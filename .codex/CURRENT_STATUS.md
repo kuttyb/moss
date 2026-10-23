@@ -11589,8 +11589,21 @@ and bodies for all arithmetic callables with their legacy `generic_stmt`
 records removed. The focused R3A–R3F suite set, arithmetic suites, and M2b2
 source-free/hostile corpus pass after this correction.
 
-A new committed candidate SHA is required. Rerun the 32-case compatibility
-oracle on that exact SHA, obtain exact-SHA Architect GO for this subtraction
-extension and consolidated R3, then update the compatibility report and push.
-The previous `114a6873` report is historical for that SHA and does not close R3.
-No R4 work has started; ABI-v9 remains default.
+Frozen candidate `31b644e455004aa4c7fdbcd54044bf043007ca4c` passes the full
+32-case compatibility oracle: 64/64 source-backed, 64/64 ABI-v9, and 64/64
+ABI-v10 Debug/Release profiles, with no unexpected results. The exact report
+is `docs/phase25/PHASE_25_1_R3_CANDIDATE_31B644E4.json`. Focused arithmetic
+source-backed/v9/v10 Debug/Release now also executes `x * 2 - 20` as `-10` /
+`-15.0`; six rehashed hostile mutations reject for both this relation and the
+nested Add/Mul profile. Non-numeric substitutions reject. The complete
+R3A–R3F and M2b2 suites passed after this correction.
+
+The Architect issued exact-SHA consolidated scoped GO on
+`31b644e455004aa4c7fdbcd54044bf043007ca4c`, with no P0/P1/P2 findings. In an
+isolated worktree they independently built `moss-dev`, ran the arithmetic
+source-free harness, record verifier, generic arithmetic requirement suite,
+and M2b2, and executed source-deleted ABI-v10 Debug/Release subtraction as
+Int `-10` and Float `-15.0` with checked projection and no legacy generic body.
+All six resealed subtraction-targeted mutations rejected. The prior P2 from
+`114a6873` is resolved. The earlier report remains historical. No R4 work has
+started; ABI-v9 remains default and L7 R3 acceptance is still pending.

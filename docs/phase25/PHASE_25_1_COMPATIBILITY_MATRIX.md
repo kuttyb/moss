@@ -179,3 +179,73 @@ disposable and are not a durable test fixture.
   deletion, legacy poisoning and projection evidence.
 - R0 architecture proposal and critical path receive independent adversarial
   review at a frozen pushed SHA; all P0/P1 findings close before R1.
+
+## R3 final arithmetic candidate refresh — 2026-10-22
+
+Frozen compiler candidate: `114a687313f98f0aa6f515f4c11d0cf3e41d3ae5`.
+The complete three-mode oracle is preserved in
+[`PHASE_25_1_R3_CANDIDATE_114A6873.json`](PHASE_25_1_R3_CANDIDATE_114A6873.json).
+All 32 cases match their expected result in every profile: 64/64
+source-backed, 64/64 ABI-v9 source-free, and 64/64 opt-in ABI-v10 source-free
+runs across native Debug/Release; zero unexpected results. Each ABI-v10 case
+records provider source deletion, selected legacy-body poisoning, and checked
+projection evidence where applicable.
+
+The candidate closes the formerly valid-but-unavailable R3 observations:
+actual `bytes.from_range`, generic Map parameter mutation, zero-argument
+relay, String `length()`, nonempty Vector literal, generic early-return,
+mutable-local `while`, typed enum Match, functional pipeline, Assert effect,
+and Raise/recover now pass the three-mode oracle. Focused suites additionally
+cover source-free ABI-v10 numeric `20 + x * 2` (`30` / `25.0`) and a second
+nested expression (`25` / `12.5`), in Debug and Release, with six internally
+rehashed occurrence mutations rejected. The focused R3A–R3F suites and M2b2
+source-free/hostile corpus pass on this candidate. The earlier R0/R3 status
+rows above are historical snapshots; this exact-SHA refresh supersedes their
+R3 availability counts.
+
+Architect scoped GO on the exact candidate SHA: independent build and
+arithmetic positive/hostile execution passed, with no P0/P1/P2 findings. A
+consolidated R3 checker/lowerer/importer review is requested before handoff.
+This is an implementation candidate, not L7 R3 acceptance. `packages/time`
+remains an unrelated package inventory build failure, and the three
+source-backed-invalid controls (Range as a generic iterator argument, Queue
+mutation through an open receiver, and untyped open-enum Match) remain
+invalid-by-language.
+
+## R3 final arithmetic authority refresh — 2026-10-22
+
+Frozen compiler candidate: `31b644e455004aa4c7fdbcd54044bf043007ca4c`.
+The full exact-SHA three-mode oracle is preserved in
+[`PHASE_25_1_R3_CANDIDATE_31B644E4.json`](PHASE_25_1_R3_CANDIDATE_31B644E4.json).
+All 32 cases matched expected results: 64/64 source-backed, 64/64 ABI-v9
+source-free, and 64/64 opt-in ABI-v10 source-free Debug/Release profiles; no
+unexpected results. The previously unavailable valid R3 profiles listed in
+the prior refresh now pass all three modes, including actual
+`bytes.from_range`, Map parameter mutation, zero-argument relay, String
+`length()`, nonempty Vector literal, early-return, mutable-local While, typed
+Match, Pipeline, Assert, and Raise/recover.
+
+The follow-up also resolves the Architect's P2 observation from candidate
+`114a6873`: generic `T - Int -> T` retains checker-owned operation authority
+through the same requirement converter. The arithmetic focused suite now
+covers `20 + x * 2` (Int `30`, Float `25.0`), `x * 2 + x * 3` (Int `25`, Float
+`12.5`), and `x * 2 - 20` (Int `-10`, Float `-15.0`) in source-backed, ABI-v9
+source-free, and ABI-v10 source-free Debug/Release. ABI-v10 provider source is
+deleted, checked projection is traced, and all three legacy generic bodies are
+absent. Six internally rehashed mutations reject for each of the two nested
+arithmetic callables; String/Bool specializations reject.
+
+The Architect issued consolidated scoped GO on exact SHA
+`31b644e455004aa4c7fdbcd54044bf043007ca4c`, with no P0/P1/P2 findings. In an
+isolated worktree they independently built `moss-dev`, ran the arithmetic
+harness, record verifier, generic arithmetic requirements suite, and M2b2,
+then executed source-deleted ABI-v10 Debug/Release `T - Int` as Int `-10` and
+Float `-15.0`. Checked projection was required, all six resealed subtraction
+mutations rejected, and no legacy generic body was present. This closes the
+P2 found on the earlier candidate. The earlier candidate report
+[`PHASE_25_1_R3_CANDIDATE_114A6873.json`](PHASE_25_1_R3_CANDIDATE_114A6873.json)
+remains historical evidence and is superseded for current parity counts by
+this report. This candidate is not L7 R3 acceptance. The `packages/time` build
+failure remains a separate package inventory blocker; the Range-argument,
+open-receiver Queue mutation, and untyped-open-enum Match probes remain
+invalid-by-language controls.

@@ -116,3 +116,74 @@ R3–R5 remain downstream milestones as specified in
 mutation workloads including the actual borrowed-Range SDK use; R4 runs the
 full SDK, cross-crate, cache, ABI-migration, and adversarial matrix; R5 is the
 opt-in release-readiness gate. These are not R2 implementation packages.
+
+## R3 final arithmetic authority candidate — 2026-10-22
+
+This section supersedes the earlier R3 availability counts above. Frozen
+candidate `114a687313f98f0aa6f515f4c11d0cf3e41d3ae5` retains each admitted
+operator requirement against its exact checked AST occurrence, including
+operator identity, operand roles/TypeRefs, result TypeRef, and parent/child
+links. Repeated operators remain distinct; the importer rejects duplicate,
+missing, ambiguous, or unlinked facts before checked-body projection. Numeric
+specialization uses the existing Moss checker/operator rules.
+
+The complete compatibility artifact is
+[`PHASE_25_1_R3_CANDIDATE_114A6873.json`](PHASE_25_1_R3_CANDIDATE_114A6873.json).
+All 32 oracle cases passed expected outcomes across source-backed, ABI-v9, and
+ABI-v10 in Debug and Release (64/64 per mode; no unexpected results). The
+previously unavailable valid R3 forms now pass in all three modes, including
+actual `bytes.from_range`, generic Map parameter mutation, relay, member
+length, nonempty Vector literals, early returns, mutable-local While, typed
+Match, Pipeline, Assert, and Raise/recover. The arithmetic profile independently
+passes `20 + x * 2` as Int `30` and Float `25.0`, plus a second nested form,
+with source deleted and legacy generic bodies poisoned for ABI-v10. Six
+internally rehashed mutations of operator identity, operands, result TypeRefs,
+parent relation, duplicate facts, and missing facts reject before import.
+
+The Architect independently built and tested exact SHA
+`114a687313f98f0aa6f515f4c11d0cf3e41d3ae5` in an isolated worktree and issued
+scoped GO for the arithmetic correction, with no P0/P1/P2 findings. The broader
+consolidated R3 review is in progress. The focused R3A–R3F suites, complete
+M2b2 source-free/hostile corpus, feedback validator, and `git diff --check`
+pass. The compiler was built with `make --jobs="$(nproc)" moss-dev`.
+
+Remaining before L7 R3 acceptance: receive the consolidated exact-SHA Architect
+GO, run final repository consistency checks, commit the ledger/report update,
+and push the reviewed candidate and closeout. No R4 work has started. The
+`packages/time` source build failure remains a separate inventory blocker; the
+invalid Range-argument, open-receiver Queue mutation, and untyped-open-enum
+Match probes remain intentional fail-closed language controls.
+
+## R3 arithmetic authority — refreshed exact candidate — 2026-10-22
+
+The initial consolidated review of `114a6873` identified valid generic
+`x * 2 - 20` as still unavailable. Its checker already retained the exact
+multiplication and subtraction occurrences; the ABI-v10 requirement converter
+was missing the checker-proven generic relation `T - Int -> T`. The bounded
+correction admits that relation alongside the already admitted opposite
+orientation and continues to validate concrete Int/Float operations through
+the existing Moss numeric specialization rules. No type is manufactured from a
+TypeRef rewrite.
+
+Frozen candidate `31b644e455004aa4c7fdbcd54044bf043007ca4c` passes the full
+32-case oracle on exact SHA: 64/64 Debug/Release profiles for source-backed,
+ABI-v9 source-free, and ABI-v10 source-free; zero unexpected results. Its raw
+report is [`PHASE_25_1_R3_CANDIDATE_31B644E4.json`](PHASE_25_1_R3_CANDIDATE_31B644E4.json).
+All earlier valid-but-unavailable R3 observations now pass in the three-mode
+oracle. The focused arithmetic suite separately confirms the required Add/Mul
+form, a repeated nested form, and mixed subtraction for Int and Float in all
+three modes, with provider source deleted and legacy ABI-v10 bodies removed.
+Twelve rehashed arithmetic evidence mutations reject, including missing facts
+for both nested Add and Sub forms; nonnumeric operand substitutions reject.
+
+Focused R3A–R3F suites, arithmetic records/hostile suites, complete M2b2
+source-free/hostile corpus, feedback validation, and `git diff --check` pass.
+The Architect issued consolidated scoped GO on exact candidate
+`31b644e455004aa4c7fdbcd54044bf043007ca4c`, with no P0/P1/P2 findings. Their
+isolated run independently built `moss-dev`, passed arithmetic and M2b2
+focused suites, executed source-deleted ABI-v10 subtraction in Debug/Release
+as Int `-10` and Float `-15.0` with checked projection, and rejected all six
+resealed subtraction-targeted mutations. The earlier candidate's P2 is
+resolved. Commit the durable closeout and push this reviewed checkpoint for
+L7 acceptance. No R4 work has started; `packages/time` remains separately
+classified as a source-package inventory failure.
