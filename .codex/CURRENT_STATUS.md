@@ -11383,3 +11383,29 @@ mutation before projection. The compatibility oracle was rerun on
 `9412ddd6b39bcc242fe84c1a45abfbbdef1d5ba4`; rerun it on any later final
 candidate SHA. R3E remains accepted only at its recorded scoped SHAs. Do not
 begin R4.
+
+## Phase 25.1 R3F — reviewed tag-only and payload recovery — implementation candidate
+
+The current compiler diff was independently reviewed by the existing Adversarial
+Architect at HEAD `9bf919eec4755847df631a7a209b791a75a4c978`. The Architect issued
+a scoped GO for the generic tag-only and one-Int-payload recovery forms, with no
+P0/P1 findings. The review is against the working-tree compiler/test changes and
+must be tied to the next committed SHA before calling that checkpoint reviewed.
+
+The common checker closure now keeps a payload constructor's checker-owned
+argument by occurrence identity and relates the recover binder and return to the
+same Int result. The common body lowerer retains Recover bindings, links the
+recovered local return to the checked result TypeRef, and accepts a checked
+Raise as a terminating path within Try. Source-free ABI-v10 Debug/Release
+execution passes with provider source deleted and both legacy bodies poisoned;
+outputs are `7\n0\n23\n`. The focused suite rejects 13 internally rehashed
+mutations before projection across private enum identity, raised variant,
+recovery selection, branch identity, payload ordinal/type, return lineage, and
+return result. The compatibility oracle now records source-backed, ABI-v9, and
+ABI-v10 Debug/Release parity for the tag and payload cases.
+
+R3F is not complete. Escaping/unhandled raise effects are not represented or
+accepted by this bounded path. Still required: checker-authoritative escaping
+raise summary and tests proving unhandled effects remain observable, broader
+hostile effect/provenance coverage, a second Architect review after committed
+SHA, and the frozen compatibility inventory. Do not begin R4.

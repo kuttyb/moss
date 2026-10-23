@@ -24,15 +24,16 @@ void write_file(const std::string& path, const std::string& bytes) {
 }  // namespace
 
 int main(int argc, char** argv) {
-  assert(argc == 5);
+  assert(argc == 6);
   const std::string interface_path = argv[1];
   const std::string archive_path = argv[2];
   const std::string mode = argv[3];
   const std::string provider_name = argv[4];
+  const std::string callable_name = argv[5];
   auto sealed = moss::abi_v10::decode(read_file(interface_path));
   const auto old_digest = sealed.digest;
   const std::string callable_id = "callable-v1:" + sealed.value.module_id +
-      ":fn:nonnegative";
+      ":fn:" + callable_name;
   auto summary_record = std::find_if(
       sealed.value.semantic_contract.begin(),
       sealed.value.semantic_contract.end(), [&](const auto& record) {
@@ -52,7 +53,6 @@ int main(int argc, char** argv) {
   assert(body.dependencies.size() == 1 &&
       body.dependencies.front().kind ==
           moss::abi_v10::CheckedBodyRecord::Dependency::Kind::NominalType);
-
   constexpr std::string_view type_prefix = "nominal-enum-v1:";
   constexpr std::string_view enum_marker = ":enum:";
   const auto& enum_id = body.dependencies.front().target_id;
@@ -78,17 +78,39 @@ int main(int argc, char** argv) {
       statements.front().kind == moss::checked_ir::StmtKind::Try &&
       statements.front().exceptional_cases.size() == 1);
   auto& attempt = statements.front();
-  if (mode == "recovery-selection") {
+  if (mode == "private-enum-id") {
+    body.dependencies.front().target_id += ":forged";
+  } else if (mode == "recovery-selection") {
     assert(!attempt.exceptional_cases.front().variant_ids.empty());
     attempt.exceptional_cases.front().variant_ids.front() += ":forged";
   } else if (mode == "return-lineage") {
     auto& returned = *attempt.exceptional_cases.front().body.front().expr;
-    assert(returned.kind == moss::checked_ir::ExprKind::IntegerLiteral);
-    returned.kind = moss::checked_ir::ExprKind::Parameter;
-    returned.literal_value.clear();
-    returned.ordinal = 0;
+    if (returned.kind == moss::checked_ir::ExprKind::IntegerLiteral) {
+      returned.kind = moss::checked_ir::ExprKind::Parameter;
+      returned.literal_value.clear();
+      returned.ordinal = 0;
+    } else {
+      assert(returned.kind == moss::checked_ir::ExprKind::LocalRead);
+      returned.ordinal += 1;
+    }
+  } else if (mode == "branch-identity") {
+    attempt.exceptional_cases.front().branch_identity += ":forged";
+  } else if (mode == "payload-ordinal") {
+    assert(!attempt.exceptional_cases.front().payload_ordinals.empty());
+    attempt.exceptional_cases.front().payload_ordinals.front() += 1;
+  } else if (mode == "payload-type") {
+    assert(!attempt.exceptional_cases.front().payload_types.empty());
+    attempt.exceptional_cases.front().payload_types.front() =
+        moss::Type::primitive("float");
+    auto& raised = *attempt.body.front().expr;
+    assert(raised.kind == moss::checked_ir::ExprKind::EnumConstruct &&
+        !raised.operands.empty());
+    raised.operands.front().type = moss::Type::primitive("float");
   } else if (mode == "raise-variant") {
-    auto& raised = *attempt.body.front().then_branch.front().expr;
+    auto& raised = *(attempt.body.front().kind ==
+            moss::checked_ir::StmtKind::Raise
+        ? attempt.body.front().expr
+        : attempt.body.front().then_branch.front().expr);
     assert(raised.kind == moss::checked_ir::ExprKind::EnumConstruct);
     raised.semantic_target_id += ":forged";
   } else if (mode == "return-result") {
@@ -98,7 +120,6 @@ int main(int argc, char** argv) {
   } else {
     assert(false && "unknown R3F exception mutation mode");
   }
-
   body.checked_ir_bytes =
       moss::checked_ir::encode_checked_body_v1(statements);
   body.semantic_hash =

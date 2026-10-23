@@ -25,6 +25,12 @@ export fn nonnegative(value):
     return value
   recover Failure.Bad:
     return 0
+
+export fn payload(code):
+  try:
+    raise Failure.Detailed(code: code)
+  recover Failure.Detailed(code):
+    return code
 """
 CONSUMER = """module Main
 import Service
@@ -32,8 +38,9 @@ import Service
 fn main():
   echo Service.nonnegative(7)
   echo Service.nonnegative(-2)
+  echo Service.payload(23)
 """
-EXPECTED = "7\n0\n"
+EXPECTED = "7\n0\n23\n"
 
 
 def run(argv, *, cwd, env, expected=0):
@@ -72,9 +79,10 @@ with tempfile.TemporaryDirectory(prefix="phase25-r3f-v10-", dir=TMP) as name:
              "-Wno-missing-field-initializers", "-pedantic", "-Isrc",
              source, "-o", str(output)], cwd=ROOT, env=env)
     for artifacts in artifacts_by_profile.values():
-        run([str(poisoner), str(artifacts / "Service.mossi"),
-             str(artifacts / "libService.rlib"), "Service", "nonnegative"],
-            cwd=ROOT, env=env)
+        for callable_name in ("nonnegative", "payload"):
+            run([str(poisoner), str(artifacts / "Service.mossi"),
+                 str(artifacts / "libService.rlib"), "Service", callable_name],
+                cwd=ROOT, env=env)
     shutil.rmtree(provider / "src")
     assert not (provider / "src").exists()
 
@@ -94,26 +102,41 @@ with tempfile.TemporaryDirectory(prefix="phase25-r3f-v10-", dir=TMP) as name:
         }
         check = run([str(MOSS), "check", str(main), "--json"],
                     cwd=consumer, env=profile_env)
-        assert "Service:fn:nonnegative|checked-body-v1" in check, check
+        for callable_name in ("nonnegative", "payload"):
+            assert f"Service:fn:{callable_name}|checked-body-v1" in check, check
         run([str(MARGO), *args, "build"], cwd=consumer, env=profile_env)
         assert run([str(MARGO), *args, "run"], cwd=consumer,
                    env=profile_env) == EXPECTED
 
-    artifacts = scratch / "hostile-recovery-selection"
-    shutil.copytree(artifacts_by_profile["debug"], artifacts)
-    run([str(mutator), str(artifacts / "Service.mossi"),
-         str(artifacts / "libService.rlib"), "recovery-selection", "Service"],
-        cwd=ROOT, env=env)
-    hostile_env = env | {
-        "MOSS_MODULE_PATH": str(artifacts),
-        "MARGO_HOME": str(scratch / "consumer-hostile"),
-        "MOSS_PHASE25_CHECKED_BODY_TRACE": "1",
-    }
-    result = subprocess.run([str(MOSS), "check", str(main), "--json"],
-                            cwd=consumer, env=hostile_env,
-                            capture_output=True, text=True, timeout=300)
-    diagnostic = result.stdout + result.stderr
-    assert result.returncode != 0 and "SOURCE_FREE_" in diagnostic, diagnostic
-    assert "Service:fn:nonnegative|checked-body-v1" not in diagnostic, diagnostic
+    hostile_cases = [
+        ("nonnegative", mode) for mode in (
+            "private-enum-id", "raise-variant", "recovery-selection",
+            "return-lineage", "return-result")
+    ] + [
+        ("payload", mode) for mode in (
+            "private-enum-id", "raise-variant", "recovery-selection",
+            "return-lineage", "return-result", "branch-identity",
+            "payload-ordinal", "payload-type")
+    ]
+    for callable_name, mode in hostile_cases:
+        case = f"{callable_name}-{mode}"
+        artifacts = scratch / f"hostile-{case}"
+        shutil.copytree(artifacts_by_profile["debug"], artifacts)
+        run([str(mutator), str(artifacts / "Service.mossi"),
+             str(artifacts / "libService.rlib"), mode, "Service",
+             callable_name], cwd=ROOT, env=env)
+        hostile_env = env | {
+            "MOSS_MODULE_PATH": str(artifacts),
+            "MARGO_HOME": str(scratch / f"consumer-{case}"),
+            "MOSS_PHASE25_CHECKED_BODY_TRACE": "1",
+        }
+        result = subprocess.run([str(MOSS), "check", str(main), "--json"],
+                                cwd=consumer, env=hostile_env,
+                                capture_output=True, text=True, timeout=300)
+        diagnostic = result.stdout + result.stderr
+        assert result.returncode != 0 and "SOURCE_FREE_" in diagnostic, (
+            case, diagnostic)
+        assert f"Service:fn:{callable_name}|checked-body-v1" not in diagnostic, (
+            case, "forged exceptional body projected before rejection", diagnostic)
+        print(f"PASS rehashed {case} mutation rejected before projection")
     print("PASS source-deleted, poisoned ABI-v10 Try/Raise Debug/Release")
-    print("PASS rehashed recovery-selection mutation rejected before projection")

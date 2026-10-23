@@ -10124,6 +10124,32 @@ class Checker {
         }
       }
       if (definitions != 1 || !definition) return false;
+      if (definition->kind == Stmt::Kind::Recover) {
+        const BodyTypeState::StatementOccurrence::BindingOccurrence* recovered =
+            nullptr;
+        for (const auto& binding : definition->bindings)
+          if (binding.identity == returned->resolved_binding_id) {
+            if (recovered) return false;
+            recovered = &binding;
+          }
+        const auto returned_type = state.solver.resolve(returned->checked_type);
+        const auto recovered_type = recovered
+            ? state.solver.resolve(recovered->type) : nullptr;
+        if (!recovered || !returned_type || !recovered_type ||
+            !returned_type->structurally_equal(*recovered_type) ||
+            !relate_type(returned->checked_type, summary.result_type))
+          return false;
+        returned_local_types.emplace(returned->resolved_binding_id,
+                                     summary.result_type);
+        for (const auto& local_read : state.expression_occurrences)
+          if (local_read.kind ==
+                  BodyTypeState::ExpressionOccurrence::Kind::Identifier &&
+              local_read.resolved_binding_id ==
+                  returned->resolved_binding_id)
+            returned_initializer_types.emplace(local_read.id,
+                                               summary.result_type);
+        continue;
+      }
       if (definition->kind == Stmt::Kind::If) {
         const BodyTypeState::StatementOccurrence::BindingOccurrence* join =
             nullptr;
@@ -10259,7 +10285,8 @@ class Checker {
       if (statement == state.statement_occurrence_ids.end()) return false;
       const auto& node = state.statement_occurrences.at(statement->second);
       const auto binding_fact = state.binding_facts.find(&source_statement);
-      if (source_statement.kind == Stmt::Kind::Case) {
+      if (source_statement.kind == Stmt::Kind::Case ||
+          source_statement.kind == Stmt::Kind::Recover) {
         if (node.bindings.size() > 64) return false;
         for (const auto& payload : node.bindings) {
           auto type = checked_body_type(payload.type);
@@ -11648,7 +11675,8 @@ class Checker {
         [&](const vector<checked_ir::Stmt>& block) {
       if (block.empty()) return false;
       const auto& last = block.back();
-      if (last.kind == checked_ir::StmtKind::Return) return true;
+      if (last.kind == checked_ir::StmtKind::Return ||
+          last.kind == checked_ir::StmtKind::Raise) return true;
       if (last.kind == checked_ir::StmtKind::Match)
         return !last.match_cases.empty() &&
             std::all_of(last.match_cases.begin(), last.match_cases.end(),
@@ -11667,8 +11695,9 @@ class Checker {
           terminates_with_return(last.then_branch) &&
           terminates_with_return(last.else_branch);
     };
-    if (!terminates_with_return(statements))
+    if (!terminates_with_return(statements)) {
       return false;
+    }
     try {
       const auto bytes = checked_ir::encode_checked_body_v1(statements);
       const auto hash = checked_ir::compute_checked_body_hash_v1(statements);
@@ -13655,7 +13684,6 @@ class Checker {
       // comparison control below: its formal is bound by the provider-owned
       // enum field, and its recover return reads that exact checked binder.
       if (function.generic && function.open_summary &&
-          function.open_summary->scheme_complete &&
           function.params.size() == 1 &&
           function.open_summary->parameter_types.size() == 1 &&
           function.open_summary->parameter_types.front() &&
@@ -13740,8 +13768,8 @@ class Checker {
                   ? state.solver.resolve(result_value.checked_type) : nullptr;
               std::vector<const BodyTypeState::ExpressionOccurrence*> args;
               for (const auto& expression : state.expression_occurrences)
-                if (expression.parent_id == root->second &&
-                    expression.child_role.rfind("argument:", 0) == 0)
+                if (expression.parent_id == constructor.id &&
+                    expression.child_role.rfind("field:", 0) == 0)
                   args.push_back(&expression);
               std::sort(args.begin(), args.end(), [](const auto* left,
                                                      const auto* right) {
@@ -13760,6 +13788,8 @@ class Checker {
                       enum_id && constructor.semantic_target_id ==
                       "nominal-enum-variant-v1:" + enum_id + ":case:" +
                           identity.variant && args.size() == 1 &&
+                  args.front()->child_role ==
+                      "field:" + variant->fields.front().name &&
                   args.front()->kind ==
                       BodyTypeState::ExpressionOccurrence::Kind::Identifier &&
                   args.front()->resolved_binding_id == "parameter:0" &&
@@ -13781,7 +13811,12 @@ class Checker {
                   summary.bound_variable_count = 0;
                   if (moss::close_open_summary_ordinals(summary)) {
                     summary.scheme_complete = true;
-                    summary.complete = false;
+                    summary.occurrence_ledger_complete =
+                        state.expression_occurrence_ledger_complete &&
+                        summary.parameter_access.size() ==
+                            function.params.size() &&
+                        summary.semantic_dependencies.empty();
+                    summary.complete = summary.occurrence_ledger_complete;
                     function.open_summary = std::move(summary);
                   }
                 }
