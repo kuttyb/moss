@@ -202,16 +202,25 @@ def executor_parity(name, source, expected_stdout):
     # inside the submitted root thunk.
     native = run_binary(binary)
     interpreted = fast_debug(source)
-    assert native.stdout == interpreted.stdout == expected_stdout, (name, native.stdout, interpreted.stdout)
+    if isinstance(expected_stdout, tuple):
+        # Executor roots may run as soon as they are submitted, so their output
+        # can race the caller's next print. Both events must occur exactly once
+        # and the joined result must still follow both of them.
+        assert native.stdout in expected_stdout, (name, native.stdout)
+        assert interpreted.stdout in expected_stdout, (name, interpreted.stdout)
+    else:
+        assert native.stdout == interpreted.stdout == expected_stdout, (
+            name, native.stdout, interpreted.stdout
+        )
     return text, native
 
 
 executor_parity('phase20_executor_basic', 'tests/phase20_executor_basic.moss', '12\n')
 executor_parity('phase20_executor_multi_root', 'tests/phase20_executor_multi_root.moss', '10\n')
-# executor.invoke is submission, not a synchronous call: under these
-# deterministic schedules the root runs at join, after "submitted".
+# executor.invoke submits asynchronous work. The root may print before or
+# after the caller's "submitted" line; join guarantees both precede the result.
 executor_parity('phase20_executor_deferred', 'tests/phase20_executor_deferred.moss',
-                'submitted\nroot ran\n5\n')
+                ('submitted\nroot ran\n5\n', 'root ran\nsubmitted\n5\n'))
 # An untyped handler parameter reachable only through executor.invoke is
 # inferred exactly like a message call site (no explicit-type requirement).
 executor_parity('phase20_executor_untyped_parameter', 'tests/phase20_executor_untyped_parameter.moss', '10\n')

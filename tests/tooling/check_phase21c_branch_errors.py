@@ -397,18 +397,20 @@ fault_text = native_text.replace(
     "    moss_inject_fileio_fault(MossFileIoFaultSite::ReadBefore, "
     "MossFileError::IO, 0);\n" + fault_marker,
     1,
-).replace(
-    between_roots,
+)
+# Executor submissions are asynchronous: the first Root may still own a
+# Branch scope when the second root is submitted. Check quiescence only after
+# join, which is the synchronization point that guarantees both Roots ended.
+join_line = "    executor.join();"
+join_marker_at = fault_text.index(before_join)
+join_at = fault_text.find(join_line, join_marker_at)
+assert join_at >= 0, "executor.join() after the main marker is missing"
+join_end = join_at + len(join_line)
+fault_text = (
+    fault_text[:join_end] + "\n"
     "    assert_eq!(moss_live_branch_scopes(), 0);\n"
-    "    assert_eq!(moss_live_fileio_branch_read_borrows(), 0);\n"
-    + between_roots,
-    1,
-).replace(
-    before_join,
-    "    assert_eq!(moss_live_branch_scopes(), 0);\n"
-    "    assert_eq!(moss_live_fileio_branch_read_borrows(), 0);\n"
-    + before_join,
-    1,
+    "    assert_eq!(moss_live_fileio_branch_read_borrows(), 0);" +
+    fault_text[join_end:]
 )
 fault_rs = OUT / "phase21c_native_read_fault.rs"
 fault_rs.write_text(fault_text)

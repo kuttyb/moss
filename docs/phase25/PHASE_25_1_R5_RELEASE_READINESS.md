@@ -156,3 +156,33 @@ R5 acceptance or Phase 25.1 completion is declared by this report.
 
 Raw command logs and JSON reports from this run are in disposable
 `tmp/r5-final/`; the durable counts and findings above are the release record.
+
+## R5.1 stabilization checkpoint — requalification in progress
+
+The R5.1 compiler/test correction checkpoint `2b0b5f81` (repository HEAD
+`b7d3d28b` after the task-scoped push authorization update) fixes the seven
+original R5 failures and closes the two previously reported P2 findings. Its
+focused compiler, ABI-v10 unit, semantic, integer-payload, conformance,
+source-free hostile, native cache collision-injection, and feedback checks
+passed. The existing Architect reviewed the final public-enum identity binding
+delta and confirmed that public exports remain admitted while missing private
+identities and non-imported external identities remain rejected.
+
+A fresh full `make check` on `b7d3d28b`, using 16 jobs, ran all 136 jobs and
+reported **134 passed, 2 failed, 0 skipped** in 1015.96 seconds wall time
+(6073.10 cumulative worker seconds). All seven original R5 failures passed.
+The two failures were test synchronization assumptions discovered by the full
+parallel run: `check_phase20_executor_fileio` assumed a fixed order between
+asynchronous root output and the submitter's print; `check_phase21c_branch_errors`
+asserted quiescence before submitted roots had joined. The executor test now
+allows either root/submitter print order but requires both once and the joined
+result last. Branch scope and read-borrow checks now occur after `join`, with
+the injected read fault retained.
+
+Both corrected gates pass individually. The corrected branch fault gate passed
+20/20 serial repetitions in isolated output directories (137.762 seconds
+total, 0 failures). These test-only changes are not yet committed; the first
+full-suite count is historical evidence for that checkpoint, not final R5.1
+qualification. A new full `make check`, `make examples`, compatibility/SDK
+and advanced-data matrices, and exact-SHA Architect verdict remain required.
+ABI-v9 remains the default, ABI-v10 remains opt-in, and R5.1 remains open.

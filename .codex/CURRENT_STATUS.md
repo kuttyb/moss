@@ -11894,6 +11894,23 @@ ABI-v10 unit shard, Team A semantic gate, integer-payload shard (including
 closure, R2 WP4 inventory self-test, 11/11 conformance gates, M2b2 prioritized
 source-free/hostile corpus, cache collision/binding test, feedback validation,
 and direct ABI-v10 adversarial executable. These are focused results, not the
-final frozen-candidate qualification. Full `make check`, examples, final R4/R5
-matrices, four-mode advanced-data matrix, and exact-SHA Architect verdict are
-still outstanding. ABI-v9 remains default and R5.1 is not yet accepted.
+final frozen-candidate qualification.
+
+The committed candidate at `b7d3d28b` completed a fresh full `make check` with
+16 jobs and all 136 manifest jobs selected: 134 passed, 2 failed, 0 skipped,
+1015.96 seconds wall time (6073.10 seconds cumulative worker time). All seven
+original R5 failures were green in that run. It exposed two additional harness
+assumptions: executor root output order before `join`, and a zero-live-Branch
+assertion between asynchronous submissions. The first test now accepts either
+pre-join print order while requiring both events exactly once and the joined
+result last. The second checks zero live scopes and read borrows only after
+`executor.join()`, retaining the injected read fault and repeated execution.
+Both corrected scripts pass individually. The corrected branch gate passed
+20/20 isolated repetitions in 137.762 seconds total (0 failures). These two
+test-only corrections are in the worktree but not yet committed; therefore
+the first full-suite result is superseded and must not be reported as final.
+
+Still outstanding on the next committed candidate: complete current-manifest
+`make check`, `make examples`, final R4/R5 compatibility and SDK acceptance
+gates, the four-mode advanced-data compiled-only matrix, and exact-SHA
+Architect GO. ABI-v9 remains default and R5.1 is not yet accepted.
