@@ -11979,3 +11979,29 @@ administrative documentation-only closeout; no regression suites were rerun.
 ABI-v9 remains the default; ABI-v10 remains opt-in. No merge to `main` or
 `phase25-integration` was performed, and ABI-v10 was not promoted. No further
 stabilization work is authorized without a new L7 assignment.
+
+
+## Phase 25.2 G0/G1 — kickoff — 2026-10-23
+
+L7 execution instructions start Phase 25.2 on the integration branch
+`phase25-2-work`, based on accepted Phase 25.1 checkpoint
+`2420439cf1cbaa08c8cd45d0d77b436ea4fb43f0`. Fetched `origin/main`; its exact
+HEAD and the local accepted baseline both equal that checkpoint, with no
+unrelated main changes. The working tree was clean before Phase 25.2 setup.
+The task authorizes local commits and normal pushes to the configured remote;
+`AGENTS.md` now records this task-specific authorization while retaining the
+no-force-push rule. The repository compiler wrapper was initially absent; a
+forced local `make moss-dev` build produced `./moss`, after which
+`./moss agent bootstrap --json` returned `language_version: moss-0.1`.
+
+G0 measurement and architecture work has not started; no compiler or build
+behavior has been changed. The exact origin baseline is recorded above.
+
+The coordinator has created `docs/phase25_2/EXECUTION_PLAN.md`, documenting the
+fetched checkpoint, toolchain/host discovery, workstream leases, gates, and
+initial risks. L5 workers are active in independent worktrees for production
+measurements and architecture mapping. The measurement worker requested no
+concurrent compiler builds while collecting its serial timed samples; the
+coordinator has paused local builds and regression suites. Synthetic Phase
+25.1 results were inspected on `origin/phase25-synthetic-build-experiment`
+and are explicitly contextual only.

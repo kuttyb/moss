@@ -165,4 +165,6 @@ When working with Moss:
 - **Authorized Commands**: Run in-repository Git commands, Python scripts, builds, and tests without requesting approval.
 - Coordinate a single branch writer. For Phase 25.1 R5.1, the user explicitly
   authorized local commits and normal pushes to `phase25-1-work`'s configured
-  remote. Do not force-push or rewrite published history.
+  remote. For Phase 25.2 G0/G1, the user explicitly authorized local commits
+  and normal pushes to `phase25-2-work`'s configured remote. Do not force-push
+  or rewrite published history.
