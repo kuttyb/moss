@@ -250,6 +250,8 @@ def main() -> int:
     artifact_compiler_sha = compiler_sha
     compiler_executable = str(MOSS.relative_to(ROOT)) if MOSS.is_relative_to(ROOT) else str(MOSS)
     compiler_binary_sha256 = hashlib.sha256(MOSS.read_bytes()).hexdigest()
+    inventory_refresh_executable = compiler_executable
+    inventory_refresh_binary_sha256 = compiler_binary_sha256
     if args.refresh_exports:
         payload = json.loads(args.output.read_text(encoding="utf-8"))
         artifact_compiler_sha = payload["compiler_commit"]
@@ -264,8 +266,12 @@ def main() -> int:
                 if path.is_file():
                     package["exported_generic_callables"].extend(parse_interface(path))
         results = payload["packages"]
-        compiler_executable = payload.get("compiler_executable") or compiler_executable
-        compiler_binary_sha256 = payload.get("compiler_binary_sha256") or compiler_binary_sha256
+        # A refresh only reparses interfaces; it cannot infer which binary
+        # originally produced them. Preserve known artifact provenance and
+        # leave legacy reports explicitly unknown. Record the current tool in
+        # separate refresh fields below.
+        compiler_executable = payload.get("compiler_executable")
+        compiler_binary_sha256 = payload.get("compiler_binary_sha256")
     else:
         results = [run_build(package, args.output) for package in packages]
     harnesses = harness_catalog()
@@ -278,6 +284,8 @@ def main() -> int:
         "compiler_executable": compiler_executable,
         "compiler_binary_sha256": compiler_binary_sha256,
         "inventory_refresh_commit": compiler_sha,
+        "inventory_refresh_executable": inventory_refresh_executable,
+        "inventory_refresh_binary_sha256": inventory_refresh_binary_sha256,
         "language_version": "moss-0.1",
         "inventory_method": "Margo debug package build; generic exports parsed from compiler-emitted semantic_exports in .mossi",
         "package_count": len(results),

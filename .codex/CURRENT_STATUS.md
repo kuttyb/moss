@@ -11644,3 +11644,12 @@ Release remain in progress. The inventory's first attempt wrote its report
 then exited nonzero on a relative-output-path formatting bug; that path is
 fixed, and metadata was refreshed from the exact built interfaces. No compiler
 source changes have been made since accepted R3.
+
+Architect review of exact checkpoint `a87a47614979a6375ffd85c683e3456c3d221218`
+returned scoped GO with no P0/P1 and a P2: refreshing a legacy report without
+artifact path/hash could incorrectly attribute the current refresher binary to
+old artifacts. The inventory now preserves missing artifact provenance as
+unknown and records refresh executable/hash separately. A rehashed legacy
+report refresh test passes with this distinction. The Architect independently
+ran the 18-case SDK matrix and R3A's three rehashed importer mutations; exact
+SHA follow-up for the legacy-refresh correction is pending.
