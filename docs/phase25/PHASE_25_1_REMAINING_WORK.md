@@ -292,3 +292,39 @@ not accepted** until scenario 7 is resolved and a fresh exact-SHA GO is issued.
 R5 remains unstarted; its recorded gates require green R0/R4 evidence,
 `make check`, examples/SDK/cross-crate and migration/cache/provenance gates,
 and an independent final architectural review. ABI-v9 remains the default.
+
+## R4 final P1 correction — exact candidate `60add1f3` — 2026-10-23
+
+Compiler candidate `60add1f31fabcb467445a3d7e72db93e4725b394` has binary
+SHA-256 `f1ace0694ecd9440800daf57629e4b018749632cf30f9c609ea92ec35fce126e`.
+Scenario 7 passes source-backed, ABI-v9 source-free, and staged-v10 Debug and
+Release with `METHOD_NOT_FOUND` for `custom_action`, consumer call primary at
+`main.moss:9`, provider related location at `provider.moss:6`. A concrete
+source-free specialization returns 42 with an assertion effect. Five resealed
+relay hostiles reject; forged member identity rejects before any body
+projection. No result type is synthesized and no ABI wire schema changed.
+
+The full staged-v10 cross-crate suite passes 11/11 Debug and 11/11 Release.
+The accepted 32-case compatibility oracle passes 64/64 each for source-backed,
+ABI-v9, and ABI-v10 profiles, with zero unexpected results. The real-SDK
+generic matrix passes 18/18; eight ABI-v9 source-free SDK harnesses pass; and
+the advanced-data compiled-only matrix passes all four ABI/profile modes with
+14 exact provider pairs per mode and provider source removed. Direct nominal
+hostiles, mixed-provider admission (6/6), the M2b2 hostile corpus, ABI-v9
+migration/rebuild, warm cache/provider binding, transitive external-cache
+revalidation, legacy inventory-provenance refresh, and feedback validation
+pass on this compiler. A rehashed legacy inventory lacking original artifact
+compiler identity keeps those fields unknown and records the refresh
+commit/executable/hash separately.
+
+The Architect independently built this exact SHA and issued scoped GO on the
+relay correction with no P0/P1/P2. Their independent scenario 7 Debug/Release
+and five-hostile runs passed, including the reject-before-projection trace.
+Overall consolidated R4 review is the remaining R4 gate. Durable evidence is
+in [`PHASE_25_1_R4_CANDIDATE_60ADD1F3.json`](PHASE_25_1_R4_CANDIDATE_60ADD1F3.json);
+raw reports are in disposable `tmp/r4-final/`.
+
+**R4 candidate acceptance and exact-SHA overall GO remain pending.** R5 has
+not started. Preserve ABI-v9 as default. The broader advanced-data
+`run_all.py` Fast Debug workload remains outside this compiled-only matrix and
+unverified on this candidate.

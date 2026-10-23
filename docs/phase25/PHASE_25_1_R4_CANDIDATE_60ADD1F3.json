@@ -1,0 +1,158 @@
+{
+  "schema": "phase25-1-r4-candidate-evidence-v1",
+  "compiler_candidate_sha": "60add1f31fabcb467445a3d7e72db93e4725b394",
+  "compiler_executable_sha256": "f1ace0694ecd9440800daf57629e4b018749632cf30f9c609ea92ec35fce126e",
+  "branch": "phase25-1-work",
+  "scope": {
+    "abi_v9_remains_default": true,
+    "wire_schema_changed": false,
+    "main_modified": false,
+    "phase25_integration_modified": false,
+    "r5_started": false
+  },
+  "scenario7": {
+    "requirement": "Return METHOD_NOT_FOUND for custom_action with consumer primary location and provider related location.",
+    "source_backed": {
+      "debug": "pass",
+      "release": "pass"
+    },
+    "abi_v9_source_free": {
+      "debug": "pass",
+      "release": "pass"
+    },
+    "staged_abi_v10_source_free": {
+      "debug": "pass",
+      "release": "pass"
+    },
+    "diagnostic_code": "METHOD_NOT_FOUND",
+    "member_name": "custom_action",
+    "consumer_primary": "main.moss:9",
+    "provider_related": "provider.moss:6",
+    "provider_source_removed_in_staged_v10": true,
+    "positive_control": {
+      "concrete_custom_action": "Data.custom_action()",
+      "result": "42",
+      "effect_control": "assert(value == 40) followed by value + 2",
+      "status": "pass"
+    },
+    "hostiles": {
+      "member_identity": "rejected before any checked-body projection",
+      "result_typeref": "SOURCE_FREE_CHECKED_BODY_INVALID; invoke_action not projected",
+      "effects": "SOURCE_FREE_CHECKED_BODY_INVALID; invoke_action not projected",
+      "private_dependency": "SOURCE_FREE_CONTRACT_INVALID; invoke_action not projected",
+      "provenance": "SOURCE_FREE_CHECKED_BODY_INVALID; invoke_action not projected"
+    },
+    "raw_report": "tmp/r4-final/member-relay.log"
+  },
+  "staged_v10_cross_crate": {
+    "debug": {
+      "passed": 11,
+      "failed": 0,
+      "report": "tmp/r4-final/cross-debug.json"
+    },
+    "release": {
+      "passed": 11,
+      "failed": 0,
+      "report": "tmp/r4-final/cross-release.json"
+    },
+    "scenario7": "pass in both profiles"
+  },
+  "compatibility_oracle": {
+    "case_count": 32,
+    "source_backed": {
+      "passed": 64,
+      "total": 64
+    },
+    "abi_v9": {
+      "passed": 64,
+      "total": 64
+    },
+    "abi_v10": {
+      "passed": 64,
+      "total": 64
+    },
+    "unexpected_results": [],
+    "report": "tmp/r4-final/r3-oracle.json"
+  },
+  "sdk_generic_matrix": {
+    "runs": 18,
+    "passed": 18,
+    "modes": [
+      "source-backed",
+      "abi-v9",
+      "abi-v10"
+    ],
+    "profiles": [
+      "debug",
+      "release"
+    ],
+    "report": "tmp/r4-final/sdk-generic.json"
+  },
+  "abi_v9_sdk_source_free": {
+    "passed": 8,
+    "total": 8,
+    "harnesses": [
+      "sdk/data-acceptance/tests/check_source_free.py",
+      "sdk/encoding/tests/check_source_free.py",
+      "sdk/fs/tests/check_source_free.py",
+      "sdk/text/tests/check_source_free.py",
+      "sdk/path/tests/check_source_free.py",
+      "sdk/foundations/acceptance/validate_source_free.py",
+      "sdk/foundations/algorithms/tests/check_source_free.py",
+      "sdk/foundations/collections/tests/check_source_free.py"
+    ],
+    "foundations_control": "source-free generic collections output and bytes range output 329; provider sources removed"
+  },
+  "advanced_data_compiled_only": {
+    "provider_pairs_per_mode": 14,
+    "provider_source_removed": true,
+    "consumer_checked_formatted_built_and_executed": true,
+    "mode_results": {
+      "abi_v9_debug": "pass",
+      "abi_v9_release": "pass",
+      "abi_v10_debug": "pass",
+      "abi_v10_release": "pass"
+    },
+    "logs": "tmp/r4-final/advanced-data/"
+  },
+  "other_r4_gates": {
+    "direct_nominal_source_free_and_seven_hostiles": "pass",
+    "mixed_provider_admission": "6/6 pass",
+    "m2b2_source_free_hostile_corpus": "pass",
+    "abi_v9_migration_rebuild_diagnostics": "pass",
+    "warm_provider_library_cache_binding": "pass",
+    "abi_v9_transitive_external_cache_revalidation": "pass",
+    "agent_feedback_validation": "pass",
+    "legacy_inventory_provenance_refresh": {
+      "status": "pass",
+      "test": "tests/phase25/compatibility/inventory.py --refresh-exports",
+      "evidence": "Legacy artifact compiler identity remains unknown when absent; current refresh commit, executable path, and binary hash are stored separately.",
+      "report": "tmp/r4-final/legacy-inventory.json"
+    }
+  },
+  "architect_review": {
+    "compiler_sha": "60add1f31fabcb467445a3d7e72db93e4725b394",
+    "binary_sha256": "f1ace0694ecd9440800daf57629e4b018749632cf30f9c609ea92ec35fce126e",
+    "scenario7_and_relay_followup": "GO",
+    "p0": 0,
+    "p1": 0,
+    "p2": 0,
+    "independent_scenario7_profiles": [
+      "staged ABI-v10 Debug",
+      "staged ABI-v10 Release"
+    ],
+    "member_identity_reject_before_projection": "pass",
+    "overall_r4_verdict": "pending fresh overall candidate review",
+    "legacy_inventory_provenance_followup": "requested with consolidated overall review"
+  },
+  "r4_acceptance": "CANDIDATE_GATES_GREEN_PENDING_OVERALL_ARCHITECT_GO",
+  "known_limitations": [
+    "The advanced-data matrix validates concrete API paths, not generic specialization; generic specialization coverage is recorded separately in the 18-run SDK matrix.",
+    "The broader advanced-data run_all Fast Debug workload is not part of this compiled-only gate and remains unverified for this candidate.",
+    "R5 has not started; ABI-v9 remains the default."
+  ],
+  "remaining_gates": [
+    "Obtain and record a fresh exact-SHA overall R4 Architect GO after review of this consolidated evidence.",
+    "Return the R4 candidate recommendation and exact evidence to L7."
+  ]
+}

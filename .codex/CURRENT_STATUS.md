@@ -11781,3 +11781,43 @@ passed. Overall exact-SHA R4 review at evidence checkpoint `40db7865` returned
 NO-GO with one P1, no P0, and no additional P2: scenario 7 remains red in both
 profiles. R4 is not accepted; R5 has not started. Keep ABI-v9 as default and
 leave protected branches untouched.
+
+## Phase 25.1 R4 final P1 correction — candidate gates green — 2026-10-23
+
+On compiler commit `60add1f31fabcb467445a3d7e72db93e4725b394` (binary
+SHA-256 `f1ace0694ecd9440800daf57629e4b018749632cf30f9c609ea92ec35fce126e`),
+cross-crate scenario 7 now returns `METHOD_NOT_FOUND` for `custom_action` in
+source-backed, ABI-v9 source-free, and staged ABI-v10 Debug/Release. The
+consumer call at `main.moss:9` is primary and `provider.moss:6` is related;
+the staged-v10 provider source tree is removed. A concrete source-free
+`custom_action()` positive control returns 42 and exercises its assertion
+effect. Five resealed member/result/effect/private-dependency/provenance
+hostiles reject; the member-identity mutation rejects before any checked-body
+projection. No TypeRef was invented and no ABI wire schema changed.
+
+The importer now validates/projects direct deferred-member leaves before
+forwarding bodies. This keeps a forged leaf from emitting a projection event
+for its relay. The exact-SHA Architect follow-up issued scoped GO with no
+P0/P1/P2 and independently ran scenario 7 in staged-v10 Debug/Release plus the
+relay hostile suite. The overall candidate review is requested after the
+consolidated durable report is recorded.
+
+Exact-candidate gates pass: staged-v10 cross-crate 11/11 Debug and 11/11
+Release; the 32-case compatibility oracle has 64/64 source-backed, 64/64
+ABI-v9, and 64/64 ABI-v10 profile outcomes with zero unexpected results; the
+real-SDK generic matrix passes 18/18; eight ABI-v9 SDK source-free harnesses
+pass; and the advanced-data compiled-only matrix passes ABI-v9/v10 Debug and
+Release with 14 provider pairs per mode and provider source removed. Direct
+nominal hostiles, mixed-provider admission (6/6), the focused M2b2 corpus,
+ABI-v9 migration, warm-cache/provider-binding, transitive external-cache, and
+legacy inventory-provenance refresh and feedback validation also pass. A
+rehashed legacy inventory with missing artifact compiler identity preserves
+that identity as unknown while recording the refresh compiler separately.
+Durable summary:
+`docs/phase25/PHASE_25_1_R4_CANDIDATE_60ADD1F3.json`; raw run reports are under
+disposable `tmp/r4-final/`.
+
+R4 candidate acceptance awaits a fresh exact-SHA overall Architect GO on the
+consolidated evidence. Do not begin R5 or change ABI-v9 default. The broader
+advanced-data `run_all.py` Fast Debug workload is outside the compiled-only
+acceptance matrix and remains unverified for this candidate.
