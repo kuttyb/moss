@@ -21,7 +21,7 @@ import tomllib
 
 ROOT = Path(__file__).resolve().parents[3]
 MARGO = ROOT / "margo"
-MOSS = ROOT / "moss"
+MOSS = Path(os.environ.get("MOSS", ROOT / "moss")).resolve()
 OUT_DEFAULT = ROOT / "docs/phase25/PHASE_25_1_GENERIC_INVENTORY.json"
 GENERIC_EXPORT = re.compile(r'^export fn (.+?) kind=generic semantic_hash=([^ ]+) return=([^ ]+) effects=(.*)$')
 SOURCE_FREE_MARKERS = {

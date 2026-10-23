@@ -376,7 +376,7 @@ export fn datetime_to_timestamp(dt: DateTime) -> Timestamp:
 fn pad_digit(d: Int) -> String:
   digits = "0123456789"
   if d >= 0 and d <= 9:
-    return digits.char_at(d)
+    return digits.char_at(d).to_string()
   return "0"
 
 fn pad2(n: Int) -> String:

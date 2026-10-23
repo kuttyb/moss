@@ -11607,3 +11607,19 @@ Int `-10` and Float `-15.0` with checked projection and no legacy generic body.
 All six resealed subtraction-targeted mutations rejected. The prior P2 from
 `114a6873` is resolved. The earlier report remains historical. No R4 work has
 started; ABI-v9 remains default and L7 R3 acceptance is still pending.
+
+## Phase 25.1 R4 — authorized kickoff — 2026-10-22
+
+L7 accepted R3 at compiler `31b644e4` / closeout `46386c9e` and authorized R4
+implementation and validation. R3 compiler changes and regression tests are
+frozen. R5, merge to `main`, and changing the default ABI remain unauthorized.
+
+R4A inventory kickoff reproduced the `packages/time` build failure with the
+repository `moss-dev`: `pad_digit` is annotated `String` but returned the
+`Char` from `String.char_at`. The bounded package fix explicitly converts that
+character with `to_string()`. The package test suite passes 11/11 in both
+Debug and Release, including ISO 8601 formatting coverage. Inventory tooling
+now honors an explicit `MOSS` compiler override so the refreshed report can
+record the built compiler. The full 26-root inventory is next; ABI matrix,
+cross-crate and migration hostile suites, Architect review, and frozen R4
+candidate remain outstanding. No R5 work has started.
