@@ -11500,3 +11500,38 @@ now added and passes locally before projection. Architect independent execution
 of the corrected positive and hostile cases remains pending. The compatibility
 matrix source code is unchanged since `b6e2db29`; the new pending commit only
 adds this hostile test and status evidence.
+
+## Phase 25.1 R3 — reviewed candidate handoff to L7 — 2026-10-22
+
+Reviewed candidate: `98f6ae73d15a7234648d89fa3930cbcfbae68816` on
+`phase25-1-work`, pushed to `origin/phase25-1-work`. The complete compatibility
+oracle ran on this exact SHA with `--include-sdk-bytes-range
+--include-surface-probes`: 32 cases; 64/64 source-backed, 64/64 ABI-v9, and
+64/64 opt-in ABI-v10 profiles passed across Debug/Release; zero unexpected
+results. The unchanged R3A–R3F focused suites, M2b2 source-free hostile corpus,
+generic arithmetic controls, and feedback validator pass.
+
+The existing Adversarial Architect independently built at this SHA and ran
+R3E callback positives plus all eight rehashed callback mutations, the R3F
+escaping-Raise source-free positive with legacy RaiseSet erased plus all six
+rehashed effect/identity mutations, and the Count early-return oracle plus its
+five rehashed hostile modes. They issued scoped GO for these bounded profiles
+with no P0/P1 findings. Count source-free projection also removes all four
+legacy `generic_stmt` records. R3F caught/recovered tag-only and payload forms
+remain covered by their focused source-free Debug/Release and hostile suites.
+
+**R3 is not complete pending L7 disposition.** The historical valid generic
+expression `20 + x * 2` remains source-backed/v9-valid and executes `30` for
+Int and `25.0` for Float, but ABI-v10 correctly rejects source-free projection.
+The Architect's exact checker probe found three summary requirements but zero
+per-operation facts for that body; the only source-linked requirement is the
+`Int + T` operation, with no occurrence-linked multiplication or operand/result
+relation. Smallest safe follow-up contract is checker-owned per-operator
+occurrence facts for every exact AST node, carrying operand roles, result
+TypeRef, and parent/child occurrence identity, with duplicate/unlinked
+constraint-derived relations excluded from ABI-v10 admission. This adds no
+numeric semantics. L7 must either approve that bounded source-free exception
+for this R3 candidate or authorize implementing the missing checker authority.
+
+No R4 work has started. Await L7 acceptance/disposition of this reviewed
+candidate before beginning R4.
