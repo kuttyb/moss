@@ -11409,3 +11409,65 @@ accepted by this bounded path. Still required: checker-authoritative escaping
 raise summary and tests proving unhandled effects remain observable, broader
 hostile effect/provenance coverage, a second Architect review after committed
 SHA, and the frozen compatibility inventory. Do not begin R4.
+
+## Phase 25.1 R3F — escaping Raise effect implementation — WIP — 2026-10-22
+
+The working tree now links an escaping Raise occurrence to a canonical ABI-v10
+effect tag containing the exact private enum declaration identity and variant.
+The checked body carries the existing private nominal dependency; the importer
+recomputes the body/effect relationship and restores the observable RaiseSet
+only after validation. The checker closes the open parameter to the existing
+enum-field `Int` constraint before summary emission; invalid String
+specialization remains rejected by the normal type checker. This is bounded
+to direct enum raises with one Int payload and does not claim arbitrary called
+raise-effect closure.
+
+`tests/tooling/check_phase25_r3f_escaping_raise_effects.py` passes source-free
+Debug/Release projection, native build, observable escaping effect query, and
+String rejection after deleting provider source and poisoning the legacy body.
+Five internally rehashed cases (missing/wrong effect tag, wrong raised
+variant, wrong payload TypeRef, and wrong private dependency hash) reject
+before projection. The existing R3F recover suite, callback effect suites,
+R3A-R3D focused suites, feedback validator, and M2b2 corpus pass on
+`build/compiler/moss-dev`. M2b2's runner was corrected to accept its current
+ABI-specific expected-output keys and the stronger unresolved callback-effect
+diagnostic when a callback body is removed. The broad compatibility oracle is
+currently running with `MOSS=build/compiler/moss-dev`; its earlier attempt was
+stopped after confirming the runner ignored that setting and selected the
+default compiler. Do not treat that interrupted run as validation.
+
+The escaping-Raise implementation is not yet Architect-reviewed or accepted.
+
+## Phase 25.1 R3 — candidate validation refresh — 2026-10-22
+
+The shared checked-body path now also admits the generic Count/Index/equality
+early-return profile from `collection-count-early-return`, with both return
+paths tied to the checker-retained Int result and the indexed operation's
+`may_panic` effect. Five internally rehashed mutations of branch index,
+return identity, requirement result, effect, and operation identity reject
+before projection. The compatibility oracle had previously classified this
+source/v9-valid form as unavailable; a focused source/v9/v10 Debug/Release
+oracle run passes after the bounded importer extension.
+
+The direct escaping-Raise effect candidate links one checked Raise to the
+canonical private enum declaration and variant effect tag, and restores its
+RaiseSet only after importer validation. Its source-free Debug/Release effect
+query and five rehashed effect/variant/payload/dependency mutations pass.
+R3F tag-only and payload-bearing recover, R3E callback propagation and its
+eight rehashed mutations, R3A–R3D focused suites, the M2b2 source-free corpus,
+the historical arithmetic harnesses, `git diff --check`, and the feedback
+validator all pass on the current working tree. The rebuilt compiler is
+`build/compiler/moss-dev`, built with `make --jobs="$(nproc)" moss-dev`.
+
+The historical `20 + x * 2` expectation is corrected: source-backed Int/Float
+execution remains `30`/`25.0`; checker body bytes exist, but its retained
+summary has three operator requirements and the ABI-v10 arithmetic importer
+still rejects that shape. The original claim that no checked body existed was
+stale. No unsafe projection was enabled and this valid ABI-v10-unavailable
+form must remain explicitly classified unless its operator relationships gain
+checker-authoritative validation.
+
+Full compatibility inventory on a committed frozen candidate and consolidated
+Architect review of this exact candidate remain pending. The bounded escaping
+Raise profile also needs Architect acceptance. Do not begin R4 or claim R3
+complete.

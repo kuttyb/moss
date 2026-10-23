@@ -229,8 +229,41 @@ fn main():
       find_function(leading_literal, "compute");
   assert(leading_literal_function.open_summary &&
          leading_literal_function.open_summary->scheme_complete);
-  assert(!leading_literal_function.checked_body_ir_v1_bytes);
-  assert(!leading_literal_function.checked_body_ir_v1_hash);
+  assert(leading_literal_function.checked_body_ir_v1_bytes &&
+         leading_literal_function.checked_body_ir_v1_hash);
+  const auto& leading_facts = *leading_literal_function.open_summary;
+  assert(leading_facts.requirements.size() == 3);
+  const auto& exact_leading_add = leading_facts.requirements.back();
+  assert(exact_leading_add.target_id == "operator:+" &&
+         exact_leading_add.subject->structurally_equal(
+             *Type::primitive("int")) &&
+         exact_leading_add.arguments.size() == 1 &&
+         exact_leading_add.arguments.front()->structurally_equal(*generic) &&
+         exact_leading_add.result &&
+         (*exact_leading_add.result)->structurally_equal(*generic));
+  // The occurrence lowerer now retains bytes for this shape, but the ABI-v10
+  // arithmetic admission contract still requires a validated two-relation
+  // summary. A body hash alone does not establish that contract.
+  abi_v10::Summary leading_wire;
+  leading_wire.variable_count = leading_facts.bound_variable_count;
+  for (const auto& parameter : leading_facts.parameter_types) {
+    auto wire = abi_v10_checked_type(parameter, leading_wire.variable_count);
+    assert(wire);
+    leading_wire.parameters.push_back(*wire);
+  }
+  for (const auto access : leading_facts.parameter_access)
+    leading_wire.parameter_access.push_back(abi_v10_checked_access(access));
+  auto leading_result = abi_v10_checked_type(
+      leading_facts.result_type, leading_wire.variable_count);
+  assert(leading_result);
+  leading_wire.result = *leading_result;
+  vector<abi_v10::SourceProvenance> leading_provenance;
+  auto leading_requirements = abi_v10_checked_requirements(
+      leading_facts.requirements, leading_wire.variable_count,
+      leading_provenance);
+  assert(leading_requirements);
+  leading_wire.requirements = *leading_requirements;
+  assert(!abi_v10_checked_arithmetic_summary_candidate(leading_wire));
 
   const auto& multiply = summary.requirements[0];
   const auto& add = summary.requirements[1];

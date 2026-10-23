@@ -49,6 +49,11 @@ def package(path, name, source):
     (path / "src/main.moss").write_text(source)
 
 
+def expected_output(case, abi="v10"):
+    key = f"abi_{abi}_expected_output"
+    return case.get(key, case.get("expected_output"))
+
+
 if args.inventory_only:
     for case in corpus["cases"]:
         print(f"{case['priority']}: {case['id']} — {case['category']}")
@@ -195,7 +200,9 @@ with tempfile.TemporaryDirectory(prefix="phase25-m2b2-corpus-", dir=TMP) as temp
         }
         command([str(MARGO), "build"], cwd=consumer, env=env)
         output = command([str(MARGO), "run"], cwd=consumer, env=env)
-        assert output == case["expected_output"], (case["id"], output)
+        expected = expected_output(case)
+        assert expected is not None, (case["id"], "missing ABI-v10 expected output")
+        assert output == expected, (case["id"], output)
         if case["checked_body_status"].startswith("checked-body supported"):
             trace_env = env | {"MOSS_PHASE25_CHECKED_BODY_TRACE": "1"}
             trace = "MOSS_CHECKED_BODY_PROJECTED|callable-v1:"
@@ -265,7 +272,7 @@ with tempfile.TemporaryDirectory(prefix="phase25-m2b2-corpus-", dir=TMP) as temp
                     poisoned_build + poisoned_check)
             poisoned_output = command(
                 [str(MARGO), "run"], cwd=consumer, env=poisoned_env)
-            assert poisoned_output == case["expected_output"], (
+            assert poisoned_output == expected_output(case), (
                 case["id"], poisoned_output)
             if case["id"] == "branch-join-generic-arithmetic":
                 for shape, expected_code, expected_message in (
@@ -328,7 +335,8 @@ with tempfile.TemporaryDirectory(prefix="phase25-m2b2-corpus-", dir=TMP) as temp
             negative_cases = {
                 "missing-summary": ("SOURCE_FREE_SUMMARY_INVALID",),
                 "missing-body": ("SOURCE_FREE_CHECKED_BODY_INVALID",
-                                 "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE"),
+                                 "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+                                 "SOURCE_FREE_CALLABLE_EFFECTS_UNRESOLVED"),
                 "corrupted-summary": ("SOURCE_FREE_CHECKED_BODY_INVALID",),
                 "identity": ("SOURCE_FREE_",),
                 "mismatch-hash": ("SOURCE_FREE_CHECKED_BODY_INVALID",
@@ -410,6 +418,19 @@ with tempfile.TemporaryDirectory(prefix="phase25-m2b2-corpus-", dir=TMP) as temp
                 negative_cases["collection-index-start"] = (
                     "SOURCE_FREE_CHECKED_BODY_INVALID",
                 )
+            if case["id"] == "collection-count-early-return":
+                for mutation in (
+                    "count-branch-index-identity",
+                    "count-branch-return-identity",
+                    "count-branch-requirement-result",
+                    "count-branch-effect-erasure",
+                    "count-branch-operation-identity",
+                ):
+                    negative_cases[mutation] = (
+                        "SOURCE_FREE_CHECKED_BODY_INVALID",
+                        "SOURCE_FREE_SUMMARY_INVALID",
+                        "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE",
+                    )
             if case["id"] == "homogeneous-vector-literal":
                 negative_cases["vector-mislink-element"] = (
                     "SOURCE_FREE_CHECKED_BODY_INVALID",
@@ -503,7 +524,7 @@ with tempfile.TemporaryDirectory(prefix="phase25-m2b2-corpus-", dir=TMP) as temp
             }
             command([str(MARGO), "build"], cwd=v9_consumer, env=v9_env)
             v9_output = command([str(MARGO), "run"], cwd=v9_consumer, env=v9_env)
-            assert v9_output == case["expected_output"], v9_output
+            assert v9_output == expected_output(case, "v9"), v9_output
             print(f"PASS {case['id']}: ABI-v9 source-free compatibility")
             continue
 
@@ -527,7 +548,7 @@ with tempfile.TemporaryDirectory(prefix="phase25-m2b2-corpus-", dir=TMP) as temp
                 capture_output=True, text=True, timeout=240)
             poisoned_output = poisoned_run.stdout + poisoned_run.stderr
             assert (poisoned_run.returncode != 0 or
-                    poisoned_run.stdout != case["expected_output"]), (
+                    poisoned_run.stdout != expected_output(case)), (
                 case["id"], "poisoned body preserved semantics; classify and "
                 "prove its non-legacy execution path before accepting it",
                 poisoned_output)

@@ -2986,6 +2986,14 @@ static moss::AccessMode imported_abi_v10_requirement_access(
 
 static bool abi_v10_collection_loop_summary_candidate(
     const abi_v10::Summary& summary);
+static bool abi_v10_collection_count_branch_summary_candidate(
+    const abi_v10::Summary& summary);
+static bool abi_v10_collection_count_branch_body_candidate(
+    const abi_v10::Summary& summary,
+    const vector<checked_ir::Stmt>& statements,
+    const moss::TypeContext& context);
+static bool abi_v10_collection_count_branch_effects(
+    const ObservableEffects& effects);
 static bool abi_v10_checked_vector_literal_summary_candidate(
     const abi_v10::Summary& summary);
 static bool abi_v10_checked_vector_literal_body_candidate(
@@ -3534,6 +3542,137 @@ static bool abi_v10_checked_payload_raise_recover_body_candidate(
       returned.expr->ordinal == 0 && returned.expr->type &&
       returned.expr->type->structurally_equal(*int_type) && returned.type &&
       returned.type->structurally_equal(*int_type);
+}
+
+// ABI-v10 preserves a bounded direct enum raise as an effect tag tied to the
+// exact private declaration and the checked Raise occurrence. The body
+// dependency carries the declaration record hash; this tag carries the
+// escaping variant identity.
+static std::optional<string> abi_v10_direct_raise_effect_tag(
+    const abi_v10::Summary& summary,
+    const vector<checked_ir::Stmt>& statements,
+    const Program& program) {
+  const bool int_parameter = summary.variable_count == 0 &&
+      summary.parameters.size() == 1 &&
+      summary.parameters.front().kind == abi_v10::WireTypeKind::Primitive &&
+      summary.parameters.front().identity == "int";
+  if (!int_parameter ||
+      summary.result.kind != abi_v10::WireTypeKind::Unit ||
+      !summary.requirements.empty() || !summary.dependencies.empty() ||
+      !summary.effect_dependencies.empty() || summary.observable_effect_bits ||
+      summary.parameter_access != vector<abi_v10::Access>{
+          abi_v10::Access::Read} || statements.size() != 1 ||
+      statements.front().kind != checked_ir::StmtKind::Raise)
+    return std::nullopt;
+  const auto& raised = statements.front();
+  if (!raised.expr || raised.expr->kind != checked_ir::ExprKind::EnumConstruct ||
+      raised.expr->semantic_target_id.empty() || !raised.expr->type ||
+      !raised.expr->type->declaration ||
+      raised.exceptional_identity.empty() ||
+      raised.expr->type->declaration->id != raised.exceptional_identity ||
+      raised.exceptional_alternatives.size() != 1 ||
+      raised.expr->operands.size() != 1 ||
+      raised.expr->operands.front().kind != checked_ir::ExprKind::Parameter ||
+      raised.expr->operands.front().ordinal != 0 ||
+      !raised.expr->operands.front().type ||
+      !imported_abi_v10_type(summary.parameters.front(),
+          *program.type_context, summary.variable_count) ||
+      !raised.expr->operands.front().type->structurally_equal(
+          *imported_abi_v10_type(summary.parameters.front(),
+              *program.type_context, summary.variable_count)))
+    return std::nullopt;
+  const auto& variant_id = raised.exceptional_alternatives.front();
+  const string prefix = "nominal-enum-variant-v1:" +
+      raised.exceptional_identity + ":case:";
+  if (!starts_with(raised.expr->semantic_target_id, prefix) ||
+      !starts_with(variant_id, "enum:"))
+    return std::nullopt;
+  const auto separator = variant_id.rfind(':');
+  if (separator == string::npos || separator <= 5) return std::nullopt;
+  const auto variant_name = variant_id.substr(separator + 1);
+  if (raised.expr->semantic_target_id != prefix + variant_name ||
+      raised.branch_identity.empty())
+    return std::nullopt;
+  const EnumType* declaration = nullptr;
+  for (const auto& candidate : program.enums) {
+    if (candidate.exported) continue;
+    const auto module_id = program_module_identity(program,
+        candidate.defining_module);
+    const auto declaration_name = candidate.declaration_name.empty()
+        ? candidate.name : candidate.declaration_name;
+    if (moss::declaration_identity(moss::DeclarationKind::Enum,
+            module_id, declaration_name) == raised.exceptional_identity) {
+      if (declaration) return std::nullopt;
+      declaration = &candidate;
+    }
+  }
+  if (!declaration) return std::nullopt;
+  const auto variant = std::find_if(declaration->cases.begin(),
+      declaration->cases.end(), [&](const EnumCase& candidate) {
+    return candidate.name == variant_name;
+  });
+  if (variant == declaration->cases.end() || variant->fields.size() != 1 ||
+      canonical_type_name(variant->fields.front().type) != "int")
+    return std::nullopt;
+  return "raise-v1:" + std::to_string(raised.exceptional_identity.size()) +
+      ":" + raised.exceptional_identity + ":" +
+      std::to_string(variant_name.size()) + ":" + variant_name;
+}
+
+static bool abi_v10_direct_raise_effects_match(
+    const string& effect_tag, const ObservableEffects& effects,
+    const Program& program, const vector<checked_ir::Stmt>& statements) {
+  if (effects.local_capture_read || effects.local_mutation ||
+      effects.domain_read || effects.domain_write || effects.message ||
+      effects.external_io || effects.fileio || effects.fileio_unknown ||
+      effects.may_panic || effects.may_diverge || effects.unresolved ||
+      effects.raise_set.size() != 1 || statements.size() != 1 ||
+      statements.front().kind != checked_ir::StmtKind::Raise ||
+      statements.front().exceptional_alternatives.size() != 1)
+    return false;
+  const auto& raised = statements.front();
+  const auto& tag_variant = raised.exceptional_alternatives.front();
+  const auto separator = tag_variant.rfind(':');
+  if (separator == string::npos) return false;
+  const auto variant_name = tag_variant.substr(separator + 1);
+  const EnumType* declaration = nullptr;
+  for (const auto& candidate : program.enums) {
+    if (candidate.exported) continue;
+    const auto module_id = program_module_identity(program,
+        candidate.defining_module);
+    const auto declaration_name = candidate.declaration_name.empty()
+        ? candidate.name : candidate.declaration_name;
+    if (moss::declaration_identity(moss::DeclarationKind::Enum,
+            module_id, declaration_name) == raised.exceptional_identity) {
+      if (declaration) return false;
+      declaration = &candidate;
+    }
+  }
+  if (!declaration) return false;
+  const auto actual = *effects.raise_set.begin();
+  return actual.kind == RaisedIdentityKind::EnumVariant &&
+      canonical_type_name(actual.type) ==
+          canonical_type_name(declaration->name) &&
+      actual.variant == variant_name &&
+      effect_tag == "raise-v1:" +
+          std::to_string(raised.exceptional_identity.size()) + ":" +
+          raised.exceptional_identity + ":" +
+          std::to_string(variant_name.size()) + ":" + variant_name;
+}
+
+static bool abi_v10_direct_raise_body_candidate(
+    const abi_v10::Summary& summary,
+    const vector<checked_ir::Stmt>& statements, const Program& program,
+    const vector<abi_v10::CheckedBodyRecord::Dependency>& dependencies,
+    const ObservableEffects& effects) {
+  const auto tag = abi_v10_direct_raise_effect_tag(summary, statements, program);
+  return tag && dependencies.size() == 1 && dependencies.front().kind ==
+          abi_v10::CheckedBodyRecord::Dependency::Kind::NominalType &&
+      statements.front().kind == checked_ir::StmtKind::Raise &&
+      dependencies.front().target_id ==
+          statements.front().exceptional_identity &&
+      summary.observable_effect_tags == vector<string>{*tag} &&
+      abi_v10_direct_raise_effects_match(*tag, effects, program, statements);
 }
 
 // Only this typed v2 summary shape selects the checked arithmetic lowering.
@@ -4781,6 +4920,108 @@ static bool abi_v10_collection_loop_summary_candidate(
       !index.provenance_id.empty() && !equality.provenance_id.empty();
 }
 
+// The checker can also produce the same Count/Index/equality relations for a
+// straight-line Count binding followed by an early return. Keep that body on
+// the shared occurrence path and validate each operation and both return
+// paths against the exact open summary.
+static bool abi_v10_collection_count_branch_summary_candidate(
+    const abi_v10::Summary& summary) {
+  return abi_v10_collection_loop_summary_candidate(summary) &&
+      summary.result.kind == abi_v10::WireTypeKind::Primitive &&
+      summary.result.identity == "int";
+}
+
+static bool abi_v10_collection_count_branch_effects(
+    const ObservableEffects& effects) {
+  return effects.may_panic && !effects.local_capture_read &&
+      !effects.local_mutation && !effects.domain_read &&
+      !effects.domain_write && !effects.message && !effects.external_io &&
+      !effects.fileio && !effects.fileio_unknown &&
+      effects.raise_set.empty() && !effects.may_diverge &&
+      !effects.unresolved;
+}
+
+static bool abi_v10_collection_count_branch_body_candidate(
+    const abi_v10::Summary& summary,
+    const vector<checked_ir::Stmt>& statements,
+    const moss::TypeContext& context) {
+  if (!abi_v10_collection_count_branch_summary_candidate(summary) ||
+      statements.size() != 3 ||
+      statements[0].kind != checked_ir::StmtKind::Let ||
+      statements[0].local_ordinal != 0 || !statements[0].expr ||
+      !statements[0].type ||
+      statements[1].kind != checked_ir::StmtKind::If ||
+      !statements[1].expr ||
+      statements[1].then_branch.size() != 1 ||
+      !statements[1].else_branch.empty() ||
+      statements[1].then_branch.front().kind !=
+          checked_ir::StmtKind::Return ||
+      !statements[1].then_branch.front().expr ||
+      statements[2].kind != checked_ir::StmtKind::Return ||
+      !statements[2].expr)
+    return false;
+  const auto vector_type = imported_abi_v10_type(
+      summary.parameters[0], context, summary.variable_count);
+  const auto element_type = imported_abi_v10_type(
+      summary.parameters[1], context, summary.variable_count);
+  const auto int_type = moss::Type::primitive("int");
+  const auto bool_type = moss::Type::primitive("bool");
+  if (!vector_type || !element_type || !int_type || !bool_type ||
+      !statements[0].type->structurally_equal(*int_type) ||
+      !statements[1].expr->type ||
+      !statements[1].expr->type->structurally_equal(*bool_type) ||
+      !statements[1].then_branch.front().type ||
+      !statements[1].then_branch.front().type->structurally_equal(*int_type) ||
+      !statements[2].type ||
+      !statements[2].type->structurally_equal(*int_type))
+    return false;
+
+  const auto& count = *statements[0].expr;
+  if (count.kind != checked_ir::ExprKind::CollectionCount ||
+      count.semantic_target_id != checked_ir::kCollectionCountOperationId ||
+      count.operands.size() != 1 || !count.type ||
+      !count.type->structurally_equal(*int_type) ||
+      count.operands.front().kind != checked_ir::ExprKind::Parameter ||
+      count.operands.front().ordinal != 0 ||
+      !count.operands.front().type ||
+      !count.operands.front().type->structurally_equal(*vector_type))
+    return false;
+
+  const auto& condition = *statements[1].expr;
+  if (condition.kind != checked_ir::ExprKind::Binary ||
+      condition.binary_op != checked_ir::BinaryOp::Equal ||
+      condition.operands.size() != 2 ||
+      !condition.type || !condition.type->structurally_equal(*bool_type))
+    return false;
+  const auto& index = condition.operands[0];
+  const auto& target = condition.operands[1];
+  if (index.kind != checked_ir::ExprKind::Index ||
+      index.semantic_target_id != checked_ir::kCollectionIndexOperationId ||
+      index.operands.size() != 2 || !index.type ||
+      !index.type->structurally_equal(*element_type) ||
+      index.operands[0].kind != checked_ir::ExprKind::Parameter ||
+      index.operands[0].ordinal != 0 || !index.operands[0].type ||
+      !index.operands[0].type->structurally_equal(*vector_type) ||
+      index.operands[1].kind != checked_ir::ExprKind::IntegerLiteral ||
+      index.operands[1].literal_value != "0" ||
+      !index.operands[1].type ||
+      !index.operands[1].type->structurally_equal(*int_type) ||
+      target.kind != checked_ir::ExprKind::Parameter ||
+      target.ordinal != 1 || !target.type ||
+      !target.type->structurally_equal(*element_type))
+    return false;
+
+  auto returns_count = [](const checked_ir::Stmt& statement) {
+    return statement.expr &&
+        statement.expr->kind == checked_ir::ExprKind::LocalRead &&
+        statement.expr->ordinal == 0 && statement.expr->type &&
+        statement.expr->type->structurally_equal(*moss::Type::primitive("int"));
+  };
+  if (!returns_count(statements[1].then_branch.front()) ||
+      !returns_count(statements[2])) return false;
+  return true;
+}
+
 // Bounded ABI-v10 contract for a generic callable whose source is iterated
 // once through the checker-owned static-iterator obligation. The requirement
 // result carries the checked loop binder TypeRef; it is not reconstructed by
@@ -5037,7 +5278,7 @@ static void project_imported_h3_checked_bodies(Program& program) {
       invalid("checked ABI-v10 body is detached from its provider summary");
     const abi_v10::Summary summary = abi_v10::read_summary(
         function.imported_checked_summary_payload);
-    const bool collection_loop_candidate =
+    const bool collection_summary_candidate =
         abi_v10_collection_loop_summary_candidate(summary);
     const bool generic_for_candidate =
         abi_v10_checked_for_summary_candidate(summary) ||
@@ -5076,7 +5317,7 @@ static void project_imported_h3_checked_bodies(Program& program) {
         body.semantic_hash != summary.body_semantic_hash ||
         summary.parameters.size() != function.params.size() ||
         summary.parameter_access.size() != function.parameter_effects.size() ||
-        (!collection_loop_candidate && !generic_for_candidate &&
+        (!collection_summary_candidate && !generic_for_candidate &&
          !generic_map_mutation_candidate &&
          !pipeline_map_candidate &&
          !typed_enum_match_candidate &&
@@ -5112,6 +5353,12 @@ static void project_imported_h3_checked_bodies(Program& program) {
     } catch (const std::invalid_argument& error) {
       invalid(string("checked ABI-v10 body cannot be decoded: ") + error.what());
     }
+    const bool collection_count_branch_candidate =
+        collection_summary_candidate &&
+        abi_v10_collection_count_branch_body_candidate(
+            summary, statements, *program.type_context);
+    const bool collection_loop_candidate =
+        collection_summary_candidate && !collection_count_branch_candidate;
     const bool contains_exceptional_control = [&] {
       std::function<bool(const vector<checked_ir::Stmt>&)> scan =
           [&](const vector<checked_ir::Stmt>& block) {
@@ -5134,7 +5381,9 @@ static void project_imported_h3_checked_bodies(Program& program) {
             summary, statements, *program.type_context, program,
             body.dependencies) ||
          abi_v10_checked_payload_raise_recover_body_candidate(
-            summary, statements, program, body.dependencies));
+            summary, statements, program, body.dependencies) ||
+         abi_v10_direct_raise_body_candidate(summary, statements, program,
+             body.dependencies, function.observable_effects));
     if (contains_exceptional_control && !checked_exceptional_body_candidate)
       invalid("checked ABI-v10 exceptional body does not preserve its typed raise, recovery, and result relations");
     const bool typed_enum_match_body_candidate = body.dependencies.empty() &&
@@ -5363,6 +5612,7 @@ static void project_imported_h3_checked_bodies(Program& program) {
     };
     inspect_operations(statements);
     if (contains_conditional && contains_operation && !collection_loop_candidate &&
+        !collection_count_branch_candidate &&
         !checked_branch_arithmetic_candidate &&
         !checked_conditional_arithmetic_candidate &&
         !checked_numeric_early_return_candidate &&
@@ -5388,6 +5638,11 @@ static void project_imported_h3_checked_bodies(Program& program) {
     const bool pure_effect_record_valid =
         abi_v10_effects_pure(function.observable_effects) &&
         summary.observable_effect_tags.empty();
+    const auto direct_raise_tag = abi_v10_direct_raise_effect_tag(
+        summary, statements, program);
+    const bool checked_direct_raise_effect_record_valid = direct_raise_tag &&
+        abi_v10_direct_raise_body_candidate(summary, statements, program,
+            body.dependencies, function.observable_effects);
     const bool member_effect_record_valid =
         abi_v10_generic_member_summary_candidate(summary) &&
         abi_v10_deferred_member_effects(function.observable_effects) &&
@@ -5399,6 +5654,11 @@ static void project_imported_h3_checked_bodies(Program& program) {
         summary.observable_effect_tags.empty();
     const bool effect_contract_valid = collection_loop_candidate
         ? abi_v10_collection_loop_effects(function.observable_effects)
+        : collection_count_branch_candidate
+            ? abi_v10_collection_count_branch_effects(
+                  function.observable_effects) &&
+                  summary.observable_effect_tags ==
+                      vector<string>{"may_panic"}
         : generic_for_candidate
             ? (assert_mutation_for_candidate
                 ? abi_v10_checked_for_assert_mutation_effects(
@@ -5411,7 +5671,8 @@ static void project_imported_h3_checked_bodies(Program& program) {
         : pure_effect_record_valid || map_effect_record_valid ||
                   generic_map_effect_record_valid ||
                   checked_assert_effect_record_valid || member_effect_record_valid ||
-                  returned_callback_effect_record_valid;
+                  returned_callback_effect_record_valid ||
+                  checked_direct_raise_effect_record_valid;
     if (!effect_contract_valid)
       invalid("checked ABI-v10 body disagrees with its callable summary");
     const auto dependencies = extract_semantic_dependencies(statements);
@@ -6744,7 +7005,8 @@ static void project_imported_h3_checked_bodies(Program& program) {
           [&](const vector<checked_ir::Stmt>& block) {
         if (block.empty()) return false;
         const auto& last = block.back();
-        if (last.kind == checked_ir::StmtKind::Return) return true;
+        if (last.kind == checked_ir::StmtKind::Return ||
+            last.kind == checked_ir::StmtKind::Raise) return true;
         if (last.kind == checked_ir::StmtKind::Match)
           return typed_enum_match_body_candidate &&
               std::all_of(last.match_cases.begin(), last.match_cases.end(),
@@ -7216,11 +7478,15 @@ static void validate_imported_h3_summary_closure(const Program& program) {
             summary.result, *program.type_context, summary.variable_count);
         const auto body = abi_v10::read_checked_body_record(
             function.imported_checked_body_payload);
+        const bool direct_raise_tagged =
+            summary.observable_effect_tags.size() == 1 &&
+            starts_with(summary.observable_effect_tags.front(), "raise-v1:");
         if (types_complete && result && body.callable_id == summary.callable_id &&
             body.semantic_hash == summary.body_semantic_hash) {
           const auto statements = checked_ir::decode_checked_body_v1(
               body.checked_ir_bytes, *program.type_context, parameters,
-              result, body.semantic_hash, false, generic_map_mutation);
+              result, body.semantic_hash, false, generic_map_mutation,
+              false, false, false, direct_raise_tagged);
           effects_valid = abi_v10_local_map_effects_covered(
                   function.observable_effects, statements) &&
               summary.observable_effect_bits == 0 &&
@@ -7240,6 +7506,10 @@ static void validate_imported_h3_summary_closure(const Program& program) {
                summary.observable_effect_bits == 0 &&
                summary.observable_effect_tags ==
                    vector<string>{"may_panic"});
+          effects_valid = effects_valid ||
+              (direct_raise_tagged &&
+               abi_v10_direct_raise_body_candidate(summary, statements,
+                   program, body.dependencies, function.observable_effects));
         }
       } catch (const std::exception&) {
         effects_valid = false;
@@ -13680,6 +13950,116 @@ class Checker {
     const auto int_type = moss::Type::primitive("int");
     const auto bool_type = moss::Type::primitive("bool");
     for (auto& function : p_.functions) {
+      // A direct enum payload read constrains the otherwise-open parameter to
+      // the declared field type. Preserve that existing checker relation in
+      // the open summary before lowering; this is not a new generic rule.
+      if (function.generic && function.open_summary &&
+          function.params.size() == 1 && function.body.size() == 1 &&
+          function.body.front().kind == Stmt::Kind::Raise &&
+          function.open_summary->parameter_types.size() == 1 &&
+          function.open_summary->parameter_types.front() &&
+          function.open_summary->parameter_types.front()->kind ==
+              moss::TypeKind::InferenceVar &&
+          function.open_summary->parameter_types.front()->var_id ==
+              moss::TypeVarId{0, 0, 0} &&
+          function.open_summary->result_type &&
+          function.open_summary->result_type->kind == moss::TypeKind::Unit &&
+          function.open_summary->requirements.empty() &&
+          function.open_summary->member_requirements.empty() &&
+          function.open_summary->operations.empty() &&
+          function.open_summary->semantic_dependencies.empty() &&
+          function.open_summary->effect_requirement_ids.empty() &&
+          !function.observable_effects.unresolved &&
+          function.observable_effects.raise_set.size() == 1) {
+        const auto retained = checked_body_states_.find(&function.body);
+        if (retained != checked_body_states_.end() && retained->second &&
+            retained->second->expression_occurrence_ledger_complete) {
+          auto& state = *retained->second;
+          const auto formal = state.resolved_local(function.params.front().name);
+          const auto& raised_source = function.body.front();
+          const auto raise_node = state.statement_occurrence_ids.find(
+              &raised_source);
+          const auto raise_root = raise_node == state.statement_occurrence_ids.end()
+              ? state.expression_root_slots.end()
+              : state.expression_root_slots.find(
+                    {raise_node->second, "raise-value"});
+          if (formal && raise_node != state.statement_occurrence_ids.end() &&
+              raise_root != state.expression_root_slots.end() &&
+              raise_root->second < state.expression_occurrences.size() &&
+              state.statement_occurrences.size() == 1 &&
+              raised_source.exceptional_alternatives.size() == 1) {
+            const auto& constructor =
+                state.expression_occurrences[raise_root->second];
+            const auto& effect = *function.observable_effects.raise_set.begin();
+            const auto declaration = enums_.find(
+                canonical_type_name(effect.type));
+            if (effect.kind == RaisedIdentityKind::EnumVariant &&
+                declaration != enums_.end() &&
+                !declaration->second->exported &&
+                raised_source.exceptional_alternatives.count(effect) == 1 &&
+                constructor.kind ==
+                    BodyTypeState::ExpressionOccurrence::Kind::Constructor &&
+                starts_with(constructor.semantic_target_id,
+                    "nominal-enum-variant-v1:") &&
+                constructor.checked_type &&
+                constructor.checked_type->kind == moss::TypeKind::Enum &&
+                constructor.checked_type->declaration &&
+                constructor.checked_type->declaration->id ==
+                    moss::declaration_identity(
+                        moss::DeclarationKind::Enum,
+                        program_module_identity(p_,
+                            declaration->second->defining_module),
+                        declaration->second->declaration_name.empty()
+                            ? declaration->second->name
+                            : declaration->second->declaration_name)) {
+              const auto variant = std::find_if(
+                  declaration->second->cases.begin(),
+                  declaration->second->cases.end(), [&](const EnumCase& item) {
+                return item.name == effect.variant &&
+                    item.fields.size() == 1 &&
+                    canonical_type_name(item.fields.front().type) == "int";
+              });
+              const auto payload = std::find_if(
+                  state.expression_occurrences.begin(),
+                  state.expression_occurrences.end(), [&](const auto& item) {
+                return item.parent_id == constructor.id &&
+                    item.child_role == "field:" +
+                        (variant == declaration->second->cases.end()
+                            ? string() : variant->fields.front().name);
+              });
+              const auto resolved_formal = state.solver.resolve(formal);
+              const auto resolved_payload =
+                  payload != state.expression_occurrences.end() &&
+                      payload->checked_type
+                  ? state.solver.resolve(payload->checked_type) : nullptr;
+              const auto expected_variant =
+                  "nominal-enum-variant-v1:" +
+                  constructor.checked_type->declaration->id + ":case:" +
+                  effect.variant;
+              if (variant != declaration->second->cases.end() &&
+                  constructor.semantic_target_id == expected_variant &&
+                  constructor.semantic_operand_ordinals ==
+                      vector<std::uint32_t>{0} &&
+                  payload != state.expression_occurrences.end() &&
+                  resolved_formal &&
+                  resolved_payload &&
+                  resolved_formal->structurally_equal(*int_type) &&
+                  resolved_payload->structurally_equal(*int_type)) {
+                auto summary = *function.open_summary;
+                summary.parameter_types.front() = int_type;
+                summary.result_type = moss::Type::unit();
+                summary.bound_variable_count = 0;
+                if (moss::close_open_summary_ordinals(summary)) {
+                  summary.scheme_complete = true;
+                  summary.occurrence_ledger_complete = true;
+                  summary.complete = false;
+                  function.open_summary = std::move(summary);
+                }
+              }
+            }
+          }
+        }
+      }
       // The payload-return control has a different checker relation from the
       // comparison control below: its formal is bound by the provider-owned
       // enum field, and its recover return reads that exact checked binder.
@@ -56501,6 +56881,13 @@ static void append_abi_v10_occurrence_records(
             facts.member_requirements.front().member_name;
     if (deferred_member_effects) {
       summary.observable_effect_tags = {"member-dispatch-v1"};
+    } else if (const auto direct_raise_tag =
+                   abi_v10_direct_raise_effect_tag(summary, decoded, program);
+               direct_raise_tag &&
+                   abi_v10_direct_raise_effects_match(
+                       *direct_raise_tag, facts.observable_effects,
+                       program, decoded)) {
+      summary.observable_effect_tags = {*direct_raise_tag};
     } else if (!abi_v10_effects_pure(facts.observable_effects)) {
       if (abi_v10_local_map_effects_covered(
               facts.observable_effects, decoded)) {
@@ -56535,9 +56922,17 @@ static void append_abi_v10_occurrence_records(
             // the empty intermediate summary and then add the tag afterward.
             auto collection_summary = summary;
             collection_summary.observable_effect_tags = {"may_panic"};
-            if (!abi_v10_collection_loop_summary_candidate(collection_summary) ||
-                !abi_v10_collection_loop_effects(facts.observable_effects) ||
-                !abi_v10_checked_collection_loop_body(decoded, facts.result_type))
+            const bool count_branch =
+                abi_v10_collection_count_branch_body_candidate(
+                    collection_summary, decoded, *program.type_context);
+            const bool loop_body = abi_v10_checked_collection_loop_body(
+                decoded, facts.result_type);
+            const bool collection_summary_ok =
+                abi_v10_collection_loop_summary_candidate(collection_summary);
+            const bool collection_effects_ok =
+                abi_v10_collection_loop_effects(facts.observable_effects);
+            if (!collection_summary_ok || !collection_effects_ok ||
+                (!loop_body && !count_branch))
               continue;
             summary.observable_effect_tags = {
                 std::move(collection_summary.observable_effect_tags.front())};
@@ -56583,7 +56978,9 @@ static void append_abi_v10_occurrence_records(
              summary, decoded, *program.type_context, program,
              body.dependencies) ||
          abi_v10_checked_payload_raise_recover_body_candidate(
-             summary, decoded, program, body.dependencies));
+             summary, decoded, program, body.dependencies) ||
+         abi_v10_direct_raise_body_candidate(summary, decoded, program,
+             body.dependencies, facts.observable_effects));
     if (has_exceptional_control && !checked_exceptional_body) continue;
     const bool checked_vector_literal =
         abi_v10_checked_vector_literal_summary_candidate(summary) &&
@@ -56597,6 +56994,10 @@ static void append_abi_v10_occurrence_records(
     const bool checked_numeric_while =
         abi_v10_checked_numeric_while_body_candidate(
             summary, decoded, *program.type_context);
+    const bool checked_collection_count_branch =
+        abi_v10_collection_count_branch_body_candidate(
+            summary, decoded, *program.type_context) &&
+        abi_v10_collection_count_branch_effects(facts.observable_effects);
     const bool checked_assert = body.dependencies.empty() &&
         abi_v10_checked_assert_body_candidate(
             summary, decoded, *program.type_context) &&
@@ -56637,7 +57038,8 @@ static void append_abi_v10_occurrence_records(
     if (contains_conditional && contains_operation &&
         !abi_v10_collection_loop_summary_candidate(summary) &&
         !checked_branch_arithmetic && !checked_conditional_arithmetic &&
-        !checked_numeric_early_return && !checked_exceptional_body)
+        !checked_numeric_early_return && !checked_exceptional_body &&
+        !checked_collection_count_branch)
       continue;
     if (contains_while && contains_operation && !checked_numeric_while &&
         !abi_v10_collection_loop_summary_candidate(summary))
@@ -56652,6 +57054,7 @@ static void append_abi_v10_occurrence_records(
         !checked_branch_arithmetic &&
         !checked_numeric_early_return &&
         !checked_numeric_while &&
+        !checked_collection_count_branch &&
         !checked_assert &&
         !checked_returned_callback &&
         !checked_exceptional_body &&

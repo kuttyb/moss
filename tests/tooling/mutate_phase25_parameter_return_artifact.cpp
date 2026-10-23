@@ -107,6 +107,23 @@ int main(int argc, char** argv) {
     replace_summary();
     replace_body(std::move(body));
   };
+  auto rewrite_collection_count_branch = [&](auto&& rewrite) {
+    auto body = moss::abi_v10::read_checked_body_record(body_at->payload);
+    moss::TypeContext context;
+    const auto variable = moss::Type::var(moss::TypeVarId{0, 0, 0});
+    const auto vector = moss::Type::builtin("vector", {variable});
+    auto statements = moss::checked_ir::decode_checked_body_v1(
+        body.checked_ir_bytes, context, {vector, variable},
+        moss::Type::primitive("int"), body.semantic_hash);
+    rewrite(statements);
+    body.checked_ir_bytes =
+        moss::checked_ir::encode_checked_body_v1(statements);
+    body.semantic_hash =
+        moss::checked_ir::compute_checked_body_hash_v1(statements);
+    summary.body_semantic_hash = body.semantic_hash;
+    replace_summary();
+    replace_body(std::move(body));
+  };
 
   if (mode == "missing-summary") {
     sealed.value.semantic_contract.erase(summary_at);
@@ -478,6 +495,46 @@ int main(int argc, char** argv) {
                  moss::checked_ir::ExprKind::IntegerLiteral);
       statements[1].expr->literal_value = "1";
     });
+  } else if (mode == "count-branch-index-identity") {
+    rewrite_collection_count_branch([&](auto& statements) {
+      assert(statements.size() == 3 && statements[1].expr);
+      auto& index = statements[1].expr->operands.front();
+      assert(index.kind == moss::checked_ir::ExprKind::Index &&
+             index.operands.size() == 2);
+      index.operands.front().ordinal = 1;
+    });
+  } else if (mode == "count-branch-return-identity") {
+    rewrite_collection_count_branch([&](auto& statements) {
+      assert(statements.size() == 3 &&
+             statements[1].then_branch.size() == 1 &&
+             statements[1].then_branch.front().expr && statements[2].expr);
+      statements[1].then_branch.front().expr->ordinal = 1;
+    });
+  } else if (mode == "count-branch-requirement-result") {
+    assert(summary.requirements.size() == 2 && summary.requirements.front().result);
+    summary.requirements.front().result->kind =
+        moss::abi_v10::WireTypeKind::Primitive;
+    summary.requirements.front().result->identity = "int";
+    summary.requirements.front().result->ordinal = 0;
+    summary.requirements.front().result->arguments.clear();
+    replace_summary();
+  } else if (mode == "count-branch-effect-erasure") {
+    summary.observable_effect_tags.clear();
+    replace_summary();
+  } else if (mode == "count-branch-operation-identity") {
+    auto body = moss::abi_v10::read_checked_body_record(body_at->payload);
+    const std::string old_id = "builtin:collection-count-v1";
+    const std::string forged_id = "builtin:collection-count-x1";
+    const auto position = body.checked_ir_bytes.find(old_id);
+    assert(position != std::string::npos &&
+           body.checked_ir_bytes.find(old_id, position + old_id.size()) ==
+               std::string::npos);
+    body.checked_ir_bytes.replace(position, old_id.size(), forged_id);
+    body.semantic_hash = "body-semantic-v1:sha256:" +
+        moss::source_free_contract_sha256(body.checked_ir_bytes);
+    summary.body_semantic_hash = body.semantic_hash;
+    replace_summary();
+    replace_body(std::move(body));
   } else if (mode == "duplicate-record") {
     auto duplicate = *summary_at;
     duplicate.id = "sha256:" + std::string(64, 'f');

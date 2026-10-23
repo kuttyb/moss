@@ -21,7 +21,7 @@ import tempfile
 
 
 ROOT = Path(__file__).resolve().parents[3]
-MOSS = ROOT / "moss"
+MOSS = Path(os.environ.get("MOSS", ROOT / "moss")).resolve()
 MARGO = ROOT / "margo"
 POISON_SOURCE = ROOT / "tests/tooling/poison_phase25_generic_callable.cpp"
 TMP = ROOT / "tmp"
