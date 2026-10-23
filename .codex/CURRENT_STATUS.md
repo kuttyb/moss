@@ -11376,6 +11376,10 @@ This is not R3F acceptance. The payload-bearing ABI-v10 helper remains
 unavailable: its current source form does not retain an open summary, and an
 inferred generic probe still does not lower to a checked body. Exceptional
 hostile mutations and Architect independent execution/review for this new
-candidate are also outstanding. The compatibility oracle run predates the
-latest payload-probe edits; rerun it on the final candidate SHA. R3E remains
-accepted only at its recorded scoped SHAs. Do not begin R4.
+candidate are also outstanding. Focused suite
+`tests/tooling/check_phase25_r3f_abi_v10.py` now passes source-deleted,
+poisoned Debug/Release execution and rejects a rehashed recovery-selection
+mutation before projection. The compatibility oracle was rerun on
+`9412ddd6b39bcc242fe84c1a45abfbbdef1d5ba4`; rerun it on any later final
+candidate SHA. R3E remains accepted only at its recorded scoped SHAs. Do not
+begin R4.
