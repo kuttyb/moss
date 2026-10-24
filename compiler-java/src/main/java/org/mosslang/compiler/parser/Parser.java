@@ -45,6 +45,10 @@ public class Parser {
         return Math.abs(a);
     }
 
+    private static IntArrayList copyContinuationLines(IntArrayList existing) {
+        return existing != null ? IntArrayList.newList(existing) : new IntArrayList();
+    }
+
     public Program parse() {
         Program p = new Program();
         p.sourceLines.addAll(lines);
@@ -106,7 +110,7 @@ public class Parser {
                             statement.line = function.resultLine;
                             statement.indent = 0;
                             statement.text = function.resultExpression;
-                            statement.continuationLines = function.resultContinuationLines;
+                            statement.continuationLines = copyContinuationLines(function.resultContinuationLines);
                             MemberCallResult mcr = new MemberCallResult();
                             SimpleCallResult scr = new SimpleCallResult();
                             if (parseMessageCall(statement.text, mcr)) {
@@ -270,7 +274,7 @@ public class Parser {
                     Stmt last = m.body.remove(m.body.size() - 1);
                     m.resultExpression = last.text;
                     m.resultLine = last.line;
-                    m.resultContinuationLines = last.continuationLines;
+                    m.resultContinuationLines = copyContinuationLines(last.continuationLines);
                 }
                 o.methods.add(m);
                 continue;
@@ -647,7 +651,7 @@ public class Parser {
             Stmt last = f.body.remove(f.body.size() - 1);
             f.resultExpression = last.text;
             f.resultLine = last.line;
-            f.resultContinuationLines = last.continuationLines;
+            f.resultContinuationLines = copyContinuationLines(last.continuationLines);
         }
         if (f.body.isEmpty() && f.resultExpression == null) {
             fail(head, "function body may not be empty");
@@ -727,7 +731,7 @@ public class Parser {
         s.line = L.no;
         s.indent = (L.indent - baseIndent) / indentUnit;
         s.text = L.text;
-        s.continuationLines = L.continuationLines;
+        s.continuationLines = copyContinuationLines(L.continuationLines);
         s.sourceFile = L.sourceFile;
 
         String[] forbidden = {"async ", "yield ", "lock ", "shared ", "thread "};

@@ -15,7 +15,7 @@ public class Line {
         this.no = no;
         this.indent = indent;
         this.text = text != null ? text : "";
-        this.continuationLines = continuationLines != null ? continuationLines : new IntArrayList();
+        this.continuationLines = continuationLines != null ? IntArrayList.newList(continuationLines) : new IntArrayList();
         this.sourceFile = sourceFile != null ? sourceFile : "";
     }
 

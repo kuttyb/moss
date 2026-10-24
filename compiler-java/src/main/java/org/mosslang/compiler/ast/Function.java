@@ -3,12 +3,16 @@ package org.mosslang.compiler.ast;
 import org.eclipse.collections.api.list.MutableList;
 import org.eclipse.collections.impl.list.mutable.FastList;
 import org.eclipse.collections.impl.list.mutable.primitive.IntArrayList;
+import org.mosslang.compiler.types.TypeContext;
+import org.mosslang.compiler.types.TypeParser;
+import org.mosslang.compiler.types.TypeRef;
 
 public class Function {
     public String name = "";
     public String header = "";
     public MutableList<Param> params = new FastList<>();
     public String returnType = null;
+    public TypeRef returnTypeRef = null;
     public MutableList<Stmt> body = new FastList<>();
     public String definingModule = "";
     public String declarationName = "";
@@ -33,8 +37,49 @@ public class Function {
         this.exported = exported;
     }
 
-    public void setReturnType(String returnType) {
-        this.returnType = returnType;
+    public void bindReturnType(TypeRef term) {
+        this.returnTypeRef = term;
+        if (returnTypeRef != null) {
+            this.returnType = returnTypeRef.toCanonicalString();
+        } else {
+            this.returnType = null;
+        }
+    }
+
+    public void setReturnType(String raw) {
+        this.returnType = raw;
+        if (returnType != null && !returnType.isEmpty() && TypeContext.current() != null) {
+            TypeRef parsed = TypeParser.parseCanonical(returnType);
+            if (parsed != null && parsed.isClosed()) {
+                this.returnTypeRef = parsed;
+                return;
+            }
+        }
+        this.returnTypeRef = null;
+    }
+
+    public void sync() {
+        if (returnTypeRef != null) {
+            this.returnType = returnTypeRef.toCanonicalString();
+        } else if (returnType != null && !returnType.isEmpty() && TypeContext.current() != null) {
+            TypeRef parsed = TypeParser.parseCanonical(returnType);
+            if (parsed != null && parsed.isClosed()) {
+                this.returnTypeRef = parsed;
+            }
+        }
+    }
+
+    public void assertConsistent() {
+        if (returnTypeRef != null &&
+                (returnType == null || !returnType.equals(returnTypeRef.toCanonicalString()))) {
+            throw new IllegalStateException("Function '" + name +
+                    "' return type string projection '" + (returnType != null ? returnType : "<missing>") +
+                    "' contradicts bound TypeRef '" +
+                    returnTypeRef.toCanonicalString() + "'");
+        }
+        for (Param param : params) {
+            param.assertConsistent();
+        }
     }
 
     @Override

@@ -20,6 +20,27 @@ public class Program {
 
     public Program() {}
 
+    public void assertDeclarationTypeConsistency() {
+        for (Function f : functions) {
+            f.assertConsistent();
+        }
+        for (ObjectType o : objects) {
+            for (Method m : o.methods) {
+                m.assertConsistent();
+            }
+        }
+        for (Trait t : traits) {
+            for (TraitMethod m : t.methods) {
+                m.assertConsistent();
+            }
+        }
+        for (Domain d : domains) {
+            for (Handler h : d.handlers) {
+                h.assertConsistent();
+            }
+        }
+    }
+
     @Override
     public String toString() {
         return "Program{module='" + moduleName + "', functions=" + functions.size() +

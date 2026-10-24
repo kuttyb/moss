@@ -20,6 +20,8 @@ public class ParserTest {
         testTraits();
         testNumericAndCharLiterals();
         testStatementsAndControlFlow();
+        testAstDualTypeRepresentation();
+        testContinuationLinesDefensiveCopy();
         testParseErrors();
         testParseRealMossFiles();
 
@@ -196,6 +198,72 @@ public class ParserTest {
         Program p = Parser.parseSource(src, "control.moss");
         Function f = p.functions.get(0);
         assertTrue(f.body.size() > 5, "Should have several statements");
+    }
+
+    private static void testAstDualTypeRepresentation() {
+        org.mosslang.compiler.types.TypeContext ctx = new org.mosslang.compiler.types.TypeContext();
+        try (org.mosslang.compiler.types.TypeContext.Scope scope = org.mosslang.compiler.types.TypeContext.openScope(ctx)) {
+            Param param = new Param("x", "int");
+            param.sync();
+            assertTrue(param.typeRef != null, "Param typeRef should be bound after sync");
+            assertEquals("int", param.typeRef.toCanonicalString(), "Param canonical string");
+            param.assertConsistent();
+
+            Field field = new Field();
+            field.name = "val";
+            field.setType("string");
+            assertTrue(field.typeRef != null, "Field typeRef should be bound");
+            assertEquals("string", field.typeRef.toCanonicalString(), "Field canonical string");
+            field.assertConsistent();
+
+            Function fn = new Function();
+            fn.name = "foo";
+            fn.setReturnType("vector[int]");
+            assertTrue(fn.returnTypeRef != null, "Function returnTypeRef should be bound");
+            assertEquals("vector[int]", fn.returnTypeRef.toCanonicalString(), "Function returnTypeRef canonical string");
+            fn.assertConsistent();
+
+            Method m = new Method();
+            m.name = "bar";
+            m.setReturnType("bool");
+            assertTrue(m.returnTypeRef != null, "Method returnTypeRef should be bound");
+            m.assertConsistent();
+
+            Handler h = new Handler();
+            h.name = "Msg";
+            h.setReplyType("int");
+            assertTrue(h.replyTypeRef != null, "Handler replyTypeRef should be bound");
+            h.assertConsistent();
+
+            TraitMethod tm = new TraitMethod();
+            tm.name = "calc";
+            tm.setReturnType("float");
+            assertTrue(tm.returnTypeRef != null, "TraitMethod returnTypeRef should be bound");
+            tm.assertConsistent();
+
+            Program p = new Program();
+            p.functions.add(fn);
+            p.assertDeclarationTypeConsistency();
+
+            // Test inconsistency detection
+            param.type = "float";
+            boolean threw = false;
+            try {
+                param.assertConsistent();
+            } catch (IllegalStateException e) {
+                threw = true;
+            }
+            assertTrue(threw, "assertConsistent should throw on mismatch");
+        }
+    }
+
+    private static void testContinuationLinesDefensiveCopy() {
+        String src = "fn main():\n  x = 1\n  |> add(2)\n";
+        Program p = Parser.parseSource(src, "pipeline.moss");
+        Stmt stmt = p.main.body.get(0);
+        assertEquals(1, stmt.continuationLines.size(), "Pipeline continuation size");
+        stmt.continuationLines.add(100);
+        assertEquals(0, p.sourceLines.get(0).continuationLines.size(), "Source lines continuation should not be mutated");
     }
 
     private static void testParseErrors() {
