@@ -57,7 +57,8 @@ absolute path. Phase 7 does not yet include an installer.
 The repository Makefile compiles the explicit `COMPILER_SOURCES` list
 (`src/char_string_ordering_runtime.cpp`, `src/diagnostic_identity.cpp`,
 `src/display_runtime.cpp`, `src/executor_runtime.cpp`,
-`src/fileio_runtime.cpp`, `src/float_format_runtime.cpp`, `src/handler_runtime.cpp`, `src/numeric_runtime.cpp`,
+`src/fileio_runtime.cpp`, `src/float_format_runtime.cpp`,
+`src/handler_runtime.cpp`, `src/numeric_runtime.cpp`,
 `src/program_identity.cpp`, and `src/moss.cpp`) into separate objects, then
 links the development and optimized executables at their existing paths. Clang
 profiles build a shared standard-library PCH from `src/compiler_pch.hpp` in the
@@ -73,8 +74,11 @@ A missing depfile is regenerated along with its object.
 update `./moss`. `make moss-opt` and `make moss-release` keep the `-O2` profile.
 Override `CXX`, `CXXFLAGS_BASE`, `CXXFLAGS_DEV`, and `CXXFLAGS_OPT` as needed.
 The object directory includes a checksum of the compiler command and relevant
-flags, so configuration changes select a fresh object tree. Old configuration
-trees can be removed with `make clean`, which deletes `build/compiler/`.
+flags, so configuration changes select a fresh object tree. A small active-link
+configuration stamp beside each public executable also forces relinking when a
+compiler or flag configuration changes, even though executable paths stay
+fixed. Old configuration trees can be removed with `make clean`, which deletes
+`build/compiler/`.
 
 `COMPILER_SOURCES` is the extension point for future translation units.
 `CXXFLAGS_PCH` adds flags to Clang PCH creation and compilation. `LINKER`,

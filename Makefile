@@ -32,6 +32,8 @@ COMPILER_OBJECTS_DEV = $(patsubst %.cpp,$(COMPILER_OBJ_DIR_DEV)/%.o,$(COMPILER_S
 COMPILER_OBJECTS_OPT = $(patsubst %.cpp,$(COMPILER_OBJ_DIR_OPT)/%.o,$(COMPILER_SOURCES))
 COMPILER_DEPFILES_DEV = $(COMPILER_OBJECTS_DEV:.o=.d)
 COMPILER_DEPFILES_OPT = $(COMPILER_OBJECTS_OPT:.o=.d)
+COMPILER_ACTIVE_CONFIG_DEV = $(MOSS_DEV).config
+COMPILER_ACTIVE_CONFIG_OPT = $(MOSS_OPT).config
 
 # Clang shares one stable standard-library PCH across compiler translation
 # units. GCC remains an explicit compatibility path without Clang PCH flags.
@@ -57,7 +59,7 @@ RUSTC ?= rustc
 EXAMPLE_BUILD_DIR ?= build/examples/optimized
 TEST_JOBS ?= $(shell nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 16)
 
-.PHONY: all moss moss-dev moss-opt moss-release check check-parallel check-serial examples examples-optimized clean help
+.PHONY: all moss moss-dev moss-opt moss-release check check-parallel check-serial examples examples-optimized clean help FORCE
 
 # Default target: build fast development compiler (-O0) and update ./moss
 all: moss-dev
@@ -67,9 +69,23 @@ moss: moss-dev
 moss-dev: $(MOSS_DEV)
 	@cp -f $(MOSS_DEV) moss
 
-$(MOSS_DEV): $(COMPILER_OBJECTS_DEV)
+# These active-link stamps detect toolchain/flag switches even though all
+# configurations intentionally preserve the public executable paths.
+FORCE:
+
+$(COMPILER_ACTIVE_CONFIG_DEV): FORCE
+	@if ! test -f $@ || test "$$(cat $@)" != "$(COMPILER_CONFIG_DEV)"; then \
+		printf '%s\n' "$(COMPILER_CONFIG_DEV)" > $@.tmp; mv -f $@.tmp $@; \
+	fi
+
+$(COMPILER_ACTIVE_CONFIG_OPT): FORCE
+	@if ! test -f $@ || test "$$(cat $@)" != "$(COMPILER_CONFIG_OPT)"; then \
+		printf '%s\n' "$(COMPILER_CONFIG_OPT)" > $@.tmp; mv -f $@.tmp $@; \
+	fi
+
+$(MOSS_DEV): $(COMPILER_OBJECTS_DEV) $(COMPILER_ACTIVE_CONFIG_DEV)
 	@mkdir -p $(@D)
-	$(LINKER) $(CXX_TOOLCHAIN_FLAGS) $(CXXFLAGS_DEV) $(LDFLAGS) $^ $(LDLIBS) -o $@.tmp
+	$(LINKER) $(CXX_TOOLCHAIN_FLAGS) $(CXXFLAGS_DEV) $(LDFLAGS) $(COMPILER_OBJECTS_DEV) $(LDLIBS) -o $@.tmp
 	@mv -f $@.tmp $@
 
 moss-opt: $(MOSS_OPT)
@@ -79,9 +95,9 @@ moss-release: $(MOSS_RELEASE)
 $(MOSS_RELEASE): $(MOSS_OPT)
 	@cp -f $(MOSS_OPT) $@
 
-$(MOSS_OPT): $(COMPILER_OBJECTS_OPT)
+$(MOSS_OPT): $(COMPILER_OBJECTS_OPT) $(COMPILER_ACTIVE_CONFIG_OPT)
 	@mkdir -p $(@D)
-	$(LINKER) $(CXX_TOOLCHAIN_FLAGS) $(CXXFLAGS_OPT) $(LDFLAGS) $^ $(LDLIBS) -o $@.tmp
+	$(LINKER) $(CXX_TOOLCHAIN_FLAGS) $(CXXFLAGS_OPT) $(LDFLAGS) $(COMPILER_OBJECTS_OPT) $(LDLIBS) -o $@.tmp
 	@mv -f $@.tmp $@
 
 ifneq ($(filter clang++ clang++-%,$(notdir $(firstword $(CXX)))),)

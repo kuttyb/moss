@@ -155,6 +155,21 @@ def main() -> None:
         if "dev-" not in str(gcc_objects[-1].parent.parent):
             raise AssertionError("GCC override did not create a development object tree")
 
+        make(project, "moss-opt", "CXX=g++")
+        gcc_opt_objects = list((project / "build/compiler/obj").glob("opt-*/src/moss.o"))
+        if len(gcc_opt_objects) != 2:
+            raise AssertionError("GCC optimized override reused an existing object directory")
+
+        # Switching back to Clang must relink both shared executable paths even
+        # when the original Clang objects are still newer than the source.
+        before = snapshot(tracked)
+        make(project, "moss-dev", "moss-opt")
+        after = snapshot(tracked)
+        if after[dev] == before[dev] or after[opt] == before[opt]:
+            raise AssertionError("switching back to Clang reused a GCC-linked executable")
+        assert_unchanged(before, after, [dev_object, opt_object],
+                         "Clang relink after GCC override")
+
         # Changing the stable PCH input rebuilds PCH-backed objects in both
         # profiles and relinks both executables.
         before = snapshot(tracked)
