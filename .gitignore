@@ -28,6 +28,10 @@ examples/**/build/
 examples/projects/*/build/
 examples/projects/*/.moss/
 
-.aider*
-package-lock.json
-benchmarks/agent/phase22_3_ab/runs/**
+compiler-java/bin/
+compiler-java/bin/**
+compiler-java/jdt/daemon.log
+compiler-java/jdt/workspace/**
+compiler-java/jdt/configuration/org.eclipse.core.runtime/.manager/.tmp*
+compiler-java/jdt/configuration/org.eclipse.equinox.app/.manager/.tmp*
+
