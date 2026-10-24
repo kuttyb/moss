@@ -12090,7 +12090,7 @@ GCC build and timings are recorded in `docs/phase25_2/STATUS.md`. Do not merge
 to main. Next assignment: execute GitHub issue #14 autonomously in this same
 repository; maintain branch scope and do not merge to main.
 
-## Phase 25.2 R3 — ETI/header isolation/benchmark — 2026-10-24
+## Phase 25.2 R3 — ETI/header isolation/benchmark — 2026-10-23
 
 R3 implementation has moved numeric literal implementation, typed semantic
 projection, Type IR text parsing/validation, and checked-body encoding/hash

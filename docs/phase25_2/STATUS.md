@@ -148,7 +148,7 @@ from the measured build.
   harness itself passes when compiled with the existing missing-initializer
   warning suppressed.
 
-## R3 — ETI, header isolation and C++ benchmark contract — 2026-10-24
+## R3 — ETI, header isolation and C++ benchmark contract — 2026-10-23
 
 R3 follows the reviewed R2 decomposition on the same `phase25-2-work` branch.
 Four non-template implementation regions were moved out of headers into
