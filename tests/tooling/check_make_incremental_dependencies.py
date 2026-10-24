@@ -76,6 +76,9 @@ def main() -> None:
         dev_object = next((project / "build/compiler/obj").glob("dev-*/src/moss.o"))
         opt_object = next((project / "build/compiler/obj").glob("opt-*/src/moss.o"))
         dev_dep, opt_dep = dev_object.with_suffix(".d"), opt_object.with_suffix(".d")
+        dev_pch = dev_object.parents[1] / "compiler_pch.pch"
+        opt_pch = opt_object.parents[1] / "compiler_pch.pch"
+        dev_pch_dep, opt_pch_dep = dev_pch.with_suffix(".d"), opt_pch.with_suffix(".d")
         for dep in (dev_dep, opt_dep):
             contents = dep.read_text()
             if "base.hpp" not in contents or "bridge.inc" not in contents:
@@ -170,6 +173,16 @@ def main() -> None:
         assert_unchanged(before, after, [dev_object, opt_object],
                          "Clang relink after GCC override")
 
+        # A changed linker version relinks without recompiling compiler objects.
+        make(project, "moss-dev", "moss-opt", "MOLD_VERSION=mold-test-a")
+        before = snapshot([dev, opt, dev_object, opt_object])
+        time.sleep(0.02)
+        make(project, "moss-dev", "moss-opt", "MOLD_VERSION=mold-test-b")
+        after = snapshot([dev, opt, dev_object, opt_object])
+        assert_all_changed(before, after, [dev, opt], "linker version change")
+        assert_unchanged(before, after, [dev_object, opt_object],
+                         "linker version change")
+
         # Changing the stable PCH input rebuilds PCH-backed objects in both
         # profiles and relinks both executables.
         before = snapshot(tracked)
@@ -177,6 +190,17 @@ def main() -> None:
             stream.write("\n// PCH dependency edit\n")
         make(project, "--jobs=8", "moss-dev", "moss-opt")
         assert_all_changed(before, snapshot(tracked), tracked, "PCH header edit")
+
+        # Losing only PCH depfiles must reconstruct PCHs before source objects.
+        before = snapshot([dev, opt, dev_object, opt_object, dev_pch, opt_pch])
+        dev_pch_dep.unlink()
+        opt_pch_dep.unlink()
+        make(project, "--jobs=8", "moss-dev", "moss-opt")
+        after = snapshot([dev, opt, dev_object, opt_object, dev_pch, opt_pch])
+        assert_all_changed(before, after, [dev, opt, dev_object, opt_object,
+                                           dev_pch, opt_pch], "deleted PCH depfiles")
+        if not dev_pch_dep.is_file() or not opt_pch_dep.is_file():
+            raise AssertionError("missing PCH depfile was not regenerated")
 
         make(project, "clean")
         if dev.exists() or opt.exists() or wrapper.exists():
