@@ -53,7 +53,9 @@ def command_record(argv: list[str], log: Path, jobs: int,
         raise RuntimeError(f"invalid /usr/bin/time output in {time_file}")
     lines = log.read_text(encoding="utf-8", errors="replace").splitlines()
     compiled = [line.split(" -c ", 1)[1] for line in lines if " -c " in line]
-    linked = [line for line in lines if re.search(r" -o build/.+\.tmp(?:\s|$)", line)]
+    # PCH generation also writes a .tmp file; count only executable links.
+    linked = [line for line in lines if re.search(
+        r" -o build/.+/(?:moss-dev|moss-opt)\.tmp(?:\s|$)", line)]
     return {
         "exit_code": result.returncode,
         "wall_seconds": float(values[0]),

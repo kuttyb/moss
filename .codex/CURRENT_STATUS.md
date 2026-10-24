@@ -12089,3 +12089,23 @@ and ABI-v10 empty-vector probes. Full 137/137 regression, optimized examples,
 GCC build and timings are recorded in `docs/phase25_2/STATUS.md`. Do not merge
 to main. Next assignment: execute GitHub issue #14 autonomously in this same
 repository; maintain branch scope and do not merge to main.
+
+## Phase 25.2 R3 — ETI/header isolation/benchmark — 2026-10-24
+
+R3 implementation has moved numeric literal implementation, typed semantic
+projection, Type IR text parsing/validation, and checked-body encoding/hash
+bodies to four owning production TUs. Checker no longer includes
+`interpreter.hpp`. Explicit template instantiation was evaluated with optimized
+object symbol audit and Clang time traces; no safe measurable Moss-authored
+candidate was found, so no ETI was introduced. A reproducible C++ build/object
+isolation benchmark, 21 raw records and a Java behavior fixture contract are
+checked in under `benchmarks/phase25_2/r3/`; benchmark method, results, header
+fanout and comparison limits are in `docs/phase25_2/FINAL_BUILD_COMPARISON.md`.
+Java equivalence remains unverified.
+
+On integrated candidate `8bce73223dc42177c1fad7224da1ab899df26414`, the full
+`make --jobs="$(nproc)" check` passed 137/137 with zero failed/skipped; optimized
+examples, Clang optimized build, GCC development build/smoke and relevant
+ABI-v9/v10, SDK, source-free and hostile-artifact gates passed. Feedback validation, `git diff --check`, benchmark Python compile/help, fixture
+JSON parse, and the 21-row raw CSV checks all pass on the current closeout tree.
+Benchmark source code was measured at `b4bc3b7ec9ad74c535ece2aacbcac6fb144e8edd`; subsequent production C++ was unchanged. Remaining: run closeout validators, commit and push raw benchmark/docs, then obtain independent final exact-SHA Architect review and record its verdict. No merge to `main`.

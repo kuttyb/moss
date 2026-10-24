@@ -147,3 +147,43 @@ from the measured build.
   are pre-existing and are not selected by `make check`. The declaration-boundary
   harness itself passes when compiled with the existing missing-initializer
   warning suppressed.
+
+## R3 — ETI, header isolation and C++ benchmark contract — 2026-10-24
+
+R3 follows the reviewed R2 decomposition on the same `phase25-2-work` branch.
+Four non-template implementation regions were moved out of headers into
+independently compiled production TUs: numeric literal parsing/format helpers
+(`numeric_literal.cpp`), typed semantic projection (`typed_semantic_api.cpp`),
+Type IR parsing and syntax validation (`type_ir.cpp`), and checked-body type,
+expression, statement, canonical-body and hash encoding (`checked_body_ir.cpp`).
+The bodies remain owned by their implementation TUs; declaration headers expose
+only their APIs. Checker no longer includes `interpreter.hpp` and includes the
+narrow numeric runtime interface it uses directly. Direct C++ test harnesses
+were updated to link the new owner objects without weakening assertions.
+
+The optimized symbol and Clang time-trace audit found no safe, measurable
+Moss-authored ETI candidate. Repeated symbols are chiefly small standard-library
+weak/COMDAT instantiations. No ETI was added. Header fanout for the measured
+18-object production build is recorded in
+[`FINAL_BUILD_COMPARISON.md`](FINAL_BUILD_COMPARISON.md); a shared `type_ir.hpp`
+edit rebuilds ten dependents, while edits to the three R2 core implementation
+files rebuild only their owner plus the final executable link.
+
+The reproducible C++ benchmark driver, 21 raw timing records and Java behavior
+fixture contract are checked in under `benchmarks/phase25_2/r3/`. On the
+16-CPU i9-13900K WSL2 host, three-run medians are 12.71 s clean `-O0`, 50.97 s
+clean `-O2`, 0.60 s no-op, and 1.90 / 9.59 / 4.66 s for Parser / Checker /
+Generator implementation edit and relink. A `type_ir.hpp` header edit takes
+12.39 s and recompiles exactly ten objects. The full method and limits are in
+the build comparison document. Java remains an unexecuted behavior contract;
+no parity or timing claim is made.
+
+The integrated R3 candidate passed `make --jobs="$(nproc)" check` with
+**137/137**, zero failed and zero skipped. Optimized examples, Clang optimized
+build, GCC development build and smoke, feedback validation, and the focused
+ABI-v9/v10, source-free, SDK and hostile-artifact gates passed. The full check
+initially found direct test harnesses that omitted newly separated owner TUs;
+the harness link lists were repaired, assertions preserved, and the complete
+suite rerun successfully. Exact-SHA final Architect review is pending. R3
+implementation commits through the tested code are on `phase25-2-work`; no
+merge to `main` has been performed.

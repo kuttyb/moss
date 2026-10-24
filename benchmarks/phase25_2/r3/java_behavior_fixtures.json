@@ -1,7 +1,7 @@
 {
   "schema": "moss-java-behavior-fixtures-v1",
   "language_version": "moss-0.1",
-  "compiler_commit": "record the R3 implementation SHA used for each run",
+  "compiler_commit": "b4bc3b7ec9ad74c535ece2aacbcac6fb144e8edd",
   "fixtures": [
     {
       "id": "minimal-native-output",
