@@ -1,0 +1,7 @@
+# EXPECT: ok=false
+# EXPECT: error.code=UNKNOWN_SYMBOL_OR_TYPE
+# EXPECT: error.line=7
+# EXPECT: error.message_substr=unknown identifier 'undefined_variable'
+
+fn main():
+  echo undefined_variable

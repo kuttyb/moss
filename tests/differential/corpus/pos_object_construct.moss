@@ -1,0 +1,9 @@
+# EXPECT: ok=true
+
+type Point:
+  x: int
+  y: int
+
+fn main():
+  let p = Point(x = 10, y = 20)
+  echo p.x + p.y

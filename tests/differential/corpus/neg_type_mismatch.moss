@@ -1,0 +1,11 @@
+# EXPECT: ok=false
+# EXPECT: error.code=MOSS_COMPILE_ERROR
+# EXPECT: error.line=7
+# EXPECT: error.message_substr=returns 'string' but is annotated 'int'
+
+fn test_return() -> int:
+  return "hello"
+
+fn main():
+  let x = test_return()
+  echo x

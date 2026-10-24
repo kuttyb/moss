@@ -1,0 +1,8 @@
+# EXPECT: ok=false
+# EXPECT: error.code=TYPE_MISMATCH
+# EXPECT: error.line=7
+# EXPECT: error.message_substr=operator '*' is not defined for 'string' and 'bool'
+
+fn main():
+  let x = "hello" * true
+  echo x

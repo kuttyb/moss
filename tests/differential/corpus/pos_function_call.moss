@@ -1,0 +1,8 @@
+# EXPECT: ok=true
+
+fn square(x: int) -> int:
+  return x * x
+
+fn main():
+  let val = square(5)
+  echo val

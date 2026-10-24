@@ -1,0 +1,11 @@
+# EXPECT: ok=false
+# EXPECT: error.code=TYPE_MISMATCH
+# EXPECT: error.line=10
+# EXPECT: error.message_substr=function add expects 2 arguments, got 1
+
+fn add(a: int, b: int) -> int:
+  return a + b
+
+fn main():
+  let res = add(10)
+  echo res
