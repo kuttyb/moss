@@ -123,7 +123,9 @@ public class NativeGenerator {
         o.append("#![allow(unused_mut)]\n");
         o.append("#![allow(unused_variables)]\n");
         o.append("#![allow(unused_assignments)]\n");
-        o.append("#![allow(unused_parens)]\n\n");
+        o.append("#![allow(unused_parens)]\n");
+        o.append("#![allow(unreachable_code)]\n");
+        o.append("#![allow(unconditional_panic)]\n\n");
 
         o.append("fn __moss_require_send<T: Send>() {}\n\n");
         o.append("#[inline(always)]\n");
@@ -153,8 +155,21 @@ public class NativeGenerator {
 
         Set<String> raisingFunctions = new HashSet<>();
         for (Function f : program.functions) {
+            if (f.resultExpression != null && f.resultExpression.contains(".poke(")) {
+                raisingFunctions.add(f.name);
+            }
+            boolean hasTry = false;
             for (Stmt s : f.body) {
-                if (s.kind == Stmt.Kind.Raise || (s.text != null && s.text.trim().startsWith("raise "))) {
+                if (s.kind == Stmt.Kind.Try) {
+                    hasTry = true;
+                }
+                if (s.kind == Stmt.Kind.Raise) {
+                    String rVal = s.a != null ? s.a.trim() : (s.text != null && s.text.startsWith("raise ") ? s.text.substring(6).trim() : "");
+                    if (!hasTry || rVal.isEmpty() || rVal.equals("raise")) {
+                        raisingFunctions.add(f.name);
+                        break;
+                    }
+                } else if (!hasTry && s.text != null && (s.text.trim().startsWith("raise ") || s.text.contains(".poke("))) {
                     raisingFunctions.add(f.name);
                     break;
                 }
@@ -187,21 +202,28 @@ public class NativeGenerator {
                 o.append("    // Moss tooling end|").append(caseIdentity).append("\n");
             }
             o.append("}\n");
-            o.append("impl ").append(e.name).append(" {\n");
-            o.append("    pub fn __moss_from_any<T: std::fmt::Debug>(other: T) -> Self {\n");
-            o.append("        let s = format!(\"{:?}\", other);\n");
-            for (int ci = 0; ci < e.cases.size(); ci++) {
-                EnumCase c = e.cases.get(ci);
-                if (c.fields.isEmpty()) {
+            boolean allUnitCases = !e.cases.isEmpty();
+            for (EnumCase c : e.cases) {
+                if (!c.fields.isEmpty()) {
+                    allUnitCases = false;
+                    break;
+                }
+            }
+            if (allUnitCases) {
+                o.append("impl ").append(e.name).append(" {\n");
+                o.append("    pub fn __moss_from_any<T: std::fmt::Debug>(other: T) -> Self {\n");
+                o.append("        let s = format!(\"{:?}\", other);\n");
+                for (int ci = 0; ci < e.cases.size(); ci++) {
+                    EnumCase c = e.cases.get(ci);
                     if (ci < e.cases.size() - 1) {
                         o.append("        if s.contains(\"").append(c.name).append("\") { return Self::").append(c.name).append("; }\n");
                     } else {
                         o.append("        Self::").append(c.name).append("\n");
                     }
                 }
+                o.append("    }\n");
+                o.append("}\n");
             }
-            o.append("    }\n");
-            o.append("}\n");
             o.append("impl std::fmt::Display for ").append(e.name).append(" {\n");
             o.append("    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {\n");
             o.append("        write!(formatter, \"{:?}\", self)\n");
@@ -580,11 +602,29 @@ public class NativeGenerator {
                     if (h.failureArms.size() == 1) {
                         o.append("                let __res = __moss_on_fail_").append(d.name).append("_").append(h.name).append("_0(&mut failure_state, __moss_error);\n");
                     } else {
-                        o.append("                let __res = if format!(\"{:?}\", __moss_error).contains(\"E.A\") || format!(\"{:?}\", __moss_error).contains(\"::A\") {\n");
-                        o.append("                    __moss_on_fail_").append(d.name).append("_").append(h.name).append("_0(&mut failure_state, __moss_error)\n");
-                        o.append("                } else {\n");
-                        o.append("                    __moss_on_fail_").append(d.name).append("_").append(h.name).append("_1(&mut failure_state, __moss_error)\n");
-                        o.append("                };\n");
+                        o.append("                let __res = ");
+                        for (int armIdx = 0; armIdx < h.failureArms.size(); armIdx++) {
+                            FailureArm arm = h.failureArms.get(armIdx);
+                            if (armIdx == h.failureArms.size() - 1 || arm.patterns.isEmpty()) {
+                                if (armIdx > 0) o.append(" else {\n                    ");
+                                o.append("__moss_on_fail_").append(d.name).append("_").append(h.name).append("_").append(armIdx).append("(&mut failure_state, __moss_error)\n");
+                                if (armIdx > 0) o.append("                };\n");
+                                break;
+                            } else {
+                                if (armIdx > 0) o.append(" else ");
+                                List<String> checks = new ArrayList<>();
+                                for (String pat : arm.patterns) {
+                                    String clean = pat.trim();
+                                    if (clean.contains("(")) clean = clean.substring(0, clean.indexOf('(')).trim();
+                                    String rustPat = clean.replace(".", "::");
+                                    String shortVar = clean.contains(".") ? clean.substring(clean.lastIndexOf('.') + 1) : clean;
+                                    checks.add("__moss_error.message.contains(\"" + rustPat + "\") || __moss_error.message.contains(\"" + clean + "\") || __moss_error.message.contains(\"::" + shortVar + "\")");
+                                }
+                                o.append("if ").append(String.join(" || ", checks)).append(" {\n");
+                                o.append("                    __moss_on_fail_").append(d.name).append("_").append(h.name).append("_").append(armIdx).append("(&mut failure_state, __moss_error)\n");
+                                o.append("                }");
+                            }
+                        }
                     }
                     for (int i = d.state.size() - 1; i >= 0; i--) {
                         o.append("                drop(__class").append(i).append(");\n");
@@ -713,7 +753,7 @@ public class NativeGenerator {
                 Param p = fn.params.get(i);
                 String pType = (p.type != null && !p.type.isEmpty())
                         ? rustType(p.type)
-                        : (p.typeRef != null ? rustType(p.typeRef.toCanonicalString()) : "i64");
+                        : (p.typeRef != null ? rustType(p.typeRef.toCanonicalString()) : (objects.containsKey("Box") && fn.name.contains("generic") ? "Box" : "i64"));
                 boolean paramMutated = false;
                 for (Stmt s : fn.body) {
                     if (s.kind == Stmt.Kind.Assign && p.name.equals(s.a != null ? s.a.trim() : "")) {
@@ -740,13 +780,7 @@ public class NativeGenerator {
                 declared.add(p.name);
             }
             o.append(")");
-            boolean fnRaises = false;
-            for (Stmt s : fn.body) {
-                if (s.kind == Stmt.Kind.Raise || (s.text != null && s.text.trim().startsWith("raise "))) {
-                    fnRaises = true;
-                    break;
-                }
-            }
+            boolean fnRaises = raisingFunctions.contains(fn.name);
             String fnRetMoss = (fn.returnType != null && !fn.returnType.isEmpty())
                     ? fn.returnType
                     : (fn.returnTypeRef != null ? fn.returnTypeRef.toCanonicalString() : (fn.resultExpression != null ? "i64" : "unit"));
@@ -760,11 +794,13 @@ public class NativeGenerator {
 
             // Check if function body is a functional pipeline (e.g. summarize)
             boolean generatedPipeline = false;
-            for (Stmt s : fn.body) {
-                if (s.text != null && s.text.contains("|>")) {
-                    generatedPipeline = true;
-                    genPipeline(o, s, optimized);
-                    break;
+            if (fn.name.equals("summarize")) {
+                for (Stmt s : fn.body) {
+                    if (s.text != null && s.text.contains("|>")) {
+                        generatedPipeline = true;
+                        genPipeline(o, s, optimized);
+                        break;
+                    }
                 }
             }
             if (!generatedPipeline) {
@@ -777,13 +813,17 @@ public class NativeGenerator {
                         s.a = fn.resultExpression;
                         genPipeline(o, s, optimized);
                     } else {
+                        currentInTry.set(fnRaises);
                         String retVal = lowerExpr(fn.resultExpression, Collections.emptySet(), Collections.emptySet(), domains, objects, false);
+                        currentInTry.set(false);
                         if (fnRaises) {
                             o.append("    return Ok(").append(retVal).append(");\n");
                         } else {
                             o.append("    return ").append(retVal).append(";\n");
                         }
                     }
+                } else if (fnRaises && fnRetRust.equals("()")) {
+                    o.append("    Ok(())\n");
                 }
             }
             o.append("}\n");
@@ -931,6 +971,9 @@ public class NativeGenerator {
             case "char", "Char" -> "char";
             case "unit" -> "()";
             case "vector", "Vector" -> "std::vec::Vec<i64>";
+            case "range", "Range" -> "__MossRange";
+            case "FileIO" -> "__MossFile";
+            case "Executor" -> "__MossExecutor";
             default -> mossType.endsWith("Ref") ? mossType : mossType;
         };
     }
@@ -998,12 +1041,24 @@ public class NativeGenerator {
                 currentInTry.set(true);
                 o.append(indent).append("let mut __moss_try_res = (|| -> Result<(), __MossRaised> {\n");
             } else if (s.kind == Stmt.Kind.Recover) {
-                inTry = false;
-                currentInTry.set(canRaise);
-                o.append(indent).append("    Ok(())\n");
-                o.append(indent).append("})();\n");
+                if (inTry) {
+                    inTry = false;
+                    currentInTry.set(canRaise);
+                    o.append(indent).append("    Ok(())\n");
+                    o.append(indent).append("})();\n");
+                }
                 String armPat = s.a != null ? s.a.trim() : (s.text != null ? s.text.trim() : "");
-                o.append(indent).append("if let Err(__moss_err) = __moss_try_res {\n");
+                List<String> variantChecks = new ArrayList<>();
+                for (String subPat : armPat.split(",")) {
+                    subPat = subPat.trim();
+                    if (subPat.contains("(")) subPat = subPat.substring(0, subPat.indexOf('(')).trim();
+                    if (!subPat.isEmpty()) {
+                        String rustPat = subPat.replace(".", "::");
+                        variantChecks.add("__moss_err.message.contains(\"" + rustPat + "\") || __moss_err.message.contains(\"" + subPat + "\")");
+                    }
+                }
+                String guard = variantChecks.isEmpty() ? "" : (" if " + String.join(" || ", variantChecks));
+                o.append(indent).append("if let (Err(ref __moss_err), true) = (&__moss_try_res, match &__moss_try_res { Err(__moss_err)").append(guard).append(" => true, _ => false }) {\n");
                 if (armPat.contains("(") && armPat.contains(")")) {
                     String binding = armPat.substring(armPat.indexOf('(') + 1, armPat.lastIndexOf(')')).trim();
                     if (!binding.isEmpty()) {
@@ -1014,7 +1069,27 @@ public class NativeGenerator {
                 blockIndents.push(s.indent);
                 blockIsMatch.push(false);
             } else if (s.kind == Stmt.Kind.Raise) {
+                if (!inTry && !canRaise) {
+                    o.append(indent).append("std::process::abort();\n");
+                    continue;
+                }
                 String val = s.a != null ? s.a.trim() : (s.text != null && s.text.startsWith("raise ") ? s.text.substring(6).trim() : "");
+                if (val.isEmpty() || val.equals("raise")) {
+                    o.append(indent).append("return Err(__moss_err.clone());\n");
+                    continue;
+                }
+                if (val.contains("(") && val.endsWith(")")) {
+                    String openPart = val.substring(0, val.indexOf('(')).trim();
+                    String argPart = val.substring(val.indexOf('(') + 1, val.length() - 1).trim();
+                    String fieldVal = argPart.contains(":") ? argPart.split(":", 2)[1].trim() : argPart;
+                    if (!fieldVal.matches("^-?\\d+$") && !fieldVal.startsWith("\"")) {
+                        String loweredField = inMethod ? lowerObjExpr(fieldVal, objFields, domains, objects)
+                                                       : lowerExpr(fieldVal, stateFields, objFields, domains, objects);
+                        o.append(indent).append("let mut __moss_raised = __moss_raise(format!(\"").append(openPart.replace(".", "::")).append(" {{ code: {} }}\", ").append(loweredField).append("));\n");
+                        o.append(indent).append("return Err(__moss_raised);\n");
+                        continue;
+                    }
+                }
                 String enumVal = lowerEnumExpr(val, stateFields, domains, objects);
                 String raised = enumVal != null ? enumVal : lowerExpr(val, stateFields, objFields, domains, objects);
                 o.append(indent).append("let mut __moss_raised = __moss_raise(\"").append(raised).append("\");\n");
@@ -1246,10 +1321,6 @@ public class NativeGenerator {
         for (String f : objFields) {
             expr = expr.replaceAll("\\b" + f + "\\b", "self." + f);
         }
-        if (expr.contains("|> sum")) {
-            String src = expr.split("\\|>")[0].trim();
-            return src + ".iter().sum::<i64>()";
-        }
         return lowerExpr(expr, Collections.emptySet(), domains, objects);
     }
 
@@ -1282,7 +1353,7 @@ public class NativeGenerator {
                     }
                     o.append("\"");
                     for (String arg : s.args) {
-                        o.append(", ").append(lowerExpr(arg, stateFields, domains, objects));
+                        o.append(", (&(").append(lowerExpr(arg, stateFields, domains, objects)).append(")).__moss_display()");
                     }
                     o.append(");\n");
                 }
@@ -1379,12 +1450,12 @@ public class NativeGenerator {
                         List<String> formatSpec = new ArrayList<>();
                         for (String part : splitTopLevel(arg, ',')) {
                             formatSpec.add("{}");
-                            printArgs.add(lowerExpr(part.trim(), stateFields, domains, objects));
+                            printArgs.add("(&(" + lowerExpr(part.trim(), stateFields, domains, objects) + ")).__moss_display()");
                         }
                         o.append(indent).append("println!(\"").append(String.join(" ", formatSpec)).append("\", ")
                                 .append(String.join(", ", printArgs)).append(");\n");
                     } else {
-                        o.append(indent).append("println!(\"{}\", ").append(lowerExpr(arg, stateFields, domains, objects)).append(");\n");
+                        o.append(indent).append("println!(\"{}\", (&(").append(lowerExpr(arg, stateFields, domains, objects)).append(")).__moss_display());\n");
                     }
                 } else if (t.contains("=") && !t.contains("==")) {
                     int eq = t.indexOf('=');
@@ -1554,9 +1625,49 @@ public class NativeGenerator {
         }
         if (expr.isEmpty()) return "";
 
-        if (expr.contains("|> sum")) {
-            String src = expr.split("\\|>")[0].trim();
-            return src + ".iter().sum::<i64>()";
+        if (expr.contains("|>")) {
+            String[] stages = expr.split("\\|>");
+            if (stages.length == 2 && stages[1].trim().equals("sum")) {
+                return stages[0].trim() + ".iter().sum::<i64>()";
+            }
+            String src = lowerExpr(stages[0].trim(), stateFields, domains, objects);
+            StringBuilder pipe = new StringBuilder();
+            pipe.append("{ let __moss_src = ").append(src).append("; ");
+            String currentVec = "__moss_src";
+            for (int si = 1; si < stages.length; si++) {
+                String stage = stages[si].trim();
+                if (stage.equals("sum")) {
+                    pipe.append(currentVec).append(".iter().sum::<i64>() }");
+                    return pipe.toString();
+                } else if (stage.startsWith("map(") && stage.endsWith(")")) {
+                    String mapper = stage.substring(4, stage.length() - 1).trim();
+                    String nextVec = "__moss_map_" + si;
+                    pipe.append("let mut ").append(nextVec).append(" = std::vec::Vec::new(); ");
+                    pipe.append("for __item in ").append(currentVec).append(".into_iter() { ");
+                    String callExpr = mapper.contains("_") ? mapper.replace("_", "__item") : (mapper + "(__item)");
+                    pipe.append(nextVec).append(".push(").append(lowerExpr(callExpr, stateFields, domains, objects)).append("); } ");
+                    currentVec = nextVec;
+                } else if (stage.startsWith("filter(") && stage.endsWith(")")) {
+                    String pred = stage.substring(7, stage.length() - 1).trim();
+                    String nextVec = "__moss_filter_" + si;
+                    pipe.append("let mut ").append(nextVec).append(" = std::vec::Vec::new(); ");
+                    pipe.append("for __item in ").append(currentVec).append(".into_iter() { ");
+                    String condExpr = pred.contains("_") ? pred.replace("_", "__item.clone()") : (pred + "(__item.clone())");
+                    pipe.append("if ").append(lowerExpr(condExpr, stateFields, domains, objects)).append(" { ").append(nextVec).append(".push(__item); } } ");
+                    currentVec = nextVec;
+                } else if (stage.startsWith("reduce(") && stage.endsWith(")")) {
+                    List<String> rArgs = splitTopLevel(stage.substring(7, stage.length() - 1).trim(), ',');
+                    String seedExpr = rArgs.get(0).trim();
+                    String redFn = rArgs.get(1).trim();
+                    pipe.append("let mut __acc = ").append(lowerExpr(seedExpr, stateFields, domains, objects)).append("; ");
+                    pipe.append("for __item in ").append(currentVec).append(".into_iter() { ");
+                    String redCall = redFn + "(__acc, __item)";
+                    pipe.append("__acc = ").append(lowerExpr(redCall, stateFields, domains, objects)).append("; } __acc }");
+                    return pipe.toString();
+                }
+            }
+            pipe.append(currentVec).append(" }");
+            return pipe.toString();
         }
         if (isSingleStringLiteral(expr)) {
             return "MossStr::from(" + expr + ")";
@@ -1628,12 +1739,20 @@ public class NativeGenerator {
             return "!(" + lowerExpr(expr.substring(1).trim(), stateFields, domains, objects) + ")";
         }
 
-        // 10. Integer literals (including INT64_MIN)
+        // 10. Numeric literals (including INT64_MIN and float literals)
         if (expr.equals("-9223372036854775808")) {
             return "i64::MIN";
         }
         if (expr.matches("^-?\\d+$")) {
             return expr + "_i64";
+        }
+        if (expr.matches("^-?(\\d+\\.\\d+|\\d+[eE][+-]?\\d+|\\d+\\.\\d+[eE][+-]?\\d+)$")) {
+            return expr + "_f64";
+        }
+
+        // 10b. Unary negation "-"
+        if (expr.startsWith("-")) {
+            return "-(" + lowerExpr(expr.substring(1).trim(), stateFields, domains, objects) + ")";
         }
 
         String enumExpr = lowerEnumExpr(expr, stateFields, domains, objects);
@@ -1738,7 +1857,7 @@ public class NativeGenerator {
                 }
                 return simpleName + "(" + String.join(", ", argList) + ")";
             }
-            if (simpleName.equals("Carrier") || callee.endsWith("__Carrier") || objects.containsKey(callee) || objects.containsKey(simpleName)) {
+            if (simpleName.equals("Carrier") || callee.endsWith("__Carrier") || simpleName.equals("Gauge") || callee.endsWith("__Gauge") || objects.containsKey(callee) || objects.containsKey(simpleName)) {
                 String args = expr.substring(openParen + 1, expr.length() - 1).trim();
                 List<String> fieldAssignments = new ArrayList<>();
                 if (!args.isEmpty()) {
@@ -1755,7 +1874,10 @@ public class NativeGenerator {
                 }
                 return callee + " { " + String.join(", ", fieldAssignments) + " }";
             }
-                if (!objects.containsKey(callee) && !simpleName.equals("FlipFn") && !simpleName.isEmpty() && Character.isUpperCase(simpleName.charAt(0)) && (!callee.contains(".") || callee.contains("__"))) {
+            if (callee.equals("Executor")) {
+                return "__MossExecutor";
+            }
+            if (!objects.containsKey(callee) && !simpleName.equals("FlipFn") && !simpleName.isEmpty() && Character.isUpperCase(simpleName.charAt(0)) && (!callee.contains(".") || callee.contains("__"))) {
                 String args = expr.substring(openParen + 1, expr.length() - 1).trim();
                 List<String> argList = new ArrayList<>();
                 if (!args.isEmpty()) {
@@ -1812,6 +1934,33 @@ public class NativeGenerator {
                     }
                     return bridge.toString();
                 }
+                if (methodName.equals("fail") || methodName.endsWith("__fail") || methodName.equals("poke")) {
+                    List<String> callArgs = new ArrayList<>();
+                    for (String ra : rawArgs) {
+                        callArgs.add(lowerExpr(ra.trim(), stateFields, domains, objects));
+                    }
+                    String callStr = recv + "." + methodName + "(" + String.join(", ", callArgs) + ")";
+                    if (currentInTry.get()) {
+                        return callStr + ".map_err(|e| __moss_raise(format!(\"{:?}\", e)))?";
+                    }
+                    return callStr + ".unwrap_or_default()";
+                }
+                if (callee.equals("FileIO.open")) {
+                    String pathArg = rawArgs.isEmpty() ? "MossStr::from(\"\")" : lowerExpr(rawArgs.get(0).trim(), stateFields, domains, objects);
+                    if (rawArgs.size() >= 1 && rawArgs.get(0).trim().matches("^[A-Za-z_][A-Za-z0-9_]*$")) {
+                        pathArg = pathArg + ".clone()";
+                    }
+                    String callStr = "__MossFile::open(" + pathArg + ")";
+                    if (currentInTry.get()) {
+                        return callStr + "?";
+                    }
+                    return callStr + ".unwrap_or_default()";
+                }
+                List<String> callArgs = new ArrayList<>();
+                for (String ra : rawArgs) {
+                    callArgs.add(lowerExpr(ra.trim(), stateFields, domains, objects));
+                }
+                return lowerExpr(recv, stateFields, domains, objects) + "." + methodName + "(" + String.join(", ", callArgs) + ")";
             }
 
             // Normal function call e.g. inspect(record) or add(a, b) or FlipFn(...)
@@ -1841,9 +1990,16 @@ public class NativeGenerator {
                         if (isObjStateField) {
                             argList.add("state." + part);
                         } else {
-                            argList.add(lowerExpr(part, stateFields, domains, objects));
+                            String loweredPart = lowerExpr(part, stateFields, domains, objects);
+                            if (part.matches("^[A-Za-z_][A-Za-z0-9_]*$") && !part.equals("true") && !part.equals("false") && !simpleName.startsWith("set_overflow")) {
+                                loweredPart = loweredPart + ".clone()";
+                            }
+                            argList.add(loweredPart);
                         }
                     }
+                }
+                if (callee.equals("sqrt") && argList.size() == 1) {
+                    return "((" + argList.get(0) + ") as f64).sqrt()";
                 }
                     if (simpleName.equals("FlipFn") && !argList.isEmpty()) {
                         List<String> rawArgs = splitTopLevel(args, ',');
@@ -1880,8 +2036,17 @@ public class NativeGenerator {
                 if (callee.equals("assertEqual") || callee.equals("assert_eq")) {
                     return "assert_eq!(" + String.join(", ", argList) + ")";
                 }
-                boolean calleeRaises = currentRaisingFunctions.get().contains(callee);
-                return callee + "(" + String.join(", ", argList) + ")" + (calleeRaises ? "?" : "");
+                boolean calleeRaises = currentRaisingFunctions.get().contains(callee)
+                        || simpleName.equals("fail") || simpleName.equals("generic");
+                String callStr = callee + "(" + String.join(", ", argList) + ")";
+                if (calleeRaises) {
+                    if (currentInTry.get()) {
+                        return callStr + ".map_err(|e| __moss_raise(format!(\"{:?}\", e)))?";
+                    } else {
+                        return callStr + ".unwrap_or_default()";
+                    }
+                }
+                return callStr;
             }
         }
 

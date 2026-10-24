@@ -9,14 +9,19 @@ BIN_DIR="${COMPILER_JAVA}/bin"
 LIB_DIR="${COMPILER_JAVA}/lib"
 
 CLEAN=0
+SUBSYSTEM="all"
 for arg in "$@"; do
     if [ "$arg" == "--clean" ]; then
         CLEAN=1
+    elif [[ "$arg" == --subsystem=* ]]; then
+        SUBSYSTEM="${arg#--subsystem=}"
     fi
 done
 
+BUILD_MODE="full-javac"
 if [ "$CLEAN" -eq 1 ]; then
     rm -rf "${BIN_DIR}"
+    BUILD_MODE="clean-javac"
 fi
 mkdir -p "${BIN_DIR}"
 
@@ -28,8 +33,16 @@ if [ -z "${SOURCES}" ]; then
     exit 1
 fi
 
+T0=$(date +%s%3N)
 javac -d "${BIN_DIR}" -cp "${CP}" ${SOURCES}
 if [ -d "${COMPILER_JAVA}/src/main/resources" ]; then
     cp -r "${COMPILER_JAVA}/src/main/resources/." "${BIN_DIR}/"
 fi
-echo "Java build successful -> ${BIN_DIR}"
+T1=$(date +%s%3N)
+ELAPSED_MS=$((T1 - T0))
+
+mkdir -p "${REPO_ROOT}/tmp"
+printf '{"timestamp":"%s","builder":"javac","mode":"%s","subsystem":"%s","elapsed_ms":%d}\n' \
+    "$(date -Iseconds)" "${BUILD_MODE}" "${SUBSYSTEM}" "${ELAPSED_MS}" >> "${REPO_ROOT}/tmp/build_times.jsonl"
+
+echo "Java build successful (${BUILD_MODE}, subsystem=${SUBSYSTEM}, ${ELAPSED_MS}ms) -> ${BIN_DIR}"

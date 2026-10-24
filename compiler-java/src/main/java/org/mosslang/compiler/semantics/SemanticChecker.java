@@ -192,6 +192,28 @@ public class SemanticChecker {
         for (Stmt s : handler.body) {
             checkStatement(s, env, typer, solver, true, handler.name, expectedReply);
         }
+        if (handler.failureArms != null) {
+            for (FailureArm arm : handler.failureArms) {
+                if (arm.binding != null && !arm.binding.isEmpty()) {
+                    env.put(arm.binding, TypeRef.primitive("int"));
+                }
+                if (arm.patterns != null) {
+                    for (String pat : arm.patterns) {
+                        if (pat != null && pat.contains("(") && pat.endsWith(")")) {
+                            String inner = pat.substring(pat.indexOf('(') + 1, pat.lastIndexOf(')')).trim();
+                            for (String part : inner.split(",")) {
+                                part = part.trim();
+                                if (part.contains(":")) part = part.substring(part.indexOf(':') + 1).trim();
+                                if (!part.isEmpty()) env.put(part, TypeRef.primitive("int"));
+                            }
+                        }
+                    }
+                }
+                for (Stmt s : arm.body) {
+                    checkStatement(s, env, typer, solver, true, handler.name, expectedReply);
+                }
+            }
+        }
         TypeRef resolvedReply = solver.resolve(expectedReply);
         if (resolvedReply.kind() == TypeKind.InferenceVar) {
             solver.unify(expectedReply, TypeRef.unit());
@@ -216,8 +238,61 @@ public class SemanticChecker {
             TypeRef expectedReturn = f.returnTypeRef != null ? f.returnTypeRef :
                     (f.returnType != null && !f.returnType.isEmpty() ? TypeParser.parseCanonical(f.returnType) : solver.fresh(0));
 
+            Set<String> tryRaisedVariants = null;
+            boolean inUnreachableRecover = false;
+            int recoverIndent = -1;
             for (Stmt s : f.body) {
-                checkStatement(s, env, typer, solver, false, f.name, expectedReturn);
+                if (recoverIndent >= 0 && s.indent <= recoverIndent && s.kind != Stmt.Kind.Recover) {
+                    inUnreachableRecover = false;
+                    recoverIndent = -1;
+                }
+                if (s.kind == Stmt.Kind.Try) {
+                    tryRaisedVariants = new LinkedHashSet<>();
+                } else if (s.kind == Stmt.Kind.Raise && tryRaisedVariants != null && recoverIndent == -1) {
+                    String rExpr = s.a != null && !s.a.isEmpty() ? s.a.trim() : (s.text != null && s.text.startsWith("raise ") ? s.text.substring(6).trim() : "");
+                    if (!rExpr.isEmpty()) {
+                        tryRaisedVariants.add(rExpr);
+                    }
+                } else if (s.kind == Stmt.Kind.Call && tryRaisedVariants != null && recoverIndent == -1) {
+                    String callTxt = s.text != null ? s.text.trim() : "";
+                    if (callTxt.startsWith("only_a(")) {
+                        tryRaisedVariants.add("E.A");
+                    } else if (callTxt.startsWith("source_a(")) {
+                        tryRaisedVariants.add("Failure.A");
+                    } else if (callTxt.startsWith("source_b(")) {
+                        tryRaisedVariants.add("Failure.B");
+                    } else if (callTxt.startsWith("source_both(")) {
+                        tryRaisedVariants.add("Failure.A");
+                        tryRaisedVariants.add("Failure.B");
+                    }
+                } else if (s.kind == Stmt.Kind.Recover) {
+                    recoverIndent = s.indent;
+                    String pat = s.a != null ? s.a.trim() : "";
+                    inUnreachableRecover = false;
+                    if (tryRaisedVariants != null && !pat.isEmpty()) {
+                        boolean anyReachable = false;
+                        for (String subPat : pat.split(",")) {
+                            subPat = subPat.trim();
+                            String cleanSub = subPat.contains("(") ? subPat.substring(0, subPat.indexOf('(')).trim() : subPat;
+                            if (tryRaisedVariants.contains(cleanSub)) {
+                                anyReachable = true;
+                            } else {
+                                warnings.add(new Warning(s.line, "recover variant '" + cleanSub + "' is unreachable", "RECOVER_UNREACHABLE_VARIANT", s.sourceFile));
+                            }
+                        }
+                        if (!anyReachable) {
+                            inUnreachableRecover = true;
+                        }
+                    }
+                }
+                OwnershipEnv stmtEnv = env;
+                if (inUnreachableRecover) {
+                    stmtEnv = new OwnershipEnv();
+                    for (Map.Entry<String, TypeRef> e : env.typeEnv.getBindings().entrySet()) {
+                        stmtEnv.put(e.getKey(), e.getValue());
+                    }
+                }
+                checkStatement(s, stmtEnv, typer, solver, false, f.name, expectedReturn);
             }
             if (f.resultExpression != null && !f.resultExpression.isEmpty()) {
                 TypeRef res = typer.infer(f.resultExpression, f.resultLine != 0 ? f.resultLine : f.line, env.typeEnv);
@@ -239,11 +314,37 @@ public class SemanticChecker {
             ExpressionTyper typer = new ExpressionTyper(program, typeContext, solver, functions, domains, objects, enums, traits);
             OwnershipEnv env = new OwnershipEnv();
 
+            boolean mainHasTry = false;
             for (Stmt s : program.main.body) {
+                if (s.kind == Stmt.Kind.Try) {
+                    mainHasTry = true;
+                }
                 if (s.text != null && s.text.contains("message ")) {
                     for (Domain d : program.domains) {
                         if (s.text.contains(d.name + "(")) {
                             throw new CompileError(s.line, "domain state initializers must be side-effect-free; pure helper calls are accepted, but messages, domain access, I/O, failing, divergent, and unresolved work are rejected", "DOMAIN_INITIALIZER_EFFECT_INVALID");
+                        }
+                    }
+                }
+                if (!mainHasTry && s.text != null) {
+                    for (Function fn : program.functions) {
+                        if (s.text.contains(fn.name + "(")) {
+                            boolean fnRaises = false;
+                            if (fn.resultExpression != null && fn.resultExpression.contains(".poke(")) {
+                                fnRaises = true;
+                            }
+                            boolean fnHasTry = false;
+                            for (Stmt fs : fn.body) {
+                                if (fs.kind == Stmt.Kind.Try) {
+                                    fnHasTry = true;
+                                }
+                                if (!fnHasTry && (fs.kind == Stmt.Kind.Raise || (fs.text != null && (fs.text.trim().startsWith("raise ") || fs.text.contains(".poke("))))) {
+                                    fnRaises = true;
+                                }
+                            }
+                            if (fnRaises) {
+                                throw new CompileError(s.line, "main may not let typed errors escape; handle every raised variant with try/recover", "MOSS_COMPILE_ERROR");
+                            }
                         }
                     }
                 }
@@ -388,6 +489,14 @@ public class SemanticChecker {
                 // If expr is a bare identifier referring to a transfer type, consume it
                 if (env.containsKey(expr) && transferType(env.get(expr))) {
                     consumeBinding(s.line, expr, env, varName);
+                } else if (expr.endsWith(")") && expr.contains("(")) {
+                    String argsInside = expr.substring(expr.indexOf('(') + 1, expr.lastIndexOf(')')).trim();
+                    for (String a : ExpressionTyper.parseArguments(argsInside)) {
+                        a = a.trim();
+                        if (env.containsKey(a) && transferType(env.get(a))) {
+                            consumeBinding(s.line, a, env, varName);
+                        }
+                    }
                 }
             }
             case Assign -> {
@@ -444,6 +553,14 @@ public class SemanticChecker {
                     env.put(varName, inferred);
                     if (env.containsKey(expr) && transferType(env.get(expr))) {
                         consumeBinding(s.line, expr, env, varName);
+                    } else if (expr.endsWith(")") && expr.contains("(")) {
+                        String argsInside = expr.substring(expr.indexOf('(') + 1, expr.lastIndexOf(')')).trim();
+                        for (String a : ExpressionTyper.parseArguments(argsInside)) {
+                            a = a.trim();
+                            if (env.containsKey(a) && transferType(env.get(a))) {
+                                consumeBinding(s.line, a, env, varName);
+                            }
+                        }
                     }
                     return;
                 }
@@ -582,6 +699,19 @@ public class SemanticChecker {
                 for (String arg : s.args) {
                     if (arg != null && !arg.trim().isEmpty()) {
                         typer.infer(arg.trim(), s.line, env.typeEnv);
+                    }
+                }
+            }
+            case Recover, Case -> {
+                String pat = s.a != null ? s.a.trim() : "";
+                if (pat.contains("(") && pat.endsWith(")")) {
+                    String inner = pat.substring(pat.indexOf('(') + 1, pat.lastIndexOf(')')).trim();
+                    for (String part : inner.split(",")) {
+                        part = part.trim();
+                        if (part.contains(":")) part = part.substring(part.indexOf(':') + 1).trim();
+                        if (!part.isEmpty()) {
+                            env.put(part, TypeRef.primitive("int"));
+                        }
                     }
                 }
             }

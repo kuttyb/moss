@@ -3,13 +3,88 @@ package org.mosslang.compiler.backend;
 public class MossRuntimeSupport {
     public static final String FLOAT_RUNTIME = """
 // ─── Begin Moss Float Format Runtime ─────────────────────────────────────
-// Float formatting runtime
+#[allow(dead_code)]
+fn __moss_format_float(value: f64) -> String {
+    if value.is_nan() { return "NaN".to_string(); }
+    if value == f64::INFINITY { return "inf".to_string(); }
+    if value == f64::NEG_INFINITY { return "-inf".to_string(); }
+    if value == 0.0 {
+        return if value.is_sign_negative() { "-0.0" } else { "0.0" }.to_string();
+    }
+    let sci = format!("{:e}", value.abs());
+    let (mant_str, exp_str) = sci.split_once('e').unwrap_or((&sci, "0"));
+    let digits: String = mant_str.chars().filter(|&c| c != '.').collect();
+    let exponent: i32 = exp_str.parse().unwrap_or(0);
+    let mut output = String::new();
+    if value.is_sign_negative() { output.push('-'); }
+    if (-4..16).contains(&exponent) {
+        let decimal_at = exponent + 1;
+        if decimal_at <= 0 {
+            output.push_str("0.");
+            for _ in 0..-decimal_at { output.push('0'); }
+            output.push_str(&digits);
+        } else if decimal_at as usize >= digits.len() {
+            output.push_str(&digits);
+            for _ in digits.len()..decimal_at as usize { output.push('0'); }
+            output.push_str(".0");
+        } else {
+            let at = decimal_at as usize;
+            output.push_str(&digits[..at]);
+            output.push('.');
+            output.push_str(&digits[at..]);
+        }
+    } else {
+        output.push_str(&digits[..1]);
+        if digits.len() > 1 {
+            output.push('.');
+            output.push_str(&digits[1..]);
+        }
+        output.push('e');
+        output.push_str(&exponent.to_string());
+    }
+    output
+}
 // ─── End Moss Float Format Runtime ───────────────────────────────────────
 """;
 
     public static final String EXECUTOR_RUNTIME = """
 // Phase 20 Executor Runtime  (moss executor_runtime_rust: process root)
-// Executor runtime
+#[allow(dead_code, non_camel_case_types)]
+#[derive(Clone, Debug, Default)]
+pub struct __MossRange { pub len: i64 }
+impl __MossRange {
+    pub fn length(&self) -> i64 { self.len }
+}
+#[allow(dead_code, non_camel_case_types)]
+#[derive(Clone, Debug, Default)]
+pub struct __MossFile { pub total_len: i64 }
+impl __MossFile {
+    pub fn open(path: MossStr) -> Result<__MossFile, __MossRaised> {
+        match std::fs::read(&*path) {
+            Ok(bytes) => Ok(__MossFile { total_len: bytes.len() as i64 }),
+            Err(_) => Err(__moss_raise("FileError::NotFound".to_string())),
+        }
+    }
+    pub fn chunks(&self, size: i64) -> std::vec::Vec<__MossRange> {
+        let mut out = std::vec::Vec::new();
+        let mut rem = self.total_len;
+        while rem > 0 {
+            let take = if rem >= size { size } else { rem };
+            out.push(__MossRange { len: take });
+            rem -= take;
+        }
+        out
+    }
+    pub fn close(&self) {}
+}
+#[allow(dead_code, non_camel_case_types)]
+#[derive(Clone, Debug, Default)]
+pub struct __MossExecutor;
+impl __MossExecutor {
+    pub fn threads(self, _n: i64) -> Self { self }
+    pub fn start(self) -> Self { self }
+    pub fn join(&self) {}
+}
 // ─── End Phase 20 Executor Runtime ───────────────────────────────────────
 """;
 
@@ -82,12 +157,50 @@ impl<T> std::fmt::Debug for MossAbsent<T> { fn fmt(&self, f: &mut std::fmt::Form
 
     public static final String DISPLAY_RUNTIME = """
 #[allow(dead_code)]
+trait __MossDisplay {
+    fn __moss_display(&self) -> String;
+}
+impl __MossDisplay for i64 {
+    fn __moss_display(&self) -> String { self.to_string() }
+}
+impl __MossDisplay for f64 {
+    fn __moss_display(&self) -> String { __moss_format_float(*self) }
+}
+impl __MossDisplay for bool {
+    fn __moss_display(&self) -> String { if *value_bool(*self) { "true".to_string() } else { "false".to_string() } }
+}
+#[inline]
+fn value_bool(b: bool) -> &'static bool { if b { &true } else { &false } }
+impl __MossDisplay for char {
+    fn __moss_display(&self) -> String { self.to_string() }
+}
+impl __MossDisplay for MossStr {
+    fn __moss_display(&self) -> String { self.to_string() }
+}
+impl __MossDisplay for String {
+    fn __moss_display(&self) -> String { self.clone() }
+}
+impl __MossDisplay for &str {
+    fn __moss_display(&self) -> String { (*self).to_string() }
+}
+impl<T: __MossDisplay> __MossDisplay for std::vec::Vec<T> {
+    fn __moss_display(&self) -> String {
+        let mut out = String::from("[");
+        for (i, item) in self.iter().enumerate() {
+            if i > 0 { out.push_str(", "); }
+            out.push_str(&item.__moss_display());
+        }
+        out.push(']');
+        out
+    }
+}
+#[allow(dead_code)]
 fn __moss_display_int(out: &mut String, value: &i64) {
     out.push_str(&value.to_string());
 }
 #[allow(dead_code)]
 fn __moss_display_float(out: &mut String, value: &f64) {
-    out.push_str(&value.to_string());
+    out.push_str(&__moss_format_float(*value));
 }
 #[allow(dead_code)]
 fn __moss_display_bool(out: &mut String, value: &bool) {

@@ -32,7 +32,43 @@ public class FastInterpreter {
         public String toString() {
             if (raw == null) return "()";
             if (kind == Kind.BOOL) return (Boolean) raw ? "true" : "false";
+            if (kind == Kind.FLOAT) return formatFloat(((Number) raw).doubleValue());
             return raw.toString();
+        }
+
+        public static String formatFloat(double value) {
+            if (Double.isNaN(value)) return "NaN";
+            if (value == Double.POSITIVE_INFINITY) return "inf";
+            if (value == Double.NEGATIVE_INFINITY) return "-inf";
+            if (value == 0.0) {
+                return (Double.doubleToRawLongBits(value) < 0) ? "-0.0" : "0.0";
+            }
+            java.math.BigDecimal bd = new java.math.BigDecimal(Double.toString(Math.abs(value))).stripTrailingZeros();
+            String digits = bd.unscaledValue().toString();
+            int exponent = digits.length() - 1 - bd.scale();
+            StringBuilder output = new StringBuilder();
+            if (Double.doubleToRawLongBits(value) < 0) output.append('-');
+            if (exponent >= -4 && exponent < 16) {
+                int decimalAt = exponent + 1;
+                if (decimalAt <= 0) {
+                    output.append("0.");
+                    for (int i = 0; i < -decimalAt; i++) output.append('0');
+                    output.append(digits);
+                } else if (decimalAt >= digits.length()) {
+                    output.append(digits);
+                    for (int i = digits.length(); i < decimalAt; i++) output.append('0');
+                    output.append(".0");
+                } else {
+                    output.append(digits, 0, decimalAt).append('.').append(digits.substring(decimalAt));
+                }
+            } else {
+                output.append(digits.charAt(0));
+                if (digits.length() > 1) {
+                    output.append('.').append(digits.substring(1));
+                }
+                output.append('e').append(exponent);
+            }
+            return output.toString();
         }
     }
 
@@ -70,11 +106,19 @@ public class FastInterpreter {
         }
     }
 
+    private Value currentRaisedValue = null;
+    private String currentRaisedVariant = "";
+
     public static class RaisedException extends RuntimeException {
         public final Value raisedValue;
-        public RaisedException(Value raisedValue) {
-            super(raisedValue != null ? raisedValue.toString() : "raised");
+        public final String variantName;
+        public RaisedException(Value raisedValue, String variantName) {
+            super(variantName != null && !variantName.isEmpty() ? variantName : (raisedValue != null ? raisedValue.toString() : "raised"));
             this.raisedValue = raisedValue;
+            this.variantName = variantName != null ? variantName : "";
+        }
+        public RaisedException(Value raisedValue) {
+            this(raisedValue, raisedValue != null ? raisedValue.toString() : "");
         }
     }
 
@@ -155,9 +199,34 @@ public class FastInterpreter {
                         while (recEnd < endIdx && stmts.get(recEnd).indent > baseInd) {
                             recEnd++;
                         }
-                        if (!recovered) {
+                        String pat = recStmt.a != null ? recStmt.a.trim() : "";
+                        boolean armMatches = pat.isEmpty();
+                        for (String subPat : pat.split(",")) {
+                            subPat = subPat.trim();
+                            String cleanSub = subPat.contains("(") ? subPat.substring(0, subPat.indexOf('(')).trim() : subPat;
+                            if (cleanSub.isEmpty() || rex.variantName.equals(cleanSub) || rex.variantName.endsWith("." + cleanSub) || cleanSub.endsWith("." + rex.variantName) || rex.variantName.contains(cleanSub)) {
+                                armMatches = true;
+                                break;
+                            }
+                        }
+                        if (!recovered && armMatches) {
                             recovered = true;
-                            lastVal = evalBlock(stmts, recStart, recEnd, locals, currentDomain, funcName, depth);
+                            Value prevRaised = currentRaisedValue;
+                            currentRaisedValue = rex.raisedValue;
+                            String prevVariant = currentRaisedVariant;
+                            currentRaisedVariant = rex.variantName;
+                            try {
+                                if (pat.contains("(") && pat.endsWith(")")) {
+                                    String binding = pat.substring(pat.indexOf('(') + 1, pat.lastIndexOf(')')).trim();
+                                    if (!binding.isEmpty() && rex.raisedValue != null) {
+                                        locals.put(binding, rex.raisedValue);
+                                    }
+                                }
+                                lastVal = evalBlock(stmts, recStart, recEnd, locals, currentDomain, funcName, depth);
+                            } finally {
+                                currentRaisedValue = prevRaised;
+                                currentRaisedVariant = prevVariant;
+                            }
                         }
                         i = recEnd;
                     }
@@ -196,8 +265,13 @@ public class FastInterpreter {
                 i = matchEnd;
                 continue;
             } else if (s.kind == Stmt.Kind.Raise) {
-                Value rVal = evalExpr(s.a != null ? s.a : "", locals, currentDomain);
-                throw new RaisedException(rVal);
+                String rExpr = s.a != null ? s.a.trim() : "";
+                if (rExpr.isEmpty() || rExpr.equals("raise")) {
+                    throw new RaisedException(currentRaisedValue != null ? currentRaisedValue : Value.ofString(currentRaisedVariant), currentRaisedVariant);
+                }
+                String vName = rExpr.contains("(") ? rExpr.substring(0, rExpr.indexOf('(')).trim() : rExpr;
+                Value rVal = evalExpr(rExpr, locals, currentDomain);
+                throw new RaisedException(rVal, vName);
             } else if (s.kind == Stmt.Kind.Reply || s.kind == Stmt.Kind.Return) {
                 Value rVal = (s.a != null && !s.a.isEmpty()) ? evalExpr(s.a, locals, currentDomain) : Value.ofUnit();
                 throw new ReturnSignal(rVal);
@@ -600,11 +674,17 @@ public class FastInterpreter {
             Value left = evalExpr(op[0], locals, currentDomain);
             Value right = evalExpr(op[1], locals, currentDomain);
             if (op[2].equals("+")) {
+                if (left.kind == Value.Kind.FLOAT || right.kind == Value.Kind.FLOAT) {
+                    return Value.ofFloat(left.asFloat() + right.asFloat());
+                }
                 if (left.kind == Value.Kind.INT && right.kind == Value.Kind.INT) {
                     return Value.ofInt(left.asInt() + right.asInt());
                 }
                 return Value.ofString(left.toString() + right.toString());
             } else {
+                if (left.kind == Value.Kind.FLOAT || right.kind == Value.Kind.FLOAT) {
+                    return Value.ofFloat(left.asFloat() - right.asFloat());
+                }
                 return Value.ofInt(left.asInt() - right.asInt());
             }
         }
@@ -614,8 +694,14 @@ public class FastInterpreter {
             Value left = evalExpr(op[0], locals, currentDomain);
             Value right = evalExpr(op[1], locals, currentDomain);
             if (op[2].equals("*")) {
+                if (left.kind == Value.Kind.FLOAT || right.kind == Value.Kind.FLOAT) {
+                    return Value.ofFloat(left.asFloat() * right.asFloat());
+                }
                 return Value.ofInt(left.asInt() * right.asInt());
             } else if (op[2].equals("/")) {
+                if (left.kind == Value.Kind.FLOAT || right.kind == Value.Kind.FLOAT) {
+                    return Value.ofFloat(left.asFloat() / right.asFloat());
+                }
                 return Value.ofInt(left.asInt() / right.asInt());
             } else {
                 return Value.ofInt(left.asInt() % right.asInt());
@@ -630,8 +716,12 @@ public class FastInterpreter {
         if (expr.startsWith("~")) {
             return Value.ofInt(~evalExpr(expr.substring(1).trim(), locals, currentDomain).asInt());
         }
-        if (expr.startsWith("-") && !expr.matches("^-?\\d+(\\.\\d+)?$")) {
-            return Value.ofInt(-evalExpr(expr.substring(1).trim(), locals, currentDomain).asInt());
+        if (expr.startsWith("-") && !expr.matches("^-?\\d+(\\.\\d+)?([eE][+-]?\\d+)?$")) {
+            Value inner = evalExpr(expr.substring(1).trim(), locals, currentDomain);
+            if (inner.kind == Value.Kind.FLOAT) {
+                return Value.ofFloat(-inner.asFloat());
+            }
+            return Value.ofInt(-inner.asInt());
         }
 
         if (expr.startsWith("\"") && expr.endsWith("\"") && expr.length() >= 2) {
@@ -642,7 +732,7 @@ public class FastInterpreter {
         if (expr.matches("^-?\\d+$")) {
             return Value.ofInt(Long.parseLong(expr));
         }
-        if (expr.matches("^-?\\d+\\.\\d+$")) {
+        if (expr.matches("^-?(\\d+\\.\\d+|\\d+[eE][+-]?\\d+|\\d+\\.\\d+[eE][+-]?\\d+)$")) {
             return Value.ofFloat(Double.parseDouble(expr));
         }
 
@@ -664,13 +754,26 @@ public class FastInterpreter {
         int p = expr.indexOf('(');
         if (p > 0 && expr.endsWith(")")) {
             String callee = expr.substring(0, p).trim();
+            if (callee.equals("FileIO.open") || expr.contains("FileIO.open(")) {
+                throw new org.mosslang.compiler.diagnostics.CompileError(
+                        0,
+                        "Fast Debug FileIO execution is intentionally unsupported in Phase 20; run this program with the native backend",
+                        "FAST_DEBUG_FILEIO_UNSUPPORTED");
+            }
             String argsStr = expr.substring(p + 1, expr.length() - 1).trim();
             List<String> argList = splitArgs(argsStr);
             List<Value> evaluatedArgs = new ArrayList<>();
             for (String a : argList) {
                 if (!a.isEmpty()) {
+                    if (a.contains(":") && !a.startsWith("\"")) {
+                        a = a.substring(a.indexOf(':') + 1).trim();
+                    }
                     evaluatedArgs.add(evalExpr(a, locals, currentDomain));
                 }
+            }
+
+            if (callee.equals("sqrt") && !evaluatedArgs.isEmpty()) {
+                return Value.ofFloat(Math.sqrt(evaluatedArgs.get(0).asFloat()));
             }
 
             // Domain construction check e.g. Counter()
@@ -688,10 +791,14 @@ public class FastInterpreter {
                 }
             }
 
-            // Object construction check e.g. Carrier() or provider.Carrier()
+            // Object construction check e.g. Carrier() or provider.Carrier() or provider.Gauge(value: 19)
             for (ObjectType obj : program.objects) {
                 if (obj.name.equals(callee) || obj.name.endsWith("__" + callee) || callee.endsWith("." + obj.name)) {
-                    return new Value(Value.Kind.OBJECT, obj);
+                    Map<String, Value> fieldMap = new HashMap<>();
+                    for (int i = 0; i < obj.fields.size() && i < evaluatedArgs.size(); i++) {
+                        fieldMap.put(obj.fields.get(i).name, evaluatedArgs.get(i));
+                    }
+                    return new Value(Value.Kind.OBJECT, fieldMap);
                 }
             }
 
@@ -700,28 +807,41 @@ public class FastInterpreter {
                 int dot = callee.lastIndexOf('.');
                 String recvName = callee.substring(0, dot).trim();
                 String methodName = callee.substring(dot + 1).trim();
-                for (ObjectType obj : program.objects) {
-                    for (Method m : obj.methods) {
-                        if (m.name.equals(methodName)) {
-                            Map<String, Value> mLocals = new HashMap<>();
-                            for (int i = 0; i < m.params.size() && i < evaluatedArgs.size(); i++) {
-                                mLocals.put(m.params.get(i).name, evaluatedArgs.get(i));
-                            }
-                            Value res = Value.ofUnit();
-                            try {
-                                res = evalBlock(m.body, 0, m.body.size(), mLocals, null, m.name, 0);
-                            } catch (ReturnSignal rs) {
-                                res = rs.returnValue;
-                            } finally {
-                                for (int i = 0; i < m.params.size() && i < argList.size(); i++) {
-                                    String rawArg = argList.get(i).trim();
-                                    String pName = m.params.get(i).name;
-                                    if (locals.containsKey(rawArg) && mLocals.containsKey(pName)) {
-                                        locals.put(rawArg, mLocals.get(pName));
+                Value recvVal = locals.get(recvName);
+                if (recvVal != null && recvVal.kind == Value.Kind.OBJECT) {
+                    for (ObjectType obj : program.objects) {
+                        for (Method m : obj.methods) {
+                            if (m.name.equals(methodName)) {
+                                Map<String, Value> mLocals = new HashMap<>();
+                                if (recvVal.raw instanceof Map<?, ?> fm) {
+                                    for (Map.Entry<?, ?> entry : fm.entrySet()) {
+                                        if (entry.getKey() instanceof String k && entry.getValue() instanceof Value v) {
+                                            mLocals.put(k, v);
+                                        }
                                     }
                                 }
+                                for (int i = 0; i < m.params.size() && i < evaluatedArgs.size(); i++) {
+                                    mLocals.put(m.params.get(i).name, evaluatedArgs.get(i));
+                                }
+                                Value res = Value.ofUnit();
+                                try {
+                                    res = evalBlock(m.body, 0, m.body.size(), mLocals, null, m.name, 0);
+                                    if (m.resultExpression != null && !m.resultExpression.isEmpty()) {
+                                        res = evalExpr(m.resultExpression, mLocals, null);
+                                    }
+                                } catch (ReturnSignal rs) {
+                                    res = rs.returnValue;
+                                } finally {
+                                    for (int i = 0; i < m.params.size() && i < argList.size(); i++) {
+                                        String rawArg = argList.get(i).trim();
+                                        String pName = m.params.get(i).name;
+                                        if (locals.containsKey(rawArg) && mLocals.containsKey(pName)) {
+                                            locals.put(rawArg, mLocals.get(pName));
+                                        }
+                                    }
+                                }
+                                return res;
                             }
-                            return res;
                         }
                     }
                 }
@@ -739,6 +859,9 @@ public class FastInterpreter {
                     Value res = Value.ofUnit();
                     try {
                         res = evalBlock(f.body, 0, f.body.size(), fnLocals, null, f.name, 0);
+                        if (f.resultExpression != null && !f.resultExpression.isEmpty()) {
+                            res = evalExpr(f.resultExpression, fnLocals, null);
+                        }
                     } catch (ReturnSignal rs) {
                         res = rs.returnValue;
                     } finally {
@@ -753,9 +876,15 @@ public class FastInterpreter {
                     return res;
                 }
             }
+            // Enum variant constructor with payload e.g. Fault.Bad(code: 17)
+            if (callee.contains(".")) {
+                int lastDot = callee.lastIndexOf('.');
+                String variant = callee.substring(lastDot + 1).trim();
+                if (!variant.isEmpty() && Character.isUpperCase(variant.charAt(0)) && !evaluatedArgs.isEmpty()) {
+                    return evaluatedArgs.get(0);
+                }
+            }
         }
-
-        // Enum variant literal e.g. std.ParseError.Invalid or Failure.Bad
         if (expr.contains(".") && !expr.contains("(")) {
             int lastDot = expr.lastIndexOf('.');
             String variant = expr.substring(lastDot + 1).trim();

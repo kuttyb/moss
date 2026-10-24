@@ -79,25 +79,51 @@ def send_command(cmd_str, port=JDT_PORT):
 
 def main():
     action = "BUILD_INCREMENTAL"
-    if "--clean" in sys.argv:
-        action = "BUILD_CLEAN"
-    elif "--full" in sys.argv:
-        action = "BUILD_FULL"
-    elif "--stop" in sys.argv:
-        if is_daemon_running():
-            send_command("STOP")
-            print("JDT daemon stopped.")
-        else:
-            print("JDT daemon is not running.")
-        return
+    subsystem = "all"
+    for arg in sys.argv[1:]:
+        if arg == "--clean":
+            action = "BUILD_CLEAN"
+        elif arg == "--full":
+            action = "BUILD_FULL"
+        elif arg.startswith("--subsystem="):
+            subsystem = arg.split("=", 1)[1]
+        elif arg == "--stop":
+            if is_daemon_running():
+                send_command("STOP")
+                print("JDT daemon stopped.")
+            else:
+                print("JDT daemon is not running.")
+            return
 
     if not is_daemon_running():
         start_daemon()
 
     # Always refresh to ensure file modifications on disk are observed
-    send_command("REFRESH")
+    _, refresh_ms = send_command("REFRESH")
     resp, client_elapsed_ms = send_command(action)
-    print(f"JDT {action}: {resp} (client_latency={client_elapsed_ms:.1f}ms)")
+    total_ms = refresh_ms + client_elapsed_ms
+    if (COMPILER_JAVA / "src" / "main" / "resources").is_dir():
+        import shutil
+        for item in (COMPILER_JAVA / "src" / "main" / "resources").iterdir():
+            dest = BIN_DIR / item.name
+            if item.is_file():
+                shutil.copy2(item, dest)
+    log_dir = REPO_ROOT / "tmp"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    import json, datetime
+    record = {
+        "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "builder": "eclipse-jdt",
+        "mode": action.lower(),
+        "subsystem": subsystem,
+        "refresh_ms": round(refresh_ms, 2),
+        "compile_ms": round(client_elapsed_ms, 2),
+        "elapsed_ms": round(total_ms, 2),
+        "response": resp
+    }
+    with open(log_dir / "build_times.jsonl", "a", encoding="utf-8") as fp:
+        fp.write(json.dumps(record) + "\n")
+    print(f"JDT {action} (subsystem={subsystem}): {resp} (compile={client_elapsed_ms:.1f}ms, total={total_ms:.1f}ms)")
     
     if "FAILED" in resp or "ERROR" in resp:
         sys.exit(1)

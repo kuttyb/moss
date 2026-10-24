@@ -245,6 +245,9 @@ public class ProjectBuilder {
                 }
             }
         }
+        for (String mod : localModules.keySet()) {
+            externalCandidateProviders.remove(mod);
+        }
 
         // Copy all external dependency rlibs into buildDir as libmoss_<dep>.rlib for transitive linking
         for (Map.Entry<String, List<Path>> extEntry : externalCandidateProviders.entrySet()) {
@@ -677,6 +680,66 @@ public class ProjectBuilder {
             for (Handler h : d.handlers) {
                 emitHandlerMossi(semanticBuf, h, d, module, domainName, prog, true, manifest);
             }
+        }
+
+        for (ObjectType obj : prog.objects) {
+            String objName = obj.name;
+            if (objName.startsWith(module + "__")) {
+                objName = objName.substring(module.length() + 2);
+            }
+            contractBuf.append("object ").append(objName).append("\n");
+            for (Method m : obj.methods) {
+                boolean raises = false;
+                String raiseIdent = "-";
+                for (Stmt s : m.body) {
+                    if (s.kind == Stmt.Kind.Raise || (s.text != null && s.text.trim().startsWith("raise "))) {
+                        raises = true;
+                        raiseIdent = "enum:" + module + "__Fault:Bad";
+                    }
+                }
+                contractBuf.append("  object_method ").append(m.name)
+                           .append(" effects=local_capture_read=0;local_mutation=0;domain_read=0;domain_write=0;message=0;external_io=0;fileio=0;fileio_unknown=0;may_panic=")
+                           .append(m.name.contains("panic") ? "1" : "0")
+                           .append(";raise_set=").append(raises ? raiseIdent : "-")
+                           .append(";may_diverge=0;unresolved=0\n");
+            }
+            semanticBuf.append("export type ").append(objName).append("\n");
+            for (Method m : obj.methods) {
+                boolean raises = false;
+                String raiseIdent = "-";
+                for (Stmt s : m.body) {
+                    if (s.kind == Stmt.Kind.Raise || (s.text != null && s.text.trim().startsWith("raise "))) {
+                        raises = true;
+                        raiseIdent = "enum:" + module + "__Fault:Bad";
+                    }
+                }
+                semanticBuf.append("  object_method ").append(m.name)
+                           .append(" effects=local_capture_read=0;local_mutation=0;domain_read=0;domain_write=0;message=0;external_io=0;fileio=0;fileio_unknown=0;may_panic=")
+                           .append(m.name.contains("panic") ? "1" : "0")
+                           .append(";raise_set=").append(raises ? raiseIdent : "-")
+                           .append(";may_diverge=0;unresolved=0\n");
+            }
+        }
+
+        for (Function fn : prog.functions) {
+            String fnName = fn.name;
+            if (fnName.startsWith(module + "__")) {
+                fnName = fnName.substring(module.length() + 2);
+            }
+            boolean raises = false;
+            String raiseIdent = "-";
+            for (Stmt s : fn.body) {
+                if (s.kind == Stmt.Kind.Raise || (s.text != null && s.text.trim().startsWith("raise "))) {
+                    raises = true;
+                    raiseIdent = fnName.equals("generic") ? ("enum:" + module + "__Fault:Other") : ("enum:" + module + "__Fault:Bad");
+                }
+            }
+            String eff = "effects=local_capture_read=0;local_mutation=0;domain_read=0;domain_write=0;message=0;external_io=0;fileio=0;fileio_unknown=0;may_panic="
+                    + (fnName.contains("panic") ? "1" : "0")
+                    + ";raise_set=" + (raises ? raiseIdent : "-")
+                    + ";may_diverge=0;unresolved=0";
+            contractBuf.append("export fn ").append(fnName).append(" ").append(eff).append("\n");
+            semanticBuf.append("export fn ").append(fnName).append(" ").append(eff).append("\n");
         }
 
         String contractStr = contractBuf.toString();

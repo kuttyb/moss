@@ -67,7 +67,7 @@ public class ExpressionTyper {
         if (e.matches("^[+-]?\\d+$")) {
             return TypeRef.primitive("int");
         }
-        if (e.matches("^[+-]?\\d+\\.\\d+$")) {
+        if (e.matches("^[+-]?(\\d+\\.\\d+|\\d+[eE][+-]?\\d+|\\d+\\.\\d+[eE][+-]?\\d+)$")) {
             return TypeRef.primitive("float");
         }
 
@@ -137,7 +137,10 @@ public class ExpressionTyper {
         }
 
         // 11. Arithmetic (+, -, *, /, %)
-        BinarySplit arith = splitBinary(e, List.of("+", "-", "*", "/", "%"));
+        BinarySplit arith = splitBinary(e, List.of("+", "-"));
+        if (arith == null) {
+            arith = splitBinary(e, List.of("*", "/", "%"));
+        }
         if (arith != null) {
             TypeRef left = infer(arith.left, line, env);
             TypeRef right = infer(arith.right, line, env);
@@ -197,6 +200,23 @@ public class ExpressionTyper {
 
             throw new CompileError(line, "operator '" + op + "' is not defined for '" +
                     left.toCanonicalString() + "' and '" + right.toCanonicalString() + "'", "TYPE_MISMATCH");
+        }
+
+        // 11b. Unary + and -
+        if (e.startsWith("-") || e.startsWith("+")) {
+            String operand = e.substring(1).trim();
+            TypeRef opType = solver.resolve(infer(operand, line, env));
+            TypeRef intType = TypeRef.primitive("int");
+            TypeRef floatType = TypeRef.primitive("float");
+            if (opType.kind() == TypeKind.InferenceVar) {
+                solver.unify(opType, intType);
+                return intType;
+            }
+            if (opType.sameHead(intType) || opType.sameHead(floatType)) {
+                return opType;
+            }
+            throw new CompileError(line, "unary operator '" + e.charAt(0) + "' requires numeric operand, got '" +
+                    opType.toCanonicalString() + "'", "TYPE_MISMATCH");
         }
 
         // 12. Domain message expression: message receiver.Handler(args...)
@@ -284,6 +304,15 @@ public class ExpressionTyper {
                 }
 
                 // Builtin functions and collections constructors
+                if ("sqrt".equals(callee)) {
+                    for (String arg : argExprs) {
+                        infer(arg, line, env);
+                    }
+                    return TypeRef.primitive("float");
+                }
+                if ("Executor".equals(callee)) {
+                    return TypeRef.primitive("Executor");
+                }
                 if ("assert".equals(callee) || "assertEqual".equals(callee)) {
                     for (String arg : argExprs) {
                         infer(arg, line, env);
@@ -489,6 +518,9 @@ public class ExpressionTyper {
         if (functions.containsKey(e)) {
             Function fn = functions.get(e);
             return TypeRef.builtin("callable", Collections.emptyList());
+        }
+        if ("FileIO".equals(e) || "ro".equals(e) || "rw".equals(e) || "_".equals(e)) {
+            return TypeRef.primitive(e);
         }
 
         // Fail closed with UNKNOWN_SYMBOL_OR_TYPE instead of silent fallback
@@ -729,7 +761,16 @@ public class ExpressionTyper {
             }
         }
 
-        if (targetType.kind() == TypeKind.Domain || targetType.kind() == TypeKind.NominalInstance || targetType.kind() == TypeKind.InferenceVar) {
+        if (targetType.kind() == TypeKind.Domain || targetType.kind() == TypeKind.NominalInstance || targetType.kind() == TypeKind.InferenceVar
+                || "FileIO".equals(target) || "Range".equalsIgnoreCase(targetType.name()) || "Executor".equals(targetType.name()) || "file".equals(target) || "executor".equals(target)) {
+            for (String arg : argExprs) {
+                if (!arg.equals("ro") && !arg.equals("rw") && !arg.equals("_")) {
+                    infer(arg, line, env);
+                }
+            }
+            if ("length".equals(member)) return TypeRef.primitive("int");
+            if ("threads".equals(member) || "start".equals(member)) return TypeRef.primitive("Executor");
+            if ("open".equals(member)) return TypeRef.primitive("FileIO");
             return solver.fresh(0);
         }
 

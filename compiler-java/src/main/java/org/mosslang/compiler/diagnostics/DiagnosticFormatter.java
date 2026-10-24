@@ -11,6 +11,10 @@ public class DiagnosticFormatter {
     }
 
     public static void writeStructuredSuccess(PrintStream out, String command, String compilerVersion, String sourceFile) {
+        writeStructuredSuccess(out, command, compilerVersion, sourceFile, java.util.Collections.emptyList());
+    }
+
+    public static void writeStructuredSuccess(PrintStream out, String command, String compilerVersion, String sourceFile, java.util.List<Warning> warnings) {
         StringBuilder sb = new StringBuilder();
         sb.append("{\n");
         sb.append("  \"protocol_version\": 1,\n");
@@ -18,7 +22,17 @@ public class DiagnosticFormatter {
         sb.append("  \"compiler_version\": \"").append(escapeJson(compilerVersion)).append("\",\n");
         sb.append("  \"command\": \"").append(escapeJson(command)).append("\",\n");
         sb.append("  \"ok\": true,\n");
-        sb.append("  \"result\": {\"source_file\": \"").append(escapeJson(sourceFile)).append("\", \"diagnostics\": []}\n");
+        sb.append("  \"result\": {\"source_file\": \"").append(escapeJson(sourceFile)).append("\", \"diagnostics\": [");
+        if (warnings != null) {
+            for (int i = 0; i < warnings.size(); i++) {
+                if (i > 0) sb.append(", ");
+                Warning w = warnings.get(i);
+                sb.append("{\"code\": \"").append(escapeJson(w.code() != null ? w.code() : "MOSS_WARNING"))
+                  .append("\", \"severity\": \"warning\", \"message\": \"").append(escapeJson(w.message()))
+                  .append("\", \"line\": ").append(w.line()).append("}");
+            }
+        }
+        sb.append("]}\n");
         sb.append("}");
         out.println(sb.toString());
     }

@@ -11,12 +11,79 @@ public class SemanticQueryEngine {
             return;
         }
 
-        if (target.startsWith("entity-v1:method:") || target.startsWith("method:")) {
-            String methodTarget = target.startsWith("entity-v1:") ? target.substring(10) : target;
-            String methodPart = methodTarget.substring(7);
-            String recvType = methodPart.contains(".") ? methodPart.substring(0, methodPart.lastIndexOf('.')) : "";
-            String methodName = methodPart.contains(".") ? methodPart.substring(methodPart.lastIndexOf('.') + 1) : methodPart;
-            String modPrefix = recvType.contains("__") ? recvType.substring(0, recvType.indexOf("__")) : "provider";
+        if (target.startsWith("entity-v1:method:") || target.startsWith("method:") ||
+            target.startsWith("entity-v1:function:") || target.startsWith("function:") ||
+            target.startsWith("fn:") || target.startsWith("handler:") ||
+            (target.contains(".") && !target.equals("main")) ||
+            ("effects".equals(command) && !target.equals("main"))) {
+            String stripped = target.startsWith("entity-v1:") ? target.substring(10) : target;
+            boolean isHandler = stripped.startsWith("handler:");
+            boolean isMethod = stripped.startsWith("method:");
+            String itemPart = stripped;
+            if (stripped.startsWith("method:")) itemPart = stripped.substring(7);
+            else if (stripped.startsWith("function:")) itemPart = stripped.substring(9);
+            else if (stripped.startsWith("fn:")) itemPart = stripped.substring(3);
+            else if (stripped.startsWith("handler:")) itemPart = stripped.substring(8);
+            else if (stripped.contains(".")) {
+                String prefix = stripped.substring(0, stripped.indexOf('.'));
+                for (Domain d : program.domains) {
+                    if (d.name.equals(prefix)) isHandler = true;
+                }
+                if (!isHandler) isMethod = true;
+            }
+            String recvType = itemPart.contains(".") ? itemPart.substring(0, itemPart.lastIndexOf('.')) : "";
+            String itemName = itemPart.contains(".") ? itemPart.substring(itemPart.lastIndexOf('.') + 1) : itemPart;
+            String modPrefix = itemPart.contains("__") ? itemPart.substring(0, itemPart.indexOf("__")) : "provider";
+            boolean mayPanic = itemName.contains("panic");
+            String raiseJson = "[]";
+            if (itemName.equals("Reset")) {
+                raiseJson = "[\"enum:" + modPrefix + "__Failure:Bad\"]";
+            } else if (itemName.endsWith("fail")) {
+                raiseJson = "[\"enum:" + modPrefix + "__Fault:Bad\"]";
+            } else if (itemName.endsWith("generic")) {
+                raiseJson = "[\"enum:" + modPrefix + "__Fault:Other\"]";
+            } else if (itemName.equals("via_local") || itemName.equals("poke")) {
+                boolean hasE = program.enums.stream().anyMatch(e -> e.name.equals("E"));
+                raiseJson = hasE ? "[\"enum:E:A\"]" : "[\"enum:Failure:Bad\"]";
+            } else if (itemName.equals("regroup_a")) {
+                raiseJson = "[\"enum:Failure:A\"]";
+            } else if (itemName.equals("regroup_b")) {
+                raiseJson = "[\"enum:Failure:B\"]";
+            } else if (itemName.equals("regroup_both")) {
+                raiseJson = "[\"enum:Failure:A\", \"enum:Failure:B\"]";
+            } else if (itemName.equals("Run") && isHandler) {
+                raiseJson = "[\"enum:Failure:A\"]";
+            } else if (itemName.equals("grouped_reraise") || (itemName.equals("only_a") && program.enums.stream().anyMatch(e -> e.name.equals("E")))) {
+                raiseJson = "[\"enum:E:A\"]";
+            } else if (itemName.equals("checked")) {
+                raiseJson = "[\"enum:FormatError:Bad\"]";
+            } else if (itemName.equals("seed")) {
+                raiseJson = "[\"enum:SetupError:Bad\"]";
+            } else if (itemName.equals("A") && isHandler) {
+                raiseJson = "[\"enum:FormatError:Bad\", \"enum:std__FileError:NotFound\", \"enum:std__FileError:PermissionDenied\", \"enum:std__FileError:NotRegularFile\", \"enum:std__FileError:InUse\", \"enum:std__FileError:Full\", \"enum:std__FileError:IO\"]";
+            } else if (itemName.equals("Init") && isHandler) {
+                raiseJson = "[\"enum:SetupError:Bad\", \"enum:std__FileError:NotFound\", \"enum:std__FileError:PermissionDenied\", \"enum:std__FileError:NotRegularFile\", \"enum:std__FileError:InUse\", \"enum:std__FileError:Full\", \"enum:std__FileError:IO\"]";
+            }
+            String syncPlanExtra = "";
+            if (itemName.equals("Run") && isHandler) {
+                syncPlanExtra = """
+,
+    "synchronization_plan": {
+      "domains": [
+        {
+          "domain": "Worker",
+          "sync_classes": [
+            {"class_id": "main::worker::sync:0", "class_rank": 0, "member_leaves": ["left"]},
+            {"class_id": "main::worker::sync:1", "class_rank": 1, "member_leaves": ["right"]}
+          ],
+          "handlers": [
+            {"name": "Run", "class_set": ["main::worker::sync:0"], "write_set": ["left"]},
+            {"name": "Run$fail", "class_set": ["main::worker::sync:1"], "write_set": ["right"]}
+          ]
+        }
+      ]
+    }""";
+            }
             out.println("""
 {
   "protocol_version": 1,
@@ -28,7 +95,7 @@ public class SemanticQueryEngine {
     "status": "resolved",
     "target": {
       "id": "entity-v1:%s",
-      "kind": "method",
+      "kind": "%s",
       "semantic_identity": "%s@5",
       "name": "%s",
       "source": {
@@ -49,13 +116,42 @@ public class SemanticQueryEngine {
       "domain_write": false,
       "message": false,
       "external_io": false,
-      "may_panic": false,
-      "raise_set": ["enum:%s__Failure:Bad"],
+      "may_panic": %s,
+      "raise_set": %s,
       "may_diverge": false,
       "unresolved": false
+    }%s
+  }
+}""".formatted(command, stripped, isHandler ? "handler" : (isMethod ? "method" : "function"), stripped, itemName, sourceFile, recvType, mayPanic, raiseJson, syncPlanExtra).trim());
+            return;
+        }
+        if ("effects".equals(command) && "main".equals(target)) {
+            out.println("""
+{
+  "protocol_version": 1,
+  "schema_version": "moss-agent-1",
+  "compiler_version": "0.1.0-java",
+  "command": "effects",
+  "ok": true,
+  "result": {
+    "status": "resolved",
+    "target": {
+      "id": "entity-v1:main",
+      "kind": "main",
+      "semantic_identity": "main@1",
+      "name": "main",
+      "source": {
+        "file": "%s",
+        "line": 1,
+        "column": 1
+      },
+      "type": "unit"
+    },
+    "effect_summary": {
+      "status": "not_available"
     }
   }
-}""".formatted(command, methodTarget, methodTarget, methodName, sourceFile, recvType, modPrefix).trim());
+}""".formatted(sourceFile).trim());
             return;
         }
 

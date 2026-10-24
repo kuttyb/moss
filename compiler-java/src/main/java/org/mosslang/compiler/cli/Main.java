@@ -327,7 +327,10 @@ public class Main {
                 for (org.mosslang.compiler.ast.ModuleImport imp : program.imports) {
                     List<Path> cands = candidateMap.get(imp.name);
                     if (cands != null && !cands.isEmpty()) {
-                        org.mosslang.compiler.project.SourceFreeAbi.validateMossiInterface(cands.get(0));
+                        Path localModSrc = projectRoot != null ? projectRoot.resolve("src").resolve(imp.name + ".moss") : null;
+                        if (localModSrc == null || !Files.exists(localModSrc)) {
+                            org.mosslang.compiler.project.SourceFreeAbi.validateMossiInterface(cands.get(0));
+                        }
                     }
                 }
                 if (program.main != null) {
@@ -335,7 +338,24 @@ public class Main {
                         List<Path> cands = candidateMap.get(imp.name);
                         if (cands != null && !cands.isEmpty()) {
                             String mText = Files.readString(cands.get(0), StandardCharsets.UTF_8);
-                            if (mText.contains("raise_set=") && !mText.contains("raise_set=-;") && !mText.contains("handler_failure_arm ")) {
+                            boolean localDomainHasFailureArm = false;
+                            for (org.mosslang.compiler.ast.Domain d : program.domains) {
+                                for (org.mosslang.compiler.ast.Handler h : d.handlers) {
+                                    if (h.failureArms != null && !h.failureArms.isEmpty()) {
+                                        localDomainHasFailureArm = true;
+                                        break;
+                                    }
+                                    if (h.body != null) {
+                                        for (org.mosslang.compiler.ast.Stmt hs : h.body) {
+                                            if (hs.kind == org.mosslang.compiler.ast.Stmt.Kind.Try) {
+                                                localDomainHasFailureArm = true;
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            if (mText.contains("raise_set=enum:") && !mText.contains("handler_failure_arm ") && !localDomainHasFailureArm) {
                                 boolean hasTry = false;
                                 for (org.mosslang.compiler.ast.Stmt s : program.main.body) {
                                     if (s.kind == org.mosslang.compiler.ast.Stmt.Kind.Try) {
@@ -346,7 +366,7 @@ public class Main {
                                 if (!hasTry) {
                                     for (org.mosslang.compiler.ast.Stmt s : program.main.body) {
                                         String stmtText = (s.text != null ? s.text : "") + " " + (s.b != null ? s.b : "");
-                                        if (stmtText.contains("message ")) {
+                                        if (stmtText.contains("message ") || stmtText.contains(imp.name + ".fail") || stmtText.contains(imp.name + ".generic")) {
                                             throw new CompileError("TYPED_ERROR_ESCAPES_MAIN",
                                                     "main may not let typed errors escape; handle every raised variant with try/recover",
                                                     absPath, s.line);
@@ -362,7 +382,7 @@ public class Main {
             CheckedProgram checker = new CheckedProgram(program);
             checker.run();
 
-            if (!jsonOutput) {
+            if (!jsonOutput && !interpMode) {
                 for (Warning w : checker.warnings()) {
                     System.err.println("moss:" + w.line() + ": warning: " + w.message());
                 }
@@ -370,7 +390,7 @@ public class Main {
 
             if (checkOnly) {
                 if (jsonOutput) {
-                    DiagnosticFormatter.writeStructuredSuccess(System.out, "check", COMPILER_VERSION, absPath);
+                    DiagnosticFormatter.writeStructuredSuccess(System.out, "check", COMPILER_VERSION, absPath, checker.warnings());
                 } else {
                     System.out.println(sourcePath + ": ok");
                 }
