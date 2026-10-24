@@ -11,7 +11,7 @@ using namespace moss;
 
 static Program checked_program(const string& source) {
   std::istringstream input(source);
-  Program program = Parser(lex_lines(input, "<generic-arithmetic-test>")).parse();
+  Program program = moss::parse_source(input, "<generic-arithmetic-test>");
   Checker checker(program);
   checker.run();
   return program;
@@ -82,7 +82,7 @@ static OpenCallableSummaryFacts import_synthetic_summary(
     const string& payload,
     const vector<std::pair<string, string>>& provenance_records) {
   std::istringstream input("module Service\nexport fn compute(x):\n  return x\n");
-  Program program = Parser(lex_lines(input, "Service.mossi")).parse();
+  Program program = moss::parse_source(input, "Service.mossi");
   program.package_identities = true;
   program.module_identities["Service"] = kImportedModuleId;
   auto& function = program.functions.front();
@@ -119,7 +119,7 @@ static bool synthetic_imported_call_rejected(const string& argument,
     std::istringstream input("module Service\n"
         "export fn compute(x):\n  return x\n"
         "fn main():\n  value = compute(" + argument + ")\n");
-    Program program = Parser(lex_lines(input, "Service.mossi")).parse();
+    Program program = moss::parse_source(input, "Service.mossi");
     program.package_identities = true;
     program.module_identities["Service"] = kImportedModuleId;
     auto& function = program.functions.front();
@@ -143,7 +143,7 @@ static bool synthetic_imported_call_rejected(const string& argument,
 static Program checked_arithmetic_source(const string& expression) {
   std::istringstream input("export fn compute(x):\n  return " + expression +
                            "\n");
-  Program program = Parser(lex_lines(input, "<checked-arithmetic-body>")).parse();
+  Program program = moss::parse_source(input, "<checked-arithmetic-body>");
   Checker checker(program);
   checker.run();
   return program;
@@ -806,8 +806,7 @@ export fn fresh(value, outer: Bool, inner: Bool):
   let doubled = value * 2
   return doubled + 20
 )moss");
-  Program staged_program = Parser(
-      lex_lines(staged_input, "<checked-straight-line-body>")).parse();
+  Program staged_program = moss::parse_source(staged_input, "<checked-straight-line-body>");
   staged_program.type_context = std::make_shared<TypeContext>();
   Checker staged_checker(staged_program);
   staged_checker.run();

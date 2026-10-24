@@ -1,5 +1,32 @@
 # Phase 25.2 compiler build acceleration status
 
+> The G1 build-acceleration work summarized below is historical. The current
+> assignment is L7 Phase 25.2 R2 Core Compiler Decomposition, resumed on
+> `phase25-2-work` at `5f8056652668046bca59be5870bd110821d7e159`; its acceptance
+> is not established by the earlier G1/G2 status or review.
+
+## R2 core compiler decomposition — in progress — 2026-10-23
+
+The Parser, lexer and source normalization implementation have been moved from
+`src/moss.cpp` into independently compiled `src/parser.cpp`. The driver uses a
+narrow `parse_source` / `parse_source_lines` API; `Parser` remains private to
+its owning TU. Shared syntax helpers are declared in `src/parser_support.hpp`
+and retain one implementation owner. Checker, FunctionalOptimizer and
+Generator are not yet extracted.
+
+Clang development build passes. Focused controls pass: Phase 21 numeric
+parsing/conversion parity, generic collection facts, ABI-v10 empty-vector
+provider emission, and the H3 source-free chain with poisoned fallback and
+negative closure cases. Direct C++ harnesses that constructed `Parser` were
+updated to use the new frontend API; their assertions are unchanged. The
+Parser incremental probe edited and restored `parser.cpp`; each run rebuilt
+only `parser.o` plus relink. First-extraction Architect review is pending. The
+optional `check_phase25_generic_arithmetic_requirements.py` control still
+aborts on `checked ABI-v10 requirement provenance identity is forged`; the
+existing status records this assertion failure as reproduced before extraction
+at `19f05677`. It is not counted as a pass. No compiler semantic change or ABI
+default change is intended.
+
 **Branch:** `phase25-2-work`<br>
 **Tested implementation SHA:** `1b20ca665fe61e1197dec7e1b14f6a584ae54d2c`<br>
 **State:** G1 complete; G2 has 10 production translation units; final validation green; independent Architect GO.

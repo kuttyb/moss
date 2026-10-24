@@ -12059,3 +12059,26 @@ implementation SHA and issued GO with zero open P0/P1/P2. Optimized examples
 and feedback validation also passed after the fixes. Remaining: commit the
 final exact-SHA review closeout record, then push normally to
 `origin/phase25-2-work`. Do not merge to main.
+## Phase 25.2 R2 Core Compiler Decomposition — current session — 2026-10-23
+
+L7's R2 decomposition assignment resumes on `phase25-2-work` at exact starting
+SHA `5f8056652668046bca59be5870bd110821d7e159`. The previous G1/G2 build
+acceleration closeout below is historical and does not satisfy R2 acceptance.
+The Parser/frontend extraction is implemented in the worktree: `parser.cpp`
+owns Parser, lexing and character/numeric source normalization; `parser.hpp`
+exposes parse entry points and `parser_support.hpp` exposes declaration-only
+shared syntax helpers. The development compiler builds. Numeric parsing parity,
+generic collection facts, ABI-v10 empty-vector provider emission, and H3
+source-free chain/hostile controls pass. Direct C++ controls were migrated from
+the private Parser class without changing assertions.
+
+The Parser incremental probe edited and restored `parser.cpp`; each run
+recompiled only `parser.o` and relinked. The optional generic arithmetic direct
+C++ harness still aborts on `checked ABI-v10 requirement provenance identity
+is forged`, matching the pre-extraction failure already recorded in
+`docs/phase25_2/STATUS.md` at baseline `19f05677`; it is not counted as a pass.
+
+Feedback validation and `git diff --check` pass. Next: commit the Parser
+extraction checkpoint and request the required independent Architect audit.
+Optimizer, Generator, Checker extraction, full integrated validation and final
+performance measurements remain open.
