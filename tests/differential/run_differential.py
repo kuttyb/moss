@@ -50,7 +50,18 @@ def compare_file(source_file, cpp_bin, java_run, mode="check"):
     j_ret, j_out, j_err = run_cmd(java_cmd)
 
     match_exit = (c_ret == j_ret)
-    match_out = (normalize_output(c_out) == normalize_output(j_out))
+    if mode == "check_json":
+        try:
+            cj = json.loads(c_out)
+            jj = json.loads(j_out)
+            # compare keys ignoring compiler_version suffix
+            cj.pop("compiler_version", None)
+            jj.pop("compiler_version", None)
+            match_out = (cj == jj)
+        except Exception:
+            match_out = (normalize_output(c_out) == normalize_output(j_out))
+    else:
+        match_out = (normalize_output(c_out) == normalize_output(j_out))
     
     details = {
         "file": source_file,

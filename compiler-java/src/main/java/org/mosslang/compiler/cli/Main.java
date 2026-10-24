@@ -70,10 +70,11 @@ public class Main {
         }
 
         File file = new File(sourcePath);
+        String absPath = file.getAbsolutePath();
         if (!file.exists()) {
             if (jsonOutput) {
-                DiagnosticFormatter.writeStructuredError(System.out, checkOnly ? "check" : "compile",
-                        "SOURCE_NOT_FOUND", "cannot open Moss source '" + sourcePath + "'", sourcePath, 0, "", "");
+                DiagnosticFormatter.writeStructuredError(System.out, checkOnly ? "check" : "compile", COMPILER_VERSION,
+                        "SOURCE_NOT_FOUND", "cannot open Moss source '" + sourcePath + "'", absPath, 0, "", "");
             } else {
                 System.err.println("moss: cannot open " + sourcePath);
             }
@@ -82,7 +83,6 @@ public class Main {
 
         try {
             String content = Files.readString(Paths.get(sourcePath), StandardCharsets.UTF_8);
-            String absPath = file.getAbsolutePath();
             Program program = Parser.parseSource(content, absPath);
 
             CheckedProgram checker = new CheckedProgram(program);
@@ -96,8 +96,7 @@ public class Main {
 
             if (checkOnly) {
                 if (jsonOutput) {
-                    System.out.println("{\"protocol_version\":1,\"schema_version\":\"moss-agent-1\",\"compiler_version\":\"" +
-                            COMPILER_VERSION + "\",\"command\":\"check\",\"ok\":true}");
+                    DiagnosticFormatter.writeStructuredSuccess(System.out, "check", COMPILER_VERSION, absPath);
                 } else {
                     System.out.println(sourcePath + ": ok");
                 }
@@ -115,17 +114,17 @@ public class Main {
 
         } catch (CompileError e) {
             if (jsonOutput) {
-                DiagnosticFormatter.writeStructuredError(System.out, checkOnly ? "check" : "compile",
-                        e.getCode() != null && !e.getCode().isEmpty() ? e.getCode() : "COMPILE_ERROR",
-                        e.getMessage(), e.getSourceFile(), e.getLine(), e.getSemanticIdentity(), e.getSymbol());
+                DiagnosticFormatter.writeStructuredError(System.out, checkOnly ? "check" : "compile", COMPILER_VERSION,
+                        e.getCode() != null && !e.getCode().isEmpty() ? e.getCode() : "MOSS_COMPILE_ERROR",
+                        e.getMessage(), e.getSourceFile() != null ? e.getSourceFile() : absPath, e.getLine(), e.getSemanticIdentity(), e.getSymbol());
             } else {
                 DiagnosticFormatter.writeHumanError(System.err, e.getSourceFile(), e.getLine(), e.getCode(), e.getMessage());
             }
             return 1;
         } catch (Exception e) {
             if (jsonOutput) {
-                DiagnosticFormatter.writeStructuredError(System.out, checkOnly ? "check" : "compile",
-                        "INTERNAL_ERROR", e.getMessage(), sourcePath, 0, "", "");
+                DiagnosticFormatter.writeStructuredError(System.out, checkOnly ? "check" : "compile", COMPILER_VERSION,
+                        "INTERNAL_ERROR", e.getMessage(), absPath, 0, "", "");
             } else {
                 System.err.println("moss: internal error: " + e.getMessage());
             }

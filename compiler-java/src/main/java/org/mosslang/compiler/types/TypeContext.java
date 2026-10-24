@@ -33,7 +33,12 @@ public class TypeContext {
         @Override
         public void close() {
             if (context != null) {
-                CONTEXT_STACK.get().remove(context);
+                Deque<TypeContext> stack = CONTEXT_STACK.get();
+                if (!stack.isEmpty() && stack.peek() == context) {
+                    stack.pop();
+                } else {
+                    stack.remove(context);
+                }
             }
         }
     }

@@ -10,6 +10,10 @@ public class TypeSolverTest {
         testTransitiveUnification();
         testOccursCheck();
         testTransactionalRollback();
+        testFailedEqualityIndex();
+        testCallableId();
+        testTypeParserRobustness();
+        testMemberClosure();
         testCanonicalParser();
         System.out.println("TypeSolverTest PASSED.");
     }
@@ -111,6 +115,67 @@ public class TypeSolverTest {
         }
         if (!solver.resolve(t).equals(stringType)) {
             throw new AssertionError("t should resolve to string");
+        }
+    }
+
+    private static void testFailedEqualityIndex() {
+        TypeSolver solver = new TypeSolver(1);
+        TypeRef t = solver.fresh(10);
+        int[] failed = new int[1];
+        List<TypeSolver.Equality> equalities = List.of(
+            new TypeSolver.Equality(t, TypeRef.primitive("int")),
+            new TypeSolver.Equality(t, TypeRef.primitive("string"))
+        );
+        boolean ok = solver.unifyAll(equalities, failed);
+        if (ok || failed[0] != 1) {
+            throw new AssertionError("failed equality should report index 1, got " + failed[0]);
+        }
+    }
+
+    private static void testCallableId() {
+        CallableId cid = new CallableId("module_main", "fn", "calculate");
+        if (!"callable-v1:module_main:fn:calculate".equals(cid.str())) {
+            throw new AssertionError("unexpected canonical callable id: " + cid.str());
+        }
+        CallableId parsed = CallableId.parse(cid.str());
+        if (parsed == null || !parsed.getModuleId().equals("module_main") || !parsed.getDeclarationName().equals("calculate")) {
+            throw new AssertionError("CallableId parsing mismatch");
+        }
+    }
+
+    private static void testTypeParserRobustness() {
+        if (TypeParser.parseCanonical("int trailing") != null) {
+            throw new AssertionError("TypeParser must reject trailing garbage");
+        }
+        TypeRef tv = TypeParser.parseCanonical("_typevar:1:2:3");
+        if (tv == null || tv.kind() != TypeKind.InferenceVar) {
+            throw new AssertionError("TypeParser must parse _typevar:");
+        }
+    }
+
+    private static void testMemberClosure() {
+        TypeSolver solver = new TypeSolver(1);
+        MemberDispatchRequirement req = new MemberDispatchRequirement();
+        req.requirementId = "req1";
+        req.receiver = TypeRef.primitive("int");
+        req.memberName = "to_string";
+        req.argumentTypes = List.of();
+        req.result = solver.fresh(10);
+
+        MemberClosureResult res = MemberClosure.closeMemberRequirements(solver, List.of(req), r -> {
+            if ("to_string".equals(r.memberName)) {
+                return MemberAdmission.admitted("int.to_string", "callable-v1:core:method:to_string",
+                        AccessMode.Read, List.of(), TypeRef.primitive("string"), List.of());
+            }
+            return MemberAdmission.rejected("unknown member");
+        });
+
+        if (res.status != MemberClosureResult.Status.Closed) {
+            throw new AssertionError("MemberClosure should succeed, got " + res.status + ": " + res.diagnostic);
+        }
+        TypeRef resolvedRes = solver.resolve(req.result);
+        if (!"string".equals(resolvedRes.name())) {
+            throw new AssertionError("MemberClosure should bind result to string, got " + resolvedRes);
         }
     }
 

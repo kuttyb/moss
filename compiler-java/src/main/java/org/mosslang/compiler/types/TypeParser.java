@@ -6,7 +6,9 @@ public class TypeParser {
     public static TypeRef parseCanonical(String raw) {
         if (raw == null) return null;
         Parser p = new Parser(raw);
-        return p.parse(0);
+        TypeRef parsed = p.parse(0);
+        p.space();
+        return (parsed != null && p.pos == raw.length()) ? parsed : null;
     }
 
     private static class Parser {
@@ -48,42 +50,49 @@ public class TypeParser {
                 boolean nominal = false;
                 boolean positional = false;
 
-                while (true) {
-                    space();
-                    if (pos >= text.length() || text.charAt(pos) == ']') return null;
-                    int start = pos;
-                    String candidate = token();
-                    space();
-                    if (pos < text.length() && text.charAt(pos) == '=') {
-                        if (positional || candidate.isEmpty()) return null;
-                        nominal = true;
-                        pos++;
-                        TypeRef val = parse(depth + 1);
-                        if (val == null) return null;
-                        for (TypeRef.FieldSub f : fields) {
-                            if (f.name().equals(candidate)) return null;
-                        }
-                        fields.add(new TypeRef.FieldSub(candidate, val));
-                    } else {
-                        if (nominal) return null;
-                        positional = true;
-                        pos = start;
-                        TypeRef val = parse(depth + 1);
-                        if (val == null) return null;
-                        args.add(val);
-                    }
+                while (pos < text.length()) {
                     space();
                     if (pos < text.length() && text.charAt(pos) == ']') {
                         pos++;
                         break;
                     }
-                    if (pos >= text.length() || text.charAt(pos) != ',') return null;
-                    pos++;
+                    int saved = pos;
+                    String fieldName = token();
+                    space();
+                    if (pos < text.length() && text.charAt(pos) == '=') {
+                        nominal = true;
+                        if (positional) return null;
+                        pos++;
+                        space();
+                        TypeRef sub = parse(depth + 1);
+                        if (sub == null) return null;
+                        fields.add(new TypeRef.FieldSub(fieldName, sub));
+                    } else {
+                        positional = true;
+                        if (nominal) return null;
+                        pos = saved;
+                        TypeRef sub = parse(depth + 1);
+                        if (sub == null) return null;
+                        args.add(sub);
+                    }
+                    space();
+                    if (pos < text.length() && text.charAt(pos) == ',') {
+                        pos++;
+                    } else if (pos < text.length() && text.charAt(pos) == ']') {
+                        pos++;
+                        break;
+                    } else {
+                        return null;
+                    }
                 }
 
                 if (nominal) {
-                    return TypeRef.nominal(head, fields);
+                    TypeContext ctx = TypeContext.current();
+                    NominalDeclaration decl = ctx != null ? ctx.find(head) : null;
+                    if (decl == null) return null;
+                    return TypeRef.nominalBound(decl, head, fields);
                 }
+
                 if ("Vector".equals(head)) head = "vector";
                 else if ("Map".equals(head)) head = "map";
                 else if ("Queue".equals(head)) head = "queue";
@@ -128,8 +137,30 @@ public class TypeParser {
                     }
                     return TypeRef.domain(head);
                 }
+                if (ctx.hasTrait(head)) {
+                    return TypeRef.traitConstraint(head);
+                }
             }
-            return TypeRef.primitive(head);
+
+            if (head.startsWith("_typevar:")) {
+                String ids = head.substring("_typevar:".length());
+                String[] parts = ids.split(":");
+                if (parts.length == 3) {
+                    try {
+                        int s = Integer.parseInt(parts[0]);
+                        int o = Integer.parseInt(parts[1]);
+                        int ord = Integer.parseInt(parts[2]);
+                        return TypeRef.var(new TypeVarId(s, o, ord));
+                    } catch (NumberFormatException ignored) {}
+                }
+                return null;
+            }
+
+            if (head.startsWith("_")) {
+                return TypeRef.primitive(head);
+            }
+
+            return null;
         }
     }
 }

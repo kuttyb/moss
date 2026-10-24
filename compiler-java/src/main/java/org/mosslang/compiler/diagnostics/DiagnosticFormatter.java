@@ -10,26 +10,58 @@ public class DiagnosticFormatter {
         out.println(src + loc + ": error: " + codePrefix + message);
     }
 
-    public static void writeStructuredError(PrintStream out, String command, String code, String message,
-                                           String sourceFile, int line, String semanticIdentity, String symbol) {
+    public static void writeStructuredSuccess(PrintStream out, String command, String compilerVersion, String sourceFile) {
         StringBuilder sb = new StringBuilder();
-        sb.append("{\"status\":\"error\",\"error\":{");
-        sb.append("\"command\":\"").append(escapeJson(command)).append("\",");
-        sb.append("\"code\":\"").append(escapeJson(code)).append("\",");
-        sb.append("\"message\":\"").append(escapeJson(message)).append("\"");
-        if (sourceFile != null && !sourceFile.isEmpty()) {
-            sb.append(",\"source_file\":\"").append(escapeJson(sourceFile)).append("\"");
-        }
+        sb.append("{\n");
+        sb.append("  \"protocol_version\": 1,\n");
+        sb.append("  \"schema_version\": \"moss-agent-1\",\n");
+        sb.append("  \"compiler_version\": \"").append(escapeJson(compilerVersion)).append("\",\n");
+        sb.append("  \"command\": \"").append(escapeJson(command)).append("\",\n");
+        sb.append("  \"ok\": true,\n");
+        sb.append("  \"result\": {\"source_file\": \"").append(escapeJson(sourceFile)).append("\", \"diagnostics\": []}\n");
+        sb.append("}");
+        out.println(sb.toString());
+    }
+
+    public static void writeStructuredError(PrintStream out, String command, String compilerVersion,
+                                           String code, String message, String sourceFile, int line,
+                                           String semanticIdentity, String symbol) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("{\n");
+        sb.append("  \"protocol_version\": 1,\n");
+        sb.append("  \"schema_version\": \"moss-agent-1\",\n");
+        sb.append("  \"compiler_version\": \"").append(escapeJson(compilerVersion)).append("\",\n");
+        sb.append("  \"command\": \"").append(escapeJson(command)).append("\",\n");
+        sb.append("  \"ok\": false,\n");
+        sb.append("  \"error\": {");
+        sb.append("\"code\": \"").append(escapeJson(code)).append("\", ");
+        sb.append("\"severity\": \"error\", ");
+        sb.append("\"message\": \"").append(escapeJson(message)).append("\", ");
+        sb.append("\"source_file\": \"").append(escapeJson(sourceFile != null ? sourceFile : "")).append("\", ");
+        sb.append("\"line\": ").append(line).append(", ");
+        sb.append("\"column\": 1, ");
         if (line > 0) {
-            sb.append(",\"line\":").append(line);
+            sb.append("\"span\": {\"start_line\": ").append(line).append(", \"start_column\": 1, \"end_line\": ").append(line).append(", \"end_column\": 1}, ");
+            sb.append("\"source\": {\"file\": \"").append(escapeJson(sourceFile != null ? sourceFile : "")).append("\", \"line\": ").append(line).append(", \"column\": 1, \"span\": {\"start_line\": ").append(line).append(", \"start_column\": 1, \"end_line\": ").append(line).append(", \"end_column\": 1}}, ");
+        } else {
+            sb.append("\"span\": null, ");
+            sb.append("\"source\": {\"file\": \"").append(escapeJson(sourceFile != null ? sourceFile : "")).append("\", \"line\": 0, \"column\": 1, \"span\": null}, ");
         }
         if (semanticIdentity != null && !semanticIdentity.isEmpty()) {
-            sb.append(",\"semantic_identity\":\"").append(escapeJson(semanticIdentity)).append("\"");
+            sb.append("\"semantic_identity\": \"").append(escapeJson(semanticIdentity)).append("\", ");
+        } else {
+            sb.append("\"semantic_identity\": null, ");
         }
         if (symbol != null && !symbol.isEmpty()) {
-            sb.append(",\"symbol\":\"").append(escapeJson(symbol)).append("\"");
+            sb.append("\"symbol\": \"").append(escapeJson(symbol)).append("\", ");
+        } else {
+            sb.append("\"symbol\": null, ");
         }
-        sb.append("}}");
+        sb.append("\"rule\": null, \"cause\": null, \"related\": [], \"guidance\": null, ");
+        sb.append("\"details\": {\"ownership_expected\": null, \"ownership_actual\": null, \"consume_line\": null, \"recursion_witness\": null, \"resolution\": null}, ");
+        sb.append("\"fixes\": [], \"legal_alternatives\": []");
+        sb.append("}\n");
+        sb.append("}");
         out.println(sb.toString());
     }
 

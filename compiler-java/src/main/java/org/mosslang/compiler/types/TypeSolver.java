@@ -62,10 +62,18 @@ public class TypeSolver {
     public record Equality(TypeRef left, TypeRef right) {}
 
     public boolean unifyAll(List<Equality> equalities) {
+        return unifyAll(equalities, null);
+    }
+
+    public boolean unifyAll(List<Equality> equalities, int[] failedIndex) {
         List<Undo> trail = new ArrayList<>();
-        for (Equality eq : equalities) {
+        for (int i = 0; i < equalities.size(); i++) {
+            Equality eq = equalities.get(i);
             if (eq.left() != null && eq.right() != null && unifyImpl(eq.left(), eq.right(), trail)) {
                 continue;
+            }
+            if (failedIndex != null && failedIndex.length > 0) {
+                failedIndex[0] = i;
             }
             rollback(trail);
             return false;
