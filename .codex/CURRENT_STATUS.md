@@ -12029,10 +12029,18 @@ updating this file and `AGENTS.md`; the task-specific AGENTS rule is to be
 updated before any push. Current implementation HEAD is
 `a763a74c0220b85216ef5a6bdb82640c555e70a8`.
 
-Clang/mold G1 is now implemented and committed, with four compiler TUs after
-initial extractions. Focused validation is recorded in
-`docs/phase25_2/STATUS.md`; no full final suite, final timing, or ABI gate is
-claimed yet. An exact-HEAD independent Architect review is in progress.
-Continue cohesive, buildable G2 extractions, update the Phase 25.2 status, run
-focused validation after each extraction, then execute the requested final gates
-and obtain a near-final exact-SHA review before pushing. Do not merge to main.
+Clang/mold G1 is committed with configuration-isolated object trees, depfiles,
+Clang PCH, and active-link configuration stamps for both stable executable
+paths. G2 currently has ten production translation units. Focused extraction
+checks, numeric source-free/hostile gates, full FileIO runtime hardening,
+Clang Debug/optimized builds, GCC Debug build/smoke, and the Make switchback
+regression have passed. The first-extraction Architect review was scoped GO.
+
+Final full `make check`, optimized examples, remaining ABI-v9/v10 source-free
+and hostile artifact gates, final clean/incremental compile/link timings, and
+near-final exact-SHA Architect review remain. ETI candidate audit is based on
+actual emitted object symbols; no cross-TU Moss-owned expensive template
+specialization has been identified, so do not add an arbitrary standard-library
+instantiation. Keep this status and `docs/phase25_2/STATUS.md` current. After all
+final gates and review, commit the completed status and push normally to the
+configured `phase25-2-work` remote; do not merge to main.
