@@ -10,7 +10,7 @@ tokens, ordered parent commit; sequential lowering for ineligible stages).
 
 Agent D owns no production FileIO, Executor, or Branch runtime. Generated
 native code links against the real Agent B (src/fileio_runtime.hpp) and
-Agent C (src/executor_runtime.hpp) runtimes emitted by the compiler. Branch
+Agent C (src/executor_runtime.cpp) runtimes emitted by the compiler. Branch
 traces come from a TEST-ONLY observer (tests/tooling/fixtures/
 phase20_runtime_observer.rs, never emitted by the compiler) that installs
 Agent C's `moss_perf` instrumentation hook.
@@ -967,12 +967,12 @@ expect_rejected(write_source('phase20_chunks_shape', '''fn main():
     code='FILEIO_CHUNK_PIPELINE_SHAPE')
 
 # Branch scheduling and FileIO runtime live only in their owners' modules
-# (Agent C: executor_runtime.hpp; Agent B: fileio_runtime.cpp), never in
+# (Agent C: executor_runtime.cpp; Agent B: fileio_runtime.cpp), never in
 # Agent D's lowering/codegen.
 for path in (repo / 'src').iterdir():
     if path.suffix in ('.hpp', '.inc', '.cpp'):
         source_text = path.read_text()
-        if path.name != 'executor_runtime.hpp':
+        if path.name != 'executor_runtime.cpp':
             assert 'fn branch_publish' not in source_text, path
         if path.name not in ('fileio_runtime.hpp', 'fileio_runtime.cpp'):
             assert 'fn moss_fileio_branch_read_borrow' not in source_text, path

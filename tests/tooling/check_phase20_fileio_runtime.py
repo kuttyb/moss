@@ -745,10 +745,10 @@ fn main() {
 """
 
 def extract_fair_leaf_runtime_rust():
-    executor_header = os.path.join(REPO_ROOT, "src/executor_runtime.hpp")
+    executor_header = os.path.join(REPO_ROOT, "src/executor_runtime.cpp")
     with open(executor_header, "r", encoding="utf-8") as f:
         content = f.read()
-    start_marker = 'inline const char* fair_leaf_runtime_items() {\n  return R"EXECUTOR_RUST(\n'
+    start_marker = 'const char* fair_leaf_runtime_items() {\n  return R"EXECUTOR_RUST(\n'
     end_marker = '\n)EXECUTOR_RUST";\n}'
     start_idx = content.find(start_marker)
     end_idx = content.find(end_marker, start_idx)

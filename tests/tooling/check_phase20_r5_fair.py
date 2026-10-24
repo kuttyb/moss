@@ -7,9 +7,9 @@ import sys
 repo = Path(__file__).resolve().parents[2]
 out = Path(sys.argv[1] if len(sys.argv) > 1 else repo / 'tmp/phase20-r5').resolve()
 out.mkdir(parents=True, exist_ok=True)
-executor = (repo / 'src/executor_runtime.hpp').read_text()
+executor = (repo / 'src/executor_runtime.cpp').read_text()
 fileio = (repo / 'src/fileio_runtime.cpp').read_text()
-begin = 'inline const char* fair_leaf_runtime_items() {\n  return R"EXECUTOR_RUST(\n'
+begin = 'const char* fair_leaf_runtime_items() {\n  return R"EXECUTOR_RUST(\n'
 end = '\n)EXECUTOR_RUST";\n}'
 start = executor.index(begin) + len(begin)
 fair_runtime = executor[start:executor.index(end, start)]
