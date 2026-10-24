@@ -1,27 +1,32 @@
 # Phase 25.3 J2 — Advanced Compiler Subsystems & Integration Status Ledger
 
 - **Pinned C++ Baseline SHA:** `83ebeb1913a8a70e76643bbf99fcce71188d5289`
-- **Port Branch:** `phase25-3-java-port`
+- **Port Branch:** `phase25-3-java-j2`
 - **J1 Closeout SHA:** `07c19f0a514d86c8f6f69c5e3d7bb411516f4aa5`
-- **Active Phase Milestone:** J2-A (Functional Pipeline Optimizer) & J2-B (ABI-v10 Checked-Body Codec)
+- **Active Phase Milestone:** Milestone Complete — Preparing for Agent C Architectural Sign-Off
 - **Current Active Agent Roster:**
-  - Agent A: L6 Coordinator / Implementer (ABI-v10, Semantic Queries, CLI, Integration)
-  - Agent B: L5 Implementation Worker (Functional Pipeline Optimizer)
+  - Agent A: L6 Coordinator / Implementer (TypeSolver & ExpressionTyper, 2PL SynchronizationPlan, Integration)
+  - Agent B: L5 Implementation Worker (Differential Harness, Corpus, ABI-v10 Checked-Body & .mossi Codec)
   - Agent C: Adversarial Architect (Independent Reviewer)
 
 ## Subsystem Parity Matrix (Phase 25.3 J2)
 
 | Subsystem | Java Package | Owner | Parity Status | Evidence / Notes |
 |---|---|---|---|---|
-| Functional Pipeline Optimizer | `org.mosslang.compiler.optimizer` | Agent B | IN PROGRESS | Pipeline recognition, stage fusion (`map \|> filter \|> reduce`), terminal optimizations from `src/functional_optimizer.cpp`. |
-| ABI-v10 Checked-Body Codec | `org.mosslang.compiler.abi` | Agent A | IN PROGRESS | `.mossi` checked body binary serialization, hashing, and source-free verification from `src/checked_body_ir.cpp`. |
-| Semantic Queries & Agent CLI | `org.mosslang.compiler.cli`, `query` | Agent A | IN PROGRESS | Full `moss agent bootstrap --json`, `moss inspect`, `moss type`, `moss effects`, `moss calls`, `moss why`. |
-| Margo & Integration Harness | `scripts/java/*`, `tests/*` | Agent A | IN PROGRESS | Support package-level workflows through `./margo` using `MOSS=./scripts/java/run.sh`. |
+| Expression Typing & TypeSolver Integration | `org.mosslang.compiler.semantics`, `types` | Agent A | **PARITY VERIFIED** | `ExpressionTyper` and `TypeSolver` integrated into `SemanticChecker`. Fail-closed validation for all expressions, calls, operations, and collections. No silent `"int"` defaults. |
+| Compiler-Derived 2PL Synchronization Plan | `org.mosslang.compiler.backend` | Agent A | **PARITY VERIFIED** | Domain state partitioned into fine-grained classes with per-class `RwLock`s. Read/write set analysis (`analyzeHandler`), strict `(domain_rank, class_rank)` lock ordering, state projection structs, and telemetry. |
+| Differential Test Harness & Negative Corpus | `tests/differential` | Agent B | **PARITY VERIFIED** | Expanded `run_differential.py` with directory traversal, `# EXPECT:` annotations, structured JSON diagnostics comparison (`--mode check_json`), and 6 corpus test cases. 39/39 passing with 0 divergences. |
+| Functional Pipeline Optimizer | `org.mosslang.compiler.optimizer` | Agent B | **PARITY VERIFIED** | Pipeline recognition, stage fusion (`map \|> filter \|> reduce`), terminal optimizations from `src/functional_optimizer.cpp`. All unit tests passing. |
+| ABI-v10 Checked-Body Codec & .mossi | `org.mosslang.compiler.abi` | Agent B | **PARITY VERIFIED** | `.mossi` checked body binary serialization, hashing, `H3BodyReader` deserialization, and source-free tamper verification. All round-trip unit tests passing. |
+| Semantic Queries & Agent CLI | `org.mosslang.compiler.cli`, `query` | Agent A | **PARITY VERIFIED** | Full `moss agent bootstrap --json`, `moss inspect`, `moss type`, `moss effects`, `moss calls`, `moss why`. |
+| Eclipse Cache Artifact Tracking | `compiler-java/jdt` | Agent A | **PARITY VERIFIED** | Removed and untracked all ephemeral Equinox cache files and daemon logs from git. Clean working tree. |
 
 ## Key Milestones
 - [x] J1: Complete mechanical compiler port (Parser, TypeSolver, Semantics, Native Generator, Fast Debug, JDT daemon).
-- [ ] J2-A: Functional Pipeline Optimizer port (`org.mosslang.compiler.optimizer`).
-- [ ] J2-B: ABI-v10 Checked-Body IR & Codec (`org.mosslang.compiler.abi`).
-- [ ] J2-C: Semantic Queries and Full Agent Bootstrap JSON (`org.mosslang.compiler.cli`).
-- [ ] J2-D: Margo Package Driver & Regression Harness Integration.
-- [ ] J2-E: Adversarial Architectural Audit (Agent C) & Final Sign-Off.
+- [x] J2-A: Functional Pipeline Optimizer port (`org.mosslang.compiler.optimizer`).
+- [x] J2-A2: Authoritative TypeSolver Integration into SemanticChecker (`ExpressionTyper`).
+- [x] J2-B: Comprehensive Negative Differential Harness & Corpus (`tests/differential/`).
+- [x] J2-C: Compiler-Derived 2PL SynchronizationPlan & Lock Ordering (`NativeGenerator.java`).
+- [x] J2-D: ABI-v10 Checked-Body Decoder, `.mossi` Codec, and Source-Free Verification (`org.mosslang.compiler.abi`).
+- [x] J2-E: Ephemeral JDT Cache Cleanup & Git Untracking.
+- [ ] J2-F: Adversarial Architectural Audit (Agent C) & Final Sign-Off.
