@@ -12093,15 +12093,26 @@ The FunctionalOptimizer edit/restore probe rebuilt only its object plus relink;
 its implementation is committed and pushed at
 `83d6eb927a590318c2cce5fcda2343c334c72872`.
 
-The whole Native Generator now builds independently in `native_generator.cpp`;
-its `.inc` lowering fragments stay with its private stateful class. The driver
-uses the declaration-only `generate_native` API. After the Architect's bounded
-seam recommendation, shared pipeline records and only called helpers are
-declared for the backend TU while canonical implementations, builtin registries
-and staged ABI configuration remain owned once in `moss.cpp`. `staged_abi_v10`
-had inherited internal linkage from `interpreter.hpp`; that shared declaration
-is now external and the sole definition remains in `moss.cpp`. Clang dev build,
-executor/FileIO controls and H3 source-free/hostile chain pass. A Generator
-edit/restore probe rebuilt only `native_generator.o` plus relink. Current sizes:
-`moss.cpp` 54,605 lines / 2,663,306 bytes; Generator 6,845 lines / 332,956
-bytes. Commit this working checkpoint before extracting Checker.
+The Native Generator is independently compiled in `native_generator.cpp` with
+its `.inc` lowering fragments and stateful class intact. Its declaration-only
+API is `generate_native`; shared helper implementations, builtin registries and
+staged ABI configuration remain single-owned. The Generator source edit/restore
+probe rebuilt only its object plus relink; executor/FileIO and H3 source-free/
+hostile controls pass. The Checker is now independently compiled as one class
+in `semantic_checker.cpp`; its `TypeEnv`, checked-body relationships and `.inc`
+files remain in that TU. The driver uses declaration-only `check_program`, and
+direct C++ harnesses were converted to narrow wrapper APIs without changing
+assertions. Clang dev build, generic collection facts, empty-vector ABI-v10,
+declaration boundaries, H3 source-free chain and executor/FileIO pass. The
+Checker edit/restore probe rebuilt only `semantic_checker.o` plus relink.
+
+Two optional direct controls retain baseline failures: generic arithmetic
+requirement provenance aborts with `checked ABI-v10 requirement provenance
+identity is forged`, and statement/call occurrence roles fails its private-fact
+assertion. The declaration-authority wrapper also stops at existing
+`-Werror=missing-field-initializers`; the extraction-specific declaration
+boundary harness passes with warning suppression. Do not count these as passes.
+Current sizes: `moss.cpp` 23,786 lines / 1,121,792 bytes;
+`semantic_checker.cpp` 30,920 / 1,544,010; `native_generator.cpp` 6,846 /
+332,957; `parser.cpp` 1,058 / 45,255; `functional_optimizer.cpp` 1,398 /
+58,819. Commit this working Checker checkpoint before integrated validation.

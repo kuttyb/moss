@@ -13,8 +13,7 @@ narrow `parse_source` / `parse_source_lines` API; `Parser` remains private to
 its owning TU. Shared syntax helpers are declared in `src/parser_support.hpp`
 and retain one implementation owner. `FunctionalOptimizer` is also extracted
 intact into `src/functional_optimizer.cpp`; `optimize_program` is its narrow
-entry point and `OptimizationPlan` remains a shared declaration. Checker and
-Generator are not yet extracted.
+entry point and `OptimizationPlan` remains a shared declaration.
 
 Clang development build passes. Focused controls pass: Phase 21 numeric
 parsing/conversion parity; generic collection facts; ABI-v10 empty-vector
@@ -44,16 +43,35 @@ shared staged-ABI query external linkage, preserving its one implementation
 and process-wide environment snapshot. Clang development build,
 `check_phase20_executor_fileio.py`, and the H3 source-free/hostile chain pass.
 A source edit/restore probe rebuilt only `native_generator.o` plus relink.
-`moss.cpp` is now 54,605 lines / 2,663,306 bytes; `native_generator.cpp` is
-6,845 lines / 332,956 bytes. Checker remains in `moss.cpp`.
 
-The optional
-`check_phase25_generic_arithmetic_requirements.py` control still aborts on
-`checked ABI-v10 requirement provenance identity is forged`; the existing
-status records this assertion failure as reproduced before extraction at
-`19f05677`. It is not counted as a pass. No compiler semantic change or ABI
-default change is intended. The Generator checkpoint is ready to commit before
-the Checker extraction.
+Checker is now one independently compiled `src/semantic_checker.cpp`, with its
+stateful class, `TypeEnv`, checked-body state and existing `.inc` files kept in
+the owner. The production API is declaration-only `check_program`; direct C++
+controls use that seam and narrow wrappers for existing Checker-owned unit
+probes. No Program or AST objects are copied across the boundary. Clang
+development build and focused generic-collection, empty-vector ABI-v10,
+declaration-boundary, H3 source-free/hostile, and executor/FileIO controls pass.
+GCC direct-C++ harnesses also build against the extracted translation units.
+A Checker source edit/restore probe rebuilt only `semantic_checker.o` plus
+relink.
+
+Two optional direct C++ harnesses remain known failures, reproduced on the
+pre-extraction baseline: `check_phase25_generic_arithmetic_requirements.py`
+aborts on `checked ABI-v10 requirement provenance identity is forged`, and
+`check_phase25_statement_call_occurrence_roles.py` fails its existing private
+fact assertion. A separate declaration-authority wrapper stops at
+`-Werror=missing-field-initializers` in existing `TypeSolver::Undo` records;
+the extraction-specific declaration-boundary harness passes with the existing
+warning suppression. These failures are not counted as passes.
+
+Current source distribution: `moss.cpp` 23,786 lines / 1,121,792 bytes;
+`semantic_checker.cpp` 30,920 / 1,544,010; `native_generator.cpp` 6,846 /
+332,957; `parser.cpp` 1,058 / 45,255; `functional_optimizer.cpp` 1,398 /
+58,819. `moss.cpp` now holds shared support, semantic-query/developer tools,
+ABI codecs and project/module/CLI orchestration; those remaining regions are
+recorded for a later round rather than split into tiny helper TUs. No compiler
+semantic change or ABI default change is intended. The Checker checkpoint is
+ready to commit before full integrated validation.
 
 **Branch:** `phase25-2-work`<br>
 **Tested implementation SHA:** `1b20ca665fe61e1197dec7e1b14f6a584ae54d2c`<br>

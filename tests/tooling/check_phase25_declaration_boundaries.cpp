@@ -108,7 +108,7 @@ int main() {
       });
       expect_projection_failure([&] {
         auto input = program;
-        Checker checker(input);
+        (void)moss::check_program(input);
       });
     }
   }

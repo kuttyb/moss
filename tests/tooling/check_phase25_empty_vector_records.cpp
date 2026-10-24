@@ -24,8 +24,7 @@ static Program checked_provider(const string& functions) {
     function.defining_module = "Provider";
     function.source_file = "Provider.moss";
   }
-  Checker checker(program);
-  checker.run();
+  (void)moss::check_program(program);
   for (auto& function : program.functions)
     if (!starts_with(function.name, "Provider__"))
       function.name = "Provider__" + function.name;

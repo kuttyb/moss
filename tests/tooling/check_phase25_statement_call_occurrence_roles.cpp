@@ -7,5 +7,5 @@
 using namespace moss;
 
 int main() {
-  assert(Checker::unit_test_statement_call_occurrence_roles());
+  assert(checker_unit_test_statement_call_occurrence_roles());
 }
