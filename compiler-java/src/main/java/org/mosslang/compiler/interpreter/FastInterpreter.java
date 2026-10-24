@@ -179,6 +179,59 @@ public class FastInterpreter {
                 }
                 i = elseEnd;
                 continue;
+            } else if (s.kind == Stmt.Kind.For) {
+                int baseInd = s.indent;
+                int forEnd = i + 1;
+                while (forEnd < endIdx && stmts.get(forEnd).indent > baseInd) {
+                    forEnd++;
+                }
+                String loopVar = s.a != null ? s.a.trim() : "";
+                String iterExpr = s.b != null ? s.b.trim() : "";
+                List<Value> items = new ArrayList<>();
+                if (iterExpr.startsWith("range(") && iterExpr.endsWith(")")) {
+                    String inside = iterExpr.substring(6, iterExpr.length() - 1).trim();
+                    List<String> rParts = splitArgs(inside);
+                    long start = 0;
+                    long end = 0;
+                    long step = 1;
+                    if (rParts.size() == 1) {
+                        end = evalExpr(rParts.get(0).trim(), locals, currentDomain).asInt();
+                    } else if (rParts.size() >= 2) {
+                        start = evalExpr(rParts.get(0).trim(), locals, currentDomain).asInt();
+                        end = evalExpr(rParts.get(1).trim(), locals, currentDomain).asInt();
+                        if (rParts.size() >= 3) {
+                            step = evalExpr(rParts.get(2).trim(), locals, currentDomain).asInt();
+                        }
+                    }
+                    if (step > 0) {
+                        for (long v = start; v < end; v += step) {
+                            items.add(Value.ofInt(v));
+                        }
+                    } else if (step < 0) {
+                        for (long v = start; v > end; v += step) {
+                            items.add(Value.ofInt(v));
+                        }
+                    }
+                } else {
+                    Value iterVal = evalExpr(iterExpr, locals, currentDomain);
+                    if (iterVal.raw instanceof List<?> lst) {
+                        @SuppressWarnings("unchecked")
+                        List<Value> l = (List<Value>) lst;
+                        items.addAll(l);
+                    } else if (iterVal.raw instanceof Map<?, ?> mp) {
+                        @SuppressWarnings("unchecked")
+                        Map<Object, Value> m = (Map<Object, Value>) mp;
+                        for (Object k : m.keySet()) {
+                            items.add(k instanceof Value ? (Value) k : Value.ofString(k.toString()));
+                        }
+                    }
+                }
+                for (Value itm : items) {
+                    locals.put(loopVar, itm);
+                    lastVal = evalBlock(stmts, i + 1, forEnd, locals, currentDomain, funcName, depth);
+                }
+                i = forEnd;
+                continue;
             } else if (s.kind == Stmt.Kind.Else) {
                 int baseInd = s.indent;
                 i++;
