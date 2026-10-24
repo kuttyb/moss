@@ -270,6 +270,9 @@ public class ExpressionTyper {
                     }
                     if (program != null && program.imports.anySatisfy(imp -> imp.name.equals(target))) {
                         for (String arg : argExprs) {
+                            if (arg.contains(":")) {
+                                arg = arg.substring(arg.indexOf(':') + 1).trim();
+                            }
                             infer(arg, line, env);
                         }
                         if (!member.isEmpty() && Character.isUpperCase(member.charAt(0))) {
@@ -422,6 +425,9 @@ public class ExpressionTyper {
                     String[] parts = callee.split("\\.", 2);
                     if (program != null && program.imports.anySatisfy(imp -> imp.name.equals(parts[0]))) {
                         for (String arg : argExprs) {
+                            if (arg.contains(":")) {
+                                arg = arg.substring(arg.indexOf(':') + 1).trim();
+                            }
                             infer(arg, line, env);
                         }
                         return TypeRef.primitive("int");
@@ -567,7 +573,8 @@ public class ExpressionTyper {
         }
         Domain domain = domains.get(receiverType.name());
         if (domain == null) {
-            throw new CompileError(line, "unknown domain '" + receiverType.name() + "'", "UNKNOWN_SYMBOL_OR_TYPE");
+            // Imported domain
+            return TypeRef.primitive("int");
         }
         Handler target = null;
         for (Handler h : domain.handlers) {

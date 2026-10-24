@@ -316,7 +316,7 @@ public class DebugMapGenerator {
             }
             pipeEntry.provenance = new ArrayList<>(p.provenance);
             pipeEntry.lineMappings.add(new DebugLineMapping(mossLine, generatedLine));
-            map.entries.add(pipeEntry);
+            addOrMerge(map, pipeEntry);
 
             // Node entries for each item in provenance
             for (String origin : p.provenance) {
@@ -356,7 +356,7 @@ public class DebugMapGenerator {
                 }
                 nodeEntry.provenance = new ArrayList<>(p.provenance);
                 nodeEntry.lineMappings.add(new DebugLineMapping(nodeMossLine, nodeGeneratedLine));
-                map.entries.add(nodeEntry);
+                addOrMerge(map, nodeEntry);
             }
         }
 
@@ -381,7 +381,7 @@ public class DebugMapGenerator {
             }
             groupEntry.provenance = new ArrayList<>(g.provenance);
             groupEntry.lineMappings.add(new DebugLineMapping(mossLine, generatedLine));
-            map.entries.add(groupEntry);
+            addOrMerge(map, groupEntry);
 
             // Group contributing origins by pipeline
             Map<String, List<String>> pipelineOrigins = new LinkedHashMap<>();
@@ -415,7 +415,7 @@ public class DebugMapGenerator {
                     }
                     nodeEntry.provenance = new ArrayList<>(origins);
                     nodeEntry.lineMappings.add(new DebugLineMapping(nLine, generatedLine));
-                    map.entries.add(nodeEntry);
+                    addOrMerge(map, nodeEntry);
                 }
 
                 // Add pipeline entry
@@ -430,9 +430,19 @@ public class DebugMapGenerator {
                 }
                 pipeEntry.provenance = new ArrayList<>(origins);
                 pipeEntry.lineMappings.add(new DebugLineMapping(pLine, generatedLine));
-                map.entries.add(pipeEntry);
+                addOrMerge(map, pipeEntry);
             }
         }
+    }
+
+    private static void addOrMerge(DebugMap map, DebugMapEntry entry) {
+        for (DebugMapEntry e : map.entries) {
+            if (e.semanticIdentity.equals(entry.semanticIdentity)) {
+                e.lineMappings.addAll(entry.lineMappings);
+                return;
+            }
+        }
+        map.entries.add(entry);
     }
 
     private static int parseLineFromIdentity(String identity) {

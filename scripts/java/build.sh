@@ -29,4 +29,7 @@ if [ -z "${SOURCES}" ]; then
 fi
 
 javac -d "${BIN_DIR}" -cp "${CP}" ${SOURCES}
+if [ -d "${COMPILER_JAVA}/src/main/resources" ]; then
+    cp -r "${COMPILER_JAVA}/src/main/resources/." "${BIN_DIR}/"
+fi
 echo "Java build successful -> ${BIN_DIR}"

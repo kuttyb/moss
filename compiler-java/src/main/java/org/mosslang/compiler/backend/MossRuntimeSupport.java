@@ -14,6 +14,39 @@ public class MossRuntimeSupport {
 """;
 
     public static final String HANDLER_RUNTIME = """
+#[derive(Clone, Debug)]
+pub struct __MossRaised {
+    pub message: String,
+    pub captures: std::collections::BTreeMap<String, String>,
+}
+impl __MossRaised {
+    pub fn get_code(&self) -> i64 {
+        for token in self.message.split(|c: char| !c.is_numeric() && c != '-') {
+            if let Ok(v) = token.parse::<i64>() { return v; }
+        }
+        0
+    }
+    pub fn get_string(&self) -> String {
+        self.message.clone()
+    }
+    pub fn get_capture(&self, name: &str) -> String {
+        self.captures.get(name).cloned().unwrap_or_else(|| self.message.clone())
+    }
+}
+#[inline]
+pub fn __moss_raise(val: impl std::string::ToString) -> __MossRaised {
+    __MossRaised {
+        message: val.to_string(),
+        captures: std::collections::BTreeMap::new(),
+    }
+}
+impl From<String> for __MossRaised {
+    fn from(s: String) -> Self { __moss_raise(s) }
+}
+impl From<&str> for __MossRaised {
+    fn from(s: &str) -> Self { __moss_raise(s) }
+}
+
 struct MossAbortOnUnwind;
 impl Drop for MossAbortOnUnwind {
     fn drop(&mut self) { if std::thread::panicking() { std::process::abort(); } }
@@ -78,6 +111,9 @@ pub struct MossStr(String);
 impl MossStr {
     pub fn from(s: &str) -> Self {
         MossStr(s.to_string())
+    }
+    pub fn length(&self) -> i64 {
+        self.0.len() as i64
     }
 }
 

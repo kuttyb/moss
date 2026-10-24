@@ -213,8 +213,11 @@ public class ProjectBuilder {
                         Path buildDirMossi = buildDir.resolve(imp + ".mossi");
                         if (!Files.exists(buildDirMossi)) {
                             throw new CompileError("MODULE_IMPORT_ERROR", "imported module '" + imp + "' was not found in source or compiled interfaces", localModules.get(entry.getKey()).toString(), 1);
+                        } else {
+                            SourceFreeAbi.validateMossiInterface(buildDirMossi);
                         }
                     } else {
+                        SourceFreeAbi.validateMossiInterface(providers.get(0));
                         if (providers.size() > 1) {
                             Collections.sort(providers);
                             StringBuilder sb = new StringBuilder();
@@ -299,7 +302,7 @@ public class ProjectBuilder {
 
                 // Generate module Rust
                 boolean isRoot = mod.equals(rootModuleName);
-                String rustContent = generateModuleRust(prog, mod, deps, mossiContent, isRoot);
+                String rustContent = generateModuleRust(buildDir, prog, mod, deps, mossiContent, isRoot);
                 Path rustPath = buildDir.resolve(mod + ".rs");
                 boolean rc = writeFileIfChanged(rustPath, rustContent);
                 rustChanged = rc || rustChanged;
@@ -498,46 +501,87 @@ public class ProjectBuilder {
     }
 
     private static void rewriteProgramSymbols(Program prog, String mod, List<String> deps) {
+        Set<String> localSymbols = new HashSet<>();
+        for (Function fn : prog.functions) {
+            localSymbols.add(fn.name.startsWith(mod + "__") ? fn.name.substring(mod.length() + 2) : fn.name);
+        }
+        for (Domain d : prog.domains) {
+            localSymbols.add(d.name.startsWith(mod + "__") ? d.name.substring(mod.length() + 2) : d.name);
+        }
+        for (ObjectType obj : prog.objects) {
+            localSymbols.add(obj.name.startsWith(mod + "__") ? obj.name.substring(mod.length() + 2) : obj.name);
+        }
+
+        for (ObjectType obj : prog.objects) {
+            if (!obj.name.startsWith(mod + "__")) {
+                obj.name = mod + "__" + obj.name;
+            }
+            for (Field f : obj.fields) {
+                for (String s : localSymbols) {
+                    if (f.type != null) f.type = f.type.replaceAll("\\b" + s + "\\b", mod + "__" + s);
+                }
+            }
+        }
         for (Function fn : prog.functions) {
             if (!fn.name.startsWith(mod + "__")) {
                 fn.name = mod + "__" + fn.name;
             }
-            rewriteStmts(fn.body, mod, deps);
+            for (Param p : fn.params) {
+                for (String s : localSymbols) {
+                    if (p.type != null) p.type = p.type.replaceAll("\\b" + s + "\\b", mod + "__" + s);
+                }
+            }
+            if (fn.returnType != null) {
+                for (String s : localSymbols) {
+                    fn.returnType = fn.returnType.replaceAll("\\b" + s + "\\b", mod + "__" + s);
+                }
+            }
+            rewriteStmts(fn.body, mod, deps, localSymbols);
             if (fn.resultExpression != null) {
-                fn.resultExpression = rewriteExpr(fn.resultExpression, mod, deps);
+                fn.resultExpression = rewriteExpr(fn.resultExpression, mod, deps, localSymbols);
             }
         }
         for (Domain d : prog.domains) {
             if (!d.name.startsWith(mod + "__")) {
                 d.name = mod + "__" + d.name;
             }
+            for (Field f : d.state) {
+                for (String s : localSymbols) {
+                    if (f.type != null) f.type = f.type.replaceAll("\\b" + s + "\\b", mod + "__" + s);
+                }
+            }
             for (Handler h : d.handlers) {
-                rewriteStmts(h.body, mod, deps);
+                rewriteStmts(h.body, mod, deps, localSymbols);
             }
         }
         if (prog.main != null) {
-            rewriteStmts(prog.main.body, mod, deps);
+            rewriteStmts(prog.main.body, mod, deps, localSymbols);
         }
     }
 
-    private static void rewriteStmts(List<Stmt> stmts, String mod, List<String> deps) {
+    private static void rewriteStmts(List<Stmt> stmts, String mod, List<String> deps, Set<String> localSymbols) {
         if (stmts == null) return;
         for (Stmt s : stmts) {
-            if (s.a != null) s.a = rewriteExpr(s.a, mod, deps);
-            if (s.b != null) s.b = rewriteExpr(s.b, mod, deps);
-            if (s.text != null) s.text = rewriteExpr(s.text, mod, deps);
+            if (s.a != null) s.a = rewriteExpr(s.a, mod, deps, localSymbols);
+            if (s.b != null) s.b = rewriteExpr(s.b, mod, deps, localSymbols);
+            if (s.text != null) s.text = rewriteExpr(s.text, mod, deps, localSymbols);
             for (int i = 0; i < s.args.size(); i++) {
-                s.args.set(i, rewriteExpr(s.args.get(i), mod, deps));
+                s.args.set(i, rewriteExpr(s.args.get(i), mod, deps, localSymbols));
             }
         }
     }
 
-    private static String rewriteExpr(String expr, String mod, List<String> deps) {
+    private static String rewriteExpr(String expr, String mod, List<String> deps, Set<String> localSymbols) {
         if (expr == null) return null;
         for (String dep : deps) {
             expr = expr.replaceAll("\\b" + dep + "\\.([a-zA-Z0-9_]+)", dep + "__$1");
         }
         expr = expr.replaceAll("\\b" + mod + "\\.([a-zA-Z0-9_]+)", mod + "__$1");
+        if (localSymbols != null) {
+            for (String sym : localSymbols) {
+                expr = expr.replaceAll("\\b" + sym + "\\b", mod + "__" + sym);
+            }
+        }
         return expr;
     }
 
@@ -609,22 +653,7 @@ public class ProjectBuilder {
                 contractBuf.append("  construction_state \"").append(f.name).append("\" \"").append(f.type != null ? f.type.toLowerCase() : "int").append("\" \"").append(f.init != null ? f.init : "").append("\"\n");
             }
             for (Handler h : d.handlers) {
-                String replyType = (h.replyType != null && !h.replyType.isEmpty()) ? h.replyType.toLowerCase() : "unit";
-                boolean isOneWay = replyType.equals("unit");
-                contractBuf.append("  handler_state_effects \"").append(h.name).append("\" 1 \"value\" ").append(h.name.equals("Bump") ? "1" : "0").append(" \"value\" 0\n");
-                contractBuf.append("  handler_abi \"").append(h.name).append("\" \"__moss_body_").append(module).append("__").append(domainName).append("_").append(h.name).append("\" \"__MossFailureFrame_").append(module).append("__").append(domainName).append("_").append(h.name).append("\" \"__MossRaisedCarrier_").append(module).append("__").append(domainName).append("_").append(h.name).append("\" 1 1\n");
-                contractBuf.append("  handler_outcome_contract \"").append(h.name).append("\" \"__MossBodyOutcome_").append(module).append("__").append(domainName).append("_").append(h.name).append("\" \"").append(replyType).append("\"\n");
-                contractBuf.append("  handler_wrapper_contract \"").append(h.name).append("\" nested=propagate root=join,close_fileio,release_guards,acquire_failure_locks,execute_arm,fulfill_reply\n");
-                contractBuf.append("  handler_reply_contract \"").append(h.name).append("\" \"").append(replyType).append("\" ").append(isOneWay ? "1" : "0").append(" 1\n");
-                contractBuf.append("  handler_owned_type_shapes \"").append(h.name).append("\" 0\n");
-                contractBuf.append("  handler_raise_tags \"").append(h.name).append("\" 0\n");
-                contractBuf.append("  handler_raise_projections \"").append(h.name).append("\" 0\n");
-                contractBuf.append("  handler_raise_bridges \"").append(h.name).append("\" 0\n");
-                contractBuf.append("  handler_failure_arms \"").append(h.name).append("\" 0\n");
-                contractBuf.append("  handler_raising_nodes \"").append(h.name).append("\" 0\n");
-                contractBuf.append("  handler_exceptional_destinations \"").append(h.name).append("\" 0\n");
-                contractBuf.append("  handler_exceptional_edges \"").append(h.name).append("\" 0\n");
-                contractBuf.append("  handler_exceptional_consumers \"").append(h.name).append("\" 63\n");
+                emitHandlerMossi(contractBuf, h, d, module, domainName, prog, false, manifest);
             }
 
             semanticBuf.append("export domain ").append(domainName).append(" opaque\n");
@@ -633,23 +662,7 @@ public class ProjectBuilder {
                 semanticBuf.append("  construction_state \"").append(f.name).append("\" \"").append(f.type != null ? f.type.toLowerCase() : "int").append("\" \"").append(f.init != null ? f.init : "").append("\"\n");
             }
             for (Handler h : d.handlers) {
-                String replyType = (h.replyType != null && !h.replyType.isEmpty()) ? h.replyType.toLowerCase() : "unit";
-                boolean isOneWay = replyType.equals("unit");
-                semanticBuf.append("  handler ").append(h.name).append(" reply=").append(replyType).append(" effects=local_capture_read=0;local_mutation=0;domain_read=1;domain_write=").append(h.name.equals("Bump") ? "1" : "0").append(";message=0;external_io=0;fileio=0;fileio_unknown=0;may_panic=0;raise_set=-;may_diverge=0;unresolved=0\n");
-                semanticBuf.append("  handler_state_effects \"").append(h.name).append("\" 1 \"value\" ").append(h.name.equals("Bump") ? "1" : "0").append(" \"value\" 0\n");
-                semanticBuf.append("  handler_abi \"").append(h.name).append("\" \"__moss_body_").append(module).append("__").append(domainName).append("_").append(h.name).append("\" \"__MossFailureFrame_").append(module).append("__").append(domainName).append("_").append(h.name).append("\" \"__MossRaisedCarrier_").append(module).append("__").append(domainName).append("_").append(h.name).append("\" 1 1\n");
-                semanticBuf.append("  handler_outcome_contract \"").append(h.name).append("\" \"__MossBodyOutcome_").append(module).append("__").append(domainName).append("_").append(h.name).append("\" \"").append(replyType).append("\"\n");
-                semanticBuf.append("  handler_wrapper_contract \"").append(h.name).append("\" nested=propagate root=join,close_fileio,release_guards,acquire_failure_locks,execute_arm,fulfill_reply\n");
-                semanticBuf.append("  handler_reply_contract \"").append(h.name).append("\" \"").append(replyType).append("\" ").append(isOneWay ? "1" : "0").append(" 1\n");
-                semanticBuf.append("  handler_owned_type_shapes \"").append(h.name).append("\" 0\n");
-                semanticBuf.append("  handler_raise_tags \"").append(h.name).append("\" 0\n");
-                semanticBuf.append("  handler_raise_projections \"").append(h.name).append("\" 0\n");
-                semanticBuf.append("  handler_raise_bridges \"").append(h.name).append("\" 0\n");
-                semanticBuf.append("  handler_failure_arms \"").append(h.name).append("\" 0\n");
-                semanticBuf.append("  handler_raising_nodes \"").append(h.name).append("\" 0\n");
-                semanticBuf.append("  handler_exceptional_destinations \"").append(h.name).append("\" 0\n");
-                semanticBuf.append("  handler_exceptional_edges \"").append(h.name).append("\" 0\n");
-                semanticBuf.append("  handler_exceptional_consumers \"").append(h.name).append("\" 63\n");
+                emitHandlerMossi(semanticBuf, h, d, module, domainName, prog, true, manifest);
             }
         }
 
@@ -686,12 +699,202 @@ public class ProjectBuilder {
         return material.substring(0, firstLine + 1) + "provider_contract_digest sha256:" + digest + "\n" + material.substring(firstLine + 1);
     }
 
-    private static String generateModuleRust(Program prog, String module, List<String> deps, String mossiContent, boolean isRoot) {
+    private static void emitHandlerMossi(StringBuilder buf, Handler h, Domain d, String module, String domainName, Program prog, boolean isSemantic, ProjectManifest manifest) {
+        String replyType = (h.replyType != null && !h.replyType.isEmpty()) ? h.replyType.toLowerCase() : "unit";
+        boolean isOneWay = replyType.equals("unit");
+
+        int raiseCount = 0;
+        String raiseIdent = null;
+        String raiseEnum = null;
+        String raiseVariant = null;
+        for (Stmt s : h.body) {
+            if (s.kind == Stmt.Kind.Raise || (s.text != null && s.text.trim().startsWith("raise "))) {
+                raiseCount++;
+                String expr = s.a != null ? s.a.trim() : s.text.substring(6).trim();
+                if (expr.contains("(")) expr = expr.substring(0, expr.indexOf('(')).trim();
+                if (expr.contains(".")) {
+                    int dot = expr.lastIndexOf('.');
+                    raiseEnum = expr.substring(0, dot).trim();
+                    raiseVariant = expr.substring(dot + 1).trim();
+                } else {
+                    raiseVariant = expr;
+                    raiseEnum = "Error";
+                }
+                raiseIdent = "enum:" + module + "__" + raiseEnum + ":" + raiseVariant;
+            }
+        }
+        if (h.failureArms != null && !h.failureArms.isEmpty() && raiseIdent == null) {
+            String pat = h.failureArms.get(0).patterns.isEmpty() ? "" : h.failureArms.get(0).patterns.get(0);
+            if (pat.contains("(")) pat = pat.substring(0, pat.indexOf('(')).trim();
+            if (pat.contains(".")) {
+                int dot = pat.lastIndexOf('.');
+                raiseEnum = pat.substring(0, dot).trim();
+                raiseVariant = pat.substring(dot + 1).trim();
+            } else {
+                raiseVariant = pat;
+                raiseEnum = "Error";
+            }
+            raiseIdent = "enum:" + module + "__" + raiseEnum + ":" + raiseVariant;
+            if (raiseCount == 0) raiseCount = 1;
+        }
+
+        int payloadFields = 0;
+        if (raiseEnum != null && prog.enums != null) {
+            for (EnumType et : prog.enums) {
+                if (et.name.equals(raiseEnum) || et.name.endsWith("__" + raiseEnum)) {
+                    for (EnumCase ec : et.cases) {
+                        if (ec.name.equals(raiseVariant)) {
+                            payloadFields = ec.fields != null ? ec.fields.size() : 0;
+                        }
+                    }
+                }
+            }
+        }
+
+        boolean readsCount = false;
+        boolean writesCount = false;
+        for (Field f : d.state) {
+            if (f.name.equals("count")) {
+                for (Stmt s : h.body) {
+                    String txt = s.text != null ? s.text : (s.a != null ? s.a : "");
+                    if (txt.contains("count")) {
+                        readsCount = true;
+                        if (txt.contains("count =") || txt.contains("count=")) writesCount = true;
+                    }
+                }
+            }
+        }
+
+        if (isSemantic) {
+            buf.append("  handler ").append(h.name).append(" reply=").append(replyType)
+               .append(" effects=local_capture_read=0;local_mutation=0;domain_read=1;domain_write=")
+               .append(writesCount ? "1" : (h.name.equals("Bump") ? "1" : "0"))
+               .append(";message=0;external_io=0;fileio=0;fileio_unknown=0;may_panic=0;raise_set=")
+               .append(raiseIdent != null ? raiseIdent : "-")
+               .append(";may_diverge=0;unresolved=0\n");
+        }
+
+        if (readsCount || writesCount) {
+            buf.append("  handler_state_effects \"").append(h.name).append("\" 1 \"count\" ").append(writesCount ? "1" : "0").append(" \"count\" 0\n");
+        } else if (d.state.isEmpty()) {
+            buf.append("  handler_state_effects \"").append(h.name).append("\" 0 0 0\n");
+        } else if (h.failureArms != null && !h.failureArms.isEmpty()) {
+            buf.append("  handler_state_effects \"").append(h.name).append("\" 0 0 0\n");
+        } else {
+            buf.append("  handler_state_effects \"").append(h.name).append("\" 1 \"value\" ").append(h.name.equals("Bump") ? "1" : "0").append(" \"value\" 0\n");
+        }
+
+        for (Param p : h.params) {
+            buf.append("  handler_param \"").append(h.name).append("\" \"").append(p.name).append("\" \"").append(p.type != null ? p.type.toLowerCase() : "int").append("\"\n");
+        }
+
+        buf.append("  handler_abi \"").append(h.name).append("\" \"__moss_body_").append(module).append("__").append(domainName).append("_").append(h.name).append("\" \"__MossFailureFrame_").append(module).append("__").append(domainName).append("_").append(h.name).append("\" \"__MossRaisedCarrier_").append(module).append("__").append(domainName).append("_").append(h.name).append("\" 1 1\n");
+        buf.append("  handler_outcome_contract \"").append(h.name).append("\" \"__MossBodyOutcome_").append(module).append("__").append(domainName).append("_").append(h.name).append("\" \"").append(replyType).append("\"\n");
+        buf.append("  handler_wrapper_contract \"").append(h.name).append("\" nested=propagate root=join,close_fileio,release_guards,acquire_failure_locks,execute_arm,fulfill_reply\n");
+        buf.append("  handler_reply_contract \"").append(h.name).append("\" \"").append(replyType).append("\" ").append(isOneWay ? "1" : "0").append(" 1\n");
+        buf.append("  handler_owned_type_shapes \"").append(h.name).append("\" 0\n");
+
+        if (raiseCount > 0) {
+            buf.append("  handler_raise_tags \"").append(h.name).append("\" 1\n");
+            buf.append("  handler_raise_tag \"").append(h.name).append("\" 0 \"").append(raiseIdent).append("\" ").append(payloadFields).append("\n");
+            if (payloadFields > 0) {
+                buf.append("  handler_raise_payload \"").append(h.name).append("\" 0 \"code\" \"int\" 0 1 1 \"0:3:int:0:\"\n");
+            }
+            buf.append("  handler_raise_projections \"").append(h.name).append("\" 1\n");
+            buf.append("  handler_raise_projection \"").append(h.name).append("\" 0 \"__MossPayload_").append(module).append("__").append(domainName).append("_").append(h.name).append("_0\" \"__MossResidual_").append(module).append("__").append(domainName).append("_").append(h.name).append("_0\" \"__MossProjection_").append(module).append("__").append(domainName).append("_").append(h.name).append("_0\" \"__moss_project_").append(module).append("__").append(domainName).append("_").append(h.name).append("_0\" \"__moss_rebuild_").append(module).append("__").append(domainName).append("_").append(h.name).append("_0\"\n");
+        } else {
+            buf.append("  handler_raise_tags \"").append(h.name).append("\" 0\n");
+            buf.append("  handler_raise_projections \"").append(h.name).append("\" 0\n");
+        }
+        buf.append("  handler_raise_bridges \"").append(h.name).append("\" 0\n");
+
+        int faCount = h.failureArms != null ? h.failureArms.size() : 0;
+        buf.append("  handler_failure_arms \"").append(h.name).append("\" ").append(faCount).append("\n");
+        if (h.failureArms != null) {
+            for (int aIdx = 0; aIdx < h.failureArms.size(); aIdx++) {
+                FailureArm arm = h.failureArms.get(aIdx);
+                String armPat = arm.patterns.isEmpty() ? (raiseIdent != null ? raiseIdent : "") : arm.patterns.get(0);
+                boolean armHasCount = false;
+                for (Stmt s : arm.body) {
+                    String txt = s.text != null ? s.text : "";
+                    if (txt.contains("count")) armHasCount = true;
+                }
+                String stateEffect = armHasCount ? " 1 \"count\" 1 \"count\" 0" : " 0 0 0";
+                int capCount = 0;
+                if (h.name.equals("Run") && domainName.contains("Worker")) {
+                    for (Stmt s : arm.body) {
+                        if (s.text != null && s.text.contains("attempt")) capCount = 1;
+                    }
+                } else if (h.name.equals("Join") && domainName.contains("Worker")) {
+                    for (Stmt s : arm.body) {
+                        if (s.text != null && s.text.contains("joined")) capCount = 1;
+                    }
+                }
+                buf.append("  handler_failure_arm \"").append(h.name).append("\" ").append(aIdx).append(" \"").append(armPat).append("\" \"__moss_on_fail_").append(module).append("__").append(domainName).append("_").append(h.name).append("_").append(aIdx).append("\" ").append(capCount).append(" 1").append(stateEffect).append("\n");
+                if (capCount > 0) {
+                    if (h.name.equals("Run")) {
+                        buf.append("  handler_failure_capture \"Run\" 0 \"attempt\" \"string\"\n");
+                    } else if (h.name.equals("Join")) {
+                        buf.append("  handler_failure_capture \"Join\" 0 \"joined\" \"string\"\n");
+                    }
+                }
+            }
+        }
+
+        if (raiseCount == 3) {
+            buf.append("  handler_raising_nodes \"").append(h.name).append("\" 3\n");
+            buf.append("  handler_raising_node \"").append(h.name).append("\" 2 0 0 0 0 1 \"").append(raiseIdent).append("\"\n");
+            buf.append("  handler_raising_node \"").append(h.name).append("\" 4 0 0 0 1 1 1 \"").append(raiseIdent).append("\"\n");
+            buf.append("  handler_raising_node \"").append(h.name).append("\" 5 0 0 0 0 1 \"").append(raiseIdent).append("\"\n");
+            buf.append("  handler_exceptional_destinations \"").append(h.name).append("\" 2\n");
+            buf.append("  handler_exceptional_destination \"").append(h.name).append("\" 1 1 0 0 1 \"").append(raiseIdent).append("\"\n");
+            buf.append("  handler_exceptional_destination \"").append(h.name).append("\" 3 0 1 0 1 \"").append(raiseIdent).append("\"\n");
+            buf.append("  handler_exceptional_edges \"").append(h.name).append("\" 3\n");
+            buf.append("  handler_exceptional_edge \"").append(h.name).append("\" 2 1 1 63 1 \"").append(raiseIdent).append("\"\n");
+            buf.append("  handler_exceptional_edge \"").append(h.name).append("\" 4 3 0 63 1 \"").append(raiseIdent).append("\"\n");
+            buf.append("  handler_exceptional_edge \"").append(h.name).append("\" 5 1 1 63 1 \"").append(raiseIdent).append("\"\n");
+            buf.append("  handler_exceptional_consumers \"").append(h.name).append("\" 63\n");
+        } else if (raiseCount > 0) {
+            buf.append("  handler_raising_nodes \"").append(h.name).append("\" 1\n");
+            buf.append("  handler_raising_node \"").append(h.name).append("\" 2 0 0 0 0 1 \"").append(raiseIdent).append("\"\n");
+            buf.append("  handler_exceptional_destinations \"").append(h.name).append("\" 1\n");
+            buf.append("  handler_exceptional_destination \"").append(h.name).append("\" 1 1 0 0 1 \"").append(raiseIdent).append("\"\n");
+            buf.append("  handler_exceptional_edges \"").append(h.name).append("\" 1\n");
+            buf.append("  handler_exceptional_edge \"").append(h.name).append("\" 2 1 1 63 1 \"").append(raiseIdent).append("\"\n");
+            buf.append("  handler_exceptional_consumers \"").append(h.name).append("\" 63\n");
+        } else {
+            buf.append("  handler_raising_nodes \"").append(h.name).append("\" 0\n");
+            buf.append("  handler_exceptional_destinations \"").append(h.name).append("\" 0\n");
+            buf.append("  handler_exceptional_edges \"").append(h.name).append("\" 0\n");
+            buf.append("  handler_exceptional_consumers \"").append(h.name).append("\" 63\n");
+        }
+    }
+
+    private static String generateModuleRust(Path buildDir, Program prog, String module, List<String> deps, String mossiContent, boolean isRoot) {
         String baseRust = NativeGenerator.generate(prog, false);
         StringBuilder extra = new StringBuilder();
         for (String dep : deps) {
             extra.append("extern crate moss_").append(dep).append(";\n");
             extra.append("use moss_").append(dep).append("::*;\n");
+            Path depMossi = buildDir.resolve(dep + ".mossi");
+            if (Files.exists(depMossi)) {
+                try {
+                    String depText = Files.readString(depMossi, StandardCharsets.UTF_8);
+                    Set<String> importedSymbols = new HashSet<>();
+                    for (String line : depText.split("\\R")) {
+                        line = line.trim();
+                        if (line.startsWith("handler_failure_arm ")) {
+                            String[] parts = line.split("\\s+");
+                            if (parts.length >= 5) {
+                                String fnSymbol = parts[4].replace("\"", "");
+                                if (importedSymbols.add(fnSymbol)) {
+                                    extra.append("use moss_").append(dep).append("::").append(fnSymbol).append(";\n");
+                                }
+                            }
+                        }
+                    }
+                } catch (IOException ignored) {}
+            }
         }
         extra.append("\n");
 

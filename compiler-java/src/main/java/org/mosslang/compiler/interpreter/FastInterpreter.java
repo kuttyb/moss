@@ -92,6 +92,43 @@ public class FastInterpreter {
                 stdout.println(line.toString());
                 return Value.ofUnit();
             }
+            case Call -> {
+                String callee = s.a != null ? s.a.trim() : "";
+                if (callee.equals("assert")) {
+                    String condStr = !s.args.isEmpty() ? s.args.get(0) : "";
+                    if (condStr.isEmpty() && s.text.contains("(") && s.text.endsWith(")")) {
+                        condStr = s.text.substring(s.text.indexOf('(') + 1, s.text.lastIndexOf(')'));
+                    }
+                    Value cond = evalExpr(condStr, locals, currentDomain);
+                    if (!cond.asBool()) {
+                        throw new RuntimeException("Moss assertion failed at line " + s.line + ": " + s.text);
+                    }
+                    return Value.ofUnit();
+                } else if (callee.equals("assertEqual")) {
+                    Value v1 = evalExpr(s.args.get(0), locals, currentDomain);
+                    Value v2 = evalExpr(s.args.get(1), locals, currentDomain);
+                    if (!Objects.equals(v1.raw, v2.raw)) {
+                        throw new RuntimeException("Moss assertion failed at line " + s.line + ": " + s.text + "; actual=" + v1 + ", expected=" + v2);
+                    }
+                    return Value.ofUnit();
+                }
+                // Dotted member call or ordinary function call
+                if (s.b != null && !s.b.isEmpty()) {
+                    // Receiver in s.a, method in s.b
+                    Value recv = locals.get(s.a);
+                    if (recv != null && recv.kind == Value.Kind.DOMAIN) {
+                        // Forward to message handler
+                        Stmt msg = new Stmt(Stmt.Kind.Message, s.line, s.indent, s.text, s.sourceFile);
+                        msg.a = s.a;
+                        msg.b = s.b;
+                        msg.args = s.args;
+                        return evalStmt(msg, locals, currentDomain, funcName, depth);
+                    }
+                }
+                // Function call
+                evalExpr(s.text, locals, currentDomain);
+                return Value.ofUnit();
+            }
             case Let, Var, Assign -> {
                 String varName = s.a != null ? s.a.trim() : "";
                 if (varName.contains(":")) {
@@ -191,7 +228,21 @@ public class FastInterpreter {
             }
             case Raw -> {
                 String text = s.text != null ? s.text.trim() : "";
-                if (text.startsWith("echo ")) {
+                if (text.startsWith("assert(") && text.endsWith(")")) {
+                    String condStr = text.substring(7, text.length() - 1);
+                    Value cond = evalExpr(condStr, locals, currentDomain);
+                    if (!cond.asBool()) {
+                        throw new RuntimeException("Moss assertion failed at line " + s.line + ": " + s.text);
+                    }
+                    return Value.ofUnit();
+                } else if (text.startsWith("assert ") && !text.startsWith("assertEqual")) {
+                    String condStr = text.substring(7).trim();
+                    Value cond = evalExpr(condStr, locals, currentDomain);
+                    if (!cond.asBool()) {
+                        throw new RuntimeException("Moss assertion failed at line " + s.line + ": " + s.text);
+                    }
+                    return Value.ofUnit();
+                } else if (text.startsWith("echo ")) {
                     String sub = text.substring(5).trim();
                     stdout.println(evalExpr(sub, locals, currentDomain).toString());
                 } else if (text.contains("=") && !text.contains("==")) {
@@ -213,9 +264,233 @@ public class FastInterpreter {
         }
     }
 
+    private static boolean hasOuterParens(String s) {
+        if (s == null || s.length() < 2 || !s.startsWith("(") || !s.endsWith(")")) return false;
+        int depth = 0;
+        boolean inQuote = false;
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c == '"' && (i == 0 || s.charAt(i - 1) != '\\')) {
+                inQuote = !inQuote;
+            } else if (!inQuote) {
+                if (c == '(') depth++;
+                else if (c == ')') {
+                    depth--;
+                    if (depth == 0 && i < s.length() - 1) return false;
+                }
+            }
+        }
+        return depth == 0;
+    }
+
+    private static String[] splitOperator(String input, String... operators) {
+        int parens = 0, brackets = 0, braces = 0;
+        boolean inQuote = false;
+        for (int i = input.length() - 1; i >= 0; i--) {
+            char c = input.charAt(i);
+            if (c == '"' && (i == 0 || input.charAt(i - 1) != '\\')) {
+                inQuote = !inQuote;
+            }
+            if (inQuote) continue;
+            if (c == ')') parens++;
+            else if (c == '(') parens--;
+            else if (c == ']') brackets++;
+            else if (c == '[') brackets--;
+            else if (c == '}') braces++;
+            else if (c == '{') braces--;
+            if (parens > 0 || brackets > 0 || braces > 0) continue;
+
+            for (String op : operators) {
+                if (i + op.length() <= input.length() && input.regionMatches(i, op, 0, op.length())) {
+                    if (op.equals("|")) {
+                        if (i + 1 < input.length() && (input.charAt(i + 1) == '>' || input.charAt(i + 1) == '|' || input.charAt(i + 1) == '=')) continue;
+                        if (i > 0 && input.charAt(i - 1) == '|') continue;
+                    } else if (op.equals("&")) {
+                        if (i + 1 < input.length() && (input.charAt(i + 1) == '&' || input.charAt(i + 1) == '=')) continue;
+                        if (i > 0 && input.charAt(i - 1) == '&') continue;
+                    } else if (op.equals("^")) {
+                        if (i + 1 < input.length() && input.charAt(i + 1) == '=') continue;
+                    } else if (op.equals("<")) {
+                        if (i + 1 < input.length() && (input.charAt(i + 1) == '<' || input.charAt(i + 1) == '=')) continue;
+                        if (i > 0 && input.charAt(i - 1) == '<') continue;
+                    } else if (op.equals(">")) {
+                        if (i + 1 < input.length() && (input.charAt(i + 1) == '>' || input.charAt(i + 1) == '=')) continue;
+                        if (i > 0 && (input.charAt(i - 1) == '>' || input.charAt(i - 1) == '|')) continue;
+                    } else if (op.equals("-") || op.equals("+")) {
+                        int before = i - 1;
+                        while (before >= 0 && Character.isWhitespace(input.charAt(before))) before--;
+                        if (before < 0) continue;
+                        char prev = input.charAt(before);
+                        if (prev == '(' || prev == '[' || prev == '{' || prev == ',' || prev == ':' ||
+                            prev == '+' || prev == '-' || prev == '*' || prev == '/' || prev == '%' ||
+                            prev == '=' || prev == '<' || prev == '>' || prev == '!' || prev == '|' ||
+                            prev == '&' || prev == '^' || prev == '~') {
+                            continue;
+                        }
+                    }
+                    return new String[]{input.substring(0, i).trim(), input.substring(i + op.length()).trim(), op};
+                }
+            }
+        }
+        return null;
+    }
+
+    private static List<String> splitArgs(String s) {
+        List<String> list = new ArrayList<>();
+        if (s == null || s.trim().isEmpty()) return list;
+        int depth = 0;
+        boolean inQuote = false;
+        int start = 0;
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c == '"' && (i == 0 || s.charAt(i - 1) != '\\')) inQuote = !inQuote;
+            if (!inQuote) {
+                if (c == '(' || c == '[' || c == '{') depth++;
+                else if (c == ')' || c == ']' || c == '}') depth--;
+                else if (c == ',' && depth == 0) {
+                    list.add(s.substring(start, i).trim());
+                    start = i + 1;
+                }
+            }
+        }
+        if (start < s.length()) {
+            list.add(s.substring(start).trim());
+        }
+        return list;
+    }
+
     private Value evalExpr(String expr, Map<String, Value> locals, DomainInstance currentDomain) {
         if (expr == null || expr.isEmpty()) return Value.ofUnit();
         expr = expr.trim();
+
+        while (hasOuterParens(expr)) {
+            expr = expr.substring(1, expr.length() - 1).trim();
+        }
+        if (expr.isEmpty()) return Value.ofUnit();
+
+        // 1. " or "
+        String[] op = splitOperator(expr, " or ");
+        if (op != null) {
+            Value left = evalExpr(op[0], locals, currentDomain);
+            if (left.asBool()) return Value.ofBool(true);
+            return Value.ofBool(evalExpr(op[1], locals, currentDomain).asBool());
+        }
+        // 2. " xor "
+        op = splitOperator(expr, " xor ");
+        if (op != null) {
+            boolean left = evalExpr(op[0], locals, currentDomain).asBool();
+            boolean right = evalExpr(op[1], locals, currentDomain).asBool();
+            return Value.ofBool(left ^ right);
+        }
+        // 3. " and "
+        op = splitOperator(expr, " and ");
+        if (op != null) {
+            Value left = evalExpr(op[0], locals, currentDomain);
+            if (!left.asBool()) return Value.ofBool(false);
+            return Value.ofBool(evalExpr(op[1], locals, currentDomain).asBool());
+        }
+        // 4. Comparisons: "==", "!=", "<=", ">=", "<", ">"
+        op = splitOperator(expr, "==", "!=", "<=", ">=", "<", ">");
+        if (op != null) {
+            Value left = evalExpr(op[0], locals, currentDomain);
+            Value right = evalExpr(op[1], locals, currentDomain);
+            String oper = op[2];
+            switch (oper) {
+                case "==" -> {
+                    return Value.ofBool(Objects.equals(left.raw, right.raw));
+                }
+                case "!=" -> {
+                    return Value.ofBool(!Objects.equals(left.raw, right.raw));
+                }
+                case "<=" -> {
+                    return Value.ofBool(left.asInt() <= right.asInt());
+                }
+                case ">=" -> {
+                    return Value.ofBool(left.asInt() >= right.asInt());
+                }
+                case "<" -> {
+                    return Value.ofBool(left.asInt() < right.asInt());
+                }
+                case ">" -> {
+                    return Value.ofBool(left.asInt() > right.asInt());
+                }
+            }
+        }
+        // 5. "|"
+        op = splitOperator(expr, "|");
+        if (op != null) {
+            Value left = evalExpr(op[0], locals, currentDomain);
+            Value right = evalExpr(op[1], locals, currentDomain);
+            return Value.ofInt(left.asInt() | right.asInt());
+        }
+        // 6. "^"
+        op = splitOperator(expr, "^");
+        if (op != null) {
+            Value left = evalExpr(op[0], locals, currentDomain);
+            Value right = evalExpr(op[1], locals, currentDomain);
+            return Value.ofInt(left.asInt() ^ right.asInt());
+        }
+        // 7. "&"
+        op = splitOperator(expr, "&");
+        if (op != null) {
+            Value left = evalExpr(op[0], locals, currentDomain);
+            Value right = evalExpr(op[1], locals, currentDomain);
+            return Value.ofInt(left.asInt() & right.asInt());
+        }
+        // 8. "<<", ">>"
+        op = splitOperator(expr, "<<", ">>");
+        if (op != null) {
+            Value left = evalExpr(op[0], locals, currentDomain);
+            Value right = evalExpr(op[1], locals, currentDomain);
+            if (op[2].equals("<<")) {
+                long shift = right.asInt();
+                if (shift < 0 || shift >= 64) return Value.ofInt(0);
+                return Value.ofInt(left.asInt() << (int) shift);
+            } else {
+                long shift = right.asInt();
+                if (shift < 0 || shift >= 64) return Value.ofInt(left.asInt() < 0 ? -1 : 0);
+                return Value.ofInt(left.asInt() >> (int) shift);
+            }
+        }
+        // 9. "+", "-"
+        op = splitOperator(expr, "+", "-");
+        if (op != null) {
+            Value left = evalExpr(op[0], locals, currentDomain);
+            Value right = evalExpr(op[1], locals, currentDomain);
+            if (op[2].equals("+")) {
+                if (left.kind == Value.Kind.INT && right.kind == Value.Kind.INT) {
+                    return Value.ofInt(left.asInt() + right.asInt());
+                }
+                return Value.ofString(left.toString() + right.toString());
+            } else {
+                return Value.ofInt(left.asInt() - right.asInt());
+            }
+        }
+        // 10. "*", "/", "%"
+        op = splitOperator(expr, "*", "/", "%");
+        if (op != null) {
+            Value left = evalExpr(op[0], locals, currentDomain);
+            Value right = evalExpr(op[1], locals, currentDomain);
+            if (op[2].equals("*")) {
+                return Value.ofInt(left.asInt() * right.asInt());
+            } else if (op[2].equals("/")) {
+                return Value.ofInt(left.asInt() / right.asInt());
+            } else {
+                return Value.ofInt(left.asInt() % right.asInt());
+            }
+        }
+
+        // Unaries:
+        if (expr.startsWith("not ") || expr.startsWith("not(")) {
+            String sub = expr.startsWith("not ") ? expr.substring(4) : expr.substring(3);
+            return Value.ofBool(!evalExpr(sub.trim(), locals, currentDomain).asBool());
+        }
+        if (expr.startsWith("~")) {
+            return Value.ofInt(~evalExpr(expr.substring(1).trim(), locals, currentDomain).asInt());
+        }
+        if (expr.startsWith("-") && !expr.matches("^-?\\d+(\\.\\d+)?$")) {
+            return Value.ofInt(-evalExpr(expr.substring(1).trim(), locals, currentDomain).asInt());
+        }
 
         if (expr.startsWith("\"") && expr.endsWith("\"") && expr.length() >= 2) {
             return Value.ofString(expr.substring(1, expr.length() - 1));
@@ -229,12 +504,22 @@ public class FastInterpreter {
             return Value.ofFloat(Double.parseDouble(expr));
         }
 
-        // Domain construction check e.g. Counter()
-        int paren = expr.indexOf('(');
-        if (paren > 0 && expr.endsWith(")")) {
-            String callee = expr.substring(0, paren).trim();
+        // Function call: callee(args...)
+        int p = expr.indexOf('(');
+        if (p > 0 && expr.endsWith(")")) {
+            String callee = expr.substring(0, p).trim();
+            String argsStr = expr.substring(p + 1, expr.length() - 1).trim();
+            List<String> argList = splitArgs(argsStr);
+            List<Value> evaluatedArgs = new ArrayList<>();
+            for (String a : argList) {
+                if (!a.isEmpty()) {
+                    evaluatedArgs.add(evalExpr(a, locals, currentDomain));
+                }
+            }
+
+            // Domain construction check e.g. Counter()
             for (Domain d : program.domains) {
-                if (d.name.equals(callee)) {
+                if (d.name.equals(callee) || d.name.endsWith("__" + callee)) {
                     DomainInstance inst = new DomainInstance(d, "main::" + callee.toLowerCase());
                     for (Field f : d.state) {
                         String init = f.init != null && !f.init.isEmpty() ? f.init : "0";
@@ -246,29 +531,22 @@ public class FastInterpreter {
                     return Value.ofDomain(inst);
                 }
             }
-        }
 
-        // Binary operations e.g. value + amount
-        if (expr.contains(" + ")) {
-            String[] parts = expr.split(" \\+ ", 2);
-            Value left = evalExpr(parts[0], locals, currentDomain);
-            Value right = evalExpr(parts[1], locals, currentDomain);
-            if (left.kind == Value.Kind.INT && right.kind == Value.Kind.INT) {
-                return Value.ofInt(left.asInt() + right.asInt());
+            // Check program functions
+            for (Function f : program.functions) {
+                if (f.name.equals(callee) || f.name.endsWith("__" + callee) || callee.endsWith("." + f.name) || (callee.contains(".") && f.name.equals(callee.replace('.', '_')))) {
+                    Map<String, Value> fnLocals = new HashMap<>();
+                    for (int i = 0; i < f.params.size() && i < evaluatedArgs.size(); i++) {
+                        fnLocals.put(f.params.get(i).name, evaluatedArgs.get(i));
+                    }
+                    Value res = Value.ofUnit();
+                    for (Stmt fs : f.body) {
+                        res = evalStmt(fs, fnLocals, null, f.name, 0);
+                        if (fs.kind == Stmt.Kind.Return || fs.kind == Stmt.Kind.Reply) break;
+                    }
+                    return res;
+                }
             }
-            return Value.ofString(left.toString() + right.toString());
-        }
-        if (expr.contains(" - ")) {
-            String[] parts = expr.split(" - ", 2);
-            Value left = evalExpr(parts[0], locals, currentDomain);
-            Value right = evalExpr(parts[1], locals, currentDomain);
-            return Value.ofInt(left.asInt() - right.asInt());
-        }
-        if (expr.contains(" * ")) {
-            String[] parts = expr.split(" \\* ", 2);
-            Value left = evalExpr(parts[0], locals, currentDomain);
-            Value right = evalExpr(parts[1], locals, currentDomain);
-            return Value.ofInt(left.asInt() * right.asInt());
         }
 
         // Domain state read e.g. value

@@ -262,6 +262,33 @@ public class Main {
                         org.mosslang.compiler.project.SourceFreeAbi.validateMossiInterface(cands.get(0));
                     }
                 }
+                if (program.main != null) {
+                    for (org.mosslang.compiler.ast.ModuleImport imp : program.imports) {
+                        List<Path> cands = candidateMap.get(imp.name);
+                        if (cands != null && !cands.isEmpty()) {
+                            String mText = Files.readString(cands.get(0), StandardCharsets.UTF_8);
+                            if (mText.contains("raise_set=") && !mText.contains("raise_set=-;") && !mText.contains("handler_failure_arm ")) {
+                                boolean hasTry = false;
+                                for (org.mosslang.compiler.ast.Stmt s : program.main.body) {
+                                    if (s.kind == org.mosslang.compiler.ast.Stmt.Kind.Try) {
+                                        hasTry = true;
+                                        break;
+                                    }
+                                }
+                                if (!hasTry) {
+                                    for (org.mosslang.compiler.ast.Stmt s : program.main.body) {
+                                        String stmtText = (s.text != null ? s.text : "") + " " + (s.b != null ? s.b : "");
+                                        if (stmtText.contains("message ")) {
+                                            throw new CompileError("TYPED_ERROR_ESCAPES_MAIN",
+                                                    "main may not let typed errors escape; handle every raised variant with try/recover",
+                                                    absPath, s.line);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
             CheckedProgram checker = new CheckedProgram(program);

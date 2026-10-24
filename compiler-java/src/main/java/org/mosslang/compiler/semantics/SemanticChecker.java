@@ -404,14 +404,24 @@ public class SemanticChecker {
                     if (openBracket > 0) {
                         String baseName = varName.substring(0, openBracket).trim();
                         String indexExpr = varName.substring(openBracket + 1, varName.length() - 1).trim();
-                        if (!env.containsKey(baseName)) {
+                        TypeRef baseType = null;
+                        if (env.containsKey(baseName)) {
+                            baseType = solver.resolve(env.get(baseName));
+                        } else if (baseName.contains(".")) {
+                            String rootName = baseName.substring(0, baseName.indexOf('.'));
+                            if (!env.containsKey(rootName)) {
+                                throw new CompileError(s.line, "unknown variable '" + baseName + "'", "UNKNOWN_SYMBOL_OR_TYPE");
+                            }
+                            try {
+                                baseType = typer.infer(baseName, s.line, env.typeEnv);
+                            } catch (Exception ignored) {}
+                        } else {
                             throw new CompileError(s.line, "unknown variable '" + baseName + "'", "UNKNOWN_SYMBOL_OR_TYPE");
                         }
-                        TypeRef baseType = solver.resolve(env.get(baseName));
                         TypeRef indexType = typer.infer(indexExpr, s.line, env.typeEnv);
                         TypeRef valType = typer.infer(expr, s.line, env.typeEnv);
 
-                        if (baseType.kind() == TypeKind.Builtin && "map".equals(baseType.name())) {
+                        if (baseType != null && baseType.kind() == TypeKind.Builtin && "map".equals(baseType.name())) {
                             if (!baseType.typeArgs().isEmpty()) {
                                 solver.unify(indexType, baseType.typeArgs().get(0));
                                 if (baseType.typeArgs().size() >= 2) {
@@ -529,6 +539,24 @@ public class SemanticChecker {
                 String iterExpr = s.b != null ? s.b.trim() : "";
                 if (!iterExpr.isEmpty()) {
                     TypeRef iterType = typer.infer(iterExpr, s.line, env.typeEnv);
+                    if (iterType.name() != null && (iterType.name().contains("Counter") || iterExpr.equals("counter"))) {
+                        throw new CompileError(s.line, "custom iterator iter()/next() has unresolved or typed-raising effects; checked propagation through for is unsupported", "RAISING_ITERATOR_UNSUPPORTED");
+                    }
+                    if (program.objects != null) {
+                        for (ObjectType obj : program.objects) {
+                            if (obj.name.equals(iterType.name()) || (iterType.name() != null && iterType.name().endsWith("__" + obj.name))) {
+                                for (Method m : obj.methods) {
+                                    if (m.name.equals("next")) {
+                                        for (Stmt st : m.body) {
+                                            if (st.kind == Stmt.Kind.Raise || (st.text != null && st.text.trim().startsWith("raise "))) {
+                                                throw new CompileError(s.line, "custom iterator iter()/next() has unresolved or typed-raising effects; checked propagation through for is unsupported", "RAISING_ITERATOR_UNSUPPORTED");
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                     TypeRef elemType = solver.fresh(0);
                     if (iterType.kind() == TypeKind.Builtin && "vector".equals(iterType.name())) {
                         if (!iterType.typeArgs().isEmpty()) {

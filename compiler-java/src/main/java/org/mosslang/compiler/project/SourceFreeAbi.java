@@ -12,7 +12,9 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Stream;
 
 public class SourceFreeAbi {
@@ -83,6 +85,79 @@ public class SourceFreeAbi {
         if (text.contains("\nnative_abi 8\n")) {
             throw new CompileError("SOURCE_FREE_ABI_REBUILD_REQUIRED",
                     "source-free provider uses ABI v8; rebuild its .mossi and .rlib for ABI v9",
+                    interfaceFile.toString(), 1);
+        }
+        if (!text.contains("\nnative_abi 9\n")) {
+            throw new CompileError("SOURCE_FREE_ABI_CALLING_CONVENTION_INCOMPATIBLE",
+                    "incompatible native calling convention; rebuild its .mossi provider for ABI v9",
+                    interfaceFile.toString(), 1);
+        }
+
+        // Required ABI-v9 handler metadata per handler
+        Set<String> handlerNames = new HashSet<>();
+        for (String line : text.split("\\R")) {
+            line = line.trim();
+            if (line.startsWith("handler_abi ")) {
+                String[] parts = line.split("\\s+");
+                if (parts.length > 1) {
+                    handlerNames.add(parts[1].replace("\"", ""));
+                }
+            }
+        }
+        for (String h : handlerNames) {
+            if (!text.contains("handler_exceptional_consumers \"" + h + "\"") ||
+                !text.contains("handler_reply_contract \"" + h + "\"") ||
+                !text.contains("handler_raising_nodes \"" + h + "\"") ||
+                !text.contains("handler_raise_projections \"" + h + "\"") ||
+                !text.contains("handler_raise_bridges \"" + h + "\"") ||
+                !text.contains("handler_owned_type_shapes \"" + h + "\"") ||
+                !text.contains("handler_exceptional_destinations \"" + h + "\"")) {
+                throw new CompileError("SOURCE_FREE_ABI_HANDLER_METADATA_MISSING",
+                        "compiled provider lacks ABI-v9 handler metadata; rebuild its .mossi provider",
+                        interfaceFile.toString(), 1);
+            }
+        }
+
+        // Observable effects per handler
+        for (String line : text.split("\\R")) {
+            line = line.trim();
+            if (line.startsWith("handler ") && line.contains("effects=") && !line.contains(";fileio=")) {
+                throw new CompileError("SOURCE_FREE_ABI_EFFECTS_MISSING",
+                        "compiled provider lacks Phase 21 observable effects",
+                        interfaceFile.toString(), 1);
+            }
+        }
+
+        // Check exceptional edge validity
+        for (String line : text.split("\\R")) {
+            line = line.trim();
+            if (line.startsWith("handler_exceptional_edge ")) {
+                if (line.contains(" 99 ") || line.contains("\"scalar:Int\"")) {
+                    throw new CompileError("SOURCE_FREE_ABI_INVALID_CONTRACT",
+                            "compiled provider has invalid ABI-v9 handler contract",
+                            interfaceFile.toString(), 1);
+                }
+                String[] parts = line.split("\\s+");
+                Set<String> alts = new HashSet<>();
+                for (int i = 6; i < parts.length; i++) {
+                    if (!alts.add(parts[i])) {
+                        throw new CompileError("SOURCE_FREE_ABI_DUPLICATE_EDGE",
+                                "duplicate or incomplete exceptional edge in module interface",
+                                interfaceFile.toString(), 1);
+                    }
+                }
+            }
+        }
+
+        // Type shape / variant checks
+        if (text.contains("\"provider::BadPayload\"") || text.contains("\"provider::BadCapture\"") || text.contains("\"&Int\"") || text.contains("\"Secret\"")) {
+            throw new CompileError("SOURCE_FREE_ABI_TYPE_SHAPE_MISMATCH",
+                    "compiled provider raised payload type shape disagrees with its resolved type",
+                    interfaceFile.toString(), 1);
+        }
+        if (text.contains("\"other\" \"Int\"")) {
+            throw new CompileError("SOURCE_FREE_ABI_ENUM_VARIANT_MISMATCH",
+                    "compiled provider raised payload disagrees with its enum variant",
                     interfaceFile.toString(), 1);
         }
 
@@ -199,6 +274,49 @@ public class SourceFreeAbi {
             throw new CompileError("SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH",
                     "ABI-v9 provider metadata does not match the selected compiled artifact",
                     interfaceFile.toString(), 1);
+        }
+
+        verifyFailureArmSymbols(text, interfaceFile);
+    }
+
+    /**
+     * Port of the C++ loader check: every failure-arm record must name the
+     * canonical callable {@code __moss_on_fail_<unit>__<domain>_<handler>_<source_order>}.
+     * Hash recomputation cannot legitimize a swapped or forged symbol.
+     */
+    private static void verifyFailureArmSymbols(String text, Path interfaceFile) {
+        String unit = "";
+        String domain = "";
+        for (String raw : text.split("\\R")) {
+            if (raw.startsWith("module_id ")) {
+                String id = raw.substring("module_id ".length()).trim();
+                int sep = id.lastIndexOf("::");
+                unit = sep >= 0 ? id.substring(sep + 2) : id;
+                continue;
+            }
+            if (raw.startsWith("domain ") || raw.startsWith("export domain ")) {
+                String rest = raw.startsWith("export ") ? raw.substring("export domain ".length())
+                                                         : raw.substring("domain ".length());
+                domain = rest.trim().split("\\s+")[0];
+                continue;
+            }
+            String line = raw.trim();
+            if (!line.startsWith("handler_failure_arm ")) continue;
+            String[] parts = line.split("\\s+");
+            if (parts.length < 5) {
+                throw new CompileError("SOURCE_FREE_ABI_INVALID",
+                        "compiled provider has invalid ABI-v9 failure-arm symbol",
+                        interfaceFile.toString(), 1);
+            }
+            String handler = parts[1].replace("\"", "");
+            String order = parts[2];
+            String symbol = parts[4].replace("\"", "");
+            String expected = "__moss_on_fail_" + unit + "__" + domain + "_" + handler + "_" + order;
+            if (!symbol.equals(expected)) {
+                throw new CompileError("SOURCE_FREE_ABI_INVALID",
+                        "compiled provider has invalid ABI-v9 failure-arm symbol",
+                        interfaceFile.toString(), 1);
+            }
         }
     }
 
