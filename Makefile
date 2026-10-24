@@ -1,3 +1,5 @@
+# Clang is the Phase 25.2 default; preserve command-line and environment overrides.
+# GNU Make sets built-in CXX=g++, so CXX ?= clang++ would not take effect.
 ifeq ($(origin CXX),default)
 CXX := clang++
 endif
@@ -24,8 +26,8 @@ MOSS_RELEASE = $(COMPILER_DIR)/moss-release
 COMPILER_SOURCES ?= src/char_string_ordering_runtime.cpp src/diagnostic_identity.cpp src/display_runtime.cpp src/executor_runtime.cpp src/fileio_runtime.cpp src/float_format_runtime.cpp src/handler_runtime.cpp src/numeric_runtime.cpp src/program_identity.cpp src/moss.cpp
 
 # Profiles and command-line configurations use distinct object trees.
-COMPILER_CONFIG_DEV = $(shell printf '%s\n' '$(CXX)' '$(CXX_TOOLCHAIN_FLAGS)' '$(CPPFLAGS)' '$(CXXFLAGS_DEV)' '$(CXXFLAGS_PCH)' '$(LINKER)' '$(LDFLAGS)' '$(LDLIBS)' '$(shell $(CXX) --version 2>/dev/null | head -n 1)' '$(shell $(CXX) -dumpmachine 2>/dev/null)' | cksum | cut -d' ' -f1)
-COMPILER_CONFIG_OPT = $(shell printf '%s\n' '$(CXX)' '$(CXX_TOOLCHAIN_FLAGS)' '$(CPPFLAGS)' '$(CXXFLAGS_OPT)' '$(CXXFLAGS_PCH)' '$(LINKER)' '$(LDFLAGS)' '$(LDLIBS)' '$(shell $(CXX) --version 2>/dev/null | head -n 1)' '$(shell $(CXX) -dumpmachine 2>/dev/null)' | cksum | cut -d' ' -f1)
+COMPILER_CONFIG_DEV = $(shell printf '%s\n' '$(CXX)' '$(CXX_TOOLCHAIN_FLAGS)' '$(CPPFLAGS)' '$(CXXFLAGS_DEV)' '$(CXXFLAGS_PCH)' '$(LINKER)' '$(LDFLAGS)' '$(MOSS_LDFLAGS)' '$(LDLIBS)' '$(shell $(CXX) --version 2>/dev/null | head -n 1)' '$(shell $(CXX) -dumpmachine 2>/dev/null)' | cksum | cut -d' ' -f1)
+COMPILER_CONFIG_OPT = $(shell printf '%s\n' '$(CXX)' '$(CXX_TOOLCHAIN_FLAGS)' '$(CPPFLAGS)' '$(CXXFLAGS_OPT)' '$(CXXFLAGS_PCH)' '$(LINKER)' '$(LDFLAGS)' '$(MOSS_LDFLAGS)' '$(LDLIBS)' '$(shell $(CXX) --version 2>/dev/null | head -n 1)' '$(shell $(CXX) -dumpmachine 2>/dev/null)' | cksum | cut -d' ' -f1)
 COMPILER_OBJ_DIR_DEV = $(COMPILER_DIR)/obj/dev-$(COMPILER_CONFIG_DEV)
 COMPILER_OBJ_DIR_OPT = $(COMPILER_DIR)/obj/opt-$(COMPILER_CONFIG_OPT)
 COMPILER_OBJECTS_DEV = $(patsubst %.cpp,$(COMPILER_OBJ_DIR_DEV)/%.o,$(COMPILER_SOURCES))
@@ -51,7 +53,9 @@ COMPILER_PCH_DEPFILES =
 endif
 
 LINKER ?= $(CXX)
-LDFLAGS ?= -fuse-ld=mold
+# Link with mold through the compiler driver; override with MOSS_LDFLAGS=.
+MOSS_LDFLAGS ?= -fuse-ld=mold
+LDFLAGS ?=
 LDLIBS ?=
 
 MOSS ?= ./moss
@@ -85,7 +89,7 @@ $(COMPILER_ACTIVE_CONFIG_OPT): FORCE
 
 $(MOSS_DEV): $(COMPILER_OBJECTS_DEV) $(COMPILER_ACTIVE_CONFIG_DEV)
 	@mkdir -p $(@D)
-	$(LINKER) $(CXX_TOOLCHAIN_FLAGS) $(CXXFLAGS_DEV) $(LDFLAGS) $(COMPILER_OBJECTS_DEV) $(LDLIBS) -o $@.tmp
+	$(LINKER) $(CXX_TOOLCHAIN_FLAGS) $(CXXFLAGS_DEV) $(LDFLAGS) $(MOSS_LDFLAGS) $(COMPILER_OBJECTS_DEV) $(LDLIBS) -o $@.tmp
 	@mv -f $@.tmp $@
 
 moss-opt: $(MOSS_OPT)
@@ -97,7 +101,7 @@ $(MOSS_RELEASE): $(MOSS_OPT)
 
 $(MOSS_OPT): $(COMPILER_OBJECTS_OPT) $(COMPILER_ACTIVE_CONFIG_OPT)
 	@mkdir -p $(@D)
-	$(LINKER) $(CXX_TOOLCHAIN_FLAGS) $(CXXFLAGS_OPT) $(LDFLAGS) $(COMPILER_OBJECTS_OPT) $(LDLIBS) -o $@.tmp
+	$(LINKER) $(CXX_TOOLCHAIN_FLAGS) $(CXXFLAGS_OPT) $(LDFLAGS) $(MOSS_LDFLAGS) $(COMPILER_OBJECTS_OPT) $(LDLIBS) -o $@.tmp
 	@mv -f $@.tmp $@
 
 ifneq ($(filter clang++ clang++-%,$(notdir $(firstword $(CXX)))),)
