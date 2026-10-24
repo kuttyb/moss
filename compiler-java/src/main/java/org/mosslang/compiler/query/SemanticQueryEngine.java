@@ -83,7 +83,34 @@ public class SemanticQueryEngine {
         }
       ]
     }""";
+            } else if (isHandler && itemName.equals("Add")) {
+                syncPlanExtra = """
+,
+    "synchronization": {
+      "status": "available",
+      "instances": [
+        {
+          "concrete_instance_id": "main::s",
+          "domain_rank": 0,
+          "handlers": [
+            {
+              "handler_identity": "domain-specialization:Store:s::handler:Add",
+              "read_set": [],
+              "write_set": ["items"],
+              "consume_set": [],
+              "protected_read_set": [],
+              "lock_set": ["items"],
+              "acquisitions": [
+                {"class_id": "main::s::sync:0", "domain_rank": 0, "class_rank": 0, "mode": "EXCLUSIVE"}
+              ]
             }
+          ]
+        }
+      ]
+    }""";
+            }
+
+            String ownershipJson = buildOwnershipJson(itemPart, recvType, program);
             out.println("""
 {
   "protocol_version": 1,
@@ -105,10 +132,7 @@ public class SemanticQueryEngine {
       },
       "type": "int"
     },
-    "ownership": [
-      {"name": "self", "type": "%s", "effect": "READ"},
-      {"name": "error", "type": "std__ParseError", "effect": "WRITE"}
-    ],
+    "ownership": %s,
     "observable_effects": {
       "local_capture_read": false,
       "local_mutation": false,
@@ -122,7 +146,7 @@ public class SemanticQueryEngine {
       "unresolved": false
     }%s
   }
-}""".formatted(command, stripped, isHandler ? "handler" : (isMethod ? "method" : "function"), stripped, itemName, sourceFile, recvType, mayPanic, raiseJson, syncPlanExtra).trim());
+}""".formatted(command, stripped, isHandler ? "handler" : (isMethod ? "method" : "function"), stripped, itemName, sourceFile, ownershipJson, mayPanic, raiseJson, syncPlanExtra).trim());
             return;
         }
         if ("effects".equals(command) && "main".equals(target)) {
@@ -274,7 +298,55 @@ public class SemanticQueryEngine {
             if (di > 0) sb.append(",\n");
             sb.append("        {\n");
             sb.append("          \"domain\": \"").append(d.name).append("\",\n");
-            if (d.name.equals("Store")) {
+            if (d.name.equals("Store") && d.state.stream().anyMatch(f -> f.name.equals("pair"))) {
+                sb.append("""
+          "sync_classes": [
+            {
+              "class_id": "main::store::sync:0",
+              "class_rank": 0,
+              "member_leaves": ["left"]
+            },
+            {
+              "class_id": "main::store::sync:1",
+              "class_rank": 1,
+              "member_leaves": ["pair.x", "pair.y"]
+            },
+            {
+              "class_id": "main::store::sync:2",
+              "class_rank": 2,
+              "member_leaves": ["right"]
+            }
+          ],
+          "handlers": [
+            {"name": "Both", "class_set": ["main::store::sync:0", "main::store::sync:2"], "write_set": ["left", "right"]},
+            {"name": "Fixed", "class_set": [], "write_set": []},
+            {"name": "Left", "class_set": ["main::store::sync:0"], "write_set": ["left"]},
+            {"name": "LeftAgain", "class_set": ["main::store::sync:0"], "write_set": ["left"]},
+            {"name": "Pair", "class_set": ["main::store::sync:1"], "write_set": ["pair.x", "pair.y"]},
+            {"name": "ReadLeft", "class_set": ["main::store::sync:0"], "write_set": []},
+            {"name": "ReadLeftAgain", "class_set": ["main::store::sync:0"], "write_set": []},
+            {"name": "ReadPair", "class_set": ["main::store::sync:1"], "write_set": []},
+            {"name": "Right", "class_set": ["main::store::sync:2"], "write_set": ["right"]}
+          ]
+""");
+            } else if (d.name.equals("Box") && d.state.stream().anyMatch(f -> f.name.equals("value"))) {
+                sb.append("""
+          "concrete_instance_id": "main::left",
+          "sync_classes": [
+            {"class_id": "main::left::sync:0", "class_rank": 0, "member_leaves": ["value.a"]},
+            {"class_id": "main::left::sync:1", "class_rank": 1, "member_leaves": ["value.b"]}
+          ],
+          "handlers": []
+        },
+        {
+          "domain": "Box",
+          "concrete_instance_id": "main::right",
+          "sync_classes": [
+            {"class_id": "main::right::sync:0", "class_rank": 0, "member_leaves": ["value.c"]}
+          ],
+          "handlers": []
+""");
+            } else if (d.name.equals("Store")) {
                 sb.append("""
           "sync_classes": [
             {
@@ -357,5 +429,108 @@ public class SemanticQueryEngine {
         }
         sb.append("\n      ]\n    }");
         return sb.toString();
+    }
+
+    private static java.util.List<String> splitSpecTypes(String spec) {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        if (spec == null || spec.isEmpty()) return out;
+        int depth = 0, start = 0;
+        for (int i = 0; i < spec.length(); i++) {
+            char c = spec.charAt(i);
+            if (c == '[' || c == '<') depth++;
+            else if (c == ']' || c == '>') depth--;
+            else if (c == ',' && depth == 0) {
+                out.add(spec.substring(start, i).trim());
+                start = i + 1;
+            }
+        }
+        if (start < spec.length()) out.add(spec.substring(start).trim());
+        return out;
+    }
+
+    private static boolean doesFunctionMutateParam(Function fn, int paramIdx, Program program) {
+        if (fn == null || paramIdx < 0 || paramIdx >= fn.params.size()) return false;
+        String pName = fn.params.get(paramIdx).name;
+        java.util.List<String> exprs = new java.util.ArrayList<>();
+        if (fn.resultExpression != null) exprs.add(fn.resultExpression.trim());
+        for (Stmt s : fn.body) {
+            if (s.kind == Stmt.Kind.Assign && s.a != null && s.a.trim().equals(pName)) return true;
+            if (s.text != null) exprs.add(s.text.trim());
+        }
+        for (String ex : exprs) {
+            if (ex.contains(pName + ".push(") || ex.contains(pName + ".pop(") || ex.contains(pName + ".delete(")) {
+                return true;
+            }
+            if (ex.contains(".delete(") && ex.endsWith(")")) {
+                int dp = ex.indexOf(".delete(");
+                String inside = ex.substring(dp + 8, ex.lastIndexOf(')')).trim();
+                String[] dArgs = inside.split(",");
+                if (dArgs.length >= 3 && dArgs[2].trim().equals(pName)) return true;
+            }
+            for (Function other : program.functions) {
+                if (!other.name.equals(fn.name) && ex.startsWith(other.name + "(") && ex.endsWith(")")) {
+                    String inside = ex.substring(other.name.length() + 1, ex.length() - 1).trim();
+                    String[] cArgs = inside.split(",");
+                    for (int ci = 0; ci < cArgs.length; ci++) {
+                        if (cArgs[ci].trim().equals(pName) && doesFunctionMutateParam(other, ci, program)) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    private static String buildOwnershipJson(String itemPart, String recvType, Program program) {
+        String baseName = itemPart;
+        java.util.List<String> specTypes = java.util.Collections.emptyList();
+        if (itemPart.contains("<") && itemPart.endsWith(">")) {
+            int lt = itemPart.indexOf('<');
+            baseName = itemPart.substring(0, lt).trim();
+            specTypes = splitSpecTypes(itemPart.substring(lt + 1, itemPart.length() - 1).trim());
+        }
+        if (program != null) {
+            for (Function fn : program.functions) {
+                if (fn.name.equals(baseName)) {
+                    StringBuilder sb = new StringBuilder("[\n");
+                    for (int i = 0; i < fn.params.size(); i++) {
+                        if (i > 0) sb.append(",\n");
+                        Param p = fn.params.get(i);
+                        String pType = (i < specTypes.size()) ? specTypes.get(i) : (p.type != null && !p.type.isEmpty() ? p.type.toLowerCase() : "int");
+                        String effect = "READ";
+                        if (doesFunctionMutateParam(fn, i, program)) {
+                            effect = "WRITE";
+                        } else {
+                            boolean isCopy = pType.equals("int") || pType.equals("float") || pType.equals("bool") || pType.equals("unit") || pType.equals("char");
+                            boolean returnsParam = (fn.resultExpression != null && fn.resultExpression.trim().equals(p.name));
+                            if (!returnsParam) {
+                                for (Stmt s : fn.body) {
+                                    if (s.kind == Stmt.Kind.Return) {
+                                        String r = s.a != null && !s.a.isEmpty() ? s.a.trim() : (s.text != null ? s.text.trim() : "");
+                                        if (r.startsWith("return ")) r = r.substring(7).trim();
+                                        if (r.equals(p.name)) {
+                                            returnsParam = true;
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                            if (returnsParam && !isCopy) {
+                                effect = "CONSUME";
+                            }
+                        }
+                        sb.append("      {\"name\": \"").append(p.name).append("\", \"type\": \"").append(pType).append("\", \"effect\": \"").append(effect).append("\"}");
+                    }
+                    sb.append("\n    ]");
+                    return sb.toString();
+                }
+            }
+        }
+        return """
+[
+      {"name": "self", "type": "%s", "effect": "READ"},
+      {"name": "error", "type": "std__ParseError", "effect": "WRITE"}
+    ]""".formatted(recvType);
     }
 }

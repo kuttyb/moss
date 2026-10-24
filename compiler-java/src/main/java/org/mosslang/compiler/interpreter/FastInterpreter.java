@@ -6,7 +6,7 @@ import java.util.*;
 
 public class FastInterpreter {
     public static class Value {
-        public enum Kind { INT, FLOAT, BOOL, STRING, UNIT, OBJECT, DOMAIN }
+        public enum Kind { INT, FLOAT, BOOL, STRING, UNIT, OBJECT, DOMAIN, VECTOR, MAP, QUEUE }
         public final Kind kind;
         public final Object raw;
 
@@ -329,16 +329,32 @@ public class FastInterpreter {
                     }
                 }
                 // Function call
-                evalExpr(s.text, locals, currentDomain);
-                return Value.ofUnit();
+                return evalExpr(s.text, locals, currentDomain);
             }
             case Let, Var, Assign -> {
                 String varName = s.a != null ? s.a.trim() : "";
-                if (varName.contains(":")) {
+                if (varName.contains(":") && !varName.contains("[")) {
                     varName = varName.split(":")[0].trim();
                 }
                 String exprStr = s.b != null ? s.b.trim() : "";
                 Value val = evalExpr(exprStr, locals, currentDomain);
+                if (varName.endsWith("]") && varName.contains("[")) {
+                    int openB = varName.indexOf('[');
+                    String baseName = varName.substring(0, openB).trim();
+                    String keyExpr = varName.substring(openB + 1, varName.length() - 1).trim();
+                    Value baseVal = locals.containsKey(baseName) ? locals.get(baseName) : (currentDomain != null ? currentDomain.state.get(baseName) : null);
+                    Value keyVal = evalExpr(keyExpr, locals, currentDomain);
+                    if (baseVal != null && baseVal.raw instanceof Map<?, ?> mp) {
+                        @SuppressWarnings("unchecked")
+                        Map<Object, Value> m = (Map<Object, Value>) mp;
+                        m.put(keyVal.raw, val);
+                    } else if (baseVal != null && baseVal.raw instanceof List<?> lst) {
+                        @SuppressWarnings("unchecked")
+                        List<Value> l = (List<Value>) lst;
+                        l.set((int) keyVal.asInt(), val);
+                    }
+                    return Value.ofUnit();
+                }
                 if (currentDomain != null && currentDomain.state.containsKey(varName)) {
                     Value before = currentDomain.state.get(varName);
                     currentDomain.state.put(varName, val);
@@ -584,6 +600,57 @@ public class FastInterpreter {
         }
         if (expr.isEmpty()) return Value.ofUnit();
 
+        // 0. "|>" pipeline
+        String[] pipe = splitOperator(expr, "|>");
+        if (pipe != null) {
+            Value left = evalExpr(pipe[0], locals, currentDomain);
+            String stage = pipe[1].trim();
+            if (stage.equals("count")) {
+                if (left.raw instanceof Collection<?> col) return Value.ofInt(col.size());
+                if (left.raw instanceof Map<?, ?> mp) return Value.ofInt(mp.size());
+                return Value.ofInt(0);
+            }
+            if (stage.equals("sum")) {
+                long sum = 0;
+                if (left.raw instanceof Collection<?> col) {
+                    for (Object o : col) {
+                        if (o instanceof Value v) sum += v.asInt();
+                    }
+                }
+                return Value.ofInt(sum);
+            }
+            if (stage.startsWith("map(") && stage.endsWith(")")) {
+                String fnName = stage.substring(4, stage.length() - 1).trim();
+                List<Value> outList = new ArrayList<>();
+                if (left.raw instanceof Collection<?> col) {
+                    for (Object o : col) {
+                        if (o instanceof Value v) {
+                            Map<String, Value> tmpLocals = new HashMap<>(locals);
+                            tmpLocals.put("__pipe_item", v);
+                            outList.add(evalExpr(fnName + "(__pipe_item)", tmpLocals, currentDomain));
+                        }
+                    }
+                }
+                return new Value(Value.Kind.VECTOR, outList);
+            }
+            if (stage.startsWith("reduce(") && stage.endsWith(")")) {
+                List<String> rArgs = splitArgs(stage.substring(7, stage.length() - 1).trim());
+                Value acc = !rArgs.isEmpty() ? evalExpr(rArgs.get(0), locals, currentDomain) : Value.ofInt(0);
+                String fnName = rArgs.size() >= 2 ? rArgs.get(1).trim() : "";
+                if (left.raw instanceof Collection<?> col && !fnName.isEmpty()) {
+                    for (Object o : col) {
+                        if (o instanceof Value v) {
+                            Map<String, Value> tmpLocals = new HashMap<>(locals);
+                            tmpLocals.put("__pipe_acc", acc);
+                            tmpLocals.put("__pipe_item", v);
+                            acc = evalExpr(fnName + "(__pipe_acc, __pipe_item)", tmpLocals, currentDomain);
+                        }
+                    }
+                }
+                return acc;
+            }
+        }
+
         // 1. " or "
         String[] op = splitOperator(expr, " or ");
         if (op != null) {
@@ -750,8 +817,53 @@ public class FastInterpreter {
             }
         }
 
+        if (expr.startsWith("[") && expr.endsWith("]")) {
+            List<String> items = splitArgs(expr.substring(1, expr.length() - 1).trim());
+            List<Value> vec = new ArrayList<>();
+            for (String item : items) {
+                if (!item.isEmpty()) vec.add(evalExpr(item, locals, currentDomain));
+            }
+            return new Value(Value.Kind.VECTOR, vec);
+        }
+
+        if (expr.endsWith("]") && !expr.startsWith("[") && !expr.endsWith(")")) {
+            int openB = expr.indexOf('[');
+            if (openB > 0) {
+                Value baseVal = evalExpr(expr.substring(0, openB).trim(), locals, currentDomain);
+                Value idxVal = evalExpr(expr.substring(openB + 1, expr.length() - 1).trim(), locals, currentDomain);
+                if (baseVal.raw instanceof List<?> lst) {
+                    @SuppressWarnings("unchecked")
+                    List<Value> l = (List<Value>) lst;
+                    return l.get((int) idxVal.asInt());
+                }
+                if (baseVal.raw instanceof Map<?, ?> mp) {
+                    @SuppressWarnings("unchecked")
+                    Map<Object, Value> m = (Map<Object, Value>) mp;
+                    return m.getOrDefault(idxVal.raw, Value.ofUnit());
+                }
+            }
+        }
+
         // Function call: callee(args...)
-        int p = expr.indexOf('(');
+        int p = -1;
+        if (expr.endsWith(")")) {
+            int depth = 0;
+            boolean inQ = false;
+            for (int i = expr.length() - 1; i >= 0; i--) {
+                char c = expr.charAt(i);
+                if (c == '"' && (i == 0 || expr.charAt(i - 1) != '\\')) inQ = !inQ;
+                if (!inQ) {
+                    if (c == ')') depth++;
+                    else if (c == '(') {
+                        depth--;
+                        if (depth == 0) {
+                            p = i;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
         if (p > 0 && expr.endsWith(")")) {
             String callee = expr.substring(0, p).trim();
             if (callee.equals("FileIO.open") || expr.contains("FileIO.open(")) {
@@ -765,11 +877,36 @@ public class FastInterpreter {
             List<Value> evaluatedArgs = new ArrayList<>();
             for (String a : argList) {
                 if (!a.isEmpty()) {
-                    if (a.contains(":") && !a.startsWith("\"")) {
-                        a = a.substring(a.indexOf(':') + 1).trim();
+                    int colIdx = -1;
+                    int pDepth = 0;
+                    boolean inStr = false;
+                    for (int ci = 0; ci < a.length(); ci++) {
+                        char ch = a.charAt(ci);
+                        if (ch == '"' && (ci == 0 || a.charAt(ci - 1) != '\\')) inStr = !inStr;
+                        if (!inStr) {
+                            if (ch == '(' || ch == '[' || ch == '{') pDepth++;
+                            else if (ch == ')' || ch == ']' || ch == '}') pDepth--;
+                            else if (ch == ':' && pDepth == 0) {
+                                colIdx = ci;
+                                break;
+                            }
+                        }
+                    }
+                    if (colIdx > 0) {
+                        a = a.substring(colIdx + 1).trim();
                     }
                     evaluatedArgs.add(evalExpr(a, locals, currentDomain));
                 }
+            }
+
+            if (callee.equals("Vector") || callee.startsWith("Vector[")) {
+                return new Value(Value.Kind.VECTOR, new ArrayList<Value>());
+            }
+            if (callee.equals("Map") || callee.startsWith("Map[")) {
+                return new Value(Value.Kind.MAP, new LinkedHashMap<Object, Value>());
+            }
+            if (callee.equals("Queue") || callee.startsWith("Queue[")) {
+                return new Value(Value.Kind.QUEUE, new ArrayDeque<Value>());
             }
 
             if (callee.equals("sqrt") && !evaluatedArgs.isEmpty()) {
@@ -802,12 +939,88 @@ public class FastInterpreter {
                 }
             }
 
-            // Object method call check e.g. carrier.Reset(error) or carrier.Flip(set_overflow(error), error)
+            // Object or Builtin method call check e.g. carrier.Reset(error), x.length(), v.push(1), m.delete(...)
             if (callee.contains(".")) {
                 int dot = callee.lastIndexOf('.');
                 String recvName = callee.substring(0, dot).trim();
                 String methodName = callee.substring(dot + 1).trim();
-                Value recvVal = locals.get(recvName);
+                Value recvVal = locals.containsKey(recvName) ? locals.get(recvName)
+                        : (currentDomain != null && currentDomain.state.containsKey(recvName) ? currentDomain.state.get(recvName) : null);
+                if (recvVal == null) {
+                    try {
+                        recvVal = evalExpr(recvName, locals, currentDomain);
+                    } catch (Exception ignored) {}
+                }
+                if (recvVal != null) {
+                    if (recvVal.kind == Value.Kind.STRING) {
+                        if (methodName.equals("length") || methodName.equals("len") || methodName.equals("size")) {
+                            return Value.ofInt(recvVal.asString().length());
+                        }
+                        if (methodName.equals("char_at") && !evaluatedArgs.isEmpty()) {
+                            int idx = (int) evaluatedArgs.get(0).asInt();
+                            return Value.ofString(String.valueOf(recvVal.asString().charAt(idx)));
+                        }
+                        if (methodName.equals("split") && !evaluatedArgs.isEmpty()) {
+                            String sep = evaluatedArgs.get(0).asString();
+                            List<Value> parts = new ArrayList<>();
+                            for (String pt : recvVal.asString().split(java.util.regex.Pattern.quote(sep), -1)) {
+                                parts.add(Value.ofString(pt));
+                            }
+                            return new Value(Value.Kind.VECTOR, parts);
+                        }
+                    } else if (recvVal.kind == Value.Kind.VECTOR && recvVal.raw instanceof List<?> lst) {
+                        @SuppressWarnings("unchecked")
+                        List<Value> l = (List<Value>) lst;
+                        if (methodName.equals("push") && !evaluatedArgs.isEmpty()) {
+                            l.add(evaluatedArgs.get(0));
+                            return Value.ofUnit();
+                        }
+                        if (methodName.equals("pop")) {
+                            return l.remove(l.size() - 1);
+                        }
+                        if (methodName.equals("length") || methodName.equals("len") || methodName.equals("size") || methodName.equals("count")) {
+                            return Value.ofInt(l.size());
+                        }
+                    } else if (recvVal.kind == Value.Kind.QUEUE && recvVal.raw instanceof Deque<?> dq) {
+                        @SuppressWarnings("unchecked")
+                        Deque<Value> q = (Deque<Value>) dq;
+                        if (methodName.equals("push") && !evaluatedArgs.isEmpty()) {
+                            q.addLast(evaluatedArgs.get(0));
+                            return Value.ofUnit();
+                        }
+                        if (methodName.equals("pop")) {
+                            return q.removeFirst();
+                        }
+                    } else if (recvVal.kind == Value.Kind.MAP && recvVal.raw instanceof Map<?, ?> mp) {
+                        @SuppressWarnings("unchecked")
+                        Map<Object, Value> m = (Map<Object, Value>) mp;
+                        if (methodName.equals("keys")) {
+                            List<Value> keys = new ArrayList<>();
+                            for (Object k : m.keySet()) {
+                                if (k instanceof Long l) keys.add(Value.ofInt(l));
+                                else if (k instanceof Boolean b) keys.add(Value.ofBool(b));
+                                else keys.add(Value.ofString(String.valueOf(k)));
+                            }
+                            return new Value(Value.Kind.VECTOR, keys);
+                        }
+                        if (methodName.equals("values")) {
+                            return new Value(Value.Kind.VECTOR, new ArrayList<>(m.values()));
+                        }
+                        if (methodName.equals("delete") && evaluatedArgs.size() >= 2) {
+                            Object k = evaluatedArgs.get(0).raw;
+                            Value fallback = evaluatedArgs.get(1);
+                            boolean present = m.containsKey(k);
+                            Value removed = present ? m.remove(k) : fallback;
+                            if (argList.size() >= 3) {
+                                String foundVar = argList.get(2).trim();
+                                if (locals.containsKey(foundVar)) {
+                                    locals.put(foundVar, Value.ofBool(present));
+                                }
+                            }
+                            return removed;
+                        }
+                    }
+                }
                 if (recvVal != null && recvVal.kind == Value.Kind.OBJECT) {
                     for (ObjectType obj : program.objects) {
                         for (Method m : obj.methods) {

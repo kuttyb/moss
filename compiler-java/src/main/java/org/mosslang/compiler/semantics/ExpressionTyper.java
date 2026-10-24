@@ -400,7 +400,7 @@ public class ExpressionTyper {
                     }
 
                     // For generic or inferred functions, specialize the return type
-                    if (hasGenericParam && !fn.body.isEmpty()) {
+                    if (hasGenericParam && (!fn.body.isEmpty() || (fn.resultExpression != null && !fn.resultExpression.isEmpty()))) {
                         TypeEnv callEnv = new TypeEnv();
                         for (int i = 0; i < fn.params.size(); i++) {
                             callEnv.put(fn.params.get(i).name, actualArgs.get(i));
@@ -414,14 +414,23 @@ public class ExpressionTyper {
                                 if (!retExpr.isEmpty()) {
                                     return infer(retExpr, s.line, callEnv);
                                 }
-                            } else if (s.kind == Stmt.Kind.Assign) {
+                            } else if (s.kind == Stmt.Kind.Assign || s.kind == Stmt.Kind.Let || s.kind == Stmt.Kind.Var) {
                                 String vname = s.a != null ? s.a.trim() : "";
                                 String ve = s.b != null ? s.b.trim() : "";
                                 if (!vname.isEmpty() && !ve.isEmpty()) {
-                                    TypeRef vt = infer(ve, s.line, callEnv);
-                                    callEnv.put(vname, vt);
+                                    if (!vname.contains("[")) {
+                                        TypeRef vt = infer(ve, s.line, callEnv);
+                                        callEnv.put(vname, vt);
+                                    } else {
+                                        infer(ve, s.line, callEnv);
+                                    }
                                 }
+                            } else if (s.kind == Stmt.Kind.Call && s.text != null) {
+                                infer(s.text.trim(), s.line, callEnv);
                             }
+                        }
+                        if (fn.resultExpression != null && !fn.resultExpression.isEmpty()) {
+                            return infer(fn.resultExpression, fn.resultLine != 0 ? fn.resultLine : line, callEnv);
                         }
                     }
 
@@ -695,6 +704,18 @@ public class ExpressionTyper {
             if ("contains".equals(member) || "hasKey".equals(member)) {
                 return TypeRef.primitive("bool");
             }
+            if ("keys".equals(member)) {
+                TypeRef k = targetType.typeArgs().isEmpty() ? solver.fresh(0) : targetType.typeArgs().get(0);
+                return TypeRef.builtin("vector", List.of(k));
+            }
+            if ("values".equals(member)) {
+                TypeRef v = targetType.typeArgs().size() < 2 ? solver.fresh(0) : targetType.typeArgs().get(1);
+                return TypeRef.builtin("vector", List.of(v));
+            }
+            if ("delete".equals(member)) {
+                for (String a : argExprs) infer(a, line, env);
+                return targetType.typeArgs().size() < 2 ? solver.fresh(0) : targetType.typeArgs().get(1);
+            }
         }
 
         if (targetType.kind() == TypeKind.Builtin && "queue".equals(targetType.name())) {
@@ -711,9 +732,53 @@ public class ExpressionTyper {
         }
 
         if (targetType.sameHead(TypeRef.primitive("string"))) {
-            if ("len".equals(member) || "size".equals(member)) {
+            if ("len".equals(member) || "size".equals(member) || "length".equals(member)) {
+                if (!argExprs.isEmpty()) {
+                    throw new CompileError(line, "method '" + member + "' on string expects 0 arguments, got " + argExprs.size(), "TYPE_MISMATCH");
+                }
                 return TypeRef.primitive("int");
             }
+            if ("char_at".equals(member)) {
+                if (argExprs.size() != 1) {
+                    throw new CompileError(line, "method 'char_at' on string expects 1 argument, got " + argExprs.size(), "TYPE_MISMATCH");
+                }
+                TypeRef idxType = solver.resolve(infer(argExprs.get(0), line, env));
+                if (!solver.unify(idxType, TypeRef.primitive("int"))) {
+                    throw new CompileError(line, "method 'char_at' requires int argument, got '" + idxType.toCanonicalString() + "'", "TYPE_MISMATCH");
+                }
+                return TypeRef.primitive("string");
+            }
+            if ("split".equals(member)) {
+                if (argExprs.size() != 1) {
+                    throw new CompileError(line, "method 'split' on string expects 1 argument, got " + argExprs.size(), "TYPE_MISMATCH");
+                }
+                TypeRef sepType = solver.resolve(infer(argExprs.get(0), line, env));
+                if (!solver.unify(sepType, TypeRef.primitive("string"))) {
+                    throw new CompileError(line, "method 'split' requires string argument, got '" + sepType.toCanonicalString() + "'", "TYPE_MISMATCH");
+                }
+                return TypeRef.builtin("vector", List.of(TypeRef.primitive("string")));
+            }
+            if ("parse_int".equals(member)) {
+                for (String a : argExprs) infer(a, line, env);
+                return TypeRef.primitive("int");
+            }
+            if ("parse_float".equals(member)) {
+                for (String a : argExprs) infer(a, line, env);
+                return TypeRef.primitive("float");
+            }
+            if ("parse_bool".equals(member)) {
+                for (String a : argExprs) infer(a, line, env);
+                return TypeRef.primitive("bool");
+            }
+            if ("trim".equals(member) || "to_upper".equals(member) || "to_lower".equals(member) || "slice".equals(member)) {
+                for (String a : argExprs) infer(a, line, env);
+                return TypeRef.primitive("string");
+            }
+            if ("starts_with".equals(member) || "ends_with".equals(member) || "contains".equals(member)) {
+                for (String a : argExprs) infer(a, line, env);
+                return TypeRef.primitive("bool");
+            }
+            throw new CompileError(line, "type 'string' has no method '" + member + "'", "TYPE_MISMATCH");
         }
 
         if (traits.containsKey(targetType.name())) {

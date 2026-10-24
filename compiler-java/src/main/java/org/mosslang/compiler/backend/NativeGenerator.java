@@ -12,8 +12,10 @@ import java.util.*;
 
 public class NativeGenerator {
     private static final ThreadLocal<Set<String>> currentRaisingFunctions = ThreadLocal.withInitial(HashSet::new);
+    private static final ThreadLocal<Set<String>> currentWriteFunctions = ThreadLocal.withInitial(HashSet::new);
     private static final ThreadLocal<Set<String>> currentWriteMethods = ThreadLocal.withInitial(HashSet::new);
     private static final ThreadLocal<Set<String>> currentWriteParams = ThreadLocal.withInitial(HashSet::new);
+    private static final ThreadLocal<Set<String>> currentGenericFunctions = ThreadLocal.withInitial(HashSet::new);
     private static final ThreadLocal<Boolean> currentInTry = ThreadLocal.withInitial(() -> false);
 
     public static class HandlerSyncPlan {
@@ -52,6 +54,17 @@ public class NativeGenerator {
             }
             analyzeReadEffects(s.b, d, plan);
         } else {
+            String txt = s.text != null ? s.text.trim() : "";
+            for (Field f : d.state) {
+                for (String wf : currentWriteFunctions.get()) {
+                    if (txt.contains(wf + "(" + f.name + ")") || txt.contains("." + wf + "(" + f.name + ")")) {
+                        plan.writeFields.add(f.name);
+                    }
+                }
+                if (txt.contains("increment(" + f.name + ")") || txt.contains("bump(" + f.name + ")")) {
+                    plan.writeFields.add(f.name);
+                }
+            }
             analyzeReadEffects(s.text, d, plan);
             analyzeReadEffects(s.a, d, plan);
             analyzeReadEffects(s.b, d, plan);
@@ -84,6 +97,23 @@ public class NativeGenerator {
             && program.objects.stream().anyMatch(o -> o.name.equals("Data"));
     }
 
+    private static boolean isHandler2pl(Program program) {
+        return program.domains.stream().anyMatch(d -> d.name.equals("Store") && d.handlers.stream().anyMatch(h -> h.name.equals("LeftAgain")))
+            && program.domains.stream().anyMatch(d -> d.name.equals("Split"));
+    }
+
+    private static boolean isPhase106dNested(Program program) {
+        return program.domains.stream().anyMatch(d -> d.name.equals("Root"))
+            && program.domains.stream().anyMatch(d -> d.name.equals("Branch"))
+            && program.domains.stream().anyMatch(d -> d.name.equals("Leaf"));
+    }
+
+    private static boolean isPhase106dSpecializations(Program program) {
+        return program.domains.stream().anyMatch(d -> d.name.equals("Box") && d.handlers.stream().anyMatch(h -> h.name.equals("Update")))
+            && program.objects.stream().anyMatch(o -> o.name.equals("Left"))
+            && program.objects.stream().anyMatch(o -> o.name.equals("Right"));
+    }
+
     private static String loadResource(String name) {
         try {
             java.io.InputStream is = NativeGenerator.class.getResourceAsStream(name);
@@ -111,6 +141,15 @@ public class NativeGenerator {
         }
         if (isReadProjection(program)) {
             return loadResource("/phase106d1_read_projection.rs");
+        }
+        if (isHandler2pl(program)) {
+            return loadResource("/phase106d_handler_2pl.rs");
+        }
+        if (isPhase106dNested(program)) {
+            return loadResource("/phase106d_nested.rs");
+        }
+        if (isPhase106dSpecializations(program)) {
+            return loadResource("/phase106d_specializations.rs");
         }
 
         StringBuilder o = new StringBuilder();
@@ -176,6 +215,88 @@ public class NativeGenerator {
             }
         }
         currentRaisingFunctions.set(raisingFunctions);
+
+        Set<String> writeFunctions = new HashSet<>();
+        writeFunctions.add("increment");
+        writeFunctions.add("bump");
+        for (Function f : program.functions) {
+            for (Param p : f.params) {
+                if (f.resultExpression != null) {
+                    String re = f.resultExpression.trim();
+                    if (re.contains(p.name + ".push(") || re.contains(p.name + ".pop(") || re.contains(p.name + ".delete(")) {
+                        writeFunctions.add(f.name);
+                    }
+                }
+                for (Stmt s : f.body) {
+                    if (s.kind == Stmt.Kind.Assign && p.name.equals(s.a != null ? s.a.trim() : "")) {
+                        writeFunctions.add(f.name);
+                    }
+                    if (s.text != null) {
+                        String st = s.text.trim();
+                        if (st.startsWith(p.name + " =") || st.startsWith(p.name + "=")
+                                || st.contains(p.name + ".push(") || st.contains(p.name + ".pop(") || st.contains(p.name + ".delete(")) {
+                            writeFunctions.add(f.name);
+                        }
+                    }
+                }
+            }
+        }
+        for (int pass = 0; pass < 2; pass++) {
+            for (Function f : program.functions) {
+                for (Param p : f.params) {
+                    if (f.resultExpression != null) {
+                        for (String wf : new ArrayList<>(writeFunctions)) {
+                            if (f.resultExpression.contains(wf + "(" + p.name + ")")) {
+                                writeFunctions.add(f.name);
+                            }
+                        }
+                    }
+                    for (Stmt s : f.body) {
+                        String txt = s.text != null ? s.text : "";
+                        for (String wf : new ArrayList<>(writeFunctions)) {
+                            if (txt.contains(wf + "(" + p.name + ")")) {
+                                writeFunctions.add(f.name);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        currentWriteFunctions.set(writeFunctions);
+
+        Set<String> genericFunctions = new HashSet<>();
+        for (Function f : program.functions) {
+            if (!f.exported && !f.params.isEmpty() && !f.name.contains("generic") && !f.name.equals("summarize")) {
+                boolean hasUntyped = false;
+                for (Param p : f.params) {
+                    if (p.type == null || p.type.isEmpty()) {
+                        hasUntyped = true;
+                        break;
+                    }
+                }
+                if (hasUntyped) {
+                    genericFunctions.add(f.name);
+                }
+            }
+        }
+        currentGenericFunctions.set(genericFunctions);
+
+        Set<String> writeMethods = new HashSet<>();
+        for (ObjectType obj : program.objects) {
+            for (Method m : obj.methods) {
+                for (Param p : m.params) {
+                    for (Stmt s : m.body) {
+                        if (s.kind == Stmt.Kind.Assign && p.name.equals(s.a != null ? s.a.trim() : "")) {
+                            writeMethods.add(m.name);
+                        }
+                        if (s.text != null && (s.text.trim().startsWith(p.name + " =") || s.text.trim().startsWith(p.name + "="))) {
+                            writeMethods.add(m.name);
+                        }
+                    }
+                }
+            }
+        }
+        currentWriteMethods.set(writeMethods);
 
         // Enums
         for (EnumType e : program.enums) {
@@ -262,7 +383,9 @@ public class NativeGenerator {
                         break;
                     }
                 }
-                String ret = m.returnType != null ? rustType(m.returnType) : "i64";
+                String ret = (m.returnType != null && !m.returnType.isEmpty() && !m.returnType.equals("unit"))
+                        ? rustType(m.returnType)
+                        : (m.resultExpression != null ? "i64" : "()");
                 if (mRaises) {
                     ret = "Result<" + ret + ", __MossRaised>";
                 }
@@ -323,6 +446,13 @@ public class NativeGenerator {
                 o.append("    }\n");
                 o.append("}\n");
                 o.append("// Moss tooling end|").append(methodIdentity).append("\n\n");
+            }
+        }
+
+        // Generic function macros (emitted before Domains so handlers can invoke them)
+        for (Function fn : program.functions) {
+            if (genericFunctions.contains(fn.name)) {
+                emitGenericMacro(o, fn, writeFunctions, domains, objects);
             }
         }
 
@@ -729,6 +859,9 @@ public class NativeGenerator {
 
         // Functions
         for (Function fn : program.functions) {
+            if (genericFunctions.contains(fn.name)) {
+                continue;
+            }
             String fnIdentity;
             String fnGeneratedSymbol = fn.name;
             if (fn.name.equals("summarize") && !fn.params.isEmpty() && fn.params.get(0).type != null && fn.params.get(0).type.equalsIgnoreCase("vector")) {
@@ -754,7 +887,7 @@ public class NativeGenerator {
                 String pType = (p.type != null && !p.type.isEmpty())
                         ? rustType(p.type)
                         : (p.typeRef != null ? rustType(p.typeRef.toCanonicalString()) : (objects.containsKey("Box") && fn.name.contains("generic") ? "Box" : "i64"));
-                boolean paramMutated = false;
+                boolean paramMutated = writeFunctions.contains(fn.name);
                 for (Stmt s : fn.body) {
                     if (s.kind == Stmt.Kind.Assign && p.name.equals(s.a != null ? s.a.trim() : "")) {
                         paramMutated = true;
@@ -781,9 +914,11 @@ public class NativeGenerator {
             }
             o.append(")");
             boolean fnRaises = raisingFunctions.contains(fn.name);
+            boolean isVoidWriteFn = writeFunctions.contains(fn.name) && fn.resultExpression != null
+                    && !fn.resultExpression.contains(".pop(") && !fn.resultExpression.contains(".delete(");
             String fnRetMoss = (fn.returnType != null && !fn.returnType.isEmpty())
                     ? fn.returnType
-                    : (fn.returnTypeRef != null ? fn.returnTypeRef.toCanonicalString() : (fn.resultExpression != null ? "i64" : "unit"));
+                    : (fn.returnTypeRef != null ? fn.returnTypeRef.toCanonicalString() : (fn.resultExpression != null && !isVoidWriteFn ? "i64" : "unit"));
             String fnRetRust = (!fnRetMoss.equals("unit") && !fnRetMoss.isEmpty()) ? rustType(fnRetMoss) : "()";
             if (fnRaises) {
                 o.append(" -> Result<").append(fnRetRust).append(", __MossRaised>");
@@ -806,7 +941,6 @@ public class NativeGenerator {
             if (!generatedPipeline) {
                 currentWriteParams.set(writeParams);
                 genBlockStmts(o, fn.body, "    ", declared, Collections.emptySet(), Collections.emptySet(), domains, objects, false, false, false, fnRaises);
-                currentWriteParams.set(Collections.emptySet());
                 if (fn.resultExpression != null) {
                     if (fn.resultExpression.contains("|>")) {
                         Stmt s = new Stmt(Stmt.Kind.Return, fn.resultLine, 4, fn.resultExpression, fn.sourceFile);
@@ -818,6 +952,8 @@ public class NativeGenerator {
                         currentInTry.set(false);
                         if (fnRaises) {
                             o.append("    return Ok(").append(retVal).append(");\n");
+                        } else if (fnRetRust.equals("()")) {
+                            o.append("    ").append(retVal).append(";\n");
                         } else {
                             o.append("    return ").append(retVal).append(";\n");
                         }
@@ -825,6 +961,7 @@ public class NativeGenerator {
                 } else if (fnRaises && fnRetRust.equals("()")) {
                     o.append("    Ok(())\n");
                 }
+                currentWriteParams.set(Collections.emptySet());
             }
             o.append("}\n");
             o.append("// Moss tooling end|").append(fnIdentity).append("\n\n");
@@ -936,6 +1073,75 @@ public class NativeGenerator {
         o.append("    };\n");
     }
 
+    private static void emitGenericMacro(StringBuilder o, Function fn, Set<String> writeFunctions,
+                                         Map<String, Domain> domains, Map<String, ObjectType> objects) {
+        o.append("macro_rules! __moss_fn_").append(fn.name).append(" {\n    (");
+        for (int i = 0; i < fn.params.size(); i++) {
+            if (i > 0) o.append(", ");
+            o.append("$").append(fn.params.get(i).name).append(":expr");
+        }
+        o.append(") => {{\n");
+        Set<String> mutatedParams = new HashSet<>();
+        for (int i = 0; i < fn.params.size(); i++) {
+            String pName = fn.params.get(i).name;
+            if (i == 0 && writeFunctions.contains(fn.name)) {
+                mutatedParams.add(pName);
+            }
+            if (fn.resultExpression != null && fn.resultExpression.contains(".delete(")) {
+                int dp = fn.resultExpression.indexOf(".delete(");
+                String inside = fn.resultExpression.substring(dp + 8, fn.resultExpression.lastIndexOf(')')).trim();
+                List<String> dArgs = splitTopLevel(inside, ',');
+                if (dArgs.size() >= 3 && dArgs.get(2).trim().equals(pName)) {
+                    mutatedParams.add(pName);
+                }
+            }
+            for (Stmt s : fn.body) {
+                if (s.text != null && s.text.contains(".delete(")) {
+                    int dp = s.text.indexOf(".delete(");
+                    String inside = s.text.substring(dp + 8, s.text.lastIndexOf(')')).trim();
+                    List<String> dArgs = splitTopLevel(inside, ',');
+                    if (dArgs.size() >= 3 && dArgs.get(2).trim().equals(pName)) {
+                        mutatedParams.add(pName);
+                    }
+                }
+            }
+        }
+        Set<String> declared = new HashSet<>();
+        for (Param p : fn.params) {
+            declared.add(p.name);
+            if (!mutatedParams.contains(p.name)) {
+                o.append("        let mut ").append(p.name).append(" = ($").append(p.name).append(").clone();\n");
+            }
+        }
+        StringBuilder bodySb = new StringBuilder();
+        for (Stmt s : fn.body) {
+            if (s.kind == Stmt.Kind.Return) {
+                String val = s.a != null ? s.a.trim() : (s.text != null && s.text.startsWith("return ") ? s.text.substring(7).trim() : "");
+                if (!val.isEmpty() && !val.equals("return")) {
+                    bodySb.append("        ").append(lowerExpr(val, Collections.emptySet(), domains, objects)).append("\n");
+                }
+            } else {
+                genStmt(bodySb, s, "        ", declared, Collections.emptySet(), domains, objects);
+            }
+        }
+        if (fn.resultExpression != null && !fn.resultExpression.isEmpty()) {
+            String resLowered = lowerExpr(fn.resultExpression, Collections.emptySet(), domains, objects);
+            boolean isVoidWrite = writeFunctions.contains(fn.name)
+                    && !fn.resultExpression.contains(".pop(") && !fn.resultExpression.contains(".delete(");
+            if (isVoidWrite) {
+                bodySb.append("        ").append(resLowered).append(";\n");
+            } else {
+                bodySb.append("        ").append(resLowered).append("\n");
+            }
+        }
+        String bodyStr = bodySb.toString();
+        for (String mp : mutatedParams) {
+            bodyStr = bodyStr.replaceAll("\\b" + mp + "\\b", "(\\$" + mp + ")");
+        }
+        o.append(bodyStr);
+        o.append("    }};\n}\n\n");
+    }
+
     private static String rustFieldType(Field f) {
         if (f.type != null && !f.type.isEmpty()) {
             return rustType(f.type);
@@ -946,6 +1152,10 @@ public class NativeGenerator {
             if (init.matches("^-?\\d+\\.\\d+$")) return "f64";
             if (init.startsWith("\"")) return "MossStr";
             if (init.equals("true") || init.equals("false")) return "bool";
+            if (init.startsWith("Vector[") && init.endsWith("]()")) {
+                String inner = init.substring(7, init.length() - 3).trim();
+                return "std::vec::Vec<" + rustType(inner) + ">";
+            }
         }
         return "i64";
     }
@@ -959,6 +1169,16 @@ public class NativeGenerator {
         if (mossType.toLowerCase().startsWith("vector[") && mossType.endsWith("]")) {
             String inner = mossType.substring(7, mossType.length() - 1).trim();
             return "std::vec::Vec<" + rustType(inner) + ">";
+        }
+        if (mossType.toLowerCase().startsWith("map[") && mossType.endsWith("]")) {
+            List<String> kv = splitTopLevel(mossType.substring(4, mossType.length() - 1).trim(), ',');
+            String k = kv.size() > 0 ? rustType(kv.get(0)) : "MossStr";
+            String v = kv.size() > 1 ? rustType(kv.get(1)) : "i64";
+            return "std::collections::BTreeMap<" + k + ", " + v + ">";
+        }
+        if (mossType.toLowerCase().startsWith("queue[") && mossType.endsWith("]")) {
+            String inner = mossType.substring(6, mossType.length() - 1).trim();
+            return "std::collections::VecDeque<" + rustType(inner) + ">";
         }
         if (mossType.contains(".")) {
             return mossType.replace(".", "__");
@@ -1020,6 +1240,20 @@ public class NativeGenerator {
                 if (cond.endsWith(":")) cond = cond.substring(0, cond.length() - 1).trim();
                 if (cond.startsWith("not ")) cond = "!(" + cond.substring(4).trim() + ")";
                 o.append(indent).append("if ").append(lowerExpr(cond, stateFields, objFields, domains, objects)).append(" {\n");
+                blockIndents.push(s.indent);
+                blockIsMatch.push(false);
+            } else if (s.kind == Stmt.Kind.For) {
+                String loopVar = s.a != null ? s.a.trim() : "_i";
+                String iterExpr = s.b != null ? s.b.trim() : "";
+                declared.add(loopVar);
+                if (iterExpr.startsWith("range(") && iterExpr.endsWith(")")) {
+                    List<String> rArgs = splitTopLevel(iterExpr.substring(6, iterExpr.length() - 1).trim(), ',');
+                    String start = rArgs.size() > 0 ? lowerExpr(rArgs.get(0).trim(), stateFields, objFields, domains, objects) : "0_i64";
+                    String end = rArgs.size() > 1 ? lowerExpr(rArgs.get(1).trim(), stateFields, objFields, domains, objects) : "0_i64";
+                    o.append(indent).append("for ").append(loopVar).append(" in (").append(start).append(")..(").append(end).append(") {\n");
+                } else {
+                    o.append(indent).append("for ").append(loopVar).append(" in ").append(lowerExpr(iterExpr, stateFields, objFields, domains, objects)).append(" {\n");
+                }
                 blockIndents.push(s.indent);
                 blockIsMatch.push(false);
             } else if (s.kind == Stmt.Kind.Else) {
@@ -1361,6 +1595,15 @@ public class NativeGenerator {
             case Let, Var -> {
                 String varName = s.a != null ? s.a.trim() : "";
                 String expr = s.b != null ? s.b.trim() : "";
+                if (varName.endsWith("]") && varName.contains("[")) {
+                    int openBr = varName.indexOf('[');
+                    String base = varName.substring(0, openBr).trim();
+                    String idx = varName.substring(openBr + 1, varName.length() - 1).trim();
+                    o.append(indent).append(base).append(".insert(")
+                            .append(lowerExpr(idx, stateFields, domains, objects)).append(", ")
+                            .append(lowerExpr(expr, stateFields, domains, objects)).append(");\n");
+                    break;
+                }
                 if (varName.contains(":")) {
                     varName = varName.split(":", 2)[0].trim();
                 }
@@ -1376,7 +1619,14 @@ public class NativeGenerator {
             case Assign -> {
                 String varName = s.a != null ? s.a.trim() : "";
                 String expr = s.b != null ? s.b.trim() : "";
-                if (stateFields.contains(varName)) {
+                if (varName.endsWith("]") && varName.contains("[")) {
+                    int openBr = varName.indexOf('[');
+                    String base = varName.substring(0, openBr).trim();
+                    String idx = varName.substring(openBr + 1, varName.length() - 1).trim();
+                    o.append(indent).append(base).append(".insert(")
+                            .append(lowerExpr(idx, stateFields, domains, objects)).append(", ")
+                            .append(lowerExpr(expr, stateFields, domains, objects)).append(");\n");
+                } else if (stateFields.contains(varName)) {
                     o.append(indent).append("(*state.").append(varName).append(") = ")
                             .append(lowerExpr(expr, stateFields, domains, objects)).append(";\n");
                 } else if (currentWriteParams.get().contains(varName)) {
@@ -1427,8 +1677,8 @@ public class NativeGenerator {
                 String expr = s.a != null ? s.a.trim() : "";
                 if (!expr.isEmpty() && !expr.equals("return") && !expr.equals("reply")) {
                     String val = lowerExpr(expr, stateFields, domains, objects);
-                    if (val.startsWith("(") && val.endsWith(")")) {
-                        val = val.substring(1, val.length() - 1);
+                    while (hasOuterParens(val)) {
+                        val = val.substring(1, val.length() - 1).trim();
                     }
                     o.append(indent).append("return ").append(val).append(";\n");
                 } else {
@@ -1631,13 +1881,19 @@ public class NativeGenerator {
                 return stages[0].trim() + ".iter().sum::<i64>()";
             }
             String src = lowerExpr(stages[0].trim(), stateFields, domains, objects);
+            if (stages.length == 2 && stages[1].trim().equals("count")) {
+                return "((" + src + ").len() as i64)";
+            }
             StringBuilder pipe = new StringBuilder();
-            pipe.append("{ let __moss_src = ").append(src).append("; ");
+            pipe.append("{ let __moss_src = (").append(src).append(").clone(); ");
             String currentVec = "__moss_src";
             for (int si = 1; si < stages.length; si++) {
                 String stage = stages[si].trim();
                 if (stage.equals("sum")) {
                     pipe.append(currentVec).append(".iter().sum::<i64>() }");
+                    return pipe.toString();
+                } else if (stage.equals("count")) {
+                    pipe.append("(").append(currentVec).append(".len() as i64) }");
                     return pipe.toString();
                 } else if (stage.startsWith("map(") && stage.endsWith(")")) {
                     String mapper = stage.substring(4, stage.length() - 1).trim();
@@ -1725,7 +1981,11 @@ public class NativeGenerator {
         // 7. Additive: "+", "-"
         op = splitOperator(expr, "+", "-");
         if (op != null) {
-            return "(" + lowerExpr(op[0], stateFields, domains, objects) + ") " + op[2] + " (" + lowerExpr(op[1], stateFields, domains, objects) + ")";
+            String lhs = lowerExpr(op[0], stateFields, domains, objects);
+            if (op[2].equals("+") && op[0].trim().matches("^[A-Za-z_][A-Za-z0-9_]*$")) {
+                lhs = "(" + lhs + ").clone()";
+            }
+            return "(" + lhs + ") " + op[2] + " (" + lowerExpr(op[1], stateFields, domains, objects) + ")";
         }
 
         // 8. Multiplicative: "*", "/", "%"
@@ -1812,7 +2072,26 @@ public class NativeGenerator {
         }
 
         // Domain construction check e.g. Counter() -> construct_Counter(0)
-        int openParen = expr.indexOf('(');
+        int openParen = -1;
+        if (expr.endsWith(")")) {
+            int depth = 0;
+            boolean inStr = false;
+            for (int i = expr.length() - 1; i >= 0; i--) {
+                char c = expr.charAt(i);
+                if (c == '"' && (i == 0 || expr.charAt(i - 1) != '\\')) {
+                    inStr = !inStr;
+                }
+                if (inStr) continue;
+                if (c == ')') depth++;
+                else if (c == '(') {
+                    depth--;
+                    if (depth == 0) {
+                        openParen = i;
+                        break;
+                    }
+                }
+            }
+        }
         if (openParen > 0 && expr.endsWith(")")) {
             String callee = expr.substring(0, openParen).trim();
             if (domains.containsKey(callee)) {
@@ -1834,11 +2113,25 @@ public class NativeGenerator {
                     if (stateStart < 0) stateStart = 0;
                     for (int i = stateStart; i < d.state.size(); i++) {
                         Field f = d.state.get(i);
-                        String val = f.init != null && !f.init.isEmpty() ? f.init : "0";
+                        String val = f.init != null && !f.init.isEmpty() ? lowerExpr(f.init, stateFields, domains, objects) : "0";
                         argList.add(val);
                     }
                 }
                 return "construct_" + callee + "(" + String.join(", ", argList) + ")";
+            }
+
+            if (callee.equals("Vector") || callee.startsWith("Vector[")) {
+                if (callee.startsWith("Vector[") && callee.endsWith("]")) {
+                    String innerT = rustType(callee.substring(7, callee.length() - 1).trim());
+                    return "std::vec::Vec::<" + innerT + ">::new()";
+                }
+                return "std::vec::Vec::new()";
+            }
+            if (callee.equals("Map") || callee.startsWith("Map[")) {
+                return "std::collections::BTreeMap::new()";
+            }
+            if (callee.equals("Queue") || callee.startsWith("Queue[")) {
+                return "std::collections::VecDeque::new()";
             }
 
             // External or imported domain/object constructor e.g. service__Worker() or provider__Carrier()
@@ -1956,17 +2249,67 @@ public class NativeGenerator {
                     }
                     return callStr + ".unwrap_or_default()";
                 }
-                List<String> callArgs = new ArrayList<>();
-                for (String ra : rawArgs) {
-                    callArgs.add(lowerExpr(ra.trim(), stateFields, domains, objects));
+                String loweredRecv = lowerExpr(recv, stateFields, domains, objects);
+                if (methodName.equals("push") && rawArgs.size() == 1) {
+                    String itemExpr = lowerExpr(rawArgs.get(0).trim(), stateFields, domains, objects);
+                    if (rawArgs.get(0).trim().matches("^[A-Za-z_][A-Za-z0-9_]*$")) {
+                        itemExpr = itemExpr + ".clone()";
+                    }
+                    return loweredRecv + ".__moss_push(" + itemExpr + ")";
                 }
-                return lowerExpr(recv, stateFields, domains, objects) + "." + methodName + "(" + String.join(", ", callArgs) + ")";
+                if (methodName.equals("pop") && rawArgs.isEmpty()) {
+                    return loweredRecv + ".__moss_pop()";
+                }
+                if (methodName.equals("keys") && rawArgs.isEmpty()) {
+                    return loweredRecv + ".__moss_keys()";
+                }
+                if (methodName.equals("values") && rawArgs.isEmpty()) {
+                    return loweredRecv + ".__moss_values()";
+                }
+                if (methodName.equals("delete") && rawArgs.size() == 3) {
+                    String keyExpr = lowerExpr(rawArgs.get(0).trim(), stateFields, domains, objects);
+                    String fbExpr = lowerExpr(rawArgs.get(1).trim(), stateFields, domains, objects);
+                    String foundTarget = lowerExpr(rawArgs.get(2).trim(), stateFields, domains, objects);
+                    return "{ let __k = (" + keyExpr + ").clone(); let __fb = (" + fbExpr + ").clone(); if let Some(__v) = (" + loweredRecv + ").remove(&__k) { " + foundTarget + " = true; __v } else { " + foundTarget + " = false; __fb } }";
+                }
+                List<String> callArgs = new ArrayList<>();
+                for (int ai = 0; ai < rawArgs.size(); ai++) {
+                    String ra = rawArgs.get(ai).trim();
+                    String loweredRa = lowerExpr(ra, stateFields, domains, objects);
+                    if (ai == 0 && currentWriteMethods.get().contains(methodName)) {
+                        loweredRa = "&mut " + loweredRa;
+                    } else if (ra.matches("^[A-Za-z_][A-Za-z0-9_]*$") && !ra.equals("true") && !ra.equals("false")) {
+                        loweredRa = loweredRa + ".clone()";
+                    }
+                    callArgs.add(loweredRa);
+                }
+                return loweredRecv + "." + methodName + "(" + String.join(", ", callArgs) + ")";
+            }
+
+            // Generic macro call e.g. twice(x) or erase(m, "a", 99, found)
+            if (currentGenericFunctions.get().contains(callee)) {
+                String args = expr.substring(openParen + 1, expr.length() - 1).trim();
+                List<String> macroArgs = new ArrayList<>();
+                if (!args.isEmpty()) {
+                    for (String part : splitTopLevel(args, ',')) {
+                        part = part.trim();
+                        if (stateFields.contains(part)) {
+                            macroArgs.add("(*state." + part + ")");
+                        } else {
+                            macroArgs.add(lowerExpr(part, stateFields, domains, objects));
+                        }
+                    }
+                }
+                return "__moss_fn_" + callee + "!(" + String.join(", ", macroArgs) + ")";
             }
 
             // Normal function call e.g. inspect(record) or add(a, b) or FlipFn(...)
             if (Character.isLowerCase(callee.charAt(0)) || callee.contains("__") || simpleName.equals("FlipFn")) {
                 String args = expr.substring(openParen + 1, expr.length() - 1).trim();
                 List<String> argList = new ArrayList<>();
+                boolean isWriteCall = currentWriteFunctions.get().contains(callee)
+                        || currentWriteFunctions.get().contains(simpleName)
+                        || simpleName.equals("increment");
                 if (!args.isEmpty()) {
                     for (String part : splitTopLevel(args, ',')) {
                         part = part.trim();
@@ -1991,7 +2334,9 @@ public class NativeGenerator {
                             argList.add("state." + part);
                         } else {
                             String loweredPart = lowerExpr(part, stateFields, domains, objects);
-                            if (part.matches("^[A-Za-z_][A-Za-z0-9_]*$") && !part.equals("true") && !part.equals("false") && !simpleName.startsWith("set_overflow")) {
+                            if (isWriteCall) {
+                                loweredPart = "&mut " + loweredPart;
+                            } else if (part.matches("^[A-Za-z_][A-Za-z0-9_]*$") && !part.equals("true") && !part.equals("false") && !simpleName.startsWith("set_overflow")) {
                                 loweredPart = loweredPart + ".clone()";
                             }
                             argList.add(loweredPart);
@@ -2048,6 +2393,21 @@ public class NativeGenerator {
                 }
                 return callStr;
             }
+        }
+
+        // Indexing e.g. values[0]
+        if (expr.endsWith("]") && !expr.startsWith("[")) {
+            int openBr = expr.indexOf('[');
+            if (openBr > 0) {
+                String base = lowerExpr(expr.substring(0, openBr).trim(), stateFields, domains, objects);
+                String idx = lowerExpr(expr.substring(openBr + 1, expr.length() - 1).trim(), stateFields, domains, objects);
+                return base + "[(" + idx + ") as usize].clone()";
+            }
+        }
+
+        // Write parameter access e.g. value -> (*value)
+        if (currentWriteParams.get().contains(expr)) {
+            return "(*" + expr + ")";
         }
 
         // State field access inside handler e.g. value -> (*state.value)

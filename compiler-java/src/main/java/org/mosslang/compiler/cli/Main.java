@@ -161,9 +161,43 @@ public class Main {
             }
             try {
                 String content = Files.readString(Paths.get(src), StandardCharsets.UTF_8);
-                Program p = Parser.parseSource(content, new File(src).getAbsolutePath());
-                org.mosslang.compiler.query.SemanticQueryEngine.executeQuery(first, target, p, new File(src).getAbsolutePath(), json, System.out);
+                String absSrc = new File(src).getAbsolutePath();
+                Program p = Parser.parseSource(content, absSrc);
+                if (p.imports != null && !p.imports.isEmpty()) {
+                    Path sourceFile = Paths.get(src).toAbsolutePath();
+                    Path dir = sourceFile.getParent();
+                    Path projectRoot = null;
+                    while (dir != null) {
+                        if (Files.exists(dir.resolve("moss.toml")) || Files.exists(dir.resolve("Moss.toml"))) {
+                            projectRoot = dir;
+                            break;
+                        }
+                        dir = dir.getParent();
+                    }
+                    List<Path> candidates = org.mosslang.compiler.project.SourceFreeAbi.findInterfaceCandidates(
+                            projectRoot != null ? projectRoot : Paths.get(".").toAbsolutePath());
+                    for (org.mosslang.compiler.ast.ModuleImport imp : p.imports) {
+                        for (Path cand : candidates) {
+                            String stem = cand.getFileName().toString().replaceAll("\\.mossi$", "");
+                            if (stem.equals(imp.name)) {
+                                Path localModSrc = projectRoot != null ? projectRoot.resolve("src").resolve(imp.name + ".moss") : null;
+                                if (localModSrc == null || !Files.exists(localModSrc)) {
+                                    org.mosslang.compiler.project.SourceFreeAbi.validateMossiInterface(cand);
+                                }
+                            }
+                        }
+                    }
+                }
+                org.mosslang.compiler.query.SemanticQueryEngine.executeQuery(first, target, p, absSrc, json, System.out);
                 return 0;
+            } catch (CompileError e) {
+                if (json) {
+                    DiagnosticFormatter.writeStructuredError(System.out, first, COMPILER_VERSION,
+                            e.getCode(), e.getMessage(), new File(src).getAbsolutePath(), e.getLine(), "", "");
+                } else {
+                    System.err.println("moss:" + e.getLine() + ": error: [" + e.getCode() + "] " + e.getMessage());
+                }
+                return 1;
             } catch (Exception e) {
                 System.err.println("moss: query failed: " + e.getMessage());
                 return 1;

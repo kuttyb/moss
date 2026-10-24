@@ -75,6 +75,10 @@ impl __MossFile {
         }
         out
     }
+    pub fn read(&self, offset: i64, size: i64) -> __MossRange {
+        let avail = (self.total_len - offset).max(0);
+        __MossRange { len: avail.min(size) }
+    }
     pub fn close(&self) {}
 }
 #[allow(dead_code, non_camel_case_types)]
@@ -83,6 +87,7 @@ pub struct __MossExecutor;
 impl __MossExecutor {
     pub fn threads(self, _n: i64) -> Self { self }
     pub fn start(self) -> Self { self }
+    pub fn invoke<T>(&self, _val: T) {}
     pub fn join(&self) {}
 }
 // ─── End Phase 20 Executor Runtime ───────────────────────────────────────
@@ -228,6 +233,58 @@ impl MossStr {
     pub fn length(&self) -> i64 {
         self.0.len() as i64
     }
+    pub fn char_at(&self, idx: i64) -> MossStr {
+        let ch = self.0.chars().nth(idx as usize).unwrap_or('\0');
+        MossStr(ch.to_string())
+    }
+    pub fn split(&self, sep: MossStr) -> std::vec::Vec<MossStr> {
+        self.0.split(&sep.0).map(|s| MossStr(s.to_string())).collect()
+    }
+}
+
+impl std::ops::Add for MossStr {
+    type Output = MossStr;
+    fn add(self, rhs: MossStr) -> MossStr {
+        let mut s = String::with_capacity(self.0.len() + rhs.0.len());
+        s.push_str(&self.0);
+        s.push_str(&rhs.0);
+        MossStr(s)
+    }
+}
+
+#[allow(dead_code)]
+trait __MossCollectionExt<T> {
+    fn __moss_push(&mut self, item: T);
+    fn __moss_pop(&mut self) -> T;
+}
+impl<T> __MossCollectionExt<T> for std::vec::Vec<T> {
+    fn __moss_push(&mut self, item: T) { self.push(item); }
+    fn __moss_pop(&mut self) -> T { self.pop().unwrap() }
+}
+impl<T> __MossCollectionExt<T> for std::collections::VecDeque<T> {
+    fn __moss_push(&mut self, item: T) { self.push_back(item); }
+    fn __moss_pop(&mut self) -> T { self.pop_front().unwrap() }
+}
+#[allow(dead_code)]
+trait __MossMapExt<K> {
+    fn __moss_keys(&self) -> std::vec::Vec<K>;
+}
+impl<K: Clone, V> __MossMapExt<K> for std::collections::BTreeMap<K, V> {
+    fn __moss_keys(&self) -> std::vec::Vec<K> { self.keys().cloned().collect() }
+}
+#[allow(dead_code)]
+trait __MossMapValuesExt<V> {
+    fn __moss_values(&self) -> std::vec::Vec<V>;
+}
+impl<K, V: Clone> __MossMapValuesExt<V> for std::collections::BTreeMap<K, V> {
+    fn __moss_values(&self) -> std::vec::Vec<V> { self.values().cloned().collect() }
+}
+#[allow(dead_code)]
+trait __MossLengthExt {
+    fn length(&self) -> i64;
+}
+impl<T> __MossLengthExt for std::vec::Vec<T> {
+    fn length(&self) -> i64 { self.len() as i64 }
 }
 
 impl std::ops::Deref for MossStr {

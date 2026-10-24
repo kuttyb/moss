@@ -175,7 +175,7 @@ public class SemanticChecker {
             if (t == null && f.init != null && !f.init.isEmpty()) {
                 t = typer.infer(f.init, f.line, env.typeEnv);
             }
-            env.put(f.name, t != null ? t : TypeRef.primitive("int"));
+            env.put(f.name, t != null ? t : solver.fresh(0));
         }
         for (DomainRoute r : domain.routes) {
             env.put(r.name, TypeRef.domain(r.type));
@@ -456,6 +456,49 @@ public class SemanticChecker {
         env.moved.put(name, new MoveInfo(line, destination));
     }
 
+    private boolean doesFunctionConsumeParam(Function fn, int paramIdx) {
+        if (fn == null || paramIdx < 0 || paramIdx >= fn.params.size()) return false;
+        String pName = fn.params.get(paramIdx).name;
+        if (fn.resultExpression != null && fn.resultExpression.trim().equals(pName)) {
+            return true;
+        }
+        for (Stmt s : fn.body) {
+            if (s.kind == Stmt.Kind.Return) {
+                String ret = s.a != null && !s.a.isEmpty() ? s.a.trim() : (s.text != null ? s.text.trim() : "");
+                if (ret.startsWith("return ")) ret = ret.substring(7).trim();
+                if (ret.equals(pName)) return true;
+            } else if (s.kind == Stmt.Kind.Let || s.kind == Stmt.Kind.Var || s.kind == Stmt.Kind.Assign) {
+                String rhs = s.b != null ? s.b.trim() : "";
+                if (rhs.equals(pName)) return true;
+            }
+        }
+        return false;
+    }
+
+    private void consumeCallArguments(int line, String expr, OwnershipEnv env, String fallbackDest) {
+        if (expr == null) return;
+        expr = expr.trim();
+        if (expr.endsWith(")") && expr.contains("(")) {
+            int openP = expr.indexOf('(');
+            String callee = expr.substring(0, openP).trim();
+            String argsInside = expr.substring(openP + 1, expr.lastIndexOf(')')).trim();
+            List<String> args = ExpressionTyper.parseArguments(argsInside);
+            Function fn = functions.get(callee);
+            boolean isObjCtor = objects.containsKey(callee);
+            for (int i = 0; i < args.size(); i++) {
+                String a = args.get(i).trim();
+                if (a.contains(":") && !a.startsWith("\"")) {
+                    a = a.substring(a.indexOf(':') + 1).trim();
+                }
+                if (env.containsKey(a) && transferType(env.get(a))) {
+                    if (isObjCtor || (fn != null && doesFunctionConsumeParam(fn, i))) {
+                        consumeBinding(line, a, env, fallbackDest != null ? fallbackDest : callee);
+                    }
+                }
+            }
+        }
+    }
+
     private void checkStatement(Stmt s, OwnershipEnv env, ExpressionTyper typer, TypeSolver solver,
                                 boolean insideHandler, String enclosingName, TypeRef expectedType) {
         if (s == null) return;
@@ -489,14 +532,8 @@ public class SemanticChecker {
                 // If expr is a bare identifier referring to a transfer type, consume it
                 if (env.containsKey(expr) && transferType(env.get(expr))) {
                     consumeBinding(s.line, expr, env, varName);
-                } else if (expr.endsWith(")") && expr.contains("(")) {
-                    String argsInside = expr.substring(expr.indexOf('(') + 1, expr.lastIndexOf(')')).trim();
-                    for (String a : ExpressionTyper.parseArguments(argsInside)) {
-                        a = a.trim();
-                        if (env.containsKey(a) && transferType(env.get(a))) {
-                            consumeBinding(s.line, a, env, varName);
-                        }
-                    }
+                } else {
+                    consumeCallArguments(s.line, expr, env, varName);
                 }
             }
             case Assign -> {
@@ -553,14 +590,8 @@ public class SemanticChecker {
                     env.put(varName, inferred);
                     if (env.containsKey(expr) && transferType(env.get(expr))) {
                         consumeBinding(s.line, expr, env, varName);
-                    } else if (expr.endsWith(")") && expr.contains("(")) {
-                        String argsInside = expr.substring(expr.indexOf('(') + 1, expr.lastIndexOf(')')).trim();
-                        for (String a : ExpressionTyper.parseArguments(argsInside)) {
-                            a = a.trim();
-                            if (env.containsKey(a) && transferType(env.get(a))) {
-                                consumeBinding(s.line, a, env, varName);
-                            }
-                        }
+                    } else {
+                        consumeCallArguments(s.line, expr, env, varName);
                     }
                     return;
                 }
@@ -573,6 +604,8 @@ public class SemanticChecker {
                 }
                 if (env.containsKey(expr) && transferType(env.get(expr))) {
                     consumeBinding(s.line, expr, env, varName);
+                } else {
+                    consumeCallArguments(s.line, expr, env, varName);
                 }
             }
             case Message -> {
@@ -692,6 +725,7 @@ public class SemanticChecker {
                 String callExpr = s.text != null ? s.text.trim() : "";
                 if (!callExpr.isEmpty()) {
                     typer.infer(callExpr, s.line, env.typeEnv);
+                    consumeCallArguments(s.line, callExpr, env, null);
                 }
             }
             case Echo -> {
@@ -699,6 +733,7 @@ public class SemanticChecker {
                 for (String arg : s.args) {
                     if (arg != null && !arg.trim().isEmpty()) {
                         typer.infer(arg.trim(), s.line, env.typeEnv);
+                        consumeCallArguments(s.line, arg.trim(), env, null);
                     }
                 }
             }
