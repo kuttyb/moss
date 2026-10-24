@@ -362,6 +362,18 @@ public class FastInterpreter {
                     }
                     return Value.ofUnit();
                 }
+                if (varName.contains(".") && !varName.contains("[")) {
+                    int dot = varName.indexOf('.');
+                    String objName = varName.substring(0, dot).trim();
+                    String fieldName = varName.substring(dot + 1).trim();
+                    Value objVal = locals.containsKey(objName) ? locals.get(objName) : (currentDomain != null ? currentDomain.state.get(objName) : null);
+                    if (objVal != null && objVal.raw instanceof Map<?, ?> mp) {
+                        @SuppressWarnings("unchecked")
+                        Map<String, Value> m = (Map<String, Value>) mp;
+                        m.put(fieldName, val);
+                    }
+                    return Value.ofUnit();
+                }
                 if (currentDomain != null && currentDomain.state.containsKey(varName)) {
                     Value before = currentDomain.state.get(varName);
                     currentDomain.state.put(varName, val);

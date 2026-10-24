@@ -1011,6 +1011,33 @@ public class SemanticChecker {
                     }
                 }
 
+                // Check if target is a field write e.g. item.value = 2
+                if (varName.contains(".") && !varName.contains("[")) {
+                    int dot = varName.indexOf('.');
+                    String rootName = varName.substring(0, dot).trim();
+                    String fieldName = varName.substring(dot + 1).trim();
+                    if (!env.containsKey(rootName)) {
+                        throw new CompileError(s.line, "unknown variable '" + rootName + "'", "UNKNOWN_SYMBOL_OR_TYPE");
+                    }
+                    if (env.immutables.contains(rootName)) {
+                        throw new CompileError(s.line, "cannot mutate immutable variable '" + rootName + "' introduced with let (IMMUTABLE_LOCAL_MUTATION)", "IMMUTABLE_LOCAL_MUTATION");
+                    }
+                    TypeRef rootType = solver.resolve(env.get(rootName));
+                    ObjectType obj = objects.get(rootType.name());
+                    if (obj != null) {
+                        Field f = obj.fields.stream().filter(field -> field.name.equals(fieldName)).findFirst().orElse(null);
+                        if (f != null) {
+                            TypeRef fieldType = f.typeRef != null ? f.typeRef : TypeRef.primitive(f.type != null ? f.type : "int");
+                            TypeRef inferred = typer.infer(expr, s.line, env.typeEnv);
+                            if (!solver.unify(fieldType, inferred)) {
+                                throw new CompileError(s.line, "field '" + fieldName + "' type mismatch: expected '" +
+                                        solver.resolve(fieldType).toCanonicalString() + "', got '" + solver.resolve(inferred).toCanonicalString() + "'", "TYPE_MISMATCH");
+                            }
+                        }
+                    }
+                    return;
+                }
+
                 // If not already in scope, assignment introduces local variable
                 if (!env.containsKey(varName)) {
                     TypeRef inferred = typer.infer(expr, s.line, env.typeEnv);
