@@ -1,6 +1,18 @@
 package org.mosslang.compiler.backend;
 
 public class MossRuntimeSupport {
+    public static final String FLOAT_RUNTIME = """
+// ─── Begin Moss Float Format Runtime ─────────────────────────────────────
+// Float formatting runtime
+// ─── End Moss Float Format Runtime ───────────────────────────────────────
+""";
+
+    public static final String EXECUTOR_RUNTIME = """
+// Phase 20 Executor Runtime  (moss executor_runtime_rust: process root)
+// Executor runtime
+// ─── End Phase 20 Executor Runtime ───────────────────────────────────────
+""";
+
     public static final String HANDLER_RUNTIME = """
 struct MossAbortOnUnwind;
 impl Drop for MossAbortOnUnwind {

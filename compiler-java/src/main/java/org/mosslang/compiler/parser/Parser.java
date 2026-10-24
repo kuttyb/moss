@@ -150,7 +150,40 @@ public class Parser {
                 }
             }
         }
+        addStandardEnums(p);
         return p;
+    }
+
+    public static void addStandardEnums(Program p) {
+        boolean hasFileError = false;
+        boolean hasParseError = false;
+        boolean hasConversionError = false;
+        for (EnumType e : p.enums) {
+            if ("std__FileError".equals(e.name)) hasFileError = true;
+            if ("std__ParseError".equals(e.name)) hasParseError = true;
+            if ("std__ConversionError".equals(e.name)) hasConversionError = true;
+        }
+        if (!hasFileError) {
+            EnumType e = new EnumType("std__FileError", "", 0, "", false);
+            for (String c : List.of("NotFound", "PermissionDenied", "NotRegularFile", "InUse", "Full", "IO")) {
+                e.cases.add(new EnumCase(c, 0, ""));
+            }
+            p.enums.add(e);
+        }
+        if (!hasParseError) {
+            EnumType e = new EnumType("std__ParseError", "", 0, "", false);
+            for (String c : List.of("Invalid", "Overflow")) {
+                e.cases.add(new EnumCase(c, 0, ""));
+            }
+            p.enums.add(e);
+        }
+        if (!hasConversionError) {
+            EnumType e = new EnumType("std__ConversionError", "", 0, "", false);
+            for (String c : List.of("NonFinite", "Overflow")) {
+                e.cases.add(new EnumCase(c, 0, ""));
+            }
+            p.enums.add(e);
+        }
     }
 
     private void fail(Line L, String msg) {

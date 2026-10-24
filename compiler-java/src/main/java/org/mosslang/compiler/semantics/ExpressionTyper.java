@@ -265,6 +265,18 @@ public class ExpressionTyper {
                 if (dot > 0 && !callee.startsWith("\"")) {
                     String target = callee.substring(0, dot).trim();
                     String member = callee.substring(dot + 1).trim();
+                    if (enums.containsKey(target)) {
+                        return TypeRef.enumeration(target);
+                    }
+                    if (program != null && program.imports.anySatisfy(imp -> imp.name.equals(target))) {
+                        for (String arg : argExprs) {
+                            infer(arg, line, env);
+                        }
+                        if (!member.isEmpty() && Character.isUpperCase(member.charAt(0))) {
+                            return TypeRef.domain(member);
+                        }
+                        return TypeRef.primitive("int");
+                    }
                     return inferMethodCall(target, member, argExprs, line, env);
                 }
 
@@ -404,6 +416,16 @@ public class ExpressionTyper {
                         infer(arg, line, env);
                     }
                     return TypeRef.unit();
+                }
+
+                if (callee.contains(".")) {
+                    String[] parts = callee.split("\\.", 2);
+                    if (program != null && program.imports.anySatisfy(imp -> imp.name.equals(parts[0]))) {
+                        for (String arg : argExprs) {
+                            infer(arg, line, env);
+                        }
+                        return TypeRef.primitive("int");
+                    }
                 }
 
                 throw new CompileError(line, "unknown function or constructor '" + callee + "'", "UNKNOWN_SYMBOL_OR_TYPE");

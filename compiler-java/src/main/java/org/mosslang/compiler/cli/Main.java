@@ -14,7 +14,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 public class Main {
@@ -192,7 +194,7 @@ public class Main {
                 traceMode = true;
             } else if ("--json".equals(a)) {
                 jsonOutput = true;
-            } else if ("--debug".equals(a)) {
+            } else if ("--debug".equals(a) || "-g".equals(a)) {
                 debugBuild = true;
             } else if ("-O0".equals(a)) {
                 optimized = false;
@@ -235,6 +237,32 @@ public class Main {
         try {
             String content = Files.readString(Paths.get(sourcePath), StandardCharsets.UTF_8);
             Program program = Parser.parseSource(content, absPath);
+
+            if (program.imports != null && !program.imports.isEmpty()) {
+                Path sourceFile = Paths.get(sourcePath).toAbsolutePath();
+                Path dir = sourceFile.getParent();
+                Path projectRoot = null;
+                while (dir != null) {
+                    if (Files.exists(dir.resolve("moss.toml"))) {
+                        projectRoot = dir;
+                        break;
+                    }
+                    dir = dir.getParent();
+                }
+                List<Path> candidates = org.mosslang.compiler.project.SourceFreeAbi.findInterfaceCandidates(
+                        projectRoot != null ? projectRoot : Paths.get(".").toAbsolutePath());
+                Map<String, List<Path>> candidateMap = new HashMap<>();
+                for (Path cand : candidates) {
+                    String stem = cand.getFileName().toString().replaceAll("\\.mossi$", "");
+                    candidateMap.computeIfAbsent(stem, k -> new ArrayList<>()).add(cand);
+                }
+                for (org.mosslang.compiler.ast.ModuleImport imp : program.imports) {
+                    List<Path> cands = candidateMap.get(imp.name);
+                    if (cands != null && !cands.isEmpty()) {
+                        org.mosslang.compiler.project.SourceFreeAbi.validateMossiInterface(cands.get(0));
+                    }
+                }
+            }
 
             CheckedProgram checker = new CheckedProgram(program);
             checker.run();

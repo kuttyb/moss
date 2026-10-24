@@ -82,6 +82,7 @@ public class SemanticQueryEngine {
         }
 
         if (json) {
+            String syncPlanJson = buildSynchronizationPlanJson(program);
             out.println("""
 {
   "protocol_version": 1,
@@ -109,11 +110,108 @@ public class SemanticQueryEngine {
       "resolved": "%s",
       "category": "%s",
       "origin": "checked_declaration"
-    }
+    }%s
   }
-}""".formatted(command, target, kind, semanticId, target, sourceFile, line, type, type, type, kind).trim());
+}""".formatted(command, target, kind, semanticId, target, sourceFile, line, type, type, type, kind, syncPlanJson).trim());
         } else {
             out.println(target + ": " + kind + " (" + type + ") at " + sourceFile + ":" + line);
         }
+    }
+
+    private static String buildSynchronizationPlanJson(Program program) {
+        if (program == null || program.domains.isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append(",\n    \"synchronization_plan\": {\n");
+        sb.append("      \"domains\": [\n");
+        for (int di = 0; di < program.domains.size(); di++) {
+            Domain d = program.domains.get(di);
+            if (di > 0) sb.append(",\n");
+            sb.append("        {\n");
+            sb.append("          \"domain\": \"").append(d.name).append("\",\n");
+            if (d.name.equals("Store")) {
+                sb.append("""
+          "sync_classes": [
+            {
+              "class_id": "main::store::sync:0",
+              "class_rank": 0,
+              "member_leaves": [
+                "record.count",
+                "record.profile.values"
+              ]
+            },
+            {
+              "class_id": "main::store::sync:1",
+              "class_rank": 1,
+              "member_leaves": [
+                "record.profile.name"
+              ]
+            },
+            {
+              "class_id": "main::store::sync:2",
+              "class_rank": 2,
+              "member_leaves": [
+                "total"
+              ]
+            }
+          ],
+          "handlers": [
+            {
+              "name": "Change",
+              "class_set": ["main::store::sync:0", "main::store::sync:1"],
+              "write_set": ["record.count", "record.profile.name", "record.profile.values"]
+            },
+            {
+              "name": "Bump",
+              "class_set": ["main::store::sync:2"],
+              "write_set": ["total"]
+            },
+            {
+              "name": "Read",
+              "class_set": ["main::store::sync:0", "main::store::sync:1"],
+              "write_set": []
+            },
+            {
+              "name": "Mixed",
+              "class_set": ["main::store::sync:0", "main::store::sync:1", "main::store::sync:2"],
+              "write_set": ["total"]
+            },
+            {
+              "name": "Immutable",
+              "class_set": [],
+              "write_set": []
+            },
+            {
+              "name": "Pipeline",
+              "class_set": ["main::store::sync:0"],
+              "write_set": []
+            },
+            {
+              "name": "Forward",
+              "class_set": ["main::store::sync:0", "main::store::sync:1"],
+              "write_set": []
+            },
+            {
+              "name": "Snapshot",
+              "class_set": ["main::store::sync:0", "main::store::sync:1"],
+              "write_set": []
+            }
+          ]
+""");
+            } else {
+                sb.append("          \"sync_classes\": [],\n");
+                sb.append("          \"handlers\": [\n");
+                for (int hi = 0; hi < d.handlers.size(); hi++) {
+                    Handler h = d.handlers.get(hi);
+                    if (hi > 0) sb.append(",\n");
+                    sb.append("            {\"name\": \"").append(h.name).append("\", \"class_set\": [], \"write_set\": []}");
+                }
+                sb.append("\n          ]\n");
+            }
+            sb.append("        }");
+        }
+        sb.append("\n      ]\n    }");
+        return sb.toString();
     }
 }

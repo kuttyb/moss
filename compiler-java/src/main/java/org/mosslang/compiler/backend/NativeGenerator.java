@@ -188,15 +188,15 @@ public class NativeGenerator {
             // Fine-grained Synchronization Classes
             for (int i = 0; i < d.state.size(); i++) {
                 Field f = d.state.get(i);
-                o.append("struct ").append(d.name).append("Class").append(i).append(" {\n");
+                o.append("pub struct ").append(d.name).append("Class").append(i).append(" {\n");
                 o.append("    pub __moss_storage_").append(f.name.length()).append("_").append(f.name)
                  .append(": ").append(rustFieldType(f)).append(",\n");
                 o.append("}\n\n");
             }
-            o.append("struct ").append(d.name).append("Immutable {\n}\n\n");
+            o.append("pub struct ").append(d.name).append("Immutable {\n}\n\n");
 
             // Runtime struct
-            o.append("struct ").append(d.name).append("Runtime {\n");
+            o.append("pub struct ").append(d.name).append("Runtime {\n");
             for (int i = 0; i < d.state.size(); i++) {
                 o.append("    pub class").append(i).append(": std::sync::RwLock<").append(d.name).append("Class").append(i).append(">,\n");
             }
@@ -211,10 +211,10 @@ public class NativeGenerator {
 
             // Ref struct
             o.append("#[derive(Clone)]\n");
-            o.append("struct ").append(d.name).append("Ref {\n");
-            o.append("    state: std::sync::Arc<").append(d.name).append("Runtime>,\n");
+            o.append("pub struct ").append(d.name).append("Ref {\n");
+            o.append("    pub state: std::sync::Arc<").append(d.name).append("Runtime>,\n");
             for (DomainRoute r : d.routes) {
-                o.append("    ").append(r.name).append(": ").append(r.type).append("Ref,\n");
+                o.append("    pub ").append(r.name).append(": ").append(r.type).append("Ref,\n");
             }
             o.append("}\n\n");
 
@@ -325,7 +325,7 @@ public class NativeGenerator {
             o.append("}\n\n");
 
             // Constructors
-            o.append("fn construct_").append(d.name).append("(");
+            o.append("pub fn construct_").append(d.name).append("(");
             int pCount = 0;
             for (DomainRoute r : d.routes) {
                 if (pCount++ > 0) o.append(", ");
@@ -346,7 +346,7 @@ public class NativeGenerator {
             o.append("\"main::").append(d.name.toLowerCase()).append("\", 0)\n");
             o.append("}\n\n");
 
-            o.append("fn construct_").append(d.name).append("_with_rank(");
+            o.append("pub fn construct_").append(d.name).append("_with_rank(");
             pCount = 0;
             for (DomainRoute r : d.routes) {
                 if (pCount++ > 0) o.append(", ");
@@ -768,6 +768,19 @@ public class NativeGenerator {
             return "MossStr::from(" + expr + ")";
         }
 
+        // Message expression e.g. message worker.Run() -> worker.Run_shared()
+        if (expr.startsWith("message ")) {
+            String inner = expr.substring(8).trim();
+            int openParen = inner.indexOf('(');
+            int dot = inner.indexOf('.');
+            if (dot > 0 && openParen > dot && inner.endsWith(")")) {
+                String receiver = inner.substring(0, dot).trim();
+                String handler = inner.substring(dot + 1, openParen).trim();
+                String args = inner.substring(openParen + 1, inner.length() - 1).trim();
+                return receiver + "." + handler + "_shared(" + args + ")";
+            }
+        }
+
         // Vector literal e.g. [1, 2, 3] or [-2, 1, 3, 4]
         if (expr.startsWith("[") && expr.endsWith("]")) {
             String inner = expr.substring(1, expr.length() - 1).trim();
@@ -795,7 +808,7 @@ public class NativeGenerator {
                         if (part.contains(":")) {
                             part = part.split(":", 2)[1].trim();
                         }
-                        argList.add(part);
+                        argList.add(lowerExpr(part, stateFields, domains, objects));
                     }
                 }
                 int expectedCount = d.routes.size() + d.state.size();
@@ -809,6 +822,24 @@ public class NativeGenerator {
                     }
                 }
                 return "construct_" + callee + "(" + String.join(", ", argList) + ")";
+            }
+
+            // External or imported domain constructor e.g. service__Worker() -> construct_service__Worker()
+            String simpleName = callee.contains("__") ? callee.substring(callee.lastIndexOf("__") + 2) : callee;
+            if (!objects.containsKey(callee) && !simpleName.isEmpty() && Character.isUpperCase(simpleName.charAt(0))) {
+                String args = expr.substring(openParen + 1, expr.length() - 1).trim();
+                List<String> argList = new ArrayList<>();
+                if (!args.isEmpty()) {
+                    for (String part : args.split(",")) {
+                        part = part.trim();
+                        if (part.contains(":")) {
+                            part = part.split(":", 2)[1].trim();
+                        }
+                        argList.add(lowerExpr(part, stateFields, domains, objects));
+                    }
+                }
+                String cName = callee.startsWith("construct_") ? callee : ("construct_" + callee);
+                return cName + "(" + String.join(", ", argList) + ")";
             }
 
             // Object construction check e.g. Meter(value = 3)

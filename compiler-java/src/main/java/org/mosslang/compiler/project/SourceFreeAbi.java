@@ -1,0 +1,248 @@
+package org.mosslang.compiler.project;
+
+import org.mosslang.compiler.diagnostics.CompileError;
+
+import java.io.File;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.stream.Stream;
+
+public class SourceFreeAbi {
+
+    public static String toolingName(String value) {
+        if (value == null || value.isEmpty()) return "anonymous";
+        char[] chars = value.toCharArray();
+        for (int i = 0; i < chars.length; i++) {
+            char c = chars[i];
+            if (!Character.isLetterOrDigit(c) && c != '_') {
+                chars[i] = '_';
+            }
+        }
+        String res = new String(chars);
+        while (res.endsWith("_")) {
+            res = res.substring(0, res.length() - 1);
+        }
+        return res.isEmpty() ? "anonymous" : res;
+    }
+
+    public static String sha256(String input) {
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            byte[] digest = md.digest(input.getBytes(StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder();
+            for (byte b : digest) {
+                sb.append(String.format("%02x", b));
+            }
+            return sb.toString();
+        } catch (NoSuchAlgorithmException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public static Path selectedProviderRlib(Path interfaceFile) throws CompileError {
+        Path rlib = interfaceFile.resolveSibling(interfaceFile.getFileName().toString().replaceAll("\\.mossi$", ".rlib"));
+        if (Files.isRegularFile(rlib)) return rlib;
+        String stem = interfaceFile.getFileName().toString().replaceAll("\\.mossi$", "");
+        rlib = interfaceFile.resolveSibling("lib" + stem + ".rlib");
+        if (Files.isRegularFile(rlib)) return rlib;
+
+        throw new CompileError("SOURCE_FREE_PROVIDER_ARTIFACT_MISSING",
+                "compiled provider artifact is missing for '" + interfaceFile + "'; rebuild the ABI-v9 provider",
+                interfaceFile.toString(), 1);
+    }
+
+    public static String sourceFreeContractMarker(String module, String digest) {
+        return "MOSS_ABI_V9_CONTRACT::" + toolingName(module) + "::" + digest + "::END";
+    }
+
+    public static void validateMossiInterface(Path interfaceFile) throws CompileError {
+        String text;
+        try {
+            text = Files.readString(interfaceFile, StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new CompileError("MOSS_INTERFACE_ERROR",
+                    "cannot read Moss module interface '" + interfaceFile + "'", interfaceFile.toString(), 1);
+        }
+        validateMossiText(interfaceFile, text);
+    }
+
+    public static void validateMossiText(Path interfaceFile, String text) throws CompileError {
+        if (!text.startsWith("moss-module-interface-v2\n") && !text.startsWith("moss-module-interface-v3\n")) {
+            throw new CompileError("SOURCE_FREE_ABI_REBUILD_REQUIRED",
+                    "source-free provider uses an older module interface; rebuild it for ABI v9",
+                    interfaceFile.toString(), 1);
+        }
+        if (text.contains("\nnative_abi 8\n")) {
+            throw new CompileError("SOURCE_FREE_ABI_REBUILD_REQUIRED",
+                    "source-free provider uses ABI v8; rebuild its .mossi and .rlib for ABI v9",
+                    interfaceFile.toString(), 1);
+        }
+
+        String prefix = "provider_contract_digest sha256:";
+        int begin = text.indexOf("\n" + prefix);
+        if (begin == -1 || text.indexOf("\n" + prefix, begin + 1) != -1) {
+            throw new CompileError("SOURCE_FREE_CONTRACT_INVALID",
+                    "ABI-v9 provider contract digest is missing or repeated",
+                    interfaceFile.toString(), 1);
+        }
+        int end = text.indexOf('\n', begin + 1);
+        if (end == -1) {
+            throw new CompileError("SOURCE_FREE_CONTRACT_INVALID",
+                    "ABI-v9 provider contract digest is incomplete",
+                    interfaceFile.toString(), 1);
+        }
+
+        String declared = text.substring(begin + 1 + prefix.length(), end).trim();
+        if (declared.length() != 64 || !declared.matches("^[0-9a-fA-F]{64}$")) {
+            throw new CompileError("SOURCE_FREE_CONTRACT_INVALID",
+                    "ABI-v9 provider contract digest is malformed",
+                    interfaceFile.toString(), 1);
+        }
+
+        String material = text.substring(0, begin + 1) + text.substring(end + 1);
+        String calculated = sha256(material);
+        if (!calculated.equalsIgnoreCase(declared)) {
+            throw new CompileError("SOURCE_FREE_CONTRACT_MISMATCH",
+                    "ABI-v9 provider metadata does not match its declared contract digest",
+                    interfaceFile.toString(), 1);
+        }
+
+        // Verify provider rlib archive
+        Path rlibPath = selectedProviderRlib(interfaceFile);
+        byte[] bytes;
+        try {
+            bytes = Files.readAllBytes(rlibPath);
+        } catch (IOException e) {
+            throw new CompileError("SOURCE_FREE_PROVIDER_ARTIFACT_MISSING",
+                    "cannot read selected ABI-v9 provider artifact '" + rlibPath + "'",
+                    interfaceFile.toString(), 1);
+        }
+
+        String rlibHeader = new String(bytes, 0, Math.min(8, bytes.length), StandardCharsets.US_ASCII);
+        if (!rlibHeader.startsWith("!<arch>\n")) {
+            throw new CompileError("SOURCE_FREE_ARTIFACT_CONTRACT_INVALID",
+                    "selected provider artifact is not a Rust rlib archive",
+                    interfaceFile.toString(), 1);
+        }
+
+        String stem = interfaceFile.getFileName().toString().replaceAll("\\.mossi$", "");
+        String contractPrefix = "MOSS_ABI_V9_CONTRACT::" + toolingName(stem) + "::";
+        byte[] prefixBytes = contractPrefix.getBytes(StandardCharsets.US_ASCII);
+        int expectedMarkerLen = contractPrefix.length() + 64 + "::END".length();
+
+        int count = 0;
+        String embedded = "";
+
+        int cursor = 8;
+        while (cursor < bytes.length) {
+            if (bytes.length - cursor < 60) {
+                throw new CompileError("SOURCE_FREE_ARTIFACT_CONTRACT_INVALID",
+                        "selected provider rlib has malformed archive records",
+                        interfaceFile.toString(), 1);
+            }
+            if (bytes[cursor + 58] != '`' || bytes[cursor + 59] != '\n') {
+                throw new CompileError("SOURCE_FREE_ARTIFACT_CONTRACT_INVALID",
+                        "selected provider rlib has malformed archive records",
+                        interfaceFile.toString(), 1);
+            }
+
+            String name = new String(bytes, cursor, 16, StandardCharsets.US_ASCII).trim();
+            String sizeText = new String(bytes, cursor + 48, 10, StandardCharsets.US_ASCII).trim();
+
+            int memberSize;
+            try {
+                memberSize = Integer.parseInt(sizeText);
+            } catch (NumberFormatException e) {
+                throw new CompileError("SOURCE_FREE_ARTIFACT_CONTRACT_INVALID",
+                        "selected provider rlib has an invalid archive member",
+                        interfaceFile.toString(), 1);
+            }
+
+            int memberBegin = cursor + 60;
+            if (memberSize > bytes.length - memberBegin) {
+                throw new CompileError("SOURCE_FREE_ARTIFACT_CONTRACT_INVALID",
+                        "selected provider rlib has a truncated archive member",
+                        interfaceFile.toString(), 1);
+            }
+
+            if (!name.contains(".rmeta") && !name.equals("/") && !name.equals("//")) {
+                int found = indexOfSubarray(bytes, memberBegin, memberBegin + memberSize, prefixBytes);
+                if (found != -1 && found + expectedMarkerLen <= memberBegin + memberSize) {
+                    count++;
+                    embedded = new String(bytes, found, expectedMarkerLen, StandardCharsets.US_ASCII);
+                    int repeated = indexOfSubarray(bytes, found + 1, memberBegin + memberSize, prefixBytes);
+                    if (repeated != -1) {
+                        count++;
+                    }
+                }
+            }
+
+            cursor = memberBegin + memberSize + (memberSize & 1);
+        }
+
+        if (count != 1) {
+            throw new CompileError("SOURCE_FREE_ARTIFACT_CONTRACT_INVALID",
+                    "selected provider artifact has missing or ambiguous ABI-v9 contract binding",
+                    interfaceFile.toString(), 1);
+        }
+
+        String expectedMarker = sourceFreeContractMarker(stem, declared);
+        if (!embedded.equals(expectedMarker)) {
+            throw new CompileError("SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH",
+                    "ABI-v9 provider metadata does not match the selected compiled artifact",
+                    interfaceFile.toString(), 1);
+        }
+    }
+
+    private static int indexOfSubarray(byte[] array, int start, int end, byte[] target) {
+        if (target.length == 0) return start;
+        int max = end - target.length;
+        for (int i = start; i <= max; i++) {
+            boolean match = true;
+            for (int j = 0; j < target.length; j++) {
+                if (array[i + j] != target[j]) {
+                    match = false;
+                    break;
+                }
+            }
+            if (match) return i;
+        }
+        return -1;
+    }
+
+    public static List<Path> findInterfaceCandidates(Path projectRoot) {
+        List<Path> candidates = new ArrayList<>();
+        List<Path> roots = new ArrayList<>();
+        if (projectRoot != null) {
+            roots.add(projectRoot.resolve("build").resolve("debug"));
+            roots.add(projectRoot.resolve("build").resolve("release"));
+            roots.add(projectRoot.resolve("deps"));
+        }
+        String env = System.getenv("MOSS_MODULE_PATH");
+        if (env != null && !env.isBlank()) {
+            for (String part : env.split(File.pathSeparator)) {
+                if (!part.isBlank()) {
+                    roots.add(Paths.get(part));
+                }
+            }
+        }
+        for (Path root : roots) {
+            if (Files.isDirectory(root)) {
+                try (Stream<Path> stream = Files.walk(root)) {
+                    stream.filter(Files::isRegularFile)
+                            .filter(p -> p.toString().endsWith(".mossi"))
+                            .forEach(candidates::add);
+                } catch (IOException ignored) {}
+            }
+        }
+        return candidates;
+    }
+}
