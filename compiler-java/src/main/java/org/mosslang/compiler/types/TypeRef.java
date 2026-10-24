@@ -89,12 +89,20 @@ public class TypeRef {
     public static TypeRef enumeration(String name) {
         TypeContext ctx = TypeContext.current();
         NominalDeclaration decl = ctx != null ? ctx.find(name) : null;
+        return enumeration(decl, name);
+    }
+
+    public static TypeRef enumeration(NominalDeclaration decl, String name) {
         return new TypeRef(TypeKind.Enum, name, null, null, null, decl);
     }
 
     public static TypeRef domain(String name) {
         TypeContext ctx = TypeContext.current();
         NominalDeclaration decl = ctx != null ? ctx.find(name) : null;
+        return domain(decl, name);
+    }
+
+    public static TypeRef domain(NominalDeclaration decl, String name) {
         return new TypeRef(TypeKind.Domain, name, null, null, null, decl);
     }
 

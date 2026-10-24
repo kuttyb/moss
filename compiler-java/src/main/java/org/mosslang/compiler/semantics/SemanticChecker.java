@@ -189,7 +189,12 @@ public class SemanticChecker {
         for (Stmt s : handler.body) {
             checkStatement(s, env, typer, solver, true, handler.name, expectedReply);
         }
-        handler.replyTypeRef = solver.resolve(expectedReply);
+        TypeRef resolvedReply = solver.resolve(expectedReply);
+        if (resolvedReply.kind() == TypeKind.InferenceVar) {
+            solver.unify(expectedReply, TypeRef.unit());
+            resolvedReply = TypeRef.unit();
+        }
+        handler.replyTypeRef = resolvedReply;
     }
 
     private void checkFunctions() {
@@ -210,7 +215,16 @@ public class SemanticChecker {
             for (Stmt s : f.body) {
                 checkStatement(s, env, typer, solver, false, f.name, expectedReturn);
             }
-            f.returnTypeRef = solver.resolve(expectedReturn);
+            if (f.resultExpression != null && !f.resultExpression.isEmpty()) {
+                TypeRef res = typer.infer(f.resultExpression, f.resultLine != 0 ? f.resultLine : f.line, env.typeEnv);
+                solver.unify(expectedReturn, res);
+            }
+            TypeRef resolvedReturn = solver.resolve(expectedReturn);
+            if (resolvedReturn.kind() == TypeKind.InferenceVar) {
+                solver.unify(expectedReturn, TypeRef.unit());
+                resolvedReturn = TypeRef.unit();
+            }
+            f.returnTypeRef = resolvedReturn;
         }
     }
 
