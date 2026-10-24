@@ -12061,58 +12061,27 @@ final exact-SHA review closeout record, then push normally to
 `origin/phase25-2-work`. Do not merge to main.
 ## Phase 25.2 R2 Core Compiler Decomposition — current session — 2026-10-23
 
-L7's R2 decomposition assignment resumes on `phase25-2-work` at exact starting
-SHA `5f8056652668046bca59be5870bd110821d7e159`. The previous G1/G2 build
-acceleration closeout below is historical and does not satisfy R2 acceptance.
-The Parser/frontend extraction is committed and reviewed: `parser.cpp` owns
-Parser, lexing and character/numeric source normalization; `parser.hpp` exposes
-parse entry points and `parser_support.hpp` exposes declaration-only shared
-syntax helpers. `FunctionalOptimizer` is now independently compiled in
-`functional_optimizer.cpp`, with a narrow `optimize_program` entry point and
-shared `OptimizationPlan` declaration. The development compiler builds.
-Numeric parsing parity, generic collection facts, ABI-v10 empty-vector provider
-emission, H3 source-free/hostile chain, peer-open pipeline, try-placeholder,
-unary-not speculation, and formatter convergence controls pass. Direct C++
-controls were migrated from the private Parser class without changing
-assertions. `moss.cpp` is now 61,386 lines / 2,993,898 bytes.
+R2 implementation is on `phase25-2-work`, with checkpoints through
+`a73018dd` pushed. Parser, FunctionalOptimizer, Native Generator and Checker
+are independently compiled production owners. `moss.cpp` is 23,791 lines /
+1,121,922 bytes; the extracted core TUs are Parser 1,058 lines, optimizer
+1,398, Generator 6,846 and Checker 30,936. Checker and Generator retain their
+stateful classes and existing `.inc` fragments; all use narrow declaration-only
+interfaces and share the authoritative Program/AST facts.
 
-The Parser incremental probe edited and restored `parser.cpp`; each run
-recompiled only `parser.o` and relinked. The optional generic arithmetic direct
-C++ harness still aborts on `checked ABI-v10 requirement provenance identity
-is forged`, matching the pre-extraction failure already recorded in
-`docs/phase25_2/STATUS.md` at baseline `19f05677`; it is not counted as a pass.
+The integrated `make --jobs="$(nproc)" check` passed 137/137, optimized
+examples passed, and GCC `moss-dev` built. The initial failed integrated run
+found that production `check_program` destroyed Checker-owned checked facts too
+early. `CheckedProgram` now retains private Checker state across project,
+interpreter and standalone production operations; the full passing run includes
+this fix. Clean Clang+mold builds were O0 14.21s and O2 56.47s on 16 jobs.
+Incremental object/relink times: Parser 2.08/0.68s, Checker 10.98/0.68s,
+Generator 3.94/0.70s; each edit rebuilt only its owning object. No-op was
+0.65s. Full source distribution and optional known direct-control failures are
+recorded in `docs/phase25_2/STATUS.md`.
 
-Feedback validation and `git diff --check` pass. The independent Architect
-issued scoped GO on exact parser checkpoint
-`f4a1986982a45ffb94da234f4be201d65b9b5dbf` with no P0/P1 findings. They
-confirmed the private Parser class, declaration-only interfaces, shared
-Program/AST identity, and unchanged direct-control assertions. Their
-non-blocking note is to keep the shared helper interface from growing.
-
-The FunctionalOptimizer edit/restore probe rebuilt only its object plus relink;
-its implementation is committed and pushed at
-`83d6eb927a590318c2cce5fcda2343c334c72872`.
-
-The Native Generator is independently compiled in `native_generator.cpp` with
-its `.inc` lowering fragments and stateful class intact. Its declaration-only
-API is `generate_native`; shared helper implementations, builtin registries and
-staged ABI configuration remain single-owned. The Generator source edit/restore
-probe rebuilt only its object plus relink; executor/FileIO and H3 source-free/
-hostile controls pass. The Checker is now independently compiled as one class
-in `semantic_checker.cpp`; its `TypeEnv`, checked-body relationships and `.inc`
-files remain in that TU. The driver uses declaration-only `check_program`, and
-direct C++ harnesses were converted to narrow wrapper APIs without changing
-assertions. Clang dev build, generic collection facts, empty-vector ABI-v10,
-declaration boundaries, H3 source-free chain and executor/FileIO pass. The
-Checker edit/restore probe rebuilt only `semantic_checker.o` plus relink.
-
-Two optional direct controls retain baseline failures: generic arithmetic
-requirement provenance aborts with `checked ABI-v10 requirement provenance
-identity is forged`, and statement/call occurrence roles fails its private-fact
-assertion. The declaration-authority wrapper also stops at existing
-`-Werror=missing-field-initializers`; the extraction-specific declaration
-boundary harness passes with warning suppression. Do not count these as passes.
-Current sizes: `moss.cpp` 23,786 lines / 1,121,792 bytes;
-`semantic_checker.cpp` 30,920 / 1,544,010; `native_generator.cpp` 6,846 /
-332,957; `parser.cpp` 1,058 / 45,255; `functional_optimizer.cpp` 1,398 /
-58,819. Commit this working Checker checkpoint before integrated validation.
+Final independent Architect review is pending. Next: verify clean worktree and
+validation record, request final review on the exact integrated candidate SHA,
+then record the verdict. Do not merge to main. After R2 final review/closeout,
+continue with the separately authorized GitHub issue #14, keeping its work in
+this repository and not merging to main.

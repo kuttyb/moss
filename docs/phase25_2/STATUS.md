@@ -5,73 +5,66 @@
 > `phase25-2-work` at `5f8056652668046bca59be5870bd110821d7e159`; its acceptance
 > is not established by the earlier G1/G2 status or review.
 
-## R2 core compiler decomposition — in progress — 2026-10-23
+## R2 core compiler decomposition — implementation complete, final review pending — 2026-10-23
 
-The Parser, lexer and source normalization implementation have been moved from
-`src/moss.cpp` into independently compiled `src/parser.cpp`. The driver uses a
-narrow `parse_source` / `parse_source_lines` API; `Parser` remains private to
-its owning TU. Shared syntax helpers are declared in `src/parser_support.hpp`
-and retain one implementation owner. `FunctionalOptimizer` is also extracted
-intact into `src/functional_optimizer.cpp`; `optimize_program` is its narrow
-entry point and `OptimizationPlan` remains a shared declaration.
+The four priority compiler owners are independently compiled production TUs:
+`parser.cpp` owns Parser/lexer/source normalization; `functional_optimizer.cpp`
+owns `FunctionalOptimizer`; `native_generator.cpp` owns the stateful Generator
+and its handler, borrowed-view, FileIO and executor `.inc` fragments; and
+`semantic_checker.cpp` owns Checker, TypeEnv, inference/ownership/effect state,
+checked-body facts and its existing `.inc` fragments. Each class remains private
+to its owner. Narrow declaration-only entry points preserve one authoritative
+Program, TypeContext, AST identity and pointer-keyed semantic relationships.
+The driver, ABI codecs, semantic-query/developer tools, project/module handling
+and CLI orchestration remain in `moss.cpp`; these are the principal regions
+for a later decomposition round. ABI-v9 remains the default, ABI-v10 opt-in;
+no semantic change is intended.
 
-Clang development build passes. Focused controls pass: Phase 21 numeric
-parsing/conversion parity; generic collection facts; ABI-v10 empty-vector
-provider emission; H3 source-free chain/hostile closure; Phase 21 peer-open,
-try-placeholder and unary-not pipeline gates; and Phase 15.7 formatter
-convergence. Direct C++ harnesses that constructed `Parser` were updated to
-use the new frontend API; assertions are unchanged. Parser and optimizer source
-edit/restore probes each rebuilt only their own object plus relink. The
-independent Architect issued scoped GO on Parser checkpoint
-`f4a1986982a45ffb94da234f4be201d65b9b5dbf`, with no P0/P1 findings. The review
-confirmed Parser privacy, declaration-only interfaces, one shared Program/AST
-identity, and unchanged direct-control assertions. It noted that shared helper
-declarations should not expand as the other core owners move. FunctionalOptimizer
-is implemented and its focused controls pass; its extraction is committed at
-`83d6eb927a590318c2cce5fcda2343c334c72872`.
+The first integrated run exposed an important lifetime boundary: `check_program`
+returned warnings while destroying Checker immediately, before production
+consumers finished using Checker-owned checked facts. The committed follow-up
+adds declaration-only RAII `CheckedProgram`, retaining the private Checker for
+project validation, checked interpreter setup and standalone compilation.
+`check_program` remains as a short-lived convenience seam for direct controls.
+This fix was present in the accepted full regression run.
 
-The Native Generator is now independently compiled in `src/native_generator.cpp`.
-Its stateful `Generator` class and its handler, borrowed-view, FileIO and
-executor lowering fragments remain together in that owner. The driver calls
-`generate_native` through a declaration-only interface. Shared parsing records
-and backend helpers are declaration-only; canonical helper implementations,
-staged ABI configuration and builtin registries remain single-owned in
-`moss.cpp`. The initial 50 missing-helper compile errors were closed with this
-bounded interface after the Architect advised keeping the Generator whole and
-exporting only helpers it actually calls. `src/interpreter.hpp` now gives the
-shared staged-ABI query external linkage, preserving its one implementation
-and process-wide environment snapshot. Clang development build,
-`check_phase20_executor_fileio.py`, and the H3 source-free/hostile chain pass.
-A source edit/restore probe rebuilt only `native_generator.o` plus relink.
+Integrated validation on the Clang+mold default: `make --jobs="$(nproc)" check`
+passed **137/137**, 0 failed and 0 skipped; `make --jobs="$(nproc)"
+examples-optimized` passed. ABI-v9/v10, source-free, SDK, and hostile-artifact
+gates included by the full check passed. The GCC development build passed.
+Focused Parser, optimizer, Generator, Checker, executor/FileIO, generic
+collection, ABI-v10 empty-vector, declaration-boundary and H3 source-free /
+hostile controls passed. The feedback validator and `git diff --check` passed.
+Two optional direct controls remain baseline failures reproduced before this
+round: `check_phase25_generic_arithmetic_requirements.py` aborts on forged ABI-v10
+requirement provenance, and `check_phase25_statement_call_occurrence_roles.py`
+fails its private-fact assertion. The declaration-authority wrapper stops at
+existing `-Werror=missing-field-initializers`; the extraction-specific
+boundary harness passes with the existing warning suppression. These are not
+counted as passing validation.
 
-Checker is now one independently compiled `src/semantic_checker.cpp`, with its
-stateful class, `TypeEnv`, checked-body state and existing `.inc` files kept in
-the owner. The production API is declaration-only `check_program`; direct C++
-controls use that seam and narrow wrappers for existing Checker-owned unit
-probes. No Program or AST objects are copied across the boundary. Clang
-development build and focused generic-collection, empty-vector ABI-v10,
-declaration-boundary, H3 source-free/hostile, and executor/FileIO controls pass.
-GCC direct-C++ harnesses also build against the extracted translation units.
-A Checker source edit/restore probe rebuilt only `semantic_checker.o` plus
-relink.
+Incremental edit/restore probes compile exactly one affected object and relink:
+`parser.o`, `semantic_checker.o`, or `native_generator.o`. Measured object compile
+and relink times were Parser 2.08s/0.68s, Checker 10.98s/0.68s, Generator
+3.94s/0.70s. Combined edit-to-relink times were 2.05s, 11.24s and 4.17s;
+no-op development build was 0.65s. Clean Clang+mold builds on the detected
+16-job host took 14.21s at `-O0` and 56.47s at `-O2` (compile plus link).
 
-Two optional direct C++ harnesses remain known failures, reproduced on the
-pre-extraction baseline: `check_phase25_generic_arithmetic_requirements.py`
-aborts on `checked ABI-v10 requirement provenance identity is forged`, and
-`check_phase25_statement_call_occurrence_roles.py` fails its existing private
-fact assertion. A separate declaration-authority wrapper stops at
-`-Werror=missing-field-initializers` in existing `TypeSolver::Undo` records;
-the extraction-specific declaration-boundary harness passes with the existing
-warning suppression. These failures are not counted as passes.
-
-Current source distribution: `moss.cpp` 23,786 lines / 1,121,792 bytes;
-`semantic_checker.cpp` 30,920 / 1,544,010; `native_generator.cpp` 6,846 /
+Current source sizes: `moss.cpp` 23,791 lines / 1,121,922 bytes;
+`semantic_checker.cpp` 30,936 / 1,544,580; `native_generator.cpp` 6,846 /
 332,957; `parser.cpp` 1,058 / 45,255; `functional_optimizer.cpp` 1,398 /
-58,819. `moss.cpp` now holds shared support, semantic-query/developer tools,
-ABI codecs and project/module/CLI orchestration; those remaining regions are
-recorded for a later round rather than split into tiny helper TUs. No compiler
-semantic change or ABI default change is intended. The Checker checkpoint is
-ready to commit before full integrated validation.
+58,819. `moss.cpp` is substantially reduced from the initial 61,386 lines /
+2,993,898 bytes. It now predominantly provides driver/project orchestration,
+shared support, developer and semantic-query operations, and ABI codecs.
+
+The Parser checkpoint received independent scoped GO at
+`f4a1986982a45ffb94da234f4be201d65b9b5dbf`, with no P0/P1 findings. The
+Architect's Generator seam guidance was followed: keep Generator and all its
+fragments together and expose only narrow shared helper declarations. Final
+integrated-candidate adversarial review is pending. Implementation checkpoints
+are `83d6eb927a590318c2cce5fcda2343c334c72872` (optimizer),
+`f0a81af2` (Generator), `20b4c120` (Checker), and `a73018dd` (Checker lifetime
+fix), all on `phase25-2-work` and pushed to `origin/phase25-2-work`.
 
 **Branch:** `phase25-2-work`<br>
 **Tested implementation SHA:** `1b20ca665fe61e1197dec7e1b14f6a584ae54d2c`<br>
