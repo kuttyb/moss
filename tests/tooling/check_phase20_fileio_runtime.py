@@ -1369,13 +1369,13 @@ def test_target_platform_gating(test_dir):
 
     # 4. Emission wiring: the guarded implementation is emitted only for programs
     #    that use FileIO; the root coordination runtime is emitted for every root.
-    with open(os.path.join(REPO_ROOT, "src/moss.cpp"), "r", encoding="utf-8") as f:
-        moss_cpp = f.read()
-    assert re.search(r'if \(program_uses_fileio\(p_\)\) \{\s*o << fileio_runtime_rust\(\);\s*\}', moss_cpp), \
+    with open(os.path.join(REPO_ROOT, "src/native_generator.cpp"), "r", encoding="utf-8") as f:
+        generator_cpp = f.read()
+    assert re.search(r'if \(program_uses_fileio\(p_\)\) \{\s*o << fileio_runtime_rust\(\);\s*\}', generator_cpp), \
         "fileio_runtime_rust() must be emitted only for FileIO-using programs"
-    assert re.search(r'if \(!project_module_artifact_\)\s*\{\s*o << fileio_root_runtime_rust\(\);', moss_cpp), \
+    assert re.search(r'if \(!project_module_artifact_\)\s*\{\s*o << fileio_root_runtime_rust\(\);', generator_cpp), \
         "standalone roots, including explicit modules, must emit fileio_root_runtime_rust()"
-    assert re.search(r'else if \(p_\.main\)\s*\{.*?cfg\(moss_process_root\).*?fileio_root_runtime_rust\(\);', moss_cpp, re.S), \
+    assert re.search(r'else if \(p_\.main\)\s*\{.*?cfg\(moss_process_root\).*?fileio_root_runtime_rust\(\);', generator_cpp, re.S), \
         "explicit-module roots must emit FileIO coordination only in executable mode"
     print("[PASS] Test 39: Platform target gating verified (FileIO guarded, root coordination portable)")
 

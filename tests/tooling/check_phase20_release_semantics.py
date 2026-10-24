@@ -56,7 +56,7 @@ def main():
     # The diagnostic itself must survive preprocessing even when no current
     # source fixture reaches this late fail-safe path.
     preprocessed = subprocess.run(
-        [compiler, "-std=c++17", "-DNDEBUG", "-E", "src/moss.cpp"],
+        [compiler, "-std=c++17", "-DNDEBUG", "-E", "src/semantic_checker.cpp"],
         cwd=ROOT, capture_output=True, text=True, check=True, timeout=120)
     assert "FUNCTIONAL_CALLABLE_UNRESOLVED" in preprocessed.stdout, (
         "functional-callable correctness check was compiled out by NDEBUG")

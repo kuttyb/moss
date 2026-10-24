@@ -30877,8 +30877,24 @@ private:
 #include "file_chunk_lowering.inc"
 };
 
+class CheckedProgram::Impl {
+ public:
+  explicit Impl(Program& program) : checker(program) {}
+  Checker checker;
+};
+
+CheckedProgram::CheckedProgram(Program& program)
+    : impl_(std::make_unique<Impl>(program)) {}
+CheckedProgram::~CheckedProgram() = default;
+CheckedProgram::CheckedProgram(CheckedProgram&&) noexcept = default;
+CheckedProgram& CheckedProgram::operator=(CheckedProgram&&) noexcept = default;
+void CheckedProgram::run() { impl_->checker.run(); }
+const std::vector<Warning>& CheckedProgram::warnings() const {
+  return impl_->checker.warnings();
+}
+
 std::vector<Warning> check_program(Program& program) {
-  Checker checker(program);
+  CheckedProgram checker(program);
   checker.run();
   return checker.warnings();
 }

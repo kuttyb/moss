@@ -15463,8 +15463,10 @@ static CheckedProjectUnit check_project_sources(
       }
     }
     prepare_and_validate_module_exports(program, false);
-    vector<Warning> warnings = check_program(program);
+    CheckedProgram checker(program);
+    checker.run();
     prepare_and_validate_module_exports(program, true);
+    vector<Warning> warnings = checker.warnings();
     if (!declaration_filter.empty() || declaration_ids) {
       if (mode == ProgramGenerationMode::Tests) {
         program.tests.erase(
@@ -22571,7 +22573,8 @@ static moss::Program load_checked_interpreter_program(
     }
     moss::Program program = moss::parse_source(
         source, std::filesystem::absolute(input).lexically_normal().string());
-    (void)moss::check_program(program);
+    moss::CheckedProgram checker(program);
+    checker.run();
     if (!test_mode) reject_fast_debug_fileio(program);
     else if (fileio_tests) *fileio_tests = fast_debug_fileio_tests(program);
     moss::optimize_program(program, false);
@@ -23636,7 +23639,9 @@ int main(int argc, char** argv) {
           source_stream,
           std::filesystem::absolute(input).lexically_normal().string());
       auto& standalone_program = *active_program;
-      warnings = moss::check_program(standalone_program);
+      moss::CheckedProgram checker(standalone_program);
+      checker.run();
+      warnings = checker.warnings();
       if (!json_output) {
         for (const auto& warning : warnings)
           std::cerr << diagnostic_source << ":" << warning.line

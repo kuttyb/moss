@@ -7,8 +7,28 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
+#include <memory>
 
 namespace moss {
+
+// Owns one Checker and its pointer-keyed solved state for the full checked
+// program lifetime. The implementation remains private to semantic_checker.cpp.
+class CheckedProgram {
+ public:
+  explicit CheckedProgram(Program& program);
+  ~CheckedProgram();
+  CheckedProgram(CheckedProgram&&) noexcept;
+  CheckedProgram& operator=(CheckedProgram&&) noexcept;
+  CheckedProgram(const CheckedProgram&) = delete;
+  CheckedProgram& operator=(const CheckedProgram&) = delete;
+
+  void run();
+  const std::vector<Warning>& warnings() const;
+
+ private:
+  class Impl;
+  std::unique_ptr<Impl> impl_;
+};
 
 std::vector<Warning> check_program(Program& program);
 
