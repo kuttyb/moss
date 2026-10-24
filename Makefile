@@ -1,4 +1,10 @@
-CXX ?= c++
+# Clang is the Phase 25.2 default; preserve command-line and environment overrides.
+# GNU Make sets built-in CXX=g++, so CXX ?= clang++ would not take effect.
+ifeq ($(origin CXX),default)
+CXX := clang++
+else ifeq ($(origin CXX),undefined)
+CXX := clang++
+endif
 CXXFLAGS_BASE ?= -std=c++17 -Wall -Wextra -pedantic
 CXXFLAGS_DEV ?= $(CXXFLAGS_BASE) -O0
 CXXFLAGS_OPT ?= $(CXXFLAGS_BASE) -O2
