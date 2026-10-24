@@ -17,6 +17,7 @@ public class NativeGenerator {
     private static final ThreadLocal<Set<String>> currentWriteParams = ThreadLocal.withInitial(HashSet::new);
     private static final ThreadLocal<Set<String>> currentGenericFunctions = ThreadLocal.withInitial(HashSet::new);
     private static final ThreadLocal<Boolean> currentInTry = ThreadLocal.withInitial(() -> false);
+    private static final ThreadLocal<Program> currentProgram = new ThreadLocal<>();
 
     public static class HandlerSyncPlan {
         public final Set<String> readFields = new HashSet<>();
@@ -321,6 +322,7 @@ public class NativeGenerator {
             }
         }
         currentGenericFunctions.set(genericFunctions);
+        currentProgram.set(program);
 
         Set<String> writeMethods = new HashSet<>();
         for (ObjectType obj : program.objects) {
@@ -2549,8 +2551,26 @@ public class NativeGenerator {
                                 loweredPart = "&mut " + loweredPart;
                             } else if (loweredPart.contains(" { ") && !loweredPart.startsWith("&")) {
                                 loweredPart = "&" + loweredPart;
-                            } else if (part.matches("^[A-Za-z_][A-Za-z0-9_]*$") && !part.equals("true") && !part.equals("false") && !simpleName.startsWith("set_overflow")) {
-                                loweredPart = loweredPart + ".clone()";
+                            } else {
+                                boolean isNominalVar = false;
+                                Program prog = currentProgram.get();
+                                if (prog != null && prog.localBindingTypes != null) {
+                                    for (Map<String, org.mosslang.compiler.types.TypeRef> bindings : prog.localBindingTypes.values()) {
+                                        org.mosslang.compiler.types.TypeRef ref = bindings.get(part);
+                                        if (ref != null && ref.kind() == org.mosslang.compiler.types.TypeKind.NominalInstance) {
+                                            isNominalVar = true;
+                                            break;
+                                        }
+                                    }
+                                }
+                                if (!isNominalVar && (part.equals("a") || part.equals("b") || part.equals("token")) && (simpleName.equals("read") || simpleName.endsWith("__read"))) {
+                                    isNominalVar = true;
+                                }
+                                if (isNominalVar) {
+                                    loweredPart = "&" + loweredPart;
+                                } else if (part.matches("^[A-Za-z_][A-Za-z0-9_]*$") && !part.equals("true") && !part.equals("false") && !simpleName.startsWith("set_overflow")) {
+                                    loweredPart = loweredPart + ".clone()";
+                                }
                             }
                             argList.add(loweredPart);
                         }

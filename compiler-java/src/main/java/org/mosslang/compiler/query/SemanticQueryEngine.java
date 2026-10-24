@@ -5,9 +5,72 @@ import java.io.PrintStream;
 
 public class SemanticQueryEngine {
     public static void executeQuery(String command, String target, Program program, String sourceFile, boolean json, PrintStream out) {
+        executeQuery(command, target, program, sourceFile, json, null, null, out);
+    }
+
+    public static void executeQuery(String command, String target, Program program, String sourceFile, boolean json, String kindFilter, String enclosingFilter, PrintStream out) {
         if ("fmt".equals(command)) {
             // Canonical formatting query
             out.print(program.sourceLines.stream().map(l -> l.text).reduce("", (a, b) -> a + b + "\n"));
+            return;
+        }
+
+        String enc = (enclosingFilter != null && !enclosingFilter.isEmpty()) ? enclosingFilter : "main";
+        java.util.Map<String, org.mosslang.compiler.types.TypeRef> encBindings = program.localBindingTypes.get(enc);
+        java.util.Map<String, Integer> encLines = program.localBindingLines.get(enc);
+        if (("binding".equals(kindFilter) || (encBindings != null && encBindings.containsKey(target))) && encBindings != null && encBindings.containsKey(target)) {
+            org.mosslang.compiler.types.TypeRef ref = encBindings.get(target);
+            int line = encLines != null ? encLines.getOrDefault(target, 0) : 0;
+            String resolved = ref != null ? ref.toCanonicalString() : "unit";
+            String declId = null;
+            String modId = null;
+            String declName = null;
+            String instKey = null;
+            if (ref != null && ref.declaration() != null) {
+                declId = ref.declaration().getId();
+                modId = ref.declaration().getModuleId();
+                declName = ref.declaration().getDeclarationName();
+                instKey = ref.nominalInstanceKey();
+            }
+            String nominalJson = "";
+            if (declId != null) {
+                nominalJson = ",\n      \"nominal\": {\n        \"declaration_id\": \"" + declId + "\",\n        \"module_identity\": \"" + modId + "\",\n        \"declaration_name\": \"" + declName + "\",\n        \"instance_key\": \"" + (instKey != null ? instKey : "") + "\"\n      }";
+            }
+            if (json) {
+                out.println("""
+{
+  "protocol_version": 1,
+  "schema_version": "moss-agent-1",
+  "compiler_version": "0.1.0-java",
+  "command": "%s",
+  "ok": true,
+  "result": {
+    "status": "resolved",
+    "target": {
+      "id": "entity-v1:binding:%s:%s",
+      "kind": "binding",
+      "semantic_identity": "%s@%d:statement",
+      "durable_identity": "entity-v1:binding:%s:%s",
+      "name": "%s",
+      "source": {
+        "file": "%s",
+        "line": %d,
+        "column": 1
+      },
+      "type": "%s"
+    },
+    "resolved_type": "%s",
+    "type_facts": {
+      "status": "resolved",
+      "resolved": "%s",
+      "category": "concrete",
+      "origin": "inferred"%s
+    }
+  }
+}""".formatted(command, enc, target, enc, line, enc, target, target, sourceFile, line, resolved, resolved, resolved, nominalJson).trim());
+            } else {
+                out.println(target + ": binding (" + resolved + ") at " + sourceFile + ":" + line);
+            }
             return;
         }
 
@@ -196,8 +259,9 @@ public class SemanticQueryEngine {
         }
 
         ObjectType matchedObject = null;
+        String cleanTarget = target.replaceAll("^entity-v1:type:", "").replaceAll("^type:", "");
         for (ObjectType o : program.objects) {
-            if (o.name.equals(target)) {
+            if (o.name.equals(target) || o.name.equals(cleanTarget) || o.name.endsWith("__" + cleanTarget) || cleanTarget.endsWith("__" + o.name)) {
                 matchedObject = o;
                 break;
             }
@@ -249,6 +313,15 @@ public class SemanticQueryEngine {
             semanticId = "main@8";
         }
 
+        String nominalObjJson = "";
+        if (matchedObject != null) {
+            org.mosslang.compiler.types.TypeContext ctx = program != null && program.typeContext != null ? program.typeContext : org.mosslang.compiler.types.TypeContext.current();
+            org.mosslang.compiler.types.NominalDeclaration decl = ctx != null ? ctx.find(matchedObject.name) : null;
+            if (decl != null) {
+                nominalObjJson = ",\n      \"nominal\": {\n        \"declaration_id\": \"" + decl.getId() + "\",\n        \"module_identity\": \"" + decl.getModuleId() + "\",\n        \"declaration_name\": \"" + decl.getDeclarationName() + "\",\n        \"instance_key\": null\n      }";
+            }
+        }
+
         if (json) {
             String syncPlanJson = buildSynchronizationPlanJson(program);
             out.println("""
@@ -277,10 +350,10 @@ public class SemanticQueryEngine {
       "status": "resolved",
       "resolved": "%s",
       "category": "%s",
-      "origin": "checked_declaration"
+      "origin": "checked_declaration"%s
     }%s
   }
-}""".formatted(command, target, kind, semanticId, target, sourceFile, line, type, type, type, kind, syncPlanJson).trim());
+}""".formatted(command, target, kind, semanticId, target, sourceFile, line, type, type, type, kind, nominalObjJson, syncPlanJson).trim());
         } else {
             out.println(target + ": " + kind + " (" + type + ") at " + sourceFile + ":" + line);
         }

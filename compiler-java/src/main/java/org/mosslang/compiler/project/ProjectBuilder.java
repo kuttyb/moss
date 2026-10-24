@@ -312,7 +312,7 @@ public class ProjectBuilder {
                 List<String> deps = moduleImports.getOrDefault(mod, Collections.emptyList());
 
                 // Generate .mossi interface
-                String mossiContent = generateMossiInterface(manifest, mod, prog, toolchain, deps);
+                String mossiContent = generateMossiInterface(manifest, mod, prog, toolchain, deps, buildDir, externalCandidateProviders);
                 Path mossiPath = buildDir.resolve(mod + ".mossi");
                 writeFileIfChanged(mossiPath, mossiContent);
                 emittedInterfaces.add(mossiPath);
@@ -632,7 +632,7 @@ public class ProjectBuilder {
         return String.format("%016x", hash);
     }
 
-    private static String generateMossiInterface(ProjectManifest manifest, String module, Program prog, BackendToolchain toolchain, List<String> deps) {
+    private static String generateMossiInterface(ProjectManifest manifest, String module, Program prog, BackendToolchain toolchain, List<String> deps, Path buildDir, Map<String, List<Path>> externalCandidateProviders) {
         StringBuilder contractBuf = new StringBuilder();
         StringBuilder semanticBuf = new StringBuilder();
 
@@ -756,7 +756,13 @@ public class ProjectBuilder {
             StringBuilder importsBuf = new StringBuilder();
             importsBuf.append("imports\ncount ").append(deps.size()).append("\n");
             for (String dep : deps) {
-                importsBuf.append(dep).append(" sha256:0000000000000000000000000000000000000000000000000000000000000000 sha256:0000000000000000000000000000000000000000000000000000000000000000\n");
+                Path depMossi = buildDir != null ? buildDir.resolve(dep + ".mossi") : null;
+                if ((depMossi == null || !Files.exists(depMossi)) && externalCandidateProviders != null) {
+                    List<Path> ext = externalCandidateProviders.get(dep);
+                    if (ext != null && !ext.isEmpty()) depMossi = ext.get(0);
+                }
+                String d = (depMossi != null && Files.exists(depMossi)) ? SourceFreeAbi.extractContractDigest(depMossi) : "0000000000000000000000000000000000000000000000000000000000000000";
+                importsBuf.append(dep).append(" sha256:").append(d).append(" sha256:").append(d).append("\n");
             }
             String importsStr = importsBuf.toString();
 
@@ -795,11 +801,13 @@ public class ProjectBuilder {
                 String objName = obj.name;
                 if (objName.startsWith(module + "__")) objName = objName.substring(module.length() + 2);
                 StringBuilder b = new StringBuilder();
-                b.append("object ").append(objName).append("\n");
+                b.append("type ").append(objName).append(" nominal\n");
                 binRecords.add(new String[]{"type:" + objName, b.toString()});
 
                 StringBuilder s = new StringBuilder();
-                s.append("export type ").append(objName).append("\n");
+                s.append("export type ").append(objName).append(" nominal\n");
+                s.append("  declaration_id nominal-template-v1:").append(modId).append(":type:").append(objName).append("\n");
+                s.append("  public_representation field value \n");
                 semRecords.add(new String[]{"type:" + objName, s.toString()});
             }
 
@@ -1059,7 +1067,7 @@ public class ProjectBuilder {
             }
             if (Files.exists(depMossi)) {
                 try {
-                    String depText = Files.readString(depMossi, StandardCharsets.UTF_8);
+                    String depText = Files.readString(depMossi, StandardCharsets.ISO_8859_1);
                     for (String line : depText.split("\\R")) {
                         Matcher m = fnPat.matcher(line);
                         if (m.find()) {
@@ -1079,7 +1087,7 @@ public class ProjectBuilder {
             Path depMossi = buildDir.resolve(dep + ".mossi");
             if (Files.exists(depMossi)) {
                 try {
-                    String depText = Files.readString(depMossi, StandardCharsets.UTF_8);
+                    String depText = Files.readString(depMossi, StandardCharsets.ISO_8859_1);
                     Set<String> importedSymbols = new HashSet<>();
                     for (String line : depText.split("\\R")) {
                         line = line.trim();

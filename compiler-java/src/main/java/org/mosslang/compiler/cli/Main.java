@@ -146,10 +146,16 @@ public class Main {
         if (Set.of("inspect", "type", "effects", "ownership", "calls", "why", "fmt").contains(first)) {
             String target = args.length > 1 ? args[1] : "";
             String src = null;
+            String kind = null;
+            String enclosing = null;
             boolean json = false;
             for (int i = 1; i < args.length; i++) {
                 if ("--source".equals(args[i]) && i + 1 < args.length) {
                     src = args[++i];
+                } else if ("--kind".equals(args[i]) && i + 1 < args.length) {
+                    kind = args[++i];
+                } else if ("--enclosing".equals(args[i]) && i + 1 < args.length) {
+                    enclosing = args[++i];
                 } else if ("--json".equals(args[i])) {
                     json = true;
                 } else if (!args[i].startsWith("-") && src == null && i > 1) {
@@ -176,19 +182,108 @@ public class Main {
                     }
                     List<Path> candidates = org.mosslang.compiler.project.SourceFreeAbi.findInterfaceCandidates(
                             projectRoot != null ? projectRoot : Paths.get(".").toAbsolutePath());
+                    Map<String, List<Path>> candidateMap = new HashMap<>();
+                    for (Path cand : candidates) {
+                        String stem = cand.getFileName().toString().replaceAll("\\.mossi$", "");
+                        candidateMap.computeIfAbsent(stem, k -> new ArrayList<>()).add(cand);
+                    }
                     for (org.mosslang.compiler.ast.ModuleImport imp : p.imports) {
-                        for (Path cand : candidates) {
-                            String stem = cand.getFileName().toString().replaceAll("\\.mossi$", "");
-                            if (stem.equals(imp.name)) {
-                                Path localModSrc = projectRoot != null ? projectRoot.resolve("src").resolve(imp.name + ".moss") : null;
-                                if (localModSrc == null || !Files.exists(localModSrc)) {
-                                    org.mosslang.compiler.project.SourceFreeAbi.validateMossiInterface(cand);
+                        List<Path> cands = candidateMap.get(imp.name);
+                        if (cands != null && cands.size() > 1) {
+                            String firstDigest = null;
+                            for (Path c : cands) {
+                                String d = org.mosslang.compiler.project.SourceFreeAbi.extractContractDigest(c);
+                                if (firstDigest == null) {
+                                    firstDigest = d;
+                                } else if (!firstDigest.equals(d)) {
+                                    throw new CompileError(imp.line,
+                                            "module identity 'module-v1:" + imp.name + "' is claimed by providers with different bound contracts:\n" +
+                                                    "  " + cands.get(0) + "\n  " + c,
+                                            "SOURCE_FREE_MODULE_ID_CONFLICT",
+                                            absSrc);
+                                }
+                            }
+                        }
+                    }
+                    Map<String, String> depDigests = new HashMap<>();
+                    Map<String, org.mosslang.compiler.project.SourceFreeAbi.MossiInfo> loadedExternalModules = new HashMap<>();
+                    for (org.mosslang.compiler.ast.ModuleImport imp : p.imports) {
+                        List<Path> cands = candidateMap.get(imp.name);
+                        if (cands != null && !cands.isEmpty()) {
+                            Path cand = cands.get(0);
+                            Path localModSrc = projectRoot != null ? projectRoot.resolve("src").resolve(imp.name + ".moss") : null;
+                            if (localModSrc == null || !Files.exists(localModSrc)) {
+                                org.mosslang.compiler.project.SourceFreeAbi.validateMossiInterface(cand);
+                            }
+                            loadedExternalModules.put(imp.name, org.mosslang.compiler.project.SourceFreeAbi.parseMossiInfo(cand));
+                            String candDigest = org.mosslang.compiler.project.SourceFreeAbi.extractContractDigest(cand);
+                            if (candDigest != null && !candDigest.isEmpty() && !candDigest.startsWith("0000")) {
+                                String prev = depDigests.put(imp.name, candDigest);
+                                if (prev != null && !prev.equals(candDigest) && !prev.startsWith("0000")) {
+                                    throw new CompileError(imp.line,
+                                            "module identity '" + imp.name + "' is claimed by providers with different bound contracts",
+                                            "SOURCE_FREE_MODULE_ID_CONFLICT",
+                                            absSrc);
+                                }
+                            }
+                            String candText = Files.readString(cand, StandardCharsets.ISO_8859_1);
+                            boolean inImports = false;
+                            for (String l : candText.split("\\R")) {
+                                l = l.trim();
+                                if (l.equals("imports")) {
+                                    inImports = true;
+                                    continue;
+                                }
+                                if (inImports) {
+                                    if (l.startsWith("binary_contract") || l.startsWith("contract") || l.startsWith("semantic_contract")) {
+                                        inImports = false;
+                                        break;
+                                    }
+                                    if (l.startsWith("count ") || l.isEmpty()) continue;
+                                    if (l.contains(" sha256:")) {
+                                        String[] parts = l.split("\\s+");
+                                        if (parts.length >= 2) {
+                                            String depName = parts[0];
+                                            String depDig = parts[1].replace("sha256:", "");
+                                            String prev = depDigests.put(depName, depDig);
+                                            if (prev != null && !prev.equals(depDig) && !prev.startsWith("0000") && !depDig.startsWith("0000")) {
+                                                throw new CompileError(imp.line,
+                                                        "module identity '" + depName + "' is claimed by providers with different bound contracts",
+                                                        "SOURCE_FREE_MODULE_ID_CONFLICT",
+                                                        absSrc);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    for (Map.Entry<String, org.mosslang.compiler.project.SourceFreeAbi.MossiInfo> entry : loadedExternalModules.entrySet()) {
+                        String external = entry.getKey();
+                        org.mosslang.compiler.project.SourceFreeAbi.MossiInfo extInfo = entry.getValue();
+                        for (String[] req : extInfo.imports) {
+                            String reqModId = req[0];
+                            String reqBinHash = req[1].replace("sha256:", "");
+                            String reqSemHash = req[2].replace("sha256:", "");
+                            int sep = reqModId.lastIndexOf("::");
+                            String imported = sep >= 0 ? reqModId.substring(sep + 2).trim() : reqModId;
+                            org.mosslang.compiler.project.SourceFreeAbi.MossiInfo selInfo = loadedExternalModules.get(imported);
+                            if (selInfo != null) {
+                                String selBin = selInfo.binaryHash != null ? selInfo.binaryHash.replace("sha256:", "") : "";
+                                String selSem = selInfo.semanticHash != null ? selInfo.semanticHash.replace("sha256:", "") : "";
+                                if (!selBin.equals(reqBinHash) || !selSem.equals(reqSemHash)) {
+                                    throw new CompileError(1,
+                                            "provider '" + external + "' was built against " + reqModId + ", but the selected '" + imported + "' provider has a different identity or bound contract",
+                                            "SOURCE_FREE_MODULE_ID_CONFLICT",
+                                            absSrc);
                                 }
                             }
                         }
                     }
                 }
-                org.mosslang.compiler.query.SemanticQueryEngine.executeQuery(first, target, p, absSrc, json, System.out);
+                org.mosslang.compiler.semantics.SemanticChecker checker = new org.mosslang.compiler.semantics.SemanticChecker(p);
+                checker.run();
+                org.mosslang.compiler.query.SemanticQueryEngine.executeQuery(first, target, p, absSrc, json, kind, enclosing, System.out);
                 return 0;
             } catch (CompileError e) {
                 if (json) {
@@ -360,15 +455,99 @@ public class Main {
                 }
                 for (org.mosslang.compiler.ast.ModuleImport imp : program.imports) {
                     List<Path> cands = candidateMap.get(imp.name);
+                    if (cands != null && cands.size() > 1) {
+                        String firstDigest = null;
+                        for (Path c : cands) {
+                            String d = org.mosslang.compiler.project.SourceFreeAbi.extractContractDigest(c);
+                            if (firstDigest == null) {
+                                firstDigest = d;
+                            } else if (!firstDigest.equals(d)) {
+                                throw new CompileError(imp.line,
+                                        "module identity 'module-v1:" + imp.name + "' is claimed by providers with different bound contracts:\n" +
+                                                "  " + cands.get(0) + "\n  " + c,
+                                        "SOURCE_FREE_MODULE_ID_CONFLICT",
+                                        absPath);
+                            }
+                        }
+                    }
+                }
+                Map<String, String> depDigests = new HashMap<>();
+                Map<String, org.mosslang.compiler.project.SourceFreeAbi.MossiInfo> loadedExternalModules = new HashMap<>();
+                for (org.mosslang.compiler.ast.ModuleImport imp : program.imports) {
+                    List<Path> cands = candidateMap.get(imp.name);
                     if (cands != null && !cands.isEmpty()) {
+                        Path cand = cands.get(0);
                         Path localModSrc = projectRoot != null ? projectRoot.resolve("src").resolve(imp.name + ".moss") : null;
                         if (localModSrc == null || !Files.exists(localModSrc)) {
-                            org.mosslang.compiler.project.SourceFreeAbi.validateMossiInterface(cands.get(0));
+                            org.mosslang.compiler.project.SourceFreeAbi.validateMossiInterface(cand);
                             if (interpMode) {
                                 throw new CompileError(
                                         1,
                                         "Fast Debug requires source for all reachable Moss modules; module '" + imp.name + "' is available only as a compiled .mossi provider. Use 'margo test --interp' so Margo can supply the resolved dependency source, or use native execution.",
                                         "FAST_DEBUG_NATIVE_DEPENDENCY",
+                                        absPath);
+                            }
+                        }
+                        loadedExternalModules.put(imp.name, org.mosslang.compiler.project.SourceFreeAbi.parseMossiInfo(cand));
+                        String candDigest = org.mosslang.compiler.project.SourceFreeAbi.extractContractDigest(cand);
+                        if (candDigest != null && !candDigest.isEmpty() && !candDigest.startsWith("0000")) {
+                            String prev = depDigests.put(imp.name, candDigest);
+                            if (prev != null && !prev.equals(candDigest) && !prev.startsWith("0000")) {
+                                throw new CompileError(imp.line,
+                                        "module identity '" + imp.name + "' is claimed by providers with different bound contracts",
+                                        "SOURCE_FREE_MODULE_ID_CONFLICT",
+                                        absPath);
+                            }
+                        }
+                        String candText = Files.readString(cand, StandardCharsets.ISO_8859_1);
+                        boolean inImports = false;
+                        for (String l : candText.split("\\R")) {
+                            l = l.trim();
+                            if (l.equals("imports")) {
+                                inImports = true;
+                                continue;
+                            }
+                            if (inImports) {
+                                if (l.startsWith("binary_contract") || l.startsWith("contract") || l.startsWith("semantic_contract")) {
+                                    inImports = false;
+                                    break;
+                                }
+                                if (l.startsWith("count ") || l.isEmpty()) continue;
+                                if (l.contains(" sha256:")) {
+                                    String[] parts = l.split("\\s+");
+                                    if (parts.length >= 2) {
+                                        String depName = parts[0];
+                                        String depDig = parts[1].replace("sha256:", "");
+                                        String prev = depDigests.put(depName, depDig);
+                                        if (prev != null && !prev.equals(depDig) && !prev.startsWith("0000") && !depDig.startsWith("0000")) {
+                                            throw new CompileError(imp.line,
+                                                    "module identity '" + depName + "' is claimed by providers with different bound contracts",
+                                                    "SOURCE_FREE_MODULE_ID_CONFLICT",
+                                                    absPath);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                for (Map.Entry<String, org.mosslang.compiler.project.SourceFreeAbi.MossiInfo> entry : loadedExternalModules.entrySet()) {
+                    String external = entry.getKey();
+                    org.mosslang.compiler.project.SourceFreeAbi.MossiInfo extInfo = entry.getValue();
+                    for (String[] req : extInfo.imports) {
+                        String reqModId = req[0];
+                        String reqBinHash = req[1].replace("sha256:", "");
+                        String reqSemHash = req[2].replace("sha256:", "");
+                        int sep = reqModId.lastIndexOf("::");
+                        String imported = sep >= 0 ? reqModId.substring(sep + 2).trim() : reqModId;
+                        org.mosslang.compiler.project.SourceFreeAbi.MossiInfo selInfo = loadedExternalModules.get(imported);
+                        if (selInfo != null) {
+                            String selBin = selInfo.binaryHash != null ? selInfo.binaryHash.replace("sha256:", "") : "";
+                            String selSem = selInfo.semanticHash != null ? selInfo.semanticHash.replace("sha256:", "") : "";
+                            if (!selBin.equals(reqBinHash) || !selSem.equals(reqSemHash)) {
+                                throw new CompileError(1,
+                                        "provider '" + external + "' was built against " + reqModId + ", but the selected '" + imported + "' provider has a different identity or bound contract",
+                                        "SOURCE_FREE_MODULE_ID_CONFLICT",
                                         absPath);
                             }
                         }
@@ -393,7 +572,7 @@ public class Main {
                     for (org.mosslang.compiler.ast.ModuleImport imp : program.imports) {
                         List<Path> cands = candidateMap.get(imp.name);
                         if (cands != null && !cands.isEmpty()) {
-                            String mText = Files.readString(cands.get(0), StandardCharsets.UTF_8);
+                            String mText = Files.readString(cands.get(0), StandardCharsets.ISO_8859_1);
                             boolean localDomainHasFailureArm = false;
                             for (org.mosslang.compiler.ast.Domain d : program.domains) {
                                 for (org.mosslang.compiler.ast.Handler h : d.handlers) {

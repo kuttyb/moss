@@ -18,6 +18,9 @@ public class Program {
     public MutableList<BenchDecl> benchmarks = new FastList<>();
     public MainProc main = null;
     public java.util.Set<String> importedGenericFunctions = new java.util.HashSet<>();
+    public java.util.Map<String, java.util.Map<String, org.mosslang.compiler.types.TypeRef>> localBindingTypes = new java.util.HashMap<>();
+    public java.util.Map<String, java.util.Map<String, Integer>> localBindingLines = new java.util.HashMap<>();
+    public org.mosslang.compiler.types.TypeContext typeContext = null;
 
     public Program() {}
 

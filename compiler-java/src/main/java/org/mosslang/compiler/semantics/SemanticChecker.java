@@ -73,6 +73,7 @@ public class SemanticChecker {
     }
 
     public void run() {
+        program.typeContext = this.typeContext;
         try (var scope = TypeContext.openScope(typeContext)) {
             collectDeclarations();
             checkEnums();
@@ -86,13 +87,82 @@ public class SemanticChecker {
     }
 
     private void collectDeclarations() {
+        for (ObjectType o : program.objects) {
+            if (o.name.equals("ParseError") || o.name.equals("FileError") || o.name.equals("ConversionError")) {
+                throw new CompileError(o.line, "duplicate declaration '" + o.name + "' conflicts with std." + o.name, "DUPLICATE_SYMBOL");
+            }
+        }
+        for (Trait t : program.traits) {
+            if (t.name.equals("ParseError") || t.name.equals("FileError") || t.name.equals("ConversionError")) {
+                throw new CompileError(t.line, "duplicate declaration '" + t.name + "' conflicts with std." + t.name, "DUPLICATE_SYMBOL");
+            }
+        }
+
+        Set<String> declaredNames = new HashSet<>();
+        for (ObjectType o : program.objects) {
+            if (!declaredNames.add(o.name)) {
+                throw new CompileError(o.line, "duplicate symbol '" + o.name + "'", "DUPLICATE_SYMBOL");
+            }
+        }
+        for (Domain d : program.domains) {
+            if (!declaredNames.add(d.name)) {
+                throw new CompileError(d.line, "duplicate symbol '" + d.name + "'", "DUPLICATE_SYMBOL");
+            }
+        }
+        for (Trait t : program.traits) {
+            if (!declaredNames.add(t.name)) {
+                throw new CompileError(t.line, "duplicate symbol '" + t.name + "'", "DUPLICATE_SYMBOL");
+            }
+        }
+
+        String pkg = "__standalone__";
+        String ver = "0.0.0";
+        String mod = program.moduleName != null && !program.moduleName.isEmpty() ? program.moduleName : "main";
+        if (program.sourceLines != null && !program.sourceLines.isEmpty()) {
+            String srcFile = program.sourceLines.get(0).sourceFile;
+            if (srcFile != null && !srcFile.isEmpty()) {
+                java.nio.file.Path dir = java.nio.file.Paths.get(srcFile).getParent();
+                while (dir != null) {
+                    if (java.nio.file.Files.exists(dir.resolve("Moss.toml")) || java.nio.file.Files.exists(dir.resolve("moss.toml"))) {
+                        try {
+                            org.mosslang.compiler.project.ProjectManifest pm = org.mosslang.compiler.project.ProjectManifest.load(dir);
+                            pkg = pm.getName();
+                            ver = pm.getVersion();
+                            if (program.moduleName == null || program.moduleName.isEmpty()) {
+                                mod = pkg;
+                            }
+                        } catch (Exception ignored) {}
+                        break;
+                    }
+                    dir = dir.getParent();
+                }
+            }
+        }
+        String currentModuleId = "module-v1:" + pkg + "@" + ver + "::" + mod;
+
         for (EnumType e : program.enums) {
             if (enums.put(e.name, e) != null) {
                 throw new CompileError(e.line, "duplicate enum '" + e.name + "'", "DUPLICATE_DECLARATION");
             }
-            typeContext.declare(DeclarationKind.Enum, e.name, "module-v1:main", e.name, Collections.emptyList());
+            if (e.name.equals("ParseError") || e.name.equals("FileError") || e.name.equals("ConversionError")
+                    || e.name.equals("std__ParseError") || e.name.equals("std__FileError") || e.name.equals("std__ConversionError")) {
+                String shortName = e.name.startsWith("std__") ? e.name.substring(5) : e.name;
+                typeContext.declare(DeclarationKind.Enum, e.name, "module-v1:moss-std@0.1.0::std", shortName, Collections.emptyList());
+                if (!e.name.equals(shortName)) {
+                    typeContext.declare(DeclarationKind.Enum, shortName, "module-v1:moss-std@0.1.0::std", shortName, Collections.emptyList());
+                }
+            } else {
+                typeContext.declare(DeclarationKind.Enum, e.name, currentModuleId, e.name, Collections.emptyList());
+            }
         }
         for (ObjectType o : program.objects) {
+            if (o.name.equals("ParseError") || o.name.equals("FileError") || o.name.equals("ConversionError")
+                    || o.name.equals("std__ParseError") || o.name.equals("std__FileError") || o.name.equals("std__ConversionError")) {
+                String declName = o.name.startsWith("std__") ? o.name.substring(5) : o.name;
+                throw new CompileError(o.line > 0 ? o.line : 1,
+                        "'" + declName + "' names the compiler standard error std." + declName + "; choose another name",
+                        "DUPLICATE_SYMBOL");
+            }
             if (objects.put(o.name, o) != null) {
                 throw new CompileError(o.line, "duplicate type '" + o.name + "'", "DUPLICATE_DECLARATION");
             }
@@ -101,9 +171,16 @@ public class SemanticChecker {
                 boolean isInf = f.inferred || f.type == null || f.type.isEmpty();
                 slots.add(new NominalFieldSlot(f.name, f.type, isInf));
             }
-            typeContext.declare(DeclarationKind.Record, o.name, "module-v1:main", o.name, slots);
+            typeContext.declare(DeclarationKind.Record, o.name, currentModuleId, o.name, slots);
         }
         for (Trait t : program.traits) {
+            if (t.name.equals("ParseError") || t.name.equals("FileError") || t.name.equals("ConversionError")
+                    || t.name.equals("std__ParseError") || t.name.equals("std__FileError") || t.name.equals("std__ConversionError")) {
+                String declName = t.name.startsWith("std__") ? t.name.substring(5) : t.name;
+                throw new CompileError(t.line > 0 ? t.line : 1,
+                        "'" + declName + "' names the compiler standard error std." + declName + "; choose another name",
+                        "DUPLICATE_SYMBOL");
+            }
             if (traits.put(t.name, t) != null) {
                 throw new CompileError(t.line, "duplicate trait '" + t.name + "'", "DUPLICATE_DECLARATION");
             }
@@ -113,11 +190,90 @@ public class SemanticChecker {
             if (domains.put(d.name, d) != null) {
                 throw new CompileError(d.line, "duplicate domain '" + d.name + "'", "DUPLICATE_DECLARATION");
             }
-            typeContext.declare(DeclarationKind.Domain, d.name, "module-v1:main", d.name, Collections.emptyList());
+            typeContext.declare(DeclarationKind.Domain, d.name, currentModuleId, d.name, Collections.emptyList());
         }
         for (Function f : program.functions) {
             if (functions.put(f.name, f) != null) {
                 throw new CompileError(f.line, "duplicate function '" + f.name + "'", "DUPLICATE_DECLARATION");
+            }
+        }
+
+        if (program.imports != null && !program.imports.isEmpty()) {
+            java.nio.file.Path sourcePath = null;
+            if (program.sourceLines != null && !program.sourceLines.isEmpty() && program.sourceLines.get(0).sourceFile != null) {
+                sourcePath = java.nio.file.Paths.get(program.sourceLines.get(0).sourceFile);
+            }
+            java.nio.file.Path projectRoot = null;
+            if (sourcePath != null) {
+                java.nio.file.Path d = sourcePath.getParent();
+                while (d != null) {
+                    if (java.nio.file.Files.exists(d.resolve("moss.toml")) || java.nio.file.Files.exists(d.resolve("Moss.toml"))) {
+                        projectRoot = d;
+                        break;
+                    }
+                    d = d.getParent();
+                }
+            }
+            List<java.nio.file.Path> candidates = org.mosslang.compiler.project.SourceFreeAbi.findInterfaceCandidates(
+                    projectRoot != null ? projectRoot : java.nio.file.Paths.get(".").toAbsolutePath());
+            java.util.regex.Pattern fnPat = java.util.regex.Pattern.compile("\\bfn\\s+([A-Za-z0-9_]+)\\b.*?\\breturn=([A-Za-z0-9_.:]+)");
+            for (java.nio.file.Path cand : candidates) {
+                String stem = cand.getFileName().toString().replaceAll("\\.mossi$", "");
+                try {
+                    String text = java.nio.file.Files.readString(cand, java.nio.charset.StandardCharsets.ISO_8859_1);
+                    for (String l : text.split("\\R")) {
+                        l = l.trim();
+                        if (l.startsWith("declaration_id nominal-template-v1:")) {
+                            String declId = l.substring(15).trim();
+                            int typeIdx = declId.lastIndexOf(":type:");
+                            if (typeIdx > 0) {
+                                String typeName = declId.substring(typeIdx + 6).trim();
+                                String modPart = declId.substring(20, typeIdx).trim();
+                                typeContext.declare(DeclarationKind.Record, stem + "__" + typeName, modPart, typeName, Collections.emptyList());
+                                typeContext.declare(DeclarationKind.Record, stem + "." + typeName, modPart, typeName, Collections.emptyList());
+                                if (typeContext.find(typeName) == null) {
+                                    typeContext.declare(DeclarationKind.Record, typeName, modPart, typeName, Collections.emptyList());
+                                }
+                            }
+                        }
+                    }
+                    Function currentFn = null;
+                    for (String l : text.split("\\R")) {
+                        l = l.trim();
+                        java.util.regex.Matcher m = fnPat.matcher(l);
+                        if (m.find()) {
+                            String fnName = m.group(1);
+                            String retTypeStr = m.group(2);
+                            currentFn = new Function();
+                            currentFn.name = fnName;
+                            TypeRef retRef = TypeParser.parseCanonical(retTypeStr);
+                            if (retRef != null) {
+                                currentFn.bindReturnType(retRef);
+                            } else {
+                                currentFn.setReturnType(retTypeStr);
+                            }
+                            functions.put(stem + "." + fnName, currentFn);
+                            functions.put(stem + "__" + fnName, currentFn);
+                            continue;
+                        }
+                        if (l.startsWith("param ") && currentFn != null) {
+                            String[] parts = l.split("\\s+");
+                            if (parts.length >= 3) {
+                                int idx = Integer.parseInt(parts[1]);
+                                String paramType = parts[2];
+                                while (currentFn.params.size() <= idx) {
+                                    currentFn.params.add(new Param());
+                                }
+                                Param p = currentFn.params.get(idx);
+                                p.setType(paramType);
+                                TypeRef pRef = TypeParser.parseCanonical(paramType);
+                                if (pRef != null) {
+                                    p.bindType(pRef);
+                                }
+                            }
+                        }
+                    }
+                } catch (Exception ignored) {}
             }
         }
     }
@@ -350,6 +506,12 @@ public class SemanticChecker {
                 resolvedReturn = TypeRef.unit();
             }
             f.returnTypeRef = resolvedReturn;
+            for (Map.Entry<String, TypeRef> entry : env.typeEnv.getBindings().entrySet()) {
+                TypeRef resolved = solver.resolve(entry.getValue());
+                int bLine = env.bindingLines.getOrDefault(entry.getKey(), f.line);
+                program.localBindingTypes.computeIfAbsent(f.name, k -> new HashMap<>()).put(entry.getKey(), resolved);
+                program.localBindingLines.computeIfAbsent(f.name, k -> new HashMap<>()).put(entry.getKey(), bLine);
+            }
         }
     }
 
@@ -398,8 +560,10 @@ public class SemanticChecker {
             }
             for (Map.Entry<String, TypeRef> entry : env.typeEnv.getBindings().entrySet()) {
                 TypeRef resolved = solver.resolve(entry.getValue());
+                int bLine = env.bindingLines.getOrDefault(entry.getKey(), program.main.line);
+                program.localBindingTypes.computeIfAbsent("main", k -> new HashMap<>()).put(entry.getKey(), resolved);
+                program.localBindingLines.computeIfAbsent("main", k -> new HashMap<>()).put(entry.getKey(), bLine);
                 if (resolved != null && !resolved.isClosed()) {
-                    int bLine = env.bindingLines.getOrDefault(entry.getKey(), program.main.line);
                     throw new CompileError(bLine,
                             "local binding '" + entry.getKey() + "' has unpinned open type '" + resolved.toCanonicalString() + "'",
                             "TYPE_AMBIGUOUS_OPEN_RESULT");

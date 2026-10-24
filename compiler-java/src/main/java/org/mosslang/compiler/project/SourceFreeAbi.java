@@ -38,7 +38,7 @@ public class SourceFreeAbi {
     public static String sha256(String input) {
         try {
             MessageDigest md = MessageDigest.getInstance("SHA-256");
-            byte[] digest = md.digest(input.getBytes(StandardCharsets.UTF_8));
+            byte[] digest = md.digest(input.getBytes(StandardCharsets.ISO_8859_1));
             StringBuilder sb = new StringBuilder();
             for (byte b : digest) {
                 sb.append(String.format("%02x", b));
@@ -65,10 +65,62 @@ public class SourceFreeAbi {
         return "MOSS_ABI_V9_CONTRACT::" + toolingName(module) + "::" + digest + "::END";
     }
 
+    public static String extractContractDigest(Path mossi) {
+        try {
+            String text = Files.readString(mossi, StandardCharsets.ISO_8859_1);
+            for (String l : text.split("\\R")) {
+                if (l.startsWith("provider_contract_digest sha256:")) {
+                    return l.substring(32).trim();
+                }
+            }
+        } catch (IOException ignored) {}
+        return "";
+    }
+
+    public static class MossiInfo {
+        public String moduleId;
+        public String binaryHash;
+        public String semanticHash;
+        public String digest;
+        public List<String[]> imports = new ArrayList<>();
+    }
+
+    public static MossiInfo parseMossiInfo(Path mossiFile) {
+        MossiInfo info = new MossiInfo();
+        try {
+            String text = Files.readString(mossiFile, StandardCharsets.ISO_8859_1);
+            boolean inImports = false;
+            for (String l : text.split("\\R")) {
+                l = l.trim();
+                if (l.startsWith("module_id ")) {
+                    info.moduleId = l.substring(10).trim();
+                } else if (l.startsWith("binary_contract_hash ")) {
+                    info.binaryHash = l.substring(21).trim();
+                } else if (l.startsWith("semantic_contract_hash ")) {
+                    info.semanticHash = l.substring(23).trim();
+                } else if (l.startsWith("provider_contract_digest sha256:")) {
+                    info.digest = l.substring(32).trim();
+                } else if (l.equals("imports")) {
+                    inImports = true;
+                } else if (inImports) {
+                    if (l.startsWith("binary_contract") || l.startsWith("contract") || l.startsWith("semantic_contract")) {
+                        inImports = false;
+                    } else if (!l.startsWith("count ") && !l.isEmpty()) {
+                        String[] parts = l.split("\\s+");
+                        if (parts.length >= 3) {
+                            info.imports.add(new String[]{parts[0], parts[1], parts[2]});
+                        }
+                    }
+                }
+            }
+        } catch (IOException ignored) {}
+        return info;
+    }
+
     public static void validateMossiInterface(Path interfaceFile) throws CompileError {
         String text;
         try {
-            text = Files.readString(interfaceFile, StandardCharsets.UTF_8);
+            text = Files.readString(interfaceFile, StandardCharsets.ISO_8859_1);
         } catch (IOException e) {
             throw new CompileError("MOSS_INTERFACE_ERROR",
                     "cannot read Moss module interface '" + interfaceFile + "'", interfaceFile.toString(), 1);

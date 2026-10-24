@@ -290,11 +290,42 @@ public class ExpressionTyper {
                         return TypeRef.enumeration(target);
                     }
                     if (program != null && program.imports.anySatisfy(imp -> imp.name.equals(target))) {
-                        for (String arg : argExprs) {
-                            if (arg.contains(":")) {
-                                arg = arg.substring(arg.indexOf(':') + 1).trim();
+                        Function fn = functions.get(target + "." + member);
+                        if (fn == null) fn = functions.get(target + "__" + member);
+                        if (fn == null) fn = functions.get(callee);
+                        if (fn != null) {
+                            if (argExprs.size() != fn.params.size()) {
+                                throw new CompileError(line, "function " + callee + " expects " +
+                                        fn.params.size() + " arguments, got " + argExprs.size(), "TYPE_MISMATCH");
                             }
-                            infer(arg, line, env);
+                            for (int i = 0; i < argExprs.size(); i++) {
+                                String aExpr = argExprs.get(i);
+                                if (aExpr.contains(":")) {
+                                    aExpr = aExpr.substring(aExpr.indexOf(':') + 1).trim();
+                                }
+                                TypeRef actual = infer(aExpr, line, env);
+                                Param param = fn.params.get(i);
+                                TypeRef expected = param.typeRef != null ? param.typeRef : TypeParser.parseCanonical(param.type);
+                                if (expected != null && !solver.unify(actual, expected)) {
+                                    throw new CompileError(line, "argument " + (i + 1) + " to function '" +
+                                            callee + "' has incompatible type '" + actual.toCanonicalString() +
+                                            "', expected '" + expected.toCanonicalString() + "'", "TYPE_MISMATCH");
+                                }
+                            }
+                            if (fn.returnTypeRef != null) {
+                                return fn.returnTypeRef;
+                            }
+                            if (fn.returnType != null && !fn.returnType.isEmpty()) {
+                                TypeRef ret = TypeParser.parseCanonical(fn.returnType);
+                                if (ret != null) return ret;
+                            }
+                        } else {
+                            for (String arg : argExprs) {
+                                if (arg.contains(":")) {
+                                    arg = arg.substring(arg.indexOf(':') + 1).trim();
+                                }
+                                infer(arg, line, env);
+                            }
                         }
                         if (!member.isEmpty() && Character.isUpperCase(member.charAt(0))) {
                             return TypeRef.domain(target + "." + member);

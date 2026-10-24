@@ -192,6 +192,111 @@ public class TypeRef {
         return toCanonicalString();
     }
 
+    private static void appendPart(StringBuilder out, String part) {
+        out.append(part.length()).append(':').append(part);
+    }
+
+    public void appendTypeKey(StringBuilder out, List<String> active) {
+        switch (kind) {
+            case Primitive -> {
+                appendPart(out, "primitive");
+                appendPart(out, name);
+            }
+            case Unit -> {
+                appendPart(out, "unit");
+            }
+            case Enum, Domain -> {
+                appendPart(out, kind == TypeKind.Enum ? "enum" : "domain");
+                appendPart(out, declaration != null ? declaration.getId() : name);
+            }
+            case TraitConstraint -> {
+                appendPart(out, "trait");
+                appendPart(out, name);
+            }
+            case InferenceVar -> throw new IllegalStateException("open type has no stable type key");
+            case Builtin -> {
+                appendPart(out, "builtin-instance-v1");
+                appendPart(out, name);
+                appendPart(out, String.valueOf(typeArgs.size()));
+                for (TypeRef arg : typeArgs) {
+                    StringBuilder nested = new StringBuilder();
+                    arg.appendTypeKey(nested, active);
+                    appendPart(out, nested.toString());
+                }
+            }
+            case NominalInstance -> {
+                String declId = declaration != null ? declaration.getId() : ("nominal-template-v1:::type:" + name);
+                StringBuilder inst = new StringBuilder(declId);
+                for (FieldSub sub : fieldSubstitutions) {
+                    appendPart(inst, sub.type().structuralKey());
+                }
+                String instance = inst.toString();
+                for (int depth = 0; depth < active.size(); depth++) {
+                    if (active.get(active.size() - 1 - depth).equals(instance)) {
+                        appendPart(out, "backref");
+                        appendPart(out, String.valueOf(depth));
+                        return;
+                    }
+                }
+                active.add(instance);
+                appendPart(out, "nominal-instance-v1");
+                appendPart(out, declId);
+                List<TypeRef> fields = resolvedFields();
+                appendPart(out, String.valueOf(fields.size()));
+                for (TypeRef field : fields) {
+                    StringBuilder nested = new StringBuilder();
+                    field.appendTypeKey(nested, active);
+                    appendPart(out, nested.toString());
+                }
+                active.remove(active.size() - 1);
+            }
+        }
+    }
+
+    public List<TypeRef> resolvedFields() {
+        if (declaration == null) {
+            List<TypeRef> res = new ArrayList<>();
+            for (FieldSub sub : fieldSubstitutions) res.add(sub.type());
+            return res;
+        }
+        List<TypeRef> res = new ArrayList<>();
+        for (NominalFieldSlot slot : declaration.getFields()) {
+            TypeRef found = null;
+            for (FieldSub sub : fieldSubstitutions) {
+                if (sub.name().equals(slot.name())) {
+                    found = sub.type();
+                    break;
+                }
+            }
+            if (found != null) {
+                res.add(found);
+            } else if (slot.declaredType() != null && !slot.declaredType().isEmpty()) {
+                res.add(TypeParser.parseCanonical(slot.declaredType()));
+            } else {
+                res.add(TypeRef.primitive("int"));
+            }
+        }
+        return res;
+    }
+
+    public String nominalInstanceKey() {
+        StringBuilder material = new StringBuilder();
+        appendTypeKey(material, new ArrayList<>());
+        return "nominal-instance-v1:sha256:" + sha256(material.toString());
+    }
+
+    private static String sha256(String input) {
+        try {
+            java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
+            byte[] digest = md.digest(input.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder();
+            for (byte b : digest) sb.append(String.format("%02x", b));
+            return sb.toString();
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     public String stableTypeKey() {
         return toCanonicalString();
     }
