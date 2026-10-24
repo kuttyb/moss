@@ -8,6 +8,8 @@ endif
 CXXFLAGS_BASE ?= -std=c++17 -Wall -Wextra -pedantic
 CXXFLAGS_DEV ?= $(CXXFLAGS_BASE) -O0
 CXXFLAGS_OPT ?= $(CXXFLAGS_BASE) -O2
+# Link with mold through the compiler driver; override with MOSS_LDFLAGS=.
+MOSS_LDFLAGS ?= -fuse-ld=mold
 
 COMPILER_DIR = build/compiler
 MOSS_DEV = $(COMPILER_DIR)/moss-dev
@@ -31,7 +33,7 @@ moss-dev: $(MOSS_DEV)
 
 $(MOSS_DEV): src/moss.cpp $(wildcard src/*.hpp src/*.inc)
 	@mkdir -p $(COMPILER_DIR)
-	$(CXX) $(CXXFLAGS_DEV) $< -o $@
+	$(CXX) $(CXXFLAGS_DEV) $< -o $@ $(MOSS_LDFLAGS)
 
 moss-opt: $(MOSS_OPT)
 
@@ -42,7 +44,7 @@ $(MOSS_RELEASE): $(MOSS_OPT)
 
 $(MOSS_OPT): src/moss.cpp $(wildcard src/*.hpp src/*.inc)
 	@mkdir -p $(COMPILER_DIR)
-	$(CXX) $(CXXFLAGS_OPT) $< -o $@
+	$(CXX) $(CXXFLAGS_OPT) $< -o $@ $(MOSS_LDFLAGS)
 
 check: check-parallel
 
