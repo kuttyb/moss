@@ -1022,18 +1022,11 @@ public class SemanticChecker {
                     if (env.immutables.contains(rootName)) {
                         throw new CompileError(s.line, "cannot mutate immutable variable '" + rootName + "' introduced with let (IMMUTABLE_LOCAL_MUTATION)", "IMMUTABLE_LOCAL_MUTATION");
                     }
-                    TypeRef rootType = solver.resolve(env.get(rootName));
-                    ObjectType obj = objects.get(rootType.name());
-                    if (obj != null) {
-                        Field f = obj.fields.stream().filter(field -> field.name.equals(fieldName)).findFirst().orElse(null);
-                        if (f != null) {
-                            TypeRef fieldType = f.typeRef != null ? f.typeRef : TypeRef.primitive(f.type != null ? f.type : "int");
-                            TypeRef inferred = typer.infer(expr, s.line, env.typeEnv);
-                            if (!solver.unify(fieldType, inferred)) {
-                                throw new CompileError(s.line, "field '" + fieldName + "' type mismatch: expected '" +
-                                        solver.resolve(fieldType).toCanonicalString() + "', got '" + solver.resolve(inferred).toCanonicalString() + "'", "TYPE_MISMATCH");
-                            }
-                        }
+                    TypeRef targetFieldType = typer.infer(varName, s.line, env.typeEnv);
+                    TypeRef inferred = typer.infer(expr, s.line, env.typeEnv);
+                    if (!solver.unify(targetFieldType, inferred)) {
+                        throw new CompileError(s.line, "field '" + fieldName + "' type mismatch: expected '" +
+                                solver.resolve(targetFieldType).toCanonicalString() + "', got '" + solver.resolve(inferred).toCanonicalString() + "'", "TYPE_MISMATCH");
                     }
                     return;
                 }
