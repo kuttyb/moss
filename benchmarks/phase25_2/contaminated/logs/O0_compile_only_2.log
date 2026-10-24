@@ -1,0 +1,10 @@
+In file included from src/ast.hpp:15,
+                 from src/moss.cpp:33:
+src/type_ir.hpp: In member function 'moss::TypeVarId moss::TypeSolver::root(moss::TypeVarId, Trail*)':
+src/type_ir.hpp:1090:25: warning: missing initializer for member 'moss::TypeSolver::Undo::binding' [-Wmissing-field-initializers]
+ 1090 |         trail->push_back({Undo::Kind::Parent, id, found->second.parent});
+      |         ~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+src/type_ir.hpp: In member function 'bool moss::TypeSolver::bind(moss::TypeVarId, const moss::TypeRef&, Trail&)':
+src/type_ir.hpp:1136:22: warning: missing initializer for member 'moss::TypeSolver::Undo::binding' [-Wmissing-field-initializers]
+ 1136 |       trail.push_back({Undo::Kind::Parent, other, secondary.parent});
+      |       ~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
