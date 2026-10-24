@@ -195,6 +195,16 @@ public class TypeSolver {
         if (b.kind() == TypeKind.InferenceVar) {
             return bind(b.varId(), a, trail);
         }
+        // Duck-typed trait constraints match any conforming type
+        if (a.kind() == TypeKind.TraitConstraint || b.kind() == TypeKind.TraitConstraint) {
+            return true;
+        }
+        // Bare collection builtins (e.g. bare 'Vector' or 'Map') match specialized collections
+        if (a.kind() == TypeKind.Builtin && b.kind() == TypeKind.Builtin && Objects.equals(a.name(), b.name())) {
+            if (a.typeArgs().isEmpty() || b.typeArgs().isEmpty()) {
+                return true;
+            }
+        }
         if (!a.sameHead(b) ||
             a.typeArgs().size() != b.typeArgs().size() ||
             a.fieldSubstitutions().size() != b.fieldSubstitutions().size()) {
