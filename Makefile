@@ -23,7 +23,7 @@ COMPILER_DIR ?= build/compiler
 MOSS_DEV = $(COMPILER_DIR)/moss-dev
 MOSS_OPT = $(COMPILER_DIR)/moss-opt
 MOSS_RELEASE = $(COMPILER_DIR)/moss-release
-COMPILER_SOURCES ?= src/char_string_ordering_runtime.cpp src/diagnostic_identity.cpp src/display_runtime.cpp src/executor_runtime.cpp src/fileio_runtime.cpp src/float_format_runtime.cpp src/functional_optimizer.cpp src/handler_runtime.cpp src/native_generator.cpp src/numeric_literal.cpp src/numeric_runtime.cpp src/parser.cpp src/program_identity.cpp src/semantic_checker.cpp src/typed_semantic_api.cpp src/type_ir.cpp src/moss.cpp
+COMPILER_SOURCES ?= src/char_string_ordering_runtime.cpp src/checked_body_ir.cpp src/diagnostic_identity.cpp src/display_runtime.cpp src/executor_runtime.cpp src/fileio_runtime.cpp src/float_format_runtime.cpp src/functional_optimizer.cpp src/handler_runtime.cpp src/native_generator.cpp src/numeric_literal.cpp src/numeric_runtime.cpp src/parser.cpp src/program_identity.cpp src/semantic_checker.cpp src/typed_semantic_api.cpp src/type_ir.cpp src/moss.cpp
 
 # Profiles and command-line configurations use distinct object trees.
 COMPILER_CONFIG_DEV = $(shell printf '%s\n' '$(CXX)' '$(CXX_TOOLCHAIN_FLAGS)' '$(CPPFLAGS)' '$(CXXFLAGS_DEV)' '$(CXXFLAGS_PCH)' '$(shell $(CXX) --version 2>/dev/null | head -n 1)' '$(shell $(CXX) -dumpmachine 2>/dev/null)' | cksum | cut -d' ' -f1)

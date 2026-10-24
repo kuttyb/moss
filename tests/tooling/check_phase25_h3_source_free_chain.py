@@ -46,8 +46,8 @@ with tempfile.TemporaryDirectory(prefix="phase25-h3-chain-", dir=TMP) as td:
     common_lowering = scratch / "check_common_lowering"
     command(["g++", "-std=c++17", "-O0", "-Wall", "-Wextra", "-Werror",
              "-Wno-missing-field-initializers", "-pedantic", "-Isrc",
-             "tests/tooling/check_phase25_h3_chain_records.cpp", "-o",
-             str(verifier)])
+             "tests/tooling/check_phase25_h3_chain_records.cpp",
+             "src/checked_body_ir.cpp", "-o", str(verifier)])
     command(["g++", "-std=c++17", "-O0", "-Wall", "-Wextra", "-Werror",
              "-Wno-missing-field-initializers", "-pedantic", "-Isrc",
              "tests/tooling/check_phase25_h3_poison_legacy.cpp", "-o",
