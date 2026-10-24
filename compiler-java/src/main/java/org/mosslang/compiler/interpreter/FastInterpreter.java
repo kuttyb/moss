@@ -9,10 +9,17 @@ public class FastInterpreter {
         public enum Kind { INT, FLOAT, BOOL, STRING, UNIT, OBJECT, DOMAIN, VECTOR, MAP, QUEUE }
         public final Kind kind;
         public final Object raw;
+        public String typeName = null;
 
         public Value(Kind kind, Object raw) {
             this.kind = kind;
             this.raw = raw;
+        }
+
+        public Value(Kind kind, Object raw, String typeName) {
+            this.kind = kind;
+            this.raw = raw;
+            this.typeName = typeName;
         }
 
         public static Value ofInt(long v) { return new Value(Kind.INT, v); }
@@ -827,10 +834,23 @@ public class FastInterpreter {
         }
 
         if (expr.endsWith("]") && !expr.startsWith("[") && !expr.endsWith(")")) {
-            int openB = expr.indexOf('[');
+            int closeB = expr.length() - 1;
+            int depth = 0;
+            int openB = -1;
+            for (int i = closeB; i >= 0; i--) {
+                char ch = expr.charAt(i);
+                if (ch == ']') depth++;
+                else if (ch == '[') {
+                    depth--;
+                    if (depth == 0) {
+                        openB = i;
+                        break;
+                    }
+                }
+            }
             if (openB > 0) {
                 Value baseVal = evalExpr(expr.substring(0, openB).trim(), locals, currentDomain);
-                Value idxVal = evalExpr(expr.substring(openB + 1, expr.length() - 1).trim(), locals, currentDomain);
+                Value idxVal = evalExpr(expr.substring(openB + 1, closeB).trim(), locals, currentDomain);
                 if (baseVal.raw instanceof List<?> lst) {
                     @SuppressWarnings("unchecked")
                     List<Value> l = (List<Value>) lst;
@@ -962,7 +982,7 @@ public class FastInterpreter {
                             fieldMap.put(obj.fields.get(i).name, evaluatedArgs.get(i));
                         }
                     }
-                    return new Value(Value.Kind.OBJECT, fieldMap);
+                    return new Value(Value.Kind.OBJECT, fieldMap, obj.name);
                 }
             }
 
@@ -1050,6 +1070,9 @@ public class FastInterpreter {
                 }
                 if (recvVal != null && recvVal.kind == Value.Kind.OBJECT) {
                     for (ObjectType obj : program.objects) {
+                        if (recvVal.typeName != null && !recvVal.typeName.equals(obj.name)) {
+                            continue;
+                        }
                         for (Method m : obj.methods) {
                             if (m.name.equals(methodName)) {
                                 Map<String, Value> mLocals = new HashMap<>();

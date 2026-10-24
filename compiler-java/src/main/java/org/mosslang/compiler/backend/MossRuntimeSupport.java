@@ -305,5 +305,108 @@ impl std::fmt::Debug for MossStr {
         write!(f, "{:?}", self.0)
     }
 }
+
+#[allow(dead_code)]
+pub trait MossAdd<Rhs = Self> {
+    type Output;
+    fn __moss_add(self, rhs: Rhs) -> Self::Output;
+}
+impl MossAdd<i64> for i64 {
+    type Output = i64;
+    #[inline(always)]
+    fn __moss_add(self, rhs: i64) -> i64 { self.wrapping_add(rhs) }
+}
+impl MossAdd<i64> for f64 {
+    type Output = f64;
+    #[inline(always)]
+    fn __moss_add(self, rhs: i64) -> f64 { self + (rhs as f64) }
+}
+impl MossAdd<f64> for f64 {
+    type Output = f64;
+    #[inline(always)]
+    fn __moss_add(self, rhs: f64) -> f64 { self + rhs }
+}
+impl MossAdd<f64> for i64 {
+    type Output = f64;
+    #[inline(always)]
+    fn __moss_add(self, rhs: f64) -> f64 { (self as f64) + rhs }
+}
+impl MossAdd<&MossStr> for MossStr {
+    type Output = MossStr;
+    #[inline(always)]
+    fn __moss_add(mut self, rhs: &MossStr) -> MossStr { self.0.push_str(&rhs.0); self }
+}
+impl MossAdd<MossStr> for MossStr {
+    type Output = MossStr;
+    #[inline(always)]
+    fn __moss_add(mut self, rhs: MossStr) -> MossStr { self.0.push_str(&rhs.0); self }
+}
+impl MossAdd<&str> for MossStr {
+    type Output = MossStr;
+    #[inline(always)]
+    fn __moss_add(mut self, rhs: &str) -> MossStr { self.0.push_str(rhs); self }
+}
+impl<T: Clone> MossAdd<&std::vec::Vec<T>> for std::vec::Vec<T> {
+    type Output = std::vec::Vec<T>;
+    #[inline(always)]
+    fn __moss_add(mut self, rhs: &std::vec::Vec<T>) -> std::vec::Vec<T> { self.extend(rhs.iter().cloned()); self }
+}
+impl<T: Clone> MossAdd<std::vec::Vec<T>> for std::vec::Vec<T> {
+    type Output = std::vec::Vec<T>;
+    #[inline(always)]
+    fn __moss_add(mut self, rhs: std::vec::Vec<T>) -> std::vec::Vec<T> { self.extend(rhs); self }
+}
+
+#[allow(dead_code)]
+pub trait MossSub<Rhs = Self> {
+    type Output;
+    fn __moss_sub(self, rhs: Rhs) -> Self::Output;
+}
+impl MossSub<i64> for i64 {
+    type Output = i64;
+    #[inline(always)]
+    fn __moss_sub(self, rhs: i64) -> i64 { self.wrapping_sub(rhs) }
+}
+impl MossSub<i64> for f64 {
+    type Output = f64;
+    #[inline(always)]
+    fn __moss_sub(self, rhs: i64) -> f64 { self - (rhs as f64) }
+}
+impl MossSub<f64> for f64 {
+    type Output = f64;
+    #[inline(always)]
+    fn __moss_sub(self, rhs: f64) -> f64 { self - rhs }
+}
+impl MossSub<f64> for i64 {
+    type Output = f64;
+    #[inline(always)]
+    fn __moss_sub(self, rhs: f64) -> f64 { (self as f64) - rhs }
+}
+
+#[allow(dead_code)]
+pub trait MossMul<Rhs = Self> {
+    type Output;
+    fn __moss_mul(self, rhs: Rhs) -> Self::Output;
+}
+impl MossMul<i64> for i64 {
+    type Output = i64;
+    #[inline(always)]
+    fn __moss_mul(self, rhs: i64) -> i64 { self.wrapping_mul(rhs) }
+}
+impl MossMul<i64> for f64 {
+    type Output = f64;
+    #[inline(always)]
+    fn __moss_mul(self, rhs: i64) -> f64 { self * (rhs as f64) }
+}
+impl MossMul<f64> for f64 {
+    type Output = f64;
+    #[inline(always)]
+    fn __moss_mul(self, rhs: f64) -> f64 { self * rhs }
+}
+impl MossMul<f64> for i64 {
+    type Output = f64;
+    #[inline(always)]
+    fn __moss_mul(self, rhs: f64) -> f64 { (self as f64) * rhs }
+}
 """;
 }

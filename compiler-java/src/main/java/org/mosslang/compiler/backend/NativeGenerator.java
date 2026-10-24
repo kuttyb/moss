@@ -2,6 +2,7 @@ package org.mosslang.compiler.backend;
 
 import org.mosslang.compiler.ast.*;
 import org.mosslang.compiler.semantics.SemanticChecker;
+import org.mosslang.compiler.types.TypeKind;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
@@ -504,9 +505,23 @@ public class NativeGenerator {
                         break;
                     }
                 }
-                String ret = (m.returnType != null && !m.returnType.isEmpty() && !m.returnType.equals("unit"))
-                        ? rustType(m.returnType)
-                        : (m.resultExpression != null ? "i64" : "()");
+                String inferredRet = null;
+                if (m.returnTypeRef != null && m.returnTypeRef.kind() != TypeKind.Unit) {
+                    inferredRet = rustType(m.returnTypeRef.toCanonicalString());
+                } else if (m.returnType != null && !m.returnType.isEmpty() && !m.returnType.equals("unit")) {
+                    inferredRet = rustType(m.returnType);
+                } else {
+                    for (Stmt s : m.body) {
+                        if (s.kind == Stmt.Kind.Return && s.a != null && !s.a.trim().isEmpty() && !s.a.trim().equals("return")) {
+                            inferredRet = "i64";
+                            break;
+                        }
+                    }
+                    if (inferredRet == null && m.resultExpression != null && !m.resultExpression.isEmpty()) {
+                        inferredRet = "i64";
+                    }
+                }
+                String ret = inferredRet != null ? inferredRet : "()";
                 if (mRaises) {
                     ret = "Result<" + ret + ", __MossRaised>";
                 }
@@ -1027,12 +1042,12 @@ public class NativeGenerator {
                 if (paramMutated) {
                     writeParams.add(p.name);
                     pType = "&mut " + pType;
-                } else if (p.type != null && p.type.equalsIgnoreCase("vector")) {
+                } else if (!fn.exported && p.type != null && p.type.equalsIgnoreCase("vector")) {
                     pType = "&std::vec::Vec<i64>";
-                } else if (p.type != null && objects.containsKey(p.type)) {
+                } else if (!fn.exported && p.type != null && objects.containsKey(p.type)) {
                     pType = "&" + pType;
-                } else if (objects.containsKey(p.type) || objects.containsKey(rustType(p.type))
-                        || objects.keySet().stream().anyMatch(k -> k.endsWith("__" + p.type) || k.equals(p.type))) {
+                } else if (!fn.exported && (objects.containsKey(p.type) || objects.containsKey(rustType(p.type))
+                        || objects.keySet().stream().anyMatch(k -> k.endsWith("__" + p.type) || k.equals(p.type)))) {
                     pType = "&" + pType;
                 }
                 o.append(p.name).append(": ").append(pType);
@@ -1236,7 +1251,7 @@ public class NativeGenerator {
         for (Param p : fn.params) {
             declared.add(p.name);
             if (!mutatedParams.contains(p.name)) {
-                o.append("        let mut ").append(p.name).append(" = ($").append(p.name).append(").clone();\n");
+                o.append("        #[allow(unused_mut)]\n        let mut ").append(p.name).append(" = ($").append(p.name).append(").clone();\n");
             }
         }
         StringBuilder bodySb = new StringBuilder();
@@ -2103,13 +2118,20 @@ public class NativeGenerator {
             if (op[2].equals("+") && op[0].trim().matches("^[A-Za-z_][A-Za-z0-9_]*$")) {
                 lhs = "(" + lhs + ").clone()";
             }
-            return "(" + lhs + ") " + op[2] + " (" + lowerExpr(op[1], stateFields, domains, objects) + ")";
+            String rhs = lowerExpr(op[1], stateFields, domains, objects);
+            String mName = op[2].equals("+") ? "__moss_add" : "__moss_sub";
+            return "(" + lhs + ")." + mName + "(" + rhs + ")";
         }
 
         // 8. Multiplicative: "*", "/", "%"
         op = splitOperator(expr, "*", "/", "%");
         if (op != null) {
-            return "(" + lowerExpr(op[0], stateFields, domains, objects) + ") " + op[2] + " (" + lowerExpr(op[1], stateFields, domains, objects) + ")";
+            String lhs = lowerExpr(op[0], stateFields, domains, objects);
+            String rhs = lowerExpr(op[1], stateFields, domains, objects);
+            if (op[2].equals("*")) {
+                return "(" + lhs + ").__moss_mul(" + rhs + ")";
+            }
+            return "(" + lhs + ") " + op[2] + " (" + rhs + ")";
         }
 
         // 9. Unary bitwise NOT: "~"
@@ -2198,7 +2220,11 @@ public class NativeGenerator {
                 } else if (part.matches("^-?\\d+$")) {
                     items.add(part + "_i64");
                 } else {
-                    items.add(lowerExpr(part, stateFields, domains, objects));
+                    String loweredItem = lowerExpr(part, stateFields, domains, objects);
+                    if (part.matches("^[A-Za-z_][A-Za-z0-9_]*$") && !part.equals("true") && !part.equals("false")) {
+                        loweredItem = loweredItem + ".clone()";
+                    }
+                    items.add(loweredItem);
                 }
             }
             return "vec![" + String.join(", ", items) + "]";
@@ -2550,7 +2576,12 @@ public class NativeGenerator {
                             if (isWriteCall) {
                                 loweredPart = "&mut " + loweredPart;
                             } else if (loweredPart.contains(" { ") && !loweredPart.startsWith("&")) {
-                                loweredPart = "&" + loweredPart;
+                                Program prog = currentProgram.get();
+                                Function calleeFn = prog != null ? prog.functions.stream().filter(f -> f.name.equals(callee) || f.name.equals(simpleName)).findFirst().orElse(null) : null;
+                                boolean calleeTakesValue = calleeFn != null && calleeFn.exported;
+                                if (!calleeTakesValue) {
+                                    loweredPart = "&" + loweredPart;
+                                }
                             } else {
                                 boolean isNominalVar = false;
                                 Program prog = currentProgram.get();
@@ -2630,10 +2661,38 @@ public class NativeGenerator {
 
         // Indexing e.g. values[0]
         if (expr.endsWith("]") && !expr.startsWith("[")) {
-            int openBr = expr.indexOf('[');
+            int closeBr = expr.length() - 1;
+            int depth = 0;
+            int openBr = -1;
+            for (int i = closeBr; i >= 0; i--) {
+                char ch = expr.charAt(i);
+                if (ch == ']') depth++;
+                else if (ch == '[') {
+                    depth--;
+                    if (depth == 0) {
+                        openBr = i;
+                        break;
+                    }
+                }
+            }
             if (openBr > 0) {
-                String base = lowerExpr(expr.substring(0, openBr).trim(), stateFields, domains, objects);
-                String idx = lowerExpr(expr.substring(openBr + 1, expr.length() - 1).trim(), stateFields, domains, objects);
+                String rawBase = expr.substring(0, openBr).trim();
+                String base = lowerExpr(rawBase, stateFields, domains, objects);
+                String idx = lowerExpr(expr.substring(openBr + 1, closeBr).trim(), stateFields, domains, objects);
+                boolean isMap = false;
+                Program prog = currentProgram.get();
+                if (prog != null && prog.localBindingTypes != null) {
+                    for (Map<String, org.mosslang.compiler.types.TypeRef> bindings : prog.localBindingTypes.values()) {
+                        org.mosslang.compiler.types.TypeRef ref = bindings.get(rawBase);
+                        if (ref != null && ref.kind() == org.mosslang.compiler.types.TypeKind.Builtin && "map".equals(ref.name())) {
+                            isMap = true;
+                            break;
+                        }
+                    }
+                }
+                if (isMap) {
+                    return "((" + base + ")[&(" + idx + ")].clone())";
+                }
                 return base + "[(" + idx + ") as usize].clone()";
             }
         }

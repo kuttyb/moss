@@ -18,6 +18,8 @@ public class ExpressionTyper {
     private final Deque<String> activeSpecializations = new ArrayDeque<>();
     public String currentCallingModule = null;
     public String currentCallingFunction = "main";
+    public String currentCallerSpecializationKey = null;
+    public TypeRef currentExpectedType = null;
 
     public ExpressionTyper(Program program,
                            TypeContext typeContext,
@@ -301,10 +303,7 @@ public class ExpressionTyper {
                                         fn.params.size() + " arguments, got " + argExprs.size(), "TYPE_MISMATCH");
                             }
                             for (int i = 0; i < argExprs.size(); i++) {
-                                String aExpr = argExprs.get(i);
-                                if (aExpr.contains(":")) {
-                                    aExpr = aExpr.substring(aExpr.indexOf(':') + 1).trim();
-                                }
+                                String aExpr = stripNamedArgPrefix(argExprs.get(i));
                                 TypeRef actual = infer(aExpr, line, env);
                                 Param param = fn.params.get(i);
                                 TypeRef expected = param.typeRef != null ? param.typeRef : TypeParser.parseCanonical(param.type);
@@ -323,10 +322,7 @@ public class ExpressionTyper {
                             }
                         } else {
                             for (String arg : argExprs) {
-                                if (arg.contains(":")) {
-                                    arg = arg.substring(arg.indexOf(':') + 1).trim();
-                                }
-                                infer(arg, line, env);
+                                infer(stripNamedArgPrefix(arg), line, env);
                             }
                         }
                         if (!member.isEmpty() && Character.isUpperCase(member.charAt(0))) {
@@ -421,10 +417,11 @@ public class ExpressionTyper {
                     List<String> callableArgs = new ArrayList<>();
                     boolean hasGenericParam = false;
                     for (int i = 0; i < argExprs.size(); i++) {
-                        String aExpr = argExprs.get(i).trim();
-                        if (aExpr.contains(":")) {
-                            aExpr = aExpr.substring(aExpr.indexOf(':') + 1).trim();
-                        }
+                        String aExpr = stripNamedArgPrefix(argExprs.get(i));
+                        Param param = i < fn.params.size() ? fn.params.get(i) : null;
+                        TypeRef expected = (param != null && param.type != null && !param.type.isEmpty() && !traits.containsKey(param.type)) ?
+                                (param.typeRef != null ? param.typeRef : TypeParser.parseCanonical(param.type)) : null;
+
                         TypeRef actual;
                         if (functions.containsKey(aExpr)) {
                             Function argFn = functions.get(aExpr);
@@ -432,25 +429,44 @@ public class ExpressionTyper {
                             callableArgs.add(argFn.semanticCallableId);
                             actual = TypeRef.unit();
                         } else {
-                            actual = infer(aExpr, line, env);
+                            TypeRef prevExpected = this.currentExpectedType;
+                            this.currentExpectedType = expected;
+                            try {
+                                actual = infer(aExpr, line, env);
+                            } finally {
+                                this.currentExpectedType = prevExpected;
+                            }
                             displayArgTypes.add(solver.resolve(actual).toCanonicalString());
                         }
                         actualArgs.add(actual);
-                        Param param = fn.params.get(i);
-                        TypeRef expected = param.typeRef != null ? param.typeRef : TypeParser.parseCanonical(param.type);
-                        if (param.type == null || param.type.isEmpty() || traits.containsKey(param.type)
-                                || "Vector".equals(param.type) || "Map".equals(param.type)
-                                || (expected != null && expected.isBareTemplate())) {
-                            hasGenericParam = true;
-                        }
-                        if (expected != null && !expected.isBareTemplate() && !solver.unify(actual, expected)) {
-                            throw new CompileError(line, "argument " + (i + 1) + " to function '" +
-                                    callee + "' has incompatible type '" + actual.toCanonicalString() +
-                                    "', expected '" + expected.toCanonicalString() + "'", "TYPE_MISMATCH");
-                        } else if (expected != null && expected.isBareTemplate() && !actual.sameHead(expected)) {
-                            throw new CompileError(line, "argument " + (i + 1) + " to function '" +
-                                    callee + "' has incompatible type '" + actual.toCanonicalString() +
-                                    "', expected '" + expected.toCanonicalString() + "'", "TYPE_MISMATCH");
+
+                        if (param != null) {
+                            if (param.type == null || param.type.isEmpty() || traits.containsKey(param.type)
+                                    || "Vector".equals(param.type) || "Map".equals(param.type)
+                                    || (expected != null && expected.isBareTemplate())) {
+                                hasGenericParam = true;
+                            }
+                            if (traits.containsKey(param.type)) {
+                                TypeRef resolvedActual = solver.resolve(actual);
+                                if (!objects.containsKey(resolvedActual.name())) {
+                                    throw new CompileError(line, "concrete argument does not satisfy member summary trait '" + param.type + "'", "TYPE_MISMATCH");
+                                }
+                                ObjectType obj = objects.get(resolvedActual.name());
+                                Trait tr = traits.get(param.type);
+                                for (TraitMethod tm : tr.methods) {
+                                    if (obj.methods.stream().noneMatch(m -> m.name.equals(tm.name))) {
+                                        throw new CompileError(line, "concrete argument does not satisfy member summary trait '" + param.type + "': missing method " + tm.name, "TYPE_MISMATCH");
+                                    }
+                                }
+                            } else if (expected != null && !expected.isBareTemplate() && !solver.unify(actual, expected)) {
+                                throw new CompileError(line, "argument " + (i + 1) + " to function '" +
+                                        callee + "' has incompatible type '" + actual.toCanonicalString() +
+                                        "', expected '" + expected.toCanonicalString() + "'", "TYPE_MISMATCH");
+                            } else if (expected != null && expected.isBareTemplate() && !actual.sameHead(expected)) {
+                                throw new CompileError(line, "argument " + (i + 1) + " to function '" +
+                                        callee + "' has incompatible type '" + actual.toCanonicalString() +
+                                        "', expected '" + expected.toCanonicalString() + "'", "TYPE_MISMATCH");
+                            }
                         }
                     }
 
@@ -459,6 +475,10 @@ public class ExpressionTyper {
                     sKey.callableArguments.addAll(callableArgs);
                     for (TypeRef at : actualArgs) {
                         sKey.arguments.add(solver.resolve(at));
+                    }
+                    boolean hasMemberCall = fn.body.stream().anyMatch(st -> (st.text != null && st.text.contains(".length()")) || (st.a != null && st.a.contains(".length()")));
+                    if (currentExpectedType != null && currentExpectedType.isClosed() && (fn.generic || hasMemberCall)) {
+                        sKey.openResultBindings.add(new SpecializationKey.OpenResultBinding(1, currentExpectedType));
                     }
                     String stableKey = sKey.stableKey();
 
@@ -483,6 +503,7 @@ public class ExpressionTyper {
                         callEdge.occurrence = occ;
                         callEdge.programOccurrence = progOcc;
                         callEdge.argumentTypes.addAll(displayArgTypes);
+                        callEdge.sourceSpecializationKey = currentCallerSpecializationKey != null ? currentCallerSpecializationKey : "";
                         callEdge.specializationKey = stableKey;
                         program.semanticCallEdges.add(callEdge);
                     }
@@ -499,6 +520,40 @@ public class ExpressionTyper {
                         }
                         spec.returnType = fn.returnType != null ? fn.returnType : "int";
                         spec.returnTypeRef = fn.returnTypeRef != null ? fn.returnTypeRef : TypeRef.primitive("int");
+                        spec.openResultBindings.addAll(sKey.openResultBindings);
+                        if (hasMemberCall) {
+                            FunctionSpecialization.MemberReq req = new FunctionSpecialization.MemberReq();
+                            req.line = line;
+                            req.sourceFile = program.sourceFile != null ? program.sourceFile : "";
+                            spec.memberRequirements.add(req);
+                        }
+                        for (int pi = 0; pi < fn.params.size() && pi < actualArgs.size(); pi++) {
+                            Param p = fn.params.get(pi);
+                            if (traits.containsKey(p.type)) {
+                                TypeRef resAct = solver.resolve(actualArgs.get(pi));
+                                ObjectType obj = objects.get(resAct.name());
+                                if (obj != null) {
+                                    Trait tr = traits.get(p.type);
+                                    for (TraitMethod tm : tr.methods) {
+                                        FunctionSpecialization.MemberReq req = new FunctionSpecialization.MemberReq();
+                                        req.requirementId = "callable-v1:module-v1:__standalone__@0.0.0::main:fn:" + fn.name + ":member:" + spec.memberRequirements.size();
+                                        req.parentRequirementId = null;
+                                        req.memberName = tm.name;
+                                        req.receiverKind = "nominal";
+                                        req.receiverId = "nominal-template-v1:module-v1:__standalone__@0.0.0::main:type:" + obj.name;
+                                        req.resultKind = "primitive";
+                                        req.resultId = "int";
+                                        req.admittedTemplate = req.receiverId;
+                                        req.selectedCallableId = "callable-v1:" + req.receiverId + ":method:" + tm.name;
+                                        req.enclosingCallable = "callable-v1:module-v1:__standalone__@0.0.0::main:fn:" + fn.name;
+                                        req.callExpressionId = req.requirementId;
+                                        req.line = fn.line;
+                                        req.sourceFile = "";
+                                        spec.memberRequirements.add(req);
+                                    }
+                                }
+                            }
+                        }
                         fn.specializations.add(spec);
                     }
 
@@ -521,6 +576,10 @@ public class ExpressionTyper {
                             }
                         }
                         activeSpecializations.push(specKey);
+                        String prevCaller = currentCallingFunction;
+                        String prevCallerKey = currentCallerSpecializationKey;
+                        currentCallingFunction = "fn:" + fn.name;
+                        currentCallerSpecializationKey = stableKey;
                         try {
                             TypeEnv callEnv = new TypeEnv();
                             for (int i = 0; i < fn.params.size(); i++) {
@@ -535,6 +594,13 @@ public class ExpressionTyper {
                                     if (!retExpr.isEmpty()) {
                                         TypeRef res = infer(retExpr, s.line, callEnv);
                                         if (callEdge != null) callEdge.returnTypeRef = res;
+                                        for (FunctionSpecialization fs : fn.specializations) {
+                                            if (stableKey != null && stableKey.equals(fs.stableTypeKey)) {
+                                                fs.returnTypeRef = res;
+                                                fs.returnType = res.toCanonicalString();
+                                                break;
+                                            }
+                                        }
                                         return res;
                                     }
                                 } else if (s.kind == Stmt.Kind.Assign || s.kind == Stmt.Kind.Let || s.kind == Stmt.Kind.Var) {
@@ -555,9 +621,27 @@ public class ExpressionTyper {
                             if (fn.resultExpression != null && !fn.resultExpression.isEmpty()) {
                                 TypeRef res = infer(fn.resultExpression, fn.resultLine != 0 ? fn.resultLine : line, callEnv);
                                 if (callEdge != null) callEdge.returnTypeRef = res;
+                                for (FunctionSpecialization fs : fn.specializations) {
+                                    if (stableKey != null && stableKey.equals(fs.stableTypeKey)) {
+                                        fs.returnTypeRef = res;
+                                        fs.returnType = res.toCanonicalString();
+                                        break;
+                                    }
+                                }
                                 return res;
                             }
+                        } catch (CompileError ce) {
+                            if ("METHOD_NOT_FOUND".equals(ce.getCode()) || "LOCAL_MUTATION".equals(ce.getCode())
+                                    || (ce.getMessage() != null && ce.getMessage().contains("is incompatible with argument types"))) {
+                                throw ce;
+                            }
+                            if (ce.getMessage() != null && ce.getMessage().contains("operator ")) {
+                                throw new CompileError(line, "open-result specialization has unresolved type bindings: " + ce.getMessage(), "TYPE_AMBIGUOUS_OPEN_RESULT");
+                            }
+                            throw ce;
                         } finally {
+                            currentCallingFunction = prevCaller;
+                            currentCallerSpecializationKey = prevCallerKey;
                             activeSpecializations.pop();
                         }
                     }
@@ -596,10 +680,7 @@ public class ExpressionTyper {
                     String[] parts = callee.split("\\.", 2);
                     if (program != null && program.imports.anySatisfy(imp -> imp.name.equals(parts[0]))) {
                         for (String arg : argExprs) {
-                            if (arg.contains(":")) {
-                                arg = arg.substring(arg.indexOf(':') + 1).trim();
-                            }
-                            infer(arg, line, env);
+                            infer(stripNamedArgPrefix(arg), line, env);
                         }
                         return TypeRef.primitive("int");
                     }
@@ -718,9 +799,15 @@ public class ExpressionTyper {
         if (stageExpr.startsWith("map(") && stageExpr.endsWith(")")) {
             String inner = stageExpr.substring(4, stageExpr.length() - 1).trim();
             if (functions.containsKey(inner)) {
-                Function fn = functions.get(inner);
-                TypeRef ret = fn.returnTypeRef != null ? fn.returnTypeRef :
-                        (fn.returnType != null ? TypeParser.parseCanonical(fn.returnType) : solver.fresh(0));
+                String dummyArg = "0";
+                if (elemType.sameHead(TypeRef.primitive("string"))) {
+                    dummyArg = "\"\"";
+                } else if (elemType.sameHead(TypeRef.primitive("float"))) {
+                    dummyArg = "0.0";
+                } else if (elemType.sameHead(TypeRef.primitive("bool"))) {
+                    dummyArg = "false";
+                }
+                TypeRef ret = infer(inner + "(" + dummyArg + ")", line, env);
                 return TypeRef.builtin("vector", List.of(ret));
             }
             return TypeRef.builtin("vector", List.of(solver.fresh(0)));
@@ -972,21 +1059,28 @@ public class ExpressionTyper {
             ObjectType obj = objects.get(targetType.name());
             for (Method m : obj.methods) {
                 if (m.name.equals(member)) {
+                    TypeEnv methodEnv = new TypeEnv();
+                    for (Field f : obj.fields) {
+                        TypeRef ft = (f.type != null && !f.type.isEmpty()) ? TypeParser.parseCanonical(f.type) : solver.fresh(0);
+                        methodEnv.put(f.name, ft);
+                    }
+                    List<String> actualTypeNames = new ArrayList<>();
+                    for (int i = 0; i < m.params.size() && i < argExprs.size(); i++) {
+                        Param p = m.params.get(i);
+                        TypeRef expected = (p.type != null && !p.type.isEmpty()) ? TypeParser.parseCanonical(p.type) : null;
+                        TypeRef actual = infer(argExprs.get(i), line, env);
+                        actualTypeNames.add(solver.resolve(actual).toCanonicalString());
+                        if (expected != null && !solver.unify(actual, expected)) {
+                            throw new CompileError(line, "method '" + member + "' is incompatible with argument types (" + String.join(", ", actualTypeNames) + ")", "TYPE_MISMATCH");
+                        }
+                        methodEnv.put(p.name, actual);
+                    }
                     if (m.returnTypeRef != null && m.returnTypeRef.isClosed()) {
                         return m.returnTypeRef;
                     }
                     if (m.returnType != null && !m.returnType.isEmpty()) {
                         TypeRef parsed = TypeParser.parseCanonical(m.returnType);
                         if (parsed != null) return parsed;
-                    }
-                    // Infer return type from method body
-                    TypeEnv methodEnv = new TypeEnv();
-                    for (Field f : obj.fields) {
-                        TypeRef ft = (f.type != null && !f.type.isEmpty()) ? TypeParser.parseCanonical(f.type) : solver.fresh(0);
-                        methodEnv.put(f.name, ft);
-                    }
-                    for (int i = 0; i < m.params.size() && i < argExprs.size(); i++) {
-                        methodEnv.put(m.params.get(i).name, infer(argExprs.get(i), line, env));
                     }
                     for (Stmt s : m.body) {
                         if (s.kind == Stmt.Kind.Return) {
@@ -1000,6 +1094,7 @@ public class ExpressionTyper {
                     return solver.fresh(0);
                 }
             }
+            throw new CompileError(line, "type '" + targetType.toCanonicalString() + "' has no method '" + member + "' (missing required method '" + member + "')", "METHOD_NOT_FOUND");
         }
 
         if (targetType.kind() == TypeKind.Domain || targetType.kind() == TypeKind.NominalInstance || targetType.kind() == TypeKind.InferenceVar
@@ -1015,7 +1110,7 @@ public class ExpressionTyper {
             return solver.fresh(0);
         }
 
-        return TypeRef.unit();
+        throw new CompileError(line, "type '" + targetType.toCanonicalString() + "' has no method '" + member + "' (missing required method '" + member + "')", "METHOD_NOT_FOUND");
     }
 
     private List<TypeRef.FieldSub> checkConstructorArgs(String objectName, List<Field> fields, List<String> argExprs, int line, TypeEnv env) {
@@ -1242,5 +1337,18 @@ public class ExpressionTyper {
             }
         }
         return -1;
+    }
+
+    private static String stripNamedArgPrefix(String aExpr) {
+        if (aExpr == null) return "";
+        String s = aExpr.trim();
+        int colon = s.indexOf(':');
+        if (colon > 0) {
+            String prefix = s.substring(0, colon).trim();
+            if (!prefix.contains("(") && !prefix.contains("[") && !prefix.contains("{") && !prefix.contains("\"") && prefix.matches("^[a-zA-Z_][a-zA-Z0-9_]*$")) {
+                return s.substring(colon + 1).trim();
+            }
+        }
+        return s;
     }
 }

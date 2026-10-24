@@ -92,7 +92,7 @@ public class TypeSolver {
     private TypeVarId root(TypeVarId id, List<Undo> trail) {
         Variable var = variables.get(id);
         if (var == null) {
-            throw new IllegalArgumentException("unknown type variable " + id);
+            return id;
         }
         if (var.parent.equals(id)) {
             return id;

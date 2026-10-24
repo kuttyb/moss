@@ -515,6 +515,10 @@ public class SemanticChecker {
                 solver.unify(expectedReturn, TypeRef.unit());
                 resolvedReturn = TypeRef.unit();
             }
+            boolean hasUnannotatedParam = f.params.stream().anyMatch(p -> p.type == null || p.type.isEmpty() || traits.containsKey(p.type) || "Vector".equals(p.type) || "Map".equals(p.type));
+            if (hasUnannotatedParam) {
+                f.generic = true;
+            }
             if (resolvedReturn.isClosed()) {
                 f.bindReturnType(resolvedReturn);
             } else {
@@ -590,33 +594,47 @@ public class SemanticChecker {
 
             if (program.semanticCallEdges != null) {
                 for (SemanticCallEdge edge : program.semanticCallEdges) {
-                    if (edge.source.equals("main") && edge.returnTypeRef != null && edge.target.startsWith("fn:")) {
+                    if (edge.returnTypeRef != null && edge.target.startsWith("fn:") && (edge.source.equals("main") || !edge.sourceSpecializationKey.isEmpty())) {
                         String callee = edge.target.substring(3);
                         Function fn = functions.get(callee);
-                        if (fn != null && (fn.generic || fn.returnType == null || (fn.returnTypeRef != null && !fn.returnTypeRef.isClosed()))) {
+                        boolean returnsOpen = fn != null && (fn.returnType == null || (fn.returnTypeRef != null && !fn.returnTypeRef.isClosed()));
+                        if (returnsOpen) {
                             TypeRef resolved = solver.resolve(edge.returnTypeRef);
                             if (resolved != null && resolved.isClosed()) {
                                 TypeRef innerElem = !resolved.typeArgs().isEmpty() ? resolved.typeArgs().get(0) : resolved;
                                 SpecializationKey sk = new SpecializationKey();
                                 sk.callableId = fn.semanticCallableId;
                                 for (String a : edge.argumentTypes) {
-                                    sk.arguments.add(TypeParser.parseCanonical(a));
+                                    if (a.startsWith("callable:")) {
+                                        sk.callableArguments.add("callable-v1:module-v1:__standalone__@0.0.0::main:fn:" + a.substring(9));
+                                        sk.arguments.add(TypeRef.unit());
+                                    } else {
+                                        TypeRef pt = TypeParser.parseCanonical(a);
+                                        sk.arguments.add(pt != null ? pt : TypeRef.primitive(a));
+                                    }
                                 }
                                 sk.openResultBindings.add(new SpecializationKey.OpenResultBinding(1, innerElem));
                                 String updatedKey = sk.stableKey();
-                                edge.specializationKey = updatedKey;
-
-                                if (fn.specializations.stream().noneMatch(sp -> updatedKey.equals(sp.stableTypeKey))) {
-                                    FunctionSpecialization spec = new FunctionSpecialization();
-                                    spec.generatedName = "__moss_specialize_" + fn.name + "_" + fn.specializations.size();
-                                    spec.parameterTypes.addAll(edge.argumentTypes);
-                                    spec.stableTypeKey = updatedKey;
-                                    spec.semanticKey = sk;
-                                    spec.parameterTypeRefs.addAll(sk.arguments);
-                                    spec.returnType = resolved.toCanonicalString();
-                                    spec.returnTypeRef = resolved;
-                                    spec.openResultBindings.add(new SpecializationKey.OpenResultBinding(1, innerElem));
-                                    fn.specializations.add(spec);
+                                if (updatedKey != null) {
+                                    edge.specializationKey = updatedKey;
+                                    if (fn.specializations.stream().noneMatch(sp -> updatedKey.equals(sp.stableTypeKey))) {
+                                        FunctionSpecialization spec = new FunctionSpecialization();
+                                        spec.generatedName = "__moss_specialize_" + fn.name + "_" + fn.specializations.size();
+                                        spec.parameterTypes.addAll(edge.argumentTypes);
+                                        spec.stableTypeKey = updatedKey;
+                                        spec.semanticKey = sk;
+                                        spec.parameterTypeRefs.addAll(sk.arguments);
+                                        spec.returnType = resolved.toCanonicalString();
+                                        spec.returnTypeRef = resolved;
+                                        spec.openResultBindings.add(new SpecializationKey.OpenResultBinding(1, innerElem));
+                                        if (fn.body.stream().anyMatch(st -> (st.text != null && st.text.contains(".length()")) || (st.a != null && st.a.contains(".length()")))) {
+                                            FunctionSpecialization.MemberReq req = new FunctionSpecialization.MemberReq();
+                                            req.line = edge.line;
+                                            req.sourceFile = program.sourceFile != null ? program.sourceFile : "";
+                                            spec.memberRequirements.add(req);
+                                        }
+                                        fn.specializations.add(spec);
+                                    }
                                 }
                             }
                         }
@@ -963,15 +981,30 @@ public class SemanticChecker {
 
                         if (baseType != null && baseType.kind() == TypeKind.Builtin && "map".equals(baseType.name())) {
                             if (!baseType.typeArgs().isEmpty()) {
-                                solver.unify(indexType, baseType.typeArgs().get(0));
+                                if (!solver.unify(indexType, baseType.typeArgs().get(0))) {
+                                    throw new CompileError(s.line, "map key type mismatch: expected '" +
+                                            solver.resolve(baseType.typeArgs().get(0)).toCanonicalString() + "', got '" +
+                                            solver.resolve(indexType).toCanonicalString() + "'", "TYPE_MISMATCH");
+                                }
                                 if (baseType.typeArgs().size() >= 2) {
-                                    solver.unify(valType, baseType.typeArgs().get(1));
+                                    if (!solver.unify(valType, baseType.typeArgs().get(1))) {
+                                        throw new CompileError(s.line, "map value type mismatch: expected '" +
+                                                solver.resolve(baseType.typeArgs().get(1)).toCanonicalString() + "', got '" +
+                                                solver.resolve(valType).toCanonicalString() + "'", "TYPE_MISMATCH");
+                                    }
                                 }
                             }
-                        } else if (baseType.kind() == TypeKind.Builtin && "vector".equals(baseType.name())) {
-                            solver.unify(indexType, TypeRef.primitive("int"));
+                        } else if (baseType != null && baseType.kind() == TypeKind.Builtin && "vector".equals(baseType.name())) {
+                            if (!solver.unify(indexType, TypeRef.primitive("int"))) {
+                                throw new CompileError(s.line, "vector index must be int, got '" +
+                                        solver.resolve(indexType).toCanonicalString() + "'", "TYPE_MISMATCH");
+                            }
                             if (!baseType.typeArgs().isEmpty()) {
-                                solver.unify(valType, baseType.typeArgs().get(0));
+                                if (!solver.unify(valType, baseType.typeArgs().get(0))) {
+                                    throw new CompileError(s.line, "vector element type mismatch: expected '" +
+                                            solver.resolve(baseType.typeArgs().get(0)).toCanonicalString() + "', got '" +
+                                            solver.resolve(valType).toCanonicalString() + "'", "TYPE_MISMATCH");
+                                }
                             }
                         }
                         return;
