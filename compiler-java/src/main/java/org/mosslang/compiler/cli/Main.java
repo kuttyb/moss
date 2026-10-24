@@ -40,9 +40,21 @@ public class Main {
             usage();
             return 0;
         }
-        if ("agent".equals(first) && args.length > 1 && "bootstrap".equals(args[1])) {
-            System.out.println(AgentBootstrap.getBootstrapJson(COMPILER_VERSION, LANGUAGE_VERSION));
-            return 0;
+        if ("agent".equals(first)) {
+            String sub = args.length > 1 ? args[1] : "bootstrap";
+            if ("capabilities".equals(sub)) {
+                System.out.println(AgentBootstrap.getCapabilitiesJson(COMPILER_VERSION, LANGUAGE_VERSION));
+                return 0;
+            } else if ("schema".equals(sub)) {
+                System.out.println(AgentBootstrap.getSchemaJson(COMPILER_VERSION, LANGUAGE_VERSION));
+                return 0;
+            } else if ("session-report-template".equals(sub)) {
+                System.out.println(AgentBootstrap.getSessionReportTemplateJson(COMPILER_VERSION, LANGUAGE_VERSION));
+                return 0;
+            } else {
+                System.out.println(AgentBootstrap.getBootstrapJson(COMPILER_VERSION, LANGUAGE_VERSION));
+                return 0;
+            }
         }
 
         if (Set.of("inspect", "type", "effects", "ownership", "calls", "why", "fmt").contains(first)) {

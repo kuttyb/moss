@@ -268,7 +268,30 @@ public class ExpressionTyper {
                     return inferMethodCall(target, member, argExprs, line, env);
                 }
 
-                // Builtin collections constructors
+                // Builtin functions and collections constructors
+                if ("assert".equals(callee) || "assertEqual".equals(callee)) {
+                    for (String arg : argExprs) {
+                        infer(arg, line, env);
+                    }
+                    return TypeRef.unit();
+                }
+                if ("range".equals(callee)) {
+                    for (String arg : argExprs) {
+                        TypeRef a = infer(arg, line, env);
+                        solver.unify(a, TypeRef.primitive("int"));
+                    }
+                    return TypeRef.builtin("range", List.of(TypeRef.primitive("int")));
+                }
+                if (callee.startsWith("Vector[") && callee.endsWith("]")) {
+                    String inner = callee.substring(7, callee.length() - 1).trim();
+                    TypeRef elem = TypeParser.parseCanonical(inner);
+                    return TypeRef.builtin("vector", List.of(elem != null ? elem : TypeRef.primitive(inner.toLowerCase())));
+                }
+                if (callee.startsWith("Queue[") && callee.endsWith("]")) {
+                    String inner = callee.substring(6, callee.length() - 1).trim();
+                    TypeRef elem = TypeParser.parseCanonical(inner);
+                    return TypeRef.builtin("queue", List.of(elem != null ? elem : TypeRef.primitive(inner.toLowerCase())));
+                }
                 if ("Vector".equals(callee) || "vector".equals(callee)) {
                     TypeRef elem = solver.fresh(0);
                     return TypeRef.builtin("vector", List.of(elem));

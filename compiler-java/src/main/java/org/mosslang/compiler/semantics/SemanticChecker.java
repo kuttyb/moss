@@ -31,6 +31,7 @@ public class SemanticChecker {
     public static class OwnershipEnv {
         public final TypeEnv typeEnv = new TypeEnv();
         public final Map<String, MoveInfo> moved = new HashMap<>();
+        public final Set<String> immutables = new HashSet<>();
 
         public void put(String name, TypeRef type) {
             if (name != null && !name.isEmpty()) {
@@ -72,6 +73,7 @@ public class SemanticChecker {
             checkDomains();
             checkFunctions();
             checkMain();
+            checkTests();
         }
     }
 
@@ -179,8 +181,9 @@ public class SemanticChecker {
             env.put(r.name, TypeRef.domain(r.type));
         }
         for (Param p : handler.params) {
-            TypeRef t = p.typeRef != null ? p.typeRef : TypeParser.parseCanonical(p.type);
-            env.put(p.name, t != null ? t : TypeRef.primitive(p.type));
+            TypeRef t = p.typeRef != null ? p.typeRef :
+                    (p.type != null && !p.type.isEmpty() ? TypeParser.parseCanonical(p.type) : solver.fresh(0));
+            env.put(p.name, t != null ? t : solver.fresh(0));
         }
 
         TypeRef expectedReply = handler.replyTypeRef != null ? handler.replyTypeRef :
@@ -205,8 +208,9 @@ public class SemanticChecker {
             OwnershipEnv env = new OwnershipEnv();
 
             for (Param p : f.params) {
-                TypeRef t = p.typeRef != null ? p.typeRef : TypeParser.parseCanonical(p.type);
-                env.put(p.name, t != null ? t : TypeRef.primitive(p.type));
+                TypeRef t = p.typeRef != null ? p.typeRef :
+                        (p.type != null && !p.type.isEmpty() ? TypeParser.parseCanonical(p.type) : solver.fresh(0));
+                env.put(p.name, t != null ? t : solver.fresh(0));
             }
 
             TypeRef expectedReturn = f.returnTypeRef != null ? f.returnTypeRef :
@@ -236,7 +240,33 @@ public class SemanticChecker {
             OwnershipEnv env = new OwnershipEnv();
 
             for (Stmt s : program.main.body) {
+                if (s.text != null && s.text.contains("message ")) {
+                    for (Domain d : program.domains) {
+                        if (s.text.contains(d.name + "(")) {
+                            throw new CompileError(s.line, "domain state initializers must be side-effect-free; pure helper calls are accepted, but messages, domain access, I/O, failing, divergent, and unresolved work are rejected", "DOMAIN_INITIALIZER_EFFECT_INVALID");
+                        }
+                    }
+                }
                 checkStatement(s, env, typer, solver, false, "main", TypeRef.unit());
+            }
+        }
+    }
+
+    private void checkTests() {
+        for (TestDecl t : program.tests) {
+            currentSemanticIdentity = "test:" + t.name + "@" + t.line;
+            TypeSolver solver = new TypeSolver(sessionCounter++);
+            ExpressionTyper typer = new ExpressionTyper(program, typeContext, solver, functions, domains, objects, enums, traits);
+            OwnershipEnv env = new OwnershipEnv();
+            for (Stmt s : t.body) {
+                if (s.text != null) {
+                    for (Domain d : program.domains) {
+                        if (s.text.contains(d.name + "(")) {
+                            throw new CompileError(s.line, "domain construction is allowed only in the main composition prefix", "DOMAIN_TOPOLOGY_INVALID");
+                        }
+                    }
+                }
+                checkStatement(s, env, typer, solver, false, "test", TypeRef.unit());
             }
         }
     }
@@ -342,28 +372,18 @@ public class SemanticChecker {
             case Let, Var -> {
                 String varName = s.a != null ? s.a.trim() : "";
                 String expr = s.b != null ? s.b.trim() : "";
-                String explicitType = null;
                 if (varName.contains(":")) {
-                    String[] parts = varName.split(":", 2);
-                    varName = parts[0].trim();
-                    explicitType = parts[1].trim();
+                    throw new CompileError(s.line, "local type annotations are not supported in this form; use inferred local syntax such as 'var values = Vector[Int]()'", "LOCAL_TYPE_ANNOTATION_UNSUPPORTED");
                 }
 
                 // Check RHS expression availability before consuming
                 requireAvailable(s.line, expr, env);
 
                 TypeRef inferred = typer.infer(expr, s.line, env.typeEnv);
-                if (explicitType != null && !explicitType.isEmpty()) {
-                    TypeRef expected = TypeParser.parseCanonical(explicitType);
-                    if (expected != null) {
-                        if (!solver.unify(inferred, expected)) {
-                            throw new CompileError(s.line, "type mismatch: expected '" +
-                                    expected.toCanonicalString() + "', got '" + solver.resolve(inferred).toCanonicalString() + "'", "TYPE_MISMATCH");
-                        }
-                        inferred = expected;
-                    }
-                }
                 env.put(varName, inferred);
+                if (s.kind == Stmt.Kind.Let) {
+                    env.immutables.add(varName);
+                }
 
                 // If expr is a bare identifier referring to a transfer type, consume it
                 if (env.containsKey(expr) && transferType(env.get(expr))) {
@@ -373,6 +393,9 @@ public class SemanticChecker {
             case Assign -> {
                 String varName = s.a != null ? s.a.trim() : "";
                 String expr = s.b != null ? s.b.trim() : "";
+                if (env.immutables.contains(varName)) {
+                    throw new CompileError(s.line, "cannot mutate immutable variable '" + varName + "' introduced with let (IMMUTABLE_LOCAL_MUTATION)", "IMMUTABLE_LOCAL_MUTATION");
+                }
                 requireAvailable(s.line, expr, env);
 
                 // Check if target is an indexed write e.g. prices["NVDA"] = 180.5
@@ -498,6 +521,25 @@ public class SemanticChecker {
                         throw new CompileError(s.line, "while condition must be bool, got '" +
                                 solver.resolve(condType).toCanonicalString() + "'", "TYPE_MISMATCH");
                     }
+                }
+            }
+            case For -> {
+                requireAvailable(s.line, s.text, env);
+                String varName = s.a != null ? s.a.trim() : "";
+                String iterExpr = s.b != null ? s.b.trim() : "";
+                if (!iterExpr.isEmpty()) {
+                    TypeRef iterType = typer.infer(iterExpr, s.line, env.typeEnv);
+                    TypeRef elemType = solver.fresh(0);
+                    if (iterType.kind() == TypeKind.Builtin && "vector".equals(iterType.name())) {
+                        if (!iterType.typeArgs().isEmpty()) {
+                            elemType = iterType.typeArgs().get(0);
+                        }
+                    } else if (iterType.kind() == TypeKind.Builtin && "range".equals(iterType.name())) {
+                        elemType = TypeRef.primitive("int");
+                    } else if (iterExpr.startsWith("range(") || iterType.sameHead(TypeRef.primitive("int"))) {
+                        elemType = TypeRef.primitive("int");
+                    }
+                    env.put(varName, elemType);
                 }
             }
             case Call -> {

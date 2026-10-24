@@ -69,7 +69,8 @@ public class NativeGenerator {
         o.append("#![allow(unused_imports)]\n");
         o.append("#![allow(unused_mut)]\n");
         o.append("#![allow(unused_variables)]\n");
-        o.append("#![allow(unused_assignments)]\n\n");
+        o.append("#![allow(unused_assignments)]\n");
+        o.append("#![allow(unused_parens)]\n\n");
 
         o.append("fn __moss_require_send<T: Send>() {}\n\n");
         o.append("#[inline(always)]\n");
@@ -165,6 +166,9 @@ public class NativeGenerator {
                     o.append("    pub ").append(f.name).append(": &'a ")
                      .append(isWrite ? "mut " : "").append(rustFieldType(f)).append(",\n");
                 }
+                for (DomainRoute r : d.routes) {
+                    o.append("    pub ").append(r.name).append(": &'a ").append(r.type).append("Ref,\n");
+                }
                 o.append("    pub __lifetime: std::marker::PhantomData<&'a ()>,\n");
                 o.append("}\n\n");
 
@@ -219,6 +223,9 @@ public class NativeGenerator {
                      .append(isWrite ? "&mut " : "&")
                      .append("__class").append(clsIdx).append(".__moss_storage_").append(f.name.length()).append("_").append(f.name).append(",\n");
                 }
+                for (DomainRoute r : d.routes) {
+                    o.append("            ").append(r.name).append(": &self.").append(r.name).append(",\n");
+                }
                 o.append("            __lifetime: std::marker::PhantomData,\n");
                 o.append("        };\n");
 
@@ -245,13 +252,20 @@ public class NativeGenerator {
 
             // Constructors
             o.append("fn construct_").append(d.name).append("(");
-            for (int i = 0; i < d.state.size(); i++) {
-                if (i > 0) o.append(", ");
-                Field f = d.state.get(i);
+            int pCount = 0;
+            for (DomainRoute r : d.routes) {
+                if (pCount++ > 0) o.append(", ");
+                o.append(r.name).append(": ").append(r.type).append("Ref");
+            }
+            for (Field f : d.state) {
+                if (pCount++ > 0) o.append(", ");
                 o.append(f.name).append(": ").append(rustFieldType(f));
             }
             o.append(") -> ").append(d.name).append("Ref {\n");
             o.append("    construct_").append(d.name).append("_with_rank(");
+            for (DomainRoute r : d.routes) {
+                o.append(r.name).append(", ");
+            }
             for (Field f : d.state) {
                 o.append(f.name).append(", ");
             }
@@ -259,9 +273,16 @@ public class NativeGenerator {
             o.append("}\n\n");
 
             o.append("fn construct_").append(d.name).append("_with_rank(");
-            for (Field f : d.state) {
-                o.append(f.name).append(": ").append(rustFieldType(f)).append(", ");
+            pCount = 0;
+            for (DomainRoute r : d.routes) {
+                if (pCount++ > 0) o.append(", ");
+                o.append(r.name).append(": ").append(r.type).append("Ref");
             }
+            for (Field f : d.state) {
+                if (pCount++ > 0) o.append(", ");
+                o.append(f.name).append(": ").append(rustFieldType(f));
+            }
+            if (pCount > 0) o.append(", ");
             o.append("__identity: &'static str, __rank: usize) -> ").append(d.name).append("Ref {\n");
             o.append("    ").append(d.name).append("Ref {\n");
             o.append("        state: std::sync::Arc::new(").append(d.name).append("Runtime {\n");
@@ -277,7 +298,7 @@ public class NativeGenerator {
             }
             o.append("        }),\n");
             for (DomainRoute r : d.routes) {
-                o.append("        ").append(r.name).append(": construct_").append(r.type).append("(),\n");
+                o.append("        ").append(r.name).append(",\n");
             }
             o.append("    }\n");
             o.append("}\n\n");
@@ -290,13 +311,16 @@ public class NativeGenerator {
             for (int i = 0; i < fn.params.size(); i++) {
                 if (i > 0) o.append(", ");
                 Param p = fn.params.get(i);
-                o.append(p.name).append(": ").append(rustType(p.type));
+                String pType = (p.type != null && !p.type.isEmpty())
+                        ? rustType(p.type)
+                        : (p.typeRef != null ? rustType(p.typeRef.toCanonicalString()) : "i64");
+                o.append(p.name).append(": ").append(pType);
                 declared.add(p.name);
             }
             o.append(")");
             String fnRetMoss = (fn.returnType != null && !fn.returnType.isEmpty())
                     ? fn.returnType
-                    : (fn.returnTypeRef != null ? fn.returnTypeRef.toCanonicalString() : "unit");
+                    : (fn.returnTypeRef != null ? fn.returnTypeRef.toCanonicalString() : "i64");
             if (!fnRetMoss.equals("unit") && !fnRetMoss.isEmpty()) {
                 o.append(" -> ").append(rustType(fnRetMoss));
             }
@@ -398,8 +422,12 @@ public class NativeGenerator {
             case Message -> {
                 String receiver = s.a != null ? s.a.trim() : "";
                 String handler = s.b != null ? s.b.trim() : "";
+                String target = receiver;
+                if (!stateFields.isEmpty()) {
+                    target = "state." + receiver;
+                }
                 StringBuilder call = new StringBuilder();
-                call.append(receiver).append(".").append(handler).append("_shared(");
+                call.append(target).append(".").append(handler).append("_shared(");
                 for (int i = 0; i < s.args.size(); i++) {
                     if (i > 0) call.append(", ");
                     call.append(lowerExpr(s.args.get(i), stateFields, domains));
@@ -469,18 +497,27 @@ public class NativeGenerator {
             if (domains.containsKey(callee)) {
                 Domain d = domains.get(callee);
                 String args = expr.substring(openParen + 1, expr.length() - 1).trim();
-                if (args.isEmpty()) {
-                    StringBuilder argBuf = new StringBuilder();
-                    for (int i = 0; i < d.state.size(); i++) {
-                        if (i > 0) argBuf.append(", ");
+                List<String> argList = new ArrayList<>();
+                if (!args.isEmpty()) {
+                    for (String part : args.split(",")) {
+                        part = part.trim();
+                        if (part.contains(":")) {
+                            part = part.split(":", 2)[1].trim();
+                        }
+                        argList.add(part);
+                    }
+                }
+                int expectedCount = d.routes.size() + d.state.size();
+                if (argList.size() < expectedCount) {
+                    int stateStart = argList.size() - d.routes.size();
+                    if (stateStart < 0) stateStart = 0;
+                    for (int i = stateStart; i < d.state.size(); i++) {
                         Field f = d.state.get(i);
                         String val = f.init != null && !f.init.isEmpty() ? f.init : "0";
-                        argBuf.append(val);
+                        argList.add(val);
                     }
-                    return "construct_" + callee + "(" + argBuf + ")";
-                } else {
-                    return "construct_" + callee + "(" + args + ")";
                 }
+                return "construct_" + callee + "(" + String.join(", ", argList) + ")";
             }
         }
 
