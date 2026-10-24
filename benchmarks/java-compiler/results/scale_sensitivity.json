@@ -1,0 +1,74 @@
+{
+  "50": {
+    "files": 86,
+    "lines": 2114,
+    "clean_warm": {
+      "javac_median_ms": 1012.5,
+      "mill_median_ms": 1147.6,
+      "jdt_median_ms": 93.7
+    },
+    "no_op": {
+      "javac_median_ms": 989.9,
+      "mill_median_ms": 109.0,
+      "jdt_median_ms": 2.2
+    },
+    "single_method_b4": {
+      "javac_median_ms": 992.9,
+      "mill_median_ms": 110.5,
+      "jdt_median_ms": 16.1
+    },
+    "central_typeref_b7": {
+      "javac_median_ms": 1024.8,
+      "mill_median_ms": 109.9,
+      "jdt_median_ms": 11.5
+    }
+  },
+  "500": {
+    "files": 500,
+    "lines": 12908,
+    "clean_warm": {
+      "javac_median_ms": 1615.6,
+      "mill_median_ms": 1724.9,
+      "jdt_median_ms": 195.4
+    },
+    "no_op": {
+      "javac_median_ms": 1647.3,
+      "mill_median_ms": 109.3,
+      "jdt_median_ms": 3.5
+    },
+    "single_method_b4": {
+      "javac_median_ms": 1648.8,
+      "mill_median_ms": 108.4,
+      "jdt_median_ms": 20.5
+    },
+    "central_typeref_b7": {
+      "javac_median_ms": 1637.1,
+      "mill_median_ms": 107.3,
+      "jdt_median_ms": 12.8
+    }
+  },
+  "1000": {
+    "files": 1000,
+    "lines": 25883,
+    "clean_warm": {
+      "javac_median_ms": 2029.5,
+      "mill_median_ms": 2319.3,
+      "jdt_median_ms": 278.7
+    },
+    "no_op": {
+      "javac_median_ms": 2181.9,
+      "mill_median_ms": 110.9,
+      "jdt_median_ms": 6.9
+    },
+    "single_method_b4": {
+      "javac_median_ms": 2207.6,
+      "mill_median_ms": 112.3,
+      "jdt_median_ms": 23.8
+    },
+    "central_typeref_b7": {
+      "javac_median_ms": 2201.5,
+      "mill_median_ms": 110.7,
+      "jdt_median_ms": 15.9
+    }
+  }
+}

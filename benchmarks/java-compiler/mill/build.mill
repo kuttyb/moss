@@ -1,0 +1,16 @@
+package build
+import mill._, javalib._
+
+object compiler extends JavaModule {
+  def javacOptions = Seq("--release", "25")
+  def zincIncrementalCompilation = Task { true }
+  def sources = Task.Sources {
+    moduleDir / os.up / os.up / "corpus"
+  }
+  def unmanagedClasspath = Task.Input {
+    os.list(moduleDir / os.up / os.up / "lib")
+      .filter(_.ext == "jar")
+      .map(PathRef(_))
+      .toSeq
+  }
+}

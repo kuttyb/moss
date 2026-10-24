@@ -1,0 +1,292 @@
+{
+  "B1": {
+    "javac": {
+      "median_ms": 1243.0,
+      "p95_ms": 1243.0,
+      "min_ms": 1243.0,
+      "max_ms": 1243.0,
+      "stddev_ms": 0.0,
+      "avg_rss_mb": 252.9,
+      "trials": 1
+    },
+    "mill": {
+      "median_ms": 2970.3,
+      "p95_ms": 2970.3,
+      "min_ms": 2970.3,
+      "max_ms": 2970.3,
+      "stddev_ms": 0.0,
+      "avg_rss_mb": 188.7,
+      "trials": 1
+    },
+    "jdt": {
+      "median_ms": 4898.38,
+      "p95_ms": 4898.38,
+      "min_ms": 4898.38,
+      "max_ms": 4898.38,
+      "stddev_ms": 0.0,
+      "avg_rss_mb": 0.0,
+      "trials": 1
+    }
+  },
+  "B2": {
+    "javac": {
+      "median_ms": 1217.51,
+      "p95_ms": 1610.57,
+      "min_ms": 1149.61,
+      "max_ms": 1610.57,
+      "stddev_ms": 106.83,
+      "avg_rss_mb": 276.0,
+      "trials": 15
+    },
+    "mill": {
+      "median_ms": 1215.12,
+      "p95_ms": 1536.06,
+      "min_ms": 1060.07,
+      "max_ms": 1536.06,
+      "stddev_ms": 120.53,
+      "avg_rss_mb": 188.7,
+      "trials": 15
+    },
+    "jdt": {
+      "median_ms": 107.27,
+      "p95_ms": 244.08,
+      "min_ms": 89.15,
+      "max_ms": 244.08,
+      "stddev_ms": 40.45,
+      "avg_rss_mb": 1277.3,
+      "trials": 15
+    }
+  },
+  "B3": {
+    "javac": {
+      "median_ms": 1243.22,
+      "p95_ms": 1258.92,
+      "min_ms": 1200.54,
+      "max_ms": 1258.92,
+      "stddev_ms": 16.58,
+      "avg_rss_mb": 287.6,
+      "trials": 15
+    },
+    "mill": {
+      "median_ms": 109.4,
+      "p95_ms": 115.99,
+      "min_ms": 106.53,
+      "max_ms": 115.99,
+      "stddev_ms": 3.08,
+      "avg_rss_mb": 188.7,
+      "trials": 15
+    },
+    "jdt": {
+      "median_ms": 2.23,
+      "p95_ms": 3.19,
+      "min_ms": 1.78,
+      "max_ms": 3.19,
+      "stddev_ms": 0.39,
+      "avg_rss_mb": 1309.4,
+      "trials": 15
+    }
+  },
+  "B4": {
+    "javac": {
+      "median_ms": 1223.28,
+      "p95_ms": 1285.47,
+      "min_ms": 1193.73,
+      "max_ms": 1285.47,
+      "stddev_ms": 25.54,
+      "avg_rss_mb": 287.2,
+      "trials": 15
+    },
+    "mill": {
+      "median_ms": 106.77,
+      "p95_ms": 318.55,
+      "min_ms": 103.33,
+      "max_ms": 318.55,
+      "stddev_ms": 54.72,
+      "avg_rss_mb": 188.7,
+      "trials": 15
+    },
+    "jdt": {
+      "median_ms": 15.75,
+      "p95_ms": 33.08,
+      "min_ms": 1.92,
+      "max_ms": 33.08,
+      "stddev_ms": 9.49,
+      "avg_rss_mb": 1356.9,
+      "trials": 15
+    }
+  },
+  "B5": {
+    "javac": {
+      "median_ms": 1231.14,
+      "p95_ms": 1272.32,
+      "min_ms": 1179.88,
+      "max_ms": 1272.32,
+      "stddev_ms": 23.2,
+      "avg_rss_mb": 287.6,
+      "trials": 15
+    },
+    "mill": {
+      "median_ms": 109.7,
+      "p95_ms": 310.8,
+      "min_ms": 104.75,
+      "max_ms": 310.8,
+      "stddev_ms": 52.21,
+      "avg_rss_mb": 188.7,
+      "trials": 15
+    },
+    "jdt": {
+      "median_ms": 21.86,
+      "p95_ms": 27.48,
+      "min_ms": 1.65,
+      "max_ms": 27.48,
+      "stddev_ms": 10.94,
+      "avg_rss_mb": 1394.0,
+      "trials": 15
+    }
+  },
+  "B6": {
+    "javac": {
+      "median_ms": 1234.82,
+      "p95_ms": 1260.86,
+      "min_ms": 1178.57,
+      "max_ms": 1260.86,
+      "stddev_ms": 25.67,
+      "avg_rss_mb": 287.6,
+      "trials": 15
+    },
+    "mill": {
+      "median_ms": 107.88,
+      "p95_ms": 507.01,
+      "min_ms": 104.52,
+      "max_ms": 507.01,
+      "stddev_ms": 103.11,
+      "avg_rss_mb": 188.7,
+      "trials": 15
+    },
+    "jdt": {
+      "median_ms": 24.22,
+      "p95_ms": 32.22,
+      "min_ms": 1.68,
+      "max_ms": 32.22,
+      "stddev_ms": 8.59,
+      "avg_rss_mb": 1405.6,
+      "trials": 15
+    }
+  },
+  "B7": {
+    "javac": {
+      "median_ms": 1230.69,
+      "p95_ms": 1267.01,
+      "min_ms": 1206.12,
+      "max_ms": 1267.01,
+      "stddev_ms": 18.5,
+      "avg_rss_mb": 287.5,
+      "trials": 15
+    },
+    "mill": {
+      "median_ms": 108.55,
+      "p95_ms": 616.09,
+      "min_ms": 103.37,
+      "max_ms": 616.09,
+      "stddev_ms": 130.95,
+      "avg_rss_mb": 188.7,
+      "trials": 15
+    },
+    "jdt": {
+      "median_ms": 12.69,
+      "p95_ms": 61.23,
+      "min_ms": 1.85,
+      "max_ms": 61.23,
+      "stddev_ms": 13.97,
+      "avg_rss_mb": 1402.4,
+      "trials": 15
+    }
+  },
+  "B8": {
+    "javac": {
+      "median_ms": 1249.7,
+      "p95_ms": 1295.92,
+      "min_ms": 1223.47,
+      "max_ms": 1295.92,
+      "stddev_ms": 19.98,
+      "avg_rss_mb": 291.8,
+      "trials": 15
+    },
+    "mill": {
+      "median_ms": 109.52,
+      "p95_ms": 309.76,
+      "min_ms": 104.2,
+      "max_ms": 309.76,
+      "stddev_ms": 51.83,
+      "avg_rss_mb": 188.7,
+      "trials": 15
+    },
+    "jdt": {
+      "median_ms": 21.0,
+      "p95_ms": 23.59,
+      "min_ms": 2.07,
+      "max_ms": 23.59,
+      "stddev_ms": 8.05,
+      "avg_rss_mb": 1326.0,
+      "trials": 15
+    }
+  },
+  "B9": {
+    "javac": {
+      "median_ms": 1241.2,
+      "p95_ms": 1285.54,
+      "min_ms": 1219.94,
+      "max_ms": 1285.54,
+      "stddev_ms": 20.86,
+      "avg_rss_mb": 288.3,
+      "trials": 15
+    },
+    "mill": {
+      "median_ms": 109.57,
+      "p95_ms": 315.1,
+      "min_ms": 104.21,
+      "max_ms": 315.1,
+      "stddev_ms": 53.2,
+      "avg_rss_mb": 1514.0,
+      "trials": 15
+    },
+    "jdt": {
+      "median_ms": 21.63,
+      "p95_ms": 27.18,
+      "min_ms": 1.67,
+      "max_ms": 27.18,
+      "stddev_ms": 10.53,
+      "avg_rss_mb": 1326.3,
+      "trials": 15
+    }
+  },
+  "B10": {
+    "javac": {
+      "median_ms": 1131.93,
+      "p95_ms": 1621.55,
+      "min_ms": 1082.52,
+      "max_ms": 1621.55,
+      "stddev_ms": 131.47,
+      "avg_rss_mb": 279.1,
+      "trials": 15
+    },
+    "mill": {
+      "median_ms": 139.04,
+      "p95_ms": 218.54,
+      "min_ms": 131.32,
+      "max_ms": 218.54,
+      "stddev_ms": 21.21,
+      "avg_rss_mb": 1544.7,
+      "trials": 15
+    },
+    "jdt": {
+      "median_ms": 16.02,
+      "p95_ms": 27.46,
+      "min_ms": 1.46,
+      "max_ms": 27.46,
+      "stddev_ms": 8.98,
+      "avg_rss_mb": 1326.5,
+      "trials": 15
+    }
+  }
+}

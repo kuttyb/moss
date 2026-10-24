@@ -1,0 +1,10 @@
+{
+  "platform": "Linux-6.18.33.2-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+  "machine": "x86_64",
+  "cpu_count": 16,
+  "python_version": "3.12.3",
+  "mem_total_kb": 32734852,
+  "fs_type": "ext4 (WSL2 native virtual disk)",
+  "fs_total_gb": 1006.85,
+  "fs_free_gb": 936.87
+}

@@ -1,0 +1,17 @@
+# Build outputs and transient workspaces
+javac/bin/
+mill/out/
+jdt/bin/
+jdt/workspace/
+jdt/p2/
+jdt/artifacts.xml
+jdt/bundle/bin/
+jdt/configuration/org.eclipse.osgi/
+jdt/configuration/org.eclipse.core.runtime/
+jdt/configuration/org.eclipse.equinox.app/
+jdt/configuration/org.eclipse.update/
+corpus_backup/
+fixtures/bin/
+__pycache__/
+*.class
+*.log
