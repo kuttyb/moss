@@ -36,6 +36,8 @@
 #include "checked_body_ir.hpp"
 #include "debug_map.hpp"
 #include "diagnostics.hpp"
+#include "diagnostic_identity.hpp"
+#include "program_identity.hpp"
 #include "type_placeholders.hpp"
 #include "numeric_literal.hpp"
 #include "interpreter.hpp"
@@ -242,17 +244,6 @@ static string module_name_from_symbol(const string& symbol) {
 // Identity of a module spelling in `program`. Standalone sources have no
 // package manifest, so they share one compiler-defined local package; the
 // compiler's own `std` module has a compiler-defined identity.
-static string program_module_identity(const Program& program, const string& module) {
-  auto found = program.module_identities.find(module);
-  if (found != program.module_identities.end()) return found->second;
-  if (module == "std") return moss::module_identity("moss-std", "0.1.0", "std");
-  if (program.package_identities)
-    throw CompileError(0, "module '" + module + "' has no package identity",
-                       "MODULE_IDENTITY_UNRESOLVED");
-  return moss::module_identity("__standalone__", "0.0.0",
-                               module.empty() ? "main" : module);
-}
-
 // Interns every nominal declaration of `program` exactly once (§3.1): its
 // identity is the defining module identity plus the source declaration name.
 static void build_type_context(Program& program) {
@@ -48563,45 +48554,6 @@ static string diagnostic_code_for_message(const string& message) {
   if (message.find("functional") != string::npos)
     return "FUNCTIONAL_SEMANTIC_ERROR";
   return "MOSS_COMPILE_ERROR";
-}
-
-static string semantic_identity_near_line(const Program* program, int line) {
-  if (!program) return {};
-  string best;
-  int best_line = -1;
-  auto consider = [&](int candidate_line, const string& identity) {
-    if (candidate_line <= line && candidate_line >= best_line) {
-      best_line = candidate_line;
-      best = identity;
-    }
-  };
-  for (const auto& function : program->functions)
-    consider(function.line,
-             "fn:" + function.name + "@" + std::to_string(function.line));
-  for (const auto& object : program->objects) {
-    consider(object.line,
-             "type:" + object.name + "@" + std::to_string(object.line));
-    for (const auto& method : object.methods)
-      consider(method.line, "method:" + object.name + "." + method.name +
-                               "@" + std::to_string(method.line));
-  }
-  for (const auto& domain : program->domains) {
-    consider(domain.line,
-             "domain:" + domain.name + "@" + std::to_string(domain.line));
-    for (const auto& handler : domain.handlers)
-      consider(handler.line, "handler:" + domain.name + "." + handler.name +
-                                "@" + std::to_string(handler.line));
-  }
-  for (const auto& test : program->tests)
-    consider(test.line, test.semantic_identity);
-  for (const auto& benchmark : program->benchmarks)
-    consider(benchmark.line, benchmark.semantic_identity);
-  if (program->main)
-    consider(program->main->line,
-             "main@" + std::to_string(program->main->line));
-  for (const auto& pipeline : program->functional_pipelines)
-    consider(pipeline.line, pipeline.semantic_identity);
-  return best;
 }
 
 static void write_structured_error(

@@ -8,6 +8,9 @@ mkdir -p "$test_build"
 # Peer-review source hygiene: only focused migration fixtures contain retired syntax.
 python3 tests/tooling/check_retired_syntax.py --self-test
 
+# Compiler object/depfile behavior in an isolated tiny project.
+python3 tests/tooling/check_make_incremental_dependencies.py
+
 # Repository-local agent skills carry current source guidance and a checked example.
 python3 tests/tooling/check_agent_skills.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_agent_feedback.py --self-test

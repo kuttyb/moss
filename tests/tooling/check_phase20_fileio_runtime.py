@@ -757,27 +757,27 @@ def extract_fair_leaf_runtime_rust():
     return content[start_idx + len(start_marker):end_idx]
 
 def extract_fileio_runtime_rust():
-    header_path = os.path.join(REPO_ROOT, "src/fileio_runtime.hpp")
-    with open(header_path, "r", encoding="utf-8") as f:
+    source_path = os.path.join(REPO_ROOT, "src/fileio_runtime.cpp")
+    with open(source_path, "r", encoding="utf-8") as f:
         content = f.read()
-    start_marker = 'inline const char* fileio_runtime_rust() {\n  return R"RUST(\n'
+    start_marker = 'const char* fileio_runtime_rust() {\n  return R"RUST(\n'
     end_marker = '\n)RUST";\n}'
     start_idx = content.find(start_marker)
     end_idx = content.find(end_marker, start_idx)
     if start_idx == -1 or end_idx == -1:
-        raise RuntimeError("Failed to extract fileio_runtime_rust from src/fileio_runtime.hpp")
+        raise RuntimeError("Failed to extract fileio_runtime_rust from src/fileio_runtime.cpp")
     return extract_fair_leaf_runtime_rust() + "\n" + content[start_idx + len(start_marker):end_idx]
 
 def extract_fileio_root_runtime_rust():
-    header_path = os.path.join(REPO_ROOT, "src/fileio_runtime.hpp")
-    with open(header_path, "r", encoding="utf-8") as f:
+    source_path = os.path.join(REPO_ROOT, "src/fileio_runtime.cpp")
+    with open(source_path, "r", encoding="utf-8") as f:
         content = f.read()
-    start_marker = 'inline const char* fileio_root_runtime_rust() {\n  return R"RUST(\n'
+    start_marker = 'const char* fileio_root_runtime_rust() {\n  return R"RUST(\n'
     end_marker = '\n)RUST";\n}'
     start_idx = content.find(start_marker)
     end_idx = content.find(end_marker, start_idx)
     if start_idx == -1 or end_idx == -1:
-        raise RuntimeError("Failed to extract fileio_root_runtime_rust from src/fileio_runtime.hpp")
+        raise RuntimeError("Failed to extract fileio_root_runtime_rust from src/fileio_runtime.cpp")
     return content[start_idx + len(start_marker):end_idx]
 
 def compile_test_harness():

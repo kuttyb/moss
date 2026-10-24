@@ -967,14 +967,14 @@ expect_rejected(write_source('phase20_chunks_shape', '''fn main():
     code='FILEIO_CHUNK_PIPELINE_SHAPE')
 
 # Branch scheduling and FileIO runtime live only in their owners' modules
-# (Agent C: executor_runtime.hpp; Agent B: fileio_runtime.hpp), never in
+# (Agent C: executor_runtime.hpp; Agent B: fileio_runtime.cpp), never in
 # Agent D's lowering/codegen.
 for path in (repo / 'src').iterdir():
     if path.suffix in ('.hpp', '.inc', '.cpp'):
         source_text = path.read_text()
         if path.name != 'executor_runtime.hpp':
             assert 'fn branch_publish' not in source_text, path
-        if path.name != 'fileio_runtime.hpp':
+        if path.name not in ('fileio_runtime.hpp', 'fileio_runtime.cpp'):
             assert 'fn moss_fileio_branch_read_borrow' not in source_text, path
 assert not (repo / 'src/branch_runtime.hpp').exists()
 

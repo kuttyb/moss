@@ -1,4 +1,10 @@
-# Phase 25.2 G0/G1 Execution Plan
+# Phase 25.2 G0/G1 Kickoff Plan (superseded by active L7 assignment)
+
+This kickoff plan predates the active L7 compiler acceleration assignment. The
+current scope includes Clang+mold object builds, approximately 10–14 production
+translation units, ETI/PCH evaluation, and final qualification. The L6
+Coordinator is the sole implementation agent; use [`STATUS.md`](STATUS.md) for
+the current implementation checkpoint and gates.
 
 ## Accepted starting point
 
@@ -19,13 +25,7 @@
 
 | Workstream | Owner | Scope | Shared-file lease |
 |---|---|---|---|
-| Production build measurements | L5 worker in `tmp/phase25-2-bench` | Reproducible scripts, raw measurements, `BUILD_BASELINE.md` | No production source or Makefile edits |
-| Compiler architecture inventory | L5 worker in `tmp/phase25-2-arch` | Evidence-backed `TU_DEPENDENCY_MAP.md` | No production source or Makefile edits |
-| Integration, G1 and release evidence | L6 Coordinator | Integrate G0; own `Makefile`, dependency regression, execution/validation docs and final branch | Exclusive `Makefile` writer; no `src/moss.cpp` edits |
-
-The workers use independent Git worktrees based on the accepted checkpoint.
-Their results will be reviewed and cherry-picked only after G0 evidence is
-complete. No more than two L5 workers are active.
+| Compiler implementation and release evidence | L6 Coordinator | Own Makefile, source extraction, focused gates, final branch and status | Sole source and Makefile writer |
 
 ## Gate sequence
 
@@ -39,18 +39,22 @@ complete. No more than two L5 workers are active.
    interfaces, move order and rollback boundaries. Do not extract code or
    implement ETI/PCH.
 3. **G0 exit review:** Coordinator checks arithmetic, provenance, repeatability,
-   dependency edges and risk coverage. G1 may start only after the G0 artifacts
-   are integrated and the production extraction sequence is concrete.
+   dependency edges and risk coverage. The user explicitly stopped the clean
+   O2 measurement batch. Therefore the production measurement gate is
+   incomplete, with the clean O0 matrix and partial O2 evidence preserved. The
+   architecture map is complete. G1 proceeds at the user's direction with no
+   performance-gain conclusion.
 4. **G1:** Replace the single compile/link recipe with separate profile-scoped
    objects and compiler-generated depfiles; preserve flags, executable paths,
    aliases and all existing targets. Add automated incremental-build behavior
-   checks to the existing tooling regression manifest. Do not split the
-   production compiler source list beyond `src/moss.cpp`.
-5. **G1 qualification:** Build Debug and optimized binaries, run dependency
-   scenarios and the full 136-job `make check`, optimized examples, ABI-v9/v10
-   controls, source-free/hostile-artifact gates and parity checks. Capture
-   performance on the same host and compare with G0. Review the exact
-   integrated SHA, commit and push `phase25-2-work`; do not merge to main.
+   checks to the existing tooling regression manifest.
+5. **G2:** Extract cohesive compiler units incrementally; then evaluate ETI,
+   out-of-line header implementations and Clang PCH using build evidence.
+6. **Final qualification:** Build both profiles, run full `make check`,
+   optimized examples, ABI-v9/v10 source-free and hostile-artifact gates,
+   incremental behavior checks, GCC compatibility and separate compile/link
+   timings. Obtain exact-SHA Architect review, commit and push
+   `phase25-2-work`; do not merge to main.
 
 ## Initial risk ledger
 
@@ -63,7 +67,7 @@ complete. No more than two L5 workers are active.
 | Available local compiler differs from reference synthetic experiment | Host has GCC 13.3 and no Clang; synthetic report used Clang 18 and simulated source | Report production measurements with complete local identity; do not transfer synthetic ratios to Moss |
 | ABI/semantic regressions can be obscured by successful linking | Phase 25.1 added source-free ABI-v10 and hostile artifact guarantees | Run full regression and existing dedicated ABI controls against accepted baseline and G1 build |
 
-## Non-goals and stop point
+## Scope boundary
 
-No compiler extraction, language/ABI changes, PCH, ETI, linker replacement, or
-main merge is authorized. Stop after G1 validation and L7 handoff.
+Preserve compiler semantics, C++17, ABI schemas, and ABI-v9 default. Do not
+merge to `main`.

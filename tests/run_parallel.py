@@ -47,6 +47,7 @@ class JobResult:
 
 # All individual standalone Python regressions from tests/run.sh
 TOOLING_TESTS: list[tuple] = [
+    ("check_make_incremental_dependencies", [sys.executable, "tests/tooling/check_make_incremental_dependencies.py"]),
     ("check_retired_syntax", [sys.executable, "tests/tooling/check_retired_syntax.py", "--self-test"]),
     ("check_agent_skills", [sys.executable, "tests/tooling/check_agent_skills.py", "{compiler}"]),
     ("check_agent_feedback", [sys.executable, "tests/tooling/check_agent_feedback.py", "--self-test"]),
@@ -192,6 +193,7 @@ SHELL_SHARDS: list[tuple] = [
 def build_manifest() -> list[Job]:
     jobs: list[Job] = []
     lightweight = {
+        "check_make_incremental_dependencies",
         "check_retired_syntax",
         "check_agent_skills",
         "check_agent_feedback",

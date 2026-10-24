@@ -12005,3 +12005,16 @@ concurrent compiler builds while collecting its serial timed samples; the
 coordinator has paused local builds and regression suites. Synthetic Phase
 25.1 results were inspected on `origin/phase25-synthetic-build-experiment`
 and are explicitly contextual only.
+
+
+## Phase 25.2 — current resume state — 2026-10-24
+
+The G0 architecture map is integrated at `8f6c56e5053715f3e89b5ac1757cd66553863a6c`. G0 measurements were stopped at the user's explicit instruction. The first full 80-record matrix is preserved under `benchmarks/phase25_2/contaminated/` and excluded because its start snapshot contained three concurrent `moss-opt` processes. The monitored rerun has 40 complete clean O0 records and four O2 clean-build samples; the fifth O2 run was terminated before recording. No O2 edit/header/phase data is available; no G0 performance conclusion or G0 exit is claimed. `BUILD_BASELINE.md` records these limits.
+
+A concurrent commit `23bed44a5da27ee769f7d56c628aa5f28ead04fa` appeared on the integration branch, changing the default to Clang/mold and starting TU extraction. This contradicts the current L7 scope. It has been preserved with the uncommitted extraction work on local branch `phase25-2-g2-hold`, not pushed. A normal revert commit `19f05677` restores the accepted single-TU compiler and GCC default on `phase25-2-work`; no published history was rewritten.
+
+G1 is being re-applied on the restored branch: separate profile/config object directories, generated `-MMD -MP` depfiles, source list still only `src/moss.cpp`, and linker/PCH extension hooks. The incremental dependency test is being restored and added to both parallel and serial regression paths. Earlier direct test and six-case parity results were from an intermediate tree and are invalidated by the concurrent branch change. The full parallel `make check` attempt exited 130 with `KeyboardInterrupt` and no final counts; it is not accepted as full-suite evidence.
+
+Outstanding: finish G1 edits, run dependency tests, build both profiles, behavior/diagnostic parity, full 136 baseline jobs plus new test, optimized examples, ABI-v9 default/v10 opt-in and source-free/hostile gates, feedback validator, exact-SHA review, status/efficiency closeout, commit and push. Per user's instruction, do not resume performance measurements; G1 timing is unavailable and no speed gain may be claimed.
+
+After restoring the G1 branch, the Clang/mold Makefile content appeared again in the active checkout while an ordinary GCC build was being requested. The resulting Clang O2 compile was interrupted (exit 130); no compiler subprocess remains. The source tree is still single-TU on `phase25-2-work`, but its uncommitted Makefile currently conflicts with the supplied G1 scope. The out-of-scope branch and working changes remain parked under `tmp/phase25-2-g2-hold` / `phase25-2-g2-hold`. No further builds or integration edits should run until the user confirms how to handle the competing branch work. Prior full `make check` ended in KeyboardInterrupt with no final counts; it is invalidated.
