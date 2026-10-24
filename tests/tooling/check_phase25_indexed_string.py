@@ -33,7 +33,7 @@ def run(cmd, cwd=ROOT, env=None, timeout=900):
 
 
 def runtime_sections():
-    header = (ROOT / "src" / "char_string_ordering_runtime.hpp").read_text()
+    header = (ROOT / "src" / "char_string_ordering_runtime.cpp").read_text()
     sections = re.findall(r'R"RUST\((.*?)\)RUST"', header, re.S)
     assert len(sections) == 3, "expected ordering, plain, and indexed runtime sections"
     return sections

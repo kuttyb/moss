@@ -52,9 +52,20 @@ with tempfile.TemporaryDirectory(prefix="phase25-empty-vector-",
                                  dir=TMP) as temporary:
     scratch = Path(temporary)
     verifier = scratch / "verify_empty_vector_records"
+    support_sources = [
+        "src/char_string_ordering_runtime.cpp",
+        "src/diagnostic_identity.cpp",
+        "src/display_runtime.cpp",
+        "src/executor_runtime.cpp",
+        "src/fileio_runtime.cpp",
+        "src/float_format_runtime.cpp",
+        "src/handler_runtime.cpp",
+        "src/numeric_runtime.cpp",
+        "src/program_identity.cpp",
+    ]
     run(["g++", "-std=c++17", "-O0", "-w", "-Isrc",
          "tests/tooling/check_phase25_empty_vector_records.cpp",
-         "-o", str(verifier)])
+         *support_sources, "-o", str(verifier)])
 
     experimental = scratch / "experimental"
     make_provider(experimental, "empty_vector_provider")

@@ -37,7 +37,7 @@ def run(args, *, cwd=None, expected=0):
     return p.stdout
 
 
-runtime = (repo / 'src/handler_runtime.hpp').read_text().split('R"RUST(', 1)[1].split(')RUST"', 1)[0]
+runtime = (repo / 'src/handler_runtime.cpp').read_text().split('R"RUST(', 1)[1].split(')RUST"', 1)[0]
 assert 'V: Clone' not in runtime and '.clone()' not in runtime
 assert 'moss_read_or_abort<T>' in runtime and 'MossClassRuntime' not in runtime
 preamble = '#![allow(dead_code, unused_variables)]\n'
