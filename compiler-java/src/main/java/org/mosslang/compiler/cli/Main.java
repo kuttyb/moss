@@ -45,6 +45,8 @@ public class Main {
         }
 
         boolean checkOnly = false;
+        boolean interpMode = false;
+        boolean traceMode = false;
         boolean jsonOutput = false;
         String sourcePath = null;
         String outputPath = null;
@@ -53,6 +55,12 @@ public class Main {
             String a = args[i];
             if ("check".equals(a) || "--check".equals(a)) {
                 checkOnly = true;
+            } else if ("run".equals(a)) {
+                // moss run --interp
+            } else if ("--interp".equals(a)) {
+                interpMode = true;
+            } else if ("--trace".equals(a)) {
+                traceMode = true;
             } else if ("--json".equals(a)) {
                 jsonOutput = true;
             } else if ("-o".equals(a) && i + 1 < args.length) {
@@ -100,6 +108,13 @@ public class Main {
                 } else {
                     System.out.println(sourcePath + ": ok");
                 }
+                return 0;
+            }
+
+            if (interpMode) {
+                org.mosslang.compiler.interpreter.FastInterpreter interp =
+                        new org.mosslang.compiler.interpreter.FastInterpreter(program, traceMode);
+                interp.run();
                 return 0;
             }
 
