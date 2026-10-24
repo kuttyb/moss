@@ -15,4 +15,12 @@ public interface TypeRef {
     default boolean isTypeVar() {
         return false;
     }
+
+    default int typePrecedence() {
+        return 10;
+    }
+
+    default long tagValue() {
+        return 42L;
+    }
 }

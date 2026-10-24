@@ -53,14 +53,14 @@ mkdir -p "${SCRIPT_DIR}/javac/bin" "${SCRIPT_DIR}/jdt/bin" "${SCRIPT_DIR}/jdt/wo
 
 # Toolchain A: Direct Javac
 find "${SCRIPT_DIR}/corpus" -name "*.java" | sed 's/^/"/;s/$/"/' > "${SCRIPT_DIR}/javac/sources.txt"
-javac --release 25 -cp "${SCRIPT_DIR}/lib/*:${SCRIPT_DIR}/javac/bin" -d "${SCRIPT_DIR}/javac/bin" @"${SCRIPT_DIR}/javac/sources.txt"
-javac --release 25 -cp "${SCRIPT_DIR}/lib/*:${SCRIPT_DIR}/javac/bin" -d "${SCRIPT_DIR}/javac/bin" "${SCRIPT_DIR}/fixtures/CompilerFixtureTest.java"
+javac --release 25 -sourcepath "" -cp "${SCRIPT_DIR}/lib/*:${SCRIPT_DIR}/javac/bin" -d "${SCRIPT_DIR}/javac/bin" @"${SCRIPT_DIR}/javac/sources.txt"
+javac --release 25 -sourcepath "" -cp "${SCRIPT_DIR}/lib/*:${SCRIPT_DIR}/javac/bin" -d "${SCRIPT_DIR}/javac/bin" "${SCRIPT_DIR}/fixtures/CompilerFixtureTest.java"
 java -cp "${SCRIPT_DIR}/lib/*:${SCRIPT_DIR}/javac/bin" org.mosslang.compiler.fixtures.CompilerFixtureTest >/dev/null
 echo "  Toolchain A (Direct Javac): Fixture tests PASSED."
 
 # Toolchain B: Mill + Zinc
 (cd "${SCRIPT_DIR}/mill" && mill compiler.compile >/dev/null)
-javac --release 25 -cp "${SCRIPT_DIR}/lib/*:${SCRIPT_DIR}/mill/out/compiler/compile.dest/classes" -d "${SCRIPT_DIR}/mill/out/compiler/compile.dest/classes" "${SCRIPT_DIR}/fixtures/CompilerFixtureTest.java"
+javac --release 25 -sourcepath "" -cp "${SCRIPT_DIR}/lib/*:${SCRIPT_DIR}/mill/out/compiler/compile.dest/classes" -d "${SCRIPT_DIR}/mill/out/compiler/compile.dest/classes" "${SCRIPT_DIR}/fixtures/CompilerFixtureTest.java"
 java -cp "${SCRIPT_DIR}/lib/*:${SCRIPT_DIR}/mill/out/compiler/compile.dest/classes" org.mosslang.compiler.fixtures.CompilerFixtureTest >/dev/null
 echo "  Toolchain B (Mill + Zinc):  Fixture tests PASSED."
 
@@ -69,14 +69,18 @@ echo "  Toolchain B (Mill + Zinc):  Fixture tests PASSED."
 /opt/eclipse-jdt/eclipse -nosplash -data "${SCRIPT_DIR}/jdt/workspace" \
     -configuration "${SCRIPT_DIR}/jdt/configuration" \
     -application org.mosslang.jdt.builder.headlessBuilder \
-    -init "${SCRIPT_DIR}/corpus" "${SCRIPT_DIR}/lib" "${SCRIPT_DIR}/jdt/bin" >/dev/null 2>&1
+    -action init -src "${SCRIPT_DIR}/corpus" -lib "${SCRIPT_DIR}/lib" -bin "${SCRIPT_DIR}/jdt/bin" >/dev/null 2>&1
 /opt/eclipse-jdt/eclipse -nosplash -data "${SCRIPT_DIR}/jdt/workspace" \
     -configuration "${SCRIPT_DIR}/jdt/configuration" \
     -application org.mosslang.jdt.builder.headlessBuilder \
-    -build full >/dev/null 2>&1
-javac --release 25 -cp "${SCRIPT_DIR}/lib/*:${SCRIPT_DIR}/jdt/bin" -d "${SCRIPT_DIR}/jdt/bin" "${SCRIPT_DIR}/fixtures/CompilerFixtureTest.java"
+    -action clean_build -src "${SCRIPT_DIR}/corpus" -lib "${SCRIPT_DIR}/lib" -bin "${SCRIPT_DIR}/jdt/bin" >/dev/null 2>&1
+javac --release 25 -sourcepath "" -cp "${SCRIPT_DIR}/lib/*:${SCRIPT_DIR}/jdt/bin" -d "${SCRIPT_DIR}/jdt/bin" "${SCRIPT_DIR}/fixtures/CompilerFixtureTest.java"
 java -cp "${SCRIPT_DIR}/lib/*:${SCRIPT_DIR}/jdt/bin" org.mosslang.compiler.fixtures.CompilerFixtureTest >/dev/null
 echo "  Toolchain C (Eclipse JDT):  Fixture tests PASSED."
+
+# Pre-compile MutationVerifier
+mkdir -p "${SCRIPT_DIR}/fixtures/bin"
+javac --release 25 -sourcepath "" -cp "${SCRIPT_DIR}/corpus:${SCRIPT_DIR}/lib/*" -d "${SCRIPT_DIR}/fixtures/bin" "${SCRIPT_DIR}/fixtures/MutationVerifier.java"
 
 # 5. Benchmark Matrix Execution
 TRIALS="${1:-15}"

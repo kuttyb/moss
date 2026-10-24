@@ -99,4 +99,12 @@ public class SemanticChecker extends AstVisitorBase<TypeRef, SemanticContext> {
         decl.body().accept(this, inner);
         return decl.returnType();
     }
+
+    public int analyzeComplexityBudget(SourceFile file) {
+        int budget = 1000;
+        for (FunctionDecl f : file.functions()) {
+            budget -= f.body().statements().size() * 10;
+        }
+        return budget;
+    }
 }

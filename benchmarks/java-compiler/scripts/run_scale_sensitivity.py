@@ -27,6 +27,7 @@ RESULTS_DIR = BENCHMARK_DIR / "results"
 TMP_SCALE_DIR = REPO_ROOT / "tmp" / "scale"
 
 sys.path.insert(0, str(SCRIPTS_DIR))
+import mutations
 from run_benchmarks import JdtClient, run_mill_build, run_jdt_build, get_mill_daemon_rss_mb, JDT_PORT
 
 def run_scale_experiment(sizes=[50, 500, 1000], trials=5):
@@ -158,14 +159,7 @@ object compiler extends JavaModule {{
             "central_typeref_b7": {"javac": [], "mill": [], "jdt": []}
         }
 
-        # Backup scale corpus for mutations
-        backup_dir = TMP_SCALE_DIR / f"corpus_backup_{size}"
-        if backup_dir.exists(): shutil.rmtree(backup_dir)
-        shutil.copytree(corpus_dir, backup_dir)
-
-        def restore_scale_corpus():
-            shutil.rmtree(corpus_dir)
-            shutil.copytree(backup_dir, corpus_dir)
+        mut_mgr = mutations.MutationManager(corpus_path=corpus_dir)
 
         # 1. Warm clean build
         print("  Benchmarking Warm Clean Build...")
@@ -189,15 +183,12 @@ object compiler extends JavaModule {{
 
         # 3. Single method edit (B4)
         print("  Benchmarking Single Method Edit (B4)...")
-        for _ in range(trials):
-            restore_scale_corpus()
-            unifier = corpus_dir / "org" / "mosslang" / "compiler" / "types" / "TypeUnifier.java"
-            if unifier.exists():
-                txt = unifier.read_text(encoding="utf-8")
-                old_str = "if (current.equals(t2)) return true;" if "if (current.equals(t2))" in txt else "if (t1.equals(t2)) return true;"
-                new_str = old_str + "\n        int _dummyCheck = (t1.hashCode() ^ t2.hashCode()) & 0x7FFF;\n        if (_dummyCheck == -99999) return false;"
-                unifier.write_text(txt.replace(old_str, new_str, 1), encoding="utf-8")
-
+        mut_mgr.restore()
+        run_javac_scale(clean=False)
+        run_mill_scale(clean=False)
+        run_jdt_scale(full=True)
+        for tr in range(trials):
+            mut_mgr.apply_mutation("B4", trial=tr)
             t_j, ok_j = run_javac_scale(clean=False)
             scale_res["single_method_b4"]["javac"].append(t_j)
             t_m, ok_m = run_mill_scale(clean=False)
@@ -207,15 +198,12 @@ object compiler extends JavaModule {{
 
         # 4. Central TypeRef API change (B7)
         print("  Benchmarking Central TypeRef API change (B7)...")
-        for _ in range(trials):
-            restore_scale_corpus()
-            tr_file = corpus_dir / "org" / "mosslang" / "compiler" / "types" / "TypeRef.java"
-            if tr_file.exists():
-                txt = tr_file.read_text(encoding="utf-8")
-                old_tr = "default boolean isTypeVar() {\n        return false;\n    }"
-                new_tr = "default boolean isTypeVar() {\n        return false;\n    }\n\n    default int typeNestingDepth() {\n        return 1;\n    }"
-                tr_file.write_text(txt.replace(old_tr, new_tr, 1), encoding="utf-8")
-
+        mut_mgr.restore()
+        run_javac_scale(clean=False)
+        run_mill_scale(clean=False)
+        run_jdt_scale(full=True)
+        for tr in range(trials):
+            mut_mgr.apply_mutation("B7", trial=tr)
             t_j, ok_j = run_javac_scale(clean=False)
             scale_res["central_typeref_b7"]["javac"].append(t_j)
             t_m, ok_m = run_mill_scale(clean=False)
@@ -223,7 +211,7 @@ object compiler extends JavaModule {{
             t_jdt, ok_jdt = run_jdt_scale(full=False)
             if ok_jdt: scale_res["central_typeref_b7"]["jdt"].append(t_jdt)
 
-        restore_scale_corpus()
+        mut_mgr.restore()
         jdt_client.stop_daemon()
         subprocess.run(["mill", "shutdown"], cwd=mill_dir, capture_output=True)
 

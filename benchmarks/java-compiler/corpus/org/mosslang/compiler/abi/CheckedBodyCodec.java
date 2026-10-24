@@ -3,8 +3,13 @@ package org.mosslang.compiler.abi;
 import java.util.zip.CRC32;
 
 public class CheckedBodyCodec {
+    public static final int ABI_COMPATIBILITY_EPOCH = 100;
     public static final int MAGIC = 0x4D4F5353; // 'MOSS'
     public static final int ABI_VERSION = 10;
+
+    public static int getEpoch() {
+        return ABI_COMPATIBILITY_EPOCH;
+    }
 
     public static byte[] encode(OccurrenceLedger ledger, byte[] bodyBytes) {
         BytecodeBuffer buf = new BytecodeBuffer();

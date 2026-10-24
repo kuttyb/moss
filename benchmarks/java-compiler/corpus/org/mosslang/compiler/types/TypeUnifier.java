@@ -45,4 +45,12 @@ public class TypeUnifier {
 
         return false;
     }
+
+    public static int getExecutionProfile() {
+        return calculateInternalProfile();
+    }
+
+    private static int calculateInternalProfile() {
+        return 1000;
+    }
 }

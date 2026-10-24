@@ -1,165 +1,281 @@
 #!/usr/bin/env python3
 """
-Deterministic Mutation Manager for Java Compiler Benchmark Scenarios (Phase 25.3 J0)
-Scenarios B3-B10 + Syntax Error Control.
+Deterministic Mutation Manager (Phase 25.3 J0-R1)
+Generates distinct, valid, deterministic source revisions for every trial.
+Records source hashes before and after.
+Asserts that each timed edit genuinely changes the intended source.
 """
 
-import sys
+import hashlib
+import re
 import shutil
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 BENCHMARK_DIR = REPO_ROOT / "benchmarks" / "java-compiler"
-CORPUS_DIR = BENCHMARK_DIR / "corpus" / "org" / "mosslang" / "compiler"
+CORPUS_DIR = BENCHMARK_DIR / "corpus"
 BACKUP_DIR = BENCHMARK_DIR / "corpus_backup"
 
-def backup_baseline():
+def hash_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        while chunk := f.read(65536):
+            h.update(chunk)
+    return h.hexdigest()
+
+def backup_baseline(corpus_path: Path = CORPUS_DIR):
     if not BACKUP_DIR.exists():
-        shutil.copytree(BENCHMARK_DIR / "corpus", BACKUP_DIR)
+        shutil.copytree(corpus_path, BACKUP_DIR)
         print(f"Baseline corpus backed up to {BACKUP_DIR}")
 
-def restore_baseline():
+def restore_baseline(corpus_path: Path = CORPUS_DIR):
     if BACKUP_DIR.exists():
-        shutil.rmtree(BENCHMARK_DIR / "corpus")
-        shutil.copytree(BACKUP_DIR, BENCHMARK_DIR / "corpus")
+        if corpus_path.exists():
+            shutil.rmtree(corpus_path)
+        shutil.copytree(BACKUP_DIR, corpus_path)
 
-def apply_mutation(scenario_id: str):
-    restore_baseline()
-    scenario = scenario_id.upper()
+class MutationManager:
+    def __init__(self, corpus_path: Path = CORPUS_DIR):
+        self.corpus_path = corpus_path
+        backup_baseline(self.corpus_path)
 
-    if scenario == "B3":
-        # No-op: no files changed
-        pass
+    def restore(self):
+        restore_baseline(self.corpus_path)
 
-    elif scenario == "B4":
-        # Private method edit: Modify internal helper in TypeUnifier without touching signature
-        target_file = CORPUS_DIR / "types" / "TypeUnifier.java"
-        content = target_file.read_text(encoding="utf-8")
-        old_str = "if (current.equals(t2)) return true;" if "if (current.equals(t2))" in content else "if (t1.equals(t2)) return true;"
-        new_str = old_str + "\n        // Mutation B4: private calculation edit\n        int _dummyCheck = (t1.hashCode() ^ t2.hashCode()) & 0x7FFF;\n        if (_dummyCheck == -99999) return false;"
-        assert old_str in content, "Target string not found in TypeUnifier.java"
-        target_file.write_text(content.replace(old_str, new_str, 1), encoding="utf-8")
+    def apply_mutation(self, scenario: str, trial: int = 0) -> dict:
+        """
+        Applies a distinct, deterministic mutation for scenario and trial index.
+        Returns a dict of {changed_file_path: (sha_before, sha_after)}.
+        """
+        sc = scenario.upper()
+        audit = {}
 
-    elif scenario == "B5":
-        # Public method implementation edit: Change TypeSolver.solve() body while preserving API
-        target_file = CORPUS_DIR / "types" / "TypeSolver.java"
-        content = target_file.read_text(encoding="utf-8")
-        old_str = "for (TypeConstraint c : constraints) {"
-        new_str = "// Mutation B5: public implementation body edit\n        int _passCount = 0;\n        for (TypeConstraint c : constraints) {\n            _passCount++;"
-        assert old_str in content, "Target string not found in TypeSolver.java"
-        target_file.write_text(content.replace(old_str, new_str, 1), encoding="utf-8")
+        if sc == "B3":
+            # No-op: zero files changed
+            return {}
 
-    elif scenario == "B6":
-        # Public signature edit: Add overloaded lookup in SymbolTable and update callers in NameResolver & SemanticChecker
-        st_file = CORPUS_DIR / "symbols" / "SymbolTable.java"
-        st_content = st_file.read_text(encoding="utf-8")
-        old_lookup = "public Symbol lookup(String name) {\n        return currentScope.lookup(name);\n    }"
-        new_lookup = """public Symbol lookup(String name) {
-        return lookup(name, true);
-    }
+        elif sc == "B4":
+            # Private method edit in TypeUnifier.java (logic tweak inside calculateInternalProfile)
+            p = self.corpus_path / "org" / "mosslang" / "compiler" / "types" / "TypeUnifier.java"
+            sha_before = hash_file(p)
+            txt = p.read_text(encoding="utf-8")
+            
+            pattern = r"private static int calculateInternalProfile\(\) \{[\s\S]*?\}"
+            replacement = f"""private static int calculateInternalProfile() {{
+        int _val = 1000 + ({trial + 1});
+        return _val;
+    }}"""
+            new_txt = re.sub(pattern, replacement, txt)
+            assert new_txt != txt, f"B4 replacement failed to modify TypeUnifier.java on trial {trial}"
+            p.write_text(new_txt, encoding="utf-8")
+            sha_after = hash_file(p)
+            assert sha_before != sha_after, f"B4 SHA-256 did not change on trial {trial}"
+            audit[str(p)] = (sha_before, sha_after)
 
-    public Symbol lookup(String name, boolean checkParents) {
-        return checkParents ? currentScope.lookup(name) : currentScope.lookupLocal(name);
-    }"""
-        assert old_lookup in st_content, "Target lookup not found in SymbolTable.java"
-        st_file.write_text(st_content.replace(old_lookup, new_lookup, 1), encoding="utf-8")
+        elif sc == "B5":
+            # Public method implementation edit in TypeSolver.java
+            p = self.corpus_path / "org" / "mosslang" / "compiler" / "types" / "TypeSolver.java"
+            sha_before = hash_file(p)
+            txt = p.read_text(encoding="utf-8")
+            pattern = r"public int getConstraintPassCapacity\(\) \{[\s\S]*?\}"
+            replacement = f"""public int getConstraintPassCapacity() {{
+        int _cap = 256 + ({trial + 1});
+        return _cap;
+    }}"""
+            new_txt = re.sub(pattern, replacement, txt)
+            assert new_txt != txt, f"B5 replacement failed to modify TypeSolver.java on trial {trial}"
+            p.write_text(new_txt, encoding="utf-8")
+            sha_after = hash_file(p)
+            assert sha_before != sha_after, f"B5 SHA-256 did not change on trial {trial}"
+            audit[str(p)] = (sha_before, sha_after)
 
-        # Update caller in NameResolver.java
-        nr_file = CORPUS_DIR / "symbols" / "NameResolver.java"
-        nr_content = nr_file.read_text(encoding="utf-8")
-        nr_file.write_text(nr_content.replace("table.lookup(expr.name())", "table.lookup(expr.name(), true)"), encoding="utf-8")
+        elif sc == "B6":
+            # Public API change: SymbolTable.lookup(String) -> lookup(String, int), updating callers
+            st = self.corpus_path / "org" / "mosslang" / "compiler" / "symbols" / "SymbolTable.java"
+            sha_st_before = hash_file(st)
+            st_txt = st.read_text(encoding="utf-8")
+            pattern_st = r"public Symbol lookup\(String name(?:, int scopeDepthFilter)?\) \{[\s\S]*?\}"
+            repl_st = f"""public Symbol lookup(String name, int scopeDepthFilter) {{
+        if (scopeDepthFilter < 0) return null;
+        int _salt = {trial + 1};
+        return currentScope.lookup(name);
+    }}"""
+            new_st_txt = re.sub(pattern_st, repl_st, st_txt)
+            st.write_text(new_st_txt, encoding="utf-8")
+            sha_st_after = hash_file(st)
+            assert sha_st_before != sha_st_after, f"SymbolTable SHA did not change on trial {trial}"
+            audit[str(st)] = (sha_st_before, sha_st_after)
 
-        # Update caller in SemanticChecker.java
-        sc_file = CORPUS_DIR / "semantics" / "SemanticChecker.java"
-        sc_content = sc_file.read_text(encoding="utf-8")
-        sc_file.write_text(sc_content.replace("ctx.symbolTable().lookup(expr.name())", "ctx.symbolTable().lookup(expr.name(), true)"), encoding="utf-8")
+            # Update NameResolver caller
+            nr = self.corpus_path / "org" / "mosslang" / "compiler" / "symbols" / "NameResolver.java"
+            sha_nr_before = hash_file(nr)
+            nr_txt = nr.read_text(encoding="utf-8")
+            new_nr_txt = re.sub(r"table\.lookup\(expr\.name\(\)(?:, [^)]+)?\)", f"table.lookup(expr.name(), 50 + {trial + 1})", nr_txt)
+            nr.write_text(new_nr_txt, encoding="utf-8")
+            sha_nr_after = hash_file(nr)
+            assert sha_nr_before != sha_nr_after, f"NameResolver SHA did not change on trial {trial}"
+            audit[str(nr)] = (sha_nr_before, sha_nr_after)
 
-    elif scenario == "B7":
-        # TypeRef change: Central interface change widely referenced
-        tr_file = CORPUS_DIR / "types" / "TypeRef.java"
-        tr_content = tr_file.read_text(encoding="utf-8")
-        old_tr = "default boolean isTypeVar() {\n        return false;\n    }"
-        new_tr = """default boolean isTypeVar() {
-        return false;
-    }
+            # Update SemanticChecker caller
+            sc_file = self.corpus_path / "org" / "mosslang" / "compiler" / "semantics" / "SemanticChecker.java"
+            sha_sc_before = hash_file(sc_file)
+            sc_txt = sc_file.read_text(encoding="utf-8")
+            new_sc_txt = re.sub(r"ctx\.symbolTable\(\)\.lookup\(expr\.name\(\)(?:, [^)]+)?\)", f"ctx.symbolTable().lookup(expr.name(), 50 + {trial + 1})", sc_txt)
+            sc_file.write_text(new_sc_txt, encoding="utf-8")
+            sha_sc_after = hash_file(sc_file)
+            assert sha_sc_before != sha_sc_after, f"SemanticChecker SHA did not change on trial {trial}"
+            audit[str(sc_file)] = (sha_sc_before, sha_sc_after)
 
-    default int typeNestingDepth() {
-        return 1;
-    }"""
-        assert old_tr in tr_content, "Target method not found in TypeRef.java"
-        tr_file.write_text(tr_content.replace(old_tr, new_tr, 1), encoding="utf-8")
+        elif sc == "B7":
+            # High-fan-out TypeRef change: Change typePrecedence() -> typePrecedence(int) across 27 files
+            tr = self.corpus_path / "org" / "mosslang" / "compiler" / "types" / "TypeRef.java"
+            sha_tr_before = hash_file(tr)
+            tr_txt = tr.read_text(encoding="utf-8")
+            repl_tr = f"""default int typePrecedence(int passLevel) {{
+        int _salt = {trial + 1};
+        return 10 + passLevel;
+    }}"""
+            new_tr_txt = re.sub(r"default int typePrecedence\([\s\S]*?\) \{[\s\S]*?\}", repl_tr, tr_txt)
+            tr.write_text(new_tr_txt, encoding="utf-8")
+            sha_tr_after = hash_file(tr)
+            assert sha_tr_before != sha_tr_after, f"TypeRef SHA did not change on trial {trial}"
+            audit[str(tr)] = (sha_tr_before, sha_tr_after)
 
-        # Override in ArrayType.java
-        arr_file = CORPUS_DIR / "types" / "ArrayType.java"
-        arr_content = arr_file.read_text(encoding="utf-8")
-        old_arr = "@Override\n    public TypeRef substitute"
-        new_arr = """@Override
-    public int typeNestingDepth() {
-        return 1 + elementType.typeNestingDepth();
-    }
+            # Update core types & specialized types
+            core_types = [
+                "PrimitiveType.java", "FunctionType.java", "ArrayType.java",
+                "DomainType.java", "RecordType.java", "TypeVar.java"
+            ]
+            for ct in core_types:
+                p = self.corpus_path / "org" / "mosslang" / "compiler" / "types" / ct
+                if p.exists():
+                    sha_b = hash_file(p)
+                    txt = p.read_text(encoding="utf-8")
+                    method_code = f"""@Override
+    public int typePrecedence(int passLevel) {{
+        return 10 + passLevel + ({trial + 1});
+    }}"""
+                    if "typePrecedence" in txt:
+                        new_txt = re.sub(r"@Override\s+public int typePrecedence\([\s\S]*?\) \{[\s\S]*?\}", method_code, txt)
+                    else:
+                        last_brace = txt.rfind("}")
+                        new_txt = txt[:last_brace] + "\n    " + method_code + "\n}\n"
+                    p.write_text(new_txt, encoding="utf-8")
+                    sha_a = hash_file(p)
+                    assert sha_b != sha_a, f"{ct} SHA did not change on trial {trial}"
+                    audit[str(p)] = (sha_b, sha_a)
 
-    @Override
-    public TypeRef substitute"""
-        assert old_arr in arr_content, "Target method not found in ArrayType.java"
-        arr_file.write_text(arr_content.replace(old_arr, new_arr, 1), encoding="utf-8")
+            for sp in self.corpus_path.glob("**/SpecializedType_*.java"):
+                sha_b = hash_file(sp)
+                txt = sp.read_text(encoding="utf-8")
+                method_code = f"""@Override
+    public int typePrecedence(int passLevel) {{
+        return 10 + passLevel + ({trial + 1});
+    }}"""
+                if "typePrecedence" in txt:
+                    new_txt = re.sub(r"@Override\s+public int typePrecedence\([\s\S]*?\) \{[\s\S]*?\}", method_code, txt)
+                else:
+                    last_brace = txt.rfind("}")
+                    new_txt = txt[:last_brace] + "\n    " + method_code + "\n}\n"
+                sp.write_text(new_txt, encoding="utf-8")
+                sha_a = hash_file(sp)
+                assert sha_b != sha_a, f"{sp.name} SHA did not change on trial {trial}"
+                audit[str(sp)] = (sha_b, sha_a)
 
-    elif scenario == "B8":
-        # Semantic-checker change: Substantial algorithm modification in SemanticChecker
-        sc_file = CORPUS_DIR / "semantics" / "SemanticChecker.java"
-        sc_content = sc_file.read_text(encoding="utf-8")
-        old_sc = "switch (expr.op()) {"
-        new_sc = """// Mutation B8: substantial semantic checker algorithm update
-        inferredEffects.put(expr.hashCode() & 0xFFFF, Effect.READ);
-        switch (expr.op()) {"""
-        assert old_sc in sc_content, "Target string not found in SemanticChecker.java"
-        sc_file.write_text(sc_content.replace(old_sc, new_sc, 1), encoding="utf-8")
+        elif sc == "B8":
+            # Semantic checker algorithmic change in analyzeComplexityBudget
+            sc_file = self.corpus_path / "org" / "mosslang" / "compiler" / "semantics" / "SemanticChecker.java"
+            sha_b = hash_file(sc_file)
+            txt = sc_file.read_text(encoding="utf-8")
+            pattern = r"public int analyzeComplexityBudget\(SourceFile file\) \{[\s\S]*?return budget;\s*\}"
+            replacement = f"""public int analyzeComplexityBudget(SourceFile file) {{
+        int budget = 1000 + ({trial + 1});
+        for (FunctionDecl f : file.functions()) {{
+            budget -= f.body().statements().size() * (10 + ({trial + 1}));
+        }}
+        return budget;
+    }}"""
+            new_txt = re.sub(pattern, replacement, txt)
+            sc_file.write_text(new_txt, encoding="utf-8")
+            sha_a = hash_file(sc_file)
+            assert sha_b != sha_a, f"SemanticChecker SHA did not change on trial {trial}"
+            audit[str(sc_file)] = (sha_b, sha_a)
 
-    elif scenario == "B9":
-        # Multi-file edit: Modify ~20 related AST files (SyntaxNode_001 to SyntaxNode_020)
-        for i in range(1, 21):
-            num = f"{i:03d}"
-            target_file = CORPUS_DIR / "ast" / f"SyntaxNode_{num}.java"
-            if target_file.exists():
-                content = target_file.read_text(encoding="utf-8")
-                old_span = "public SourceSpan span() { return span; }"
-                new_span = f"public SourceSpan span() {{ return span; }}\n    public int getNodeOrdinal_{num}() {{ return {i}; }}"
-                if old_span in content:
-                    target_file.write_text(content.replace(old_span, new_span, 1), encoding="utf-8")
+        elif sc == "B9":
+            # Multiple-file change: Exactly 20 ABI section files
+            abi_dir = self.corpus_path / "org" / "mosslang" / "compiler" / "abi"
+            targets = [
+                abi_dir / "BytecodeBuffer.java",
+                abi_dir / "CheckedBodyCodec.java",
+                abi_dir / "OccurrenceLedger.java",
+                abi_dir / "OccurrenceRecord.java",
+                abi_dir / "OccurrenceRole.java"
+            ]
+            for num in range(1, 16):
+                targets.append(abi_dir / f"AbiSection_{num:03d}.java")
 
-    elif scenario == "B10":
-        # Collection implementation change: Primitive collection ops in OccurrenceLedger
-        target_file = CORPUS_DIR / "abi" / "OccurrenceLedger.java"
-        content = target_file.read_text(encoding="utf-8")
-        old_str = "int ord = nextOrdinal++;"
-        new_str = """// Mutation B10: primitive collection optimization
-        int ord = nextOrdinal++;
-        if (packedOccurrences.size() > 1000) packedOccurrences.trimToSize();"""
-        assert old_str in content, "Target string not found in OccurrenceLedger.java"
-        target_file.write_text(content.replace(old_str, new_str, 1), encoding="utf-8")
+            assert len(targets) == 20, f"Expected 20 ABI files, got {len(targets)}"
+            for t in targets:
+                sha_b = hash_file(t)
+                txt = t.read_text(encoding="utf-8")
+                pattern = r"public static final int ABI_COMPATIBILITY_EPOCH = [^;]+;"
+                replacement = f"public static final int ABI_COMPATIBILITY_EPOCH = 100 + ({trial + 1});"
+                new_txt = re.sub(pattern, replacement, txt)
+                t.write_text(new_txt, encoding="utf-8")
+                sha_a = hash_file(t)
+                assert sha_b != sha_a, f"{t.name} SHA did not change on trial {trial}"
+                audit[str(t)] = (sha_b, sha_a)
 
-    elif scenario == "SYNTAX_ERROR":
-        # Deliberate syntax error control
-        target_file = CORPUS_DIR / "ast" / "LiteralExpr.java"
-        content = target_file.read_text(encoding="utf-8")
-        target_file.write_text(content + "\n>>> DELIBERATE SYNTAX ERROR <<<\n", encoding="utf-8")
+        elif sc == "B10":
+            # Primitive collections in OccurrenceLedger.java
+            ol = self.corpus_path / "org" / "mosslang" / "compiler" / "abi" / "OccurrenceLedger.java"
+            sha_b = hash_file(ol)
+            txt = ol.read_text(encoding="utf-8")
+            pattern = r"public long computePrimitiveChecksum\(\) \{[\s\S]*?return c;\s*\}"
+            replacement = f"""public long computePrimitiveChecksum() {{
+        long c = ({trial + 1});
+        for (int i = 0; i < packedOccurrences.size(); i++) {{
+            c = (c * 31) + packedOccurrences.get(i) + ({trial + 1});
+        }}
+        return c;
+    }}"""
+            new_txt = re.sub(pattern, replacement, txt)
+            ol.write_text(new_txt, encoding="utf-8")
+            sha_a = hash_file(ol)
+            assert sha_b != sha_a, f"OccurrenceLedger SHA did not change on trial {trial}"
+            audit[str(ol)] = (sha_b, sha_a)
 
-    else:
-        raise ValueError(f"Unknown scenario: {scenario_id}")
+        elif sc == "DEP_INVALIDATION":
+            tr = self.corpus_path / "org" / "mosslang" / "compiler" / "types" / "TypeRef.java"
+            sha_tr_b = hash_file(tr)
+            tr_txt = tr.read_text(encoding="utf-8")
+            new_tr = re.sub(r"default long tagValue\([\s\S]*?\) \{[\s\S]*?\}",
+                            f"default long tagValue(int pass) {{ int _s = {trial + 1}; return 42L + pass; }}", tr_txt)
+            tr.write_text(new_tr, encoding="utf-8")
+            sha_tr_a = hash_file(tr)
+            assert sha_tr_b != sha_tr_a, f"TypeRef SHA did not change on trial {trial}"
+            audit[str(tr)] = (sha_tr_b, sha_tr_a)
 
-    print(f"Applied mutation for scenario: {scenario_id}")
+            ts = self.corpus_path / "org" / "mosslang" / "compiler" / "types" / "TypeSolver.java"
+            sha_ts_b = hash_file(ts)
+            ts_txt = ts.read_text(encoding="utf-8")
+            new_ts = re.sub(r"public long computeTag\(TypeRef t\) \{[\s\S]*?\}",
+                            f"public long computeTag(TypeRef t) {{ int _s = {trial + 1}; return t.tagValue(100); }}", ts_txt)
+            ts.write_text(new_ts, encoding="utf-8")
+            sha_ts_a = hash_file(ts)
+            assert sha_ts_b != sha_ts_a, f"TypeSolver SHA did not change on trial {trial}"
+            audit[str(ts)] = (sha_ts_b, sha_ts_a)
 
-if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: mutations.py <backup|restore|apply <SCENARIO>>")
-        sys.exit(1)
-    cmd = sys.argv[1].lower()
-    if cmd == "backup":
-        backup_baseline()
-    elif cmd == "restore":
-        restore_baseline()
-        print("Restored baseline corpus.")
-    elif cmd == "apply" and len(sys.argv) >= 3:
-        apply_mutation(sys.argv[2])
-    else:
-        print("Invalid command")
-        sys.exit(1)
+        elif sc == "SYNTAX_ERROR":
+            unifier = self.corpus_path / "org" / "mosslang" / "compiler" / "types" / "TypeUnifier.java"
+            sha_b = hash_file(unifier)
+            txt = unifier.read_text(encoding="utf-8")
+            unifier.write_text(f"// Syntax error trial {trial}\nthis is a deliberate syntax error;\n" + txt, encoding="utf-8")
+            sha_a = hash_file(unifier)
+            assert sha_b != sha_a, f"TypeUnifier SHA did not change on trial {trial}"
+            audit[str(unifier)] = (sha_b, sha_a)
+
+        else:
+            raise ValueError(f"Unknown scenario: {scenario}")
+
+        return audit

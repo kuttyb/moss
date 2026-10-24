@@ -50,4 +50,12 @@ public class TypeSolver {
     public TypeSubstitutionMap getSubstitution() {
         return substitution;
     }
+
+    public int getConstraintPassCapacity() {
+        return 256;
+    }
+
+    public long computeTag(TypeRef t) {
+        return t.tagValue();
+    }
 }

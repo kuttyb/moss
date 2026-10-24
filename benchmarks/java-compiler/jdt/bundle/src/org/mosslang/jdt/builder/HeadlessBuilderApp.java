@@ -53,7 +53,10 @@ public class HeadlessBuilderApp implements IApplication {
             System.out.println(res.toProtocolString());
             System.exit(0);
         } else if ("clean_build".equalsIgnoreCase(action)) {
-            BuildResult res = performBuild(true);
+            if (srcPath != null && libPath != null && binPath != null) {
+                initProject(srcPath, libPath, binPath);
+            }
+            BuildResult res = performCleanBuild();
             System.out.println(res.toProtocolString());
             System.exit(0);
         } else {
@@ -102,6 +105,9 @@ public class HeadlessBuilderApp implements IApplication {
                     writer.println("OK INIT");
                 } else if ("BUILD_FULL".equals(cmd)) {
                     BuildResult res = performBuild(true);
+                    writer.println(res.toProtocolString());
+                } else if ("BUILD_CLEAN".equals(cmd)) {
+                    BuildResult res = performCleanBuild();
                     writer.println(res.toProtocolString());
                 } else if ("BUILD_INCREMENTAL".equals(cmd)) {
                     BuildResult res = performBuild(false);
@@ -186,26 +192,67 @@ public class HeadlessBuilderApp implements IApplication {
         project.refreshLocal(IResource.DEPTH_INFINITE, null);
     }
 
+    public synchronized BuildResult performCleanBuild() throws CoreException {
+        IWorkspaceRoot root = ResourcesPlugin.getWorkspace().getRoot();
+        IProject project = root.getProject(PROJECT_NAME);
+        if (!project.exists() || !project.isOpen()) {
+            return new BuildResult(false, 0, 0, 0, 0, 1, 0, "Project not open");
+        }
+        IFolder binFolder = project.getFolder("bin");
+        if (binFolder.exists()) {
+            for (IResource m : binFolder.members()) {
+                m.delete(true, null);
+            }
+        }
+        project.build(IncrementalProjectBuilder.CLEAN_BUILD, null);
+        return performBuild(true);
+    }
+
     public synchronized BuildResult performBuild(boolean full) throws CoreException {
         IWorkspaceRoot root = ResourcesPlugin.getWorkspace().getRoot();
         IProject project = root.getProject(PROJECT_NAME);
         if (!project.exists() || !project.isOpen()) {
-            return new BuildResult(false, 0, 0, 1, 0, "Project not open");
+            return new BuildResult(false, 0, 0, 0, 0, 1, 0, "Project not open");
         }
 
         long tStart = System.nanoTime();
-        project.refreshLocal(IResource.DEPTH_INFINITE, null);
+        AtomicInteger refreshedSources = new AtomicInteger(0);
+        IWorkspace ws = ResourcesPlugin.getWorkspace();
+
+        IResourceChangeListener preListener = event -> {
+            if (event.getDelta() != null) {
+                try {
+                    event.getDelta().accept(delta -> {
+                        IResource res = delta.getResource();
+                        if (res.getType() == IResource.FILE && "java".equals(res.getFileExtension())) {
+                            int k = delta.getKind();
+                            if (k == IResourceDelta.ADDED || k == IResourceDelta.CHANGED || (delta.getFlags() & IResourceDelta.CONTENT) != 0) {
+                                refreshedSources.incrementAndGet();
+                            }
+                        }
+                        return true;
+                    });
+                } catch (CoreException ignored) {}
+            }
+        };
+
+        ws.addResourceChangeListener(preListener, IResourceChangeEvent.POST_CHANGE);
+        try {
+            project.refreshLocal(IResource.DEPTH_INFINITE, null);
+        } finally {
+            ws.removeResourceChangeListener(preListener);
+        }
         long tAfterRefresh = System.nanoTime();
 
         AtomicInteger changedClasses = new AtomicInteger(0);
-        IResourceChangeListener listener = event -> {
+        IResourceChangeListener buildListener = event -> {
             if (event.getDelta() != null) {
                 try {
                     event.getDelta().accept(delta -> {
                         IResource res = delta.getResource();
                         if (res.getType() == IResource.FILE && "class".equals(res.getFileExtension())) {
                             int k = delta.getKind();
-                            if (k == IResourceDelta.ADDED || k == IResourceDelta.CHANGED) {
+                            if (k == IResourceDelta.ADDED || k == IResourceDelta.CHANGED || (delta.getFlags() & IResourceDelta.CONTENT) != 0) {
                                 changedClasses.incrementAndGet();
                             }
                         }
@@ -215,14 +262,12 @@ public class HeadlessBuilderApp implements IApplication {
             }
         };
 
-        IWorkspace ws = ResourcesPlugin.getWorkspace();
-        ws.addResourceChangeListener(listener, IResourceChangeEvent.POST_BUILD);
-
+        ws.addResourceChangeListener(buildListener, IResourceChangeEvent.POST_BUILD);
         try {
             int kind = full ? IncrementalProjectBuilder.FULL_BUILD : IncrementalProjectBuilder.INCREMENTAL_BUILD;
             project.build(kind, null);
         } finally {
-            ws.removeResourceChangeListener(listener);
+            ws.removeResourceChangeListener(buildListener);
         }
 
         long tEnd = System.nanoTime();
@@ -245,25 +290,22 @@ public class HeadlessBuilderApp implements IApplication {
             }
         }
 
-        return new BuildResult(errors == 0, wallTimeMs, compileTimeMs, errors, warnings, changedClasses.get(), diag.toString());
+        return new BuildResult(errors == 0, wallTimeMs, compileTimeMs, refreshedSources.get(), changedClasses.get(), errors, warnings, diag.toString());
     }
 
     public record BuildResult(
         boolean success,
         long wallTimeMs,
         long compileTimeMs,
+        int refreshedSources,
+        int changedClasses,
         int errors,
         int warnings,
-        int changedClasses,
         String diagnosticsSummary
     ) {
-        public BuildResult(boolean s, long w, long c, int e, int warn, String diag) {
-            this(s, w, c, e, warn, 0, diag);
-        }
-
         public String toProtocolString() {
-            return String.format("%s wall_ms=%d compile_ms=%d changed_classes=%d errors=%d warnings=%d diag=%s",
-                success ? "SUCCESS" : "FAILED", wallTimeMs, compileTimeMs, changedClasses, errors, warnings,
+            return String.format("%s wall_ms=%d compile_ms=%d refreshed_sources=%d changed_classes=%d errors=%d warnings=%d diag=%s",
+                success ? "SUCCESS" : "FAILED", wallTimeMs, compileTimeMs, refreshedSources, changedClasses, errors, warnings,
                 diagnosticsSummary.isEmpty() ? "none" : diagnosticsSummary);
         }
     }

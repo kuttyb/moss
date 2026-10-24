@@ -5,6 +5,7 @@ import org.eclipse.collections.api.list.primitive.MutableByteList;
 import org.eclipse.collections.impl.list.mutable.primitive.ByteArrayList;
 
 public class AbiSection_004 {
+    public static final int ABI_COMPATIBILITY_EPOCH = 100;
     private final int sectionId = 4;
     private final MutableByteList payload = new ByteArrayList();
 

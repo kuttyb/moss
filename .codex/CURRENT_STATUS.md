@@ -1,18 +1,19 @@
-## Phase 25.3 J0: Java Compiler Build-System Shootout — 2026-10-23
+## Phase 25.3 J0-R1: Java Compiler Build-System Shootout Repair & Validation — 2026-10-23
 
-Completed Gate J0 shootout determining the fastest practical Java compilation toolchain for developing the Moss compiler (Phase 25.3). Branch `phase25-3-java-benchmark` at commit `0c5cfcf8`.
+Completed Gate J0-R1 benchmark correctness repair and re-measurement for the Java compilation toolchain shootout. Branch `phase25-3-java-benchmark`.
 
-- Workload (Gate J0-A): Deterministic synthetic Java compiler corpus generated (201 classes, 5,134 lines, 8 subsystems: ast, types, symbols, semantics, generics, abi, ir, driver) using Eclipse Collections 13.0.0 and Java 25. Verified against SHA-256 manifest and dependency graph. Passed all 6 deterministic fixture tests (unification, scoping, ABI-v10 CRC32 codec, CFA reachability, full driver pipeline).
-- Build Toolchains (Gate J0-B): Configured Toolchain A (direct javac 25), Toolchain B (Mill 1.3.1 + Zinc incremental compilation), and Toolchain C (Eclipse JDT headless incremental workspace builder via custom OSGi Equinox bundle org.mosslang.jdt.builder_1.0.0.jar with persistent daemon socket protocol).
-- Benchmark Matrix (Gate J0-C, 15 warm interleaved trials):
-  * Cold clean: javac fastest (1,243.0ms vs Mill 2,970.3ms vs JDT 4,898.4ms)
-  * Warm clean: JDT fastest (107.3ms vs Mill 1,215.1ms vs javac 1,217.5ms, 11.33x speedup)
-  * No-op: JDT fastest (2.2ms vs Mill 109.4ms vs javac 1,243.2ms, 49.06x speedup)
-  * Incremental edits (B4-B10): JDT wins every scenario (12.7ms to 24.2ms) vs Mill (106.8ms to 139.0ms) and javac (~1,230ms).
-  * Syntax error rejection and recovery validated across all 3 toolchains.
-- Scale Sensitivity (Gate J0-D, ~50, ~200, ~500, ~1,000 files): JDT maintains sub-25ms incremental latency (23.8ms at 1,000 files) and clean builds (278.7ms vs javac 2,029.5ms).
-- Tuning (Gate J0-E): JDT persistent process provides 45.7x speedup over cold launches. Javac heap tuning yields 1.04x speedup.
-- Deliverables: All benchmark sources, scripts, raw measurements, CSV/JSON summaries, README.md, run_all.sh reproducibility script, and full technical report at `docs/phase25/PHASE_25_3_J0_JAVA_BUILD_BENCHMARK.md`.
+- Methodological Repairs (R1-A to R1-D):
+  * R1-A: Eliminated repeated mutation no-ops across trials. Implemented `MutationManager` producing distinct deterministic source revisions for each trial $i \in [0, 14]$ without resetting between trials. Verified actual compiler activity via Zinc logs/recompiled counters and Eclipse JDT `refreshed_sources` / `changed_classes` event tracking.
+  * R1-B: Strengthened test mutations across all scenarios: internal logic (B4), public body (B5), public signature change with caller updates across 3 files (B6), high-fan-out `TypeRef` change across 26 files (B7), semantic-checker CFA budget logic (B8), 20 real ABI codec files (B9), and Eclipse Collections primitive logic (B10).
+  * R1-C: Implemented `MutationVerifier.java` executing test assertions directly against compiled bytecode under test using reflection with `-sourcepath ""` preventing implicit source recompilation. Verified dependency invalidation control (`DEP_INVALIDATION`) and deliberate syntax error rejection/recovery.
+  * R1-D: Separated cold clean builds (B1, 5 trials with full cache/output deletion) from warm clean builds (B2, 15 trials with persistent daemons).
+- Verified Benchmark Matrix (Gate J0-C, 15 warm trials / 5 cold clean trials):
+  * Cold clean (B1): javac fastest (1,543.0ms vs JDT 4,897.7ms vs Mill 9,103.5ms, 3.17x speedup vs JDT).
+  * Warm clean (B2): JDT fastest (116.7ms vs Mill 1,161.0ms vs javac 1,203.7ms, 9.95x speedup vs Mill).
+  * No-op (B3): JDT fastest (2.4ms vs Mill 108.9ms vs javac 1,215.4ms, 46.13x speedup vs Mill).
+  * Incremental edits (B4-B10): With active source recompilation verified, JDT achieves 13.9ms to 32.7ms, delivering a 12x to 18x speedup over Mill (239.4ms to 411.7ms) and 37x to 86x speedup over javac (~1,220ms).
+- Scale Sensitivity (Gate J0-D, ~50, ~500, ~1,000 files): JDT maintains sub-35ms incremental turnaround (16.3ms for B4 and 32.9ms for B7 at 1,000 files / 26.0k LOC) and clean builds (265.2ms vs javac 2,073.6ms).
+- Deliverables & Reports: Updated `benchmarks/java-compiler/results/` (`summary_table.csv`, `summary_results.json`, `scale_sensitivity.json`, `tuning_results.json`), `docs/phase25/PHASE_25_3_J0_JAVA_BUILD_BENCHMARK.md`, `docs/phase25/L7_J0_JAVA_BUILD_SHOOTOUT_REPORT.md`, and `docs/phase25/agent-patterns/team-j0-java-benchmark.md`.
 
 ## Phase 25.1 R1 next-slice probes — shadowed returns and generic For — 2026-10-21
 

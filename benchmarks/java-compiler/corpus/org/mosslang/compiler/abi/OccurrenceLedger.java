@@ -6,6 +6,7 @@ import org.eclipse.collections.api.map.primitive.MutableIntObjectMap;
 import org.eclipse.collections.impl.map.mutable.primitive.IntObjectHashMap;
 
 public class OccurrenceLedger {
+    public static final int ABI_COMPATIBILITY_EPOCH = 100;
     private final MutableLongList packedOccurrences = new LongArrayList();
     private final MutableIntObjectMap<OccurrenceRecord> records = new IntObjectHashMap<>();
     private int nextOrdinal = 1;
@@ -28,5 +29,13 @@ public class OccurrenceLedger {
 
     public MutableLongList getPackedOccurrences() {
         return packedOccurrences;
+    }
+
+    public long computePrimitiveChecksum() {
+        long c = 0;
+        for (int i = 0; i < packedOccurrences.size(); i++) {
+            c = (c * 31) + packedOccurrences.get(i);
+        }
+        return c;
     }
 }

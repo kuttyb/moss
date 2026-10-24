@@ -1,6 +1,7 @@
 package org.mosslang.compiler.abi;
 
 public record OccurrenceRecord(int ordinal, OccurrenceRole role, int symbolId, int typeId) {
+    public static final int ABI_COMPATIBILITY_EPOCH = 100;
     public long pack() {
         return ((long) ordinal << 48) |
                ((long) (role.getCode() & 0xFF) << 40) |

@@ -1,11 +1,11 @@
 Scenario,Description,javac_median_ms,mill_median_ms,jdt_median_ms,winner,speedup
-B1,Cold clean build,1243.0,2970.3,4898.38,javac,2.39x
-B2,Warm clean build,1217.51,1215.12,107.27,JDT,11.33x
-B3,No-op build,1243.22,109.4,2.23,JDT,49.06x
-B4,Private method edit,1223.28,106.77,15.75,JDT,6.78x
-B5,Public method impl edit,1231.14,109.7,21.86,JDT,5.02x
-B6,Public signature edit,1234.82,107.88,24.22,JDT,4.45x
-B7,TypeRef change,1230.69,108.55,12.69,JDT,8.55x
-B8,Semantic-checker change,1249.7,109.52,21.0,JDT,5.22x
-B9,Multi-file edit (~20 files),1241.2,109.57,21.63,JDT,5.07x
-B10,Collection impl change,1131.93,139.04,16.02,JDT,8.68x
+B1,Cold clean build,1542.97,9103.46,4897.74,javac,3.17x
+B2,Warm clean build,1203.7,1160.99,116.73,JDT,9.95x
+B3,No-op build,1215.42,108.86,2.36,JDT,46.13x
+B4,Private method edit,1199.42,248.91,13.91,JDT,17.89x
+B5,Public method impl edit,1217.12,245.16,19.18,JDT,12.78x
+B6,Public signature edit,1200.73,309.82,22.04,JDT,14.06x
+B7,TypeRef change,1206.28,336.86,28.02,JDT,12.02x
+B8,Semantic-checker change,1246.17,309.43,21.33,JDT,14.51x
+B9,Multi-file edit (~20 files),1243.33,411.73,32.69,JDT,12.59x
+B10,Collection impl change,1222.37,239.4,17.3,JDT,13.84x

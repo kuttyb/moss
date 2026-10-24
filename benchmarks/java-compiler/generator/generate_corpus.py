@@ -269,6 +269,14 @@ public interface TypeRef {
     default boolean isTypeVar() {
         return false;
     }
+
+    default int typePrecedence() {
+        return 10;
+    }
+
+    default long tagValue() {
+        return 42L;
+    }
 }
 """)
 
@@ -646,6 +654,14 @@ public class TypeUnifier {
 
         return false;
     }
+
+    public static int getExecutionProfile() {
+        return calculateInternalProfile();
+    }
+
+    private static int calculateInternalProfile() {
+        return 1000;
+    }
 }
 """)
 
@@ -700,6 +716,14 @@ public class TypeSolver {
 
     public TypeSubstitutionMap getSubstitution() {
         return substitution;
+    }
+
+    public int getConstraintPassCapacity() {
+        return 256;
+    }
+
+    public long computeTag(TypeRef t) {
+        return t.tagValue();
     }
 }
 """)
@@ -1550,6 +1574,14 @@ public class SemanticChecker extends AstVisitorBase<TypeRef, SemanticContext> {
         decl.body().accept(this, inner);
         return decl.returnType();
     }
+
+    public int analyzeComplexityBudget(SourceFile file) {
+        int budget = 1000;
+        for (FunctionDecl f : file.functions()) {
+            budget -= f.body().statements().size() * 10;
+        }
+        return budget;
+    }
 }
 """)
 
@@ -1696,6 +1728,7 @@ import java.util.Arrays;
 import java.util.zip.CRC32;
 
 public class BytecodeBuffer {
+    public static final int ABI_COMPATIBILITY_EPOCH = 100;
     private byte[] buffer;
     private int position = 0;
 
@@ -1763,6 +1796,8 @@ public enum OccurrenceRole {
     CALL_TARGET(4),
     RETURN_VALUE(5);
 
+    public static final int ABI_COMPATIBILITY_EPOCH = 100;
+
     private final int code;
     OccurrenceRole(int code) { this.code = code; }
     public int getCode() { return code; }
@@ -1779,6 +1814,7 @@ public enum OccurrenceRole {
     add_file("abi", "OccurrenceRecord", """package org.mosslang.compiler.abi;
 
 public record OccurrenceRecord(int ordinal, OccurrenceRole role, int symbolId, int typeId) {
+    public static final int ABI_COMPATIBILITY_EPOCH = 100;
     public long pack() {
         return ((long) ordinal << 48) |
                ((long) (role.getCode() & 0xFF) << 40) |
@@ -1804,6 +1840,7 @@ import org.eclipse.collections.api.map.primitive.MutableIntObjectMap;
 import org.eclipse.collections.impl.map.mutable.primitive.IntObjectHashMap;
 
 public class OccurrenceLedger {
+    public static final int ABI_COMPATIBILITY_EPOCH = 100;
     private final MutableLongList packedOccurrences = new LongArrayList();
     private final MutableIntObjectMap<OccurrenceRecord> records = new IntObjectHashMap<>();
     private int nextOrdinal = 1;
@@ -1827,6 +1864,14 @@ public class OccurrenceLedger {
     public MutableLongList getPackedOccurrences() {
         return packedOccurrences;
     }
+
+    public long computePrimitiveChecksum() {
+        long c = 0;
+        for (int i = 0; i < packedOccurrences.size(); i++) {
+            c = (c * 31) + packedOccurrences.get(i);
+        }
+        return c;
+    }
 }
 """)
 
@@ -1835,8 +1880,13 @@ public class OccurrenceLedger {
 import java.util.zip.CRC32;
 
 public class CheckedBodyCodec {
+    public static final int ABI_COMPATIBILITY_EPOCH = 100;
     public static final int MAGIC = 0x4D4F5353; // 'MOSS'
     public static final int ABI_VERSION = 10;
+
+    public static int getEpoch() {
+        return ABI_COMPATIBILITY_EPOCH;
+    }
 
     public static byte[] encode(OccurrenceLedger ledger, byte[] bodyBytes) {
         BytecodeBuffer buf = new BytecodeBuffer();
@@ -2368,6 +2418,7 @@ import org.eclipse.collections.api.list.primitive.MutableByteList;
 import org.eclipse.collections.impl.list.mutable.primitive.ByteArrayList;
 
 public class AbiSection_{class_num} {{
+    public static final int ABI_COMPATIBILITY_EPOCH = 100;
     private final int sectionId = {i};
     private final MutableByteList payload = new ByteArrayList();
 

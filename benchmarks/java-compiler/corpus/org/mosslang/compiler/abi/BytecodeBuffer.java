@@ -4,6 +4,7 @@ import java.util.Arrays;
 import java.util.zip.CRC32;
 
 public class BytecodeBuffer {
+    public static final int ABI_COMPATIBILITY_EPOCH = 100;
     private byte[] buffer;
     private int position = 0;
 
