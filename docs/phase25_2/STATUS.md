@@ -20,7 +20,11 @@ provider emission, and the H3 source-free chain with poisoned fallback and
 negative closure cases. Direct C++ harnesses that constructed `Parser` were
 updated to use the new frontend API; their assertions are unchanged. The
 Parser incremental probe edited and restored `parser.cpp`; each run rebuilt
-only `parser.o` plus relink. First-extraction Architect review is pending. The
+only `parser.o` plus relink. The independent Architect issued scoped GO on
+`f4a1986982a45ffb94da234f4be201d65b9b5dbf`, with no P0/P1 findings. The review
+confirmed Parser privacy, declaration-only interfaces, one shared Program/AST
+identity, and unchanged direct-control assertions. It noted that shared helper
+declarations should not expand as the other core owners move. The
 optional `check_phase25_generic_arithmetic_requirements.py` control still
 aborts on `checked ABI-v10 requirement provenance identity is forged`; the
 existing status records this assertion failure as reproduced before extraction

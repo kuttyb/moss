@@ -12078,7 +12078,12 @@ C++ harness still aborts on `checked ABI-v10 requirement provenance identity
 is forged`, matching the pre-extraction failure already recorded in
 `docs/phase25_2/STATUS.md` at baseline `19f05677`; it is not counted as a pass.
 
-Feedback validation and `git diff --check` pass. Next: commit the Parser
-extraction checkpoint and request the required independent Architect audit.
-Optimizer, Generator, Checker extraction, full integrated validation and final
-performance measurements remain open.
+Feedback validation and `git diff --check` pass. The independent Architect
+issued scoped GO on exact parser checkpoint
+`f4a1986982a45ffb94da234f4be201d65b9b5dbf` with no P0/P1 findings. They
+confirmed the private Parser class, declaration-only interfaces, shared
+Program/AST identity, and unchanged direct-control assertions. Their
+non-blocking note is to keep the shared helper interface from growing.
+
+Next: continue with FunctionalOptimizer extraction. Generator, Checker, full
+integrated validation and final performance measurements remain open.
