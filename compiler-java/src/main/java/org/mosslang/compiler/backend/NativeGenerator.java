@@ -1386,7 +1386,7 @@ public class NativeGenerator {
                     String end = rArgs.size() > 1 ? lowerExpr(rArgs.get(1).trim(), stateFields, objFields, domains, objects) : "0_i64";
                     o.append(indent).append("for ").append(loopVar).append(" in (").append(start).append(")..(").append(end).append(") {\n");
                 } else {
-                    o.append(indent).append("for ").append(loopVar).append(" in ").append(lowerExpr(iterExpr, stateFields, objFields, domains, objects)).append(" {\n");
+                    o.append(indent).append("for ").append(loopVar).append(" in (").append(lowerExpr(iterExpr, stateFields, objFields, domains, objects)).append(").clone() {\n");
                 }
                 blockIndents.push(s.indent);
                 blockIsMatch.push(false);
@@ -1746,7 +1746,8 @@ public class NativeGenerator {
                             .append(lowerExpr(expr, stateFields, domains, objects)).append(";\n");
                 } else {
                     declared.add(varName);
-                    o.append(indent).append("let mut ").append(varName).append(" = ")
+                    String typeAnn = (s.semanticType != null && !s.semanticType.isEmpty() && s.semanticType.startsWith("vector[")) ? ": " + rustType(s.semanticType) : "";
+                    o.append(indent).append("let mut ").append(varName).append(typeAnn).append(" = ")
                             .append(lowerExpr(expr, stateFields, domains, objects)).append(";\n");
                 }
             }
@@ -1858,7 +1859,8 @@ public class NativeGenerator {
                                     .append(lowerExpr(rhs, stateFields, domains, objects)).append(";\n");
                         }
                     } else if (declared.add(lhs)) {
-                        o.append(indent).append("let mut ").append(lhs).append(" = ")
+                        String typeAnn = (s.semanticType != null && !s.semanticType.isEmpty() && s.semanticType.startsWith("vector[")) ? ": " + rustType(s.semanticType) : "";
+                        o.append(indent).append("let mut ").append(lhs).append(typeAnn).append(" = ")
                                 .append(lowerExpr(rhs, stateFields, domains, objects)).append(";\n");
                     } else {
                         o.append(indent).append(lhs).append(" = ")

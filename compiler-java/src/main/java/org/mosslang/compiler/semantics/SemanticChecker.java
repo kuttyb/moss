@@ -517,6 +517,17 @@ public class SemanticChecker {
                 }
             }
             env = checkBlock(f.body, 0, f.body.size(), env, typer, solver, false, f.name, expectedReturn);
+            for (Stmt s : f.body) {
+                if ((s.kind == Stmt.Kind.Let || s.kind == Stmt.Kind.Var || s.kind == Stmt.Kind.Assign) && s.a != null) {
+                    String v = s.a.trim();
+                    if (env.containsKey(v)) {
+                        TypeRef res = solver.resolve(env.get(v));
+                        if (res != null && res.isClosed()) {
+                            s.semanticType = res.toCanonicalString();
+                        }
+                    }
+                }
+            }
             if (f.resultExpression != null && !f.resultExpression.isEmpty()) {
                 TypeRef res = typer.infer(f.resultExpression, f.resultLine != 0 ? f.resultLine : f.line, env.typeEnv);
                 solver.unify(expectedReturn, res);
@@ -591,6 +602,17 @@ public class SemanticChecker {
                 }
             }
             env = checkBlock(program.main.body, 0, program.main.body.size(), env, typer, solver, false, "main", TypeRef.unit());
+            for (Stmt s : program.main.body) {
+                if ((s.kind == Stmt.Kind.Let || s.kind == Stmt.Kind.Var || s.kind == Stmt.Kind.Assign) && s.a != null) {
+                    String v = s.a.trim();
+                    if (env.containsKey(v)) {
+                        TypeRef res = solver.resolve(env.get(v));
+                        if (res != null && res.isClosed()) {
+                            s.semanticType = res.toCanonicalString();
+                        }
+                    }
+                }
+            }
             for (Map.Entry<String, TypeRef> entry : env.typeEnv.getBindings().entrySet()) {
                 TypeRef resolved = solver.resolve(entry.getValue());
                 int bLine = env.bindingLines.getOrDefault(entry.getKey(), program.main.line);
