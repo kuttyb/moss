@@ -12089,7 +12089,19 @@ confirmed the private Parser class, declaration-only interfaces, shared
 Program/AST identity, and unchanged direct-control assertions. Their
 non-blocking note is to keep the shared helper interface from growing.
 
-The FunctionalOptimizer edit/restore probe rebuilt only its object plus relink.
-The optimizer checkpoint is implemented but not yet committed. Next: commit and
-continue with Native Generator extraction. Checker, full integrated validation
-and final performance measurements remain open.
+The FunctionalOptimizer edit/restore probe rebuilt only its object plus relink;
+its implementation is committed and pushed at
+`83d6eb927a590318c2cce5fcda2343c334c72872`.
+
+The whole Native Generator now builds independently in `native_generator.cpp`;
+its `.inc` lowering fragments stay with its private stateful class. The driver
+uses the declaration-only `generate_native` API. After the Architect's bounded
+seam recommendation, shared pipeline records and only called helpers are
+declared for the backend TU while canonical implementations, builtin registries
+and staged ABI configuration remain owned once in `moss.cpp`. `staged_abi_v10`
+had inherited internal linkage from `interpreter.hpp`; that shared declaration
+is now external and the sole definition remains in `moss.cpp`. Clang dev build,
+executor/FileIO controls and H3 source-free/hostile chain pass. A Generator
+edit/restore probe rebuilt only `native_generator.o` plus relink. Current sizes:
+`moss.cpp` 54,605 lines / 2,663,306 bytes; Generator 6,845 lines / 332,956
+bytes. Commit this working checkpoint before extracting Checker.

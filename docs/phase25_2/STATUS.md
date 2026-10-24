@@ -27,12 +27,33 @@ independent Architect issued scoped GO on Parser checkpoint
 `f4a1986982a45ffb94da234f4be201d65b9b5dbf`, with no P0/P1 findings. The review
 confirmed Parser privacy, declaration-only interfaces, one shared Program/AST
 identity, and unchanged direct-control assertions. It noted that shared helper
-declarations should not expand as the other core owners move. The optional
+declarations should not expand as the other core owners move. FunctionalOptimizer
+is implemented and its focused controls pass; its extraction is committed at
+`83d6eb927a590318c2cce5fcda2343c334c72872`.
+
+The Native Generator is now independently compiled in `src/native_generator.cpp`.
+Its stateful `Generator` class and its handler, borrowed-view, FileIO and
+executor lowering fragments remain together in that owner. The driver calls
+`generate_native` through a declaration-only interface. Shared parsing records
+and backend helpers are declaration-only; canonical helper implementations,
+staged ABI configuration and builtin registries remain single-owned in
+`moss.cpp`. The initial 50 missing-helper compile errors were closed with this
+bounded interface after the Architect advised keeping the Generator whole and
+exporting only helpers it actually calls. `src/interpreter.hpp` now gives the
+shared staged-ABI query external linkage, preserving its one implementation
+and process-wide environment snapshot. Clang development build,
+`check_phase20_executor_fileio.py`, and the H3 source-free/hostile chain pass.
+A source edit/restore probe rebuilt only `native_generator.o` plus relink.
+`moss.cpp` is now 54,605 lines / 2,663,306 bytes; `native_generator.cpp` is
+6,845 lines / 332,956 bytes. Checker remains in `moss.cpp`.
+
+The optional
 `check_phase25_generic_arithmetic_requirements.py` control still aborts on
 `checked ABI-v10 requirement provenance identity is forged`; the existing
 status records this assertion failure as reproduced before extraction at
 `19f05677`. It is not counted as a pass. No compiler semantic change or ABI
-default change is intended. `src/moss.cpp` is 61,386 lines / 2,993,898 bytes.
+default change is intended. The Generator checkpoint is ready to commit before
+the Checker extraction.
 
 **Branch:** `phase25-2-work`<br>
 **Tested implementation SHA:** `1b20ca665fe61e1197dec7e1b14f6a584ae54d2c`<br>
