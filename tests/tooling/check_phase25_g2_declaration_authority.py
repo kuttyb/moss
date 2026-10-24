@@ -15,6 +15,8 @@ import subprocess
 import sys
 import tempfile
 
+from compiler_test_support import compiler_support_sources
+
 ROOT = Path(__file__).resolve().parents[2]
 MOSS = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else ROOT / "moss"
 (ROOT / "tmp").mkdir(exist_ok=True)
@@ -35,7 +37,7 @@ boundary_test = ROOT / "tests" / "tooling" / "check_phase25_declaration_boundari
 boundary_bin = ROOT / "tmp" / "check_phase25_declaration_boundaries_bin"
 subprocess.run([
     "g++", "-std=c++17", "-O0", "-g0",
-    str(boundary_test), "-o", str(boundary_bin)
+    str(boundary_test), *compiler_support_sources(), "-o", str(boundary_bin)
 ], check=True)
 subprocess.run([str(boundary_bin)], check=True)
 
