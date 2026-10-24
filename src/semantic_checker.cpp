@@ -40,7 +40,7 @@
 #include "program_identity.hpp"
 #include "type_placeholders.hpp"
 #include "numeric_literal.hpp"
-#include "interpreter.hpp"
+#include "numeric_runtime.hpp"
 #include "handler_runtime.hpp"
 #include "fileio_runtime.hpp"
 #include "float_format_runtime.hpp"
