@@ -58,8 +58,27 @@ public class DiagnosticFormatter {
             sb.append("\"symbol\": null, ");
         }
         sb.append("\"rule\": null, \"cause\": null, \"related\": [], \"guidance\": null, ");
-        sb.append("\"details\": {\"ownership_expected\": null, \"ownership_actual\": null, \"consume_line\": null, \"recursion_witness\": null, \"resolution\": null}, ");
-        sb.append("\"fixes\": [], \"legal_alternatives\": []");
+        if ("OWNERSHIP_USE_AFTER_CONSUME".equals(code)) {
+            Integer consumeLine = null;
+            int marker = message != null ? message.indexOf(" at line ") : -1;
+            if (marker >= 0) {
+                int start = marker + " at line ".length();
+                int end = start;
+                while (end < message.length() && Character.isDigit(message.charAt(end))) {
+                    end++;
+                }
+                try {
+                    consumeLine = Integer.parseInt(message.substring(start, end));
+                } catch (NumberFormatException ignored) {}
+            }
+            sb.append("\"details\": {\"ownership_expected\": \"AVAILABLE\", \"ownership_actual\": \"CONSUMED\", \"consume_line\": ")
+              .append(consumeLine != null ? consumeLine : "null")
+              .append(", \"recursion_witness\": null, \"resolution\": null}, ");
+            sb.append("\"fixes\": [], \"legal_alternatives\": [\"make the callee READ the value if that matches program intent\", \"keep the ownership transfer and stop using the old binding\", \"construct an explicit new owned value or explicit deep copy\"]");
+        } else {
+            sb.append("\"details\": {\"ownership_expected\": null, \"ownership_actual\": null, \"consume_line\": null, \"recursion_witness\": null, \"resolution\": null}, ");
+            sb.append("\"fixes\": [], \"legal_alternatives\": []");
+        }
         sb.append("}\n");
         sb.append("}");
         out.println(sb.toString());

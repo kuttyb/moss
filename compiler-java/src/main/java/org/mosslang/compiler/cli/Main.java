@@ -116,7 +116,7 @@ public class Main {
             if (jsonOutput) {
                 DiagnosticFormatter.writeStructuredError(System.out, checkOnly ? "check" : "compile", COMPILER_VERSION,
                         e.getCode() != null && !e.getCode().isEmpty() ? e.getCode() : "MOSS_COMPILE_ERROR",
-                        e.getMessage(), e.getSourceFile() != null ? e.getSourceFile() : absPath, e.getLine(), e.getSemanticIdentity(), e.getSymbol());
+                        e.getMessage(), (e.getSourceFile() != null && !e.getSourceFile().isEmpty()) ? e.getSourceFile() : absPath, e.getLine(), e.getSemanticIdentity(), e.getSymbol());
             } else {
                 DiagnosticFormatter.writeHumanError(System.err, e.getSourceFile(), e.getLine(), e.getCode(), e.getMessage());
             }
