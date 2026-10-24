@@ -1,0 +1,11 @@
+Scenario,Description,javac_median_ms,mill_median_ms,jdt_median_ms,winner,speedup
+B1,Cold clean build,1542.97,9103.46,4897.74,javac,3.17x
+B2,Warm clean build,1203.7,1160.99,116.73,JDT,9.95x
+B3,No-op build,1215.42,108.86,2.36,JDT,46.13x
+B4,Private method edit,1199.42,248.91,13.91,JDT,17.89x
+B5,Public method impl edit,1217.12,245.16,19.18,JDT,12.78x
+B6,Public signature edit,1200.73,309.82,22.04,JDT,14.06x
+B7,TypeRef change,1206.28,336.86,28.02,JDT,12.02x
+B8,Semantic-checker change,1246.17,309.43,21.33,JDT,14.51x
+B9,Multi-file edit (~20 files),1243.33,411.73,32.69,JDT,12.59x
+B10,Collection impl change,1222.37,239.4,17.3,JDT,13.84x

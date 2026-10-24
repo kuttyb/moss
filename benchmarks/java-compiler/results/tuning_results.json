@@ -1,0 +1,19 @@
+{
+  "javac": {
+    "baseline_median_ms": 1247.0,
+    "tuned_median_ms": 1246.6,
+    "tuning_speedup": 1.0,
+    "tuning_details": "Pre-allocated 2GB min / 4GB max heap with G1GC"
+  },
+  "mill": {
+    "baseline_no_op_ms": 120.8,
+    "tuning_details": "Zinc incremental analysis with persistent daemon server (active)"
+  },
+  "jdt": {
+    "cold_process_clean_ms": 4897.74,
+    "persistent_daemon_clean_ms": 116.73,
+    "persistent_daemon_no_op_ms": 2.36,
+    "persistence_speedup": 42.0,
+    "tuning_details": "Persistent headless OSGi daemon eliminates ~4.8s launcher and bundle startup overhead"
+  }
+}
