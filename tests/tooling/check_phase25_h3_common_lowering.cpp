@@ -10,10 +10,8 @@ int main(int argc, char** argv) {
   assert(argc == 2);
   std::ifstream input(argv[1]);
   assert(input.good());
-  moss::Program program = moss::Parser(
-      moss::lex_lines(input, argv[1])).parse();
-  moss::Checker checker(program);
-  checker.run();
+  moss::Program program = moss::parse_source(input, argv[1]);
+  (void)moss::check_program(program);
 
   const auto find_function = [&](const std::string& name)
       -> const moss::Function& {

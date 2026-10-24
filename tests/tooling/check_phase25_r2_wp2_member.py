@@ -54,7 +54,7 @@ with tempfile.TemporaryDirectory(prefix="phase25-r2-wp2-", dir=TMP) as td:
             ("tests/tooling/check_phase25_h3_poison_legacy.cpp", poisoner)):
         run(["g++", "-std=c++17", "-O0", "-Wall", "-Wextra", "-Werror",
              "-Wno-missing-field-initializers", "-pedantic", "-Isrc",
-             source, "-o", target])
+             source, "src/checked_body_ir.cpp", "-o", target])
 
     provider = scratch / "provider"
     package(provider, "wp2_member_provider", """module Service

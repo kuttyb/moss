@@ -28,7 +28,7 @@
 
 namespace moss {
 
-static bool staged_abi_v10();
+bool staged_abi_v10();
 
 // Fast Debug is deliberately an execution backend over the checked Moss AST.
 // It does not parse, resolve, or type-check anything itself.  The checker has

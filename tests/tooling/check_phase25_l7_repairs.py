@@ -711,7 +711,7 @@ fn main() {
 
 def test_native_float_laws_with_nan_payloads():
     print("G3: native Float laws over NaN sign/payload bit patterns")
-    header = (ROOT / "src" / "char_string_ordering_runtime.hpp").read_text()
+    header = (ROOT / "src" / "char_string_ordering_runtime.cpp").read_text()
     runtime = re.search(r'R"RUST\((.*?)\)RUST"', header, re.S).group(1)
     with tempfile.TemporaryDirectory(prefix="p25-l7-laws-", dir=SCRATCH) as td:
         source = Path(td) / "laws.rs"

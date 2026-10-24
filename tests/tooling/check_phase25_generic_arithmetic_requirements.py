@@ -7,6 +7,8 @@ import subprocess
 import sys
 import tempfile
 
+from compiler_test_support import compiler_support_sources
+
 ROOT = Path(__file__).resolve().parents[2]
 MOSS = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else ROOT / "moss"
 TMP = ROOT / "tmp"
@@ -17,7 +19,7 @@ cpp_binary = TMP / "phase25-generic-arithmetic-requirements-cpp"
 subprocess.run([
     "g++", "-std=c++17", "-O0", "-Wall", "-Wextra", "-Werror",
     "-Wno-missing-field-initializers", "-pedantic", str(cpp_test),
-    "-o", str(cpp_binary),
+    *compiler_support_sources(), "-o", str(cpp_binary),
 ], check=True)
 subprocess.run([str(cpp_binary)], check=True)
 

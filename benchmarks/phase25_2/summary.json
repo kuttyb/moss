@@ -1,0 +1,198 @@
+{
+  "revision": "2420439cf1cbaa08c8cd45d0d77b436ea4fb43f0",
+  "requested_runs_per_scenario": 5,
+  "complete": false,
+  "complete_scenarios": [
+    {
+      "profile": "O0",
+      "scenario": "clean_build",
+      "runs": 5,
+      "median_time_wall_seconds": 31.98,
+      "min_time_wall_seconds": 31.72,
+      "max_time_wall_seconds": 32.32,
+      "median_user_cpu_seconds": 30.25,
+      "min_user_cpu_seconds": 30.04,
+      "max_user_cpu_seconds": 30.36,
+      "median_system_cpu_seconds": 1.67,
+      "min_system_cpu_seconds": 1.62,
+      "max_system_cpu_seconds": 1.93,
+      "median_max_rss_kb": 2760924.0,
+      "min_max_rss_kb": 2756100.0,
+      "max_max_rss_kb": 2761172.0
+    },
+    {
+      "profile": "O0",
+      "scenario": "implementation_edit",
+      "runs": 5,
+      "median_time_wall_seconds": 32.36,
+      "min_time_wall_seconds": 31.85,
+      "max_time_wall_seconds": 32.84,
+      "median_user_cpu_seconds": 30.67,
+      "min_user_cpu_seconds": 30.18,
+      "max_user_cpu_seconds": 31.23,
+      "median_system_cpu_seconds": 1.61,
+      "min_system_cpu_seconds": 1.56,
+      "max_system_cpu_seconds": 1.65,
+      "median_max_rss_kb": 2760892.0,
+      "min_max_rss_kb": 2760780.0,
+      "max_max_rss_kb": 2765700.0
+    },
+    {
+      "profile": "O0",
+      "scenario": "noop_build",
+      "runs": 5,
+      "median_time_wall_seconds": 0.0,
+      "min_time_wall_seconds": 0.0,
+      "max_time_wall_seconds": 0.01,
+      "median_user_cpu_seconds": 0.0,
+      "min_user_cpu_seconds": 0.0,
+      "max_user_cpu_seconds": 0.0,
+      "median_system_cpu_seconds": 0.0,
+      "min_system_cpu_seconds": 0.0,
+      "max_system_cpu_seconds": 0.0,
+      "median_max_rss_kb": 2508.0,
+      "min_max_rss_kb": 2508.0,
+      "max_max_rss_kb": 2508.0
+    },
+    {
+      "profile": "O0",
+      "scenario": "common_header_edit",
+      "runs": 5,
+      "median_time_wall_seconds": 31.99,
+      "min_time_wall_seconds": 31.69,
+      "max_time_wall_seconds": 32.0,
+      "median_user_cpu_seconds": 30.44,
+      "min_user_cpu_seconds": 30.29,
+      "max_user_cpu_seconds": 30.56,
+      "median_system_cpu_seconds": 1.37,
+      "min_system_cpu_seconds": 1.33,
+      "max_system_cpu_seconds": 1.51,
+      "median_max_rss_kb": 2760872.0,
+      "min_max_rss_kb": 2760740.0,
+      "max_max_rss_kb": 2761064.0
+    },
+    {
+      "profile": "O0",
+      "scenario": "isolated_header_edit",
+      "runs": 5,
+      "median_time_wall_seconds": 31.89,
+      "min_time_wall_seconds": 31.49,
+      "max_time_wall_seconds": 32.74,
+      "median_user_cpu_seconds": 30.53,
+      "min_user_cpu_seconds": 30.21,
+      "max_user_cpu_seconds": 31.1,
+      "median_system_cpu_seconds": 1.31,
+      "min_system_cpu_seconds": 1.23,
+      "max_system_cpu_seconds": 1.6,
+      "median_max_rss_kb": 2761084.0,
+      "min_max_rss_kb": 2761036.0,
+      "max_max_rss_kb": 2765696.0
+    },
+    {
+      "profile": "O0",
+      "scenario": "compile_only",
+      "runs": 5,
+      "median_time_wall_seconds": 31.18,
+      "min_time_wall_seconds": 31.11,
+      "max_time_wall_seconds": 31.53,
+      "median_user_cpu_seconds": 30.01,
+      "min_user_cpu_seconds": 29.93,
+      "max_user_cpu_seconds": 30.04,
+      "median_system_cpu_seconds": 1.23,
+      "min_system_cpu_seconds": 1.11,
+      "max_system_cpu_seconds": 1.46,
+      "median_max_rss_kb": 2761092.0,
+      "min_max_rss_kb": 2755964.0,
+      "max_max_rss_kb": 2761180.0
+    },
+    {
+      "profile": "O0",
+      "scenario": "link_only",
+      "runs": 5,
+      "median_time_wall_seconds": 0.37,
+      "min_time_wall_seconds": 0.35,
+      "max_time_wall_seconds": 0.38,
+      "median_user_cpu_seconds": 0.25,
+      "min_user_cpu_seconds": 0.21,
+      "max_user_cpu_seconds": 0.26,
+      "median_system_cpu_seconds": 0.08,
+      "min_system_cpu_seconds": 0.07,
+      "max_system_cpu_seconds": 0.12,
+      "median_max_rss_kb": 153532.0,
+      "min_max_rss_kb": 153448.0,
+      "max_max_rss_kb": 153708.0
+    },
+    {
+      "profile": "O0",
+      "scenario": "gcc_ftime_report",
+      "runs": 5,
+      "median_time_wall_seconds": 37.99,
+      "min_time_wall_seconds": 37.88,
+      "max_time_wall_seconds": 38.25,
+      "median_user_cpu_seconds": 32.16,
+      "min_user_cpu_seconds": 31.98,
+      "max_user_cpu_seconds": 32.49,
+      "median_system_cpu_seconds": 5.76,
+      "min_system_cpu_seconds": 5.71,
+      "max_system_cpu_seconds": 5.86,
+      "median_max_rss_kb": 2760996.0,
+      "min_max_rss_kb": 2760748.0,
+      "max_max_rss_kb": 2761312.0
+    }
+  ],
+  "incomplete_scenarios": [
+    {
+      "profile": "O2",
+      "scenario": "clean_build",
+      "usable_runs": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "expected_runs": 5
+    },
+    {
+      "profile": "O2",
+      "scenario": "implementation_edit",
+      "usable_runs": [],
+      "expected_runs": 5
+    },
+    {
+      "profile": "O2",
+      "scenario": "noop_build",
+      "usable_runs": [],
+      "expected_runs": 5
+    },
+    {
+      "profile": "O2",
+      "scenario": "common_header_edit",
+      "usable_runs": [],
+      "expected_runs": 5
+    },
+    {
+      "profile": "O2",
+      "scenario": "isolated_header_edit",
+      "usable_runs": [],
+      "expected_runs": 5
+    },
+    {
+      "profile": "O2",
+      "scenario": "compile_only",
+      "usable_runs": [],
+      "expected_runs": 5
+    },
+    {
+      "profile": "O2",
+      "scenario": "link_only",
+      "usable_runs": [],
+      "expected_runs": 5
+    },
+    {
+      "profile": "O2",
+      "scenario": "gcc_ftime_report",
+      "usable_runs": [],
+      "expected_runs": 5
+    }
+  ]
+}

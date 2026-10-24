@@ -489,7 +489,7 @@ fn main() {
 
 def test_native_nan_payload_bits():
     print("Native-only: NaN sign/payload bit patterns (not constructible in Moss)")
-    header = (ROOT / "src" / "char_string_ordering_runtime.hpp").read_text()
+    header = (ROOT / "src" / "char_string_ordering_runtime.cpp").read_text()
     runtime = re.search(r'R"RUST\((.*?)\)RUST"', header, re.S).group(1)
     with tempfile.TemporaryDirectory(prefix="p25-s3-nan-", dir=SCRATCH) as td:
         source = Path(td) / "nan.rs"

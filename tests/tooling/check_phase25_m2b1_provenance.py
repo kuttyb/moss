@@ -111,7 +111,7 @@ def main():
             "g++", "-std=c++17", "-O0", "-Wall", "-Wextra", "-Werror",
             "-Wno-missing-field-initializers", "-pedantic", "-Isrc",
             "tests/tooling/mutate_phase25_r2c_empty_vector_artifact.cpp",
-            "-o", mutator)
+            "src/checked_body_ir.cpp", "-o", mutator)
         assert compiled_mutator.returncode == 0, (
             compiled_mutator.stdout, compiled_mutator.stderr)
         env, artifacts = g2.source_free(scratch / "provider_setup", g2.PROVIDER_OPEN)

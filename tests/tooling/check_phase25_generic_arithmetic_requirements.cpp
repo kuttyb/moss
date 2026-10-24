@@ -11,9 +11,8 @@ using namespace moss;
 
 static Program checked_program(const string& source) {
   std::istringstream input(source);
-  Program program = Parser(lex_lines(input, "<generic-arithmetic-test>")).parse();
-  Checker checker(program);
-  checker.run();
+  Program program = moss::parse_source(input, "<generic-arithmetic-test>");
+  (void)moss::check_program(program);
   return program;
 }
 
@@ -82,7 +81,7 @@ static OpenCallableSummaryFacts import_synthetic_summary(
     const string& payload,
     const vector<std::pair<string, string>>& provenance_records) {
   std::istringstream input("module Service\nexport fn compute(x):\n  return x\n");
-  Program program = Parser(lex_lines(input, "Service.mossi")).parse();
+  Program program = moss::parse_source(input, "Service.mossi");
   program.package_identities = true;
   program.module_identities["Service"] = kImportedModuleId;
   auto& function = program.functions.front();
@@ -93,8 +92,7 @@ static OpenCallableSummaryFacts import_synthetic_summary(
   // This deliberately conflicting legacy hint must not replace sealed facts.
   function.constraints.emplace_back(ConstraintKind::Operator, "x",
                                     "operator:%", "x");
-  Checker checker(program);
-  checker.run();
+  (void)moss::check_program(program);
   assert(function.open_summary && function.open_summary->complete);
   return *function.open_summary;
 }
@@ -119,7 +117,7 @@ static bool synthetic_imported_call_rejected(const string& argument,
     std::istringstream input("module Service\n"
         "export fn compute(x):\n  return x\n"
         "fn main():\n  value = compute(" + argument + ")\n");
-    Program program = Parser(lex_lines(input, "Service.mossi")).parse();
+    Program program = moss::parse_source(input, "Service.mossi");
     program.package_identities = true;
     program.module_identities["Service"] = kImportedModuleId;
     auto& function = program.functions.front();
@@ -127,8 +125,7 @@ static bool synthetic_imported_call_rejected(const string& argument,
     function.defining_module = "Service";
     function.imported_checked_summary_payload = payload;
     function.imported_checked_provenance_records = provenance_records;
-    Checker checker(program);
-    checker.run();
+    (void)moss::check_program(program);
     return false;
   } catch (const CompileError& error) {
     assert(error.code == "TYPE_MISMATCH" ||
@@ -143,9 +140,8 @@ static bool synthetic_imported_call_rejected(const string& argument,
 static Program checked_arithmetic_source(const string& expression) {
   std::istringstream input("export fn compute(x):\n  return " + expression +
                            "\n");
-  Program program = Parser(lex_lines(input, "<checked-arithmetic-body>")).parse();
-  Checker checker(program);
-  checker.run();
+  Program program = moss::parse_source(input, "<checked-arithmetic-body>");
+  (void)moss::check_program(program);
   return program;
 }
 
@@ -156,11 +152,11 @@ static bool checked_body_available(const string& expression) {
 }
 
 int main() {
-  assert(Checker::unit_test_control_join_binding_facts());
-  assert(Checker::unit_test_deferred_operator_requirement_occurrences());
-  assert(Checker::unit_test_deferred_unary_invalid_type_rejected());
-  assert(Checker::unit_test_builtin_index_occurrence_fact());
-  assert(Checker::unit_test_vector_literal_operand_occurrences());
+  assert(checker_unit_test_control_join_binding_facts());
+  assert(checker_unit_test_deferred_operator_requirement_occurrences());
+  assert(checker_unit_test_deferred_unary_invalid_type_rejected());
+  assert(checker_unit_test_builtin_index_occurrence_fact());
+  assert(checker_unit_test_vector_literal_operand_occurrences());
   auto program = checked_program(R"moss(export fn compute(x):
   return x * 2 + 20
 
@@ -806,11 +802,9 @@ export fn fresh(value, outer: Bool, inner: Bool):
   let doubled = value * 2
   return doubled + 20
 )moss");
-  Program staged_program = Parser(
-      lex_lines(staged_input, "<checked-straight-line-body>")).parse();
+  Program staged_program = moss::parse_source(staged_input, "<checked-straight-line-body>");
   staged_program.type_context = std::make_shared<TypeContext>();
-  Checker staged_checker(staged_program);
-  staged_checker.run();
+  (void)moss::check_program(staged_program);
   const Function& staged = find_function(staged_program, "staged");
   assert(staged.open_summary && staged.open_summary->complete);
   assert(staged.checked_body_ir_v1_bytes && staged.checked_body_ir_v1_hash);

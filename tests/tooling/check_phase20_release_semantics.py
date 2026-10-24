@@ -45,16 +45,18 @@ def main():
     release = build / "moss-ndebug"
     compiler = os.environ.get("CXX", "c++")
     flags = ["-std=c++17", "-O2", "-DNDEBUG", "-Wall", "-Wextra", "-pedantic"]
-    sources = [ROOT / "src/moss.cpp", *ROOT.glob("src/*.hpp"),
+    sources = [*ROOT.glob("src/*.cpp"), *ROOT.glob("src/*.hpp"),
                *ROOT.glob("src/*.inc")]
+    compile_sources = sorted(path.relative_to(ROOT).as_posix()
+                             for path in ROOT.glob("src/*.cpp"))
     if not release.exists() or any(path.stat().st_mtime > release.stat().st_mtime
                                    for path in sources):
-        subprocess.run([compiler, *flags, "src/moss.cpp", "-o", str(release)],
-                       cwd=ROOT, check=True, timeout=600)
+        subprocess.run([compiler, *flags, *compile_sources, "-o", str(release)],
+                       cwd=ROOT, check=True, timeout=900)
     # The diagnostic itself must survive preprocessing even when no current
     # source fixture reaches this late fail-safe path.
     preprocessed = subprocess.run(
-        [compiler, "-std=c++17", "-DNDEBUG", "-E", "src/moss.cpp"],
+        [compiler, "-std=c++17", "-DNDEBUG", "-E", "src/semantic_checker.cpp"],
         cwd=ROOT, capture_output=True, text=True, check=True, timeout=120)
     assert "FUNCTIONAL_CALLABLE_UNRESOLVED" in preprocessed.stdout, (
         "functional-callable correctness check was compiled out by NDEBUG")

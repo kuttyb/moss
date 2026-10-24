@@ -1,0 +1,52 @@
+{
+  "schema": "moss-java-behavior-fixtures-v1",
+  "language_version": "moss-0.1",
+  "compiler_commit": "b4bc3b7ec9ad74c535ece2aacbcac6fb144e8edd",
+  "fixtures": [
+    {
+      "id": "minimal-native-output",
+      "source": "examples/hi.moss",
+      "commands": [
+        {
+          "argv": ["moss", "run", "--interp", "examples/hi.moss"],
+          "exit_status": 0,
+          "stdout_utf8": "hi\n"
+        },
+        {
+          "argv": ["moss", "examples/hi.moss", "--debug", "-o", "<tmp>/hi.rs"],
+          "exit_status": 0,
+          "generated_rust_sha256": "1ddc1a2197d2489d17da0dcb3b8f07948f7562b905f7404771726e7d5dff57b2",
+          "notes": "Hash is over exact UTF-8 generated Rust bytes; use the same relative source path and debug mode."
+        }
+      ]
+    },
+    {
+      "id": "ownership-use-after-consume-diagnostic",
+      "source": "examples/use_after_transfer.moss",
+      "argv": ["moss", "check", "examples/use_after_transfer.moss", "--json"],
+      "exit_status": "nonzero",
+      "diagnostic": {
+        "code": "OWNERSHIP_USE_AFTER_CONSUME",
+        "line": 12,
+        "severity": "error"
+      }
+    },
+    {
+      "id": "source-free-generic-callback-abi-v9",
+      "corpus_case": "tests/phase25/source_free_corpus/corpus.json#cases.returned-callback",
+      "command": ["python3", "tests/tooling/check_phase25_m2b2_source_free_corpus.py", "./moss"],
+      "environment": {"MOSS_STAGED_ABI": "unset"},
+      "provider_source_removed_before_consumer": true,
+      "expected_consumer_stdout_utf8": "31\nmoss\n23\n7\n"
+    },
+    {
+      "id": "source-free-generic-callback-abi-v10-opt-in",
+      "corpus_case": "tests/phase25/source_free_corpus/corpus.json#cases.returned-callback",
+      "command": ["python3", "tests/tooling/check_phase25_m2b2_source_free_corpus.py", "./moss"],
+      "environment": {"MOSS_STAGED_ABI": "v10"},
+      "provider_source_removed_before_consumer": true,
+      "expected_consumer_stdout_utf8": "31\nmoss\n23\n7\n"
+    }
+  ],
+  "comparison_status": "C++ contract only; Java behavior is unverified until the Java implementation runs equivalent cases."
+}

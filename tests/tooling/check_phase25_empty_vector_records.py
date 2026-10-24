@@ -8,6 +8,8 @@ import sys
 import tempfile
 
 
+from compiler_test_support import compiler_support_sources
+
 ROOT = Path(__file__).resolve().parents[2]
 MOSS = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else ROOT / "moss"
 MARGO = ROOT / "margo"
@@ -52,9 +54,10 @@ with tempfile.TemporaryDirectory(prefix="phase25-empty-vector-",
                                  dir=TMP) as temporary:
     scratch = Path(temporary)
     verifier = scratch / "verify_empty_vector_records"
+    support_sources = compiler_support_sources()
     run(["g++", "-std=c++17", "-O0", "-w", "-Isrc",
          "tests/tooling/check_phase25_empty_vector_records.cpp",
-         "-o", str(verifier)])
+         *support_sources, "-o", str(verifier)])
 
     experimental = scratch / "experimental"
     make_provider(experimental, "empty_vector_provider")

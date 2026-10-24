@@ -11,6 +11,8 @@ import sys
 import tempfile
 
 
+from compiler_test_support import compiler_support_sources
+
 ROOT = Path(__file__).resolve().parents[2]
 parser = argparse.ArgumentParser()
 parser.add_argument("moss", nargs="?", default=str(ROOT / "moss"))
@@ -44,16 +46,16 @@ with tempfile.TemporaryDirectory(prefix="phase25-h3-chain-", dir=TMP) as td:
     common_lowering = scratch / "check_common_lowering"
     command(["g++", "-std=c++17", "-O0", "-Wall", "-Wextra", "-Werror",
              "-Wno-missing-field-initializers", "-pedantic", "-Isrc",
-             "tests/tooling/check_phase25_h3_chain_records.cpp", "-o",
-             str(verifier)])
+             "tests/tooling/check_phase25_h3_chain_records.cpp",
+             "src/checked_body_ir.cpp", "-o", str(verifier)])
     command(["g++", "-std=c++17", "-O0", "-Wall", "-Wextra", "-Werror",
              "-Wno-missing-field-initializers", "-pedantic", "-Isrc",
              "tests/tooling/check_phase25_h3_poison_legacy.cpp", "-o",
              str(poison)])
     command(["g++", "-std=c++17", "-O0", "-Wall", "-Wextra", "-Werror",
              "-Wno-missing-field-initializers", "-pedantic", "-Isrc",
-             "tests/tooling/check_phase25_h3_common_lowering.cpp", "-o",
-             str(common_lowering)])
+             "tests/tooling/check_phase25_h3_common_lowering.cpp",
+             *compiler_support_sources(), "-o", str(common_lowering)])
 
     env = os.environ.copy()
     env.update(MOSS_STAGED_ABI="v10", MOSS=str(MOSS), TMPDIR=str(TMP))

@@ -11979,3 +11979,133 @@ administrative documentation-only closeout; no regression suites were rerun.
 ABI-v9 remains the default; ABI-v10 remains opt-in. No merge to `main` or
 `phase25-integration` was performed, and ABI-v10 was not promoted. No further
 stabilization work is authorized without a new L7 assignment.
+
+
+## Phase 25.2 G0/G1 — kickoff — 2026-10-23
+
+L7 execution instructions start Phase 25.2 on the integration branch
+`phase25-2-work`, based on accepted Phase 25.1 checkpoint
+`2420439cf1cbaa08c8cd45d0d77b436ea4fb43f0`. Fetched `origin/main`; its exact
+HEAD and the local accepted baseline both equal that checkpoint, with no
+unrelated main changes. The working tree was clean before Phase 25.2 setup.
+The task authorizes local commits and normal pushes to the configured remote;
+`AGENTS.md` now records this task-specific authorization while retaining the
+no-force-push rule. The repository compiler wrapper was initially absent; a
+forced local `make moss-dev` build produced `./moss`, after which
+`./moss agent bootstrap --json` returned `language_version: moss-0.1`.
+
+G0 measurement and architecture work has not started; no compiler or build
+behavior has been changed. The exact origin baseline is recorded above.
+
+The coordinator has created `docs/phase25_2/EXECUTION_PLAN.md`, documenting the
+fetched checkpoint, toolchain/host discovery, workstream leases, gates, and
+initial risks. L5 workers are active in independent worktrees for production
+measurements and architecture mapping. The measurement worker requested no
+concurrent compiler builds while collecting its serial timed samples; the
+coordinator has paused local builds and regression suites. Synthetic Phase
+25.1 results were inspected on `origin/phase25-synthetic-build-experiment`
+and are explicitly contextual only.
+
+
+## Phase 25.2 — current resume state — 2026-10-24
+
+The G0 architecture map is integrated at `8f6c56e5053715f3e89b5ac1757cd66553863a6c`. G0 measurements were stopped at the user's explicit instruction. The first full 80-record matrix is preserved under `benchmarks/phase25_2/contaminated/` and excluded because its start snapshot contained three concurrent `moss-opt` processes. The monitored rerun has 40 complete clean O0 records and four O2 clean-build samples; the fifth O2 run was terminated before recording. No O2 edit/header/phase data is available; no G0 performance conclusion or G0 exit is claimed. `BUILD_BASELINE.md` records these limits.
+
+A concurrent commit `23bed44a5da27ee769f7d56c628aa5f28ead04fa` appeared on the integration branch, changing the default to Clang/mold and starting TU extraction. This contradicts the current L7 scope. It has been preserved with the uncommitted extraction work on local branch `phase25-2-g2-hold`, not pushed. A normal revert commit `19f05677` restores the accepted single-TU compiler and GCC default on `phase25-2-work`; no published history was rewritten.
+
+G1 is being re-applied on the restored branch: separate profile/config object directories, generated `-MMD -MP` depfiles, source list still only `src/moss.cpp`, and linker/PCH extension hooks. The incremental dependency test is being restored and added to both parallel and serial regression paths. Earlier direct test and six-case parity results were from an intermediate tree and are invalidated by the concurrent branch change. The full parallel `make check` attempt exited 130 with `KeyboardInterrupt` and no final counts; it is not accepted as full-suite evidence.
+
+Outstanding: finish G1 edits, run dependency tests, build both profiles, behavior/diagnostic parity, full 136 baseline jobs plus new test, optimized examples, ABI-v9 default/v10 opt-in and source-free/hostile gates, feedback validator, exact-SHA review, status/efficiency closeout, commit and push. Per user's instruction, do not resume performance measurements; G1 timing is unavailable and no speed gain may be claimed.
+
+After restoring the G1 branch, the Clang/mold Makefile content appeared again in the active checkout while an ordinary GCC build was being requested. The resulting Clang O2 compile was interrupted (exit 130); no compiler subprocess remains. The source tree is still single-TU on `phase25-2-work`, but its uncommitted Makefile currently conflicts with the supplied G1 scope. The out-of-scope branch and working changes remain parked under `tmp/phase25-2-g2-hold` / `phase25-2-g2-hold`. No further builds or integration edits should run until the user confirms how to handle the competing branch work. Prior full `make check` ended in KeyboardInterrupt with no final counts; it is invalidated.
+
+
+## Phase 25.2 compiler build acceleration — resumed execution — 2026-10-24
+
+
+## Phase 25.2 compiler build acceleration — current resumed state — 2026-10-24
+
+The implementation branch `phase25-2-work` now contains the requested remote
+checkpoint `25789d6ec05039a04cbdbd75a11c83e16015fab3` as an ancestor. The
+checkpoint's Clang+mold default and updated execution brief were merged into
+the completed implementation. The tested implementation SHA is
+`1b20ca665fe61e1197dec7e1b14f6a584ae54d2c`; it builds ten production TUs with
+config-isolated objects, generated dependencies, profile-specific Clang PCH,
+and active-link configuration stamps. `AGENTS.md` records this task's normal
+push authorization and retains the no-force-push rule.
+
+On that exact implementation SHA, `make --jobs="$(nproc)" check` passed
+137/137 jobs, 0 failed, 0 skipped. Optimized examples passed. ABI-v9/v10
+source-free and hostile gates passed, including 13 ABI-v10 rehashed hostile
+mutations. GCC Debug build/smoke and Clang switch-back passed; Make incremental
+and compiler-switch tests passed; feedback validation and `git diff --check`
+passed. Clean object/PCH compile and link timings: Debug 18.89s/0.58s;
+optimized 94.95s/0.55s. One-TU incremental compile/link: Debug 0.52s/0.58s;
+optimized 0.43s/0.49s. No-op builds: 0.49s Debug and 0.47s optimized. These
+measurements use unchanged source/compiler flags; merge resolution only made
+the existing mold option explicit as `MOSS_LDFLAGS`. Details and limits are in
+`docs/phase25_2/STATUS.md`.
+
+The optimized-object `nm -C` audit found no repeated expensive Moss-owned
+template specialization warranting ETI; repeated template symbols were
+standard-library weak/COMDAT definitions, so no arbitrary ETI was added. The
+first-extraction Architect review was scoped GO. Near-final review at exact
+SHA `b03e8c50212e5eb73f75784ef9a44b5eb222f01d` issued scoped GO and identified
+two P2 build robustness gaps. Both were fixed at `1b20ca665fe61e1197dec7e1b14f6a584ae54d2c`:
+missing PCH depfiles now rebuild PCHs and dependent objects, and mold version
+changes relink without recompiling objects. The expanded isolated Make test and
+full `make check` then passed; the Architect follow-up reviewed that exact
+implementation SHA and issued GO with zero open P0/P1/P2. Optimized examples
+and feedback validation also passed after the fixes. Remaining: commit the
+final exact-SHA review closeout record, then push normally to
+`origin/phase25-2-work`. Do not merge to main.
+## Phase 25.2 R2 Core Compiler Decomposition — current session — 2026-10-23
+
+R2 implementation is on `phase25-2-work`, with checkpoints through
+`a73018dd` pushed. Parser, FunctionalOptimizer, Native Generator and Checker
+are independently compiled production owners. `moss.cpp` is 23,791 lines /
+1,121,922 bytes; the extracted core TUs are Parser 1,058 lines, optimizer
+1,398, Generator 6,846 and Checker 30,936. Checker and Generator retain their
+stateful classes and existing `.inc` fragments; all use narrow declaration-only
+interfaces and share the authoritative Program/AST facts.
+
+The integrated `make --jobs="$(nproc)" check` passed 137/137, optimized
+examples passed, and GCC `moss-dev` built. The initial failed integrated run
+found that production `check_program` destroyed Checker-owned checked facts too
+early. `CheckedProgram` now retains private Checker state across project,
+interpreter and standalone production operations; the full passing run includes
+this fix. Clean Clang+mold builds were O0 14.21s and O2 56.47s on 16 jobs.
+Incremental object/relink times: Parser 2.08/0.68s, Checker 10.98/0.68s,
+Generator 3.94/0.70s; each edit rebuilt only its owning object. No-op was
+0.65s. Full source distribution and optional known direct-control failures are
+recorded in `docs/phase25_2/STATUS.md`.
+
+R2 is complete on reviewed candidate `b9149021c1845b0a80f788ccb538fbd5eae35c12`.
+The independent Architect issued scoped GO with no unresolved P0/P1 or new P2;
+acceptance criteria are met. The review confirmed one owner for extracted
+entry-point symbols, single-owned staged ABI accessors, preserved Program/AST
+identity, and passing standalone, native/Fast Debug, H3 source-free/hostile,
+and ABI-v10 empty-vector probes. Full 137/137 regression, optimized examples,
+GCC build and timings are recorded in `docs/phase25_2/STATUS.md`. Do not merge
+to main. Next assignment: execute GitHub issue #14 autonomously in this same
+repository; maintain branch scope and do not merge to main.
+
+## Phase 25.2 R3 — ETI/header isolation/benchmark — 2026-10-23
+
+R3 implementation has moved numeric literal implementation, typed semantic
+projection, Type IR text parsing/validation, and checked-body encoding/hash
+bodies to four owning production TUs. Checker no longer includes
+`interpreter.hpp`. Explicit template instantiation was evaluated with optimized
+object symbol audit and Clang time traces; no safe measurable Moss-authored
+candidate was found, so no ETI was introduced. A reproducible C++ build/object
+isolation benchmark, 21 raw records and a Java behavior fixture contract are
+checked in under `benchmarks/phase25_2/r3/`; benchmark method, results, header
+fanout and comparison limits are in `docs/phase25_2/FINAL_BUILD_COMPARISON.md`.
+Java equivalence remains unverified.
+
+On integrated candidate `8bce73223dc42177c1fad7224da1ab899df26414`, the full
+`make --jobs="$(nproc)" check` passed 137/137 with zero failed/skipped; optimized
+examples, Clang optimized build, GCC development build/smoke and relevant
+ABI-v9/v10, SDK, source-free and hostile-artifact gates passed. Feedback validation, `git diff --check`, benchmark Python compile/help, fixture
+JSON parse, and the 21-row raw CSV checks all pass on the current closeout tree.
+Benchmark source code was measured at `b4bc3b7ec9ad74c535ece2aacbcac6fb144e8edd`; subsequent production C++ was unchanged. The independent Architect reviewed exact pushed candidate `480990e5526eb06b46d7cdd2a84a89b09eee3e84` and issued GO with no open P0/P1/P2 findings; the sole date P2 on the prior docs candidate was corrected and re-reviewed. Benchmark/docs are committed and pushed to `phase25-2-work`; no merge to `main`.

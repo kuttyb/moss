@@ -52,6 +52,39 @@ make
 That produces `./moss`. Put the checkout on `PATH` or invoke the binary by its
 absolute path. Phase 7 does not yet include an installer.
 
+### Compiler object builds
+
+The repository Makefile compiles the explicit `COMPILER_SOURCES` list
+(`src/char_string_ordering_runtime.cpp`, `src/diagnostic_identity.cpp`,
+`src/display_runtime.cpp`, `src/executor_runtime.cpp`,
+`src/fileio_runtime.cpp`, `src/float_format_runtime.cpp`,
+`src/handler_runtime.cpp`, `src/numeric_runtime.cpp`,
+`src/program_identity.cpp`, and `src/moss.cpp`) into separate objects, then
+links the development and optimized executables at their existing paths. Clang
+profiles build a shared standard-library PCH from `src/compiler_pch.hpp` in the
+same config-specific object directory and use it for each compiler TU; GCC
+overrides skip PCH. Debug objects use
+`build/compiler/obj/dev-<config>/`; optimized objects use
+`build/compiler/obj/opt-<config>/`. Each object has a generated `.d` file from
+GCC/Clang-compatible `-MMD -MP` flags. Included headers and `.inc` files rebuild
+their actual dependents; unrelated headers do not trigger compiler rebuilds.
+A missing depfile is regenerated along with its object.
+
+`make`, `make moss`, and `make moss-dev` keep the `-O0` development profile and
+update `./moss`. `make moss-opt` and `make moss-release` keep the `-O2` profile.
+Override `CXX`, `CXXFLAGS_BASE`, `CXXFLAGS_DEV`, and `CXXFLAGS_OPT` as needed.
+The object directory includes a checksum of the compiler command and relevant
+flags, so configuration changes select a fresh object tree. A small active-link
+configuration stamp beside each public executable also forces relinking when a
+compiler or flag configuration changes, even though executable paths stay
+fixed. Old configuration trees can be removed with `make clean`, which deletes
+`build/compiler/`.
+
+`COMPILER_SOURCES` is the extension point for future translation units.
+`CXXFLAGS_PCH` adds flags to Clang PCH creation and compilation. `LINKER`,
+`LDFLAGS`, and `LDLIBS` select the linker and link libraries; by default Clang
+uses mold.
+
 By default Moss resolves `rustc` on `PATH`. `RUSTC` may select another
 executable:
 

@@ -15,7 +15,7 @@ static const string kModuleId =
 
 static Program checked_provider(const string& functions) {
   std::istringstream input("module Provider\n\n" + functions);
-  Program program = Parser(lex_lines(input, "Provider.moss")).parse();
+  Program program = moss::parse_source(input, "Provider.moss");
   program.package_identities = true;
   program.module_identities["Provider"] = kModuleId;
   program.module_identities[""] = kModuleId;
@@ -24,8 +24,7 @@ static Program checked_provider(const string& functions) {
     function.defining_module = "Provider";
     function.source_file = "Provider.moss";
   }
-  Checker checker(program);
-  checker.run();
+  (void)moss::check_program(program);
   for (auto& function : program.functions)
     if (!starts_with(function.name, "Provider__"))
       function.name = "Provider__" + function.name;

@@ -10,9 +10,8 @@ using namespace moss;
 
 static Program check_source(const string& source) {
   std::istringstream input(source);
-  Program program = Parser(lex_lines(input, "<generic-collection-facts>")).parse();
-  Checker checker(program);
-  checker.run();
+  Program program = moss::parse_source(input, "<generic-collection-facts>");
+  (void)moss::check_program(program);
   return program;
 }
 

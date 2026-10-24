@@ -18,7 +18,9 @@ cpp_test = ROOT / "tests" / "tooling" / "check_phase25_checked_body_ir.cpp"
 cpp_bin = ROOT / "tmp" / "phase25-checked-body-ir-cpp-test"
 subprocess.run(["g++", "-std=c++17", "-O0", "-Wall", "-Wextra",
                 "-Wno-missing-field-initializers", "-Werror", "-pedantic",
-                str(cpp_test), "-o", str(cpp_bin)], check=True)
+                str(cpp_test), str(ROOT / "src" / "checked_body_ir.cpp"),
+                str(ROOT / "src" / "type_ir.cpp"),
+                "-o", str(cpp_bin)], check=True)
 subprocess.run([str(cpp_bin)], check=True)
 
 

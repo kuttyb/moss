@@ -745,10 +745,10 @@ fn main() {
 """
 
 def extract_fair_leaf_runtime_rust():
-    executor_header = os.path.join(REPO_ROOT, "src/executor_runtime.hpp")
+    executor_header = os.path.join(REPO_ROOT, "src/executor_runtime.cpp")
     with open(executor_header, "r", encoding="utf-8") as f:
         content = f.read()
-    start_marker = 'inline const char* fair_leaf_runtime_items() {\n  return R"EXECUTOR_RUST(\n'
+    start_marker = 'const char* fair_leaf_runtime_items() {\n  return R"EXECUTOR_RUST(\n'
     end_marker = '\n)EXECUTOR_RUST";\n}'
     start_idx = content.find(start_marker)
     end_idx = content.find(end_marker, start_idx)
@@ -757,27 +757,27 @@ def extract_fair_leaf_runtime_rust():
     return content[start_idx + len(start_marker):end_idx]
 
 def extract_fileio_runtime_rust():
-    header_path = os.path.join(REPO_ROOT, "src/fileio_runtime.hpp")
-    with open(header_path, "r", encoding="utf-8") as f:
+    source_path = os.path.join(REPO_ROOT, "src/fileio_runtime.cpp")
+    with open(source_path, "r", encoding="utf-8") as f:
         content = f.read()
-    start_marker = 'inline const char* fileio_runtime_rust() {\n  return R"RUST(\n'
+    start_marker = 'const char* fileio_runtime_rust() {\n  return R"RUST(\n'
     end_marker = '\n)RUST";\n}'
     start_idx = content.find(start_marker)
     end_idx = content.find(end_marker, start_idx)
     if start_idx == -1 or end_idx == -1:
-        raise RuntimeError("Failed to extract fileio_runtime_rust from src/fileio_runtime.hpp")
+        raise RuntimeError("Failed to extract fileio_runtime_rust from src/fileio_runtime.cpp")
     return extract_fair_leaf_runtime_rust() + "\n" + content[start_idx + len(start_marker):end_idx]
 
 def extract_fileio_root_runtime_rust():
-    header_path = os.path.join(REPO_ROOT, "src/fileio_runtime.hpp")
-    with open(header_path, "r", encoding="utf-8") as f:
+    source_path = os.path.join(REPO_ROOT, "src/fileio_runtime.cpp")
+    with open(source_path, "r", encoding="utf-8") as f:
         content = f.read()
-    start_marker = 'inline const char* fileio_root_runtime_rust() {\n  return R"RUST(\n'
+    start_marker = 'const char* fileio_root_runtime_rust() {\n  return R"RUST(\n'
     end_marker = '\n)RUST";\n}'
     start_idx = content.find(start_marker)
     end_idx = content.find(end_marker, start_idx)
     if start_idx == -1 or end_idx == -1:
-        raise RuntimeError("Failed to extract fileio_root_runtime_rust from src/fileio_runtime.hpp")
+        raise RuntimeError("Failed to extract fileio_root_runtime_rust from src/fileio_runtime.cpp")
     return content[start_idx + len(start_marker):end_idx]
 
 def compile_test_harness():
@@ -1369,13 +1369,13 @@ def test_target_platform_gating(test_dir):
 
     # 4. Emission wiring: the guarded implementation is emitted only for programs
     #    that use FileIO; the root coordination runtime is emitted for every root.
-    with open(os.path.join(REPO_ROOT, "src/moss.cpp"), "r", encoding="utf-8") as f:
-        moss_cpp = f.read()
-    assert re.search(r'if \(program_uses_fileio\(p_\)\) \{\s*o << fileio_runtime_rust\(\);\s*\}', moss_cpp), \
+    with open(os.path.join(REPO_ROOT, "src/native_generator.cpp"), "r", encoding="utf-8") as f:
+        generator_cpp = f.read()
+    assert re.search(r'if \(program_uses_fileio\(p_\)\) \{\s*o << fileio_runtime_rust\(\);\s*\}', generator_cpp), \
         "fileio_runtime_rust() must be emitted only for FileIO-using programs"
-    assert re.search(r'if \(!project_module_artifact_\)\s*\{\s*o << fileio_root_runtime_rust\(\);', moss_cpp), \
+    assert re.search(r'if \(!project_module_artifact_\)\s*\{\s*o << fileio_root_runtime_rust\(\);', generator_cpp), \
         "standalone roots, including explicit modules, must emit fileio_root_runtime_rust()"
-    assert re.search(r'else if \(p_\.main\)\s*\{.*?cfg\(moss_process_root\).*?fileio_root_runtime_rust\(\);', moss_cpp, re.S), \
+    assert re.search(r'else if \(p_\.main\)\s*\{.*?cfg\(moss_process_root\).*?fileio_root_runtime_rust\(\);', generator_cpp, re.S), \
         "explicit-module roots must emit FileIO coordination only in executable mode"
     print("[PASS] Test 39: Platform target gating verified (FileIO guarded, root coordination portable)")
 
