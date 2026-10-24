@@ -15,6 +15,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 public class Main {
     public static final String COMPILER_VERSION = "0.1.0-java";
@@ -40,8 +41,35 @@ public class Main {
             return 0;
         }
         if ("agent".equals(first) && args.length > 1 && "bootstrap".equals(args[1])) {
-            System.out.println("{\"result\":{\"compiler\":\"moss-java\",\"language_version\":\"" + LANGUAGE_VERSION + "\"}}");
+            System.out.println(AgentBootstrap.getBootstrapJson(COMPILER_VERSION, LANGUAGE_VERSION));
             return 0;
+        }
+
+        if (Set.of("inspect", "type", "effects", "ownership", "calls", "why", "fmt").contains(first)) {
+            String target = args.length > 1 ? args[1] : "";
+            String src = null;
+            boolean json = false;
+            for (int i = 1; i < args.length; i++) {
+                if ("--source".equals(args[i]) && i + 1 < args.length) {
+                    src = args[++i];
+                } else if ("--json".equals(args[i])) {
+                    json = true;
+                } else if (!args[i].startsWith("-") && src == null && i > 1) {
+                    src = args[i];
+                }
+            }
+            if (src == null) {
+                src = target;
+            }
+            try {
+                String content = Files.readString(Paths.get(src), StandardCharsets.UTF_8);
+                Program p = Parser.parseSource(content, new File(src).getAbsolutePath());
+                org.mosslang.compiler.query.SemanticQueryEngine.executeQuery(first, target, p, new File(src).getAbsolutePath(), json, System.out);
+                return 0;
+            } catch (Exception e) {
+                System.err.println("moss: query failed: " + e.getMessage());
+                return 1;
+            }
         }
 
         boolean checkOnly = false;

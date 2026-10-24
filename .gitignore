@@ -32,6 +32,12 @@ compiler-java/bin/
 compiler-java/bin/**
 compiler-java/jdt/daemon.log
 compiler-java/jdt/workspace/**
-compiler-java/jdt/configuration/org.eclipse.core.runtime/.manager/.tmp*
-compiler-java/jdt/configuration/org.eclipse.equinox.app/.manager/.tmp*
+compiler-java/jdt/configuration/**/.manager/
+compiler-java/jdt/configuration/**/.manager/**
+compiler-java/jdt/configuration/**/framework.info.*
+compiler-java/jdt/configuration/**/.tmp*
+compiler-java/jdt/configuration/**/.fileTable*
+compiler-java/jdt/configuration/**/*.1
+compiler-java/jdt/configuration/**/data/cache.timestamps
+compiler-java/jdt/configuration/**/data/timestamps-*
 
