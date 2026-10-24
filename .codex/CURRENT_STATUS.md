@@ -1,3 +1,19 @@
+## Phase 25.3 J0: Java Compiler Build-System Shootout — 2026-10-23
+
+Completed Gate J0 shootout determining the fastest practical Java compilation toolchain for developing the Moss compiler (Phase 25.3). Branch `phase25-3-java-benchmark` at commit `0c5cfcf8`.
+
+- Workload (Gate J0-A): Deterministic synthetic Java compiler corpus generated (201 classes, 5,134 lines, 8 subsystems: ast, types, symbols, semantics, generics, abi, ir, driver) using Eclipse Collections 13.0.0 and Java 25. Verified against SHA-256 manifest and dependency graph. Passed all 6 deterministic fixture tests (unification, scoping, ABI-v10 CRC32 codec, CFA reachability, full driver pipeline).
+- Build Toolchains (Gate J0-B): Configured Toolchain A (direct javac 25), Toolchain B (Mill 1.3.1 + Zinc incremental compilation), and Toolchain C (Eclipse JDT headless incremental workspace builder via custom OSGi Equinox bundle org.mosslang.jdt.builder_1.0.0.jar with persistent daemon socket protocol).
+- Benchmark Matrix (Gate J0-C, 15 warm interleaved trials):
+  * Cold clean: javac fastest (1,243.0ms vs Mill 2,970.3ms vs JDT 4,898.4ms)
+  * Warm clean: JDT fastest (107.3ms vs Mill 1,215.1ms vs javac 1,217.5ms, 11.33x speedup)
+  * No-op: JDT fastest (2.2ms vs Mill 109.4ms vs javac 1,243.2ms, 49.06x speedup)
+  * Incremental edits (B4-B10): JDT wins every scenario (12.7ms to 24.2ms) vs Mill (106.8ms to 139.0ms) and javac (~1,230ms).
+  * Syntax error rejection and recovery validated across all 3 toolchains.
+- Scale Sensitivity (Gate J0-D, ~50, ~200, ~500, ~1,000 files): JDT maintains sub-25ms incremental latency (23.8ms at 1,000 files) and clean builds (278.7ms vs javac 2,029.5ms).
+- Tuning (Gate J0-E): JDT persistent process provides 45.7x speedup over cold launches. Javac heap tuning yields 1.04x speedup.
+- Deliverables: All benchmark sources, scripts, raw measurements, CSV/JSON summaries, README.md, run_all.sh reproducibility script, and full technical report at `docs/phase25/PHASE_25_3_J0_JAVA_BUILD_BENCHMARK.md`.
+
 ## Phase 25.1 R1 next-slice probes — shadowed returns and generic For — 2026-10-21
 
 Read-only checker probes on the valid source-free corpus rows distinguish two
