@@ -12064,13 +12064,17 @@ final exact-SHA review closeout record, then push normally to
 L7's R2 decomposition assignment resumes on `phase25-2-work` at exact starting
 SHA `5f8056652668046bca59be5870bd110821d7e159`. The previous G1/G2 build
 acceleration closeout below is historical and does not satisfy R2 acceptance.
-The Parser/frontend extraction is implemented in the worktree: `parser.cpp`
-owns Parser, lexing and character/numeric source normalization; `parser.hpp`
-exposes parse entry points and `parser_support.hpp` exposes declaration-only
-shared syntax helpers. The development compiler builds. Numeric parsing parity,
-generic collection facts, ABI-v10 empty-vector provider emission, and H3
-source-free chain/hostile controls pass. Direct C++ controls were migrated from
-the private Parser class without changing assertions.
+The Parser/frontend extraction is committed and reviewed: `parser.cpp` owns
+Parser, lexing and character/numeric source normalization; `parser.hpp` exposes
+parse entry points and `parser_support.hpp` exposes declaration-only shared
+syntax helpers. `FunctionalOptimizer` is now independently compiled in
+`functional_optimizer.cpp`, with a narrow `optimize_program` entry point and
+shared `OptimizationPlan` declaration. The development compiler builds.
+Numeric parsing parity, generic collection facts, ABI-v10 empty-vector provider
+emission, H3 source-free/hostile chain, peer-open pipeline, try-placeholder,
+unary-not speculation, and formatter convergence controls pass. Direct C++
+controls were migrated from the private Parser class without changing
+assertions. `moss.cpp` is now 61,386 lines / 2,993,898 bytes.
 
 The Parser incremental probe edited and restored `parser.cpp`; each run
 recompiled only `parser.o` and relinked. The optional generic arithmetic direct
@@ -12085,5 +12089,7 @@ confirmed the private Parser class, declaration-only interfaces, shared
 Program/AST identity, and unchanged direct-control assertions. Their
 non-blocking note is to keep the shared helper interface from growing.
 
-Next: continue with FunctionalOptimizer extraction. Generator, Checker, full
-integrated validation and final performance measurements remain open.
+The FunctionalOptimizer edit/restore probe rebuilt only its object plus relink.
+The optimizer checkpoint is implemented but not yet committed. Next: commit and
+continue with Native Generator extraction. Checker, full integrated validation
+and final performance measurements remain open.

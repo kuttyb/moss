@@ -11,25 +11,28 @@ The Parser, lexer and source normalization implementation have been moved from
 `src/moss.cpp` into independently compiled `src/parser.cpp`. The driver uses a
 narrow `parse_source` / `parse_source_lines` API; `Parser` remains private to
 its owning TU. Shared syntax helpers are declared in `src/parser_support.hpp`
-and retain one implementation owner. Checker, FunctionalOptimizer and
+and retain one implementation owner. `FunctionalOptimizer` is also extracted
+intact into `src/functional_optimizer.cpp`; `optimize_program` is its narrow
+entry point and `OptimizationPlan` remains a shared declaration. Checker and
 Generator are not yet extracted.
 
 Clang development build passes. Focused controls pass: Phase 21 numeric
-parsing/conversion parity, generic collection facts, ABI-v10 empty-vector
-provider emission, and the H3 source-free chain with poisoned fallback and
-negative closure cases. Direct C++ harnesses that constructed `Parser` were
-updated to use the new frontend API; their assertions are unchanged. The
-Parser incremental probe edited and restored `parser.cpp`; each run rebuilt
-only `parser.o` plus relink. The independent Architect issued scoped GO on
+parsing/conversion parity; generic collection facts; ABI-v10 empty-vector
+provider emission; H3 source-free chain/hostile closure; Phase 21 peer-open,
+try-placeholder and unary-not pipeline gates; and Phase 15.7 formatter
+convergence. Direct C++ harnesses that constructed `Parser` were updated to
+use the new frontend API; assertions are unchanged. Parser and optimizer source
+edit/restore probes each rebuilt only their own object plus relink. The
+independent Architect issued scoped GO on Parser checkpoint
 `f4a1986982a45ffb94da234f4be201d65b9b5dbf`, with no P0/P1 findings. The review
 confirmed Parser privacy, declaration-only interfaces, one shared Program/AST
 identity, and unchanged direct-control assertions. It noted that shared helper
-declarations should not expand as the other core owners move. The
-optional `check_phase25_generic_arithmetic_requirements.py` control still
-aborts on `checked ABI-v10 requirement provenance identity is forged`; the
-existing status records this assertion failure as reproduced before extraction
-at `19f05677`. It is not counted as a pass. No compiler semantic change or ABI
-default change is intended.
+declarations should not expand as the other core owners move. The optional
+`check_phase25_generic_arithmetic_requirements.py` control still aborts on
+`checked ABI-v10 requirement provenance identity is forged`; the existing
+status records this assertion failure as reproduced before extraction at
+`19f05677`. It is not counted as a pass. No compiler semantic change or ABI
+default change is intended. `src/moss.cpp` is 61,386 lines / 2,993,898 bytes.
 
 **Branch:** `phase25-2-work`<br>
 **Tested implementation SHA:** `1b20ca665fe61e1197dec7e1b14f6a584ae54d2c`<br>
