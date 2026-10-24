@@ -333,7 +333,12 @@ public class Parser {
                 f.inferred = true;
             } else {
                 f.name = trim(lineText.substring(0, c));
-                f.type = canonicalTypeName(trim(lineText.substring(c + 1)));
+                try {
+                    f.type = canonicalTypeName(trim(lineText.substring(c + 1)));
+                } catch (CompileError ce) {
+                    CompileError withLine = new CompileError(L.no, ce.getMessage(), ce.getCode(), L.sourceFile);
+                    throw withLine;
+                }
             }
             if (!identifier(f.name)) fail(L, "object field must be 'name' or 'name: type'");
             f.line = L.no;

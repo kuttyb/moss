@@ -79,7 +79,33 @@ public final class ParserSupport {
         if ("Set".equals(type)) return "set";
 
         int bracket = type.indexOf('[');
-        if (bracket != -1 && endsWith(type, "]")) {
+        if (bracket != -1) {
+            if (!endsWith(type, "]")) {
+                throw new org.mosslang.compiler.diagnostics.CompileError(
+                        0,
+                        "malformed type expression '" + type + "': unclosed '['",
+                        "MALFORMED_TYPE_EXPRESSION");
+            }
+            int depth = 0;
+            for (int i = 0; i < type.length(); ++i) {
+                char c = type.charAt(i);
+                if (c == '[') ++depth;
+                else if (c == ']') {
+                    --depth;
+                    if (depth < 0 || (depth == 0 && i < type.length() - 1)) {
+                        throw new org.mosslang.compiler.diagnostics.CompileError(
+                                0,
+                                "malformed type expression '" + type + "'",
+                                "MALFORMED_TYPE_EXPRESSION");
+                    }
+                }
+            }
+            if (depth != 0) {
+                throw new org.mosslang.compiler.diagnostics.CompileError(
+                        0,
+                        "malformed type expression '" + type + "': unbalanced brackets",
+                        "MALFORMED_TYPE_EXPRESSION");
+            }
             String head = canonicalTypeName(type.substring(0, bracket));
             MutableList<String> arguments = splitTopLevel(type.substring(bracket + 1, type.length() - 1), ',');
             StringBuilder normalized = new StringBuilder();

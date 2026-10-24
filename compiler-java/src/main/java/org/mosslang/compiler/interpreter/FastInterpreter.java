@@ -932,8 +932,35 @@ public class FastInterpreter {
             for (ObjectType obj : program.objects) {
                 if (obj.name.equals(callee) || obj.name.endsWith("__" + callee) || callee.endsWith("." + obj.name)) {
                     Map<String, Value> fieldMap = new HashMap<>();
-                    for (int i = 0; i < obj.fields.size() && i < evaluatedArgs.size(); i++) {
-                        fieldMap.put(obj.fields.get(i).name, evaluatedArgs.get(i));
+                    for (Field f : obj.fields) {
+                        if (f.init != null && !f.init.isEmpty()) {
+                            fieldMap.put(f.name, evalExpr(f.init, locals, currentDomain));
+                        } else {
+                            fieldMap.put(f.name, Value.ofInt(0));
+                        }
+                    }
+                    for (int i = 0; i < evaluatedArgs.size(); i++) {
+                        String rawA = i < argList.size() ? argList.get(i) : "";
+                        String namedField = null;
+                        int pDepth = 0;
+                        boolean inStr = false;
+                        for (int ci = 0; ci < rawA.length(); ci++) {
+                            char ch = rawA.charAt(ci);
+                            if (ch == '"' && (ci == 0 || rawA.charAt(ci - 1) != '\\')) inStr = !inStr;
+                            if (!inStr) {
+                                if (ch == '(' || ch == '[' || ch == '{') pDepth++;
+                                else if (ch == ')' || ch == ']' || ch == '}') pDepth--;
+                                else if (ch == ':' && pDepth == 0) {
+                                    namedField = rawA.substring(0, ci).trim();
+                                    break;
+                                }
+                            }
+                        }
+                        if (namedField != null && !namedField.isEmpty()) {
+                            fieldMap.put(namedField, evaluatedArgs.get(i));
+                        } else if (i < obj.fields.size()) {
+                            fieldMap.put(obj.fields.get(i).name, evaluatedArgs.get(i));
+                        }
                     }
                     return new Value(Value.Kind.OBJECT, fieldMap);
                 }
@@ -1098,11 +1125,34 @@ public class FastInterpreter {
                 }
             }
         }
-        if (expr.contains(".") && !expr.contains("(")) {
-            int lastDot = expr.lastIndexOf('.');
-            String variant = expr.substring(lastDot + 1).trim();
-            if (!variant.isEmpty() && Character.isUpperCase(variant.charAt(0))) {
-                return Value.ofString(expr);
+        if (expr.contains(".") && !expr.endsWith(")")) {
+            int lastDot = -1;
+            int pDepth = 0;
+            boolean inStr = false;
+            for (int ci = 0; ci < expr.length(); ci++) {
+                char ch = expr.charAt(ci);
+                if (ch == '"' && (ci == 0 || expr.charAt(ci - 1) != '\\')) inStr = !inStr;
+                if (!inStr) {
+                    if (ch == '(' || ch == '[' || ch == '{') pDepth++;
+                    else if (ch == ')' || ch == ']' || ch == '}') pDepth--;
+                    else if (ch == '.' && pDepth == 0) {
+                        lastDot = ci;
+                    }
+                }
+            }
+            if (lastDot > 0) {
+                String recvExpr = expr.substring(0, lastDot).trim();
+                String fieldOrVariant = expr.substring(lastDot + 1).trim();
+                if (!fieldOrVariant.isEmpty() && Character.isUpperCase(fieldOrVariant.charAt(0)) && !expr.contains("(")) {
+                    return Value.ofString(expr);
+                }
+                Value recvVal = evalExpr(recvExpr, locals, currentDomain);
+                if (recvVal != null && recvVal.kind == Value.Kind.OBJECT && recvVal.raw instanceof Map<?, ?> fm) {
+                    Object fVal = fm.get(fieldOrVariant);
+                    if (fVal instanceof Value v) {
+                        return v;
+                    }
+                }
             }
         }
 

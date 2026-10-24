@@ -40,6 +40,13 @@ public class DiagnosticFormatter {
     public static void writeStructuredError(PrintStream out, String command, String compilerVersion,
                                            String code, String message, String sourceFile, int line,
                                            String semanticIdentity, String symbol) {
+        writeStructuredError(out, command, compilerVersion, code, message, sourceFile, line, semanticIdentity, symbol, java.util.Collections.emptyList());
+    }
+
+    public static void writeStructuredError(PrintStream out, String command, String compilerVersion,
+                                           String code, String message, String sourceFile, int line,
+                                           String semanticIdentity, String symbol,
+                                           java.util.List<CompileError.RelatedNote> related) {
         StringBuilder sb = new StringBuilder();
         sb.append("{\n");
         sb.append("  \"protocol_version\": 1,\n");
@@ -71,7 +78,21 @@ public class DiagnosticFormatter {
         } else {
             sb.append("\"symbol\": null, ");
         }
-        sb.append("\"rule\": null, \"cause\": null, \"related\": [], \"guidance\": null, ");
+        sb.append("\"rule\": null, \"cause\": null, ");
+        if (related != null && !related.isEmpty()) {
+            sb.append("\"related\": [");
+            for (int i = 0; i < related.size(); i++) {
+                if (i > 0) sb.append(", ");
+                CompileError.RelatedNote note = related.get(i);
+                sb.append("{\"message\": \"").append(escapeJson(note.message)).append("\", ");
+                sb.append("\"source\": {\"file\": \"").append(escapeJson(note.file)).append("\", ");
+                sb.append("\"line\": ").append(note.line).append(", \"column\": ").append(note.column).append(", \"span\": null}}");
+            }
+            sb.append("], ");
+        } else {
+            sb.append("\"related\": [], ");
+        }
+        sb.append("\"guidance\": null, ");
         if ("OWNERSHIP_USE_AFTER_CONSUME".equals(code)) {
             Integer consumeLine = null;
             int marker = message != null ? message.indexOf(" at line ") : -1;

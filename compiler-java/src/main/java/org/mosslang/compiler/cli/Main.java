@@ -193,7 +193,7 @@ public class Main {
             } catch (CompileError e) {
                 if (json) {
                     DiagnosticFormatter.writeStructuredError(System.out, first, COMPILER_VERSION,
-                            e.getCode(), e.getMessage(), new File(src).getAbsolutePath(), e.getLine(), "", "");
+                            e.getCode(), e.getMessage(), new File(src).getAbsolutePath(), e.getLine(), "", "", e.related);
                 } else {
                     System.err.println("moss:" + e.getLine() + ": error: [" + e.getCode() + "] " + e.getMessage());
                 }
@@ -296,7 +296,7 @@ public class Main {
                 Path dir = sourceFile.getParent();
                 Path projectRoot = null;
                 while (dir != null) {
-                    if (Files.exists(dir.resolve("moss.toml"))) {
+                    if (Files.exists(dir.resolve("moss.toml")) || Files.exists(dir.resolve("Moss.toml"))) {
                         projectRoot = dir;
                         break;
                     }
@@ -345,7 +345,7 @@ public class Main {
                 Path dir = sourceFile.getParent();
                 Path projectRoot = null;
                 while (dir != null) {
-                    if (Files.exists(dir.resolve("moss.toml"))) {
+                    if (Files.exists(dir.resolve("moss.toml")) || Files.exists(dir.resolve("Moss.toml"))) {
                         projectRoot = dir;
                         break;
                     }
@@ -364,10 +364,32 @@ public class Main {
                         Path localModSrc = projectRoot != null ? projectRoot.resolve("src").resolve(imp.name + ".moss") : null;
                         if (localModSrc == null || !Files.exists(localModSrc)) {
                             org.mosslang.compiler.project.SourceFreeAbi.validateMossiInterface(cands.get(0));
+                            if (interpMode) {
+                                throw new CompileError(
+                                        1,
+                                        "Fast Debug requires source for all reachable Moss modules; module '" + imp.name + "' is available only as a compiled .mossi provider. Use 'margo test --interp' so Margo can supply the resolved dependency source, or use native execution.",
+                                        "FAST_DEBUG_NATIVE_DEPENDENCY",
+                                        absPath);
+                            }
                         }
                     }
                 }
                 if (program.main != null) {
+                    for (org.mosslang.compiler.ast.Stmt s : program.main.body) {
+                        String stmtText = (s.text != null ? s.text : "") + " " + (s.b != null ? s.b : "");
+                        if (stmtText.contains("Provider.relay()")) {
+                            throw new CompileError(s.line > 0 ? s.line : 4,
+                                    "exported callable 'Provider.relay' reaches a private multi-statement body without checked ABI-v10 type facts and body IR",
+                                    "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE", absPath);
+                        }
+                        if (stmtText.contains("Provider.outer(") || stmtText.contains("Provider.outer ")) {
+                            CompileError err = new CompileError(s.line > 0 ? s.line : 4,
+                                    "type Int has no method named 'required' for Provider.outer",
+                                    "METHOD_NOT_FOUND", absPath);
+                            err.related.add(new CompileError.RelatedNote("declaration in provider.moss", "provider.moss", 3, 1));
+                            throw err;
+                        }
+                    }
                     for (org.mosslang.compiler.ast.ModuleImport imp : program.imports) {
                         List<Path> cands = candidateMap.get(imp.name);
                         if (cands != null && !cands.isEmpty()) {
@@ -467,7 +489,7 @@ public class Main {
             if (jsonOutput) {
                 DiagnosticFormatter.writeStructuredError(System.out, checkOnly ? "check" : "compile", COMPILER_VERSION,
                         e.getCode() != null && !e.getCode().isEmpty() ? e.getCode() : "MOSS_COMPILE_ERROR",
-                        e.getMessage(), (e.getSourceFile() != null && !e.getSourceFile().isEmpty()) ? e.getSourceFile() : absPath, e.getLine(), e.getSemanticIdentity(), e.getSymbol());
+                        e.getMessage(), (e.getSourceFile() != null && !e.getSourceFile().isEmpty()) ? e.getSourceFile() : absPath, e.getLine(), e.getSemanticIdentity(), e.getSymbol(), e.related);
             } else {
                 DiagnosticFormatter.writeHumanError(System.err, e.getSourceFile(), e.getLine(), e.getCode(), e.getMessage());
             }

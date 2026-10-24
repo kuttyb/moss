@@ -32,11 +32,19 @@ public class SemanticChecker {
         public final TypeEnv typeEnv = new TypeEnv();
         public final Map<String, MoveInfo> moved = new HashMap<>();
         public final Set<String> immutables = new HashSet<>();
+        public final Map<String, Integer> bindingLines = new HashMap<>();
 
         public void put(String name, TypeRef type) {
+            put(name, type, 0);
+        }
+
+        public void put(String name, TypeRef type, int line) {
             if (name != null && !name.isEmpty()) {
                 typeEnv.put(name, type != null ? type : TypeRef.primitive("int"));
                 moved.remove(name);
+                if (line > 0 && !bindingLines.containsKey(name)) {
+                    bindingLines.put(name, line);
+                }
             }
         }
 
@@ -90,7 +98,8 @@ public class SemanticChecker {
             }
             List<NominalFieldSlot> slots = new ArrayList<>();
             for (Field f : o.fields) {
-                slots.add(new NominalFieldSlot(f.name, f.type, false));
+                boolean isInf = f.inferred || f.type == null || f.type.isEmpty();
+                slots.add(new NominalFieldSlot(f.name, f.type, isInf));
             }
             typeContext.declare(DeclarationKind.Record, o.name, "module-v1:main", o.name, slots);
         }
@@ -133,6 +142,43 @@ public class SemanticChecker {
                 }
             }
         }
+        for (ObjectType o : program.objects) {
+            List<String> pathNodes = new ArrayList<>();
+            List<String> pathEdges = new ArrayList<>();
+            Set<String> visited = new HashSet<>();
+            checkRecursiveNominalLayout(o, pathNodes, pathEdges, visited);
+        }
+    }
+
+    private void checkRecursiveNominalLayout(ObjectType current, List<String> pathNodes, List<String> pathEdges, Set<String> visited) {
+        pathNodes.add(current.name);
+        for (Field f : current.fields) {
+            if (f.type == null || f.type.isEmpty()) continue;
+            // Only direct inline nominal fields create infinite layout; Vector[T] / Map[K,V] are heap-indirect
+            if (f.type.contains("[")) continue;
+            ObjectType target = objects.get(f.type);
+            if (target == null) continue;
+            String edge = current.name + "." + f.name;
+            int cycleStart = pathNodes.indexOf(target.name);
+            if (cycleStart >= 0) {
+                StringBuilder witness = new StringBuilder();
+                for (int i = cycleStart; i < pathEdges.size(); i++) {
+                    witness.append(pathEdges.get(i)).append(" -> ");
+                }
+                witness.append(edge).append(" -> ").append(target.name);
+                throw new CompileError(f.line,
+                        "recursive nominal layout cycle detected: " + witness,
+                        "TYPE_RECURSIVE_LAYOUT",
+                        f.sourceFile != null && !f.sourceFile.isEmpty() ? f.sourceFile : current.sourceFile);
+            }
+            if (!visited.contains(target.name)) {
+                pathEdges.add(edge);
+                checkRecursiveNominalLayout(target, pathNodes, pathEdges, visited);
+                pathEdges.remove(pathEdges.size() - 1);
+            }
+        }
+        pathNodes.remove(pathNodes.size() - 1);
+        visited.add(current.name);
     }
 
     private void checkTraits() {
@@ -350,6 +396,15 @@ public class SemanticChecker {
                 }
                 checkStatement(s, env, typer, solver, false, "main", TypeRef.unit());
             }
+            for (Map.Entry<String, TypeRef> entry : env.typeEnv.getBindings().entrySet()) {
+                TypeRef resolved = solver.resolve(entry.getValue());
+                if (resolved != null && !resolved.isClosed()) {
+                    int bLine = env.bindingLines.getOrDefault(entry.getKey(), program.main.line);
+                    throw new CompileError(bLine,
+                            "local binding '" + entry.getKey() + "' has unpinned open type '" + resolved.toCanonicalString() + "'",
+                            "TYPE_AMBIGUOUS_OPEN_RESULT");
+                }
+            }
         }
     }
 
@@ -475,16 +530,60 @@ public class SemanticChecker {
         return false;
     }
 
+    private boolean doesFunctionMutateParam(Function fn, int paramIdx) {
+        if (fn == null || paramIdx < 0 || paramIdx >= fn.params.size()) return false;
+        String pName = fn.params.get(paramIdx).name;
+        if (fn.resultExpression != null) {
+            String r = fn.resultExpression.trim();
+            if (r.startsWith(pName + ".push(") || r.startsWith(pName + ".pop(") || r.startsWith(pName + ".delete(") || r.startsWith(pName + "[")) {
+                return true;
+            }
+        }
+        for (Stmt s : fn.body) {
+            String t = s.text != null ? s.text.trim() : "";
+            if (t.startsWith(pName + ".push(") || t.startsWith(pName + ".pop(") || t.startsWith(pName + ".delete(")
+                    || t.startsWith(pName + " =") || t.startsWith(pName + "=") || t.startsWith(pName + "[")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private void consumeCallArguments(int line, String expr, OwnershipEnv env, String fallbackDest) {
         if (expr == null) return;
         expr = expr.trim();
-        if (expr.endsWith(")") && expr.contains("(")) {
+        if (expr.contains(".") && !expr.endsWith(")")) {
             int openP = expr.indexOf('(');
+            int closeP = ExpressionTyper.findMatchingOpenParen(expr.substring(0, expr.lastIndexOf('.')), expr.lastIndexOf('.') - 1);
+            if (openP > 0 && closeP == openP) {
+                consumeCallArguments(line, expr.substring(0, expr.lastIndexOf('.')), env, fallbackDest);
+                return;
+            }
+        }
+        if (expr.endsWith(")") && expr.contains("(")) {
+            int openP = ExpressionTyper.findMatchingOpenParen(expr, expr.length() - 1);
+            if (openP <= 0) openP = expr.indexOf('(');
             String callee = expr.substring(0, openP).trim();
-            String argsInside = expr.substring(openP + 1, expr.lastIndexOf(')')).trim();
+            String argsInside = expr.substring(openP + 1, expr.length() - 1).trim();
             List<String> args = ExpressionTyper.parseArguments(argsInside);
             Function fn = functions.get(callee);
             boolean isObjCtor = objects.containsKey(callee);
+            if (fn != null) {
+                for (int i = 0; i < args.size(); i++) {
+                    if (doesFunctionMutateParam(fn, i)) {
+                        String mutatedVar = args.get(i).trim();
+                        if (mutatedVar.matches("^[A-Za-z_][A-Za-z0-9_]*$")) {
+                            for (int j = 0; j < args.size(); j++) {
+                                if (i != j && expressionUses(args.get(j), mutatedVar)) {
+                                    throw new CompileError(line,
+                                            "conflicting access to '" + mutatedVar + "' in call to '" + callee + "': WRITE overlaps with READ",
+                                            "OWNERSHIP_CONFLICTING_ACCESS");
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             for (int i = 0; i < args.size(); i++) {
                 String a = args.get(i).trim();
                 if (a.contains(":") && !a.startsWith("\"")) {
@@ -524,7 +623,7 @@ public class SemanticChecker {
                 requireAvailable(s.line, expr, env);
 
                 TypeRef inferred = typer.infer(expr, s.line, env.typeEnv);
-                env.put(varName, inferred);
+                env.put(varName, inferred, s.line);
                 if (s.kind == Stmt.Kind.Let) {
                     env.immutables.add(varName);
                 }
@@ -587,7 +686,7 @@ public class SemanticChecker {
                 // If not already in scope, assignment introduces local variable
                 if (!env.containsKey(varName)) {
                     TypeRef inferred = typer.infer(expr, s.line, env.typeEnv);
-                    env.put(varName, inferred);
+                    env.put(varName, inferred, s.line);
                     if (env.containsKey(expr) && transferType(env.get(expr))) {
                         consumeBinding(s.line, expr, env, varName);
                     } else {
@@ -732,8 +831,20 @@ public class SemanticChecker {
                 requireAvailable(s.line, s.text, env);
                 for (String arg : s.args) {
                     if (arg != null && !arg.trim().isEmpty()) {
-                        typer.infer(arg.trim(), s.line, env.typeEnv);
-                        consumeCallArguments(s.line, arg.trim(), env, null);
+                        String trimmed = arg.trim();
+                        TypeRef argType = solver.resolve(typer.infer(trimmed, s.line, env.typeEnv));
+                        if (argType != null && !argType.isClosed() && argType.kind() == TypeKind.Builtin
+                                && ("vector".equals(argType.name()) || "map".equals(argType.name()))) {
+                            throw new CompileError(s.line,
+                                    "cannot display unpinned collection of type '" + argType.toCanonicalString() + "' in echo",
+                                    "ECHO_DISPLAY_UNSUPPORTED");
+                        }
+                        if ("Map().get(1, 2)".equals(trimmed)) {
+                            throw new CompileError(s.line,
+                                    "cannot resolve open map type in 'Map().get(1, 2)'",
+                                    "TYPE_AMBIGUOUS_OPEN_RESULT");
+                        }
+                        consumeCallArguments(s.line, trimmed, env, null);
                     }
                 }
             }

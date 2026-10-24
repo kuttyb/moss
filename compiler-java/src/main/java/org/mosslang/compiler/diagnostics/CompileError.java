@@ -8,6 +8,22 @@ public class CompileError extends RuntimeException {
     private String sourceFile;
     private SourceSpan span;
 
+    public static class RelatedNote {
+        public String message;
+        public String file;
+        public int line;
+        public int column = 1;
+
+        public RelatedNote(String message, String file, int line, int column) {
+            this.message = message;
+            this.file = file;
+            this.line = line;
+            this.column = column;
+        }
+    }
+
+    public final java.util.List<RelatedNote> related = new java.util.ArrayList<>();
+
     public CompileError(int line, String message) {
         this(line, message, "");
     }

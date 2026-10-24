@@ -264,18 +264,56 @@ public class NativeGenerator {
         }
         currentWriteFunctions.set(writeFunctions);
 
+        Set<String> genericObjects = new HashSet<>();
+        for (ObjectType obj : program.objects) {
+            for (Field f : obj.fields) {
+                if (f.type == null || f.type.isEmpty()) {
+                    genericObjects.add(obj.name);
+                    break;
+                }
+            }
+        }
+
         Set<String> genericFunctions = new HashSet<>();
         for (Function f : program.functions) {
-            if (!f.exported && !f.params.isEmpty() && !f.name.contains("generic") && !f.name.equals("summarize")) {
-                boolean hasUntyped = false;
+            if (!f.name.contains("generic") && !f.name.equals("summarize")) {
+                boolean hasGeneric = false;
                 for (Param p : f.params) {
-                    if (p.type == null || p.type.isEmpty()) {
-                        hasUntyped = true;
+                    if (p.type == null || p.type.isEmpty() || genericObjects.contains(p.type)) {
+                        hasGeneric = true;
                         break;
                     }
                 }
-                if (hasUntyped) {
+                if (!hasGeneric && (f.returnType == null || f.returnType.isEmpty())) {
+                    if (f.resultExpression != null && (f.resultExpression.trim().equals("[]") || genericFunctions.contains(f.resultExpression.trim().replace("()", "")))) {
+                        hasGeneric = true;
+                    }
+                    for (Stmt s : f.body) {
+                        if (s.kind == Stmt.Kind.Return && s.a != null) {
+                            String ra = s.a.trim();
+                            if (ra.equals("[]") || genericFunctions.contains(ra.replace("()", ""))) {
+                                hasGeneric = true;
+                            }
+                        }
+                    }
+                }
+                if (hasGeneric) {
                     genericFunctions.add(f.name);
+                }
+            }
+        }
+        // Second pass for transitive open-result functions (e.g. relay() -> fresh(), make(flag), outer() -> middle())
+        for (int pass = 0; pass < 3; pass++) {
+            for (Function f : program.functions) {
+                if (!f.name.contains("generic") && !f.name.equals("summarize") && (f.returnType == null || f.returnType.isEmpty())) {
+                    for (Stmt s : f.body) {
+                        String txt = s.text != null ? s.text : (s.a != null ? s.a : "");
+                        for (String gf : new ArrayList<>(genericFunctions)) {
+                            if (txt.contains(gf + "(")) {
+                                genericFunctions.add(f.name);
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -359,13 +397,91 @@ public class NativeGenerator {
             o.append("// Moss tooling begin|type|").append(typeIdentity).append("|").append(obj.name).append("|\n");
             o.append("// Moss line ").append(obj.line).append(": type ").append(obj.name).append(":\n");
             o.append("#[derive(Clone, Debug)]\n");
-            o.append("pub struct ").append(obj.name).append(" {\n");
+            List<String> openGenericParams = new ArrayList<>();
+            int openIdx = 0;
+            for (Field f : obj.fields) {
+                if (f.type == null || f.type.isEmpty()) {
+                    openGenericParams.add("__T" + (openIdx++));
+                }
+            }
+            o.append("pub struct ").append(obj.name);
+            if (!openGenericParams.isEmpty()) {
+                o.append("<");
+                for (int gi = 0; gi < openGenericParams.size(); gi++) {
+                    if (gi > 0) o.append(", ");
+                    o.append(openGenericParams.get(gi)).append(" = i64");
+                }
+                o.append(">");
+            }
+            o.append(" {\n");
+            openIdx = 0;
             for (Field f : obj.fields) {
                 o.append("    // Moss line ").append(f.line).append(": ").append(f.name).append(": ").append(f.type).append("\n");
-                o.append("    pub ").append(f.name).append(": ").append(rustType(f.type)).append(",\n");
+                String fType = (f.type == null || f.type.isEmpty()) ? openGenericParams.get(openIdx++) : rustType(f.type);
+                o.append("    pub ").append(f.name).append(": ").append(fType).append(",\n");
             }
             o.append("}\n");
             o.append("// Moss tooling end|").append(typeIdentity).append("\n\n");
+
+            boolean hasIsequal = obj.methods.stream().anyMatch(m -> m.name.equals("isequal"));
+            boolean hasHash = obj.methods.stream().anyMatch(m -> m.name.equals("hash"));
+            if (hasIsequal && hasHash) {
+                o.append("impl PartialEq for ").append(obj.name).append(" {\n");
+                o.append("    fn eq(&self, other: &Self) -> bool {\n");
+                o.append("        self.isequal(other.clone())\n");
+                o.append("    }\n");
+                o.append("}\n");
+                o.append("impl Eq for ").append(obj.name).append(" {}\n");
+                o.append("impl PartialOrd for ").append(obj.name).append(" {\n");
+                o.append("    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {\n");
+                o.append("        Some(self.cmp(other))\n");
+                o.append("    }\n");
+                o.append("}\n");
+                o.append("impl Ord for ").append(obj.name).append(" {\n");
+                o.append("    fn cmp(&self, other: &Self) -> std::cmp::Ordering {\n");
+                o.append("        self.hash().cmp(&other.hash())\n");
+                o.append("    }\n");
+                o.append("}\n");
+                o.append("impl std::hash::Hash for ").append(obj.name).append(" {\n");
+                o.append("    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {\n");
+                o.append("        self.hash().hash(state);\n");
+                o.append("    }\n");
+                o.append("}\n\n");
+            } else if (openGenericParams.isEmpty() && obj.fields.stream().allMatch(f -> !"float".equalsIgnoreCase(f.type))) {
+                o.append("impl PartialEq for ").append(obj.name).append(" {\n");
+                o.append("    fn eq(&self, other: &Self) -> bool {\n");
+                if (obj.fields.isEmpty()) {
+                    o.append("        true\n");
+                } else {
+                    List<String> eqs = new ArrayList<>();
+                    for (Field f : obj.fields) eqs.add("self." + f.name + " == other." + f.name);
+                    o.append("        ").append(String.join(" && ", eqs)).append("\n");
+                }
+                o.append("    }\n");
+                o.append("}\n");
+                o.append("impl Eq for ").append(obj.name).append(" {}\n");
+                o.append("impl PartialOrd for ").append(obj.name).append(" {\n");
+                o.append("    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {\n");
+                o.append("        Some(self.cmp(other))\n");
+                o.append("    }\n");
+                o.append("}\n");
+                o.append("impl Ord for ").append(obj.name).append(" {\n");
+                o.append("    fn cmp(&self, other: &Self) -> std::cmp::Ordering {\n");
+                if (obj.fields.isEmpty()) {
+                    o.append("        std::cmp::Ordering::Equal\n");
+                } else {
+                    o.append("        self.").append(obj.fields.get(0).name).append(".cmp(&other.").append(obj.fields.get(0).name).append(")\n");
+                }
+                o.append("    }\n");
+                o.append("}\n");
+                o.append("impl std::hash::Hash for ").append(obj.name).append(" {\n");
+                o.append("    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {\n");
+                for (Field f : obj.fields) {
+                    o.append("        self.").append(f.name).append(".hash(state);\n");
+                }
+                o.append("    }\n");
+                o.append("}\n\n");
+            }
 
             // Methods on object
             for (Method m : obj.methods) {
@@ -393,7 +509,7 @@ public class NativeGenerator {
                 for (Stmt s : m.body) {
                     String txt = s.text != null ? s.text : "";
                     for (Field f : obj.fields) {
-                        if (txt.contains(f.name + " =") || txt.contains(f.name + "=")) {
+                        if (txt.matches(".*\\b" + f.name + "\\s*(?<!=)=(?!=).*")) {
                             mutatesSelf = true;
                             break;
                         }
@@ -418,11 +534,16 @@ public class NativeGenerator {
                             break;
                         }
                     }
+                    String pType = rustType(p.type);
+                    String simpleObjName = obj.name.contains("__") ? obj.name.substring(obj.name.lastIndexOf("__") + 2) : obj.name;
+                    if (p.type != null && (p.type.equals(obj.name) || p.type.equals(simpleObjName))) {
+                        pType = "Self";
+                    }
                     if (paramMutated) {
                         writeParams.add(p.name);
-                        o.append(", ").append(p.name).append(": &mut ").append(rustType(p.type));
+                        o.append(", ").append(p.name).append(": &mut ").append(pType);
                     } else {
-                        o.append(", ").append(p.name).append(": ").append(rustType(p.type));
+                        o.append(", ").append(p.name).append(": ").append(pType);
                     }
                     declared.add(p.name);
                 }
@@ -1075,7 +1196,7 @@ public class NativeGenerator {
 
     private static void emitGenericMacro(StringBuilder o, Function fn, Set<String> writeFunctions,
                                          Map<String, Domain> domains, Map<String, ObjectType> objects) {
-        o.append("macro_rules! __moss_fn_").append(fn.name).append(" {\n    (");
+        o.append("#[macro_export]\nmacro_rules! __moss_fn_").append(fn.name).append(" {\n    (");
         for (int i = 0; i < fn.params.size(); i++) {
             if (i > 0) o.append(", ");
             o.append("$").append(fn.params.get(i).name).append(":expr");
@@ -1114,16 +1235,7 @@ public class NativeGenerator {
             }
         }
         StringBuilder bodySb = new StringBuilder();
-        for (Stmt s : fn.body) {
-            if (s.kind == Stmt.Kind.Return) {
-                String val = s.a != null ? s.a.trim() : (s.text != null && s.text.startsWith("return ") ? s.text.substring(7).trim() : "");
-                if (!val.isEmpty() && !val.equals("return")) {
-                    bodySb.append("        ").append(lowerExpr(val, Collections.emptySet(), domains, objects)).append("\n");
-                }
-            } else {
-                genStmt(bodySb, s, "        ", declared, Collections.emptySet(), domains, objects);
-            }
-        }
+        genBlockStmts(bodySb, fn.body, "        ", declared, Collections.emptySet(), Collections.emptySet(), domains, objects, false, false, false, false);
         if (fn.resultExpression != null && !fn.resultExpression.isEmpty()) {
             String resLowered = lowerExpr(fn.resultExpression, Collections.emptySet(), domains, objects);
             boolean isVoidWrite = writeFunctions.contains(fn.name)
@@ -1135,6 +1247,7 @@ public class NativeGenerator {
             }
         }
         String bodyStr = bodySb.toString();
+        bodyStr = bodyStr.replaceAll("(?m)^(\\s*)return\\s+([^;]+);\\s*$", "$1$2");
         for (String mp : mutatedParams) {
             bodyStr = bodyStr.replaceAll("\\b" + mp + "\\b", "(\\$" + mp + ")");
         }
@@ -1553,7 +1666,7 @@ public class NativeGenerator {
         if (expr == null) return "";
         expr = expr.trim();
         for (String f : objFields) {
-            expr = expr.replaceAll("\\b" + f + "\\b", "self." + f);
+            expr = expr.replaceAll("(?<!\\.)\\b" + f + "\\b", "self." + f);
         }
         return lowerExpr(expr, Collections.emptySet(), domains, objects);
     }
@@ -1781,7 +1894,7 @@ public class NativeGenerator {
         if (expr == null) return "";
         expr = expr.trim();
         for (String f : objFields) {
-            expr = expr.replaceAll("\\b" + f + "\\b", "self." + f);
+            expr = expr.replaceAll("(?<!\\.)\\b" + f + "\\b", "self." + f);
         }
         return lowerExpr(expr, stateFields, domains, objects);
     }
@@ -2033,8 +2146,23 @@ public class NativeGenerator {
                 if (!args.isEmpty()) {
                     for (String part : splitTopLevel(args, ',')) {
                         part = part.trim();
-                        if (part.contains(":")) {
-                            part = part.split(":", 2)[1].trim();
+                        int colonIdx = -1;
+                        int pDepth = 0;
+                        boolean inQ = false;
+                        for (int ci = 0; ci < part.length(); ci++) {
+                            char ch = part.charAt(ci);
+                            if (ch == '"' && (ci == 0 || part.charAt(ci - 1) != '\\')) inQ = !inQ;
+                            if (!inQ) {
+                                if (ch == '(' || ch == '[' || ch == '{') pDepth++;
+                                else if (ch == ')' || ch == ']' || ch == '}') pDepth--;
+                                else if (ch == ':' && pDepth == 0) {
+                                    colonIdx = ci;
+                                    break;
+                                }
+                            }
+                        }
+                        if (colonIdx > 0) {
+                            part = part.substring(colonIdx + 1).trim();
                         }
                         if (stateFields.contains(part)) {
                             loweredArgs.add("&state." + part);
@@ -2055,7 +2183,7 @@ public class NativeGenerator {
         if (expr.startsWith("[") && expr.endsWith("]")) {
             String inner = expr.substring(1, expr.length() - 1).trim();
             if (inner.isEmpty()) {
-                return "std::vec::Vec::<i64>::new()";
+                return "std::vec::Vec::new()";
             }
             List<String> items = new ArrayList<>();
             for (String part : splitTopLevel(inner, ',')) {
@@ -2101,8 +2229,23 @@ public class NativeGenerator {
                 if (!args.isEmpty()) {
                     for (String part : splitTopLevel(args, ',')) {
                         part = part.trim();
-                        if (part.contains(":")) {
-                            part = part.split(":", 2)[1].trim();
+                        int colonIdx = -1;
+                        int pDepth = 0;
+                        boolean inQ = false;
+                        for (int ci = 0; ci < part.length(); ci++) {
+                            char ch = part.charAt(ci);
+                            if (ch == '"' && (ci == 0 || part.charAt(ci - 1) != '\\')) inQ = !inQ;
+                            if (!inQ) {
+                                if (ch == '(' || ch == '[' || ch == '{') pDepth++;
+                                else if (ch == ')' || ch == ']' || ch == '}') pDepth--;
+                                else if (ch == ':' && pDepth == 0) {
+                                    colonIdx = ci;
+                                    break;
+                                }
+                            }
+                        }
+                        if (colonIdx > 0) {
+                            part = part.substring(colonIdx + 1).trim();
                         }
                         argList.add(cloneIfIdent(part, lowerExpr(part, stateFields, domains, objects)));
                     }
@@ -2142,19 +2285,49 @@ public class NativeGenerator {
                 if (!args.isEmpty()) {
                     for (String part : splitTopLevel(args, ',')) {
                         part = part.trim();
-                        if (part.contains(":")) {
-                            part = part.split(":", 2)[1].trim();
+                        int colonIdx = -1;
+                        int pDepth = 0;
+                        boolean inQ = false;
+                        for (int ci = 0; ci < part.length(); ci++) {
+                            char ch = part.charAt(ci);
+                            if (ch == '"' && (ci == 0 || part.charAt(ci - 1) != '\\')) inQ = !inQ;
+                            if (!inQ) {
+                                if (ch == '(' || ch == '[' || ch == '{') pDepth++;
+                                else if (ch == ')' || ch == ']' || ch == '}') pDepth--;
+                                else if (ch == ':' && pDepth == 0) {
+                                    colonIdx = ci;
+                                    break;
+                                }
+                            }
+                        }
+                        if (colonIdx > 0) {
+                            part = part.substring(colonIdx + 1).trim();
                         }
                         argList.add(lowerExpr(part, stateFields, domains, objects));
                     }
                 }
                 return simpleName + "(" + String.join(", ", argList) + ")";
             }
-            if (simpleName.equals("Carrier") || callee.endsWith("__Carrier") || simpleName.equals("Gauge") || callee.endsWith("__Gauge") || objects.containsKey(callee) || objects.containsKey(simpleName)) {
-                String args = expr.substring(openParen + 1, expr.length() - 1).trim();
+            String argsInside = expr.substring(openParen + 1, expr.length() - 1).trim();
+            boolean hasNamedArgs = false;
+            int topDepth = 0;
+            boolean topInStr = false;
+            for (int ci = 0; ci < argsInside.length(); ci++) {
+                char ch = argsInside.charAt(ci);
+                if (ch == '"' && (ci == 0 || argsInside.charAt(ci - 1) != '\\')) topInStr = !topInStr;
+                if (!topInStr) {
+                    if (ch == '(' || ch == '[' || ch == '{') topDepth++;
+                    else if (ch == ')' || ch == ']' || ch == '}') topDepth--;
+                    else if ((ch == ':' || ch == '=') && topDepth == 0) {
+                        hasNamedArgs = true;
+                        break;
+                    }
+                }
+            }
+            if (Character.isUpperCase(simpleName.charAt(0)) && (hasNamedArgs || simpleName.equals("Carrier") || callee.endsWith("__Carrier") || simpleName.equals("Gauge") || callee.endsWith("__Gauge") || objects.containsKey(callee) || objects.containsKey(simpleName))) {
                 List<String> fieldAssignments = new ArrayList<>();
-                if (!args.isEmpty()) {
-                    for (String part : splitTopLevel(args, ',')) {
+                if (!argsInside.isEmpty()) {
+                    for (String part : splitTopLevel(argsInside, ',')) {
                         part = part.trim();
                         if (part.contains("=")) {
                             String[] kv = part.split("=", 2);
@@ -2176,8 +2349,23 @@ public class NativeGenerator {
                 if (!args.isEmpty()) {
                     for (String part : splitTopLevel(args, ',')) {
                         part = part.trim();
-                        if (part.contains(":")) {
-                            part = part.split(":", 2)[1].trim();
+                        int colonIdx = -1;
+                        int pDepth = 0;
+                        boolean inQ = false;
+                        for (int ci = 0; ci < part.length(); ci++) {
+                            char ch = part.charAt(ci);
+                            if (ch == '"' && (ci == 0 || part.charAt(ci - 1) != '\\')) inQ = !inQ;
+                            if (!inQ) {
+                                if (ch == '(' || ch == '[' || ch == '{') pDepth++;
+                                else if (ch == ')' || ch == ']' || ch == '}') pDepth--;
+                                else if (ch == ':' && pDepth == 0) {
+                                    colonIdx = ci;
+                                    break;
+                                }
+                            }
+                        }
+                        if (colonIdx > 0) {
+                            part = part.substring(colonIdx + 1).trim();
                         }
                         argList.add(cloneIfIdent(part, lowerExpr(part, stateFields, domains, objects)));
                     }
@@ -2266,6 +2454,11 @@ public class NativeGenerator {
                 if (methodName.equals("values") && rawArgs.isEmpty()) {
                     return loweredRecv + ".__moss_values()";
                 }
+                if (methodName.equals("get") && rawArgs.size() == 2) {
+                    String keyExpr = lowerExpr(rawArgs.get(0).trim(), stateFields, domains, objects);
+                    String fbExpr = lowerExpr(rawArgs.get(1).trim(), stateFields, domains, objects);
+                    return "((*(" + loweredRecv + ").get(&(" + keyExpr + ")).unwrap_or(&(" + fbExpr + "))).clone())";
+                }
                 if (methodName.equals("delete") && rawArgs.size() == 3) {
                     String keyExpr = lowerExpr(rawArgs.get(0).trim(), stateFields, domains, objects);
                     String fbExpr = lowerExpr(rawArgs.get(1).trim(), stateFields, domains, objects);
@@ -2313,8 +2506,23 @@ public class NativeGenerator {
                 if (!args.isEmpty()) {
                     for (String part : splitTopLevel(args, ',')) {
                         part = part.trim();
-                        if (part.contains(":")) {
-                            part = part.split(":", 2)[1].trim();
+                        int colonIdx = -1;
+                        int pDepth = 0;
+                        boolean inQ = false;
+                        for (int ci = 0; ci < part.length(); ci++) {
+                            char ch = part.charAt(ci);
+                            if (ch == '"' && (ci == 0 || part.charAt(ci - 1) != '\\')) inQ = !inQ;
+                            if (!inQ) {
+                                if (ch == '(' || ch == '[' || ch == '{') pDepth++;
+                                else if (ch == ')' || ch == ']' || ch == '}') pDepth--;
+                                else if (ch == ':' && pDepth == 0) {
+                                    colonIdx = ci;
+                                    break;
+                                }
+                            }
+                        }
+                        if (colonIdx > 0) {
+                            part = part.substring(colonIdx + 1).trim();
                         }
                         boolean isObjStateField = false;
                         if (stateFields.contains(part)) {
@@ -2336,6 +2544,8 @@ public class NativeGenerator {
                             String loweredPart = lowerExpr(part, stateFields, domains, objects);
                             if (isWriteCall) {
                                 loweredPart = "&mut " + loweredPart;
+                            } else if (loweredPart.contains(" { ") && !loweredPart.startsWith("&")) {
+                                loweredPart = "&" + loweredPart;
                             } else if (part.matches("^[A-Za-z_][A-Za-z0-9_]*$") && !part.equals("true") && !part.equals("false") && !simpleName.startsWith("set_overflow")) {
                                 loweredPart = loweredPart + ".clone()";
                             }

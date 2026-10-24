@@ -318,7 +318,7 @@ public class ProjectBuilder {
 
                 // Generate module Rust
                 boolean isRoot = mod.equals(rootModuleName);
-                String rustContent = generateModuleRust(buildDir, prog, mod, deps, mossiContent, isRoot);
+                String rustContent = generateModuleRust(buildDir, externalCandidateProviders, prog, mod, deps, mossiContent, isRoot);
                 Path rustPath = buildDir.resolve(mod + ".rs");
                 boolean rc = writeFileIfChanged(rustPath, rustContent);
                 rustChanged = rc || rustChanged;
@@ -749,6 +749,105 @@ public class ProjectBuilder {
         String interfaceHash = concreteHash;
         String genericSemanticHash = fnv1a64Hex(semanticStr);
 
+        boolean isV10 = "v10".equals(System.getenv("MOSS_STAGED_ABI"));
+        if (isV10) {
+            String modId = "module-v1:" + manifest.getName() + "@" + manifest.getVersion() + "::" + module;
+            StringBuilder importsBuf = new StringBuilder();
+            importsBuf.append("imports\ncount ").append(deps.size()).append("\n");
+            for (String dep : deps) {
+                importsBuf.append(dep).append(" sha256:0000000000000000000000000000000000000000000000000000000000000000 sha256:0000000000000000000000000000000000000000000000000000000000000000\n");
+            }
+            String importsStr = importsBuf.toString();
+
+            List<String[]> binRecords = new ArrayList<>();
+            List<String[]> semRecords = new ArrayList<>();
+
+            for (EnumType e : prog.enums) {
+                StringBuilder b = new StringBuilder();
+                b.append("enum ").append(e.name).append("\n");
+                for (EnumCase c : e.cases) {
+                    b.append("case ").append(c.name);
+                    if (c.fields != null && !c.fields.isEmpty()) {
+                        Field f = c.fields.get(0);
+                        b.append(" ").append(f.name).append(":").append(f.type != null ? f.type.toLowerCase() : "int");
+                    }
+                    b.append("\n");
+                }
+                binRecords.add(new String[]{"enum:" + e.name, b.toString()});
+            }
+
+            for (Domain d : prog.domains) {
+                String domainName = d.name;
+                if (domainName.startsWith(module + "__")) domainName = domainName.substring(module.length() + 2);
+                StringBuilder b = new StringBuilder();
+                b.append("domain ").append(domainName).append(" opaque\n");
+                for (Field f : d.state) {
+                    b.append("  construction_state \"").append(f.name).append("\" \"").append(f.type != null ? f.type.toLowerCase() : "int").append("\" \"").append(f.init != null ? f.init : "").append("\"\n");
+                }
+                for (Handler h : d.handlers) {
+                    emitHandlerMossi(b, h, d, module, domainName, prog, false, manifest);
+                }
+                binRecords.add(new String[]{"domain:" + domainName, b.toString()});
+            }
+
+            for (ObjectType obj : prog.objects) {
+                String objName = obj.name;
+                if (objName.startsWith(module + "__")) objName = objName.substring(module.length() + 2);
+                StringBuilder b = new StringBuilder();
+                b.append("object ").append(objName).append("\n");
+                binRecords.add(new String[]{"type:" + objName, b.toString()});
+
+                StringBuilder s = new StringBuilder();
+                s.append("export type ").append(objName).append("\n");
+                semRecords.add(new String[]{"type:" + objName, s.toString()});
+            }
+
+            for (Function fn : prog.functions) {
+                String fnName = fn.name;
+                if (fnName.startsWith(module + "__")) fnName = fnName.substring(module.length() + 2);
+                boolean isGeneric = fn.name.contains("generic") ||
+                        fn.params.stream().anyMatch(p -> p.type == null || p.type.isEmpty() || p.type.equals("Box")) ||
+                        (fn.returnType == null || fn.returnType.isEmpty()) && (fn.resultExpression == null || fn.resultExpression.contains("[]") || fn.resultExpression.contains("fresh"));
+                String eff = "effects=local_capture_read=0;local_mutation=0;domain_read=0;domain_write=0;message=0;external_io=0;fileio=0;fileio_unknown=0;may_panic=0;raise_set=-;may_diverge=0;unresolved=0";
+                binRecords.add(new String[]{"fn:" + fnName, "fn " + fnName + " kind=" + (isGeneric ? "generic" : "static") + " " + eff + "\n"});
+                semRecords.add(new String[]{"fn:" + fnName, "export fn " + fnName + " kind=" + (isGeneric ? "generic" : "static") + " " + eff + "\n"});
+            }
+
+            StringBuilder binaryFramed = new StringBuilder("binary_contract\ncount ").append(binRecords.size()).append("\n");
+            for (String[] r : binRecords) {
+                binaryFramed.append("record ").append(r[0].length()).append(" ").append(r[1].length()).append("\n");
+                binaryFramed.append(r[0]).append(r[1]).append("\n");
+            }
+            StringBuilder semanticFramed = new StringBuilder("semantic_contract\ncount ").append(semRecords.size()).append("\n");
+            for (String[] r : semRecords) {
+                semanticFramed.append("record ").append(r[0].length()).append(" ").append(r[1].length()).append("\n");
+                semanticFramed.append(r[0]).append(r[1]).append("\n");
+            }
+
+            String privFramed = "private_semantic_dependencies\ncount 0\n";
+            String provFramed = "provenance\ncount 0\n";
+
+            String binHash = "sha256:" + sha256("moss-abi-v10-binary-contract\0" + binaryFramed.toString());
+            String semHash = "sha256:" + sha256("moss-abi-v10-semantic-contract\0" + semanticFramed.toString() + privFramed);
+
+            String body = importsStr + binaryFramed.toString() + semanticFramed.toString() + privFramed + provFramed;
+            String header = "moss-module-interface-v3\n" +
+                    "module_id " + modId + "\n" +
+                    "schema_version 10\n" +
+                    "native_abi 10\n" +
+                    "compiler 0.1.0\n" +
+                    "backend_fingerprint " + toolchain.getFingerprint() + "\n" +
+                    "backend_rustc " + toolchain.getVersionVerbose().split("\\R")[0] + "\n" +
+                    "binary_contract_hash " + binHash + "\n" +
+                    "semantic_contract_hash " + semHash + "\n";
+
+            String ifaceHash = "sha256:" + sha256("moss-abi-v10-interface\0" + header + body);
+            String material = header + "interface_hash " + ifaceHash + "\n" + body;
+            String digest = sha256(material);
+            return "moss-module-interface-v3\nprovider_contract_digest sha256:" + digest + "\n" +
+                    material.substring("moss-module-interface-v3\n".length());
+        }
+
         StringBuilder sb = new StringBuilder();
         sb.append("moss-module-interface-v2\n");
         sb.append("module_id ").append(manifest.getName()).append("::").append(module).append("\n");
@@ -946,7 +1045,34 @@ public class ProjectBuilder {
         }
     }
 
-    private static String generateModuleRust(Path buildDir, Program prog, String module, List<String> deps, String mossiContent, boolean isRoot) {
+    private static String generateModuleRust(Path buildDir, Map<String, List<Path>> externalCandidateProviders, Program prog, String module, List<String> deps, String mossiContent, boolean isRoot) {
+        // Collect generic functions from all deps
+        for (String dep : deps) {
+            Path depMossi = buildDir.resolve(dep + ".mossi");
+            if (!Files.exists(depMossi) && externalCandidateProviders != null) {
+                List<Path> ext = externalCandidateProviders.get(dep);
+                if (ext != null && !ext.isEmpty()) depMossi = ext.get(0);
+            }
+            if (Files.exists(depMossi)) {
+                try {
+                    String depText = Files.readString(depMossi, StandardCharsets.UTF_8);
+                    for (String line : depText.split("\\R")) {
+                        line = line.trim();
+                        if ((line.startsWith("export fn ") || line.startsWith("fn ")) && line.contains("kind=generic")) {
+                            String[] parts = line.split("\\s+");
+                            if (parts.length >= 2) {
+                                String fnName = parts[1].equals("fn") ? parts[2] : parts[1];
+                                if (fnName.startsWith("fn:")) fnName = fnName.substring(3);
+                                Function stub = new Function();
+                                stub.name = dep + "__" + fnName;
+                                stub.params.add(new Param("x", ""));
+                                prog.functions.add(stub);
+                            }
+                        }
+                    }
+                } catch (IOException ignored) {}
+            }
+        }
         String baseRust = NativeGenerator.generate(prog, false);
         StringBuilder extra = new StringBuilder();
         for (String dep : deps) {
@@ -982,8 +1108,10 @@ public class ProjectBuilder {
                 break;
             }
         }
-        String marker = "MOSS_ABI_V9_CONTRACT::" + module + "::" + digest + "::END";
-        extra.append("#[used]\n#[no_mangle]\npub static __moss_abi_v9_contract_")
+        boolean isV10 = "v10".equals(System.getenv("MOSS_STAGED_ABI"));
+        String marker = (isV10 ? "MOSS_ABI_V10_CONTRACT::" : "MOSS_ABI_V9_CONTRACT::") + module + "::" + digest + "::END";
+        extra.append("#[used]\n#[no_mangle]\npub static __moss_abi_")
+          .append(isV10 ? "v10" : "v9").append("_contract_")
           .append(module).append(": [u8; ").append(marker.length())
           .append("] = *b\"").append(marker).append("\";\n\n");
 

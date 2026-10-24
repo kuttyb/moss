@@ -15,6 +15,7 @@ public class ExpressionTyper {
     private final Map<String, ObjectType> objects;
     private final Map<String, EnumType> enums;
     private final Map<String, Trait> traits;
+    private final Deque<String> activeSpecializations = new ArrayDeque<>();
 
     public ExpressionTyper(Program program,
                            TypeContext typeContext,
@@ -360,9 +361,9 @@ public class ExpressionTyper {
                 // Check Object constructor
                 if (objects.containsKey(callee)) {
                     ObjectType obj = objects.get(callee);
-                    checkConstructorArgs(callee, obj.fields, argExprs, line, env);
+                    List<TypeRef.FieldSub> subs = checkConstructorArgs(callee, obj.fields, argExprs, line, env);
                     NominalDeclaration decl = typeContext != null ? typeContext.find(callee) : null;
-                    return TypeRef.nominalBound(decl, callee, Collections.emptyList());
+                    return TypeRef.nominalBound(decl, callee, subs);
                 }
 
                 // Check Domain constructor
@@ -388,49 +389,75 @@ public class ExpressionTyper {
                         TypeRef actual = infer(argExprs.get(i), line, env);
                         actualArgs.add(actual);
                         Param param = fn.params.get(i);
-                        if (param.type == null || param.type.isEmpty() || traits.containsKey(param.type) || "Vector".equals(param.type) || "Map".equals(param.type)) {
+                        TypeRef expected = param.typeRef != null ? param.typeRef : TypeParser.parseCanonical(param.type);
+                        if (param.type == null || param.type.isEmpty() || traits.containsKey(param.type)
+                                || "Vector".equals(param.type) || "Map".equals(param.type)
+                                || (expected != null && expected.isBareTemplate())) {
                             hasGenericParam = true;
                         }
-                        TypeRef expected = param.typeRef != null ? param.typeRef : TypeParser.parseCanonical(param.type);
-                        if (expected != null && !solver.unify(actual, expected)) {
+                        if (expected != null && !expected.isBareTemplate() && !solver.unify(actual, expected)) {
+                            throw new CompileError(line, "argument " + (i + 1) + " to function '" +
+                                    callee + "' has incompatible type '" + actual.toCanonicalString() +
+                                    "', expected '" + expected.toCanonicalString() + "'", "TYPE_MISMATCH");
+                        } else if (expected != null && expected.isBareTemplate() && !actual.sameHead(expected)) {
                             throw new CompileError(line, "argument " + (i + 1) + " to function '" +
                                     callee + "' has incompatible type '" + actual.toCanonicalString() +
                                     "', expected '" + expected.toCanonicalString() + "'", "TYPE_MISMATCH");
                         }
                     }
 
-                    // For generic or inferred functions, specialize the return type
-                    if (hasGenericParam && (!fn.body.isEmpty() || (fn.resultExpression != null && !fn.resultExpression.isEmpty()))) {
-                        TypeEnv callEnv = new TypeEnv();
-                        for (int i = 0; i < fn.params.size(); i++) {
-                            callEnv.put(fn.params.get(i).name, actualArgs.get(i));
+                    boolean returnsOpenResult = (fn.returnType == null || fn.returnType.isEmpty())
+                            && (fn.returnTypeRef == null || !fn.returnTypeRef.isClosed());
+
+                    // For generic or open-result functions, specialize the return type
+                    if ((hasGenericParam || returnsOpenResult) && (!fn.body.isEmpty() || (fn.resultExpression != null && !fn.resultExpression.isEmpty()))) {
+                        List<String> argKeyParts = new ArrayList<>();
+                        for (TypeRef a : actualArgs) {
+                            argKeyParts.add(solver.resolve(a).toCanonicalString());
                         }
-                        for (Stmt s : fn.body) {
-                            if (s.kind == Stmt.Kind.Return) {
-                                String retExpr = s.a != null && !s.a.isEmpty() ? s.a.trim() : s.text.trim();
-                                if (retExpr.startsWith("return ")) {
-                                    retExpr = retExpr.substring(7).trim();
-                                }
-                                if (!retExpr.isEmpty()) {
-                                    return infer(retExpr, s.line, callEnv);
-                                }
-                            } else if (s.kind == Stmt.Kind.Assign || s.kind == Stmt.Kind.Let || s.kind == Stmt.Kind.Var) {
-                                String vname = s.a != null ? s.a.trim() : "";
-                                String ve = s.b != null ? s.b.trim() : "";
-                                if (!vname.isEmpty() && !ve.isEmpty()) {
-                                    if (!vname.contains("[")) {
-                                        TypeRef vt = infer(ve, s.line, callEnv);
-                                        callEnv.put(vname, vt);
-                                    } else {
-                                        infer(ve, s.line, callEnv);
-                                    }
-                                }
-                            } else if (s.kind == Stmt.Kind.Call && s.text != null) {
-                                infer(s.text.trim(), s.line, callEnv);
+                        String specKey = callee + "<" + String.join(",", argKeyParts) + ">";
+                        for (String active : activeSpecializations) {
+                            if (active.startsWith(callee + "<")) {
+                                throw new CompileError(line,
+                                        "recursive generic specialization cycle on '" + callee + "': " + active + " -> " + specKey,
+                                        "TYPE_RECURSIVE_SPECIALIZATION");
                             }
                         }
-                        if (fn.resultExpression != null && !fn.resultExpression.isEmpty()) {
-                            return infer(fn.resultExpression, fn.resultLine != 0 ? fn.resultLine : line, callEnv);
+                        activeSpecializations.push(specKey);
+                        try {
+                            TypeEnv callEnv = new TypeEnv();
+                            for (int i = 0; i < fn.params.size(); i++) {
+                                callEnv.put(fn.params.get(i).name, actualArgs.get(i));
+                            }
+                            for (Stmt s : fn.body) {
+                                if (s.kind == Stmt.Kind.Return) {
+                                    String retExpr = s.a != null && !s.a.isEmpty() ? s.a.trim() : s.text.trim();
+                                    if (retExpr.startsWith("return ")) {
+                                        retExpr = retExpr.substring(7).trim();
+                                    }
+                                    if (!retExpr.isEmpty()) {
+                                        return infer(retExpr, s.line, callEnv);
+                                    }
+                                } else if (s.kind == Stmt.Kind.Assign || s.kind == Stmt.Kind.Let || s.kind == Stmt.Kind.Var) {
+                                    String vname = s.a != null ? s.a.trim() : "";
+                                    String ve = s.b != null ? s.b.trim() : "";
+                                    if (!vname.isEmpty() && !ve.isEmpty()) {
+                                        if (!vname.contains("[")) {
+                                            TypeRef vt = infer(ve, s.line, callEnv);
+                                            callEnv.put(vname, vt);
+                                        } else {
+                                            infer(ve, s.line, callEnv);
+                                        }
+                                    }
+                                } else if (s.kind == Stmt.Kind.Call && s.text != null) {
+                                    infer(s.text.trim(), s.line, callEnv);
+                                }
+                            }
+                            if (fn.resultExpression != null && !fn.resultExpression.isEmpty()) {
+                                return infer(fn.resultExpression, fn.resultLine != 0 ? fn.resultLine : line, callEnv);
+                            }
+                        } finally {
+                            activeSpecializations.pop();
                         }
                     }
 
@@ -486,12 +513,17 @@ public class ExpressionTyper {
             int lastDot = e.lastIndexOf('.');
             String base = e.substring(0, lastDot).trim();
             String member = e.substring(lastDot + 1).trim();
-            try {
-                TypeRef targetType = solver.resolve(infer(base, line, env));
-                if (targetType != null && objects.containsKey(targetType.name())) {
+            TypeRef targetType = solver.resolve(infer(base, line, env));
+            if (targetType != null) {
+                if (objects.containsKey(targetType.name())) {
                     ObjectType obj = objects.get(targetType.name());
                     for (Field f : obj.fields) {
                         if (f.name.equals(member)) {
+                            for (TypeRef.FieldSub sub : targetType.fieldSubstitutions()) {
+                                if (sub.name().equals(member)) {
+                                    return solver.resolve(sub.type());
+                                }
+                            }
                             TypeRef fieldType = (f.type != null && !f.type.isEmpty())
                                     ? TypeParser.parseCanonical(f.type)
                                     : solver.fresh(0);
@@ -500,9 +532,8 @@ public class ExpressionTyper {
                     }
                     throw new CompileError(line, "type '" + targetType.name() + "' has no field '" + member + "'", "UNKNOWN_SYMBOL_OR_TYPE");
                 }
-            } catch (CompileError err) {
-                if (err.getCode() != null && err.getCode().equals("UNKNOWN_SYMBOL_OR_TYPE") && err.getMessage().contains("has no field")) {
-                    throw err;
+                if (targetType.kind() == TypeKind.Primitive || targetType.kind() == TypeKind.InferenceVar) {
+                    throw new CompileError(line, "cannot access field '" + member + "' on unconstrained receiver '" + base + "'", "UNTYPED_FIELD_ACCESS");
                 }
             }
         }
@@ -716,6 +747,24 @@ public class ExpressionTyper {
                 for (String a : argExprs) infer(a, line, env);
                 return targetType.typeArgs().size() < 2 ? solver.fresh(0) : targetType.typeArgs().get(1);
             }
+            if ("get".equals(member)) {
+                if (argExprs.size() != 2) {
+                    throw new CompileError(line, "method 'get' on map expects 2 arguments (key, fallback), got " + argExprs.size(), "TYPE_MISMATCH");
+                }
+                TypeRef kArg = solver.resolve(infer(argExprs.get(0), line, env));
+                TypeRef fbArg = solver.resolve(infer(argExprs.get(1), line, env));
+                if (targetType.typeArgs().size() >= 1 && !solver.unify(targetType.typeArgs().get(0), kArg)) {
+                    throw new CompileError(line, "map 'get' key type mismatch: expected '" +
+                            solver.resolve(targetType.typeArgs().get(0)).toCanonicalString() + "', got '" +
+                            kArg.toCanonicalString() + "'", "TYPE_MISMATCH");
+                }
+                if (targetType.typeArgs().size() >= 2 && !solver.unify(targetType.typeArgs().get(1), fbArg)) {
+                    throw new CompileError(line, "map 'get' fallback type mismatch: expected '" +
+                            solver.resolve(targetType.typeArgs().get(1)).toCanonicalString() + "', got '" +
+                            fbArg.toCanonicalString() + "'", "TYPE_MISMATCH");
+                }
+                return targetType.typeArgs().size() >= 2 ? solver.resolve(targetType.typeArgs().get(1)) : fbArg;
+            }
         }
 
         if (targetType.kind() == TypeKind.Builtin && "queue".equals(targetType.name())) {
@@ -842,10 +891,11 @@ public class ExpressionTyper {
         return TypeRef.unit();
     }
 
-    private void checkConstructorArgs(String objectName, List<Field> fields, List<String> argExprs, int line, TypeEnv env) {
+    private List<TypeRef.FieldSub> checkConstructorArgs(String objectName, List<Field> fields, List<String> argExprs, int line, TypeEnv env) {
         if (argExprs.isEmpty() && fields.isEmpty()) {
-            return;
+            return Collections.emptyList();
         }
+        List<TypeRef.FieldSub> subs = new ArrayList<>();
         boolean hasNamed = false;
         Map<String, String> namedArgs = new HashMap<>();
         for (String a : argExprs) {
@@ -860,11 +910,15 @@ public class ExpressionTyper {
         if (hasNamed) {
             for (Field f : fields) {
                 if (namedArgs.containsKey(f.name)) {
-                    TypeRef actual = infer(namedArgs.get(f.name), line, env);
-                    TypeRef expected = TypeParser.parseCanonical(f.type);
-                    if (expected != null && !solver.unify(actual, expected)) {
-                        throw new CompileError(line, "field '" + f.name + "' of type '" + objectName +
-                                "' expects '" + expected.toCanonicalString() + "', got '" + actual.toCanonicalString() + "'", "TYPE_MISMATCH");
+                    TypeRef actual = solver.resolve(infer(namedArgs.get(f.name), line, env));
+                    TypeRef expected = (f.type != null && !f.type.isEmpty()) ? TypeParser.parseCanonical(f.type) : null;
+                    if (expected != null) {
+                        if (!solver.unify(actual, expected)) {
+                            throw new CompileError(line, "field '" + f.name + "' of type '" + objectName +
+                                    "' expects '" + expected.toCanonicalString() + "', got '" + actual.toCanonicalString() + "'", "TYPE_MISMATCH");
+                        }
+                    } else {
+                        subs.add(new TypeRef.FieldSub(f.name, actual));
                     }
                 }
             }
@@ -874,15 +928,20 @@ public class ExpressionTyper {
                         fields.size() + " arguments, got " + argExprs.size(), "ARGUMENT_COUNT_MISMATCH");
             }
             for (int i = 0; i < argExprs.size(); i++) {
-                TypeRef actual = infer(argExprs.get(i), line, env);
+                TypeRef actual = solver.resolve(infer(argExprs.get(i), line, env));
                 Field f = fields.get(i);
-                TypeRef expected = TypeParser.parseCanonical(f.type);
-                if (expected != null && !solver.unify(actual, expected)) {
-                    throw new CompileError(line, "field '" + f.name + "' expects '" +
-                            expected.toCanonicalString() + "', got '" + actual.toCanonicalString() + "'", "TYPE_MISMATCH");
+                TypeRef expected = (f.type != null && !f.type.isEmpty()) ? TypeParser.parseCanonical(f.type) : null;
+                if (expected != null) {
+                    if (!solver.unify(actual, expected)) {
+                        throw new CompileError(line, "field '" + f.name + "' expects '" +
+                                expected.toCanonicalString() + "', got '" + actual.toCanonicalString() + "'", "TYPE_MISMATCH");
+                    }
+                } else {
+                    subs.add(new TypeRef.FieldSub(f.name, actual));
                 }
             }
         }
+        return subs;
     }
 
     public static String stripRedundantParentheses(String s) {
