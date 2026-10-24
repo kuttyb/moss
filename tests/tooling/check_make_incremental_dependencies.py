@@ -144,6 +144,15 @@ def main() -> None:
         if len(configured) != 2:
             raise AssertionError("changed flags reused the old object directory")
 
+        # Switching to the explicit GCC compatibility override must also pick
+        # a separate object tree instead of reusing Clang-built objects.
+        make(project, "moss-dev", "CXX=g++")
+        gcc_objects = list((project / "build/compiler/obj").glob("dev-*/src/moss.o"))
+        if len(gcc_objects) != 3:
+            raise AssertionError("compiler override reused an existing object directory")
+        if "dev-" not in str(gcc_objects[-1].parent.parent):
+            raise AssertionError("GCC override did not create a development object tree")
+
         make(project, "clean")
         if dev.exists() or opt.exists() or wrapper.exists():
             raise AssertionError("clean left compiler outputs behind")
