@@ -33,8 +33,21 @@ COMPILER_OBJECTS_OPT = $(patsubst %.cpp,$(COMPILER_OBJ_DIR_OPT)/%.o,$(COMPILER_S
 COMPILER_DEPFILES_DEV = $(COMPILER_OBJECTS_DEV:.o=.d)
 COMPILER_DEPFILES_OPT = $(COMPILER_OBJECTS_OPT:.o=.d)
 
-# Empty hooks preserve a clean extension point for later PCH and linker work.
+# Clang shares one stable standard-library PCH across compiler translation
+# units. GCC remains an explicit compatibility path without Clang PCH flags.
 CXXFLAGS_PCH ?=
+COMPILER_PCH_DEV = $(COMPILER_OBJ_DIR_DEV)/compiler_pch.pch
+COMPILER_PCH_OPT = $(COMPILER_OBJ_DIR_OPT)/compiler_pch.pch
+ifneq ($(filter clang++ clang++-%,$(notdir $(firstword $(CXX)))),)
+COMPILER_PCH_FLAGS_DEV = -include-pch $(COMPILER_PCH_DEV)
+COMPILER_PCH_FLAGS_OPT = -include-pch $(COMPILER_PCH_OPT)
+COMPILER_PCH_DEPFILES = $(COMPILER_PCH_DEV:.pch=.d) $(COMPILER_PCH_OPT:.pch=.d)
+else
+COMPILER_PCH_FLAGS_DEV =
+COMPILER_PCH_FLAGS_OPT =
+COMPILER_PCH_DEPFILES =
+endif
+
 LINKER ?= $(CXX)
 LDFLAGS ?= -fuse-ld=mold
 LDLIBS ?=
@@ -71,14 +84,31 @@ $(MOSS_OPT): $(COMPILER_OBJECTS_OPT)
 	$(LINKER) $(CXX_TOOLCHAIN_FLAGS) $(CXXFLAGS_OPT) $(LDFLAGS) $^ $(LDLIBS) -o $@.tmp
 	@mv -f $@.tmp $@
 
+ifneq ($(filter clang++ clang++-%,$(notdir $(firstword $(CXX)))),)
+$(COMPILER_PCH_DEV): src/compiler_pch.hpp
+	@mkdir -p $(@D)
+	$(CXX) $(CXX_TOOLCHAIN_FLAGS) $(CPPFLAGS) $(CXXFLAGS_DEV) $(CXXFLAGS_PCH) -x c++-header -MMD -MP -MF $(@:.pch=.d) -MT $@ $< -o $@.tmp
+	@mv -f $@.tmp $@
+	@touch -r $@ $(@:.pch=.d)
+
+$(COMPILER_PCH_OPT): src/compiler_pch.hpp
+	@mkdir -p $(@D)
+	$(CXX) $(CXX_TOOLCHAIN_FLAGS) $(CPPFLAGS) $(CXXFLAGS_OPT) $(CXXFLAGS_PCH) -x c++-header -MMD -MP -MF $(@:.pch=.d) -MT $@ $< -o $@.tmp
+	@mv -f $@.tmp $@
+	@touch -r $@ $(@:.pch=.d)
+
+$(COMPILER_OBJECTS_DEV): $(COMPILER_PCH_DEV)
+$(COMPILER_OBJECTS_OPT): $(COMPILER_PCH_OPT)
+endif
+
 $(COMPILER_OBJ_DIR_DEV)/%.o: %.cpp
 	@mkdir -p $(@D)
-	$(CXX) $(CXX_TOOLCHAIN_FLAGS) $(CPPFLAGS) $(CXXFLAGS_DEV) $(CXXFLAGS_PCH) -MMD -MP -MF $(@:.o=.d) -MT $@ -c $< -o $@
+	$(CXX) $(CXX_TOOLCHAIN_FLAGS) $(CPPFLAGS) $(CXXFLAGS_DEV) $(CXXFLAGS_PCH) $(COMPILER_PCH_FLAGS_DEV) -MMD -MP -MF $(@:.o=.d) -MT $@ -c $< -o $@
 	@touch -r $@ $(@:.o=.d)
 
 $(COMPILER_OBJ_DIR_OPT)/%.o: %.cpp
 	@mkdir -p $(@D)
-	$(CXX) $(CXX_TOOLCHAIN_FLAGS) $(CPPFLAGS) $(CXXFLAGS_OPT) $(CXXFLAGS_PCH) -MMD -MP -MF $(@:.o=.d) -MT $@ -c $< -o $@
+	$(CXX) $(CXX_TOOLCHAIN_FLAGS) $(CPPFLAGS) $(CXXFLAGS_OPT) $(CXXFLAGS_PCH) $(COMPILER_PCH_FLAGS_OPT) -MMD -MP -MF $(@:.o=.d) -MT $@ -c $< -o $@
 	@touch -r $@ $(@:.o=.d)
 
 # Missing depfiles make their corresponding objects out of date and are
@@ -87,7 +117,7 @@ $(COMPILER_DEPFILES_DEV) $(COMPILER_DEPFILES_OPT): ;
 $(foreach object,$(COMPILER_OBJECTS_DEV),$(eval $(object): $(object:.o=.d)))
 $(foreach object,$(COMPILER_OBJECTS_OPT),$(eval $(object): $(object:.o=.d)))
 
--include $(COMPILER_DEPFILES_DEV) $(COMPILER_DEPFILES_OPT)
+-include $(COMPILER_DEPFILES_DEV) $(COMPILER_DEPFILES_OPT) $(COMPILER_PCH_DEPFILES)
 
 check: check-parallel
 

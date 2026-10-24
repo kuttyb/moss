@@ -46,6 +46,8 @@ def main() -> None:
     with tempfile.TemporaryDirectory(prefix="make-deps-", dir=SCRATCH) as temp:
         project = Path(temp)
         shutil.copy2(ROOT / "Makefile", project / "Makefile")
+        (project / "src").mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / "src/compiler_pch.hpp", project / "src/compiler_pch.hpp")
         source = project / "src"
         nested = source / "nested"
         nested.mkdir(parents=True)
@@ -152,6 +154,14 @@ def main() -> None:
             raise AssertionError("compiler override reused an existing object directory")
         if "dev-" not in str(gcc_objects[-1].parent.parent):
             raise AssertionError("GCC override did not create a development object tree")
+
+        # Changing the stable PCH input rebuilds PCH-backed objects in both
+        # profiles and relinks both executables.
+        before = snapshot(tracked)
+        with (source / "compiler_pch.hpp").open("a") as stream:
+            stream.write("\n// PCH dependency edit\n")
+        make(project, "--jobs=8", "moss-dev", "moss-opt")
+        assert_all_changed(before, snapshot(tracked), tracked, "PCH header edit")
 
         make(project, "clean")
         if dev.exists() or opt.exists() or wrapper.exists():

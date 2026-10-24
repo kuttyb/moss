@@ -59,7 +59,10 @@ The repository Makefile compiles the explicit `COMPILER_SOURCES` list
 `src/display_runtime.cpp`, `src/executor_runtime.cpp`,
 `src/fileio_runtime.cpp`, `src/float_format_runtime.cpp`, `src/handler_runtime.cpp`, `src/numeric_runtime.cpp`,
 `src/program_identity.cpp`, and `src/moss.cpp`) into separate objects, then
-links the development and optimized executables at their existing paths. Debug objects use
+links the development and optimized executables at their existing paths. Clang
+profiles build a shared standard-library PCH from `src/compiler_pch.hpp` in the
+same config-specific object directory and use it for each compiler TU; GCC
+overrides skip PCH. Debug objects use
 `build/compiler/obj/dev-<config>/`; optimized objects use
 `build/compiler/obj/opt-<config>/`. Each object has a generated `.d` file from
 GCC/Clang-compatible `-MMD -MP` flags. Included headers and `.inc` files rebuild
@@ -73,10 +76,10 @@ The object directory includes a checksum of the compiler command and relevant
 flags, so configuration changes select a fresh object tree. Old configuration
 trees can be removed with `make clean`, which deletes `build/compiler/`.
 
-`COMPILER_SOURCES` is the extension point for future translation units. The
-Makefile exposes `CXXFLAGS_PCH` for future PCH flags and `LINKER`, `LDFLAGS`,
-and `LDLIBS` for alternate linker selection and link libraries. These hooks do
-not enable PCH, ETI, or alternate linkers by default.
+`COMPILER_SOURCES` is the extension point for future translation units.
+`CXXFLAGS_PCH` adds flags to Clang PCH creation and compilation. `LINKER`,
+`LDFLAGS`, and `LDLIBS` select the linker and link libraries; by default Clang
+uses mold.
 
 By default Moss resolves `rustc` on `PATH`. `RUSTC` may select another
 executable:
