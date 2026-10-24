@@ -1,6 +1,7 @@
 package org.mosslang.compiler.backend;
 
 import org.mosslang.compiler.ast.*;
+import org.mosslang.compiler.semantics.ExpressionTyper;
 import org.mosslang.compiler.semantics.SemanticChecker;
 import org.mosslang.compiler.types.TypeKind;
 import java.io.BufferedReader;
@@ -2525,6 +2526,28 @@ public class NativeGenerator {
                     }
                 }
                 return "__moss_fn_" + callee + "!(" + String.join(", ", macroArgs) + ")";
+            }
+
+            if ("replace".equals(callee)) {
+                String args = expr.substring(openParen + 1, expr.length() - 1).trim();
+                List<String> rArgs = splitTopLevel(args, ',');
+                if (rArgs.size() == 2) {
+                    String placeStr = rArgs.get(0).trim();
+                    String repStr = rArgs.get(1).trim();
+                    String repLowered = lowerExpr(repStr, stateFields, domains, objects);
+                    String placeLowered;
+                    if (placeStr.endsWith("]") && placeStr.contains("[")) {
+                        int ob = ExpressionTyper.findMatchingOpenBracket(placeStr, placeStr.length() - 1);
+                        String base = placeStr.substring(0, ob).trim();
+                        String idx = placeStr.substring(ob + 1, placeStr.length() - 1).trim();
+                        placeLowered = base + "[" + lowerExpr(idx, stateFields, domains, objects) + " as usize]";
+                    } else if (stateFields.contains(placeStr)) {
+                        placeLowered = "(*state." + placeStr + ")";
+                    } else {
+                        placeLowered = placeStr;
+                    }
+                    return "{ let __moss_replacement = " + repLowered + "; std::mem::replace(&mut " + placeLowered + ", __moss_replacement) }";
+                }
             }
 
             // Normal function call e.g. inspect(record) or add(a, b) or FlipFn(...)

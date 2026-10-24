@@ -387,6 +387,15 @@ public class ExpressionTyper {
                     return TypeRef.primitive(callee);
                 }
 
+                if ("replace".equals(callee) && argExprs.size() == 2) {
+                    TypeRef placeType = infer(argExprs.get(0), line, env);
+                    TypeRef replacementType = infer(argExprs.get(1), line, env);
+                    if (!solver.unify(placeType, replacementType)) {
+                        throw new CompileError(line, "replace requires the replacement to have the same static type as the place", "REPLACE_TYPE_MISMATCH");
+                    }
+                    return solver.resolve(placeType);
+                }
+
                 // Check Object constructor
                 if (objects.containsKey(callee)) {
                     ObjectType obj = objects.get(callee);

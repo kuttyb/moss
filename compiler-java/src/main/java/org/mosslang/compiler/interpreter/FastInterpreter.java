@@ -1,6 +1,7 @@
 package org.mosslang.compiler.interpreter;
 
 import org.mosslang.compiler.ast.*;
+import org.mosslang.compiler.semantics.ExpressionTyper;
 import java.io.PrintStream;
 import java.util.*;
 
@@ -1123,6 +1124,47 @@ public class FastInterpreter {
             }
 
             String targetFn = callee;
+            if ("replace".equals(callee) && argList.size() == 2) {
+                Value replacement = evalExpr(argList.get(1), locals, currentDomain);
+                String placeStr = argList.get(0).trim();
+                if (placeStr.endsWith("]") && placeStr.contains("[")) {
+                    int openB = ExpressionTyper.findMatchingOpenBracket(placeStr, placeStr.length() - 1);
+                    String baseName = placeStr.substring(0, openB).trim();
+                    String keyExpr = placeStr.substring(openB + 1, placeStr.length() - 1).trim();
+                    Value baseVal = locals.containsKey(baseName) ? locals.get(baseName) : (currentDomain != null ? currentDomain.state.get(baseName) : null);
+                    Value keyVal = evalExpr(keyExpr, locals, currentDomain);
+                    if (baseVal != null && baseVal.raw instanceof List<?> lst) {
+                        @SuppressWarnings("unchecked")
+                        List<Value> l = (List<Value>) lst;
+                        int idx = (int) keyVal.asInt();
+                        Value old = l.get(idx);
+                        l.set(idx, replacement);
+                        return old;
+                    } else if (baseVal != null && baseVal.raw instanceof Map<?, ?> mp) {
+                        @SuppressWarnings("unchecked")
+                        Map<Object, Value> m = (Map<Object, Value>) mp;
+                        Value old = m.get(keyVal.raw);
+                        m.put(keyVal.raw, replacement);
+                        return old != null ? old : Value.ofUnit();
+                    }
+                } else if (placeStr.contains(".")) {
+                    int dot = placeStr.indexOf('.');
+                    String rootName = placeStr.substring(0, dot).trim();
+                    String fieldName = placeStr.substring(dot + 1).trim();
+                    Value objVal = locals.containsKey(rootName) ? locals.get(rootName) : (currentDomain != null ? currentDomain.state.get(rootName) : null);
+                    if (objVal != null && objVal.raw instanceof Map<?, ?> mp) {
+                        @SuppressWarnings("unchecked")
+                        Map<String, Value> m = (Map<String, Value>) mp;
+                        Value old = m.get(fieldName);
+                        m.put(fieldName, replacement);
+                        return old != null ? old : Value.ofUnit();
+                    }
+                } else {
+                    Value old = locals.get(placeStr);
+                    locals.put(placeStr, replacement);
+                    return old != null ? old : Value.ofUnit();
+                }
+            }
             if (locals.containsKey(callee)) {
                 Value cv = locals.get(callee);
                 if (cv != null && cv.asString().startsWith("function:")) {
