@@ -1,7 +1,7 @@
 package org.mosslang.compiler.backend;
 
 import org.mosslang.compiler.ast.*;
-import java.util.List;
+import java.util.*;
 
 public class NativeGenerator {
     public static String generate(Program program, boolean debugBuild) {
@@ -30,6 +30,11 @@ public class NativeGenerator {
         o.append(MossRuntimeSupport.STRING_RUNTIME).append("\n");
         o.append(MossRuntimeSupport.DISPLAY_RUNTIME).append("\n");
 
+        Map<String, Domain> domains = new HashMap<>();
+        for (Domain d : program.domains) {
+            domains.put(d.name, d);
+        }
+
         // Enums
         for (EnumType e : program.enums) {
             o.append("#[derive(Clone, Debug)]\n");
@@ -50,10 +55,95 @@ public class NativeGenerator {
             o.append("}\n\n");
         }
 
+        // Domains
+        for (Domain d : program.domains) {
+            Set<String> stateFields = new HashSet<>();
+            for (Field f : d.state) {
+                stateFields.add(f.name);
+            }
+
+            // State struct
+            o.append("struct ").append(d.name).append("State {\n");
+            for (Field f : d.state) {
+                o.append("    pub ").append(f.name).append(": ").append(rustFieldType(f)).append(",\n");
+            }
+            o.append("}\n\n");
+
+            // Runtime struct
+            o.append("struct ").append(d.name).append("Runtime {\n");
+            o.append("    state: std::sync::RwLock<").append(d.name).append("State>,\n");
+            o.append("}\n\n");
+
+            // Ref struct
+            o.append("#[derive(Clone)]\n");
+            o.append("struct ").append(d.name).append("Ref {\n");
+            o.append("    state: std::sync::Arc<").append(d.name).append("Runtime>,\n");
+            o.append("}\n\n");
+
+            // Handlers
+            for (Handler h : d.handlers) {
+                String replyType = (h.replyType != null && !h.replyType.isEmpty() && !h.replyType.equals("unit"))
+                        ? rustType(h.replyType) : "()";
+
+                // Handler body function
+                o.append("fn __moss_body_").append(d.name).append("_").append(h.name).append("(");
+                o.append("state: &mut ").append(d.name).append("State");
+                Set<String> declared = new HashSet<>();
+                for (Param p : h.params) {
+                    o.append(", ").append(p.name).append(": ").append(rustType(p.type));
+                    declared.add(p.name);
+                }
+                o.append(") -> ").append(replyType).append(" {\n");
+                for (Stmt s : h.body) {
+                    genStmt(o, s, "    ", declared, stateFields, domains);
+                }
+                o.append("}\n\n");
+            }
+
+            // Domain methods on Ref
+            o.append("impl ").append(d.name).append("Ref {\n");
+            for (Handler h : d.handlers) {
+                String replyType = (h.replyType != null && !h.replyType.isEmpty() && !h.replyType.equals("unit"))
+                        ? rustType(h.replyType) : "()";
+                o.append("    pub fn ").append(h.name).append("_shared(&self");
+                for (Param p : h.params) {
+                    o.append(", ").append(p.name).append(": ").append(rustType(p.type));
+                }
+                o.append(") -> ").append(replyType).append(" {\n");
+                o.append("        let mut __guard = self.state.state.write().unwrap();\n");
+                o.append("        __moss_body_").append(d.name).append("_").append(h.name).append("(&mut *__guard");
+                for (Param p : h.params) {
+                    o.append(", ").append(p.name);
+                }
+                o.append(")\n");
+                o.append("    }\n");
+            }
+            o.append("}\n\n");
+
+            // Constructor
+            o.append("fn construct_").append(d.name).append("(");
+            for (int i = 0; i < d.state.size(); i++) {
+                if (i > 0) o.append(", ");
+                Field f = d.state.get(i);
+                o.append(f.name).append(": ").append(rustFieldType(f));
+            }
+            o.append(") -> ").append(d.name).append("Ref {\n");
+            o.append("    ").append(d.name).append("Ref {\n");
+            o.append("        state: std::sync::Arc::new(").append(d.name).append("Runtime {\n");
+            o.append("            state: std::sync::RwLock::new(").append(d.name).append("State {\n");
+            for (Field f : d.state) {
+                o.append("                ").append(f.name).append(",\n");
+            }
+            o.append("            }),\n");
+            o.append("        }),\n");
+            o.append("    }\n");
+            o.append("}\n\n");
+        }
+
         // Functions
         for (Function fn : program.functions) {
             o.append("fn ").append(fn.name).append("(");
-            java.util.Set<String> declared = new java.util.HashSet<>();
+            Set<String> declared = new HashSet<>();
             for (int i = 0; i < fn.params.size(); i++) {
                 if (i > 0) o.append(", ");
                 Param p = fn.params.get(i);
@@ -66,10 +156,10 @@ public class NativeGenerator {
             }
             o.append(" {\n");
             for (Stmt s : fn.body) {
-                genStmt(o, s, "    ", declared);
+                genStmt(o, s, "    ", declared, Collections.emptySet(), domains);
             }
             if (fn.resultExpression != null) {
-                o.append("    ").append(lowerExpr(fn.resultExpression)).append("\n");
+                o.append("    ").append(lowerExpr(fn.resultExpression, Collections.emptySet(), domains)).append("\n");
             }
             o.append("}\n\n");
         }
@@ -78,14 +168,28 @@ public class NativeGenerator {
         if (program.main != null) {
             o.append("#[export_name = \"moss__main\"]\n");
             o.append("fn main() {\n");
-            java.util.Set<String> declared = new java.util.HashSet<>();
+            Set<String> declared = new HashSet<>();
             for (Stmt s : program.main.body) {
-                genStmt(o, s, "    ", declared);
+                genStmt(o, s, "    ", declared, Collections.emptySet(), domains);
             }
             o.append("}\n");
         }
 
         return o.toString();
+    }
+
+    private static String rustFieldType(Field f) {
+        if (f.type != null && !f.type.isEmpty()) {
+            return rustType(f.type);
+        }
+        if (f.init != null && !f.init.isEmpty()) {
+            String init = f.init.trim();
+            if (init.matches("^-?\\d+$")) return "i64";
+            if (init.matches("^-?\\d+\\.\\d+$")) return "f64";
+            if (init.startsWith("\"")) return "MossStr";
+            if (init.equals("true") || init.equals("false")) return "bool";
+        }
+        return "i64";
     }
 
     private static String rustType(String mossType) {
@@ -97,77 +201,154 @@ public class NativeGenerator {
             case "string", "String" -> "MossStr";
             case "char", "Char" -> "char";
             case "unit" -> "()";
-            default -> mossType;
+            default -> mossType.endsWith("Ref") ? mossType : mossType;
         };
     }
 
-    private static void genStmt(StringBuilder o, Stmt s, String indent, java.util.Set<String> declared) {
+    private static void genStmt(StringBuilder o, Stmt s, String indent, Set<String> declared,
+                                Set<String> stateFields, Map<String, Domain> domains) {
         if (s == null) return;
         switch (s.kind) {
             case Echo -> {
-                o.append(indent).append("println!(\"{}\", ");
-                if (!s.args.isEmpty()) {
-                    o.append(lowerExpr(s.args.get(0)));
+                if (s.args.isEmpty()) {
+                    o.append(indent).append("println!();\n");
                 } else {
-                    o.append("\"\"");
+                    o.append(indent).append("println!(\"");
+                    for (int i = 0; i < s.args.size(); i++) {
+                        if (i > 0) o.append(" ");
+                        o.append("{}");
+                    }
+                    o.append("\"");
+                    for (String arg : s.args) {
+                        o.append(", ").append(lowerExpr(arg, stateFields, domains));
+                    }
+                    o.append(");\n");
+                }
+            }
+            case Message -> {
+                o.append(indent);
+                if (s.messageResult != null && !s.messageResult.isEmpty()) {
+                    declared.add(s.messageResult);
+                    o.append("let ").append(s.messageResult).append(" = ");
+                }
+                o.append(s.a).append(".").append(s.b).append("_shared(");
+                for (int i = 0; i < s.args.size(); i++) {
+                    if (i > 0) o.append(", ");
+                    o.append(lowerExpr(s.args.get(i), stateFields, domains));
                 }
                 o.append(");\n");
             }
-            case Let -> {
-                declared.add(s.a);
-                o.append(indent).append("let ").append(s.a).append(" = ").append(lowerExpr(s.b)).append(";\n");
-            }
-            case Var -> {
-                declared.add(s.a);
-                o.append(indent).append("let mut ").append(s.a).append(" = ").append(lowerExpr(s.b)).append(";\n");
-            }
-            case Assign -> {
-                if (declared.add(s.a)) {
-                    o.append(indent).append("let mut ").append(s.a).append(" = ").append(lowerExpr(s.b)).append(";\n");
-                } else {
-                    o.append(indent).append(s.a).append(" = ").append(lowerExpr(s.b)).append(";\n");
+            case Reply -> {
+                o.append(indent).append("return ");
+                if (s.a != null && !s.a.isEmpty()) {
+                    o.append(lowerExpr(s.a, stateFields, domains));
                 }
+                o.append(";\n");
             }
             case Return -> {
                 o.append(indent).append("return ");
                 if (s.a != null && !s.a.isEmpty()) {
-                    o.append(lowerExpr(s.a));
+                    o.append(lowerExpr(s.a, stateFields, domains));
                 }
                 o.append(";\n");
+            }
+            case Let -> {
+                declared.add(s.a);
+                o.append(indent).append("let ").append(s.a).append(" = ")
+                        .append(lowerExpr(s.b, stateFields, domains)).append(";\n");
+            }
+            case Var -> {
+                declared.add(s.a);
+                o.append(indent).append("let mut ").append(s.a).append(" = ")
+                        .append(lowerExpr(s.b, stateFields, domains)).append(";\n");
+            }
+            case Assign -> {
+                if (stateFields.contains(s.a)) {
+                    o.append(indent).append("state.").append(s.a).append(" = ")
+                            .append(lowerExpr(s.b, stateFields, domains)).append(";\n");
+                } else if (declared.add(s.a)) {
+                    o.append(indent).append("let mut ").append(s.a).append(" = ")
+                            .append(lowerExpr(s.b, stateFields, domains)).append(";\n");
+                } else {
+                    o.append(indent).append(s.a).append(" = ")
+                            .append(lowerExpr(s.b, stateFields, domains)).append(";\n");
+                }
+            }
+            case Call -> {
+                o.append(indent).append(lowerExpr(s.text, stateFields, domains)).append(";\n");
             }
             case Raw -> {
                 String t = s.text != null ? s.text.trim() : "";
                 if (t.startsWith("echo ")) {
                     String arg = t.substring(5).trim();
-                    o.append(indent).append("println!(\"{}\", ").append(lowerExpr(arg)).append(");\n");
+                    o.append(indent).append("println!(\"{}\", ").append(lowerExpr(arg, stateFields, domains)).append(");\n");
                 } else if (t.contains("=") && !t.contains("==")) {
                     int eq = t.indexOf('=');
                     String lhs = t.substring(0, eq).trim();
                     String rhs = t.substring(eq + 1).trim();
-                    if (declared.add(lhs)) {
-                        o.append(indent).append("let mut ").append(lhs).append(" = ").append(lowerExpr(rhs)).append(";\n");
+                    if (stateFields.contains(lhs)) {
+                        o.append(indent).append("state.").append(lhs).append(" = ")
+                                .append(lowerExpr(rhs, stateFields, domains)).append(";\n");
+                    } else if (declared.add(lhs)) {
+                        o.append(indent).append("let mut ").append(lhs).append(" = ")
+                                .append(lowerExpr(rhs, stateFields, domains)).append(";\n");
                     } else {
-                        o.append(indent).append(lhs).append(" = ").append(lowerExpr(rhs)).append(";\n");
+                        o.append(indent).append(lhs).append(" = ")
+                                .append(lowerExpr(rhs, stateFields, domains)).append(";\n");
                     }
                 } else if (!t.isEmpty()) {
-                    o.append(indent).append(lowerExpr(t)).append(";\n");
+                    o.append(indent).append(lowerExpr(t, stateFields, domains)).append(";\n");
                 }
             }
             default -> {
                 String t = s.text != null ? s.text.trim() : "";
                 if (!t.isEmpty()) {
-                    o.append(indent).append(lowerExpr(t)).append(";\n");
+                    o.append(indent).append(lowerExpr(t, stateFields, domains)).append(";\n");
                 }
             }
         }
     }
 
-    private static String lowerExpr(String expr) {
+    private static String lowerExpr(String expr, Set<String> stateFields, Map<String, Domain> domains) {
         if (expr == null) return "";
         expr = expr.trim();
         if (expr.startsWith("\"") && expr.endsWith("\"")) {
             return "MossStr::from(" + expr + ")";
         }
+
+        // Domain construction check e.g. Counter() -> construct_Counter(0)
+        int openParen = expr.indexOf('(');
+        if (openParen > 0 && expr.endsWith(")")) {
+            String callee = expr.substring(0, openParen).trim();
+            if (domains.containsKey(callee)) {
+                Domain d = domains.get(callee);
+                String args = expr.substring(openParen + 1, expr.length() - 1).trim();
+                if (args.isEmpty()) {
+                    // Fill default values for state fields
+                    StringBuilder argBuf = new StringBuilder();
+                    for (int i = 0; i < d.state.size(); i++) {
+                        if (i > 0) argBuf.append(", ");
+                        Field f = d.state.get(i);
+                        String val = f.init != null && !f.init.isEmpty() ? f.init : "0";
+                        argBuf.append(val);
+                    }
+                    return "construct_" + callee + "(" + argBuf + ")";
+                } else {
+                    return "construct_" + callee + "(" + args + ")";
+                }
+            }
+        }
+
+        // State field access inside handler e.g. value -> state.value
+        if (stateFields.contains(expr)) {
+            return "state." + expr;
+        }
+
+        // Simple binary operations involving state fields e.g. value + amount -> state.value + amount
+        for (String f : stateFields) {
+            expr = expr.replaceAll("\\b" + f + "\\b", "state." + f);
+        }
+
         return expr;
     }
 }
