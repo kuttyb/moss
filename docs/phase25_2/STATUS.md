@@ -184,6 +184,11 @@ build, GCC development build and smoke, feedback validation, and the focused
 ABI-v9/v10, source-free, SDK and hostile-artifact gates passed. The full check
 initially found direct test harnesses that omitted newly separated owner TUs;
 the harness link lists were repaired, assertions preserved, and the complete
-suite rerun successfully. Exact-SHA final Architect review is pending. R3
-implementation commits through the tested code are on `phase25-2-work`; no
-merge to `main` has been performed.
+suite rerun successfully. The independent Architect reviewed exact pushed candidate
+`480990e5526eb06b46d7cdd2a84a89b09eee3e84` and issued **GO**, with no open
+P0/P1/P2 findings. The review confirmed production source ownership, direct
+harness links, object isolation, header dependency behavior, benchmark record
+consistency, and the documented Java/ETI limits. The date-only follow-up closed
+the review's sole P2 on the preceding documentation candidate. Implementation and
+closeout commits are on `phase25-2-work`; no merge to `main` has been
+performed.

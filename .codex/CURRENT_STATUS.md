@@ -12108,4 +12108,4 @@ On integrated candidate `8bce73223dc42177c1fad7224da1ab899df26414`, the full
 examples, Clang optimized build, GCC development build/smoke and relevant
 ABI-v9/v10, SDK, source-free and hostile-artifact gates passed. Feedback validation, `git diff --check`, benchmark Python compile/help, fixture
 JSON parse, and the 21-row raw CSV checks all pass on the current closeout tree.
-Benchmark source code was measured at `b4bc3b7ec9ad74c535ece2aacbcac6fb144e8edd`; subsequent production C++ was unchanged. Remaining: run closeout validators, commit and push raw benchmark/docs, then obtain independent final exact-SHA Architect review and record its verdict. No merge to `main`.
+Benchmark source code was measured at `b4bc3b7ec9ad74c535ece2aacbcac6fb144e8edd`; subsequent production C++ was unchanged. The independent Architect reviewed exact pushed candidate `480990e5526eb06b46d7cdd2a84a89b09eee3e84` and issued GO with no open P0/P1/P2 findings; the sole date P2 on the prior docs candidate was corrected and re-reviewed. Benchmark/docs are committed and pushed to `phase25-2-work`; no merge to `main`.
