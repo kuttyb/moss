@@ -211,8 +211,7 @@ public class Main {
                         List<Path> cands = candidateMap.get(imp.name);
                         if (cands != null && !cands.isEmpty()) {
                             Path cand = cands.get(0);
-                            Path localModSrc = projectRoot != null ? projectRoot.resolve("src").resolve(imp.name + ".moss") : null;
-                            if (localModSrc == null || !Files.exists(localModSrc)) {
+                            if (!org.mosslang.compiler.project.SourceFreeAbi.hasLocalModuleSource(projectRoot, imp.name)) {
                                 org.mosslang.compiler.project.SourceFreeAbi.validateMossiInterface(cand);
                             }
                             loadedExternalModules.put(imp.name, org.mosslang.compiler.project.SourceFreeAbi.parseMossiInfo(cand));
@@ -386,7 +385,7 @@ public class Main {
             String content = Files.readString(Paths.get(sourcePath), StandardCharsets.UTF_8);
             Program program = Parser.parseSource(content, absPath);
 
-            if (interpMode) {
+            if (interpMode || checkOnly) {
                 Path sourceFile = Paths.get(sourcePath).toAbsolutePath();
                 Path dir = sourceFile.getParent();
                 Path projectRoot = null;
@@ -415,9 +414,46 @@ public class Main {
                             if (depSrc.toFile().getAbsolutePath().equals(absPath)) continue;
                             String depContent = Files.readString(depSrc, StandardCharsets.UTF_8);
                             Program depProg = Parser.parseSource(depContent, depSrc.toFile().getAbsolutePath());
-                            program.functions.addAll(depProg.functions);
+                            String modName = depProg.moduleName != null && !depProg.moduleName.isEmpty() ? depProg.moduleName : null;
+                            for (org.mosslang.compiler.ast.Function f : depProg.functions) {
+                                if (modName != null) {
+                                    f.definingModule = modName;
+                                    org.mosslang.compiler.ast.Function f1 = new org.mosslang.compiler.ast.Function(modName + "." + f.name, f.header, f.line, f.sourceFile, f.exported);
+                                    f1.definingModule = modName;
+                                    f1.params = f.params;
+                                    f1.returnType = f.returnType;
+                                    f1.returnTypeRef = f.returnTypeRef;
+                                    f1.body = f.body;
+                                    f1.resultExpression = f.resultExpression;
+                                    org.mosslang.compiler.ast.Function f2 = new org.mosslang.compiler.ast.Function(modName + "__" + f.name, f.header, f.line, f.sourceFile, f.exported);
+                                    f2.definingModule = modName;
+                                    f2.params = f.params;
+                                    f2.returnType = f.returnType;
+                                    f2.returnTypeRef = f.returnTypeRef;
+                                    f2.body = f.body;
+                                    f2.resultExpression = f.resultExpression;
+                                    program.functions.add(f1);
+                                    program.functions.add(f2);
+                                }
+                                program.functions.add(f);
+                            }
+                            for (org.mosslang.compiler.ast.ObjectType o : depProg.objects) {
+                                if (modName != null) {
+                                    o.definingModule = modName;
+                                    org.mosslang.compiler.ast.ObjectType o1 = new org.mosslang.compiler.ast.ObjectType(modName + "." + o.name, o.header, o.line, o.sourceFile, o.exported);
+                                    o1.definingModule = modName;
+                                    o1.fields = o.fields;
+                                    o1.methods = o.methods;
+                                    org.mosslang.compiler.ast.ObjectType o2 = new org.mosslang.compiler.ast.ObjectType(modName + "__" + o.name, o.header, o.line, o.sourceFile, o.exported);
+                                    o2.definingModule = modName;
+                                    o2.fields = o.fields;
+                                    o2.methods = o.methods;
+                                    program.objects.add(o1);
+                                    program.objects.add(o2);
+                                }
+                                program.objects.add(o);
+                            }
                             program.domains.addAll(depProg.domains);
-                            program.objects.addAll(depProg.objects);
                             for (org.mosslang.compiler.ast.EnumType et : depProg.enums) {
                                 boolean exists = false;
                                 for (org.mosslang.compiler.ast.EnumType existing : program.enums) {
@@ -477,8 +513,7 @@ public class Main {
                     List<Path> cands = candidateMap.get(imp.name);
                     if (cands != null && !cands.isEmpty()) {
                         Path cand = cands.get(0);
-                        Path localModSrc = projectRoot != null ? projectRoot.resolve("src").resolve(imp.name + ".moss") : null;
-                        if (localModSrc == null || !Files.exists(localModSrc)) {
+                        if (!org.mosslang.compiler.project.SourceFreeAbi.hasLocalModuleSource(projectRoot, imp.name)) {
                             org.mosslang.compiler.project.SourceFreeAbi.validateMossiInterface(cand);
                             if (interpMode) {
                                 throw new CompileError(

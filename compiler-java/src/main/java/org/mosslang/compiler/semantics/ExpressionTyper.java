@@ -16,6 +16,8 @@ public class ExpressionTyper {
     private final Map<String, EnumType> enums;
     private final Map<String, Trait> traits;
     private final Deque<String> activeSpecializations = new ArrayDeque<>();
+    public String currentCallingModule = null;
+    public String currentCallingFunction = "main";
 
     public ExpressionTyper(Program program,
                            TypeContext typeContext,
@@ -415,9 +417,24 @@ public class ExpressionTyper {
                                 fn.params.size() + " arguments, got " + argExprs.size(), "TYPE_MISMATCH");
                     }
                     List<TypeRef> actualArgs = new ArrayList<>();
+                    List<String> displayArgTypes = new ArrayList<>();
+                    List<String> callableArgs = new ArrayList<>();
                     boolean hasGenericParam = false;
                     for (int i = 0; i < argExprs.size(); i++) {
-                        TypeRef actual = infer(argExprs.get(i), line, env);
+                        String aExpr = argExprs.get(i).trim();
+                        if (aExpr.contains(":")) {
+                            aExpr = aExpr.substring(aExpr.indexOf(':') + 1).trim();
+                        }
+                        TypeRef actual;
+                        if (functions.containsKey(aExpr)) {
+                            Function argFn = functions.get(aExpr);
+                            displayArgTypes.add("callable:" + aExpr);
+                            callableArgs.add(argFn.semanticCallableId);
+                            actual = TypeRef.unit();
+                        } else {
+                            actual = infer(aExpr, line, env);
+                            displayArgTypes.add(solver.resolve(actual).toCanonicalString());
+                        }
                         actualArgs.add(actual);
                         Param param = fn.params.get(i);
                         TypeRef expected = param.typeRef != null ? param.typeRef : TypeParser.parseCanonical(param.type);
@@ -437,8 +454,57 @@ public class ExpressionTyper {
                         }
                     }
 
-                    boolean returnsOpenResult = (fn.returnType == null || fn.returnType.isEmpty())
-                            && (fn.returnTypeRef == null || !fn.returnTypeRef.isClosed());
+                    SpecializationKey sKey = new SpecializationKey();
+                    sKey.callableId = fn.semanticCallableId;
+                    sKey.callableArguments.addAll(callableArgs);
+                    for (TypeRef at : actualArgs) {
+                        sKey.arguments.add(solver.resolve(at));
+                    }
+                    String stableKey = sKey.stableKey();
+
+                    String callerContext = currentCallingFunction != null ? currentCallingFunction : "main";
+                    int occ = 0;
+                    int progOcc = 0;
+                    SemanticCallEdge callEdge = null;
+                    if (program != null && program.semanticCallEdges != null) {
+                        for (SemanticCallEdge edgeCandidate : program.semanticCallEdges) {
+                            if (edgeCandidate.source.equals(callerContext) && edgeCandidate.target.equals("fn:" + fn.name)) {
+                                progOcc++;
+                                if (edgeCandidate.line == line) {
+                                    occ++;
+                                }
+                            }
+                        }
+                        callEdge = new SemanticCallEdge();
+                        callEdge.source = callerContext;
+                        callEdge.target = "fn:" + fn.name;
+                        callEdge.line = line;
+                        callEdge.sourceFile = program.sourceFile != null ? program.sourceFile : "";
+                        callEdge.occurrence = occ;
+                        callEdge.programOccurrence = progOcc;
+                        callEdge.argumentTypes.addAll(displayArgTypes);
+                        callEdge.specializationKey = stableKey;
+                        program.semanticCallEdges.add(callEdge);
+                    }
+
+                    if (stableKey != null && fn.specializations.stream().noneMatch(s -> stableKey.equals(s.stableTypeKey))) {
+                        FunctionSpecialization spec = new FunctionSpecialization();
+                        spec.generatedName = "__moss_specialize_" + fn.name + "_" + fn.specializations.size();
+                        spec.parameterTypes.addAll(displayArgTypes);
+                        spec.stableTypeKey = stableKey;
+                        spec.callableArguments.addAll(callableArgs);
+                        spec.semanticKey = sKey;
+                        for (TypeRef at : actualArgs) {
+                            spec.parameterTypeRefs.add(solver.resolve(at));
+                        }
+                        spec.returnType = fn.returnType != null ? fn.returnType : "int";
+                        spec.returnTypeRef = fn.returnTypeRef != null ? fn.returnTypeRef : TypeRef.primitive("int");
+                        fn.specializations.add(spec);
+                    }
+
+                    boolean returnsOpenResult = fn.generic
+                            || ((fn.returnType == null || fn.returnType.isEmpty() || fn.returnType.contains("?"))
+                                && (fn.returnTypeRef == null || !fn.returnTypeRef.isClosed()));
 
                     // For generic or open-result functions, specialize the return type
                     if ((hasGenericParam || returnsOpenResult) && (!fn.body.isEmpty() || (fn.resultExpression != null && !fn.resultExpression.isEmpty()))) {
@@ -467,7 +533,9 @@ public class ExpressionTyper {
                                         retExpr = retExpr.substring(7).trim();
                                     }
                                     if (!retExpr.isEmpty()) {
-                                        return infer(retExpr, s.line, callEnv);
+                                        TypeRef res = infer(retExpr, s.line, callEnv);
+                                        if (callEdge != null) callEdge.returnTypeRef = res;
+                                        return res;
                                     }
                                 } else if (s.kind == Stmt.Kind.Assign || s.kind == Stmt.Kind.Let || s.kind == Stmt.Kind.Var) {
                                     String vname = s.a != null ? s.a.trim() : "";
@@ -485,7 +553,9 @@ public class ExpressionTyper {
                                 }
                             }
                             if (fn.resultExpression != null && !fn.resultExpression.isEmpty()) {
-                                return infer(fn.resultExpression, fn.resultLine != 0 ? fn.resultLine : line, callEnv);
+                                TypeRef res = infer(fn.resultExpression, fn.resultLine != 0 ? fn.resultLine : line, callEnv);
+                                if (callEdge != null) callEdge.returnTypeRef = res;
+                                return res;
                             }
                         } finally {
                             activeSpecializations.pop();
@@ -493,13 +563,18 @@ public class ExpressionTyper {
                     }
 
                     if (fn.returnTypeRef != null && fn.returnTypeRef.isClosed()) {
+                        if (callEdge != null) callEdge.returnTypeRef = fn.returnTypeRef;
                         return fn.returnTypeRef;
                     }
                     if (fn.returnType != null && !fn.returnType.isEmpty()) {
                         TypeRef parsed = TypeParser.parseCanonical(fn.returnType);
-                        return parsed != null ? parsed : TypeRef.primitive(fn.returnType);
+                        TypeRef res = parsed != null ? parsed : TypeRef.primitive(fn.returnType);
+                        if (callEdge != null) callEdge.returnTypeRef = res;
+                        return res;
                     }
-                    return solver.fresh(0);
+                    TypeRef fresh = solver.fresh(0);
+                    if (callEdge != null) callEdge.returnTypeRef = fresh;
+                    return fresh;
                 }
 
                 // Builtin helpers: len, size, println, print, echo
@@ -530,6 +605,13 @@ public class ExpressionTyper {
                     }
                 }
 
+                if (env != null && env.containsKey(callee)) {
+                    for (String arg : argExprs) {
+                        infer(arg, line, env);
+                    }
+                    return solver.fresh(0);
+                }
+
                 throw new CompileError(line, "unknown function or constructor '" + callee + "'", "UNKNOWN_SYMBOL_OR_TYPE");
             }
         }
@@ -546,10 +628,24 @@ public class ExpressionTyper {
             String member = e.substring(lastDot + 1).trim();
             TypeRef targetType = solver.resolve(infer(base, line, env));
             if (targetType != null) {
-                if (objects.containsKey(targetType.name())) {
-                    ObjectType obj = objects.get(targetType.name());
+                ObjectType obj = objects.get(targetType.name());
+                if (obj == null && targetType.name().contains(".")) {
+                    obj = objects.get(targetType.name().substring(targetType.name().lastIndexOf('.') + 1));
+                }
+                if (obj == null && targetType.name().contains("__")) {
+                    obj = objects.get(targetType.name().substring(targetType.name().lastIndexOf("__") + 2));
+                }
+                if (obj != null) {
                     for (Field f : obj.fields) {
                         if (f.name.equals(member)) {
+                            if (!f.exported) {
+                                String definingMod = obj.definingModule != null ? obj.definingModule : "";
+                                String callerMod = currentCallingModule != null ? currentCallingModule : (program != null && program.moduleName != null ? program.moduleName : "");
+                                if (!definingMod.isEmpty() && !definingMod.equals(callerMod)) {
+                                    throw new CompileError(line, "field '" + member + "' of type '" + obj.name +
+                                            "' is private to its defining module", "FIELD_VISIBILITY_ERROR");
+                                }
+                            }
                             for (TypeRef.FieldSub sub : targetType.fieldSubstitutions()) {
                                 if (sub.name().equals(member)) {
                                     return solver.resolve(sub.type());

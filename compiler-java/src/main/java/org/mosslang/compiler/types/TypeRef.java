@@ -298,7 +298,10 @@ public class TypeRef {
     }
 
     public String stableTypeKey() {
-        return toCanonicalString();
+        if (!isClosed()) throw new IllegalStateException("open type has no stable type key");
+        StringBuilder material = new StringBuilder();
+        appendTypeKey(material, new ArrayList<>());
+        return "type-key-v1:sha256:" + sha256(material.toString());
     }
 
     @Override

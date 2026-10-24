@@ -23,6 +23,7 @@ public class Function {
     public IntArrayList resultContinuationLines = new IntArrayList();
     public boolean generic = false;
     public boolean staticDispatch = false;
+    public java.util.List<FunctionSpecialization> specializations = new java.util.ArrayList<>();
     public int line = 0;
     public boolean exported = false;
     public String sourceFile = "";

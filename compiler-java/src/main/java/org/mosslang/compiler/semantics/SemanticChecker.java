@@ -62,6 +62,17 @@ public class SemanticChecker {
         public boolean containsKey(String name) {
             return typeEnv.containsKey(name);
         }
+
+        public OwnershipEnv copy() {
+            OwnershipEnv c = new OwnershipEnv();
+            for (Map.Entry<String, TypeRef> entry : typeEnv.getBindings().entrySet()) {
+                c.typeEnv.put(entry.getKey(), entry.getValue());
+            }
+            c.moved.putAll(this.moved);
+            c.immutables.addAll(this.immutables);
+            c.bindingLines.putAll(this.bindingLines);
+            return c;
+        }
     }
 
     public SemanticChecker(Program program) {
@@ -121,6 +132,7 @@ public class SemanticChecker {
         if (program.sourceLines != null && !program.sourceLines.isEmpty()) {
             String srcFile = program.sourceLines.get(0).sourceFile;
             if (srcFile != null && !srcFile.isEmpty()) {
+                program.sourceFile = srcFile;
                 java.nio.file.Path dir = java.nio.file.Paths.get(srcFile).getParent();
                 while (dir != null) {
                     if (java.nio.file.Files.exists(dir.resolve("Moss.toml")) || java.nio.file.Files.exists(dir.resolve("moss.toml"))) {
@@ -193,6 +205,10 @@ public class SemanticChecker {
             typeContext.declare(DeclarationKind.Domain, d.name, currentModuleId, d.name, Collections.emptyList());
         }
         for (Function f : program.functions) {
+            String modId = f.definingModule != null && !f.definingModule.isEmpty() ?
+                (f.definingModule.equals("std") ? "module-v1:moss-std@0.1.0::std" : ("module-v1:" + f.definingModule + "@0.1.0::" + f.definingModule))
+                : currentModuleId;
+            f.semanticCallableId = "callable-v1:" + modId + ":fn:" + f.name;
             if (functions.put(f.name, f) != null) {
                 throw new CompileError(f.line, "duplicate function '" + f.name + "'", "DUPLICATE_DECLARATION");
             }
@@ -370,6 +386,7 @@ public class SemanticChecker {
         currentSemanticIdentity = "handler:" + domain.name + "." + handler.name + "@" + handler.line;
         TypeSolver solver = new TypeSolver(sessionCounter++);
         ExpressionTyper typer = new ExpressionTyper(program, typeContext, solver, functions, domains, objects, enums, traits);
+        typer.currentCallingModule = domain.definingModule != null && !domain.definingModule.isEmpty() ? domain.definingModule : program.moduleName;
         OwnershipEnv env = new OwnershipEnv();
 
         for (Field f : domain.state) {
@@ -391,9 +408,7 @@ public class SemanticChecker {
         TypeRef expectedReply = handler.replyTypeRef != null ? handler.replyTypeRef :
                 (handler.replyType != null && !handler.replyType.isEmpty() ? TypeParser.parseCanonical(handler.replyType) : solver.fresh(0));
 
-        for (Stmt s : handler.body) {
-            checkStatement(s, env, typer, solver, true, handler.name, expectedReply);
-        }
+        env = checkBlock(handler.body, 0, handler.body.size(), env, typer, solver, true, handler.name, expectedReply);
         if (handler.failureArms != null) {
             for (FailureArm arm : handler.failureArms) {
                 if (arm.binding != null && !arm.binding.isEmpty()) {
@@ -429,6 +444,8 @@ public class SemanticChecker {
             currentSemanticIdentity = "fn:" + f.name + "@" + f.line;
             TypeSolver solver = new TypeSolver(sessionCounter++);
             ExpressionTyper typer = new ExpressionTyper(program, typeContext, solver, functions, domains, objects, enums, traits);
+            typer.currentCallingModule = f.definingModule != null && !f.definingModule.isEmpty() ? f.definingModule : program.moduleName;
+            typer.currentCallingFunction = "fn:" + f.name;
             OwnershipEnv env = new OwnershipEnv();
 
             for (Param p : f.params) {
@@ -487,15 +504,8 @@ public class SemanticChecker {
                         }
                     }
                 }
-                OwnershipEnv stmtEnv = env;
-                if (inUnreachableRecover) {
-                    stmtEnv = new OwnershipEnv();
-                    for (Map.Entry<String, TypeRef> e : env.typeEnv.getBindings().entrySet()) {
-                        stmtEnv.put(e.getKey(), e.getValue());
-                    }
-                }
-                checkStatement(s, stmtEnv, typer, solver, false, f.name, expectedReturn);
             }
+            env = checkBlock(f.body, 0, f.body.size(), env, typer, solver, false, f.name, expectedReturn);
             if (f.resultExpression != null && !f.resultExpression.isEmpty()) {
                 TypeRef res = typer.infer(f.resultExpression, f.resultLine != 0 ? f.resultLine : f.line, env.typeEnv);
                 solver.unify(expectedReturn, res);
@@ -505,7 +515,13 @@ public class SemanticChecker {
                 solver.unify(expectedReturn, TypeRef.unit());
                 resolvedReturn = TypeRef.unit();
             }
-            f.returnTypeRef = resolvedReturn;
+            if (resolvedReturn.isClosed()) {
+                f.bindReturnType(resolvedReturn);
+            } else {
+                f.returnTypeRef = resolvedReturn;
+                f.returnType = null;
+                f.generic = true;
+            }
             for (Map.Entry<String, TypeRef> entry : env.typeEnv.getBindings().entrySet()) {
                 TypeRef resolved = solver.resolve(entry.getValue());
                 int bLine = env.bindingLines.getOrDefault(entry.getKey(), f.line);
@@ -520,6 +536,8 @@ public class SemanticChecker {
             currentSemanticIdentity = "main@" + program.main.line;
             TypeSolver solver = new TypeSolver(sessionCounter++);
             ExpressionTyper typer = new ExpressionTyper(program, typeContext, solver, functions, domains, objects, enums, traits);
+            typer.currentCallingModule = program.moduleName;
+            typer.currentCallingFunction = "main";
             OwnershipEnv env = new OwnershipEnv();
 
             boolean mainHasTry = false;
@@ -556,8 +574,8 @@ public class SemanticChecker {
                         }
                     }
                 }
-                checkStatement(s, env, typer, solver, false, "main", TypeRef.unit());
             }
+            env = checkBlock(program.main.body, 0, program.main.body.size(), env, typer, solver, false, "main", TypeRef.unit());
             for (Map.Entry<String, TypeRef> entry : env.typeEnv.getBindings().entrySet()) {
                 TypeRef resolved = solver.resolve(entry.getValue());
                 int bLine = env.bindingLines.getOrDefault(entry.getKey(), program.main.line);
@@ -567,6 +585,42 @@ public class SemanticChecker {
                     throw new CompileError(bLine,
                             "local binding '" + entry.getKey() + "' has unpinned open type '" + resolved.toCanonicalString() + "'",
                             "TYPE_AMBIGUOUS_OPEN_RESULT");
+                }
+            }
+
+            if (program.semanticCallEdges != null) {
+                for (SemanticCallEdge edge : program.semanticCallEdges) {
+                    if (edge.source.equals("main") && edge.returnTypeRef != null && edge.target.startsWith("fn:")) {
+                        String callee = edge.target.substring(3);
+                        Function fn = functions.get(callee);
+                        if (fn != null && (fn.generic || fn.returnType == null || (fn.returnTypeRef != null && !fn.returnTypeRef.isClosed()))) {
+                            TypeRef resolved = solver.resolve(edge.returnTypeRef);
+                            if (resolved != null && resolved.isClosed()) {
+                                TypeRef innerElem = !resolved.typeArgs().isEmpty() ? resolved.typeArgs().get(0) : resolved;
+                                SpecializationKey sk = new SpecializationKey();
+                                sk.callableId = fn.semanticCallableId;
+                                for (String a : edge.argumentTypes) {
+                                    sk.arguments.add(TypeParser.parseCanonical(a));
+                                }
+                                sk.openResultBindings.add(new SpecializationKey.OpenResultBinding(1, innerElem));
+                                String updatedKey = sk.stableKey();
+                                edge.specializationKey = updatedKey;
+
+                                if (fn.specializations.stream().noneMatch(sp -> updatedKey.equals(sp.stableTypeKey))) {
+                                    FunctionSpecialization spec = new FunctionSpecialization();
+                                    spec.generatedName = "__moss_specialize_" + fn.name + "_" + fn.specializations.size();
+                                    spec.parameterTypes.addAll(edge.argumentTypes);
+                                    spec.stableTypeKey = updatedKey;
+                                    spec.semanticKey = sk;
+                                    spec.parameterTypeRefs.addAll(sk.arguments);
+                                    spec.returnType = resolved.toCanonicalString();
+                                    spec.returnTypeRef = resolved;
+                                    spec.openResultBindings.add(new SpecializationKey.OpenResultBinding(1, innerElem));
+                                    fn.specializations.add(spec);
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -586,8 +640,8 @@ public class SemanticChecker {
                         }
                     }
                 }
-                checkStatement(s, env, typer, solver, false, "test", TypeRef.unit());
             }
+            env = checkBlock(t.body, 0, t.body.size(), env, typer, solver, false, "test", TypeRef.unit());
         }
     }
 
@@ -762,6 +816,83 @@ public class SemanticChecker {
         }
     }
 
+    private OwnershipEnv checkBlock(List<Stmt> stmts, int start, int end, OwnershipEnv env,
+                                    ExpressionTyper typer, TypeSolver solver,
+                                    boolean insideHandler, String enclosingName, TypeRef expectedType) {
+        int i = start;
+        while (i < end) {
+            Stmt s = stmts.get(i);
+            if (s.kind == Stmt.Kind.If) {
+                Stmt ifStmt = s;
+                checkStatement(ifStmt, env, typer, solver, insideHandler, enclosingName, expectedType);
+                int thenStart = i + 1;
+                int thenEnd = thenStart;
+                while (thenEnd < end && stmts.get(thenEnd).indent > ifStmt.indent) {
+                    thenEnd++;
+                }
+                OwnershipEnv thenEnv = env.copy();
+                thenEnv = checkBlock(stmts, thenStart, thenEnd, thenEnv, typer, solver, insideHandler, enclosingName, expectedType);
+
+                if (thenEnd < end && stmts.get(thenEnd).kind == Stmt.Kind.Else && stmts.get(thenEnd).indent == ifStmt.indent) {
+                    Stmt elseStmt = stmts.get(thenEnd);
+                    int elseStart = thenEnd + 1;
+                    int elseEnd = elseStart;
+                    while (elseEnd < end && stmts.get(elseEnd).indent > ifStmt.indent) {
+                        elseEnd++;
+                    }
+                    OwnershipEnv elseEnv = env.copy();
+                    elseEnv = checkBlock(stmts, elseStart, elseEnd, elseEnv, typer, solver, insideHandler, enclosingName, expectedType);
+
+                    env = mergeEnvs(ifStmt.line, thenEnv, elseEnv, solver);
+                    i = elseEnd;
+                } else {
+                    env = mergeEnvs(ifStmt.line, thenEnv, env, solver);
+                    i = thenEnd;
+                }
+                continue;
+            }
+            if (s.kind == Stmt.Kind.Else) {
+                i++;
+                continue;
+            }
+            checkStatement(s, env, typer, solver, insideHandler, enclosingName, expectedType);
+            i++;
+        }
+        return env;
+    }
+
+    private OwnershipEnv mergeEnvs(int line, OwnershipEnv path1, OwnershipEnv path2, TypeSolver solver) {
+        OwnershipEnv merged = new OwnershipEnv();
+        for (Map.Entry<String, TypeRef> entry : path1.typeEnv.getBindings().entrySet()) {
+            String name = entry.getKey();
+            TypeRef t1 = entry.getValue();
+            if (path2.typeEnv.containsKey(name)) {
+                TypeRef t2 = path2.typeEnv.get(name);
+                TypeRef r1 = solver.resolve(t1);
+                TypeRef r2 = solver.resolve(t2);
+                if (!solver.unify(r1, r2)) {
+                    throw new CompileError(line,
+                            "binding '" + name + "' has conflicting types across control-flow paths",
+                            "TYPE_MISMATCH");
+                }
+                merged.put(name, solver.resolve(r1), path1.bindingLines.getOrDefault(name, line));
+            } else {
+                merged.put(name, solver.resolve(t1), path1.bindingLines.getOrDefault(name, line));
+            }
+        }
+        for (Map.Entry<String, TypeRef> entry : path2.typeEnv.getBindings().entrySet()) {
+            String name = entry.getKey();
+            if (!merged.containsKey(name)) {
+                merged.put(name, solver.resolve(entry.getValue()), path2.bindingLines.getOrDefault(name, line));
+            }
+        }
+        merged.moved.putAll(path1.moved);
+        merged.moved.putAll(path2.moved);
+        merged.immutables.addAll(path1.immutables);
+        merged.immutables.addAll(path2.immutables);
+        return merged;
+    }
+
     private void checkStatement(Stmt s, OwnershipEnv env, ExpressionTyper typer, TypeSolver solver,
                                 boolean insideHandler, String enclosingName, TypeRef expectedType) {
         if (s == null) return;
@@ -919,7 +1050,7 @@ public class SemanticChecker {
                 if (expectedType != null && !solver.unify(inferred, expectedType)) {
                     CompileError err = new CompileError(s.line, "function '" + enclosingName + "' returns '" +
                             solver.resolve(inferred).toCanonicalString() + "' but is annotated '" +
-                            solver.resolve(expectedType).toCanonicalString() + "'", "MOSS_COMPILE_ERROR");
+                            solver.resolve(expectedType).toCanonicalString() + "'", "TYPE_MISMATCH");
                     err.setSemanticIdentity(currentSemanticIdentity);
                     throw err;
                 }

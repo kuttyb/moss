@@ -1087,11 +1087,19 @@ public class FastInterpreter {
                 }
             }
 
+            String targetFn = callee;
+            if (locals.containsKey(callee)) {
+                Value cv = locals.get(callee);
+                if (cv != null && cv.asString().startsWith("function:")) {
+                    targetFn = cv.asString().substring(9);
+                }
+            }
+
             // Check program functions
             for (Function f : program.functions) {
-                if (f.name.equals(callee) || f.name.endsWith("__" + callee) || callee.endsWith("." + f.name)
-                        || (callee.contains(".") && f.name.equals(callee.replace('.', '_')))
-                        || (callee.contains(".") && f.name.endsWith("__" + callee.substring(callee.lastIndexOf('.') + 1)))) {
+                if (f.name.equals(targetFn) || f.name.endsWith("__" + targetFn) || targetFn.endsWith("." + f.name)
+                        || (targetFn.contains(".") && f.name.equals(targetFn.replace('.', '_')))
+                        || (targetFn.contains(".") && f.name.endsWith("__" + targetFn.substring(targetFn.lastIndexOf('.') + 1)))) {
                     Map<String, Value> fnLocals = new HashMap<>();
                     for (int i = 0; i < f.params.size() && i < evaluatedArgs.size(); i++) {
                         fnLocals.put(f.params.get(i).name, evaluatedArgs.get(i));
@@ -1168,6 +1176,13 @@ public class FastInterpreter {
             eventId++;
             traceEvent("{\"event_id\":" + eventId + ",\"event\":\"LocalRead\",\"detail\":\"" + expr + "\"}");
             return locals.get(expr);
+        }
+
+        // Function reference
+        for (Function f : program.functions) {
+            if (f.name.equals(expr)) {
+                return Value.ofString("function:" + f.name);
+            }
         }
 
         return Value.ofUnit();

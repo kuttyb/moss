@@ -281,14 +281,14 @@ public class NativeGenerator {
         }
         for (Function f : program.functions) {
             if (!f.name.contains("generic") && !f.name.equals("summarize")) {
-                boolean hasGeneric = false;
+                boolean hasGeneric = f.generic;
                 for (Param p : f.params) {
-                    if (p.type == null || p.type.isEmpty() || genericObjects.contains(p.type)) {
+                    if (p.type == null || p.type.isEmpty() || p.type.contains("?") || genericObjects.contains(p.type)) {
                         hasGeneric = true;
                         break;
                     }
                 }
-                if (!hasGeneric && (f.returnType == null || f.returnType.isEmpty())) {
+                if (!hasGeneric && (f.returnType == null || f.returnType.isEmpty() || f.returnType.contains("?"))) {
                     if (f.resultExpression != null && (f.resultExpression.trim().equals("[]") || genericFunctions.contains(f.resultExpression.trim().replace("()", "")))) {
                         hasGeneric = true;
                     }

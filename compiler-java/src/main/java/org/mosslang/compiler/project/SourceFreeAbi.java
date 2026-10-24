@@ -470,6 +470,30 @@ public class SourceFreeAbi {
         return -1;
     }
 
+    public static boolean hasLocalModuleSource(Path projectRoot, String moduleName) {
+        if (projectRoot == null) return false;
+        Path srcDir = projectRoot.resolve("src");
+        if (!Files.isDirectory(srcDir)) return false;
+        if (Files.exists(srcDir.resolve(moduleName + ".moss"))) return true;
+        if (Files.exists(srcDir.resolve(moduleName.toLowerCase() + ".moss"))) return true;
+        try (Stream<Path> stream = Files.list(srcDir)) {
+            return stream.filter(p -> p.toString().endsWith(".moss")).anyMatch(p -> {
+                try {
+                    String txt = Files.readString(p, StandardCharsets.ISO_8859_1);
+                    for (String l : txt.split("\\R")) {
+                        l = l.trim();
+                        if (l.startsWith("module ") && l.substring(7).trim().equals(moduleName)) {
+                            return true;
+                        }
+                    }
+                } catch (IOException ignored) {}
+                return false;
+            });
+        } catch (IOException ignored) {
+            return false;
+        }
+    }
+
     public static List<Path> findInterfaceCandidates(Path projectRoot) {
         List<Path> candidates = new ArrayList<>();
         List<Path> roots = new ArrayList<>();

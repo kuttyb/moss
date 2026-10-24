@@ -4,6 +4,7 @@ import org.eclipse.collections.api.list.MutableList;
 import org.eclipse.collections.impl.list.mutable.FastList;
 
 public class Program {
+    public String sourceFile = "";
     public MutableList<Line> sourceLines = new FastList<>();
     public String moduleName = "";
     public String mainModule = "";
@@ -20,6 +21,7 @@ public class Program {
     public java.util.Set<String> importedGenericFunctions = new java.util.HashSet<>();
     public java.util.Map<String, java.util.Map<String, org.mosslang.compiler.types.TypeRef>> localBindingTypes = new java.util.HashMap<>();
     public java.util.Map<String, java.util.Map<String, Integer>> localBindingLines = new java.util.HashMap<>();
+    public java.util.List<SemanticCallEdge> semanticCallEdges = new java.util.ArrayList<>();
     public org.mosslang.compiler.types.TypeContext typeContext = null;
 
     public Program() {}
