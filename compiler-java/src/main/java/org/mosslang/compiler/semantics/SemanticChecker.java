@@ -1082,7 +1082,18 @@ public class SemanticChecker {
                 }
                 TypeRef replyType = typer.inferMessageCall(callExpr, s.line, env.typeEnv);
                 if (s.messageResult != null && !s.messageResult.isEmpty()) {
-                    env.put(s.messageResult, replyType);
+                    if (env.containsKey(s.messageResult)) {
+                        if (env.immutables.contains(s.messageResult)) {
+                            throw new CompileError(s.line, "cannot mutate immutable variable '" + s.messageResult + "' introduced with let (IMMUTABLE_LOCAL_MUTATION)", "IMMUTABLE_LOCAL_MUTATION");
+                        }
+                        TypeRef targetType = env.get(s.messageResult);
+                        if (!solver.unify(targetType, replyType)) {
+                            throw new CompileError(s.line, "type mismatch in assignment to '" + s.messageResult + "': expected '" +
+                                    solver.resolve(targetType).toCanonicalString() + "', got '" + solver.resolve(replyType).toCanonicalString() + "'", "TYPE_MISMATCH");
+                        }
+                    } else {
+                        env.put(s.messageResult, replyType);
+                    }
                 }
             }
             case Reply -> {
@@ -1098,7 +1109,7 @@ public class SemanticChecker {
                 }
                 TypeRef inferred = replyExpr.isEmpty() ? TypeRef.unit() : typer.infer(replyExpr, s.line, env.typeEnv);
                 if (expectedType != null && !solver.unify(inferred, expectedType)) {
-                    throw new CompileError(s.line, "reply type mismatch: expected '" +
+                    throw new CompileError(s.line, "conflicting reply types in handler: expected '" +
                             solver.resolve(expectedType).toCanonicalString() + "', got '" + solver.resolve(inferred).toCanonicalString() + "'", "TYPE_MISMATCH");
                 }
             }
@@ -1112,11 +1123,19 @@ public class SemanticChecker {
                 }
                 TypeRef inferred = retExpr.isEmpty() ? TypeRef.unit() : typer.infer(retExpr, s.line, env.typeEnv);
                 if (expectedType != null && !solver.unify(inferred, expectedType)) {
-                    CompileError err = new CompileError(s.line, "function '" + enclosingName + "' returns '" +
-                            solver.resolve(inferred).toCanonicalString() + "' but is annotated '" +
-                            solver.resolve(expectedType).toCanonicalString() + "'", "TYPE_MISMATCH");
-                    err.setSemanticIdentity(currentSemanticIdentity);
-                    throw err;
+                    Function f = functions.get(enclosingName);
+                    boolean isAnnotated = f != null && (f.returnTypeRef != null || (f.returnType != null && !f.returnType.isEmpty()));
+                    if (isAnnotated) {
+                        CompileError err = new CompileError(s.line, "function '" + enclosingName + "' returns '" +
+                                solver.resolve(inferred).toCanonicalString() + "' but is annotated '" +
+                                solver.resolve(expectedType).toCanonicalString() + "'", "MOSS_COMPILE_ERROR");
+                        err.setSemanticIdentity(currentSemanticIdentity);
+                        throw err;
+                    } else {
+                        CompileError err = new CompileError(s.line, "function '" + enclosingName + "' has conflicting return types", "TYPE_MISMATCH");
+                        err.setSemanticIdentity(currentSemanticIdentity);
+                        throw err;
+                    }
                 }
             }
             case If -> {
