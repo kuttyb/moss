@@ -1,0 +1,17 @@
+eclipse.preferences.version=1
+repositories/file\:_home_owner_daji_code_moss_compiler-java_jdt_configuration_org.eclipse.osgi_211_data_listener_1925729951/enabled=true
+repositories/file\:_home_owner_daji_code_moss_compiler-java_jdt_configuration_org.eclipse.osgi_211_data_listener_1925729951/isSystem=true
+repositories/file\:_home_owner_daji_code_moss_compiler-java_jdt_configuration_org.eclipse.osgi_211_data_listener_1925729951/name=dropins
+repositories/file\:_home_owner_daji_code_moss_compiler-java_jdt_configuration_org.eclipse.osgi_211_data_listener_1925729951/suffix=content.xml
+repositories/file\:_home_owner_daji_code_moss_compiler-java_jdt_configuration_org.eclipse.osgi_211_data_listener_1925729951/type=org.eclipse.equinox.internal.p2.metadata.repository.LocalMetadataRepository
+repositories/file\:_home_owner_daji_code_moss_compiler-java_jdt_configuration_org.eclipse.osgi_211_data_listener_1925729951/uri=file\:/home/owner/daji/code/moss/compiler-java/jdt/configuration/org.eclipse.osgi/211/data/listener_1925729951/
+repositories/file\:_home_owner_daji_code_moss_compiler-java_jdt_configuration_org.eclipse.osgi_211_data_listener_1925729951/version=1.0.0
+repositories/file\:_opt_eclipse-jdt_.eclipseextension/description=
+repositories/file\:_opt_eclipse-jdt_.eclipseextension/enabled=true
+repositories/file\:_opt_eclipse-jdt_.eclipseextension/isSystem=true
+repositories/file\:_opt_eclipse-jdt_.eclipseextension/name=/opt/eclipse-jdt/.eclipseextension
+repositories/file\:_opt_eclipse-jdt_.eclipseextension/provider=
+repositories/file\:_opt_eclipse-jdt_.eclipseextension/suffix=eclipse
+repositories/file\:_opt_eclipse-jdt_.eclipseextension/type=org.eclipse.equinox.p2.extensionlocation.metadataRepository
+repositories/file\:_opt_eclipse-jdt_.eclipseextension/uri=file\:/opt/eclipse-jdt/.eclipseextension
+repositories/file\:_opt_eclipse-jdt_.eclipseextension/version=1

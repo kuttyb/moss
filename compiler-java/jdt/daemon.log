@@ -1,0 +1,50 @@
+
+--- Starting JDT Daemon at Sat Oct 24 00:23:49 2026 ---
+Oct 24, 2026 12:23:49 AM org.apache.aries.spifly.BaseActivator log
+INFO: Registered provider ch.qos.logback.classic.spi.LogbackServiceProvider of service org.slf4j.spi.SLF4JServiceProvider in bundle ch.qos.logback.classic
+Oct 24, 2026 12:23:52 AM org.apache.aries.spifly.BaseActivator log
+INFO: Registered provider com.sun.tools.rngdatatype.helpers.ProxyDatatypeLibraryFactory of service com.sun.tools.rngdatatype.DatatypeLibraryFactory in bundle com.sun.xml.bind.jaxb-osgi
+Oct 24, 2026 12:23:52 AM org.apache.aries.spifly.BaseActivator log
+INFO: Registered provider com.sun.tools.xjc.addon.code_injector.PluginImpl of service com.sun.tools.xjc.Plugin in bundle com.sun.xml.bind.jaxb-osgi
+Oct 24, 2026 12:23:52 AM org.apache.aries.spifly.BaseActivator log
+INFO: Registered provider com.sun.tools.xjc.addon.locator.SourceLocationAddOn of service com.sun.tools.xjc.Plugin in bundle com.sun.xml.bind.jaxb-osgi
+Oct 24, 2026 12:23:52 AM org.apache.aries.spifly.BaseActivator log
+INFO: Registered provider com.sun.tools.xjc.addon.sync.SynchronizedMethodAddOn of service com.sun.tools.xjc.Plugin in bundle com.sun.xml.bind.jaxb-osgi
+Oct 24, 2026 12:23:52 AM org.apache.aries.spifly.BaseActivator log
+INFO: Registered provider com.sun.tools.xjc.addon.at_generated.PluginImpl of service com.sun.tools.xjc.Plugin in bundle com.sun.xml.bind.jaxb-osgi
+Oct 24, 2026 12:23:52 AM org.apache.aries.spifly.BaseActivator log
+INFO: Registered provider com.sun.tools.xjc.addon.episode.PluginImpl of service com.sun.tools.xjc.Plugin in bundle com.sun.xml.bind.jaxb-osgi
+Oct 24, 2026 12:23:52 AM org.apache.aries.spifly.BaseActivator log
+INFO: Registered provider com.sun.tools.xjc.addon.accessors.PluginImpl of service com.sun.tools.xjc.Plugin in bundle com.sun.xml.bind.jaxb-osgi
+Oct 24, 2026 12:23:52 AM org.apache.aries.spifly.BaseActivator log
+INFO: Registered provider org.glassfish.jaxb.runtime.v2.JAXBContextFactory of service jakarta.xml.bind.JAXBContextFactory in bundle com.sun.xml.bind.jaxb-osgi
+00:23:52.633 [Start Level: Equinox Container: 24f44692-f638-4ccd-8d15-e7c210ce8bbf] DEBUG org.eclipse.jgit.internal.util.ShutdownHook -- register org.eclipse.jgit.util.FS$FileStoreAttributes$$Lambda/0x000000001f218638@66f9a44a with shutdown hook
+00:23:52.633 [Start Level: Equinox Container: 24f44692-f638-4ccd-8d15-e7c210ce8bbf] DEBUG org.eclipse.jgit.internal.util.ShutdownHook -- register org.eclipse.jgit.util.FS$FileStoreAttributes$$Lambda/0x000000001f218638@66f9a44a with shutdown hook
+JDT_DAEMON_READY:45290
+00:23:53.667 [main] DEBUG org.eclipse.m2e.core.internal.project.registry.ProjectRegistryRefreshJob -- Queued refresh request: []
+00:23:53.667 [main] DEBUG org.eclipse.m2e.core.internal.project.registry.ProjectRegistryRefreshJob -- Queued refresh request: []
+
+--- Starting JDT Daemon at Sat Oct 24 00:23:58 2026 ---
+Oct 24, 2026 12:23:58 AM org.apache.aries.spifly.BaseActivator log
+INFO: Registered provider ch.qos.logback.classic.spi.LogbackServiceProvider of service org.slf4j.spi.SLF4JServiceProvider in bundle ch.qos.logback.classic
+Oct 24, 2026 12:24:00 AM org.apache.aries.spifly.BaseActivator log
+INFO: Registered provider com.sun.tools.rngdatatype.helpers.ProxyDatatypeLibraryFactory of service com.sun.tools.rngdatatype.DatatypeLibraryFactory in bundle com.sun.xml.bind.jaxb-osgi
+Oct 24, 2026 12:24:00 AM org.apache.aries.spifly.BaseActivator log
+INFO: Registered provider com.sun.tools.xjc.addon.code_injector.PluginImpl of service com.sun.tools.xjc.Plugin in bundle com.sun.xml.bind.jaxb-osgi
+Oct 24, 2026 12:24:00 AM org.apache.aries.spifly.BaseActivator log
+INFO: Registered provider com.sun.tools.xjc.addon.locator.SourceLocationAddOn of service com.sun.tools.xjc.Plugin in bundle com.sun.xml.bind.jaxb-osgi
+Oct 24, 2026 12:24:00 AM org.apache.aries.spifly.BaseActivator log
+INFO: Registered provider com.sun.tools.xjc.addon.sync.SynchronizedMethodAddOn of service com.sun.tools.xjc.Plugin in bundle com.sun.xml.bind.jaxb-osgi
+Oct 24, 2026 12:24:00 AM org.apache.aries.spifly.BaseActivator log
+INFO: Registered provider com.sun.tools.xjc.addon.at_generated.PluginImpl of service com.sun.tools.xjc.Plugin in bundle com.sun.xml.bind.jaxb-osgi
+Oct 24, 2026 12:24:00 AM org.apache.aries.spifly.BaseActivator log
+INFO: Registered provider com.sun.tools.xjc.addon.episode.PluginImpl of service com.sun.tools.xjc.Plugin in bundle com.sun.xml.bind.jaxb-osgi
+Oct 24, 2026 12:24:00 AM org.apache.aries.spifly.BaseActivator log
+INFO: Registered provider com.sun.tools.xjc.addon.accessors.PluginImpl of service com.sun.tools.xjc.Plugin in bundle com.sun.xml.bind.jaxb-osgi
+Oct 24, 2026 12:24:00 AM org.apache.aries.spifly.BaseActivator log
+INFO: Registered provider org.glassfish.jaxb.runtime.v2.JAXBContextFactory of service jakarta.xml.bind.JAXBContextFactory in bundle com.sun.xml.bind.jaxb-osgi
+00:24:01.188 [Start Level: Equinox Container: 09a29f5f-a000-4265-959e-cfaeea046c91] DEBUG org.eclipse.jgit.internal.util.ShutdownHook -- register org.eclipse.jgit.util.FS$FileStoreAttributes$$Lambda/0x000000009b214638@10fdf61b with shutdown hook
+00:24:01.188 [Start Level: Equinox Container: 09a29f5f-a000-4265-959e-cfaeea046c91] DEBUG org.eclipse.jgit.internal.util.ShutdownHook -- register org.eclipse.jgit.util.FS$FileStoreAttributes$$Lambda/0x000000009b214638@10fdf61b with shutdown hook
+JDT_DAEMON_READY:45290
+00:24:01.731 [main] DEBUG org.eclipse.m2e.core.internal.project.registry.ProjectRegistryRefreshJob -- Queued refresh request: [/moss-corpus/pom.xml]
+00:24:01.731 [main] DEBUG org.eclipse.m2e.core.internal.project.registry.ProjectRegistryRefreshJob -- Queued refresh request: [/moss-corpus/pom.xml]
