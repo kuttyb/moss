@@ -12029,7 +12029,7 @@ The implementation branch `phase25-2-work` now contains the requested remote
 checkpoint `25789d6ec05039a04cbdbd75a11c83e16015fab3` as an ancestor. The
 checkpoint's Clang+mold default and updated execution brief were merged into
 the completed implementation. The tested implementation SHA is
-`a436c66bbb5b457fa1646d9030592b42f1ebface`; it builds ten production TUs with
+`1b20ca665fe61e1197dec7e1b14f6a584ae54d2c`; it builds ten production TUs with
 config-isolated objects, generated dependencies, profile-specific Clang PCH,
 and active-link configuration stamps. `AGENTS.md` records this task's normal
 push authorization and retains the no-force-push rule.
@@ -12049,7 +12049,13 @@ the existing mold option explicit as `MOSS_LDFLAGS`. Details and limits are in
 The optimized-object `nm -C` audit found no repeated expensive Moss-owned
 template specialization warranting ETI; repeated template symbols were
 standard-library weak/COMDAT definitions, so no arbitrary ETI was added. The
-first-extraction Architect review was scoped GO. The 137-job rerun and
-optimized examples were performed after reconciling the remote checkpoint.
-Near-final exact-SHA Architect review, final closeout commit, and normal push to
-`origin/phase25-2-work` remain. Do not merge to main.
+first-extraction Architect review was scoped GO. Near-final review at exact
+SHA `b03e8c50212e5eb73f75784ef9a44b5eb222f01d` issued scoped GO and identified
+two P2 build robustness gaps. Both were fixed at `1b20ca665fe61e1197dec7e1b14f6a584ae54d2c`:
+missing PCH depfiles now rebuild PCHs and dependent objects, and mold version
+changes relink without recompiling objects. The expanded isolated Make test and
+full `make check` then passed; the Architect follow-up reviewed that exact
+implementation SHA and issued GO with zero open P0/P1/P2. Optimized examples
+and feedback validation also passed after the fixes. Remaining: commit the
+final exact-SHA review closeout record, then push normally to
+`origin/phase25-2-work`. Do not merge to main.

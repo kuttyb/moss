@@ -1,15 +1,15 @@
 # Phase 25.2 compiler build acceleration status
 
 **Branch:** `phase25-2-work`<br>
-**Tested implementation SHA:** `a436c66bbb5b457fa1646d9030592b42f1ebface`<br>
-**State:** G1 complete; G2 has 10 production translation units; final validation green; near-final Architect review pending.
+**Tested implementation SHA:** `1b20ca665fe61e1197dec7e1b14f6a584ae54d2c`<br>
+**State:** G1 complete; G2 has 10 production translation units; final validation green; independent Architect GO.
 
 The implementation branch includes the required remote checkpoint
 `25789d6ec05039a04cbdbd75a11c83e16015fab3` as an ancestor. The checkpoint's
 Clang+mold default and updated execution brief were preserved while integrating
 the object build. The merge resolution keeps mold configurable through
-`MOSS_LDFLAGS`; the effective compiler and linker flags are unchanged from the
-measured build.
+`MOSS_LDFLAGS`; the effective compiler and linker commands remain unchanged
+from the measured build.
 
 ## Implementation
 
@@ -35,7 +35,7 @@ measured build.
 
 ## Final validation
 
-- On tested SHA `a436c66bbb5b457fa1646d9030592b42f1ebface`,
+- On tested SHA `1b20ca665fe61e1197dec7e1b14f6a584ae54d2c`,
   `make --jobs="$(nproc)" check`: **137/137 passed**, 0 failed, 0 skipped
   (136 Phase 25.1 baseline jobs plus Make dependency coverage). The first run
   was 131/137 because tests still looked for extracted runtimes in headers and
@@ -64,13 +64,17 @@ measured build.
 - The first-extraction Architect reviewed exact commit
   `a763a74c0220b85216ef5a6bdb82640c555e70a8` and issued scoped GO with no
   blocker. Its GCC-override coverage recommendation is implemented.
+- The near-final Architect reviewed exact implementation SHA
+  `1b20ca665fe61e1197dec7e1b14f6a584ae54d2c` and issued **GO with zero open
+  P0/P1/P2**. The review's P2 notes are closed: deleted PCH depfiles force PCH
+  and dependent-object recovery, while a mold-version change relinks both
+  executables without recompiling compiler objects. The isolated Make
+  regression covers both cases.
 
 ## Closeout
 
-- Obtain near-final independent Architect review of frozen SHA
-  `a436c66bbb5b457fa1646d9030592b42f1ebface` and
-  record its exact-SHA verdict. Then push normally to the configured
-  `phase25-2-work` remote. Do not merge to `main`.
+- Push the reviewed candidate normally to the configured `phase25-2-work`
+  remote. Do not merge to `main`.
 - Two optional direct C++ assertions (`check_phase25_generic_arithmetic_requirements.py`
   and `check_phase25_statement_call_occurrence_roles.py`) fail on their own
   assertions; both were reproduced at pre-extraction commit `19f05677`, so they
