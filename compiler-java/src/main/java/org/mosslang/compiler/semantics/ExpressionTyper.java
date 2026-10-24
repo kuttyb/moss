@@ -413,14 +413,15 @@ public class ExpressionTyper {
         // 16. Member access without call: target.member (e.g. enum case or field read)
         int dot = e.indexOf('.');
         if (dot > 0 && !e.startsWith("\"")) {
-            String target = e.substring(0, dot).trim();
-            String member = e.substring(dot + 1).trim();
-
-            if (enums.containsKey(target)) {
-                return TypeRef.enumeration(target);
+            String enumTarget = e.substring(0, dot).trim();
+            if (enums.containsKey(enumTarget)) {
+                return TypeRef.enumeration(enumTarget);
             }
-            if (env.containsKey(target)) {
-                TypeRef targetType = solver.resolve(env.get(target));
+            int lastDot = e.lastIndexOf('.');
+            String base = e.substring(0, lastDot).trim();
+            String member = e.substring(lastDot + 1).trim();
+            try {
+                TypeRef targetType = solver.resolve(infer(base, line, env));
                 if (targetType != null && objects.containsKey(targetType.name())) {
                     ObjectType obj = objects.get(targetType.name());
                     for (Field f : obj.fields) {
@@ -432,6 +433,10 @@ public class ExpressionTyper {
                         }
                     }
                     throw new CompileError(line, "type '" + targetType.name() + "' has no field '" + member + "'", "UNKNOWN_SYMBOL_OR_TYPE");
+                }
+            } catch (CompileError err) {
+                if (err.getCode() != null && err.getCode().equals("UNKNOWN_SYMBOL_OR_TYPE") && err.getMessage().contains("has no field")) {
+                    throw err;
                 }
             }
         }
