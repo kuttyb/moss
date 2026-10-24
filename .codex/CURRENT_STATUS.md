@@ -12022,25 +12022,26 @@ After restoring the G1 branch, the Clang/mold Makefile content appeared again in
 
 ## Phase 25.2 compiler build acceleration — resumed execution — 2026-10-24
 
-L7 has explicitly resumed the compiler build acceleration mission on
-`phase25-2-work`, with authority for implementation, local commits, and normal
-pushes. The earlier pause note above is superseded. The user authorized
-updating this file and `AGENTS.md`; the task-specific AGENTS rule is to be
-updated before any push. Current implementation HEAD is
-`a763a74c0220b85216ef5a6bdb82640c555e70a8`.
 
-Clang/mold G1 is committed with configuration-isolated object trees, depfiles,
-Clang PCH, and active-link configuration stamps for both stable executable
-paths. G2 currently has ten production translation units. Focused extraction
-checks, numeric source-free/hostile gates, full FileIO runtime hardening,
-Clang Debug/optimized builds, GCC Debug build/smoke, and the Make switchback
-regression have passed. The first-extraction Architect review was scoped GO.
+The Phase 25.2 compiler build acceleration implementation is complete on
+`phase25-2-work`. Source/test candidate: `1b8ccc489d9223229b54f360c655709c7a5a7e22`;
+G1 uses Clang+mold by default, explicit config-isolated object trees, precise
+depfiles, profile-specific Clang PCH, and active-link config stamps. G2 has ten
+production TUs. `AGENTS.md` records this task's normal-push authorization and
+retains the no-force-push rule.
 
-Final full `make check`, optimized examples, remaining ABI-v9/v10 source-free
-and hostile artifact gates, final clean/incremental compile/link timings, and
-near-final exact-SHA Architect review remain. ETI candidate audit is based on
-actual emitted object symbols; no cross-TU Moss-owned expensive template
-specialization has been identified, so do not add an arbitrary standard-library
-instantiation. Keep this status and `docs/phase25_2/STATUS.md` current. After all
-final gates and review, commit the completed status and push normally to the
-configured `phase25-2-work` remote; do not merge to main.
+Final `make check` passed 137/137 jobs; optimized examples passed. ABI-v9/v10
+source-free and hostile gates passed, including 13 ABI-v10 rehashed hostile
+mutations. GCC Debug build/smoke, Clang/optimized builds, Make incremental and
+compiler-switch tests, and feedback validation passed. Clean object/PCH compile
+and link timings: Debug 18.89s/0.58s; optimized 94.95s/0.55s. One-TU incremental
+compile/link: Debug 0.52s/0.58s; optimized 0.43s/0.49s. No-op builds: 0.49s
+Debug and 0.47s optimized. Details and limits are in
+`docs/phase25_2/STATUS.md`.
+
+The optimized-object `nm -C` audit found no repeated expensive Moss-owned
+template specialization warranting ETI; repeated template symbols were
+standard-library weak/COMDAT definitions, so no arbitrary ETI was added. One
+independent first-extraction review was scoped GO. The remaining steps are the
+near-final exact-SHA Architect review, final closeout commit, and normal push to
+`origin/phase25-2-work`. Do not merge to main.
