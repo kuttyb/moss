@@ -56,7 +56,8 @@ absolute path. Phase 7 does not yet include an installer.
 
 The repository Makefile compiles the explicit `COMPILER_SOURCES` list
 (`src/diagnostic_identity.cpp`, `src/display_runtime.cpp`,
-`src/fileio_runtime.cpp`, `src/program_identity.cpp`, and `src/moss.cpp`) into separate objects, then
+`src/fileio_runtime.cpp`, `src/float_format_runtime.cpp`,
+`src/program_identity.cpp`, and `src/moss.cpp`) into separate objects, then
 links the development and optimized executables at their existing paths. Debug objects use
 `build/compiler/obj/dev-<config>/`; optimized objects use
 `build/compiler/obj/opt-<config>/`. Each object has a generated `.d` file from
