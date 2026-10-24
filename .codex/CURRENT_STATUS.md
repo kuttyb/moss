@@ -12109,3 +12109,37 @@ examples, Clang optimized build, GCC development build/smoke and relevant
 ABI-v9/v10, SDK, source-free and hostile-artifact gates passed. Feedback validation, `git diff --check`, benchmark Python compile/help, fixture
 JSON parse, and the 21-row raw CSV checks all pass on the current closeout tree.
 Benchmark source code was measured at `b4bc3b7ec9ad74c535ece2aacbcac6fb144e8edd`; subsequent production C++ was unchanged. The independent Architect reviewed exact pushed candidate `480990e5526eb06b46d7cdd2a84a89b09eee3e84` and issued GO with no open P0/P1/P2 findings; the sole date P2 on the prior docs candidate was corrected and re-reviewed. Benchmark/docs are committed and pushed to `phase25-2-work`; no merge to `main`.
+
+## Phase 25.3 bounded C++/Java codegen parity assessment — 2026-10-24
+
+L7 authorized a bounded ABI-v9 comparison against accepted C++ `main`. The
+assessment used clean detached source worktrees at C++
+`683beccf54a68f4eaa09f0db13ff8443f3396c92` and Java
+`7afd0cbb22e5b3903449ba902185f3d7d1464cd4`. The existing C++ compiler binary
+SHA-256 was `9f64b32052df93bc4fd9d72dcd792440702f61e55eec0063b1e2814ae36df4f4`;
+the detached Java baseline built cleanly in 1,655 ms. The harness was used from
+`tooling/codegen-differential` commit
+`6ca7190927d6592aaee3355e2ddfcf8bd5266c5c`, without merging that branch. The
+active shared `phase25-3-java-j2` checkout had seven pre-existing modified Java
+files; it was left untouched and the results do not cover those uncommitted
+changes.
+
+The first 20-file comparison was expanded to 52 relevant standalone examples
+and fixtures. Final counts: 39 pairs emitted byte-different Rust, 0 emitted
+identical Rust, C++ accepted/Java rejected 8, Java accepted/C++ rejected 0, and
+both rejected with matching diagnostic codes 5 (expected negative fixtures,
+including use-after-transfer). The 39 successful pairs all show generated-code
+differences; prominent root causes include runtime/prelude emission policy,
+echo lowering, and domain message lowering. Java-only rejection clusters are
+open-result inference (4), enum typing/payload handling (2), and String method
+coverage (2). No Rust compilation or native execution was run, so semantic
+equivalence remains unverified.
+
+Across all 52 attempts, per-file median/p95 were C++ 21.67/116.59 ms and Java
+255.94/276.54 ms. Each Java invocation starts a fresh JVM, so its timings include
+cold JVM startup. Both-compiled timings and representative differences are in
+[`docs/phase25_3/CODEGEN_PARITY_ASSESSMENT.md`](../docs/phase25_3/CODEGEN_PARITY_ASSESSMENT.md).
+The durable report preserves scope, evidence, diagnostic clusters, and bounded
+follow-up suggestions. No compiler changes were made; do not run full `make
+check` or expensive acceptance gates until L7 reviews this assessment. Full
+parity is not claimed.
