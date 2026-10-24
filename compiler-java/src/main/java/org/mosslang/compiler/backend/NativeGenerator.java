@@ -1777,7 +1777,8 @@ public class NativeGenerator {
                                 .append(lowerExpr(expr, stateFields, domains, objects)).append(";\n");
                     }
                 } else if (!varName.contains(".") && declared.add(varName)) {
-                    o.append(indent).append("let mut ").append(varName).append(" = ")
+                    String typeAnn = (s.semanticType != null && !s.semanticType.isEmpty() && s.semanticType.startsWith("vector[")) ? ": " + rustType(s.semanticType) : "";
+                    o.append(indent).append("let mut ").append(varName).append(typeAnn).append(" = ")
                             .append(lowerExpr(expr, stateFields, domains, objects)).append(";\n");
                 } else {
                     o.append(indent).append(varName).append(" = ")
