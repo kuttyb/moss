@@ -371,6 +371,17 @@ public class SemanticChecker {
                 if (!stateNames.add(s.name)) {
                     throw new CompileError(s.line, "duplicate domain state '" + s.name + "' in domain '" + d.name + "'", "DUPLICATE_STATE");
                 }
+                if (s.init != null && !s.init.isEmpty() && s.type != null && !s.type.isEmpty()) {
+                    TypeSolver stateSolver = new TypeSolver(sessionCounter++);
+                    ExpressionTyper stateTyper = new ExpressionTyper(program, typeContext, stateSolver, functions, domains, objects, enums, traits);
+                    TypeRef declared = TypeParser.parseCanonical(s.type);
+                    TypeRef inferred = stateTyper.infer(s.init, s.line, new TypeEnv());
+                    if (!stateSolver.unify(declared, inferred)) {
+                        throw new CompileError(s.line, "state field '" + d.name + "." + s.name +
+                                "' is annotated '" + s.type + "' but its initializer has type '" +
+                                stateSolver.resolve(inferred).toCanonicalString() + "'", "TYPE_MISMATCH");
+                    }
+                }
             }
             Set<String> handlerNames = new HashSet<>();
             for (Handler h : d.handlers) {
