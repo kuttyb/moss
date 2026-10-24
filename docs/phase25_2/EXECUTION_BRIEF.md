@@ -1,58 +1,66 @@
-# Phase 25.2 — Fast execution brief (L7 authorization)
+# Moss Phase 25.2 — L7 single-agent execution mandate
 
-**Starting branch:** `phase25-2-work` (created from accepted main `2420439cf1cbaa08c8cd45d0d77b436ea4fb43f0`).
-**Clang-default commit:** `3b8fba8b3ff1f7982d2c9854956b9466be7c91fa`.
-**Goal:** Shorten the edit → compile → link cycle by splitting the Moss C++ compiler into approximately 10–14 well-isolated translation units. Prioritize working changes over additional architecture documents or profiling.
+**Authority:** L7, 2026-10-23. **Branch:** `phase25-2-work` (based on accepted `main` `2420439cf1cbaa08c8cd45d0d77b436ea4fb43f0`). **Clang/mold Makefile commit:** `466801dcf22fb7c5dfbeb79ef4fa61ac82979bdf`. **Goal:** Deliver a genuinely faster incremental C++ compiler build by splitting the monolithic `src/moss.cpp` into about 10–14 cohesive translation units, with careful template/header work.
 
-## L7 decision: skip the extended G0 gate
+## Staffing and authority
 
-Existing measurements and the synthetic proof-of-concept are sufficient to begin. Do not repeat exhaustive compile-time, template, CPU, RSS, or linker profiling now. Compare performance after the split is functional. Use the earlier `phase25-synthetic-build-experiment` branch for reference only.
+One **L6 agent** is the sole Coordinator, implementer, and ordinary Reviewer. **Do not launch implementation subagents, teams, or L5 workers.** An **independent L6 adversarial architect** may be consulted at two frozen checkpoints: the first successful multi-TU extraction and the near-final integrated candidate (or once more if a genuine architecture blocker emerges). Do not hold every small commit for a reviewer.
 
-## Step 1 — Make Clang the development default
+This L7 decision overrides prior Phase 25.2 briefs proposing multiple workers. Continue to follow `AGENTS.md`, required repository skills/bootstrap, feedback, branch safety, focused validation and accurate review reporting. Record ordinary reviews as **self-review**, not independent signoff. Do not modify or merge `main` without L7 authorization.
 
-The branch Makefile now defaults to `clang++` while respecting explicit `CXX` overrides. Verify `make moss-dev` and `make moss-opt` build correctly with Clang; check an explicit `make CXX=g++` build as a compatibility control, using clean output trees to avoid stale object reuse. Keep the C++17 and `-O0`/ `-O2` behavior unchanged. Do not spend time benchmarking compiler-versus-compiler speed.
+## Already done
 
-## Step 2 — G1 minimum viable multi-TU build system
+The work branch is created. The Makefile currently selects `clang++` by default (with explicit `CXX` overrides) and passes `-fuse-ld=mold` on the dev/optimized compiler link commands (overridable with `MOSS_LDFLAGS=`). The branch may still contain a monolithic compile rule. **Do not redo the compiler-selection debate.**
 
-Introduce an explicit compiler `.cpp` source list, separate object and dependency files per profile (`-MMD -MP`), concurrent object builds, correct linking, and reliable no-op/incremental rebuilds. Preserve all existing Make targets and artifact paths. Ensure changing compiler, flags, or build profile cannot silently reuse incompatible objects. This work must be independently reviewable, and can proceed in parallel with symbol-boundary discovery.
+## Immediate action: verify installed tools and compiler
 
-## Step 3 — G2: actually split the compiler
+After mandatory repository startup, confirm `clang++` and `mold` resolve locally and verify the exact Make link command uses mold, not merely that mold exists. Make the existing `moss-dev` and `moss-opt` targets build from this branch and run a focused `./moss` smoke test. Fix actual toolchain or linker integration failures in scope. Keep `-std=c++17`, `-O0` development and `-O2` optimized profiles. GCC remains an explicitly selectable compatibility path, not the default. Do not run repeated compiler comparisons or extended profiling.
 
-Do not wait for a large architecture inventory document. Inspect and identify safe symbol ownership boundaries just ahead of extraction; record only the decisions necessary to make the next cut. Prefer cohesive header-dependency boundaries to equal source sizes. A provisional partition to validate against real definitions is:
+## G1: make multi-TU builds possible
 
-1. driver/CLI
-2. source parsing/AST
-3. TypeRef/TypeSolver
-4. semantic/type checking
-5. ownership/effects
-6. domains/synchronization
-7. functional pipelines/collections
-8. semantic API
-9. ABI-v9 interface
-10. ABI-v10 checked bodies/interface
-11. native codegen
-12. FileIO/executor lowering
-13. Fast Debug interpreter
-14. diagnostics and editor queries
+Replace the single compile/link recipe with:
 
-Do not force this exact division if the dependency graph contradicts it. First extract a cohesive, lower-coupling subsystem and get a working multi-TU build, then continue in small groups toward 10–14 units. Avoid placing heavy implementations in commonly included headers merely to resolve linker failures.
+- An explicit maintainable `.cpp` source list, initially including `src/moss.cpp`, incrementally extended during extraction.
+- Separate object directories for dev and optimized profiles, using `-MMD -MP` and included depfiles for exact transitive header/`.inc` dependencies.
+- Independent object compilation with parallel Make scheduling and one final compiler-driver link (using mold by default).
+- Correct no-op rebuilds and incremental updates after `.cpp`, `.hpp`, and `.inc` edits, without the old wildcard-all-headers invalidation.
+- Safe handling of compiler/flag/linker changes: never silently reuse stale objects or an out-of-date executable when build flags change.
+- Preserve all existing public make targets, executable paths, tests and examples. Do not introduce CMake or another build system.
 
-Before each cut, account for file-local `static` declarations, anonymous namespaces, globals, `.inc` includes, ownership of definitions, and One Definition Rule hazards. Make newly exposed interfaces narrow. Keep one exclusive writer on `src/moss.cpp` while extraction is underway.
+G1 is complete when the single-source build functions through the new object/link mechanism. Move directly to G2; **do not spend time on a separate performance report**.
 
-## Working cadence and tests
+## G2: extract real compiler translation units
 
-Use **one** L6 Coordinator (also normal Reviewer), **one** L5 compiler-extraction writer, and **one** independent L5 build-system/test worker. Use worktrees and non-overlapping file ownership. The coordinator integrates staged changes and may call an independent L6 adversarial reviewer at the first multi-TU milestone and final handoff, not on every small patch.
+Read the actual code and follow symbol and dependency ownership, **not equal file sizes**. A tentative target is driver, parser/AST, types, checker, ownership/effects, domains, functional/collections, typed semantic API, ABI-v9, ABI-v10 checked-body/codec, native codegen, IO/executor lowering, Fast Debug, and diagnostics/IDE. Consolidate or subdivide as actual dependencies demand; 10–14 is a guideline, not a quota.
 
-Every extraction must compile and link with Clang, pass focused tests for the subsystem moved, and preserve runtime/compiler behavior. Do not run the entire ~17-minute `make check` after each cut. At the integrated final checkpoint, run full `make check`, examples, SDK/source-free/ABI gates, and GCC compatibility, unless L7 explicitly chooses to run the full suite himself. Report any unrun gate accurately.
+- First identify the lowest-risk coherent extraction, create the narrow necessary declarations, move implementation to a new `.cpp`, and get a working two-TU binary. Continue in modest, compileable extraction commits.
+- Audit `static` functions, anonymous namespaces, file-local globals, initialization order, implicit template instantiations, `.inc` inclusion context and ODR/linkage rules *for the symbols being moved*. Prevent duplicate definitions and hidden cross-TU dependencies.
+- Do not substitute broad `#include "*.cpp"`, giant shared implementation headers or unity builds: the result must be independently compilable TUs.
+- Prefer declarations in narrow stable headers and out-of-line non-template implementations. Move expensive inline header bodies only where safe. Keep semantics unchanged.
+- No language design changes, compiler algorithm refactors, ABI schema changes, ABI-v10 promotion or unrelated fixes.
 
-Preserve the Phase 25.1 accepted semantics and ABI-v9 default / ABI-v10 opt-in. No language refactoring, no default ABI cutover, no major testing-framework rewrite. No merge to main without L7 approval.
+Build, link, and run targeted behavioral tests after each bounded extraction. Preserve exact existing diagnostic contracts, Native/Fast Debug behavior, source-free ABI-v9 default and ABI-v10 opt-in, cross-crate provenance, cache invalidation and SDK behavior. If a cut proves tightly coupled, undo it or regroup without thrash. Use commit-level rollback.
 
-## After the split works
+At the **first working multi-TU checkpoint**, ask the independent adversarial architect to review the exact SHA for symbol ownership, ODR, cross-TU state identity and hidden implementation-header coupling. Record findings, fix genuine P0/P1 issues, and carry on without asking L7 for every cut.
 
-Apply **measured** explicit template instantiation with matching `extern template` declarations for the hottest specializations, and move high-cost non-template inline bodies out of shared headers as appropriate. Add PCH and benchmark `lld`/`mold` only after compilation is distributed. Keep GCC and Clang toolchains working.
+## Optimize once splitting works
 
-## Final handoff
+- **ETI:** centralize expensive *actual* template specializations and add corresponding `extern template` declarations where legal and useful. Verify suppression of redundant emission and correctness at link; do not blanket-instantiate all STL types or claim generic algorithms can be moved entirely out of headers.
+- **Header discipline:** stop unrelated edits from recompiling most TUs. Extract implementation-heavy non-template code from common headers.
+- **PCH:** add a Clang PCH for stable system/common headers if it materially helps; ensure compile flags, invalidation and toolchain version match. Do not hide compiler definitions in a universal PCH.
+- **mold:** already the default link mode; preserve configurable fallback. No further linker bake-off is required.
 
-Report exact SHA, number/ownership of TUs, focused and full validation outcomes, before/after production clean and representative incremental build times under Clang, aggregate CPU/RSS where convenient, remaining hotspots, and independent review verdict. Use the known pre-phase `-O0` monolithic ~24-second edit baseline as historical context, clearly labeled rather than treated as a same-host controlled comparison. Do not merge to main.
+Apply optimizations in bounded independently verifiable commits. Prefer a functioning 10-TU compiler over an elegant design that does not build.
 
-**Priority:** working Clang build → multi-TU build infrastructure → first real extraction → complete split → optimize → measure at end.
+## Tests, measurement and acceptance
+
+Do not re-run exhaustive baselines or the ~17-minute full regression suite after every edit. Use focused correctness tests during extraction. At the final integrated SHA:
+
+1. Build and link dev/optimized profiles with Clang+mold, and exercise a clean and representative incremental edit/relink cycle. Report new production measurements at the **end**, referencing the historical ~24s monolithic `-O0` edit baseline only as non-controlled context; distinguish clean, incremental, compilation and link time.
+2. Show that touching a narrow implementation only rebuilds its object plus relink; touching a shared header recompiles actual dependents; no-op builds do nothing.
+3. Execute `make check` (Phase 25.1 baseline: 136/136), `make examples`, plus focused ABI-v9/v10, SDK, source-free provider/consumer and hostile-artifact controls. Do not claim a pass for any unexecuted gate. Make an explicit GCC override compatibility build if practical.
+4. Record `git diff --check`, test evidence, commit SHA and self-review. Invite the independent adversarial architect to challenge the final *frozen* SHA; document GO/NO-GO and any real findings.
+
+Keep a concise `docs/phase25_2/STATUS.md` with current commit, TUs extracted, proven checks, blockers and next step. Follow existing agent-feedback and session status policies; no daily essays. At final delivery provide: exact SHA, TU list/ownership, tests, measured new build times, review verdict and residual bottlenecks.
+
+**Stop only for a material design/semantic blocker or after delivery of the reviewed Phase 25.2 candidate. No merge to `main`. Do the work; do not substitute planning documents for code.**
