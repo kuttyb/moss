@@ -188,6 +188,8 @@ public class Main {
                 checkOnly = true;
             } else if ("run".equals(a)) {
                 // moss run --interp
+            } else if ("debug".equals(a)) {
+                interpMode = true;
             } else if ("--interp".equals(a)) {
                 interpMode = true;
             } else if ("--trace".equals(a)) {
@@ -223,6 +225,23 @@ public class Main {
         }
 
         File file = new File(sourcePath);
+        if (file.isDirectory() || ".".equals(sourcePath)) {
+            try {
+                org.mosslang.compiler.project.ProjectManifest manifest = org.mosslang.compiler.project.ProjectManifest.load(file.toPath());
+                List<Path> srcs = manifest.findSourceFiles();
+                if (!srcs.isEmpty()) {
+                    Path chosen = srcs.get(0);
+                    for (Path sp : srcs) {
+                        if (sp.getFileName().toString().equals("main.moss")) {
+                            chosen = sp;
+                            break;
+                        }
+                    }
+                    sourcePath = chosen.toString();
+                    file = chosen.toFile();
+                }
+            } catch (Exception ignored) {}
+        }
         String absPath = file.getAbsolutePath();
         if (!file.exists()) {
             if (jsonOutput) {
@@ -237,6 +256,55 @@ public class Main {
         try {
             String content = Files.readString(Paths.get(sourcePath), StandardCharsets.UTF_8);
             Program program = Parser.parseSource(content, absPath);
+
+            if (interpMode) {
+                Path sourceFile = Paths.get(sourcePath).toAbsolutePath();
+                Path dir = sourceFile.getParent();
+                Path projectRoot = null;
+                while (dir != null) {
+                    if (Files.exists(dir.resolve("moss.toml"))) {
+                        projectRoot = dir;
+                        break;
+                    }
+                    dir = dir.getParent();
+                }
+                List<String> rootDirs = new ArrayList<>();
+                if (projectRoot != null) {
+                    rootDirs.add(projectRoot.toString());
+                }
+                String fastDebugRoots = System.getenv("MOSS_FAST_DEBUG_SOURCE_ROOTS");
+                if (fastDebugRoots != null && !fastDebugRoots.isBlank()) {
+                    for (String r : fastDebugRoots.split(File.pathSeparator)) {
+                        if (!r.isBlank() && !rootDirs.contains(r)) rootDirs.add(r);
+                    }
+                }
+                for (String rootStr : rootDirs) {
+                    try {
+                        org.mosslang.compiler.project.ProjectManifest depManifest =
+                                org.mosslang.compiler.project.ProjectManifest.load(Paths.get(rootStr));
+                        for (Path depSrc : depManifest.findSourceFiles()) {
+                            if (depSrc.toFile().getAbsolutePath().equals(absPath)) continue;
+                            String depContent = Files.readString(depSrc, StandardCharsets.UTF_8);
+                            Program depProg = Parser.parseSource(depContent, depSrc.toFile().getAbsolutePath());
+                            program.functions.addAll(depProg.functions);
+                            program.domains.addAll(depProg.domains);
+                            program.objects.addAll(depProg.objects);
+                            for (org.mosslang.compiler.ast.EnumType et : depProg.enums) {
+                                boolean exists = false;
+                                for (org.mosslang.compiler.ast.EnumType existing : program.enums) {
+                                    if (existing.name.equals(et.name)) {
+                                        exists = true;
+                                        break;
+                                    }
+                                }
+                                if (!exists) {
+                                    program.enums.add(et);
+                                }
+                            }
+                        }
+                    } catch (Exception ignored) {}
+                }
+            }
 
             if (program.imports != null && !program.imports.isEmpty()) {
                 Path sourceFile = Paths.get(sourcePath).toAbsolutePath();

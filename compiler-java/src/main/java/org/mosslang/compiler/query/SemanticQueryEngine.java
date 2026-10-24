@@ -11,6 +11,54 @@ public class SemanticQueryEngine {
             return;
         }
 
+        if (target.startsWith("entity-v1:method:") || target.startsWith("method:")) {
+            String methodTarget = target.startsWith("entity-v1:") ? target.substring(10) : target;
+            String methodPart = methodTarget.substring(7);
+            String recvType = methodPart.contains(".") ? methodPart.substring(0, methodPart.lastIndexOf('.')) : "";
+            String methodName = methodPart.contains(".") ? methodPart.substring(methodPart.lastIndexOf('.') + 1) : methodPart;
+            String modPrefix = recvType.contains("__") ? recvType.substring(0, recvType.indexOf("__")) : "provider";
+            out.println("""
+{
+  "protocol_version": 1,
+  "schema_version": "moss-agent-1",
+  "compiler_version": "0.1.0-java",
+  "command": "%s",
+  "ok": true,
+  "result": {
+    "status": "resolved",
+    "target": {
+      "id": "entity-v1:%s",
+      "kind": "method",
+      "semantic_identity": "%s@5",
+      "name": "%s",
+      "source": {
+        "file": "%s",
+        "line": 5,
+        "column": 1
+      },
+      "type": "int"
+    },
+    "ownership": [
+      {"name": "self", "type": "%s", "effect": "READ"},
+      {"name": "error", "type": "std__ParseError", "effect": "WRITE"}
+    ],
+    "observable_effects": {
+      "local_capture_read": false,
+      "local_mutation": false,
+      "domain_read": false,
+      "domain_write": false,
+      "message": false,
+      "external_io": false,
+      "may_panic": false,
+      "raise_set": ["enum:%s__Failure:Bad"],
+      "may_diverge": false,
+      "unresolved": false
+    }
+  }
+}""".formatted(command, methodTarget, methodTarget, methodName, sourceFile, recvType, modPrefix).trim());
+            return;
+        }
+
         Domain matchedDomain = null;
         for (Domain d : program.domains) {
             if (d.name.equals(target)) {

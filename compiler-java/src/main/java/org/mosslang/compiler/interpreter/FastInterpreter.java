@@ -70,13 +70,142 @@ public class FastInterpreter {
         }
     }
 
+    public static class RaisedException extends RuntimeException {
+        public final Value raisedValue;
+        public RaisedException(Value raisedValue) {
+            super(raisedValue != null ? raisedValue.toString() : "raised");
+            this.raisedValue = raisedValue;
+        }
+    }
+
+    public static class ReturnSignal extends RuntimeException {
+        public final Value returnValue;
+        public ReturnSignal(Value returnValue) {
+            this.returnValue = returnValue;
+        }
+    }
+
     public void run() {
         if (program.main == null) return;
         Map<String, Value> locals = new HashMap<>();
 
-        for (Stmt s : program.main.body) {
-            evalStmt(s, locals, null, "main", 0);
+        try {
+            evalBlock(program.main.body, 0, program.main.body.size(), locals, null, "main", 0);
+        } catch (ReturnSignal ignored) {}
+    }
+
+    private Value evalBlock(List<Stmt> stmts, int startIdx, int endIdx, Map<String, Value> locals,
+                            DomainInstance currentDomain, String funcName, int depth) {
+        Value lastVal = Value.ofUnit();
+        int i = startIdx;
+        while (i < endIdx) {
+            Stmt s = stmts.get(i);
+            if (s == null) {
+                i++;
+                continue;
+            }
+            if (s.kind == Stmt.Kind.If) {
+                int baseInd = s.indent;
+                int thenEnd = i + 1;
+                while (thenEnd < endIdx && stmts.get(thenEnd).indent > baseInd) {
+                    thenEnd++;
+                }
+                int elseStart = -1;
+                int elseEnd = thenEnd;
+                if (thenEnd < endIdx && stmts.get(thenEnd).kind == Stmt.Kind.Else && stmts.get(thenEnd).indent == baseInd) {
+                    elseStart = thenEnd + 1;
+                    elseEnd = elseStart;
+                    while (elseEnd < endIdx && stmts.get(elseEnd).indent > baseInd) {
+                        elseEnd++;
+                    }
+                }
+                Value cond = evalExpr(s.a, locals, currentDomain);
+                if (cond.asBool()) {
+                    lastVal = evalBlock(stmts, i + 1, thenEnd, locals, currentDomain, funcName, depth);
+                } else if (elseStart != -1) {
+                    lastVal = evalBlock(stmts, elseStart, elseEnd, locals, currentDomain, funcName, depth);
+                }
+                i = elseEnd;
+                continue;
+            } else if (s.kind == Stmt.Kind.Else) {
+                int baseInd = s.indent;
+                i++;
+                while (i < endIdx && stmts.get(i).indent > baseInd) i++;
+                continue;
+            } else if (s.kind == Stmt.Kind.Try) {
+                int baseInd = s.indent;
+                int tryEnd = i + 1;
+                while (tryEnd < endIdx && stmts.get(tryEnd).indent > baseInd) {
+                    tryEnd++;
+                }
+                try {
+                    lastVal = evalBlock(stmts, i + 1, tryEnd, locals, currentDomain, funcName, depth);
+                    i = tryEnd;
+                    while (i < endIdx && stmts.get(i).kind == Stmt.Kind.Recover && stmts.get(i).indent == baseInd) {
+                        i++;
+                        while (i < endIdx && stmts.get(i).indent > baseInd) i++;
+                    }
+                } catch (RaisedException rex) {
+                    i = tryEnd;
+                    boolean recovered = false;
+                    while (i < endIdx && stmts.get(i).kind == Stmt.Kind.Recover && stmts.get(i).indent == baseInd) {
+                        Stmt recStmt = stmts.get(i);
+                        int recStart = i + 1;
+                        int recEnd = recStart;
+                        while (recEnd < endIdx && stmts.get(recEnd).indent > baseInd) {
+                            recEnd++;
+                        }
+                        if (!recovered) {
+                            recovered = true;
+                            lastVal = evalBlock(stmts, recStart, recEnd, locals, currentDomain, funcName, depth);
+                        }
+                        i = recEnd;
+                    }
+                    if (!recovered) throw rex;
+                }
+                continue;
+            } else if (s.kind == Stmt.Kind.Match) {
+                int baseInd = s.indent;
+                int matchEnd = i + 1;
+                while (matchEnd < endIdx && stmts.get(matchEnd).indent > baseInd) {
+                    matchEnd++;
+                }
+                Value scrut = evalExpr(s.a, locals, currentDomain);
+                String scrutStr = scrut.toString();
+                int ci = i + 1;
+                boolean matched = false;
+                while (ci < matchEnd) {
+                    Stmt cs = stmts.get(ci);
+                    if (cs.kind == Stmt.Kind.Case) {
+                        int caseInd = cs.indent;
+                        int caseBodyStart = ci + 1;
+                        int caseBodyEnd = caseBodyStart;
+                        while (caseBodyEnd < matchEnd && stmts.get(caseBodyEnd).indent > caseInd) {
+                            caseBodyEnd++;
+                        }
+                        String pat = cs.a != null ? cs.a.trim() : "";
+                        if (!matched && (scrutStr.equals(pat) || scrutStr.endsWith("." + pat) || scrutStr.endsWith("::" + pat) || scrutStr.contains(pat))) {
+                            matched = true;
+                            lastVal = evalBlock(stmts, caseBodyStart, caseBodyEnd, locals, currentDomain, funcName, depth);
+                        }
+                        ci = caseBodyEnd;
+                    } else {
+                        ci++;
+                    }
+                }
+                i = matchEnd;
+                continue;
+            } else if (s.kind == Stmt.Kind.Raise) {
+                Value rVal = evalExpr(s.a != null ? s.a : "", locals, currentDomain);
+                throw new RaisedException(rVal);
+            } else if (s.kind == Stmt.Kind.Reply || s.kind == Stmt.Kind.Return) {
+                Value rVal = (s.a != null && !s.a.isEmpty()) ? evalExpr(s.a, locals, currentDomain) : Value.ofUnit();
+                throw new ReturnSignal(rVal);
+            }
+            lastVal = evalStmt(s, locals, currentDomain, funcName, depth);
+            i++;
         }
+        return lastVal;
     }
 
     private Value evalStmt(Stmt s, Map<String, Value> locals, DomainInstance currentDomain, String funcName, int depth) {
@@ -197,8 +326,21 @@ public class FastInterpreter {
                 }
 
                 Value retVal = Value.ofUnit();
-                for (Stmt hs : handler.body) {
-                    retVal = evalStmt(hs, handlerLocals, targetDomain, targetDomain.domain.name + "." + handlerName, depth + 2);
+                try {
+                    retVal = evalBlock(handler.body, 0, handler.body.size(), handlerLocals, targetDomain, targetDomain.domain.name + "." + handlerName, depth + 2);
+                } catch (ReturnSignal rs) {
+                    retVal = rs.returnValue;
+                } catch (RaisedException rex) {
+                    if (handler.failureArms != null && !handler.failureArms.isEmpty()) {
+                        FailureArm arm = handler.failureArms.get(0);
+                        try {
+                            retVal = evalBlock(arm.body, 0, arm.body.size(), handlerLocals, targetDomain, targetDomain.domain.name + "." + handlerName, depth + 2);
+                        } catch (ReturnSignal rs) {
+                            retVal = rs.returnValue;
+                        }
+                    } else {
+                        throw rex;
+                    }
                 }
 
                 eventId++;
@@ -504,6 +646,20 @@ public class FastInterpreter {
             return Value.ofFloat(Double.parseDouble(expr));
         }
 
+        if (expr.startsWith("message ")) {
+            String inner = expr.substring(8).trim();
+            int openP = inner.indexOf('(');
+            int dot = inner.indexOf('.');
+            if (dot > 0 && openP > dot && inner.endsWith(")")) {
+                Stmt msgStmt = new Stmt(Stmt.Kind.Message, 0, 0, expr, "");
+                msgStmt.a = inner.substring(0, dot).trim();
+                msgStmt.b = inner.substring(dot + 1, openP).trim();
+                String argsStr = inner.substring(openP + 1, inner.length() - 1).trim();
+                msgStmt.args.addAll(splitArgs(argsStr));
+                return evalStmt(msgStmt, locals, currentDomain, "main", 0);
+            }
+        }
+
         // Function call: callee(args...)
         int p = expr.indexOf('(');
         if (p > 0 && expr.endsWith(")")) {
@@ -519,7 +675,7 @@ public class FastInterpreter {
 
             // Domain construction check e.g. Counter()
             for (Domain d : program.domains) {
-                if (d.name.equals(callee) || d.name.endsWith("__" + callee)) {
+                if (d.name.equals(callee) || d.name.endsWith("__" + callee) || callee.endsWith("." + d.name)) {
                     DomainInstance inst = new DomainInstance(d, "main::" + callee.toLowerCase());
                     for (Field f : d.state) {
                         String init = f.init != null && !f.init.isEmpty() ? f.init : "0";
@@ -532,20 +688,79 @@ public class FastInterpreter {
                 }
             }
 
+            // Object construction check e.g. Carrier() or provider.Carrier()
+            for (ObjectType obj : program.objects) {
+                if (obj.name.equals(callee) || obj.name.endsWith("__" + callee) || callee.endsWith("." + obj.name)) {
+                    return new Value(Value.Kind.OBJECT, obj);
+                }
+            }
+
+            // Object method call check e.g. carrier.Reset(error) or carrier.Flip(set_overflow(error), error)
+            if (callee.contains(".")) {
+                int dot = callee.lastIndexOf('.');
+                String recvName = callee.substring(0, dot).trim();
+                String methodName = callee.substring(dot + 1).trim();
+                for (ObjectType obj : program.objects) {
+                    for (Method m : obj.methods) {
+                        if (m.name.equals(methodName)) {
+                            Map<String, Value> mLocals = new HashMap<>();
+                            for (int i = 0; i < m.params.size() && i < evaluatedArgs.size(); i++) {
+                                mLocals.put(m.params.get(i).name, evaluatedArgs.get(i));
+                            }
+                            Value res = Value.ofUnit();
+                            try {
+                                res = evalBlock(m.body, 0, m.body.size(), mLocals, null, m.name, 0);
+                            } catch (ReturnSignal rs) {
+                                res = rs.returnValue;
+                            } finally {
+                                for (int i = 0; i < m.params.size() && i < argList.size(); i++) {
+                                    String rawArg = argList.get(i).trim();
+                                    String pName = m.params.get(i).name;
+                                    if (locals.containsKey(rawArg) && mLocals.containsKey(pName)) {
+                                        locals.put(rawArg, mLocals.get(pName));
+                                    }
+                                }
+                            }
+                            return res;
+                        }
+                    }
+                }
+            }
+
             // Check program functions
             for (Function f : program.functions) {
-                if (f.name.equals(callee) || f.name.endsWith("__" + callee) || callee.endsWith("." + f.name) || (callee.contains(".") && f.name.equals(callee.replace('.', '_')))) {
+                if (f.name.equals(callee) || f.name.endsWith("__" + callee) || callee.endsWith("." + f.name)
+                        || (callee.contains(".") && f.name.equals(callee.replace('.', '_')))
+                        || (callee.contains(".") && f.name.endsWith("__" + callee.substring(callee.lastIndexOf('.') + 1)))) {
                     Map<String, Value> fnLocals = new HashMap<>();
                     for (int i = 0; i < f.params.size() && i < evaluatedArgs.size(); i++) {
                         fnLocals.put(f.params.get(i).name, evaluatedArgs.get(i));
                     }
                     Value res = Value.ofUnit();
-                    for (Stmt fs : f.body) {
-                        res = evalStmt(fs, fnLocals, null, f.name, 0);
-                        if (fs.kind == Stmt.Kind.Return || fs.kind == Stmt.Kind.Reply) break;
+                    try {
+                        res = evalBlock(f.body, 0, f.body.size(), fnLocals, null, f.name, 0);
+                    } catch (ReturnSignal rs) {
+                        res = rs.returnValue;
+                    } finally {
+                        for (int i = 0; i < f.params.size() && i < argList.size(); i++) {
+                            String rawArg = argList.get(i).trim();
+                            String pName = f.params.get(i).name;
+                            if (locals.containsKey(rawArg) && fnLocals.containsKey(pName)) {
+                                locals.put(rawArg, fnLocals.get(pName));
+                            }
+                        }
                     }
                     return res;
                 }
+            }
+        }
+
+        // Enum variant literal e.g. std.ParseError.Invalid or Failure.Bad
+        if (expr.contains(".") && !expr.contains("(")) {
+            int lastDot = expr.lastIndexOf('.');
+            String variant = expr.substring(lastDot + 1).trim();
+            if (!variant.isEmpty() && Character.isUpperCase(variant.charAt(0))) {
+                return Value.ofString(expr);
             }
         }
 

@@ -276,7 +276,7 @@ public class ExpressionTyper {
                             infer(arg, line, env);
                         }
                         if (!member.isEmpty() && Character.isUpperCase(member.charAt(0))) {
-                            return TypeRef.domain(member);
+                            return TypeRef.domain(target + "." + member);
                         }
                         return TypeRef.primitive("int");
                     }
@@ -727,6 +727,10 @@ public class ExpressionTyper {
                     return solver.fresh(0);
                 }
             }
+        }
+
+        if (targetType.kind() == TypeKind.Domain || targetType.kind() == TypeKind.NominalInstance || targetType.kind() == TypeKind.InferenceVar) {
+            return solver.fresh(0);
         }
 
         return TypeRef.unit();

@@ -118,13 +118,26 @@ public class ProjectBuilder {
     }
 
     private static Map<String, List<Path>> getExternalCandidateProviders(ProjectManifest manifest) {
+        return getExternalCandidateProviders(manifest, null);
+    }
+
+    private static Map<String, List<Path>> getExternalCandidateProviders(ProjectManifest manifest, String profile) {
         Map<String, List<Path>> externalCandidateProviders = new HashMap<>();
         List<Path> candidates = SourceFreeAbi.findInterfaceCandidates(manifest != null ? manifest.getRoot() : null);
+        String excludedSubdir = null;
+        if (profile != null && manifest != null) {
+            String opposite = "release".equals(profile) ? "debug" : "release";
+            excludedSubdir = manifest.getRoot().resolve("build").resolve(opposite).toAbsolutePath().normalize().toString();
+        }
         for (Path f : candidates) {
+            Path norm = f.toAbsolutePath().normalize();
+            if (excludedSubdir != null && norm.toString().startsWith(excludedSubdir + File.separator)) {
+                continue;
+            }
             String name = f.getFileName().toString();
             if (name.endsWith(".mossi")) {
                 name = name.substring(0, name.length() - 6);
-                externalCandidateProviders.computeIfAbsent(name, k -> new ArrayList<>()).add(f.toAbsolutePath().normalize());
+                externalCandidateProviders.computeIfAbsent(name, k -> new ArrayList<>()).add(norm);
             }
         }
         return externalCandidateProviders;
@@ -202,7 +215,7 @@ public class ProjectBuilder {
         }
 
         // External module resolution from buildDir, deps, and MOSS_MODULE_PATH
-        Map<String, List<Path>> externalCandidateProviders = getExternalCandidateProviders(manifest);
+        Map<String, List<Path>> externalCandidateProviders = getExternalCandidateProviders(manifest, profile);
 
         // Check for ambiguous or missing imports
         for (Map.Entry<String, List<String>> entry : moduleImports.entrySet()) {
