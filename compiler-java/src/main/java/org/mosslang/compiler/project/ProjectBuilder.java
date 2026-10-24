@@ -15,6 +15,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.security.MessageDigest;
 import java.util.*;
+import java.util.regex.*;
 import java.util.stream.Stream;
 
 public class ProjectBuilder {
@@ -809,8 +810,10 @@ public class ProjectBuilder {
                         fn.params.stream().anyMatch(p -> p.type == null || p.type.isEmpty() || p.type.equals("Box")) ||
                         (fn.returnType == null || fn.returnType.isEmpty()) && (fn.resultExpression == null || fn.resultExpression.contains("[]") || fn.resultExpression.contains("fresh"));
                 String eff = "effects=local_capture_read=0;local_mutation=0;domain_read=0;domain_write=0;message=0;external_io=0;fileio=0;fileio_unknown=0;may_panic=0;raise_set=-;may_diverge=0;unresolved=0";
+                String fnBody = fn.resultExpression != null ? fn.resultExpression : (fn.body != null ? fn.body.toString() : "");
+                String semHash = fnv1a64Hex(fn.name + ":" + fnBody);
                 binRecords.add(new String[]{"fn:" + fnName, "fn " + fnName + " kind=" + (isGeneric ? "generic" : "static") + " " + eff + "\n"});
-                semRecords.add(new String[]{"fn:" + fnName, "export fn " + fnName + " kind=" + (isGeneric ? "generic" : "static") + " " + eff + "\n"});
+                semRecords.add(new String[]{"fn:" + fnName, "export fn " + fnName + " kind=" + (isGeneric ? "generic" : "static") + " semantic_hash=" + semHash + " " + eff + "\n"});
             }
 
             StringBuilder binaryFramed = new StringBuilder("binary_contract\ncount ").append(binRecords.size()).append("\n");
@@ -1047,6 +1050,7 @@ public class ProjectBuilder {
 
     private static String generateModuleRust(Path buildDir, Map<String, List<Path>> externalCandidateProviders, Program prog, String module, List<String> deps, String mossiContent, boolean isRoot) {
         // Collect generic functions from all deps
+        Pattern fnPat = Pattern.compile("\\bfn\\s+([A-Za-z0-9_]+)\\s+kind=generic");
         for (String dep : deps) {
             Path depMossi = buildDir.resolve(dep + ".mossi");
             if (!Files.exists(depMossi) && externalCandidateProviders != null) {
@@ -1057,17 +1061,10 @@ public class ProjectBuilder {
                 try {
                     String depText = Files.readString(depMossi, StandardCharsets.UTF_8);
                     for (String line : depText.split("\\R")) {
-                        line = line.trim();
-                        if ((line.startsWith("export fn ") || line.startsWith("fn ")) && line.contains("kind=generic")) {
-                            String[] parts = line.split("\\s+");
-                            if (parts.length >= 2) {
-                                String fnName = parts[1].equals("fn") ? parts[2] : parts[1];
-                                if (fnName.startsWith("fn:")) fnName = fnName.substring(3);
-                                Function stub = new Function();
-                                stub.name = dep + "__" + fnName;
-                                stub.params.add(new Param("x", ""));
-                                prog.functions.add(stub);
-                            }
+                        Matcher m = fnPat.matcher(line);
+                        if (m.find()) {
+                            String fnName = m.group(1);
+                            prog.importedGenericFunctions.add(dep + "__" + fnName);
                         }
                     }
                 } catch (IOException ignored) {}
@@ -1076,6 +1073,7 @@ public class ProjectBuilder {
         String baseRust = NativeGenerator.generate(prog, false);
         StringBuilder extra = new StringBuilder();
         for (String dep : deps) {
+            extra.append("#[macro_use]\n");
             extra.append("extern crate moss_").append(dep).append(";\n");
             extra.append("use moss_").append(dep).append("::*;\n");
             Path depMossi = buildDir.resolve(dep + ".mossi");

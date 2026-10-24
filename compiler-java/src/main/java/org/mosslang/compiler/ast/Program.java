@@ -17,6 +17,7 @@ public class Program {
     public MutableList<TestDecl> tests = new FastList<>();
     public MutableList<BenchDecl> benchmarks = new FastList<>();
     public MainProc main = null;
+    public java.util.Set<String> importedGenericFunctions = new java.util.HashSet<>();
 
     public Program() {}
 

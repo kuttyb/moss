@@ -275,6 +275,9 @@ public class NativeGenerator {
         }
 
         Set<String> genericFunctions = new HashSet<>();
+        if (program.importedGenericFunctions != null) {
+            genericFunctions.addAll(program.importedGenericFunctions);
+        }
         for (Function f : program.functions) {
             if (!f.name.contains("generic") && !f.name.equals("summarize")) {
                 boolean hasGeneric = false;
