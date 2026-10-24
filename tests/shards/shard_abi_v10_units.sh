@@ -13,7 +13,8 @@ ${CXX:-c++} -std=c++17 -Wall -Wextra -Wno-missing-field-initializers -Werror -pe
 tmp/abi_v10_staging
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_known_open_nominal.py "$compiler"
 ${CXX:-c++} -std=c++17 -Wall -Wextra -Wno-missing-field-initializers -Werror -pedantic -Isrc \
-  tests/tooling/abi_v10_adversarial.cpp -o tmp/abi_v10_adversarial
+  tests/tooling/abi_v10_adversarial.cpp src/checked_body_ir.cpp \
+  -o tmp/abi_v10_adversarial
 tmp/abi_v10_adversarial
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_empty_vector_records.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_r2c_empty_vector_consumer.py "$compiler"

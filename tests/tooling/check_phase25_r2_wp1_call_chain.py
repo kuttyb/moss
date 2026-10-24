@@ -58,10 +58,12 @@ with tempfile.TemporaryDirectory(prefix="phase25-r2-wp1-", dir=TMP) as td:
     poisoner = scratch / "poison_legacy"
     run(["g++", "-std=c++17", "-O0", "-Wall", "-Wextra", "-Werror",
          "-Wno-missing-field-initializers", "-pedantic", "-Isrc",
-         "tests/tooling/mutate_phase25_call_chain_artifact.cpp", "-o", mutator])
+         "tests/tooling/mutate_phase25_call_chain_artifact.cpp",
+         "src/checked_body_ir.cpp", "-o", mutator])
     run(["g++", "-std=c++17", "-O0", "-Wall", "-Wextra", "-Werror",
          "-Wno-missing-field-initializers", "-pedantic", "-Isrc",
-         "tests/tooling/check_phase25_h3_poison_legacy.cpp", "-o", poisoner])
+         "tests/tooling/check_phase25_h3_poison_legacy.cpp",
+         "src/checked_body_ir.cpp", "-o", poisoner])
 
     provider = scratch / "provider"
     package(provider, "r2_chain_provider", """module Service

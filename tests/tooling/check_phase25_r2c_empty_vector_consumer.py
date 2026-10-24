@@ -40,7 +40,7 @@ with tempfile.TemporaryDirectory(prefix="phase25-r2c-empty-vector-",
     run(["g++", "-std=c++17", "-O0", "-Wall", "-Wextra", "-Werror",
          "-Wno-missing-field-initializers", "-pedantic", "-Isrc",
          "tests/tooling/mutate_phase25_r2c_empty_vector_artifact.cpp",
-         "-o", str(mutator)], cwd=ROOT, env=os.environ.copy())
+         "src/checked_body_ir.cpp", "-o", str(mutator)], cwd=ROOT, env=os.environ.copy())
     provider = scratch / "provider"
     package(provider, "r2c_empty_vector_provider", """module Provider
 

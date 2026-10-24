@@ -19,7 +19,7 @@ PRECONSUMER = TMP / "phase25-d2-preconsumer"
 subprocess.run([
     "g++", "-std=c++17", "-O0", "-Wall", "-Wextra", "-Werror",
     "-Wno-missing-field-initializers", "-pedantic", str(SOURCE),
-    "-o", str(BINARY),
+    str(ROOT / "src" / "checked_body_ir.cpp"), "-o", str(BINARY),
 ], check=True)
 subprocess.run([str(BINARY)], check=True)
 
