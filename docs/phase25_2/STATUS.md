@@ -1,8 +1,15 @@
 # Phase 25.2 compiler build acceleration status
 
 **Branch:** `phase25-2-work`<br>
-**Source candidate:** `1b8ccc489d9223229b54f360c655709c7a5a7e22`<br>
+**Tested implementation SHA:** `a436c66bbb5b457fa1646d9030592b42f1ebface`<br>
 **State:** G1 complete; G2 has 10 production translation units; final validation green; near-final Architect review pending.
+
+The implementation branch includes the required remote checkpoint
+`25789d6ec05039a04cbdbd75a11c83e16015fab3` as an ancestor. The checkpoint's
+Clang+mold default and updated execution brief were preserved while integrating
+the object build. The merge resolution keeps mold configurable through
+`MOSS_LDFLAGS`; the effective compiler and linker flags are unchanged from the
+measured build.
 
 ## Implementation
 
@@ -28,12 +35,15 @@
 
 ## Final validation
 
-- `make --jobs="$(nproc)" check`: **137/137 passed**, 0 failed, 0 skipped
+- On tested SHA `a436c66bbb5b457fa1646d9030592b42f1ebface`,
+  `make --jobs="$(nproc)" check`: **137/137 passed**, 0 failed, 0 skipped
   (136 Phase 25.1 baseline jobs plus Make dependency coverage). The first run
   was 131/137 because tests still looked for extracted runtimes in headers and
   compiled `moss.cpp` alone; those harnesses were updated, and the final run is
   green.
-- `make examples-optimized`: passed for all positive examples.
+- `make --jobs="$(nproc)" examples-optimized`: passed for all positive
+  examples. Rust emitted non-fatal jobserver descriptor warnings because the
+  target was invoked under GNU Make parallelism.
 - Clang Debug/optimized PCH builds and optimized display smoke passed. GCC
   Debug production build/smoke and Clang switch-back relink passed.
 - ABI/source-free gates passed: Phase 21 ABI-v9 source-free suite; R3B numeric
@@ -57,7 +67,8 @@
 
 ## Closeout
 
-- Obtain near-final independent Architect review of the frozen candidate and
+- Obtain near-final independent Architect review of frozen SHA
+  `a436c66bbb5b457fa1646d9030592b42f1ebface` and
   record its exact-SHA verdict. Then push normally to the configured
   `phase25-2-work` remote. Do not merge to `main`.
 - Two optional direct C++ assertions (`check_phase25_generic_arithmetic_requirements.py`
