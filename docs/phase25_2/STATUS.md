@@ -5,7 +5,7 @@
 > `phase25-2-work` at `5f8056652668046bca59be5870bd110821d7e159`; its acceptance
 > is not established by the earlier G1/G2 status or review.
 
-## R2 core compiler decomposition — implementation complete, final review pending — 2026-10-23
+## R2 core compiler decomposition — reviewed GO — 2026-10-23
 
 The four priority compiler owners are independently compiled production TUs:
 `parser.cpp` owns Parser/lexer/source normalization; `functional_optimizer.cpp`
