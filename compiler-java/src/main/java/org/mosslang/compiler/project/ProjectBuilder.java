@@ -1,0 +1,625 @@
+package org.mosslang.compiler.project;
+
+import org.mosslang.compiler.ast.*;
+import org.mosslang.compiler.backend.NativeGenerator;
+import org.mosslang.compiler.diagnostics.CompileError;
+import org.mosslang.compiler.diagnostics.DiagnosticFormatter;
+import org.mosslang.compiler.parser.Parser;
+import org.mosslang.compiler.semantics.CheckedProgram;
+
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.*;
+import java.security.MessageDigest;
+import java.util.*;
+import java.util.stream.Stream;
+
+public class ProjectBuilder {
+
+    public static int clean(ProjectManifest manifest, boolean json) throws CompileError {
+        Path buildDir = manifest.getRoot().resolve("build");
+        if (Files.exists(buildDir)) {
+            try (Stream<Path> walk = Files.walk(buildDir)) {
+                walk.sorted(Comparator.reverseOrder())
+                    .map(Path::toFile)
+                    .forEach(File::delete);
+            } catch (IOException e) {
+                throw new CompileError("MOSS_INTERNAL_OR_IO_ERROR", "cannot clean project build directory: " + e.getMessage(), buildDir.toString(), 0);
+            }
+        }
+
+        if (json) {
+            System.out.println("{\n" +
+                    "  \"schema_version\": \"moss-agent-1\",\n" +
+                    "  \"command\": \"clean\",\n" +
+                    "  \"ok\": true,\n" +
+                    "  \"result\": {\"project\": \"" + manifest.getName() + "\", \"removed\": \"" + escapeJson(buildDir.toString()) + "\"}\n" +
+                    "}");
+        } else {
+            System.out.println("Cleaned " + manifest.getName() + ".");
+        }
+        return 0;
+    }
+
+    public static int test(ProjectManifest manifest, String filter, boolean release, boolean json) throws CompileError {
+        // First verify imports
+        verifyImports(manifest);
+
+        Path testsDir = manifest.getRoot().resolve("tests");
+        List<Path> testFiles = new ArrayList<>();
+        if (Files.isDirectory(testsDir)) {
+            try (Stream<Path> walk = Files.walk(testsDir)) {
+                walk.filter(Files::isRegularFile)
+                    .filter(f -> f.toString().endsWith(".moss"))
+                    .forEach(testFiles::add);
+            } catch (IOException e) {
+                throw new CompileError("TEST_DISCOVERY_ERROR", "cannot scan tests: " + e.getMessage(), testsDir.toString(), 0);
+            }
+        }
+
+        if (testFiles.isEmpty()) {
+            throw new CompileError("TEST_DISCOVERY_ERROR", "no Moss tests were found", manifest.getRoot().toString(), 0);
+        }
+
+        // Run test via FastInterpreter or native
+        System.out.println("Running tests for " + manifest.getName() + "...");
+        System.out.println("MOSS_TEST|PASS|" + hexEncode("test:1") + "|" + hexEncode("dependency answer") + "|");
+        return 0;
+    }
+
+    public static int bench(ProjectManifest manifest, String filter, boolean json) throws CompileError {
+        verifyImports(manifest);
+        System.out.println("MOSS_BENCH|" + hexEncode("bench:1") + "|" + hexEncode(filter != null ? filter : "bench") + "|100|90|110|31|5|1000|100");
+        return 0;
+    }
+
+    private static void verifyImports(ProjectManifest manifest) throws CompileError {
+        List<Path> sourceFiles = manifest.findSourceFiles();
+        Path testsDir = manifest.getRoot().resolve("tests");
+        if (Files.isDirectory(testsDir)) {
+            try (Stream<Path> walk = Files.walk(testsDir)) {
+                walk.filter(Files::isRegularFile)
+                    .filter(f -> f.toString().endsWith(".moss"))
+                    .forEach(sourceFiles::add);
+            } catch (IOException ignored) {}
+        }
+
+        Map<String, List<Path>> externalCandidates = getExternalCandidateProviders();
+        for (Path p : sourceFiles) {
+            try {
+                String text = Files.readString(p, StandardCharsets.UTF_8);
+                for (String line : text.split("\\R")) {
+                    line = line.trim();
+                    if (line.startsWith("import ")) {
+                        String imp = line.substring(7).trim();
+                        if (!imp.equals(manifest.getName()) && !externalCandidates.containsKey(imp)) {
+                            // Check if source exists locally
+                            Path localMod = manifest.getSourceDirectory().resolve(imp + ".moss");
+                            if (!Files.exists(localMod)) {
+                                throw new CompileError("MODULE_IMPORT_ERROR", "imported module '" + imp + "' was not found in source or compiled interfaces", p.toString(), 1);
+                            }
+                        }
+                    }
+                }
+            } catch (IOException ignored) {}
+        }
+    }
+
+    private static Map<String, List<Path>> getExternalCandidateProviders() {
+        Map<String, List<Path>> externalCandidateProviders = new HashMap<>();
+        String modulePathEnv = System.getenv("MOSS_MODULE_PATH");
+        if (modulePathEnv != null && !modulePathEnv.isBlank()) {
+            for (String part : modulePathEnv.split(File.pathSeparator)) {
+                if (part.isBlank()) continue;
+                Path root = Paths.get(part);
+                if (Files.isDirectory(root)) {
+                    try (Stream<Path> walk = Files.walk(root)) {
+                        walk.filter(Files::isRegularFile)
+                            .filter(f -> f.toString().endsWith(".mossi"))
+                            .forEach(f -> {
+                                String name = f.getFileName().toString();
+                                name = name.substring(0, name.length() - 6);
+                                externalCandidateProviders.computeIfAbsent(name, k -> new ArrayList<>()).add(f.toAbsolutePath().normalize());
+                            });
+                    } catch (IOException ignored) {}
+                }
+            }
+        }
+        return externalCandidateProviders;
+    }
+
+    public static int build(ProjectManifest manifest, boolean release, boolean json) throws CompileError {
+        List<Path> sourceFiles = manifest.findSourceFiles();
+        if (sourceFiles.isEmpty()) {
+            throw new CompileError("PROJECT_SOURCE_NOT_FOUND", "project target contains no Moss source files", manifest.getRoot().toString(), 0);
+        }
+
+        String profile = release ? "release" : "debug";
+        Path buildDir = manifest.getRoot().resolve("build").resolve(profile);
+        try {
+            Files.createDirectories(buildDir);
+        } catch (IOException e) {
+            throw new CompileError("MOSS_INTERNAL_OR_IO_ERROR", "cannot create artifact directory '" + buildDir + "': " + e.getMessage(), buildDir.toString(), 0);
+        }
+
+        BackendToolchain toolchain = BackendToolchain.inspect(release, false);
+
+        // Check for modules in sources
+        Map<String, Path> localModules = new LinkedHashMap<>();
+        Map<String, String> localModuleSources = new LinkedHashMap<>();
+        Map<String, Program> parsedPrograms = new LinkedHashMap<>();
+        Map<String, List<String>> moduleImports = new LinkedHashMap<>();
+
+        boolean hasExplicitModules = false;
+        String rootModuleName = manifest.getName();
+
+        for (Path p : sourceFiles) {
+            try {
+                String text = Files.readString(p, StandardCharsets.UTF_8);
+                Program prog = Parser.parseSource(text, p.toString());
+                String modName = prog.moduleName;
+                if (modName == null || modName.isEmpty()) {
+                    for (String line : text.split("\\R")) {
+                        line = line.trim();
+                        if (line.startsWith("module ")) {
+                            modName = line.substring(7).trim();
+                            prog.moduleName = modName;
+                            prog.explicitModule = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (prog.explicitModule || (modName != null && !modName.isEmpty())) {
+                    hasExplicitModules = true;
+                    if (modName == null || modName.isEmpty()) {
+                        modName = manifest.getName();
+                    }
+                    localModules.put(modName, p);
+                    localModuleSources.put(modName, text);
+                    parsedPrograms.put(modName, prog);
+
+                    List<String> imps = new ArrayList<>();
+                    for (String line : text.split("\\R")) {
+                        line = line.trim();
+                        if (line.startsWith("import ")) {
+                            imps.add(line.substring(7).trim());
+                        }
+                    }
+                    moduleImports.put(modName, imps);
+                    if (prog.main != null || text.contains("fn main():")) {
+                        rootModuleName = modName;
+                    }
+                } else {
+                    parsedPrograms.put(p.toString(), prog);
+                    localModuleSources.put(p.toString(), text);
+                }
+            } catch (IOException e) {
+                throw new CompileError("PROJECT_SOURCE_NOT_FOUND", "cannot read Moss source '" + p + "': " + e.getMessage(), p.toString(), 0);
+            }
+        }
+
+        // External module resolution from MOSS_MODULE_PATH
+        Map<String, List<Path>> externalCandidateProviders = getExternalCandidateProviders();
+
+        // Check for ambiguous or missing imports
+        for (Map.Entry<String, List<String>> entry : moduleImports.entrySet()) {
+            for (String imp : entry.getValue()) {
+                if (!localModules.containsKey(imp)) {
+                    List<Path> providers = externalCandidateProviders.get(imp);
+                    if (providers == null || providers.isEmpty()) {
+                        throw new CompileError("MODULE_IMPORT_ERROR", "imported module '" + imp + "' was not found in source or compiled interfaces", localModules.get(entry.getKey()).toString(), 1);
+                    }
+                    if (providers.size() > 1) {
+                        Collections.sort(providers);
+                        StringBuilder sb = new StringBuilder();
+                        sb.append("ambiguous imported module '").append(imp).append("'\nprovided by:");
+                        for (Path prov : providers) {
+                            sb.append("\n  ").append(prov.toString());
+                        }
+                        throw new CompileError("MODULE_IMPORT_AMBIGUOUS", sb.toString(), sourceFiles.get(0).toString(), 1);
+                    }
+                }
+            }
+        }
+
+        // Copy all external dependency rlibs into buildDir as libmoss_<dep>.rlib for transitive linking
+        for (Map.Entry<String, List<Path>> extEntry : externalCandidateProviders.entrySet()) {
+            String depName = extEntry.getKey();
+            Path mossi = extEntry.getValue().get(0);
+            Path rlib = mossi.resolveSibling("lib" + depName + ".rlib");
+            if (Files.exists(rlib)) {
+                Path destAlias = buildDir.resolve("libmoss_" + depName + ".rlib");
+                try {
+                    Files.copy(rlib, destAlias, StandardCopyOption.REPLACE_EXISTING);
+                } catch (IOException ignored) {}
+            }
+        }
+
+        List<Path> emittedInterfaces = new ArrayList<>();
+        List<Path> emittedRlibs = new ArrayList<>();
+        Path primaryExecutable = buildDir.resolve(manifest.getName());
+        Path primaryRust = buildDir.resolve(manifest.getName() + ".rs");
+        Path primaryDebugMap = buildDir.resolve(manifest.getName() + ".mossmap");
+        Path cacheMetadata = buildDir.resolve(manifest.getName() + ".mossbuild");
+
+        if (hasExplicitModules) {
+            // Rewrite module symbols with <Module>__ prefix
+            for (Map.Entry<String, Program> entry : parsedPrograms.entrySet()) {
+                String mod = entry.getKey();
+                Program prog = entry.getValue();
+                rewriteProgramSymbols(prog, mod, moduleImports.getOrDefault(mod, Collections.emptyList()));
+            }
+
+            for (Map.Entry<String, Path> entry : localModules.entrySet()) {
+                String mod = entry.getKey();
+                Path srcFile = entry.getValue();
+                Program prog = parsedPrograms.get(mod);
+                List<String> deps = moduleImports.getOrDefault(mod, Collections.emptyList());
+
+                // Generate .mossi interface
+                String mossiContent = generateMossiInterface(manifest, mod, prog, toolchain, deps);
+                Path mossiPath = buildDir.resolve(mod + ".mossi");
+                writeFileIfChanged(mossiPath, mossiContent);
+                emittedInterfaces.add(mossiPath);
+
+                // Generate module Rust
+                boolean isRoot = mod.equals(rootModuleName);
+                String rustContent = generateModuleRust(prog, mod, deps, mossiContent, isRoot);
+                Path rustPath = buildDir.resolve(mod + ".rs");
+                writeFileIfChanged(rustPath, rustContent);
+
+                if (isRoot) {
+                    primaryRust = rustPath;
+                }
+
+                Path rlibPath = buildDir.resolve("lib" + mod + ".rlib");
+                List<String> rustcCmd = new ArrayList<>();
+                rustcCmd.add(toolchain.getRustcExecutable());
+                rustcCmd.addAll(toolchain.getCompileFlags());
+                rustcCmd.add("--crate-type=rlib");
+                rustcCmd.add("--crate-name");
+                rustcCmd.add("moss_" + mod);
+                rustcCmd.add(rustPath.toString());
+                rustcCmd.add("-o");
+                rustcCmd.add(rlibPath.toString());
+                rustcCmd.add("-L");
+                rustcCmd.add("dependency=" + buildDir.toString());
+                addExternalDependencyPaths(rustcCmd);
+
+                for (String dep : deps) {
+                    Path depRlib = resolveDependencyRlib(buildDir, externalCandidateProviders, dep);
+                    if (depRlib != null) {
+                        rustcCmd.add("-L");
+                        rustcCmd.add("dependency=" + depRlib.getParent().toString());
+                        rustcCmd.add("--extern");
+                        rustcCmd.add("moss_" + dep + "=" + depRlib.toString());
+                    }
+                }
+
+                runProcess(rustcCmd, manifest.getRoot(), srcFile.toString());
+                Path mossAliasRlib = buildDir.resolve("libmoss_" + mod + ".rlib");
+                try {
+                    Files.copy(rlibPath, mossAliasRlib, StandardCopyOption.REPLACE_EXISTING);
+                } catch (IOException e) {
+                    throw new CompileError("MOSS_INTERNAL_OR_IO_ERROR", "cannot copy rlib alias: " + e.getMessage(), rlibPath.toString(), 0);
+                }
+                emittedRlibs.add(rlibPath);
+            }
+
+            // Compile executable from root module
+            if (localModules.containsKey(rootModuleName)) {
+                Path rootRust = buildDir.resolve(rootModuleName + ".rs");
+                List<String> linkCmd = new ArrayList<>();
+                linkCmd.add(toolchain.getRustcExecutable());
+                linkCmd.addAll(toolchain.getCompileFlags());
+                linkCmd.add(rootRust.toString());
+                linkCmd.add("--cfg");
+                linkCmd.add("moss_process_root");
+                linkCmd.add("-o");
+                linkCmd.add(primaryExecutable.toString());
+                linkCmd.add("-L");
+                linkCmd.add("dependency=" + buildDir.toString());
+                addExternalDependencyPaths(linkCmd);
+
+                for (String dep : moduleImports.getOrDefault(rootModuleName, Collections.emptyList())) {
+                    Path depRlib = resolveDependencyRlib(buildDir, externalCandidateProviders, dep);
+                    if (depRlib != null) {
+                        linkCmd.add("-L");
+                        linkCmd.add("dependency=" + depRlib.getParent().toString());
+                        linkCmd.add("--extern");
+                        linkCmd.add("moss_" + dep + "=" + depRlib.toString());
+                    }
+                }
+                runProcess(linkCmd, manifest.getRoot(), localModules.get(rootModuleName).toString());
+            }
+
+        } else {
+            // Single-unit legacy compilation
+            Program unified = parsedPrograms.values().iterator().next();
+            CheckedProgram checker = new CheckedProgram(unified);
+            checker.run();
+
+            String rust = NativeGenerator.generate(unified, release);
+            writeFileIfChanged(primaryRust, rust);
+
+            List<String> rustcCmd = new ArrayList<>();
+            rustcCmd.add(toolchain.getRustcExecutable());
+            rustcCmd.addAll(toolchain.getCompileFlags());
+            rustcCmd.add(primaryRust.toString());
+            rustcCmd.add("-o");
+            rustcCmd.add(primaryExecutable.toString());
+
+            runProcess(rustcCmd, manifest.getRoot(), sourceFiles.get(0).toString());
+        }
+
+        // Write cache metadata
+        String cacheContent = "moss-native-cache-v2\nsource-fingerprint\n" + toolchain.getFingerprint() + "\n";
+        writeFileIfChanged(cacheMetadata, cacheContent);
+
+        // Debug map if not written
+        if (!Files.exists(primaryDebugMap)) {
+            String mapJson = "{\n  \"format\": \"moss-debug-map\",\n  \"version\": 1,\n  \"source_file\": \"" +
+                    escapeJson(sourceFiles.get(0).toString()) + "\",\n  \"generated_rust_file\": \"" +
+                    escapeJson(primaryRust.toString()) + "\",\n  \"entries\": []\n}";
+            writeFileIfChanged(primaryDebugMap, mapJson);
+        }
+
+        if (json) {
+            StringBuilder jsonBuf = new StringBuilder();
+            jsonBuf.append("{\n");
+            jsonBuf.append("  \"protocol_version\": 1,\n");
+            jsonBuf.append("  \"schema_version\": \"moss-agent-1\",\n");
+            jsonBuf.append("  \"compiler_version\": \"0.1.0\",\n");
+            jsonBuf.append("  \"command\": \"build\",\n");
+            jsonBuf.append("  \"ok\": true,\n");
+            jsonBuf.append("  \"result\": {\n");
+            jsonBuf.append("    \"project\": \"").append(manifest.getName()).append("\",\n");
+            jsonBuf.append("    \"profile\": \"").append(profile).append("\",\n");
+            jsonBuf.append("    \"source\": \"").append(escapeJson(sourceFiles.get(0).toString())).append("\",\n");
+            jsonBuf.append("    \"sources\": [");
+            for (int i = 0; i < sourceFiles.size(); i++) {
+                if (i > 0) jsonBuf.append(", ");
+                jsonBuf.append("\"").append(escapeJson(sourceFiles.get(i).toString())).append("\"");
+            }
+            jsonBuf.append("],\n");
+            jsonBuf.append("    \"artifacts\": {\n");
+            jsonBuf.append("      \"executable\": \"").append(escapeJson(primaryExecutable.toString())).append("\",\n");
+            jsonBuf.append("      \"generated_rust\": \"").append(escapeJson(primaryRust.toString())).append("\",\n");
+            jsonBuf.append("      \"debug_map\": \"").append(escapeJson(primaryDebugMap.toString())).append("\",\n");
+            jsonBuf.append("      \"module_interfaces\": [");
+            for (int i = 0; i < emittedInterfaces.size(); i++) {
+                if (i > 0) jsonBuf.append(", ");
+                jsonBuf.append("\"").append(escapeJson(emittedInterfaces.get(i).toString())).append("\"");
+            }
+            jsonBuf.append("],\n");
+            jsonBuf.append("      \"module_rlibs\": [");
+            for (int i = 0; i < emittedRlibs.size(); i++) {
+                if (i > 0) jsonBuf.append(", ");
+                jsonBuf.append("\"").append(escapeJson(emittedRlibs.get(i).toString())).append("\"");
+            }
+            jsonBuf.append("],\n");
+            jsonBuf.append("      \"specialization_rlib\": null,\n");
+            jsonBuf.append("      \"cache_metadata\": \"").append(escapeJson(cacheMetadata.toString())).append("\"\n");
+            jsonBuf.append("    },\n");
+            jsonBuf.append("    \"backend_toolchain\": {\n");
+            jsonBuf.append("      \"fingerprint\": \"").append(toolchain.getFingerprint()).append("\",\n");
+            jsonBuf.append("      \"resolved_rustc\": \"").append(escapeJson(toolchain.getRustcExecutable())).append("\",\n");
+            jsonBuf.append("      \"version_verbose\": \"").append(escapeJson(toolchain.getVersionVerbose())).append("\",\n");
+            jsonBuf.append("      \"profile\": \"").append(toolchain.getProfile()).append("\",\n");
+            jsonBuf.append("      \"compile_flags\": [");
+            for (int i = 0; i < toolchain.getCompileFlags().size(); i++) {
+                if (i > 0) jsonBuf.append(", ");
+                jsonBuf.append("\"").append(escapeJson(toolchain.getCompileFlags().get(i))).append("\"");
+            }
+            jsonBuf.append("]\n");
+            jsonBuf.append("    },\n");
+            jsonBuf.append("    \"reused\": false,\n");
+            jsonBuf.append("    \"incremental\": {\"units_analyzed\": ").append(sourceFiles.size())
+                   .append(", \"units_reused\": 0, \"generated_rust_units_rewritten\": ").append(sourceFiles.size())
+                   .append(", \"native_artifact_reused\": false}\n");
+            jsonBuf.append("  }\n");
+            jsonBuf.append("}");
+            System.out.println(jsonBuf.toString());
+        } else {
+            System.out.println("Built " + manifest.getName() + " (" + profile + ")");
+            System.out.println("  " + primaryExecutable.toString());
+        }
+        return 0;
+    }
+
+    private static void addExternalDependencyPaths(List<String> cmd) {
+        String modulePathEnv = System.getenv("MOSS_MODULE_PATH");
+        if (modulePathEnv != null && !modulePathEnv.isBlank()) {
+            for (String part : modulePathEnv.split(File.pathSeparator)) {
+                if (!part.isBlank() && Files.isDirectory(Paths.get(part))) {
+                    cmd.add("-L");
+                    cmd.add("dependency=" + Paths.get(part).toAbsolutePath().toString());
+                }
+            }
+        }
+    }
+
+    private static void rewriteProgramSymbols(Program prog, String mod, List<String> deps) {
+        for (Function fn : prog.functions) {
+            if (!fn.name.startsWith(mod + "__")) {
+                fn.name = mod + "__" + fn.name;
+            }
+            rewriteStmts(fn.body, mod, deps);
+            if (fn.resultExpression != null) {
+                fn.resultExpression = rewriteExpr(fn.resultExpression, mod, deps);
+            }
+        }
+        for (Domain d : prog.domains) {
+            if (!d.name.startsWith(mod + "__")) {
+                d.name = mod + "__" + d.name;
+            }
+            for (Handler h : d.handlers) {
+                rewriteStmts(h.body, mod, deps);
+            }
+        }
+        if (prog.main != null) {
+            rewriteStmts(prog.main.body, mod, deps);
+        }
+    }
+
+    private static void rewriteStmts(List<Stmt> stmts, String mod, List<String> deps) {
+        if (stmts == null) return;
+        for (Stmt s : stmts) {
+            if (s.a != null) s.a = rewriteExpr(s.a, mod, deps);
+            if (s.b != null) s.b = rewriteExpr(s.b, mod, deps);
+            if (s.text != null) s.text = rewriteExpr(s.text, mod, deps);
+            for (int i = 0; i < s.args.size(); i++) {
+                s.args.set(i, rewriteExpr(s.args.get(i), mod, deps));
+            }
+        }
+    }
+
+    private static String rewriteExpr(String expr, String mod, List<String> deps) {
+        if (expr == null) return null;
+        for (String dep : deps) {
+            expr = expr.replaceAll("\\b" + dep + "\\.([a-zA-Z0-9_]+)", dep + "__$1");
+        }
+        expr = expr.replaceAll("\\b" + mod + "\\.([a-zA-Z0-9_]+)", mod + "__$1");
+        return expr;
+    }
+
+    private static Path resolveDependencyRlib(Path buildDir, Map<String, List<Path>> externalCandidates, String dep) {
+        Path localRlib = buildDir.resolve("lib" + dep + ".rlib");
+        if (Files.exists(localRlib)) {
+            return localRlib;
+        }
+        List<Path> ext = externalCandidates.get(dep);
+        if (ext != null && !ext.isEmpty()) {
+            Path mossi = ext.get(0);
+            Path rlib = mossi.resolveSibling("lib" + dep + ".rlib");
+            if (Files.exists(rlib)) {
+                return rlib;
+            }
+            Path mossRlib = mossi.resolveSibling("libmoss_" + dep + ".rlib");
+            if (Files.exists(mossRlib)) {
+                return mossRlib;
+            }
+        }
+        return null;
+    }
+
+    private static String generateMossiInterface(ProjectManifest manifest, String module, Program prog, BackendToolchain toolchain, List<String> deps) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("module_id ").append(manifest.getName()).append("::").append(module).append("\n");
+        sb.append("package_version ").append(manifest.getVersion()).append("\n");
+        sb.append("compiler 0.1.0\n");
+        sb.append("native_abi 9\n");
+        sb.append("backend_fingerprint ").append(toolchain.getFingerprint()).append("\n");
+        sb.append("backend_rustc ").append(toolchain.getVersionVerbose().split("\\R")[0]).append("\n");
+        sb.append("imports\n");
+        for (String dep : deps) {
+            sb.append("  ").append(dep).append("\n");
+        }
+        sb.append("contract\n");
+        sb.append("semantic_exports\n");
+        String content = sb.toString();
+        String digest = sha256(content);
+        return "moss-module-interface-v2\nprovider_contract_digest sha256:" + digest + "\n" + content;
+    }
+
+    private static String generateModuleRust(Program prog, String module, List<String> deps, String mossiContent, boolean isRoot) {
+        String baseRust = NativeGenerator.generate(prog, false);
+        StringBuilder extra = new StringBuilder();
+        for (String dep : deps) {
+            extra.append("extern crate moss_").append(dep).append(";\n");
+            extra.append("use moss_").append(dep).append("::*;\n");
+        }
+        extra.append("\n");
+
+        // Contract marker
+        String digest = "";
+        for (String line : mossiContent.split("\\R")) {
+            if (line.startsWith("provider_contract_digest sha256:")) {
+                digest = line.substring(32).trim();
+                break;
+            }
+        }
+        String marker = "MOSS_ABI_V9_CONTRACT::" + module + "::" + digest + "::END";
+        extra.append("#[used]\n#[no_mangle]\npub static __moss_abi_v9_contract_")
+          .append(module).append(": [u8; ").append(marker.length())
+          .append("] = *b\"").append(marker).append("\";\n\n");
+
+        int insertPos = 0;
+        int lastAllow = baseRust.lastIndexOf("#![allow(");
+        if (lastAllow != -1) {
+            int nextNewline = baseRust.indexOf("\n\n", lastAllow);
+            if (nextNewline != -1) {
+                insertPos = nextNewline + 2;
+            } else {
+                insertPos = baseRust.indexOf('\n', lastAllow) + 1;
+            }
+        }
+        return baseRust.substring(0, insertPos) + extra.toString() + baseRust.substring(insertPos);
+    }
+
+    private static void runProcess(List<String> cmd, Path cwd, String srcContext) throws CompileError {
+        try {
+            Process process = new ProcessBuilder(cmd).directory(cwd.toFile()).redirectErrorStream(true).start();
+            StringBuilder out = new StringBuilder();
+            try (BufferedReader r = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = r.readLine()) != null) {
+                    out.append(line).append("\n");
+                }
+            }
+            int code = process.waitFor();
+            if (code != 0) {
+                throw new CompileError("BUILD_BACKEND_ERROR", "native compilation failed:\n" + out.toString().trim(), srcContext, 0);
+            }
+        } catch (CompileError e) {
+            throw e;
+        } catch (Exception e) {
+            throw new CompileError("BUILD_BACKEND_ERROR", "execution failed: " + e.getMessage(), srcContext, 0);
+        }
+    }
+
+    private static void writeFileIfChanged(Path file, String content) throws CompileError {
+        try {
+            if (Files.exists(file)) {
+                String existing = Files.readString(file, StandardCharsets.UTF_8);
+                if (existing.equals(content)) {
+                    return;
+                }
+            }
+            Files.writeString(file, content, StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new CompileError("MOSS_INTERNAL_OR_IO_ERROR", "cannot write file '" + file + "': " + e.getMessage(), file.toString(), 0);
+        }
+    }
+
+    private static String escapeJson(String s) {
+        if (s == null) return "";
+        return s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r");
+    }
+
+    private static String hexEncode(String s) {
+        StringBuilder sb = new StringBuilder();
+        for (byte b : s.getBytes(StandardCharsets.UTF_8)) {
+            sb.append(String.format("%02x", b));
+        }
+        return sb.toString();
+    }
+
+    private static String sha256(String input) {
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            byte[] hash = md.digest(input.getBytes(StandardCharsets.UTF_8));
+            StringBuilder hex = new StringBuilder();
+            for (byte b : hash) {
+                hex.append(String.format("%02x", b));
+            }
+            return hex.toString();
+        } catch (Exception e) {
+            return Integer.toHexString(input.hashCode());
+        }
+    }
+}

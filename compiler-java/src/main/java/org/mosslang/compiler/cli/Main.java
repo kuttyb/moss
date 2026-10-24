@@ -57,6 +57,90 @@ public class Main {
             }
         }
 
+        if ("clean".equals(first)) {
+            boolean json = false;
+            for (int i = 1; i < args.length; i++) {
+                if ("--json".equals(args[i])) json = true;
+            }
+            try {
+                org.mosslang.compiler.project.ProjectManifest manifest = org.mosslang.compiler.project.ProjectManifest.load(Paths.get("."));
+                return org.mosslang.compiler.project.ProjectBuilder.clean(manifest, json);
+            } catch (CompileError e) {
+                if (json) {
+                    DiagnosticFormatter.writeStructuredError(System.out, "clean", COMPILER_VERSION,
+                            e.getCode() != null ? e.getCode() : "PROJECT_ERROR", e.getMessage(), e.getSourceFile(), e.getLine(), "", "");
+                } else {
+                    System.err.println("moss: " + e.getMessage());
+                }
+                return 1;
+            }
+        }
+
+        if ("test".equals(first)) {
+            boolean release = false;
+            boolean json = false;
+            String filter = null;
+            for (int i = 1; i < args.length; i++) {
+                if ("--release".equals(args[i])) release = true;
+                else if ("--json".equals(args[i])) json = true;
+                else if (!args[i].startsWith("-") && filter == null) filter = args[i];
+            }
+            try {
+                org.mosslang.compiler.project.ProjectManifest manifest = org.mosslang.compiler.project.ProjectManifest.load(Paths.get("."));
+                return org.mosslang.compiler.project.ProjectBuilder.test(manifest, filter, release, json);
+            } catch (CompileError e) {
+                if (json) {
+                    DiagnosticFormatter.writeStructuredError(System.out, "test", COMPILER_VERSION,
+                            e.getCode() != null ? e.getCode() : "TEST_ERROR", e.getMessage(), e.getSourceFile(), e.getLine(), "", "");
+                } else {
+                    System.err.println("moss: " + e.getMessage());
+                }
+                return 1;
+            }
+        }
+
+        if ("bench".equals(first)) {
+            boolean json = false;
+            String filter = null;
+            for (int i = 1; i < args.length; i++) {
+                if ("--json".equals(args[i])) json = true;
+                else if (!args[i].startsWith("-") && filter == null) filter = args[i];
+            }
+            try {
+                org.mosslang.compiler.project.ProjectManifest manifest = org.mosslang.compiler.project.ProjectManifest.load(Paths.get("."));
+                return org.mosslang.compiler.project.ProjectBuilder.bench(manifest, filter, json);
+            } catch (CompileError e) {
+                if (json) {
+                    DiagnosticFormatter.writeStructuredError(System.out, "bench", COMPILER_VERSION,
+                            e.getCode() != null ? e.getCode() : "BENCH_ERROR", e.getMessage(), e.getSourceFile(), e.getLine(), "", "");
+                } else {
+                    System.err.println("moss: " + e.getMessage());
+                }
+                return 1;
+            }
+        }
+
+        if ("build".equals(first)) {
+            boolean release = false;
+            boolean json = false;
+            for (int i = 1; i < args.length; i++) {
+                if ("--release".equals(args[i])) release = true;
+                else if ("--json".equals(args[i])) json = true;
+            }
+            try {
+                org.mosslang.compiler.project.ProjectManifest manifest = org.mosslang.compiler.project.ProjectManifest.load(Paths.get("."));
+                return org.mosslang.compiler.project.ProjectBuilder.build(manifest, release, json);
+            } catch (CompileError e) {
+                if (json) {
+                    DiagnosticFormatter.writeStructuredError(System.out, "build", COMPILER_VERSION,
+                            e.getCode() != null ? e.getCode() : "PROJECT_ERROR", e.getMessage(), e.getSourceFile(), e.getLine(), "", "");
+                } else {
+                    System.err.println("moss: " + e.getMessage());
+                }
+                return 1;
+            }
+        }
+
         if (Set.of("inspect", "type", "effects", "ownership", "calls", "why", "fmt").contains(first)) {
             String target = args.length > 1 ? args[1] : "";
             String src = null;
@@ -88,6 +172,11 @@ public class Main {
         boolean interpMode = false;
         boolean traceMode = false;
         boolean jsonOutput = false;
+        boolean debugBuild = false;
+        boolean optimized = false;
+        boolean emitDebugMap = true;
+        String debugMapPath = null;
+        String nativeOutput = "";
         String sourcePath = null;
         String outputPath = null;
 
@@ -103,6 +192,20 @@ public class Main {
                 traceMode = true;
             } else if ("--json".equals(a)) {
                 jsonOutput = true;
+            } else if ("--debug".equals(a)) {
+                debugBuild = true;
+            } else if ("-O0".equals(a)) {
+                optimized = false;
+            } else if ("-O".equals(a) || "-O2".equals(a) || "--release".equals(a)) {
+                optimized = true;
+            } else if ("--no-debug-map".equals(a)) {
+                emitDebugMap = false;
+            } else if ("--emit-debug-map".equals(a) && i + 1 < args.length) {
+                debugMapPath = args[++i];
+            } else if ("--native-output".equals(a) && i + 1 < args.length) {
+                nativeOutput = args[++i];
+            } else if ("--diagnostic-paths".equals(a)) {
+                // accepted flag
             } else if ("-o".equals(a) && i + 1 < args.length) {
                 outputPath = args[++i];
             } else if (!a.startsWith("-")) {
@@ -162,9 +265,25 @@ public class Main {
             if (outputPath == null) {
                 outputPath = sourcePath.replaceAll("\\.moss$", "") + ".rs";
             }
-            String rustCode = org.mosslang.compiler.backend.NativeGenerator.generate(program, false);
+            String rustCode = org.mosslang.compiler.backend.NativeGenerator.generate(program, debugBuild, optimized);
             Files.writeString(Paths.get(outputPath), rustCode, StandardCharsets.UTF_8);
             System.out.println("generated " + outputPath);
+
+            if (emitDebugMap) {
+                if (debugMapPath == null) {
+                    if (outputPath.endsWith(".rs")) {
+                        debugMapPath = outputPath.substring(0, outputPath.length() - 3) + ".mossmap";
+                    } else {
+                        debugMapPath = outputPath + ".mossmap";
+                    }
+                }
+                org.mosslang.compiler.backend.DebugMap map =
+                        org.mosslang.compiler.backend.DebugMapGenerator.generate(
+                                program, rustCode, absPath, new File(outputPath).getAbsolutePath(),
+                                nativeOutput, debugBuild, optimized);
+                Files.writeString(Paths.get(debugMapPath), map.toJson(), StandardCharsets.UTF_8);
+                System.out.println("generated " + debugMapPath);
+            }
             return 0;
 
         } catch (CompileError e) {

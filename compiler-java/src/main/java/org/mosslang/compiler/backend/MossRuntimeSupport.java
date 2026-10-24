@@ -9,9 +9,9 @@ impl Drop for MossAbortOnUnwind {
 #[cfg(any(test, moss_perf))]
 static MOSS_LOCK_HOOK: std::sync::OnceLock<fn(&str, &str, &str, usize, usize, bool)> = std::sync::OnceLock::new();
 #[inline]
-fn moss_lock_event(event: &str, instance: &str, handler: &str, domain: usize, class: usize, exclusive: bool) {
+fn moss_lock_event(_event: &str, _instance: &str, _handler: &str, _domain: usize, _class: usize, _exclusive: bool) {
     #[cfg(any(test, moss_perf))]
-    if let Some(hook) = MOSS_LOCK_HOOK.get() { hook(event, instance, handler, domain, class, exclusive); }
+    if let Some(hook) = MOSS_LOCK_HOOK.get() { hook(_event, _instance, _handler, _domain, _class, _exclusive); }
 }
 #[inline]
 fn moss_read_or_abort<T>(lock: &std::sync::RwLock<T>) -> std::sync::RwLockReadGuard<'_, T> {

@@ -26,6 +26,14 @@ public class CompileError extends RuntimeException {
         this.sourceFile = sourceFile != null ? sourceFile : "";
     }
 
+    public CompileError(String code, String message, String sourceFile, int line) {
+        this(line, message, code, sourceFile);
+    }
+
+    public CompileError(String code, String message) {
+        this(0, message, code, "");
+    }
+
     public int getLine() {
         return line;
     }
