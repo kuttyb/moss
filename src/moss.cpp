@@ -36,6 +36,8 @@
 #include "checked_body_ir.hpp"
 #include "debug_map.hpp"
 #include "diagnostics.hpp"
+#include "diagnostic_codes.hpp"
+#include "cli_entry.hpp"
 #include "type_placeholders.hpp"
 #include "numeric_literal.hpp"
 #include "interpreter.hpp"
@@ -48524,47 +48526,6 @@ static std::optional<std::pair<string,string>> specialization_identity_for_call(
   return std::nullopt;
 }
 
-static string diagnostic_code_for_message(const string& message) {
-  if (message.find("duplicate function") != string::npos ||
-      message.find("duplicate domain") != string::npos ||
-      message.find("duplicate object type") != string::npos ||
-      message.find("duplicate trait") != string::npos ||
-      message.find("duplicate exported name") != string::npos)
-    return "DUPLICATE_SYMBOL";
-  if (message.find("duplicate test name") != string::npos)
-    return "TEST_DISCOVERY_ERROR";
-  if (message.find("duplicate benchmark name") != string::npos)
-    return "BENCHMARK_CONFIGURATION_ERROR";
-  if (starts_with(message, "assert") ||
-      message.find("assertEqual") != string::npos ||
-      message.find("test assertions") != string::npos)
-    return "TEST_ASSERTION_CONFIGURATION_ERROR";
-  if (message.find("recursive local call cycle") != string::npos)
-    return "RECURSION_CYCLE";
-  if (message.find("conflicting domain types across control-flow paths") !=
-      string::npos)
-    return "TYPE_BRANCH_CONFLICT";
-  if (message.find("was transferred") != string::npos ||
-      message.find("was consumed") != string::npos)
-    return "OWNERSHIP_USE_AFTER_CONSUME";
-  if (message.find("conflicting") != string::npos &&
-      message.find("access") != string::npos)
-    return "OWNERSHIP_CONFLICTING_ACCESS";
-  if (message.find("cannot mutate immutable local") != string::npos)
-    return "IMMUTABLE_LOCAL_MUTATION";
-  if (message.find("cannot infer") != string::npos)
-    return "TYPE_INFERENCE_FAILED";
-  if (message.find("unknown") != string::npos)
-    return "UNKNOWN_SYMBOL_OR_TYPE";
-  if (message.find("expects") != string::npos ||
-      message.find("type mismatch") != string::npos ||
-      message.find("has type") != string::npos)
-    return "TYPE_MISMATCH";
-  if (message.find("functional") != string::npos)
-    return "FUNCTIONAL_SEMANTIC_ERROR";
-  return "MOSS_COMPILE_ERROR";
-}
-
 static string semantic_identity_near_line(const Program* program, int line) {
   if (!program) return {};
   string best;
@@ -63259,7 +63220,7 @@ static int run_debug_query_command(int argc, char** argv) {
   return 0;
 }
 
-int main(int argc, char** argv) {
+int moss_cli_main(int argc, char** argv) {
   string diagnostic_source = "moss";
   string active_command = "compile";
   string active_input;
