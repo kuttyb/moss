@@ -13395,3 +13395,20 @@ focused standalone Float probe. Agent-feedback validation and `git diff
 --check` pass. No native Rust compilation/execution, Margo provider-consumer
 build, SDK gate, or full `make check` was run; ABI-v10 general body projection
 and Phase 25.3 remain incomplete.
+
+### Phase 25.3 continuation — project checked Int predicates in ABI-v10
+
+The source-free ABI-v10 callable path now emits and projects one additional
+checked expression shape: a Bool-returning comparison over Int parameters,
+integer literals, and supported closed-Int arithmetic operands. The producer
+stores the comparator and typed children in the checked-body record; the loader
+accepts only recognized comparison tags with Int operand trees matching the
+callable summary. The producer-consumer regression strips legacy generic body
+rows and checks an imported predicate call. Other Bool expressions and general
+callable bodies remain unsupported by this projection path.
+
+Validation: all ten Java unit-test classes pass in default ABI-v9 and staged
+ABI-v10 modes. C++ and Java both accept the focused comparison probe. Agent
+feedback validation and `git diff --check` pass. No native Rust compilation or
+execution, Margo provider-consumer build, SDK gate, or full `make check` ran.
+Phase 25.3 remains incomplete.

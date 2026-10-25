@@ -1452,6 +1452,7 @@ public class Main {
             String returnedLiteral = null;
             String closedIntExpression = null;
             String closedFloatExpression = null;
+            String intComparisonExpression = null;
             if (statement.expr.kind == org.mosslang.compiler.abi.CheckedExprKind.Parameter) {
                 returnedParameter = statement.expr.ordinal;
                 if (returnedParameter < 0 || returnedParameter >= parameterTypes.size()
@@ -1468,6 +1469,13 @@ public class Main {
                     && ("true".equals(statement.expr.literalValue)
                         || "false".equals(statement.expr.literalValue))) {
                 returnedLiteral = statement.expr.literalValue;
+            } else if (resultType.kind() == org.mosslang.compiler.types.TypeKind.Primitive
+                    && "bool".equalsIgnoreCase(resultType.name())
+                    && parameterTypes.stream().allMatch(type -> type.kind()
+                            == org.mosslang.compiler.types.TypeKind.Primitive
+                            && "int".equalsIgnoreCase(type.name()))) {
+                intComparisonExpression = sourceFreeIntComparisonExpression(statement.expr, parameterTypes, 0);
+                if (intComparisonExpression == null) continue;
             } else if (statement.expr.kind == org.mosslang.compiler.abi.CheckedExprKind.FloatLiteral
                     && parameterTypes.isEmpty() && resultType.kind() == org.mosslang.compiler.types.TypeKind.Primitive
                     && "float".equalsIgnoreCase(resultType.name())
@@ -1519,8 +1527,10 @@ public class Main {
                 String returnExpression = returnedParameter >= 0
                         ? function.params.get(returnedParameter).name
                         : closedIntExpression != null ? closedIntExpression
-                                : closedFloatExpression != null ? closedFloatExpression : returnedLiteral;
-                if (closedIntExpression != null || closedFloatExpression != null) {
+                                : closedFloatExpression != null ? closedFloatExpression
+                                        : intComparisonExpression != null ? intComparisonExpression : returnedLiteral;
+                if (closedIntExpression != null || closedFloatExpression != null
+                        || intComparisonExpression != null) {
                     for (int index = 0; index < function.params.size(); index++) {
                         returnExpression = returnExpression.replace("\u0001" + index + "\u0002",
                                 function.params.get(index).name);
@@ -1632,6 +1642,37 @@ public class Main {
         return literal.ok && literal.end == value.length()
                 && literal.kind == org.mosslang.compiler.parser.NumericLiteral.Kind.Float
                 && literal.canonical.equals(value);
+    }
+
+    private static String sourceFreeIntComparisonExpression(
+            org.mosslang.compiler.abi.CheckedExpr expression,
+            List<org.mosslang.compiler.types.TypeRef> parameterTypes, int depth) {
+        if (expression == null || depth > 128 || expression.type == null
+                || expression.type.kind() != org.mosslang.compiler.types.TypeKind.Primitive
+                || !"bool".equalsIgnoreCase(expression.type.name())
+                || expression.kind != org.mosslang.compiler.abi.CheckedExprKind.Binary
+                || expression.operands.size() != 2
+                || !java.util.Set.of(org.mosslang.compiler.abi.CheckedBinaryOp.Equal,
+                        org.mosslang.compiler.abi.CheckedBinaryOp.NotEqual,
+                        org.mosslang.compiler.abi.CheckedBinaryOp.Less,
+                        org.mosslang.compiler.abi.CheckedBinaryOp.LessEqual,
+                        org.mosslang.compiler.abi.CheckedBinaryOp.Greater,
+                        org.mosslang.compiler.abi.CheckedBinaryOp.GreaterEqual).contains(expression.binaryOp)) {
+            return null;
+        }
+        String left = sourceFreeClosedIntExpression(expression.operands.get(0), parameterTypes, depth + 1);
+        String right = sourceFreeClosedIntExpression(expression.operands.get(1), parameterTypes, depth + 1);
+        if (left == null || right == null) return null;
+        String operator = switch (expression.binaryOp) {
+            case Equal -> "==";
+            case NotEqual -> "!=";
+            case Less -> "<";
+            case LessEqual -> "<=";
+            case Greater -> ">";
+            case GreaterEqual -> ">=";
+            default -> null;
+        };
+        return operator == null ? null : "(" + left + " " + operator + " " + right + ")";
     }
 
     private static org.mosslang.compiler.types.TypeRef v10SimpleWireType(

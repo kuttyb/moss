@@ -359,6 +359,8 @@ public final class ProjectBuilderMetadataTest {
                 + "  return left * 2.5 + right / 2.0\n"
                 + "export fn adjust_ratio(value: Float) -> Float:\n"
                 + "  return -value + .5\n"
+                + "export fn is_positive(value: Int) -> Bool:\n"
+                + "  return value > 0\n"
                 + "export fn greeting() -> String:\n"
                 + "  return \"hello\"\n", "identity-provider.moss");
         new org.mosslang.compiler.semantics.CheckedProgram(identityProgram).run();
@@ -640,6 +642,29 @@ public final class ProjectBuilderMetadataTest {
                 throw new AssertionError("ABI-v10 Float summary/body is incomplete for " + floatCallable);
             }
         }
+        AbiV10Records.Summary predicateSummary = identityInterface.binaryContract.stream()
+                .filter(record -> record.payloadBytes().length > 0
+                        && (record.payloadBytes()[0] == 3 || record.payloadBytes()[0] == 4))
+                .map(AbiV10Records.Summary::decode)
+                .filter(summary -> summary.callableId.endsWith(":fn:is_positive"))
+                .findFirst().orElseThrow(() ->
+                        new AssertionError("ABI-v10 producer omitted the checked predicate summary"));
+        AbiV10Records.CheckedBodyRecord predicateBody = identityInterface.privateSemanticDependencies.stream()
+                .filter(record -> record.id.startsWith("checked-body-v1:"))
+                .map(AbiV10Records.CheckedBodyRecord::decode)
+                .filter(body -> body.callableId.endsWith(":fn:is_positive"))
+                .findFirst().orElseThrow(() ->
+                        new AssertionError("ABI-v10 producer omitted the checked predicate body"));
+        List<org.mosslang.compiler.abi.CheckedStmt> predicateStatements =
+                CheckedBodyCodec.decodeCheckedBody(predicateBody.checkedIrBytes);
+        if (predicateSummary.result.kind != AbiV10Records.WireTypeKind.Primitive
+                || !"bool".equals(predicateSummary.result.identity)
+                || predicateStatements.size() != 1
+                || predicateStatements.get(0).expr.kind != org.mosslang.compiler.abi.CheckedExprKind.Binary
+                || predicateStatements.get(0).expr.binaryOp != org.mosslang.compiler.abi.CheckedBinaryOp.Greater
+                || !predicateSummary.bodySemanticHash.equals(predicateBody.semanticHash)) {
+            throw new AssertionError("ABI-v10 checked predicate summary/body is incomplete");
+        }
         AbiV10Records.Summary combineSummary = identityInterface.binaryContract.stream()
                 .filter(record -> record.payloadBytes().length > 0
                         && (record.payloadBytes()[0] == 3 || record.payloadBytes()[0] == 4))
@@ -722,6 +747,8 @@ public final class ProjectBuilderMetadataTest {
                     + "  return provider__weighted(2.0, 4.0)\n"
                     + "fn use_adjust_ratio() -> Float:\n"
                     + "  return provider__adjust_ratio(3.0)\n"
+                    + "fn use_is_positive() -> Bool:\n"
+                    + "  return provider__is_positive(7)\n"
                     + "fn use_increment() -> Int:\n"
                     + "  return provider__increment(41)\n"
                     + "fn use_scale() -> Int:\n"

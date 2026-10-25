@@ -1468,6 +1468,7 @@ public class ProjectBuilder {
                     CheckedExpr constantReturn = null;
                     CheckedExpr arithmeticReturn = null;
                     CheckedExpr floatArithmeticReturn = null;
+                    CheckedExpr intComparisonReturn = null;
                     if (summary == null) {
                         constantReturn = v10ZeroArgLiteralReturn(fn);
                         if (constantReturn != null) {
@@ -1489,6 +1490,13 @@ public class ProjectBuilder {
                                     fn, floatArithmeticReturn, modId, provenanceRecords);
                         }
                     }
+                    if (summary == null) {
+                        intComparisonReturn = v10IntComparisonReturn(fn);
+                        if (intComparisonReturn != null) {
+                            summary = v10IntComparisonSummary(
+                                    fn, intComparisonReturn, modId, provenanceRecords);
+                        }
+                    }
                     if (summary != null) {
                         callableSummaryRecords.add(summary.record());
                         AbiV10Records.CheckedBodyRecord body = constantReturn != null
@@ -1497,6 +1505,8 @@ public class ProjectBuilder {
                                         ? v10SimpleExpressionBody(summary, arithmeticReturn)
                                         : floatArithmeticReturn != null
                                                 ? v10SimpleExpressionBody(summary, floatArithmeticReturn)
+                                        : intComparisonReturn != null
+                                                ? v10SimpleExpressionBody(summary, intComparisonReturn)
                                                 : v10DirectReturnBody(fn, summary);
                         checkedBodyRecords.add(body.record());
                     }
@@ -1797,6 +1807,66 @@ public class ProjectBuilder {
             });
         }
         summary.result = AbiV10Records.fromTypeRef(floatType, Map.of());
+        String bodyBytes = CheckedBodyCodec.encodeCheckedBodyV1(List.of(CheckedStmt.returnStmt(expression)));
+        summary.bodySemanticHash = "body-semantic-v1:sha256:" + CheckedBodyCodec.sha256Hex(bodyBytes);
+        AbiV10Records.SourceProvenance provenance = AbiV10Records.SourceProvenance.create(
+                moduleId, summary.callableId, function.sourceFile, function.line);
+        summary.provenanceId = provenance.provenanceId();
+        provenanceRecords.add(provenance);
+        return summary;
+    }
+
+    private static CheckedExpr v10IntComparisonReturn(Function function) {
+        if (function.returnTypeRef == null
+                || function.returnTypeRef.kind() != org.mosslang.compiler.types.TypeKind.Primitive
+                || !"bool".equalsIgnoreCase(function.returnTypeRef.name())
+                || function.body.size() != 1 || function.body.get(0).kind != Stmt.Kind.Return) return null;
+        for (Param parameter : function.params) {
+            if (!isV10IntType(parameter.checkedTypeRef)) return null;
+        }
+        Stmt statement = function.body.get(0);
+        String expression = statement.a != null ? statement.a.trim() : "";
+        if (expression.isEmpty() && statement.text != null
+                && statement.text.trim().startsWith("return ")) {
+            expression = statement.text.trim().substring(7).trim();
+        }
+        org.mosslang.compiler.semantics.ExpressionTyper.BinarySplit split =
+                org.mosslang.compiler.semantics.ExpressionTyper.splitBinary(expression,
+                        List.of("==", "!=", "<=", ">=", "<", ">"));
+        if (split == null) return null;
+        CheckedExpr left = v10LowerClosedIntExpression(split.left(), function, 0);
+        CheckedExpr right = v10LowerClosedIntExpression(split.right(), function, 0);
+        if (left == null || right == null) return null;
+        org.mosslang.compiler.abi.CheckedBinaryOp operation = switch (split.op()) {
+            case "==" -> org.mosslang.compiler.abi.CheckedBinaryOp.Equal;
+            case "!=" -> org.mosslang.compiler.abi.CheckedBinaryOp.NotEqual;
+            case "<" -> org.mosslang.compiler.abi.CheckedBinaryOp.Less;
+            case "<=" -> org.mosslang.compiler.abi.CheckedBinaryOp.LessEqual;
+            case ">" -> org.mosslang.compiler.abi.CheckedBinaryOp.Greater;
+            case ">=" -> org.mosslang.compiler.abi.CheckedBinaryOp.GreaterEqual;
+            default -> null;
+        };
+        return operation == null ? null : CheckedExpr.binary(
+                operation, left, right, TypeRef.primitive("bool"));
+    }
+
+    private static AbiV10Records.Summary v10IntComparisonSummary(
+            Function function, CheckedExpr expression, String moduleId,
+            List<AbiV10Records.SourceProvenance> provenanceRecords) {
+        AbiV10Records.Summary summary = new AbiV10Records.Summary();
+        summary.callableId = function.semanticCallableId;
+        for (int index = 0; index < function.params.size(); index++) {
+            summary.parameters.add(AbiV10Records.fromTypeRef(TypeRef.primitive("int"), Map.of()));
+            org.mosslang.compiler.types.AccessMode access = function.parameterAccessModes.size() > index
+                    ? function.parameterAccessModes.get(index)
+                    : org.mosslang.compiler.types.AccessMode.Read;
+            summary.parameterAccess.add(switch (access) {
+                case Read -> AbiV10Records.Access.Read;
+                case Write -> AbiV10Records.Access.Write;
+                case Consume -> AbiV10Records.Access.Consume;
+            });
+        }
+        summary.result = AbiV10Records.fromTypeRef(TypeRef.primitive("bool"), Map.of());
         String bodyBytes = CheckedBodyCodec.encodeCheckedBodyV1(List.of(CheckedStmt.returnStmt(expression)));
         summary.bodySemanticHash = "body-semantic-v1:sha256:" + CheckedBodyCodec.sha256Hex(bodyBytes);
         AbiV10Records.SourceProvenance provenance = AbiV10Records.SourceProvenance.create(
