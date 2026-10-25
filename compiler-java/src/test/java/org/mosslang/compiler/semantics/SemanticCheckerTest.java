@@ -563,18 +563,18 @@ public class SemanticCheckerTest {
     private static void testRepeatedTraitMethodCallsRemainWellTyped() {
         Program program = Parser.parseSource(""
                 + "trait Evaluator:\n"
-                + "  fn evaluate(value: Float) -> Float\n"
+                + "  fn evaluate(value: Float, time: Float) -> Float\n"
                 + "type Linear:\n"
                 + "  scale: Float\n"
-                + "  fn evaluate(value: Float) -> Float:\n"
+                + "  fn evaluate(value: Float, time: Float) -> Float:\n"
                 + "    return scale * value\n"
-                + "fn combine(value: Evaluator, x: Float) -> Float:\n"
-                + "  left = value.evaluate(x)\n"
-                + "  right = value.evaluate(x + 1.0)\n"
+                + "fn combine(value: Evaluator, x: Float, time: Float) -> Float:\n"
+                + "  left = value.evaluate(x, time)\n"
+                + "  right = value.evaluate(x + 1.0, time + 0.5)\n"
                 + "  return left + right\n"
                 + "fn main():\n"
                 + "  linear = Linear(scale: 2.0)\n"
-                + "  result = combine(linear, 1.0)\n", "trait-method-repeated-calls.moss");
+                + "  result = combine(linear, 1.0, 0.0)\n", "trait-method-repeated-calls.moss");
         new SemanticChecker(program).run();
     }
 

@@ -14496,4 +14496,6 @@ calls to the same `System.evaluate` member in one generic `step` body; one call
 checks in both compilers, while two calls fail only in C++. Java accepts both
 the probe and the full project. Treat this as a C++ member-summary closure
 disagreement, not evidence that Java should change. No native compilation or
-execution ran.
+execution ran. The Java semantic regression for repeated trait calls now uses
+the reduced two-argument signature. All eleven Java unit-test classes pass
+under ABI-v9 and staged ABI-v10 with that regression.
