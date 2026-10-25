@@ -14231,7 +14231,7 @@ nested save/restore behavior.
 Both Java test runs pass all 11 classes under default ABI-v9 and staged ABI-v10.
 The refreshed sequential checker screen over 91 standalone `phase21_*.moss`
 fixtures reports 4 C++-only, 0 Java-only, 57 accepted by both, and 30 rejected
-by both. Remaining C++-only fixtures are three FileIO/close-related cases,
+by both. Remaining C++-only fixtures include two FileIO/close-related cases,
 `phase21_iterator_next_panic.moss` (typed-raising custom iterator limitation),
 and `phase21_peer_speculation.moss` (loop-variable shadow scope currently
 leaks its type after the loop). The last two are clear follow-up candidates;
