@@ -1053,7 +1053,8 @@ public class SemanticChecker {
                     for (Stmt statement : method.body) {
                         String target = statement.a != null ? statement.a.trim() : "";
                         String rhs = statement.b != null ? statement.b.trim() : "";
-                        if (transferType(fieldType) && isReceiverFieldValue(rhs, field.name)) {
+                        TypeRef movedFieldType = receiverFieldValueType(object, field.name, rhs);
+                        if (transferType(movedFieldType)) {
                             method.receiverAccessMode = AccessMode.Consume;
                             break;
                         }
@@ -1071,7 +1072,8 @@ public class SemanticChecker {
                         }
                         if (method.receiverAccessMode == AccessMode.Consume) break;
                     }
-                    if (transferType(fieldType) && isReceiverFieldValue(method.resultExpression, field.name)) {
+                    if (transferType(receiverFieldValueType(object, field.name,
+                            method.resultExpression))) {
                         method.receiverAccessMode = AccessMode.Consume;
                     } else {
                         AccessMode resultCallMode = objectFieldCallMode(field.name, fieldType,
@@ -1149,10 +1151,28 @@ public class SemanticChecker {
                 || target.startsWith("self." + fieldName + "[");
     }
 
-    private boolean isReceiverFieldValue(String expression, String fieldName) {
-        if (expression == null) return false;
-        String value = expression.trim();
-        return value.equals(fieldName) || value.equals("self." + fieldName);
+    private TypeRef receiverFieldValueType(ObjectType object, String fieldName, String expression) {
+        if (expression == null) return null;
+        String value = expression.trim().replaceAll("\\s", "");
+        if (value.startsWith("self.")) value = value.substring("self.".length());
+        String[] path = value.split("\\.");
+        if (path.length == 0 || !fieldName.equals(path[0])) return null;
+        Field rootField = object.fields.stream().filter(field -> field.name.equals(fieldName))
+                .findFirst().orElse(null);
+        if (rootField == null) return null;
+        TypeRef type = rootField.typeRef != null ? rootField.typeRef
+                : (rootField.type != null ? TypeParser.parseCanonical(rootField.type) : null);
+        for (int index = 1; type != null && index < path.length; index++) {
+            ObjectType owner = findObjectType(type.name());
+            if (owner == null) return null;
+            String nestedFieldName = path[index];
+            Field nestedField = owner.fields.stream()
+                    .filter(field -> field.name.equals(nestedFieldName)).findFirst().orElse(null);
+            if (nestedField == null) return null;
+            type = nestedField.typeRef != null ? nestedField.typeRef
+                    : (nestedField.type != null ? TypeParser.parseCanonical(nestedField.type) : null);
+        }
+        return type;
     }
 
     private AccessMode strongerAccessMode(AccessMode current, AccessMode candidate) {

@@ -15113,3 +15113,17 @@ The direct receiver and nested path regressions are in the same Java semantic
 test. All eleven Java test classes pass under ABI-v9 and staged ABI-v10. Native
 Rust compilation was not run. Generic field substitutions and dynamic or
 branch-sensitive receiver paths remain open.
+
+
+### Phase 25.3 continuation — detect moves from nested self fields
+
+`target = self.sink.payload` moved an owned nested object out of `self`, but
+Java only recognized a one-level `self.field` move. The checker now walks the
+declared field path, checks the final field's transfer type, and marks the
+method receiver CONSUME when that value is moved. C++ and Java now reject a
+later use of the owning local for this source.
+
+This third direct-field extraction profile is included in the receiver
+ownership regression. All eleven Java test classes pass under ABI-v9 and
+staged ABI-v10; Rust compilation was not run. Generic substitutions, indexed
+field paths, and branch-sensitive moves remain open.

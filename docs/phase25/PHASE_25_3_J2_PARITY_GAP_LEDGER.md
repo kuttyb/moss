@@ -458,3 +458,16 @@ The semantic regression now covers this nested path alongside the direct
 receiver case. All eleven Java test classes pass under ABI-v9 and staged
 ABI-v10. Generic field substitutions and branch-sensitive receiver inference
 remain open.
+
+
+### Follow-up — detect owned moves from nested self fields
+
+For `target = self.sink.payload`, C++ rejected a later use of the caller's
+`box`; Java previously treated the method as READ because it only matched a
+one-level `self.field` value. Java now walks the declared field path and uses
+the final field's transfer type to infer a consuming method receiver.
+
+The semantic test covers this nested extraction. The C++/Java focused
+diagnostic agrees, and all eleven Java test classes pass under ABI-v9 and
+staged ABI-v10. Generic substitutions, indexed paths, and branch-sensitive
+moves remain open.

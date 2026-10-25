@@ -752,6 +752,20 @@ public class SemanticCheckerTest {
                 + "  box = Box(sink=Sink(payload=Payload(value=\"x\")))\n"
                 + "  consume(box)\n"
                 + "  echo box.sink.payload.value\n", "OWNERSHIP_USE_AFTER_CONSUME");
+
+        assertCompileError(""
+                + "type Payload:\n"
+                + "  value: String\n"
+                + "type Sink:\n"
+                + "  payload: Payload\n"
+                + "type Box:\n"
+                + "  sink: Sink\n"
+                + "  fn take_payload():\n"
+                + "    target = self.sink.payload\n"
+                + "fn main():\n"
+                + "  box = Box(sink=Sink(payload=Payload(value=\"x\")))\n"
+                + "  box.take_payload()\n"
+                + "  echo box.sink.payload.value\n", "OWNERSHIP_USE_AFTER_CONSUME");
     }
 
     private static void testForLoopValuesCanFlowToObjectMethodArguments() {
