@@ -27,6 +27,7 @@ public class SemanticCheckerTest {
         testTypedOnFailLocalCaptureLowering();
         testOnFailRejectsLocalInitializedAfterRaise();
         testOnFailCaptureUsesMatchingRaisedVariant();
+        testSameCrateRaisingCallPreservesErrorCarrier();
         System.out.println("SemanticCheckerTest PASSED.");
     }
 
@@ -105,6 +106,26 @@ public class SemanticCheckerTest {
                 + "fn main():\n"
                 + "  pass\n", "variant-specific-handler-capture.moss");
         new SemanticChecker(program).run();
+    }
+
+    private static void testSameCrateRaisingCallPreservesErrorCarrier() {
+        Program program = Parser.parseSource(""
+                + "enum Failure:\n"
+                + "  Bad\n"
+                + "fn failer() -> Int:\n"
+                + "  raise Failure.Bad\n"
+                + "fn caller() -> Int:\n"
+                + "  let value = failer()\n"
+                + "  return value\n"
+                + "fn main():\n"
+                + "  echo caller()\n", "raise-carrier-propagation.moss");
+        new SemanticChecker(program).run();
+        String rust = NativeGenerator.generate(program, false);
+        if (!rust.contains("fn caller() -> Result<i64, __MossRaised>")
+                || !rust.contains("failer()?")
+                || rust.contains("failer().map_err(|e| __moss_raise(format!(\"{:?}\", e)))?")) {
+            throw new AssertionError("same-crate raising call must preserve the existing error carrier: " + rust);
+        }
     }
 
     private static void testSameTraitConstraintCanBeForwarded() {

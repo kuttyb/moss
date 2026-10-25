@@ -13033,3 +13033,25 @@ Post-checkpoint regression note: after pushing the explicit raise-edge fix at
 `./scripts/java/test.sh` passed all ten test classes, including the updated
 SemanticCheckerTest. No native Rust, SDK, or full repository acceptance gates
 were run.
+
+### Phase 25.3 continuation — preserve same-crate raised error carriers
+
+Same-crate calls to raising Moss functions now propagate the existing
+`__MossRaised` value with `?` in a raising context, preserving the callee's
+typed capture map. Previously this path reconstructed a new error from debug
+text and lost typed captures.
+
+Validation: Java build, focused generated-Rust shape assertion in
+`SemanticCheckerTest`, and `git diff --check` pass. No Rust/native compilation
+ran. Cross-crate error conversion through source-free ABI and caller-local
+capture insertion on propagation remain open.
+
+Follow-up: the new regression initially showed that the caller function itself
+was not marked as raising and therefore still unwrapped the result. The Java
+native generator now computes a transitive closure over same-crate calls to
+raising functions (and direct `fail` calls) before emitting signatures. The
+focused test checks both `Result<..., __MossRaised>` on the caller and `?` at
+the call site. `./scripts/java/build.sh`, all ten Java unit-test classes,
+feedback validation, and `git diff --check` pass after this follow-up. Cross-
+crate error conversion and caller-local capture insertion remain open; no Rust
+or native gate was run.

@@ -193,6 +193,38 @@ public class NativeGenerator {
                 }
             }
         }
+        // A function must return the same raised carrier as any local
+        // callable it invokes. Compute the transitive closure before emitting
+        // signatures so call propagation cannot silently unwrap a callee's
+        // failure into the function's default result.
+        boolean addedRaisingFunction;
+        do {
+            addedRaisingFunction = false;
+            for (Function f : program.functions) {
+                if (raisingFunctions.contains(f.name)) continue;
+                boolean callsRaisingFunction = expressionCallsRaisingFunction(
+                        f.resultExpression, raisingFunctions)
+                        || expressionCallsRaisingFunction(f.resultExpression, Collections.singleton("fail"));
+                for (Stmt statement : f.body) {
+                    callsRaisingFunction |= expressionCallsRaisingFunction(statement.text, raisingFunctions)
+                            || expressionCallsRaisingFunction(statement.a, raisingFunctions)
+                            || expressionCallsRaisingFunction(statement.b, raisingFunctions)
+                            || expressionCallsRaisingFunction(statement.text, Collections.singleton("fail"))
+                            || expressionCallsRaisingFunction(statement.a, Collections.singleton("fail"))
+                            || expressionCallsRaisingFunction(statement.b, Collections.singleton("fail"));
+                    if (statement.args != null) {
+                        for (String argument : statement.args) {
+                            callsRaisingFunction |= expressionCallsRaisingFunction(argument, raisingFunctions)
+                                    || expressionCallsRaisingFunction(argument, Collections.singleton("fail"));
+                        }
+                    }
+                }
+                if (callsRaisingFunction) {
+                    raisingFunctions.add(f.name);
+                    addedRaisingFunction = true;
+                }
+            }
+        } while (addedRaisingFunction);
         currentRaisingFunctions.set(raisingFunctions);
 
         Set<String> writeFunctions = new HashSet<>();
@@ -1139,6 +1171,37 @@ public class NativeGenerator {
 
         currentRaisingFunctions.remove();
         return o.toString();
+    }
+
+    private static boolean expressionCallsRaisingFunction(String expression, Set<String> raisingFunctions) {
+        if (expression == null || expression.isEmpty() || raisingFunctions.isEmpty()) return false;
+        for (int i = 0; i < expression.length();) {
+            char ch = expression.charAt(i);
+            if (ch == '"' || ch == '\'') {
+                char quote = ch;
+                i++;
+                while (i < expression.length()) {
+                    char current = expression.charAt(i++);
+                    if (current == '\\' && i < expression.length()) i++;
+                    else if (current == quote) break;
+                }
+                continue;
+            }
+            if (!Character.isLetter(ch) && ch != '_') {
+                i++;
+                continue;
+            }
+            int start = i++;
+            while (i < expression.length()
+                    && (Character.isLetterOrDigit(expression.charAt(i)) || expression.charAt(i) == '_')) i++;
+            String identifier = expression.substring(start, i);
+            int next = i;
+            while (next < expression.length() && Character.isWhitespace(expression.charAt(next))) next++;
+            if (next < expression.length() && expression.charAt(next) == '(' && raisingFunctions.contains(identifier)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static void emitFunctionalPipelineMarkers(StringBuilder out, String enclosingIdentity,
@@ -3010,7 +3073,10 @@ public class NativeGenerator {
                 String callStr = callee + "(" + String.join(", ", argList) + ")";
                 if (calleeRaises) {
                     if (currentInTry.get()) {
-                        return callStr + ".map_err(|e| __moss_raise(format!(\"{:?}\", e)))?";
+                        // Same-crate Moss callables use the shared __MossRaised
+                        // carrier. Preserve its typed on_fail captures while
+                        // propagating instead of flattening the error to text.
+                        return callStr + "?";
                     } else {
                         return callStr + ".unwrap_or_default()";
                     }
