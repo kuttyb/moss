@@ -1786,7 +1786,7 @@ public class SemanticChecker {
             }
             String expression = statementExpressionText(statement);
             collectNestedFunctionRaiseVariants(expression, method.body, index, visited, variants);
-            collectNestedMethodRaiseVariants(expression, method, localTypes, visited, variants);
+            collectNestedMethodRaiseVariants(expression, method, localTypes, index, visited, variants);
             if (statement.kind == Stmt.Kind.Assign && statement.a != null && statement.b != null
                     && statement.a.trim().matches("[A-Za-z_][A-Za-z0-9_]*")) {
                 String typeName = resolveMethodValueType(statement.b, method, localTypes);
@@ -1796,13 +1796,23 @@ public class SemanticChecker {
         if (method.resultExpression != null) {
             collectNestedFunctionRaiseVariants(method.resultExpression, method.body,
                     method.body.size(), visited, variants);
-            collectNestedMethodRaiseVariants(method.resultExpression, method, localTypes, visited, variants);
+            collectNestedMethodRaiseVariants(method.resultExpression, method, localTypes,
+                    method.body.size(), visited, variants);
         }
         return variants;
     }
 
+    /** Return the escaping raises known for a method, including methods it calls. */
+    public static Set<String> methodRaiseVariants(Program program, Method method) {
+        SemanticChecker checker = new SemanticChecker(program);
+        checker.collectDeclarations();
+        return Collections.unmodifiableSet(
+                checker.collectMethodRaiseVariants(method, new HashSet<>()));
+    }
+
     private void collectNestedMethodRaiseVariants(String expression, Method ownerMethod,
                                                   Map<String, String> localTypes,
+                                                  int callIndex,
                                                   Set<String> visited, Set<String> variants) {
         for (ObjectType object : program.objects) {
             for (Method candidate : object.methods) {
@@ -1813,7 +1823,9 @@ public class SemanticChecker {
                 while (matcher.find()) {
                     String receiverType = resolveMethodReceiverType(matcher.group(1), ownerMethod, localTypes);
                     if (!matchesObjectTypeName(receiverType, object.name)) continue;
-                    variants.addAll(collectMethodRaiseVariants(candidate, visited));
+                    for (String raised : collectMethodRaiseVariants(candidate, visited)) {
+                        if (!isRaiseHandled(ownerMethod.body, callIndex, raised)) variants.add(raised);
+                    }
                 }
             }
         }

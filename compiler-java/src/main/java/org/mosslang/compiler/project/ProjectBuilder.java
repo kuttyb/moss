@@ -990,10 +990,14 @@ public class ProjectBuilder {
     }
 
     static void appendV9ObjectMethodRecord(StringBuilder out, ObjectType object,
-                                           Method method, String module) {
+                                           Method method, String module, Program program) {
         String returnType = method.returnType != null && !method.returnType.isEmpty()
                 ? method.returnType : "unit";
-        String raiseIdent = raisedErrorIdentity(module, method.body);
+        Set<String> methodRaises = org.mosslang.compiler.semantics.SemanticChecker
+                .methodRaiseVariants(program, method);
+        Set<String> normalizedRaises = new java.util.LinkedHashSet<>();
+        for (String raised : methodRaises) normalizedRaises.add(normalizeRaisedIdentity(module, raised));
+        String raiseIdent = normalizedRaises.isEmpty() ? "-" : String.join(",", normalizedRaises);
         out.append("  object_method ").append(method.name)
                 .append(" return=").append(returnType)
                 .append(" receiver=").append(method.receiverAccessMode.name().toUpperCase(Locale.ROOT))
@@ -1393,12 +1397,12 @@ public class ProjectBuilder {
             }
             contractBuf.append("object ").append(objName).append("\n");
             for (Method m : obj.methods) {
-                appendV9ObjectMethodRecord(contractBuf, obj, m, module);
+                appendV9ObjectMethodRecord(contractBuf, obj, m, module, prog);
             }
             semanticBuf.append("export type ").append(objName).append("\n");
             appendExportedObjectFields(semanticBuf, obj);
             for (Method m : obj.methods) {
-                appendV9ObjectMethodRecord(semanticBuf, obj, m, module);
+                appendV9ObjectMethodRecord(semanticBuf, obj, m, module, prog);
             }
         }
 
@@ -1509,7 +1513,7 @@ public class ProjectBuilder {
                 s.append("  declaration_id nominal-template-v1:").append(modId).append(":type:").append(objName).append("\n");
                 appendExportedObjectFields(s, obj);
                 for (Method method : obj.methods) {
-                    appendV9ObjectMethodRecord(s, obj, method, module);
+                    appendV9ObjectMethodRecord(s, obj, method, module, prog);
                 }
                 semRecords.add(new String[]{"type:" + objName, s.toString()});
 

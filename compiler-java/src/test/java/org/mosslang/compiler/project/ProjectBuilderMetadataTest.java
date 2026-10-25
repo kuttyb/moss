@@ -56,6 +56,7 @@ public final class ProjectBuilderMetadataTest {
         testCanonicalNominalTemplateWirePayload();
         testCheckedOnFailCaptureAbiRows();
         testFunctionRaiseSetExportsEveryVariant();
+        testMethodRaiseSetIncludesTransitiveCalls();
         testPanicEffectIgnoresStringContents();
         testExplicitModuleBuildChecksSemantics();
         testV9FunctionParameterAccessSerialization();
@@ -185,6 +186,67 @@ public final class ProjectBuilderMetadataTest {
         }
     }
 
+    private static void testMethodRaiseSetIncludesTransitiveCalls() {
+        Program program = Parser.parseSource(""
+                + "module provider\n"
+                + "enum Failure:\n"
+                + "  Bad\n"
+                + "type Point:\n"
+                + "  fn signal():\n"
+                + "    raise Failure.Bad\n"
+                + "  fn forward():\n"
+                + "    self.signal()\n"
+                + "  fn safe():\n"
+                + "    try:\n"
+                + "      self.signal()\n"
+                + "    recover Failure.Bad:\n"
+                + "      pass\n"
+                + "fn main():\n"
+                + "  pass\n", "method-raise-export.moss");
+        new org.mosslang.compiler.semantics.CheckedProgram(program).run();
+        ProjectManifest manifest = new ProjectManifest(Path.of("tmp"), Path.of("tmp", "moss.toml"),
+                "sample", "1.0.0", Path.of("src"));
+        BackendToolchain toolchain = new BackendToolchain("rustc", "rustc 1.80.0 (test)\n",
+                "dev", java.util.List.of(), "method-raise-test");
+        String text = new String(ProjectBuilder.generateMossiInterface(manifest, "provider",
+                program, toolchain, java.util.List.of(), Path.of("tmp"), java.util.Map.of()),
+                java.nio.charset.StandardCharsets.UTF_8);
+        String forward = text.lines().filter(line -> line.contains("object_method forward "))
+                .findFirst().orElse("");
+        if (!forward.contains("raise_set=enum:provider__Failure:Bad")) {
+            throw new AssertionError("source-free method metadata omitted transitive raise variant: "
+                    + forward);
+        }
+        String safe = text.lines().filter(line -> line.contains("object_method safe "))
+                .findFirst().orElse("");
+        if (!safe.contains("raise_set=-")) {
+            throw new AssertionError("method recover did not remove a handled transitive raise: " + safe);
+        }
+        Path scratch = Path.of("tmp");
+        try {
+            Files.createDirectories(scratch);
+            Path interfaceFile = Files.createTempFile(scratch, "java-method-raise-", ".mossi");
+            try {
+                Files.writeString(interfaceFile, text);
+                Program consumer = new Program();
+                org.mosslang.compiler.cli.Main.loadMossiFunctions(interfaceFile, "provider", consumer);
+                org.mosslang.compiler.ast.Method imported = consumer.objects.stream()
+                        .filter(type -> type.name.equals("provider__Point"))
+                        .flatMap(type -> type.methods.stream())
+                        .filter(candidate -> candidate.name.equals("forward"))
+                        .findFirst().orElseThrow(() -> new AssertionError("forward method was not imported"));
+                if (!imported.sourceFreeRaiseVariants.contains("provider__Failure.Bad")) {
+                    throw new AssertionError("source-free loader omitted transitive method raise variant: "
+                            + imported.sourceFreeRaiseVariants);
+                }
+            } finally {
+                Files.deleteIfExists(interfaceFile);
+            }
+        } catch (java.io.IOException error) {
+            throw new AssertionError("could not verify source-free method raise round-trip", error);
+        }
+    }
+
     private static void testExplicitModuleBuildChecksSemantics() throws Exception {
         Path root = Files.createTempDirectory(Path.of("tmp"), "java-module-check-");
         Path source = root.resolve("src");
@@ -260,7 +322,9 @@ public final class ProjectBuilderMetadataTest {
                 org.mosslang.compiler.ast.Stmt.Kind.Assign, 5, 0,
                 "x = x + amount", "x", "x + amount"));
         StringBuilder record = new StringBuilder();
-        ProjectBuilder.appendV9ObjectMethodRecord(record, object, method, "provider");
+        Program program = new Program();
+        program.objects.add(object);
+        ProjectBuilder.appendV9ObjectMethodRecord(record, object, method, "provider", program);
         assertContains(record.toString(), "object_method shift return=float receiver=WRITE");
         assertContains(record.toString(), "params=1 \"amount\" \"float\" CONSUME");
     }

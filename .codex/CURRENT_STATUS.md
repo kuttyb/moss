@@ -15500,3 +15500,19 @@ variant recovered inside `signal` stays out of both exported summaries.
 All twelve Java unit-test classes pass under ABI-v9 defaults and staged
 ABI-v10; `git diff --check` passes. This covers ordinary function-call closure;
 method raises and native source-free execution remain open.
+
+
+### Phase 25.3 continuation — propagate method raises into source-free summaries
+
+Exported object-method ABI records now use the checker's method raise closure,
+so a method forwarding to `self.signal()` inherits its escaping variants. The
+checker traversal now also applies the caller's recover coverage when deciding
+whether a nested method's variant escapes. A metadata producer/source-free
+loader regression verifies `forward` retains `Failure.Bad` and `safe`, which
+recovers that raise, exports no raise set.
+
+All twelve Java unit-test classes pass under ABI-v9 defaults and staged
+ABI-v10; diff and feedback checks are pending before checkpoint. The test
+covers same-object self calls and exact recover coverage; typed object
+parameters/fields, native provider execution, and broader raise inference
+remain open.
