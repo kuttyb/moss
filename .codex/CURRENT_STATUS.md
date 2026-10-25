@@ -12910,3 +12910,16 @@ paths. A focused consumer checks and generates a two-field failure variant.
 Validation: Java build, all ten Java unit-test classes, and `git diff --check`
 pass. This verifies interface import and generated Rust shape, not Rust
 compilation or provider/consumer linking.
+
+### Phase 25.3 continuation — project-level ABI-v10 producer round trip
+
+Added a focused test of the assembled `ProjectBuilder.generateMossiInterface`
+path under `MOSS_STAGED_ABI=v10`. A source-derived exported record and payload
+enum are emitted through the project producer, decoded and verified by the
+production codec, and checked for the canonical nominal record, enum semantic
+record, section framing, hashes, and provider digest.
+
+Validation on this candidate tree: `MOSS_STAGED_ABI=v10
+./scripts/java/build.sh` and `MOSS_STAGED_ABI=v10 ./scripts/java/test.sh` pass;
+all ten Java test classes pass. This avoids Rust compilation and does not cover
+multi-module dependencies, source-free native linkage, or final release gates.

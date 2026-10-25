@@ -5,12 +5,14 @@ import org.mosslang.compiler.ast.EnumType;
 import org.mosslang.compiler.ast.Field;
 import org.mosslang.compiler.ast.Function;
 import org.mosslang.compiler.ast.Param;
+import org.mosslang.compiler.ast.Program;
 import org.mosslang.compiler.abi.CheckedBodyCodec;
 import org.mosslang.compiler.abi.MossiInterface;
 import org.mosslang.compiler.abi.MossiRecord;
 import org.mosslang.compiler.abi.AbiV10Records;
 import org.mosslang.compiler.diagnostics.CompileError;
 import org.mosslang.compiler.types.AccessMode;
+import org.mosslang.compiler.parser.Parser;
 
 import java.nio.file.Path;
 import java.nio.file.Files;
@@ -49,6 +51,9 @@ public final class ProjectBuilderMetadataTest {
         testV9FunctionParameterAccessSerialization();
         testExportedObjectFieldSerialization();
         testExportedObjectMethodSerialization();
+        if ("v10".equals(System.getenv("MOSS_STAGED_ABI"))) {
+            testV10ProjectProducerRoundTrip();
+        }
         System.out.println("ProjectBuilderMetadataTest PASSED.");
     }
 
@@ -187,6 +192,32 @@ public final class ProjectBuilderMetadataTest {
         AbiV10Records.NominalTemplate decoded = AbiV10Records.NominalTemplate.decode(template.record());
         assertEquals(template.representationHash, decoded.representationHash);
         assertEquals(template.templateId, decoded.templateId);
+    }
+
+    private static void testV10ProjectProducerRoundTrip() {
+        Program program = Parser.parseSource(""
+                + "type Point:\n"
+                + "  x: Float\n"
+                + "  y: Int\n"
+                + "enum Outcome:\n"
+                + "  Ready(code: Int)\n"
+                + "  Done\n", "provider.moss");
+        program.objects.get(0).exported = true;
+        program.enums.get(0).exported = true;
+        ProjectManifest manifest = new ProjectManifest(Path.of("tmp"),
+                Path.of("tmp", "moss.toml"), "sample", "1.0.0", Path.of("src"));
+        BackendToolchain toolchain = new BackendToolchain("rustc", "rustc 1.80.0 (test)\n",
+                "dev", java.util.List.of(), "fingerprint-v10-test");
+        byte[] generated = ProjectBuilder.generateMossiInterface(manifest, "provider",
+                program, toolchain, java.util.List.of(), Path.of("tmp"), java.util.Map.of());
+        MossiInterface decoded = CheckedBodyCodec.verifySourceFree(generated);
+        if (decoded.binaryContract.stream().noneMatch(record ->
+                    record.id.startsWith("nominal-template-v1:") && record.payloadBytes().length > 0)
+                || decoded.semanticContract.stream().noneMatch(record ->
+                    record.id.equals("00000000 export Outcome")
+                    && record.payload.contains("enum_case \"Ready\" 1 \"code\" \"int\""))) {
+            throw new AssertionError("Margo ABI-v10 producer omitted canonical nominal/enum facts");
+        }
     }
 
     private static void assertEquals(String expected, String actual) {

@@ -1154,7 +1154,7 @@ public class ProjectBuilder {
         return template;
     }
 
-    private static byte[] generateMossiInterface(ProjectManifest manifest, String module, Program prog, BackendToolchain toolchain, List<String> deps, Path buildDir, Map<String, List<Path>> externalCandidateProviders) {
+    static byte[] generateMossiInterface(ProjectManifest manifest, String module, Program prog, BackendToolchain toolchain, List<String> deps, Path buildDir, Map<String, List<Path>> externalCandidateProviders) {
         StringBuilder contractBuf = new StringBuilder();
         StringBuilder semanticBuf = new StringBuilder();
 
