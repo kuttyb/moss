@@ -21,6 +21,7 @@ public class SemanticChecker {
     private List<RaiseSnapshot> currentHandlerRaises;
     private Set<String> currentHandlerStateFields = Collections.emptySet();
     private int sessionCounter = 1;
+    private int activeRecoverDepth;
 
     public static class MoveInfo {
         public final int line;
@@ -1693,8 +1694,18 @@ public class SemanticChecker {
                                     ExpressionTyper typer, TypeSolver solver,
                                     boolean insideHandler, String enclosingName, TypeRef expectedType) {
         int i = start;
+        int activeRecoverIndent = -1;
         while (i < end) {
             Stmt s = stmts.get(i);
+            if (activeRecoverIndent >= 0 && s.indent <= activeRecoverIndent
+                    && (s.kind != Stmt.Kind.Recover || s.indent == activeRecoverIndent)) {
+                activeRecoverDepth--;
+                activeRecoverIndent = -1;
+            }
+            if (s.kind == Stmt.Kind.Recover) {
+                activeRecoverIndent = s.indent;
+                activeRecoverDepth++;
+            }
             if (s.kind == Stmt.Kind.While) {
                 checkStatement(s, env, typer, solver, insideHandler, enclosingName, expectedType);
                 int bodyEnd = i + 1;
@@ -1851,6 +1862,7 @@ public class SemanticChecker {
             checkStatement(s, env, typer, solver, insideHandler, enclosingName, expectedType);
             i++;
         }
+        if (activeRecoverIndent >= 0) activeRecoverDepth--;
         return env;
     }
 
@@ -2393,6 +2405,11 @@ public class SemanticChecker {
             case Raise -> {
                 String raised = s.a != null && !s.a.isEmpty() ? s.a.trim()
                         : (text.startsWith("raise ") ? text.substring(6).trim() : "");
+                if (raised.isEmpty() && activeRecoverDepth == 0) {
+                    throw new CompileError(s.line,
+                            "bare raise is legal only inside an active recover arm",
+                            "BARE_RAISE_OUTSIDE_RECOVER");
+                }
                 requireAvailable(s.line, raised, env);
                 if (currentHandlerRaises != null) {
                     String variant = raised;

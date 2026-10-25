@@ -42,6 +42,7 @@ public class SemanticCheckerTest {
         testOnFailReplyMustCoverEveryBranch();
         testOnFailRejectsBranchEscapingRaise();
         testUnreachableRecoverDoesNotConsumeReachableOwnership();
+        testBareRaiseOutsideRecoverIsRejected();
         System.out.println("SemanticCheckerTest PASSED.");
     }
 
@@ -780,6 +781,21 @@ public class SemanticCheckerTest {
                 + "fn main():\n"
                 + "  only_a()\n", "unreachable-recover-ownership.moss");
         new SemanticChecker(program).run();
+    }
+
+    private static void testBareRaiseOutsideRecoverIsRejected() {
+        assertCompileError(""
+                + "fn invalid():\n"
+                + "  raise\n", "BARE_RAISE_OUTSIDE_RECOVER");
+        Program valid = Parser.parseSource(""
+                + "enum Failure:\n"
+                + "  Bad\n"
+                + "fn main():\n"
+                + "  try:\n"
+                + "    raise Failure.Bad\n"
+                + "  recover Failure.Bad:\n"
+                + "    raise\n", "bare-raise-recover-scope.moss");
+        new SemanticChecker(valid).run();
     }
 
     private static void assertCompileError(String source, String code) {

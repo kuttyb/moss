@@ -14109,3 +14109,21 @@ screen reduced the mismatches to 17 (8 C++-only accepts, 9 Java-only accepts).
 All 11 Java test classes pass in ABI-v9 and staged ABI-v10. This addresses one
 bounded checker false rejection; the remaining mismatches and broader Phase
 25.3 acceptance are still open.
+
+### Phase 25.3 continuation — reject bare raise outside recover scope
+
+The refreshed 91-file checker screen still had a Java-only accept for
+`phase21_bare_raise_invalid.moss`, where a function used bare `raise` without
+an active recover arm. Java now tracks lexical recover scope across nested
+blocks and rejects bare raise outside it with `BARE_RAISE_OUTSIDE_RECOVER`.
+Regression coverage checks both the invalid function and valid bare reraising
+inside a recover arm; the direct-reraise fixture sample remains accepted by
+both compilers (apart from an existing unrelated Java rejection in the
+FileIO adversarial fixture).
+
+After both recent checker corrections, the 91-file standalone acceptance
+screen reports 8 C++-only accepts, 8 Java-only accepts, 53 accepted by both,
+and 22 rejected by both. Remaining divergences include error-edge ownership,
+FileIO/iterator support, and grouped/nested recovery handling; they remain
+unresolved and are not collapsed into a single parity claim. All 11 Java test
+classes pass in ABI-v9 and staged ABI-v10.
