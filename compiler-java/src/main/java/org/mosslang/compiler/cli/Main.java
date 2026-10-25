@@ -633,33 +633,6 @@ public class Main {
                         }
                     }
                 }
-                boolean isStagedV10 = "v10".equals(System.getenv("MOSS_STAGED_ABI"));
-                if (program.main != null) {
-                    for (org.mosslang.compiler.ast.Stmt s : program.main.body) {
-                        String stmtText = (s.text != null ? s.text : "") + " " + (s.b != null ? s.b : "");
-                        if (isStagedV10 && stmtText.contains("Provider.relay()")) {
-                            String mossiPath = "Provider.mossi";
-                            for (Path c : candidates) {
-                                if (c.toString().endsWith("Provider.mossi")) {
-                                    mossiPath = c.toString();
-                                    break;
-                                }
-                            }
-                            CompileError err = new CompileError(s.line > 0 ? s.line : 4,
-                                    "exported callable 'Provider.relay' reaches a private multi-statement body without checked ABI-v10 type facts and body IR",
-                                    "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE", mossiPath);
-                            err.related.add(new CompileError.RelatedNote("consumer selected unsupported body", absPath, s.line > 0 ? s.line : 4, 1));
-                            throw err;
-                        }
-                        if (stmtText.contains("Provider.outer(") || stmtText.contains("Provider.outer ")) {
-                            CompileError err = new CompileError(s.line > 0 ? s.line : 4,
-                                    "type Int has no method named 'required' for Provider.outer",
-                                    "METHOD_NOT_FOUND", absPath);
-                            err.related.add(new CompileError.RelatedNote("declaration in provider.moss", "provider.moss", 3, 1));
-                            throw err;
-                        }
-                    }
-                }
                     for (org.mosslang.compiler.ast.ModuleImport imp : program.imports) {
                         List<Path> cands = candidateMap.get(imp.name);
                         if (cands != null && !cands.isEmpty()) {
@@ -703,6 +676,8 @@ public class Main {
                         }
                     }
                 }
+
+            rejectUnavailableSourceFreeV10Calls(program, absPath);
 
             CheckedProgram checker = new CheckedProgram(program);
             checker.run();
@@ -783,6 +758,89 @@ public class Main {
         };
     }
 
+    private static void rejectUnavailableSourceFreeV10Calls(Program program, String consumerFile)
+            throws CompileError {
+        List<org.mosslang.compiler.ast.Stmt> useSites = new ArrayList<>();
+        for (org.mosslang.compiler.ast.Function caller : program.functions) {
+            if (caller.sourceFreeAbiVersion != 0) continue;
+            useSites.addAll(caller.body);
+            if (caller.resultExpression != null) {
+                useSites.add(new org.mosslang.compiler.ast.Stmt(
+                        org.mosslang.compiler.ast.Stmt.Kind.Return, caller.resultLine, 0,
+                        caller.resultExpression, caller.resultExpression, ""));
+            }
+        }
+        if (program.main != null) useSites.addAll(program.main.body);
+        for (org.mosslang.compiler.ast.Domain domain : program.domains) {
+            for (org.mosslang.compiler.ast.Handler handler : domain.handlers) {
+                if (handler.body != null) useSites.addAll(handler.body);
+            }
+        }
+        for (org.mosslang.compiler.ast.ObjectType object : program.objects) {
+            for (org.mosslang.compiler.ast.Method method : object.methods) useSites.addAll(method.body);
+        }
+        for (org.mosslang.compiler.ast.Function imported : program.functions) {
+            if (imported.sourceFreeAbiVersion != 10 || imported.sourceFreeCheckedBodyAvailable) continue;
+            Set<String> names = new HashSet<>();
+            names.add(imported.name);
+            if (!imported.semanticCallableId.isEmpty()) {
+                for (org.mosslang.compiler.ast.Function alias : program.functions) {
+                    if (imported.semanticCallableId.equals(alias.semanticCallableId)) names.add(alias.name);
+                }
+            }
+            for (org.mosslang.compiler.ast.Stmt useSite : useSites) {
+                if (!statementCallsAny(useSite, names)) continue;
+                int line = useSite.line > 0 ? useSite.line : 1;
+                CompileError error = new CompileError(line,
+                        "exported callable '" + imported.name
+                                + "' has no projected checked ABI-v10 body required by this consumer",
+                        "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE", imported.sourceFile);
+                error.related.add(new CompileError.RelatedNote(
+                        "consumer selects this callable", consumerFile, line, 1));
+                throw error;
+            }
+        }
+    }
+
+    private static boolean statementCallsAny(org.mosslang.compiler.ast.Stmt statement, Set<String> names) {
+        List<String> expressions = new ArrayList<>();
+        expressions.add(statement.text);
+        expressions.add(statement.a);
+        expressions.add(statement.b);
+        if (statement.args != null) expressions.addAll(statement.args);
+        for (String expression : expressions) {
+            if (expression == null || expression.isEmpty()) continue;
+            String code = withoutQuotedSourceText(expression);
+            for (String name : names) {
+                java.util.regex.Pattern call = java.util.regex.Pattern.compile(
+                        "(?<![A-Za-z0-9_])" + java.util.regex.Pattern.quote(name) + "\\s*\\(");
+                if (call.matcher(code).find()) return true;
+            }
+        }
+        return false;
+    }
+
+    private static String withoutQuotedSourceText(String source) {
+        StringBuilder result = new StringBuilder(source.length());
+        char quote = 0;
+        boolean escaped = false;
+        for (int index = 0; index < source.length(); index++) {
+            char current = source.charAt(index);
+            if (quote != 0) {
+                result.append(' ');
+                if (escaped) escaped = false;
+                else if (current == '\\') escaped = true;
+                else if (current == quote) quote = 0;
+            } else if (current == '"' || current == '\'') {
+                quote = current;
+                result.append(' ');
+            } else {
+                result.append(current);
+            }
+        }
+        return result.toString();
+    }
+
     static String readMossiText(Path path) throws IOException {
         byte[] bytes = Files.readAllBytes(path);
         String v10Prefix = "moss-module-interface-v3\n";
@@ -798,9 +856,10 @@ public class Main {
         try {
             byte[] rawBytes = Files.readAllBytes(cand);
             String text = readMossiText(cand);
+            boolean sourceFreeV10 = text.startsWith("moss-module-interface-v3\n");
             Map<String, org.mosslang.compiler.abi.AbiV10Records.Summary> typedV10Summaries = new HashMap<>();
             Map<String, org.mosslang.compiler.abi.AbiV10Records.CheckedBodyRecord> typedV10Bodies = new HashMap<>();
-            if (text.startsWith("moss-module-interface-v3\n")) {
+            if (sourceFreeV10) {
                 org.mosslang.compiler.abi.MossiInterface v10 =
                         org.mosslang.compiler.abi.CheckedBodyCodec.verifySourceFree(rawBytes);
                 StringBuilder legacyRecords = new StringBuilder("moss-module-interface-v2\n")
@@ -1313,6 +1372,15 @@ public class Main {
                         alias.returnType = currentFn.returnType;
                         program.functions.add(alias);
                     }
+                    currentFn.sourceFreeAbiVersion = sourceFreeV10 ? 10 : 9;
+                    currentFn.sourceFreeCheckedBodyAvailable = false;
+                    for (org.mosslang.compiler.ast.Function alias : program.functions) {
+                        if (alias != currentFn
+                                && currentFn.semanticCallableId.equals(alias.semanticCallableId)) {
+                            alias.sourceFreeAbiVersion = currentFn.sourceFreeAbiVersion;
+                            alias.sourceFreeCheckedBodyAvailable = false;
+                        }
+                    }
                 } else if (currentFn != null && line.startsWith("param ")) {
                     java.util.regex.Matcher m = java.util.regex.Pattern.compile("name=\"([^\"]*)\"").matcher(line);
                     String pName = m.find() ? m.group(1) : ("arg" + currentFn.params.size());
@@ -1480,6 +1548,7 @@ public class Main {
                     function.resultLine = 0;
                     function.generic = summary.variableCount > 0;
                     function.staticDispatch = function.generic;
+                    function.sourceFreeCheckedBodyAvailable = true;
                 }
                 continue;
             }
@@ -1526,6 +1595,7 @@ public class Main {
                     function.resultLine = returned.line;
                     function.generic = summary.variableCount > 0;
                     function.staticDispatch = function.generic;
+                    function.sourceFreeCheckedBodyAvailable = true;
                 }
                 continue;
             }
@@ -1631,6 +1701,7 @@ public class Main {
                 function.resultLine = 1;
                 function.generic = summary.variableCount > 0;
                 function.staticDispatch = function.generic;
+                function.sourceFreeCheckedBodyAvailable = true;
             }
         }
     }

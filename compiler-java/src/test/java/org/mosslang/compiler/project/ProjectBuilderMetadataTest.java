@@ -49,6 +49,10 @@ public final class ProjectBuilderMetadataTest {
         testV10SectionHashValidation();
         testV10Utf8InterfaceValidation();
         testV10RecordFramingUsesUtf8Bytes();
+        if ("v10".equals(System.getenv("MOSS_STAGED_ABI"))) {
+            testSourceFreeProviderNameIsNotSpecialCased();
+            testUnsupportedSourceFreeCallableFailsClosed();
+        }
         testCanonicalNominalTemplateWirePayload();
         testCheckedOnFailCaptureAbiRows();
         testExplicitModuleBuildChecksSemantics();
@@ -235,6 +239,160 @@ public final class ProjectBuilderMetadataTest {
         StringBuilder frame = new StringBuilder();
         ProjectBuilder.appendV10FramedRecord(frame, "fn:é", "café\n");
         assertEquals("record 5 6\nfn:écafé\n\n", frame.toString());
+    }
+
+    private static void testSourceFreeProviderNameIsNotSpecialCased() throws Exception {
+        Path root = Files.createTempDirectory(Path.of("tmp"), "java-sourcefree-outer-");
+        Path providerRoot = root.resolve("provider");
+        Path providerSource = providerRoot.resolve("src/provider.moss");
+        Path consumerRoot = root.resolve("consumer");
+        Path consumerSource = consumerRoot.resolve("src/main.moss");
+        Path interfaceDirectory = consumerRoot.resolve("build/debug");
+        try {
+            Files.createDirectories(providerSource.getParent());
+            Files.createDirectories(consumerSource.getParent());
+            Files.createDirectories(interfaceDirectory);
+            Files.writeString(providerRoot.resolve("Moss.toml"), ""
+                    + "[package]\nname = \"outer-provider\"\nversion = \"1.0.0\"\n\n"
+                    + "[build]\nsource = \"src\"\n");
+            Files.writeString(consumerRoot.resolve("Moss.toml"), ""
+                    + "[package]\nname = \"outer-consumer\"\nversion = \"1.0.0\"\n\n"
+                    + "[build]\nsource = \"src\"\n");
+            Program provider = Parser.parseSource(""
+                    + "module Provider\n"
+                    + "export fn outer(value: Int) -> Int:\n"
+                    + "  return value + 1\n", providerSource.toString());
+            new org.mosslang.compiler.semantics.CheckedProgram(provider).run();
+            provider.functions.get(0).semanticCallableId =
+                    "callable-v1:module-v1:outer-provider@1.0.0::Provider:fn:outer";
+            ProjectManifest manifest = new ProjectManifest(providerRoot,
+                    providerRoot.resolve("Moss.toml"), "outer-provider", "1.0.0",
+                    providerRoot.resolve("src"));
+            BackendToolchain toolchain = new BackendToolchain("rustc", "rustc 1.80.0 (test)\n",
+                    "dev", java.util.List.of(), "source-free-outer-test");
+            byte[] artifact = ProjectBuilder.generateMossiInterface(manifest, "Provider",
+                    provider, toolchain, java.util.List.of(), providerRoot.resolve("build"),
+                    java.util.Map.of());
+            Files.write(interfaceDirectory.resolve("Provider.mossi"), artifact);
+            MossiInterface verified = CheckedBodyCodec.verifySourceFree(artifact);
+            Files.writeString(interfaceDirectory.resolve("Provider.rlib"),
+                    "MOSS_ABI_V10_CONTRACT::Provider::" + verified.digest + "::END",
+                    java.nio.charset.StandardCharsets.US_ASCII);
+            Files.writeString(consumerSource, ""
+                    + "module Consumer\n"
+                    + "import Provider\n"
+                    + "fn main():\n"
+                    + "  echo Provider.outer(5)\n");
+
+            java.io.PrintStream previous = System.out;
+            java.io.ByteArrayOutputStream output = new java.io.ByteArrayOutputStream();
+            int exitCode;
+            try (java.io.PrintStream captured = new java.io.PrintStream(output,
+                    true, java.nio.charset.StandardCharsets.UTF_8)) {
+                System.setOut(captured);
+                exitCode = org.mosslang.compiler.cli.Main.run(new String[] {
+                        "check", consumerSource.toString(), "--json"});
+            } finally {
+                System.setOut(previous);
+            }
+            if (exitCode != 0) {
+                throw new AssertionError("valid source-free Provider.outer was rejected: " + output);
+            }
+            assertContains(output.toString(java.nio.charset.StandardCharsets.UTF_8), "\"ok\": true");
+        } finally {
+            try (var paths = Files.walk(root)) {
+                paths.sorted(java.util.Comparator.reverseOrder()).forEach(path -> {
+                    try { Files.deleteIfExists(path); }
+                    catch (java.io.IOException error) {
+                        throw new IllegalStateException("failed to clean source-free provider test", error);
+                    }
+                });
+            }
+        }
+    }
+
+    private static void testUnsupportedSourceFreeCallableFailsClosed() throws Exception {
+        Path root = Files.createTempDirectory(Path.of("tmp"), "java-sourcefree-unavailable-");
+        Path providerRoot = root.resolve("provider");
+        Path providerSource = providerRoot.resolve("src/provider.moss");
+        Path consumerRoot = root.resolve("consumer");
+        Path consumerSource = consumerRoot.resolve("src/main.moss");
+        Path interfaceDirectory = consumerRoot.resolve("build/debug");
+        try {
+            Files.createDirectories(providerSource.getParent());
+            Files.createDirectories(consumerSource.getParent());
+            Files.createDirectories(interfaceDirectory);
+            Files.writeString(providerRoot.resolve("Moss.toml"), ""
+                    + "[package]\nname = \"relay-provider\"\nversion = \"1.0.0\"\n\n"
+                    + "[build]\nsource = \"src\"\n");
+            Files.writeString(consumerRoot.resolve("Moss.toml"), ""
+                    + "[package]\nname = \"relay-consumer\"\nversion = \"1.0.0\"\n\n"
+                    + "[build]\nsource = \"src\"\n");
+            Program provider = Parser.parseSource(""
+                    + "module Provider\n"
+                    + "export fn fresh():\n"
+                    + "  return []\n"
+                    + "export fn relay():\n"
+                    + "  return fresh()\n", providerSource.toString());
+            new org.mosslang.compiler.semantics.CheckedProgram(provider).run();
+            String moduleId = "module-v1:relay-provider@1.0.0::Provider";
+            provider.functions.forEach(function -> function.semanticCallableId =
+                    "callable-v1:" + moduleId + ":fn:" + function.name);
+            ProjectManifest manifest = new ProjectManifest(providerRoot,
+                    providerRoot.resolve("Moss.toml"), "relay-provider", "1.0.0",
+                    providerRoot.resolve("src"));
+            BackendToolchain toolchain = new BackendToolchain("rustc", "rustc 1.80.0 (test)\n",
+                    "dev", java.util.List.of(), "source-free-relay-test");
+            byte[] artifact = ProjectBuilder.generateMossiInterface(manifest, "Provider",
+                    provider, toolchain, java.util.List.of(), providerRoot.resolve("build"),
+                    java.util.Map.of());
+            Files.write(interfaceDirectory.resolve("Provider.mossi"), artifact);
+            MossiInterface verified = CheckedBodyCodec.verifySourceFree(artifact);
+            MossiRecord freshRecord = verified.semanticContract.stream()
+                    .filter(record -> record.id.endsWith("fn:fresh"))
+                    .findFirst().orElseThrow(() -> new AssertionError(
+                            "ABI-v10 producer omitted the inferred fresh callable"));
+            if (!freshRecord.payload.contains("return=vector")) {
+                throw new AssertionError("inferred open collection result was not retained in ABI metadata: "
+                        + freshRecord.payload);
+            }
+            Files.writeString(interfaceDirectory.resolve("Provider.rlib"),
+                    "MOSS_ABI_V10_CONTRACT::Provider::" + verified.digest + "::END",
+                    java.nio.charset.StandardCharsets.US_ASCII);
+            Files.writeString(consumerSource, ""
+                    + "module Consumer\n"
+                    + "import Provider\n"
+                    + "fn main():\n"
+                    + "  echo Provider.relay()\n");
+
+            java.io.PrintStream previous = System.out;
+            java.io.ByteArrayOutputStream output = new java.io.ByteArrayOutputStream();
+            int exitCode;
+            try (java.io.PrintStream captured = new java.io.PrintStream(output,
+                    true, java.nio.charset.StandardCharsets.UTF_8)) {
+                System.setOut(captured);
+                exitCode = org.mosslang.compiler.cli.Main.run(new String[] {
+                        "check", consumerSource.toString(), "--json"});
+            } finally {
+                System.setOut(previous);
+            }
+            String diagnostic = output.toString(java.nio.charset.StandardCharsets.UTF_8);
+            if (exitCode == 0 || !diagnostic.contains("\"ok\": false")) {
+                throw new AssertionError("unavailable source-free relay was not rejected: " + diagnostic);
+            }
+            if (!diagnostic.contains("\"code\": \"SOURCE_FREE_CHECKED_BODY_UNAVAILABLE\"")) {
+                throw new AssertionError("unavailable source-free relay lost its ABI diagnostic: " + diagnostic);
+            }
+        } finally {
+            try (var paths = Files.walk(root)) {
+                paths.sorted(java.util.Comparator.reverseOrder()).forEach(path -> {
+                    try { Files.deleteIfExists(path); }
+                    catch (java.io.IOException error) {
+                        throw new IllegalStateException("failed to clean unavailable source-free test", error);
+                    }
+                });
+            }
+        }
     }
 
     private static void testCanonicalNominalTemplateWirePayload() {

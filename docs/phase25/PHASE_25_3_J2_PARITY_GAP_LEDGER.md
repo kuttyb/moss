@@ -48,3 +48,20 @@ The initial audit revealed that while several foundational subsystems were mecha
 3. **J2-C (Agent A — P1 Priority): Compiler-Derived 2PL Synchronization Plan**
    - Lower domain state into typed synchronization classes with read/write set analysis.
    - Generate fine-grained class locks and 2PL lock ordering in `NativeGenerator.java`.
+
+## Phase 25.3 continuation — ABI-driven source-free callable availability
+
+The Java source-free CLI no longer special-cases `Provider.outer` or
+`Provider.relay` by source text. Imported ABI-v10 functions record whether the
+loader projected a supported checked body; a consumer call to an imported
+function without one now receives the general
+`SOURCE_FREE_CHECKED_BODY_UNAVAILABLE` diagnostic. The v9 record writer also
+preserves inferred open built-in return kinds rather than substituting `unit`.
+A real CLI test uses a generated provider interface and artifact seal: valid
+`Provider.outer` passes source-free checking, while unsupported open-result
+`Provider.relay` fails closed through the general path. This does not establish
+source-free execution or general private helper closure.
+
+Validation: clean Java build and all ten Java unit-test classes pass in default
+ABI-v9 and staged ABI-v10. Native Rust execution, Margo provider-consumer
+integration, SDK gates, and full release acceptance remain unverified.

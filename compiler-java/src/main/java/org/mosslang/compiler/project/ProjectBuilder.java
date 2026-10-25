@@ -1022,8 +1022,22 @@ public class ProjectBuilder {
         for (Stmt statement : function.body) semanticBody += statement.text + "\n";
         if (function.resultExpression != null) semanticBody += function.resultExpression + "\n";
         String semanticHash = fnv1a64Hex(semanticBody);
-        String returnType = function.returnType != null && !function.returnType.isEmpty()
-                ? function.returnType : "unit";
+        String returnType;
+        if (function.returnTypeRef != null) {
+            TypeRef checkedReturn = function.returnTypeRef;
+            if (checkedReturn.isClosed()) {
+                returnType = checkedReturn.toCanonicalString();
+            } else if (checkedReturn.kind() == org.mosslang.compiler.types.TypeKind.Builtin
+                    || checkedReturn.kind() == org.mosslang.compiler.types.TypeKind.NominalInstance) {
+                returnType = checkedReturn.name();
+            } else {
+                returnType = "_";
+            }
+        } else if (function.returnType != null && !function.returnType.isEmpty()) {
+            returnType = function.returnType;
+        } else {
+            returnType = "unit";
+        }
         if (semanticRecord) {
             out.append("export fn ").append(publicName).append(" kind=").append(kind)
                     .append(" semantic_hash=").append(semanticHash)

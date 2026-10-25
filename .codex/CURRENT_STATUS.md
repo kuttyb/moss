@@ -13527,3 +13527,21 @@ ABI-v9 and staged ABI-v10 modes. C++ and Java both accept the focused Int,
 Float, and Bool branch probe. Feedback validation and `git diff --check` pass.
 No native Rust compile/run, Margo provider-consumer build, SDK gate, or full
 `make check` ran. Phase 25.3 remains in progress.
+
+### Phase 25.3 continuation — replace source-free fixture guards with ABI facts
+
+Removed the source-name-based `Provider.outer` rejection and the staged
+`Provider.relay` special case. Imported ABI-v10 functions now retain whether a
+supported checked body was projected; calls to imported functions without such
+a body fail with the general `SOURCE_FREE_CHECKED_BODY_UNAVAILABLE` diagnostic.
+The ABI-v9 record writer also now serializes checked inferred open return shapes
+instead of silently writing `unit`; open built-in results retain their bare
+kind (for example `vector`). CLI regressions generate the `.mossi` artifact
+and seal, prove a valid source-free `Provider.outer` is accepted, and prove an
+unsupported source-free relay is rejected using the general body-availability
+rule.
+
+Validation: clean Java build and all ten Java unit-test classes pass in default
+ABI-v9 and staged ABI-v10 modes. Feedback validation and `git diff --check`
+pass. Native Rust compile/run, Margo provider-consumer build, SDK gate, and full
+`make check` remain deferred; Phase 25.3 remains in progress.
