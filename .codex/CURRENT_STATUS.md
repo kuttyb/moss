@@ -16462,9 +16462,10 @@ the observable effect with an active Executor remains to be tested.
 Root raise-totality checking now also fails closed when a source-free handler
 contract says it may raise but has no exhaustive `on_fail` arms. A focused
 regression loads an ABI-v9 `.mossi` interface, imports its raising handler, and
-rejects the consumer's root message. All 12 Java test classes pass under
-ABI-v9 and staged ABI-v10. Provider artifact generation and source-free native
-linkage remain pending.
+rejects the consumer's root message. The matching ABI-v10 semantic-export
+fixture also rejects an unhandled raising handler. All 12 Java test classes
+pass under ABI-v9 and staged ABI-v10. Provider artifact generation and
+source-free native linkage remain pending.
 The matching positive ABI-v9 imported-handler fixture with an exhaustive
 failure arm is accepted when submitted through Executor, and generated Rust
 uses the provider handler's `_root` entry. This is generation inspection only.

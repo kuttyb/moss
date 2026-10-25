@@ -357,6 +357,10 @@ public final class SourceFreeObjectMetadataTest {
                 + "  construction_state \"count\" \"int\" \"0\"\n"
                 + "  handler Count reply=int effects=local_capture_read=0;local_mutation=0;domain_read=1;domain_write=0;message=0;external_io=0;fileio=0;fileio_unknown=0;may_panic=0;raise_set=-;may_diverge=0;unresolved=0\n"
                 + "  handler_param \"Count\" \"offset\" \"int\"\n"));
+        v10.semanticContract.add(new MossiRecord("00000002 export Worker", ""
+                + "export domain Worker opaque\n"
+                + "  declaration_id nominal-domain-v1:module-v1:sample@0.1.0::provider:domain:Worker\n"
+                + "  handler Work reply=unit effects=local_capture_read=0;local_mutation=0;domain_read=0;domain_write=0;message=0;external_io=0;fileio=0;fileio_unknown=0;may_panic=0;raise_set=enum:provider__Fault:Bad;may_diverge=0;unresolved=0\n"));
         Path v10File = scratch.resolve("provider-v10.mossi");
         String encodedV10 = CheckedBodyCodec.encodeMossi(v10);
         Files.writeString(v10File, encodedV10, java.nio.charset.StandardCharsets.UTF_8);
@@ -445,6 +449,21 @@ public final class SourceFreeObjectMetadataTest {
                 || domainRust.contains("pub struct provider__RecorderRuntime")) {
             throw new AssertionError("source-free domain did not use its provider crate type: "
                     + domainRust);
+        }
+        Program v10UnhandledHandler = Parser.parseSource(""
+                + "import provider\n"
+                + "fn main():\n"
+                + "  worker = provider.Worker()\n"
+                + "  message worker.Work()\n", "source-free-v10-handler-raise-root.moss");
+        Main.loadMossiFunctions(v10File, "provider", v10UnhandledHandler);
+        try {
+            new SemanticChecker(v10UnhandledHandler).run();
+            throw new AssertionError("ABI-v10 source-free raising handler must require on_fail at root ingress");
+        } catch (CompileError error) {
+            if (!"ROOT_UNHANDLED_RAISE".equals(error.getCode())) {
+                throw new AssertionError("expected ABI-v10 ROOT_UNHANDLED_RAISE, got "
+                        + error.getCode(), error);
+            }
         }
         Files.deleteIfExists(interfaceFile);
         Files.deleteIfExists(raisingInterface);
