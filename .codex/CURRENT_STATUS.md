@@ -13919,3 +13919,18 @@ The distinct `phase21_capture_method_early_raise.moss` fixture is accepted by
 C++ but Java rejects it with `OWNERSHIP_USE_AFTER_CONSUME` for `data` after a
 possibly raising first argument. This appears to be an ownership exceptional-
 edge parity gap and remains open for a separate minimal diagnosis.
+
+The follow-up ownership lead is confirmed as a Java-only checker rejection:
+`moss check --json` accepts `phase21_capture_method_early_raise.moss`, while
+Java reports `OWNERSHIP_USE_AFTER_CONSUME` for `data` in `on_fail`. The
+first call argument `fail()` raises before the later `data` argument is passed
+to `consume_after`, so the normal-path move should not erase the value on that
+exceptional path. Correct modeling needs call-argument raise snapshots and is
+not included in the Fast Debug capture fixes above.
+
+A nearby separate positive gap is `phase21_capture_owned_payload.moss`: C++
+executes it and returns `hello`, while Java reports `UNKNOWN_SYMBOL_OR_TYPE`
+for a match-case payload binder used by `on_fail`. The borrowed-payload
+counterpart is rejected by C++ with `ON_FAIL_CAPTURE_NOT_OWNED`; Java's current
+unknown-name error masks that distinction. Both are open Java semantic-checker
+parity issues pending a focused checker design.
