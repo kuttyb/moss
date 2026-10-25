@@ -15486,3 +15486,17 @@ before the bounded panic/division scan. A provider writer regression exports
 All twelve Java unit-test classes pass under ABI-v9 defaults and staged
 ABI-v10; `git diff --check` passes. Other panic inference remains a limited
 syntax scan and is not complete effect parity evidence.
+
+
+### Phase 25.3 continuation — propagate function raises into exported summaries
+
+Exported function raise sets now include escaping variants from ordinary local
+function calls. The writer walks the function-call closure, preserves
+source-order uniqueness, and applies each caller's exact recover arms before
+adding a callee variant. A source-free provider fixture verifies `forward`
+inherits `Failure.Bad` and `Failure.Other` from `signal`, while the `Caught`
+variant recovered inside `signal` stays out of both exported summaries.
+
+All twelve Java unit-test classes pass under ABI-v9 defaults and staged
+ABI-v10; `git diff --check` passes. This covers ordinary function-call closure;
+method raises and native source-free execution remain open.

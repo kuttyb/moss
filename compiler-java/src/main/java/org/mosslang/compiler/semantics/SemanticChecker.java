@@ -1741,7 +1741,7 @@ public class SemanticChecker {
         }
     }
 
-    private boolean containsFunctionCall(String expression, String functionName) {
+    public static boolean containsFunctionCall(String expression, String functionName) {
         if (expression == null || functionName == null) return false;
         return java.util.regex.Pattern.compile("(?<![A-Za-z0-9_])"
                 + java.util.regex.Pattern.quote(functionName) + "\\s*\\(")

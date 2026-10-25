@@ -111,6 +111,8 @@ public final class ProjectBuilderMetadataTest {
                 + "    raise Failure.Bad\n"
                 + "  else:\n"
                 + "    raise Failure.Other\n"
+                + "export fn forward(enabled: Bool):\n"
+                + "  signal(enabled)\n"
                 + "fn main():\n"
                 + "  pass\n", "multi-raise-export.moss");
         new org.mosslang.compiler.semantics.CheckedProgram(program).run();
@@ -124,6 +126,13 @@ public final class ProjectBuilderMetadataTest {
         String raiseSet = "raise_set=enum:provider__Failure:Bad,enum:provider__Failure:Other";
         if (!text.contains(raiseSet) || text.contains("enum:provider__Failure:Caught")) {
             throw new AssertionError("source-free function metadata omitted a raised variant: " + text);
+        }
+        String forwardRecord = text.lines().filter(line -> line.contains("forward ")
+                        && line.contains("raise_set="))
+                .findFirst().orElse("");
+        if (!forwardRecord.contains(raiseSet)) {
+            throw new AssertionError("source-free function metadata omitted transitive raise variants: "
+                    + forwardRecord);
         }
         Path scratch = Path.of("tmp");
         Files.createDirectories(scratch);
@@ -140,6 +149,15 @@ public final class ProjectBuilderMetadataTest {
                     || imported.sourceFreeRaiseVariants.contains("provider__Failure.Caught")) {
                 throw new AssertionError("source-free loader did not restore every raise variant: "
                         + imported.sourceFreeRaiseVariants);
+            }
+            org.mosslang.compiler.ast.Function importedForward = consumer.functions.stream()
+                    .filter(function -> function.name.equals("provider.forward"))
+                    .findFirst().orElseThrow(() -> new AssertionError("forward function was not imported"));
+            if (!importedForward.sourceFreeRaiseVariants.contains("provider__Failure.Bad")
+                    || !importedForward.sourceFreeRaiseVariants.contains("provider__Failure.Other")
+                    || importedForward.sourceFreeRaiseVariants.contains("provider__Failure.Caught")) {
+                throw new AssertionError("source-free loader did not restore transitive raise variants: "
+                        + importedForward.sourceFreeRaiseVariants);
             }
         } finally {
             Files.deleteIfExists(interfaceFile);
