@@ -345,6 +345,22 @@ public class FastInterpreter {
         return eventId;
     }
 
+    private int traceMethodEvent(Method method, String event, int line, String detail) {
+        if (!trace) return 0;
+        eventId++;
+        String function = method.owner + "." + method.name;
+        String source = method.sourceFile == null ? "" : method.sourceFile;
+        String identity = "method:" + function + "@" + method.line;
+        traceEvent("{\"event_id\":" + eventId + ",\"event\":\"" + event
+                + "\",\"function\":\"" + jsonEscape(function)
+                + "\",\"source_file\":\"" + jsonEscape(source)
+                + "\",\"semantic_identity\":\"" + jsonEscape(identity)
+                + "\",\"line\":" + line + traceContextFields()
+                + ",\"depth\":" + traceParentStack.size()
+                + (detail == null ? "" : ",\"detail\":\"" + jsonEscape(detail) + "\"") + "}");
+        return eventId;
+    }
+
     private void endTraceLoopIteration() {
         if (!trace) return;
         traceParentStack.pop();
@@ -1676,6 +1692,7 @@ public class FastInterpreter {
                         }
                         for (Method m : obj.methods) {
                             if (m.name.equals(methodName)) {
+                                if (locals.containsKey(recvName)) traceLocalRead(recvName);
                                 Map<String, Value> mLocals = new HashMap<>();
                                 if (recvVal.raw instanceof Map<?, ?> fm) {
                                     for (Map.Entry<?, ?> entry : fm.entrySet()) {
@@ -1688,14 +1705,49 @@ public class FastInterpreter {
                                     mLocals.put(m.params.get(i).name, evaluatedArgs.get(i));
                                 }
                                 Value res = Value.ofUnit();
+                                String oldFunction = traceFunction;
+                                String oldSource = traceSourceFile;
+                                String oldIdentity = traceSemanticIdentity;
+                                int oldLine = traceLine;
+                                int oldDepth = traceDepth;
+                                String methodFunction = m.owner + "." + m.name;
+                                int enterId = traceMethodEvent(m, "MethodEnter", m.line, null);
+                                if (trace && enterId != 0) {
+                                    traceParentStack.push(enterId);
+                                    traceCallStack.push(enterId);
+                                }
+                                traceFunction = methodFunction;
+                                traceSourceFile = m.sourceFile == null ? "" : m.sourceFile;
+                                traceSemanticIdentity = "method:" + methodFunction + "@" + m.line;
+                                boolean explicitReturn = false;
+                                boolean completed = false;
                                 try {
-                                    res = evalBlock(m.body, 0, m.body.size(), mLocals, null, m.name, 0);
+                                    res = evalBlock(m.body, 0, m.body.size(), mLocals, null, methodFunction,
+                                            trace && enterId != 0 ? 1 : 0);
                                     if (m.resultExpression != null && !m.resultExpression.isEmpty()) {
                                         res = evalExpr(m.resultExpression, mLocals, null);
                                     }
+                                    completed = true;
                                 } catch (ReturnSignal rs) {
                                     res = rs.returnValue;
+                                    explicitReturn = true;
+                                    completed = true;
                                 } finally {
+                                    if (completed) {
+                                        if (!explicitReturn)
+                                            traceMethodEvent(m, "Return", m.resultLine > 0 ? m.resultLine : m.line,
+                                                    res.toString());
+                                        traceMethodEvent(m, "MethodExit", m.resultLine > 0 ? m.resultLine : m.line, null);
+                                    }
+                                    if (trace && enterId != 0) {
+                                        traceCallStack.pop();
+                                        traceParentStack.pop();
+                                    }
+                                    traceFunction = oldFunction;
+                                    traceSourceFile = oldSource;
+                                    traceSemanticIdentity = oldIdentity;
+                                    traceLine = oldLine;
+                                    traceDepth = oldDepth;
                                     for (int i = 0; i < m.params.size() && i < argList.size(); i++) {
                                         String rawArg = argList.get(i).trim();
                                         String pName = m.params.get(i).name;

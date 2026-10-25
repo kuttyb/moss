@@ -13751,3 +13751,15 @@ probe matches C++ trace JSON and stdout exactly.
 Validation: all eleven Java unit-test classes pass in ABI-v9 and staged
 ABI-v10; feedback validation and `git diff --check` pass. Nested recovery and
 other error variants remain unverified. Phase 25.3 remains in progress.
+
+### Phase 25.3 continuation — object method call tracing
+
+Java Fast Debug now records receiver reads and emits `MethodEnter`, explicit or
+implicit `Return`, and `MethodExit` events for interpreted object methods. A
+checked `Box.get()` trace, including the nested field read and call context,
+matches C++ exactly. Other receiver forms, mutating methods, and exceptional
+exits remain unverified.
+
+Validation: all eleven Java unit-test classes pass in ABI-v9 and staged
+ABI-v10; feedback validation and `git diff --check` pass. Phase 25.3 remains
+in progress.

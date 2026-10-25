@@ -21,6 +21,7 @@ public final class FastInterpreterTest {
         testFunctionCallTraceCarriesCallContext();
         testCollectionTraceUsesCompactSummary();
         testRaiseRecoverTraceCarriesErrorIdentity();
+        testObjectMethodTraceCarriesCallContext();
         System.out.println("FastInterpreterTest PASSED.");
     }
 
@@ -312,6 +313,36 @@ public final class FastInterpreterTest {
                 + "{\"event_id\":3,\"event\":\"LocalRead\",\"function\":\"main\",\"source_file\":\"fast-interpreter-recover-trace.moss\",\"semantic_identity\":\"main@3\",\"line\":7,\"depth\":0,\"detail\":\"code\"}\n";
         if (!expected.equals(events) || !"2\n".equals(stdout.toString(StandardCharsets.UTF_8))) {
             throw new AssertionError("raise/recover trace omitted error identity: " + events);
+        }
+    }
+
+    private static void testObjectMethodTraceCarriesCallContext() {
+        var program = Parser.parseSource(""
+                + "type Box:\n"
+                + "  value: Int\n"
+                + "  fn get() -> Int:\n"
+                + "    return value\n"
+                + "fn main():\n"
+                + "  let box = Box(value: 7)\n"
+                + "  echo box.get()\n",
+                "fast-interpreter-method-trace.moss");
+        new CheckedProgram(program).run();
+
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+        ByteArrayOutputStream trace = new ByteArrayOutputStream();
+        new FastInterpreter(program, true,
+                new PrintStream(stdout, true, StandardCharsets.UTF_8),
+                new PrintStream(trace, true, StandardCharsets.UTF_8)).run();
+        String events = trace.toString(StandardCharsets.UTF_8);
+        String expected = ""
+                + "{\"event_id\":1,\"event\":\"LocalWrite\",\"function\":\"main\",\"source_file\":\"fast-interpreter-method-trace.moss\",\"semantic_identity\":\"main@5\",\"line\":6,\"depth\":0,\"detail\":\"box\",\"after\":\"Box\"}\n"
+                + "{\"event_id\":2,\"event\":\"LocalRead\",\"function\":\"main\",\"source_file\":\"fast-interpreter-method-trace.moss\",\"semantic_identity\":\"main@5\",\"line\":7,\"depth\":0,\"detail\":\"box\"}\n"
+                + "{\"event_id\":3,\"event\":\"MethodEnter\",\"function\":\"Box.get\",\"source_file\":\"fast-interpreter-method-trace.moss\",\"semantic_identity\":\"method:Box.get@3\",\"line\":3,\"depth\":0}\n"
+                + "{\"event_id\":4,\"event\":\"LocalRead\",\"function\":\"Box.get\",\"source_file\":\"fast-interpreter-method-trace.moss\",\"semantic_identity\":\"method:Box.get@3\",\"line\":4,\"parent_event_id\":3,\"call_event_id\":3,\"depth\":1,\"detail\":\"value\"}\n"
+                + "{\"event_id\":5,\"event\":\"Return\",\"function\":\"Box.get\",\"source_file\":\"fast-interpreter-method-trace.moss\",\"semantic_identity\":\"method:Box.get@3\",\"line\":4,\"parent_event_id\":3,\"call_event_id\":3,\"depth\":1,\"detail\":\"7\"}\n"
+                + "{\"event_id\":6,\"event\":\"MethodExit\",\"function\":\"Box.get\",\"source_file\":\"fast-interpreter-method-trace.moss\",\"semantic_identity\":\"method:Box.get@3\",\"line\":3,\"parent_event_id\":3,\"call_event_id\":3,\"depth\":1}\n";
+        if (!expected.equals(events) || !"7\n".equals(stdout.toString(StandardCharsets.UTF_8))) {
+            throw new AssertionError("method trace omitted call context: " + events);
         }
     }
 }
