@@ -15,6 +15,8 @@ public class CheckedBodyCodecTest {
         testSimpleReturnEncode();
         testArithmeticHashDeterminism();
         testSimpleReturnEncodeDecodeRoundTrip();
+        testCanonicalCxxArithmeticBody();
+        testCheckedBodyUtf8ByteFraming();
         testComplexStatementsRoundTrip();
         testMossiSerializationAndParsing();
         testMossiUtf8ByteFraming();
@@ -94,6 +96,41 @@ public class CheckedBodyCodecTest {
         String hash2 = CheckedBodyCodec.computeCheckedBodyHashV1(decoded);
         if (!hash1.equals(hash2)) {
             throw new AssertionError("Hash mismatch after decode: " + hash1 + " vs " + hash2);
+        }
+    }
+
+    private static void testCanonicalCxxArithmeticBody() {
+        TypeRef intType = TypeRef.primitive("int");
+        CheckedExpr multiply = CheckedExpr.binary(CheckedBinaryOp.Mul,
+                CheckedExpr.parameter(0, intType), CheckedExpr.integerLiteral(2, intType), intType);
+        CheckedExpr addition = CheckedExpr.binary(CheckedBinaryOp.Add,
+                multiply, CheckedExpr.integerLiteral(20, intType), intType);
+        List<CheckedStmt> statements = List.of(CheckedStmt.returnStmt(addition));
+        String body = CheckedBodyCodec.encodeCheckedBodyV1(statements);
+        String expectedHash = "body-semantic-v1:sha256:d1efb33af28881f27deb3485d4587a8ed60b3a59b57acf2015f8b98f96ba536a";
+        if (!expectedHash.equals(CheckedBodyCodec.computeCheckedBodyHashV1(statements))) {
+            throw new AssertionError("Java checked arithmetic bytes differ from the C++ canonical body fixture: " + body);
+        }
+        List<CheckedStmt> decoded = CheckedBodyCodec.decodeCheckedBody(body);
+        if (decoded.size() != 1 || decoded.get(0).kind != CheckedStmtKind.Return
+                || decoded.get(0).expr.kind != CheckedExprKind.Binary
+                || decoded.get(0).expr.binaryOp != CheckedBinaryOp.Add
+                || !body.equals(CheckedBodyCodec.encodeCheckedBodyV1(decoded))) {
+            throw new AssertionError("C++ canonical arithmetic body did not round trip in Java");
+        }
+    }
+
+    private static void testCheckedBodyUtf8ByteFraming() {
+        TypeRef stringType = TypeRef.primitive("string");
+        List<CheckedStmt> statements = List.of(CheckedStmt.returnStmt(
+                CheckedExpr.stringLiteral("café", stringType)));
+        String body = CheckedBodyCodec.encodeCheckedBodyV1(statements);
+        if (!body.contains("5:café")) {
+            throw new AssertionError("checked-body field lengths must count UTF-8 bytes: " + body);
+        }
+        List<CheckedStmt> decoded = CheckedBodyCodec.decodeCheckedBody(body);
+        if (!decoded.equals(statements) || !body.equals(CheckedBodyCodec.encodeCheckedBodyV1(decoded))) {
+            throw new AssertionError("UTF-8 checked-body literal did not round trip canonically");
         }
     }
 
@@ -229,7 +266,9 @@ public class CheckedBodyCodecTest {
     private static void testCheckedBodyReaderBoundsAndTrailingData() {
         String hostileCount = CheckedBodyCodec.HEADER + "10:2147483647";
         assertCheckedBodyRejects(hostileCount, "unbounded statement count");
-        String trailing = CheckedBodyCodec.encodeCheckedBodyV1(List.of()) + "garbage";
+        CheckedStmt passForTrailing = new CheckedStmt();
+        passForTrailing.kind = CheckedStmtKind.Pass;
+        String trailing = CheckedBodyCodec.encodeCheckedBodyV1(List.of(passForTrailing)) + "garbage";
         assertCheckedBodyRejects(trailing, "trailing body data");
     }
 
@@ -441,7 +480,7 @@ public class CheckedBodyCodecTest {
         CheckedStmt pass = new CheckedStmt();
         pass.kind = CheckedStmtKind.Pass;
         String checkedIr = CheckedBodyCodec.encodeCheckedBodyV1(List.of(pass));
-        if (!"moss-checked-body-v1\n1:12:131:01:01:01:0".equals(checkedIr)) {
+        if (!"moss-checked-body-v1\n1:12:13".equals(checkedIr)) {
             throw new AssertionError("unexpected canonical checked-body fixture: " + checkedIr);
         }
         AbiV10Records.CheckedBodyRecord body = new AbiV10Records.CheckedBodyRecord();
@@ -449,7 +488,7 @@ public class CheckedBodyCodecTest {
         body.checkedIrBytes = checkedIr;
         body.semanticHash = "body-semantic-v1:sha256:" + CheckedBodyCodec.sha256Hex(checkedIr);
         MossiRecord record = body.record();
-        String expectedPayloadHex = "010000000f636865636b65642d626f64792d7631000000236d6f64756c652d76313a626f78657340312e302e303a3a426f7865733a3a667265736800000058626f64792d73656d616e7469632d76313a7368613235363a37613661626537303466613234653835666165396263316632393764373962646566633561313162633563386535353731353237346139663066643932363161000000286d6f73732d636865636b65642d626f64792d76310a313a31323a3133313a30313a30313a30313a3000000000";
+        String expectedPayloadHex = "010000000f636865636b65642d626f64792d7631000000236d6f64756c652d76313a626f78657340312e302e303a3a426f7865733a3a667265736800000058626f64792d73656d616e7469632d76313a7368613235363a333063653265653465633939316139373038633461386137323232313335626563653435663964653362646563393139336436633433373235343938303965380000001c6d6f73732d636865636b65642d626f64792d76310a313a31323a313300000000";
         if (!expectedPayloadHex.equals(java.util.HexFormat.of().formatHex(record.payloadBytes()))
                 || !record.id.equals("checked-body-v1:" + body.callableId)) {
             throw new AssertionError("Java checked-body record differs from canonical C++ ABI-v10 bytes");
@@ -510,7 +549,9 @@ public class CheckedBodyCodecTest {
                 module, templateId, "provider.moss", 1);
         AbiV10Records.NominalTemplate template = AbiV10Records.NominalTemplate.create(
                 module, "Box", List.of(), provenance.provenanceId());
-        String ir = CheckedBodyCodec.encodeCheckedBodyV1(List.of());
+        CheckedStmt pass = new CheckedStmt();
+        pass.kind = CheckedStmtKind.Pass;
+        String ir = CheckedBodyCodec.encodeCheckedBodyV1(List.of(pass));
         String bodyHash = "body-semantic-v1:sha256:" + CheckedBodyCodec.sha256Hex(ir);
         AbiV10Records.CheckedBodyRecord body = new AbiV10Records.CheckedBodyRecord();
         body.callableId = callable;
@@ -584,7 +625,9 @@ public class CheckedBodyCodecTest {
         }
 
         String callable = module + "::make";
-        String ir = CheckedBodyCodec.encodeCheckedBodyV1(List.of());
+        CheckedStmt pass = new CheckedStmt();
+        pass.kind = CheckedStmtKind.Pass;
+        String ir = CheckedBodyCodec.encodeCheckedBodyV1(List.of(pass));
         String bodyHash = "body-semantic-v1:sha256:" + CheckedBodyCodec.sha256Hex(ir);
         AbiV10Records.CheckedBodyRecord body = new AbiV10Records.CheckedBodyRecord();
         body.callableId = callable;

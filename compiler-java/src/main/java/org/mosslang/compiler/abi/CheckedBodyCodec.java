@@ -36,7 +36,7 @@ public class CheckedBodyCodec {
 
     public static void encodeField(StringBuilder out, String value) {
         String val = value != null ? value : "";
-        out.append(val.length()).append(":").append(val);
+        out.append(val.getBytes(StandardCharsets.UTF_8).length).append(":").append(val);
     }
 
     public static void encodeType(StringBuilder out, TypeRef type) {
@@ -64,7 +64,9 @@ public class CheckedBodyCodec {
         }
 
         encodeField(out, String.valueOf(type.fieldSubstitutions().size()));
-        for (TypeRef.FieldSub fs : type.fieldSubstitutions()) {
+        List<TypeRef.FieldSub> substitutions = new ArrayList<>(type.fieldSubstitutions());
+        substitutions.sort(Comparator.comparing(TypeRef.FieldSub::name));
+        for (TypeRef.FieldSub fs : substitutions) {
             encodeField(out, fs.name());
             encodeType(out, fs.type());
         }
@@ -79,78 +81,191 @@ public class CheckedBodyCodec {
 
         switch (expr.kind) {
             case Parameter -> {
+                requireExpr(expr.ordinal >= 0 && expr.operands.isEmpty() && expr.literalValue.isEmpty(),
+                        "invalid checked parameter node");
                 encodeField(out, String.valueOf(expr.ordinal));
             }
             case IntegerLiteral -> {
+                requireExpr(expr.operands.isEmpty() && expr.literalValue.matches("-?[0-9]+"),
+                        "invalid checked integer literal");
                 encodeField(out, expr.literalValue);
             }
-            case FloatLiteral, StringLiteral -> {
+            case FloatLiteral -> {
+                requireExpr(expr.operands.isEmpty() && !expr.literalValue.isEmpty(),
+                        "invalid checked float literal");
+                encodeField(out, expr.literalValue);
+            }
+            case StringLiteral -> {
+                requireExpr(expr.operands.isEmpty(), "invalid checked string literal");
                 encodeField(out, expr.literalValue);
             }
             case BoolLiteral -> {
+                requireExpr(expr.operands.isEmpty()
+                        && ("true".equals(expr.literalValue) || "false".equals(expr.literalValue)),
+                        "invalid checked boolean literal");
                 encodeField(out, "true".equals(expr.literalValue) ? "1" : "0");
             }
             case LocalRead -> {
+                requireExpr(expr.ordinal >= 0 && expr.operands.isEmpty() && expr.literalValue.isEmpty(),
+                        "invalid checked local read");
                 encodeField(out, String.valueOf(expr.ordinal));
             }
             case Add -> {
+                requireExpr(expr.operands.size() == 2 && expr.literalValue.isEmpty(), "invalid checked addition node");
                 encodeField(out, "2");
-                for (CheckedExpr child : expr.operands) {
-                    encodeExpr(out, child);
-                }
+                for (CheckedExpr child : expr.operands) encodeExpr(out, child);
             }
             case Unary -> {
+                requireExpr(expr.operands.size() == 1 && expr.literalValue.isEmpty(), "invalid unary expression node");
                 encodeField(out, String.valueOf(expr.unaryOp.tag));
                 encodeExpr(out, expr.operands.get(0));
             }
             case Binary -> {
+                requireExpr(expr.operands.size() == 2 && expr.literalValue.isEmpty(), "invalid binary expression node");
                 encodeField(out, String.valueOf(expr.binaryOp.tag));
                 encodeExpr(out, expr.operands.get(0));
                 encodeExpr(out, expr.operands.get(1));
             }
             case Field -> {
+                requireExpr(expr.operands.size() == 1 && !expr.semanticTargetId.isEmpty()
+                        && expr.literalValue.isEmpty(), "invalid checked field node");
                 encodeField(out, expr.semanticTargetId);
                 encodeField(out, String.valueOf(expr.memberOrdinal));
+                encodeExpr(out, expr.operands.get(0));
             }
-            default -> {
-                encodeField(out, expr.literalValue != null ? expr.literalValue : "");
+            case Call -> {
+                requireExpr(!expr.semanticTargetId.isEmpty() && expr.literalValue.isEmpty(), "invalid checked call node");
+                encodeField(out, expr.semanticTargetId);
+                encodeField(out, String.valueOf(expr.operands.size()));
+                for (CheckedExpr child : expr.operands) encodeExpr(out, child);
             }
+            case VectorLiteral -> {
+                requireExpr(expr.literalValue.isEmpty() && expr.semanticTargetId.isEmpty(), "invalid checked vector literal");
+                encodeField(out, String.valueOf(expr.operands.size()));
+                for (CheckedExpr child : expr.operands) encodeExpr(out, child);
+            }
+            case MapLiteral -> {
+                requireExpr(expr.operands.size() % 2 == 0 && expr.operands.size() / 2 <= 32
+                        && expr.literalValue.isEmpty(), "invalid checked map literal");
+                encodeField(out, String.valueOf(expr.operands.size() / 2));
+                for (CheckedExpr child : expr.operands) encodeExpr(out, child);
+            }
+            case CollectionCount -> {
+                requireExpr(expr.operands.size() == 1
+                        && "builtin:collection-count-v1".equals(expr.semanticTargetId), "invalid checked collection count");
+                encodeField(out, expr.semanticTargetId);
+                encodeExpr(out, expr.operands.get(0));
+            }
+            case Index -> {
+                requireExpr(expr.operands.size() == 2 && "builtin:index".equals(expr.semanticTargetId),
+                        "invalid checked index expression");
+                encodeField(out, expr.semanticTargetId);
+                encodeExpr(out, expr.operands.get(0));
+                encodeExpr(out, expr.operands.get(1));
+            }
+            case CollectionPush -> {
+                requireExpr(expr.operands.size() == 2 && expr.type.kind() == TypeKind.Unit
+                        && "builtin:vector-push-v1".equals(expr.semanticTargetId), "invalid checked collection push");
+                encodeField(out, expr.semanticTargetId);
+                encodeField(out, "2");
+                for (CheckedExpr child : expr.operands) encodeExpr(out, child);
+            }
+            default -> throw new IllegalArgumentException(
+                    "Java checked-body encoder does not support expression kind " + expr.kind);
         }
     }
 
     public static void encodeStmt(StringBuilder out, CheckedStmt stmt) {
-        if (stmt == null) return;
         encodeField(out, String.valueOf(stmt.kind.tag));
-        encodeField(out, String.valueOf(stmt.localOrdinal));
-
-        if (stmt.expr != null) {
-            encodeField(out, "1");
-            encodeExpr(out, stmt.expr);
-        } else {
-            encodeField(out, "0");
-        }
-
-        encodeField(out, String.valueOf(stmt.operands.size()));
-        for (CheckedExpr op : stmt.operands) {
-            encodeExpr(out, op);
-        }
-
-        encodeField(out, String.valueOf(stmt.body.size()));
-        for (CheckedStmt s : stmt.body) {
-            encodeStmt(out, s);
+        switch (stmt.kind) {
+            case Let, Var -> {
+                requireStmt(stmt.expr != null && stmt.type != null, "invalid let/var statement");
+                encodeField(out, String.valueOf(stmt.localOrdinal));
+                encodeType(out, stmt.type);
+                encodeExpr(out, stmt.expr);
+            }
+            case Assign -> {
+                requireStmt(stmt.expr != null, "invalid assignment statement");
+                encodeField(out, String.valueOf(stmt.localOrdinal));
+                encodeExpr(out, stmt.expr);
+            }
+            case ExprStmt -> {
+                requireStmt(stmt.expr != null, "invalid expression statement");
+                encodeExpr(out, stmt.expr);
+            }
+            case Return -> {
+                encodeField(out, stmt.expr == null ? "0" : "1");
+                if (stmt.expr != null) encodeExpr(out, stmt.expr);
+            }
+            case Reply -> {
+                requireStmt(stmt.expr != null, "invalid reply statement");
+                encodeExpr(out, stmt.expr);
+            }
+            case If -> {
+                requireStmt(stmt.expr != null, "invalid if statement");
+                encodeExpr(out, stmt.expr);
+                encodeField(out, String.valueOf(stmt.thenBranch.size()));
+                for (CheckedStmt child : stmt.thenBranch) encodeStmt(out, child);
+                encodeField(out, String.valueOf(stmt.elseBranch.size()));
+                for (CheckedStmt child : stmt.elseBranch) encodeStmt(out, child);
+            }
+            case While -> {
+                requireStmt(stmt.expr != null, "invalid while statement");
+                encodeExpr(out, stmt.expr);
+                encodeField(out, String.valueOf(stmt.body.size()));
+                for (CheckedStmt child : stmt.body) encodeStmt(out, child);
+            }
+            case For -> {
+                requireStmt(stmt.expr != null && stmt.type != null && !stmt.body.isEmpty(), "invalid for statement");
+                encodeField(out, String.valueOf(stmt.localOrdinal));
+                encodeType(out, stmt.type);
+                encodeExpr(out, stmt.expr);
+                encodeField(out, String.valueOf(stmt.body.size()));
+                for (CheckedStmt child : stmt.body) encodeStmt(out, child);
+            }
+            case IfJoin -> {
+                requireStmt(stmt.expr != null && stmt.type != null && stmt.operands.size() == 2,
+                        "invalid if-join statement");
+                encodeField(out, String.valueOf(stmt.localOrdinal));
+                encodeType(out, stmt.type);
+                encodeExpr(out, stmt.expr);
+                encodeExpr(out, stmt.operands.get(0));
+                encodeExpr(out, stmt.operands.get(1));
+            }
+            case Pass -> {
+                requireStmt(stmt.expr == null && stmt.type == null && stmt.localOrdinal == 0
+                        && stmt.operands.isEmpty() && stmt.thenBranch.isEmpty()
+                        && stmt.elseBranch.isEmpty() && stmt.body.isEmpty()
+                        && stmt.semanticTargetId.isEmpty() && stmt.memberOrdinal == 0
+                        && stmt.memberName.isEmpty(), "invalid pass statement");
+            }
+            default -> throw new IllegalArgumentException(
+                    "Java checked-body encoder does not support statement kind " + stmt.kind);
         }
     }
 
     public static String encodeCheckedBodyV1(List<CheckedStmt> statements) {
         StringBuilder out = new StringBuilder();
         out.append(HEADER);
-        encodeField(out, String.valueOf(statements != null ? statements.size() : 0));
-        if (statements != null) {
-            for (CheckedStmt s : statements) {
-                encodeStmt(out, s);
-            }
+        if (statements == null || statements.isEmpty()) {
+            throw new IllegalArgumentException("checked body must contain at least one statement");
+        }
+        encodeField(out, String.valueOf(statements.size()));
+        if (statements.size() == 1 && statements.get(0).kind == CheckedStmtKind.Return) {
+            encodeField(out, "return");
+            if (statements.get(0).expr != null) encodeExpr(out, statements.get(0).expr);
+        } else {
+            for (CheckedStmt statement : statements) encodeStmt(out, statement);
         }
         return out.toString();
+    }
+
+    private static void requireExpr(boolean valid, String message) {
+        if (!valid) throw new IllegalArgumentException(message);
+    }
+
+    private static void requireStmt(boolean valid, String message) {
+        if (!valid) throw new IllegalArgumentException(message);
     }
 
     public static List<CheckedStmt> decodeCheckedBody(String bytes) {

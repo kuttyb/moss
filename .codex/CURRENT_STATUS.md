@@ -13344,3 +13344,21 @@ Validation: all ten Java unit-test classes pass after clean builds in default
 ABI-v9 and staged ABI-v10 modes. `python3 tests/tooling/check_agent_feedback.py`
 and `git diff --check` pass. No native execution, Rust compilation, Margo
 provider-consumer build, SDK gate, or full `make check` was run. This checkpoint is pushed at `f5693c57`; overall Phase 25.3 remains incomplete.
+
+### Phase 25.3 audit — canonical checked-body-v1 wire framing
+
+An ABI audit found that Java's checked-body encoder/reader were self-consistent
+but not using C++'s canonical statement framing. Java also measured field lengths
+in UTF-16 characters, and its default expression case encoded unsupported node
+kinds as literal strings. Java now follows the C++ root-return/statement layouts
+for the supported node subset, orders nominal field substitutions canonically,
+counts UTF-8 bytes, and rejects unsupported checked IR kinds. The checked body
+for `return x * 2 + 20` now reproduces the C++ fixture hash
+`body-semantic-v1:sha256:d1efb33af28881f27deb3485d4587a8ed60b3a59b57acf2015f8b98f96ba536a`.
+A non-ASCII String literal round-trip verifies byte lengths. Full C++ checked-body
+node coverage and native Java provider-consumer validation remain open.
+
+Validation after these edits: all ten Java unit-test classes pass after clean
+builds in default ABI-v9 and staged ABI-v10 modes. No C++ consumer execution,
+native Rust compilation, Margo provider-consumer build, SDK gate, or full
+`make check` was run. Overall Phase 25.3 remains incomplete.
