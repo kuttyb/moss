@@ -156,6 +156,24 @@ public final class SourceFreeObjectMetadataTest {
                         + error.getCode(), error);
             }
         }
+        Program forwardedConsume = Parser.parseSource(""
+                + "fn forward(point: provider__Point, values: Vector[Int]):\n"
+                + "  point.replace(values)\n"
+                + "fn caller(point: provider__Point, values: Vector[Int]) -> Vector[Int]:\n"
+                + "  forward(point, values)\n"
+                + "  return values\n"
+                + "fn main():\n"
+                + "  pass\n", "consumer-forwarded-ownership.moss");
+        Main.loadMossiFunctions(interfaceFile, "provider", forwardedConsume);
+        try {
+            new SemanticChecker(forwardedConsume).run();
+            throw new AssertionError("source-free method CONSUME must propagate through a function helper");
+        } catch (CompileError error) {
+            if (!"OWNERSHIP_USE_AFTER_CONSUME".equals(error.getCode())) {
+                throw new AssertionError("expected OWNERSHIP_USE_AFTER_CONSUME, got "
+                        + error.getCode(), error);
+            }
+        }
         Program wrongReturnConsumer = Parser.parseSource(""
                 + "fn wrong_return(point: provider__Point, values: Vector[Int]) -> Int:\n"
                 + "  return point.replace(values)\n"
