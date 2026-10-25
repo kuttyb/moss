@@ -1,3 +1,16 @@
+## Phase 25.4 B1 closeout — Moss compiler performance baseline — UNCONDITIONAL GO — 2026-10-25
+
+Phase 25.4 B1 delivers the portable Moss compiler torture suite (v1.0.0, 54 frozen fixtures)
+and establishes the authoritative C++ performance baseline using optimized `moss-opt` (-O2).
+Key hardening deliverables:
+1. `benchmarks/compiler_torture/verify.py`: 100% SHA256 integrity and whole-directory tree hash verification.
+2. `src/semantic_checker.cpp`: strictly disjoint top-level sequential stage timers and specialization counters, bounding unattributed time to < 2% across all workloads.
+3. Specialization attribution: W2 vs W3 differential at N=32 (+1,261 ms) is empirically explained by exclusive specialization body synthesis (567 ms in W2 vs 1.4 ms in W3) and specialization effect closure (283 ms in W2 vs 0.6 ms in W3).
+4. `REPORT.md`: 100% data-driven reporting strictly separating Measured Facts, Derived Estimates, and Hypotheses, with verified 57/57 invariant consistency via `check_report_consistency.py`.
+5. Original raw baseline preserved in `results/results_b1_initial.csv`.
+6. Independent Adversarial Architect Audit recorded with UNCONDITIONAL GO in `docs/phase25/PHASE_25_4_B1_ARCHITECT_AUDIT.md`.
+All work committed on branch `phase25-4-cpp-torture-b1`. Ready for Phase 25.4 B2.
+
 ## Phase 25.1 R1 next-slice probes — shadowed returns and generic For — 2026-10-21
 
 Read-only checker probes on the valid source-free corpus rows distinguish two
