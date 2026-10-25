@@ -424,3 +424,22 @@ example `Box`) instead of lowercasing it, while canonicalizing built-in and
 collection names recursively. The nested-field receiver query now returns the
 same `self: Box, WRITE` row under C++ and Java. All eleven Java unit-test
 classes pass under ABI-v9; broader query schema/data parity remains open.
+
+
+### Follow-up — method receiver consumption after moving an owned field
+
+`Box.take_sink` moves `self.sink` into an owned local and calls a mutating
+method on that local. The C++ checker reports the receiver as `CONSUME` and
+rejects a later use of the caller's `box`; Java previously reported `READ` and
+accepted the use. Java now infers receiver consumption from a direct owned
+field move, propagates the mode through sibling and nested field method calls,
+consumes the call receiver, serializes `CONSUME` in effects queries, and emits
+the method receiver by value.
+
+Focused C++/Java checks agree on the use-after-consume diagnostic, and their
+effects queries both report `self: Box, CONSUME`. The Java codegen unit test
+checks the by-value receiver. All eleven Java test classes pass under ABI-v9
+and staged ABI-v10. No Rust compilation or native execution was run. Nested
+consuming receiver expressions outside the direct receiver path,
+control-flow-sensitive field moves, and generic/cross-module summaries remain
+open.

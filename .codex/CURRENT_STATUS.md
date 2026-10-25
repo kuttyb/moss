@@ -15082,3 +15082,19 @@ same `self: Box, WRITE` row as C++.
 Validation: C++ and Java query rows agree on the nested receiver case; all
 eleven Java unit-test classes pass under ABI-v9. Broader query schema/data
 parity remains open.
+
+
+### Phase 25.3 continuation — infer consumed method receivers from moved fields
+
+A minimal `Box.take_sink` method moves its owned `self.sink` field into a local
+and calls a mutating method on that local. C++ rejected a later use of the
+caller's `box` and reported the method receiver as `CONSUME`; Java previously
+accepted the use and generated a borrowed `&self` receiver. Java now infers and
+propagates receiver `CONSUME`, applies that transfer at method call sites,
+reports it in effects queries, and emits a by-value Rust receiver.
+
+The focused source now has matching C++/Java rejection and effects evidence;
+Java receiver codegen is covered by a unit assertion. Both eleven-class Java
+test runs pass under ABI-v9 and staged ABI-v10. Native Rust compilation was not
+run. Nested consuming method receivers, control-flow-sensitive moves, and
+generic/cross-module receiver summaries remain open.

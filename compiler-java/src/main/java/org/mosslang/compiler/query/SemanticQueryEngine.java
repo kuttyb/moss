@@ -2004,11 +2004,11 @@ public class SemanticQueryEngine {
             for (ObjectType object : program.objects) {
                 for (Method method : object.methods) {
                     if (!(method.name.equals(baseName) || (object.name + "." + method.name).equals(baseName))) continue;
-                    boolean receiverWrite = method.receiverAccessMode == AccessMode.Write;
                     StringBuilder sb = new StringBuilder("[\n")
                             .append("      {\"name\": \"self\", \"type\": \"")
                             .append(canonicalQueryType(object.name, program)).append("\", \"effect\": \"")
-                            .append(receiverWrite ? "WRITE" : "READ").append("\"}");
+                            .append(method.receiverAccessMode.name().toUpperCase(Locale.ROOT))
+                            .append("\"}");
                     for (int index = 0; index < method.params.size(); index++) {
                         Param parameter = method.params.get(index);
                         String parameterEffect = index < method.parameterAccessModes.size()

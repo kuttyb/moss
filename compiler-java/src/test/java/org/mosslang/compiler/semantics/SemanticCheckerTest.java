@@ -21,6 +21,7 @@ public class SemanticCheckerTest {
         testGenericNumericOperationRetainsOpenTypeUntilSpecialization();
         testMixedIntFloatComparisons();
         testObjectMethodAccessModesAreRetained();
+        testMovingObjectFieldConsumesMethodReceiver();
         testSiblingMutatorReceiverModeAndUnitCodegen();
         testForLoopValuesCanFlowToObjectMethodArguments();
         testForLoopBindingDoesNotEscapeItsLoop();
@@ -675,6 +676,63 @@ public class SemanticCheckerTest {
                 || rust.contains("pub fn run(&mut self) -> i64")) {
             throw new AssertionError("unit sibling-mutator method must retain WRITE receiver and unit result: " + rust);
         }
+    }
+
+    private static void testMovingObjectFieldConsumesMethodReceiver() {
+        Program program = Parser.parseSource(""
+                + "type Sink:\n"
+                + "  value: Int\n"
+                + "  fn bump():\n"
+                + "    self.value = self.value + 1\n"
+                + "type Box:\n"
+                + "  sink: Sink\n"
+                + "  fn take_sink():\n"
+                + "    target = self.sink\n"
+                + "    target.bump()\n"
+                + "fn main():\n"
+                + "  box = Box(sink=Sink(value=0))\n"
+                + "  box.take_sink()\n", "method-consumes-field.moss");
+        new SemanticChecker(program).run();
+        var takeSink = program.objects.stream().filter(object -> object.name.equals("Box"))
+                .findFirst().orElseThrow().methods.stream()
+                .filter(method -> method.name.equals("take_sink")).findFirst().orElseThrow();
+        assertEquals(AccessMode.Consume, takeSink.receiverAccessMode);
+        String rust = NativeGenerator.generate(program, false);
+        if (!rust.contains("pub fn take_sink(self) -> ()")) {
+            throw new AssertionError("method moving an owned field must lower with a by-value receiver");
+        }
+
+        assertCompileError(""
+                + "type Sink:\n"
+                + "  value: Int\n"
+                + "  fn bump():\n"
+                + "    self.value = self.value + 1\n"
+                + "type Box:\n"
+                + "  sink: Sink\n"
+                + "  fn take_sink():\n"
+                + "    target = self.sink\n"
+                + "    target.bump()\n"
+                + "fn main():\n"
+                + "  box = Box(sink=Sink(value=0))\n"
+                + "  box.take_sink()\n"
+                + "  echo box.sink.value\n", "OWNERSHIP_USE_AFTER_CONSUME");
+
+        assertCompileError(""
+                + "type Sink:\n"
+                + "  value: Int\n"
+                + "  fn bump():\n"
+                + "    self.value = self.value + 1\n"
+                + "type Box:\n"
+                + "  sink: Sink\n"
+                + "  fn take_sink():\n"
+                + "    target = self.sink\n"
+                + "    target.bump()\n"
+                + "fn consume(box: Box):\n"
+                + "  box.take_sink()\n"
+                + "fn main():\n"
+                + "  box = Box(sink=Sink(value=0))\n"
+                + "  consume(box)\n"
+                + "  echo box.sink.value\n", "OWNERSHIP_USE_AFTER_CONSUME");
     }
 
     private static void testForLoopValuesCanFlowToObjectMethodArguments() {

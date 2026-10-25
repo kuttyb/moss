@@ -1052,21 +1052,37 @@ public class SemanticChecker {
                                     ? objects.get(fieldType.name()) : null;
                     for (Stmt statement : method.body) {
                         String target = statement.a != null ? statement.a.trim() : "";
-                        if (isReceiverFieldWriteTarget(target, field.name)) {
-                            method.receiverAccessMode = AccessMode.Write;
+                        String rhs = statement.b != null ? statement.b.trim() : "";
+                        if (transferType(fieldType) && isReceiverFieldValue(rhs, field.name)) {
+                            method.receiverAccessMode = AccessMode.Consume;
                             break;
                         }
-                        if (objectFieldCallWrites(field.name, fieldType, fieldObject, statement.text)) {
-                            method.receiverAccessMode = AccessMode.Write;
+                        if (isReceiverFieldWriteTarget(target, field.name)) {
+                            if (method.receiverAccessMode != AccessMode.Consume)
+                                method.receiverAccessMode = AccessMode.Write;
+                            break;
                         }
-                        if (method.receiverAccessMode == AccessMode.Write) break;
+                        AccessMode fieldCallMode = objectFieldCallMode(field.name, fieldType,
+                                fieldObject, statementExpressionText(statement));
+                        if (fieldCallMode == AccessMode.Consume
+                                || (fieldCallMode == AccessMode.Write
+                                        && method.receiverAccessMode == AccessMode.Read)) {
+                            method.receiverAccessMode = fieldCallMode;
+                        }
+                        if (method.receiverAccessMode == AccessMode.Consume) break;
                     }
-                    if (method.receiverAccessMode != AccessMode.Write
-                            && objectFieldCallWrites(field.name, fieldType, fieldObject,
-                                    method.resultExpression)) {
-                        method.receiverAccessMode = AccessMode.Write;
+                    if (transferType(fieldType) && isReceiverFieldValue(method.resultExpression, field.name)) {
+                        method.receiverAccessMode = AccessMode.Consume;
+                    } else {
+                        AccessMode resultCallMode = objectFieldCallMode(field.name, fieldType,
+                                fieldObject, method.resultExpression);
+                        if (resultCallMode == AccessMode.Consume
+                                || (resultCallMode == AccessMode.Write
+                                        && method.receiverAccessMode == AccessMode.Read)) {
+                            method.receiverAccessMode = resultCallMode;
+                        }
                     }
-                    if (method.receiverAccessMode == AccessMode.Write) break;
+                    if (method.receiverAccessMode == AccessMode.Consume) break;
                 }
                 Function accessView = new Function();
                 accessView.params = method.params;
@@ -1094,24 +1110,32 @@ public class SemanticChecker {
             changed = false;
             for (ObjectType object : program.objects) {
                 for (Method method : object.methods) {
-                    if (method.sourceFree || method.receiverAccessMode == AccessMode.Write) continue;
+                    if (method.sourceFree || method.receiverAccessMode == AccessMode.Consume) continue;
                     for (Method candidate : object.methods) {
-                        if (candidate == method || candidate.receiverAccessMode != AccessMode.Write
+                        if (candidate == method || candidate.receiverAccessMode == AccessMode.Read
                                 || !callsSiblingMethod(method, candidate.name)) continue;
-                        method.receiverAccessMode = AccessMode.Write;
-                        changed = true;
+                        AccessMode propagated = strongerAccessMode(method.receiverAccessMode,
+                                candidate.receiverAccessMode);
+                        if (propagated != method.receiverAccessMode) {
+                            method.receiverAccessMode = propagated;
+                            changed = true;
+                        }
                         break;
                     }
-                    if (method.receiverAccessMode == AccessMode.Write) continue;
+                    if (method.receiverAccessMode == AccessMode.Consume) continue;
                     for (ObjectType fieldObject : program.objects) {
                         for (Method candidate : fieldObject.methods) {
-                            if (candidate.receiverAccessMode != AccessMode.Write
+                            if (candidate.receiverAccessMode == AccessMode.Read
                                     || !callsMutatingFieldMethod(method, candidate)) continue;
-                            method.receiverAccessMode = AccessMode.Write;
-                            changed = true;
+                            AccessMode propagated = strongerAccessMode(method.receiverAccessMode,
+                                    candidate.receiverAccessMode);
+                            if (propagated != method.receiverAccessMode) {
+                                method.receiverAccessMode = propagated;
+                                changed = true;
+                            }
                             break;
                         }
-                        if (method.receiverAccessMode == AccessMode.Write) break;
+                        if (method.receiverAccessMode == AccessMode.Consume) break;
                     }
                 }
             }
@@ -1123,6 +1147,18 @@ public class SemanticChecker {
                 || target.startsWith(fieldName + "[")
                 || target.equals("self." + fieldName) || target.startsWith("self." + fieldName + ".")
                 || target.startsWith("self." + fieldName + "[");
+    }
+
+    private boolean isReceiverFieldValue(String expression, String fieldName) {
+        if (expression == null) return false;
+        String value = expression.trim();
+        return value.equals(fieldName) || value.equals("self." + fieldName);
+    }
+
+    private AccessMode strongerAccessMode(AccessMode current, AccessMode candidate) {
+        if (current == AccessMode.Consume || candidate == AccessMode.Consume) return AccessMode.Consume;
+        if (current == AccessMode.Write || candidate == AccessMode.Write) return AccessMode.Write;
+        return AccessMode.Read;
     }
 
     private boolean callsSiblingMethod(Method caller, String calleeName) {
@@ -1171,20 +1207,22 @@ public class SemanticChecker {
         };
     }
 
-    private boolean objectFieldCallWrites(String fieldName, TypeRef fieldType,
-                                          ObjectType fieldObject, String expression) {
-        if (expression == null || expression.isEmpty()) return false;
+    private AccessMode objectFieldCallMode(String fieldName, TypeRef fieldType,
+                                           ObjectType fieldObject, String expression) {
+        if (expression == null || expression.isEmpty()) return AccessMode.Read;
         java.util.regex.Matcher call = java.util.regex.Pattern.compile(
                 "\\b" + java.util.regex.Pattern.quote(fieldName)
                         + "\\.([A-Za-z_][A-Za-z0-9_]*)\\s*\\(").matcher(expression);
         while (call.find()) {
             String calledMethod = call.group(1);
-            if (isBuiltinMutatingMethod(fieldType, calledMethod)) return true;
-            if (fieldObject != null && fieldObject.methods.stream().anyMatch(candidate ->
-                    candidate.name.equals(calledMethod)
-                            && candidate.receiverAccessMode == AccessMode.Write)) return true;
+            if (isBuiltinMutatingMethod(fieldType, calledMethod)) return AccessMode.Write;
+            if (fieldObject != null) {
+                for (Method candidate : fieldObject.methods) {
+                    if (candidate.name.equals(calledMethod)) return candidate.receiverAccessMode;
+                }
+            }
         }
-        return false;
+        return AccessMode.Read;
     }
 
     private void checkRecursiveFunctions() {
@@ -1911,6 +1949,30 @@ public class SemanticChecker {
         if (fn.resultExpression != null && fn.resultExpression.trim().equals(pName)) {
             return true;
         }
+        TypeRef parameterType = fn.params.get(paramIdx).typeRef != null
+                ? fn.params.get(paramIdx).typeRef
+                : (fn.params.get(paramIdx).type != null && !fn.params.get(paramIdx).type.isEmpty()
+                        ? TypeParser.parseCanonical(fn.params.get(paramIdx).type) : null);
+        ObjectType parameterObject = parameterType != null
+                && parameterType.kind() == TypeKind.NominalInstance
+                        ? objects.get(parameterType.name()) : null;
+        if (parameterObject != null) {
+            java.util.regex.Pattern methodCall = java.util.regex.Pattern.compile(
+                    "\\b" + java.util.regex.Pattern.quote(pName)
+                            + "\\.([A-Za-z_][A-Za-z0-9_]*)\\s*\\(");
+            List<String> expressions = new ArrayList<>();
+            for (Stmt statement : fn.body) expressions.add(statementExpressionText(statement));
+            if (fn.resultExpression != null) expressions.add(fn.resultExpression);
+            for (String expression : expressions) {
+                java.util.regex.Matcher call = methodCall.matcher(expression);
+                while (call.find()) {
+                    for (Method method : parameterObject.methods) {
+                        if (method.name.equals(call.group(1))
+                                && method.receiverAccessMode == AccessMode.Consume) return true;
+                    }
+                }
+            }
+        }
         Deque<Map.Entry<Integer, Set<String>>> caseScopes = new ArrayDeque<>();
         for (Stmt s : fn.body) {
             while (!caseScopes.isEmpty() && s.indent <= caseScopes.peek().getKey()) {
@@ -2154,6 +2216,15 @@ public class SemanticChecker {
                     if (isObjCtor || consumesArgument) {
                         consumeBinding(line, a, env, fallbackDest != null ? fallbackDest : callee);
                     }
+                }
+            }
+            if (method != null && method.receiverAccessMode == AccessMode.Consume) {
+                String receiver = callee.substring(0, methodSeparator).trim();
+                String receiverRoot = receiver.contains(".")
+                        ? receiver.substring(0, receiver.indexOf('.')) : receiver;
+                if (env.containsKey(receiverRoot) && transferType(env.get(receiverRoot))) {
+                    consumeBinding(line, receiverRoot, env,
+                            fallbackDest != null ? fallbackDest : callee);
                 }
             }
             // The callee body runs only after all arguments have been

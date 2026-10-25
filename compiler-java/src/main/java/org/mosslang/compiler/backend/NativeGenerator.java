@@ -572,6 +572,8 @@ public class NativeGenerator {
                 if (mRaises) {
                     ret = "Result<" + ret + ", __MossRaised>";
                 }
+                boolean consumesSelf = m.receiverAccessMode
+                        == org.mosslang.compiler.types.AccessMode.Consume;
                 boolean mutatesSelf = m.receiverAccessMode
                         == org.mosslang.compiler.types.AccessMode.Write;
                 for (Stmt s : m.body) {
@@ -583,7 +585,8 @@ public class NativeGenerator {
                         }
                     }
                 }
-                o.append("    pub fn ").append(m.name).append("(").append(mutatesSelf ? "&mut self" : "&self");
+                String selfArg = consumesSelf ? "self" : (mutatesSelf ? "&mut self" : "&self");
+                o.append("    pub fn ").append(m.name).append("(").append(selfArg);
                 Set<String> declared = new HashSet<>();
                 declared.add("self");
                 for (Field f : obj.fields) {
