@@ -917,14 +917,7 @@ public class FastInterpreter {
                     int openB = varName.indexOf('[');
                     String baseName = varName.substring(0, openB).trim();
                     String keyExpr = varName.substring(openB + 1, varName.length() - 1).trim();
-                    if (locals.containsKey(baseName)) traceLocalRead(baseName);
-                    Value selfObject = locals.get("self");
-                    Value objectField = selfObject != null && selfObject.kind == Value.Kind.OBJECT
-                            && selfObject.raw instanceof Map<?, ?> fields
-                            && fields.get(baseName) instanceof Value fieldValue ? fieldValue : null;
-                    Value baseVal = objectField != null ? objectField
-                            : locals.containsKey(baseName) ? locals.get(baseName)
-                            : currentDomain != null ? currentDomain.state.get(baseName) : null;
+                    Value baseVal = evalExpr(baseName, locals, currentDomain);
                     Value keyVal = evalExpr(keyExpr, locals, currentDomain);
                     if (baseVal != null && baseVal.raw instanceof Map<?, ?> mp) {
                         @SuppressWarnings("unchecked")
@@ -2093,13 +2086,7 @@ public class FastInterpreter {
                     int openB = ExpressionTyper.findMatchingOpenBracket(placeStr, placeStr.length() - 1);
                     String baseName = placeStr.substring(0, openB).trim();
                     String keyExpr = placeStr.substring(openB + 1, placeStr.length() - 1).trim();
-                    Value selfObject = locals.get("self");
-                    Value objectField = selfObject != null && selfObject.kind == Value.Kind.OBJECT
-                            && selfObject.raw instanceof Map<?, ?> fields
-                            && fields.get(baseName) instanceof Value fieldValue ? fieldValue : null;
-                    Value baseVal = objectField != null ? objectField
-                            : locals.containsKey(baseName) ? locals.get(baseName)
-                            : currentDomain != null ? currentDomain.state.get(baseName) : null;
+                    Value baseVal = evalExpr(baseName, locals, currentDomain);
                     Value keyVal = evalExpr(keyExpr, locals, currentDomain);
                     if (baseVal != null && baseVal.raw instanceof List<?> lst) {
                         @SuppressWarnings("unchecked")

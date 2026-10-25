@@ -27,6 +27,7 @@ public final class FastInterpreterTest {
         testObjectMethodFieldShadowsSameNamedParameter();
         testSpacedGenericCollectionConstructors();
         testNestedMethodFieldReplacementPrecedesStaleLocalSnapshot();
+        testIndexedWriteThroughDottedObjectField();
         testMapGetInsideObjectMethodReturnsStoredOrFallbackValue();
         testMapSizeAndMembershipMethods();
         testMapIndexedWritesTraceReceiverReads();
@@ -499,6 +500,20 @@ public final class FastInterpreterTest {
         if (!"5\n".equals(actual)) {
             throw new AssertionError("indexed write used a stale object field after nested method replacement: " + actual);
         }
+    }
+
+    private static void testIndexedWriteThroughDottedObjectField() {
+        var program = Parser.parseSource(""
+                + "type Holder:\n"
+                + "  values: Map[String, Int]\n"
+                + "fn main():\n"
+                + "  holder = Holder(values: Map())\n"
+                + "  holder.values[\"key\"] = 12\n"
+                + "  assertEqual(holder.values[\"key\"], 12)\n", "fast-interpreter-dotted-object-index-write.moss");
+        new CheckedProgram(program).run();
+        new FastInterpreter(program, false,
+                new PrintStream(new ByteArrayOutputStream()),
+                new PrintStream(new ByteArrayOutputStream())).run();
     }
 
     private static void testMapGetInsideObjectMethodReturnsStoredOrFallbackValue() {

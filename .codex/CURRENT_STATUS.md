@@ -14549,3 +14549,13 @@ The packaged Java Margo interpreter passes all 22 Python deque tests. All eleven
 Java unit-test classes pass under ABI-v9 and staged ABI-v10. This is Fast Debug
 project evidence; native execution and frozen-candidate release gates remain
 outstanding.
+
+### Phase 25.3 continuation — indexed writes through dotted object fields
+
+Python ChainMap showed that `holder.map[key] = value` was parsed as an indexed
+write whose base was treated as a local variable name. The Java interpreter now
+evaluates the complete receiver expression through ordinary Moss lookup before
+writing, for both indexed assignment and `replace`. A focused object-field Map
+regression passes. The packaged Java Margo interpreter passes all 13 ChainMap
+tests, matching the C++ Fast Debug result; all eleven Java unit-test classes
+pass under ABI-v9 and staged ABI-v10.
