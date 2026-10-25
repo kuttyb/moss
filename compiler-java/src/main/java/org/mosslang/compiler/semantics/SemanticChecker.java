@@ -545,10 +545,26 @@ public class SemanticChecker {
                         }
                     }
                 }
-                for (Stmt s : arm.body) {
-                    checkStatement(s, env, typer, solver, true, handler.name, expectedReply);
+                OwnershipEnv armEnv = env.copy();
+                List<OwnershipEnv> availableFailureEdges = selectedFailureEdges(arm, raiseEnvironments);
+                for (String name : new HashSet<>(armEnv.moved.keySet())) {
+                    boolean readByArm = false;
+                    for (Stmt bodyStatement : arm.body) {
+                        readByArm |= expressionUses(bodyStatement.text, name)
+                                || expressionUses(bodyStatement.a, name)
+                                || expressionUses(bodyStatement.b, name);
+                        if (bodyStatement.args != null)
+                            for (String argument : bodyStatement.args) readByArm |= expressionUses(argument, name);
+                    }
+                    if (!readByArm || availableFailureEdges.isEmpty()) continue;
+                    boolean availableOnEveryEdge = true;
+                    for (OwnershipEnv edge : availableFailureEdges) availableOnEveryEdge &= !edge.moved.containsKey(name);
+                    if (availableOnEveryEdge) armEnv.moved.remove(name);
                 }
                 validateFailureArmCaptures(domain, handler, arm, env, solver, raiseEnvironments);
+                for (Stmt s : arm.body) {
+                    checkStatement(s, armEnv, typer, solver, true, handler.name, expectedReply);
+                }
             }
         }
         currentHandlerRaises = previousRaises;
@@ -567,19 +583,7 @@ public class SemanticChecker {
         arm.checkedCaptures.clear();
         if (raiseEnvironments.isEmpty()) return;
         List<OwnershipEnv> selectedEdges = new ArrayList<>();
-        for (RaiseSnapshot snapshot : raiseEnvironments) {
-            boolean selected = arm.patterns == null || arm.patterns.isEmpty()
-                    || snapshot.variant.isEmpty();
-            if (!selected) {
-                for (String pattern : arm.patterns) {
-                    String expected = pattern == null ? "" : pattern.trim();
-                    int open = expected.indexOf('(');
-                    if (open >= 0) expected = expected.substring(0, open).trim();
-                    if (snapshot.variant.equals(expected)) selected = true;
-                }
-            }
-            if (selected) selectedEdges.add(snapshot.env);
-        }
+        selectedEdges.addAll(selectedFailureEdges(arm, raiseEnvironments));
         if (selectedEdges.isEmpty()) return;
         Set<String> nonLocals = new HashSet<>();
         for (Field field : domain.state) nonLocals.add(field.name);
@@ -661,6 +665,23 @@ public class SemanticChecker {
             }
             if (expected != null) arm.checkedCaptures.put(name, expected.toCanonicalString());
         }
+    }
+
+    private List<OwnershipEnv> selectedFailureEdges(FailureArm arm, List<RaiseSnapshot> raises) {
+        List<OwnershipEnv> selectedEdges = new ArrayList<>();
+        for (RaiseSnapshot snapshot : raises) {
+            boolean selected = arm.patterns == null || arm.patterns.isEmpty() || snapshot.variant.isEmpty();
+            if (!selected) {
+                for (String pattern : arm.patterns) {
+                    String expected = pattern == null ? "" : pattern.trim();
+                    int open = expected.indexOf('(');
+                    if (open >= 0) expected = expected.substring(0, open).trim();
+                    if (snapshot.variant.equals(expected)) selected = true;
+                }
+            }
+            if (selected) selectedEdges.add(snapshot.env);
+        }
+        return selectedEdges;
     }
 
     private void checkFunctions() {
@@ -1476,6 +1497,12 @@ public class SemanticChecker {
             String callee = expr.substring(0, openP).trim();
             String argsInside = expr.substring(openP + 1, expr.length() - 1).trim();
             List<String> args = ExpressionTyper.parseArguments(argsInside);
+            // Calls in earlier arguments execute before later arguments are
+            // evaluated. Preserve the caller's ownership state on their
+            // exceptional edges before applying normal-path argument moves.
+            if (currentHandlerRaises != null) {
+                for (String argument : args) recordDirectCallRaises(argument, env);
+            }
             Function fn = functions.get(callee);
             Method method = null;
             int methodSeparator = callee.lastIndexOf('.');
@@ -1536,6 +1563,28 @@ public class SemanticChecker {
                 }
             }
         }
+    }
+
+    private void recordDirectCallRaises(String expression, OwnershipEnv env) {
+        if (expression == null) return;
+        String text = expression.trim();
+        int open = text.indexOf('(');
+        if (open <= 0 || !text.endsWith(")")) return;
+        int matching = ExpressionTyper.findMatchingOpenParen(text, text.length() - 1);
+        if (matching != open) return;
+        String callee = text.substring(0, open).trim();
+        Function called = functions.get(callee);
+        if (called != null && currentHandlerRaises != null) {
+            for (Stmt statement : called.body) {
+                if (statement.kind != Stmt.Kind.Raise || statement.a == null) continue;
+                String raised = statement.a.trim();
+                int payload = raised.indexOf('(');
+                if (payload >= 0) raised = raised.substring(0, payload).trim();
+                currentHandlerRaises.add(new RaiseSnapshot(env.copy(), raised));
+            }
+        }
+        for (String argument : ExpressionTyper.parseArguments(text.substring(open + 1, text.length() - 1)))
+            recordDirectCallRaises(argument, env);
     }
 
     private OwnershipEnv checkBlock(List<Stmt> stmts, int start, int end, OwnershipEnv env,

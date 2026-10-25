@@ -34,6 +34,7 @@ public class SemanticCheckerTest {
         testOwnedMatchPayloadCanBeOnFailCapture();
         testBorrowedMatchPayloadCannotBeOnFailCapture();
         testSameCrateRaisingCallPreservesErrorCarrier();
+        testOnFailCaptureUsesArgumentEvaluationRaiseEdge();
         System.out.println("SemanticCheckerTest PASSED.");
     }
 
@@ -285,6 +286,31 @@ public class SemanticCheckerTest {
                 || !rust.contains("fn literal() -> MossStr")
                 || rust.contains("fn literal() -> Result<MossStr, __MossRaised>")) {
             throw new AssertionError("same-crate raising call must preserve the existing error carrier: " + rust);
+        }
+    }
+
+    private static void testOnFailCaptureUsesArgumentEvaluationRaiseEdge() {
+        Program program = Parser.parseSource(""
+                + "enum Failure:\n"
+                + "  Bad\n"
+                + "fn fail() -> Int:\n"
+                + "  raise Failure.Bad\n"
+                + "fn consume_after(number: Int, data: String) -> String:\n"
+                + "  return data\n"
+                + "domain Worker:\n"
+                + "  fn Run() -> Int:\n"
+                + "    var data = \"abc\"\n"
+                + "    result = consume_after(fail(), data)\n"
+                + "    reply 0\n"
+                + "  on_fail Failure.Bad:\n"
+                + "    reply data.length()\n"
+                + "fn main():\n"
+                + "  worker = Worker()\n"
+                + "  echo message worker.Run()\n", "raise-before-consume-capture.moss");
+        new SemanticChecker(program).run();
+        if (!program.domains.get(0).handlers.get(0).failureArms.get(0)
+                .checkedCaptures.containsKey("data")) {
+            throw new AssertionError("argument raise edge did not preserve the pre-transfer local");
         }
     }
 

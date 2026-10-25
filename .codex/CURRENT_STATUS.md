@@ -13948,3 +13948,12 @@ Java binds case payload types while validating failure arms, then rejects a
 payload originating from non-consuming `match` with
 `ON_FAIL_CAPTURE_NOT_OWNED`. A semantic test confirms rejection, alongside the
 positive consumed-payload capture test. ABI-v9 and staged ABI-v10 suites pass.
+
+The raising-call argument ownership gap is fixed for directly visible helper
+raises. Java now records the caller ownership environment at calls inside
+arguments before applying normal-path moves, and checks each `on_fail` body
+against its selected raise-edge state. The method-early-raise fixture now passes
+Java checking and Fast Debug and returns `3`, matching C++. Existing consumed
+capture fixtures still reject with `ON_FAIL_CAPTURE_CONSUMED`, matching C++.
+A semantic unit test covers the pre-transfer capture. Indirect raise-effect
+summaries and broader argument evaluation ordering remain unverified.
