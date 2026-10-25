@@ -542,20 +542,29 @@ public class ProjectBuilder {
             }
 
             // Explicit module builds previously reached interface/Rust
-            // emission without running the semantic checker. Check modules
-            // whose local dependency declarations are available by assembling
-            // a module-scoped view of the current module and its local imports.
+            // emission without running the semantic checker. Check each module
+            // using local declarations and verified imported ABI declarations.
             for (String mod : moduleOrder) {
                 List<String> imports = moduleImports.getOrDefault(mod, Collections.emptyList());
-                if (imports.stream().anyMatch(dependency -> !localModules.containsKey(dependency))) {
-                    // External ABI declarations still need to be materialized
-                    // into the Java checker before this consumer can be checked.
-                    continue;
-                }
                 Program checkView = projectCopy(parsedPrograms.get(mod));
                 Set<String> included = new LinkedHashSet<>();
                 for (String dependency : imports) {
-                    collectLocalModuleDependencies(dependency, moduleImports, localModules, included);
+                    if (localModules.containsKey(dependency)) {
+                        collectLocalModuleDependencies(dependency, moduleImports, localModules, included);
+                    } else {
+                        Path providerInterface = buildDir.resolve(dependency + ".mossi");
+                        List<Path> candidates = externalCandidateProviders.get(dependency);
+                        if (candidates != null && !candidates.isEmpty()) {
+                            providerInterface = candidates.get(0);
+                        }
+                        if (!Files.exists(providerInterface)) {
+                            throw new CompileError("MODULE_IMPORT_ERROR",
+                                    "imported module '" + dependency + "' has no interface for semantic checking",
+                                    localModules.get(mod).toString(), 1);
+                        }
+                        org.mosslang.compiler.cli.Main.loadMossiFunctions(
+                                providerInterface, dependency, checkView);
+                    }
                 }
                 included.remove(mod);
                 for (String dependency : included) {

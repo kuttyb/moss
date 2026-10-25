@@ -13074,3 +13074,12 @@ Validation: Java build, all ten Java unit-test classes, and `git diff --check`
 pass. Modules with external imports are still skipped because ABI declarations
 have not yet been materialized into the checker view. External source-free
 project checking and native project acceptance remain open.
+
+Follow-up: external module ABI declarations are now materialized into the
+explicit-module checker view through the existing verified
+`Main.loadMossiFunctions` loader; the ABI-v9 and ABI-v10 source-free function
+tests exercise that loader. The Java build and all ten unit-test classes pass
+in both default ABI-v9 and staged ABI-v10 modes, and feedback validation passes.
+The invalid local provider/consumer ProjectBuilder case still rejects before
+rustc. The full external-provider Margo build/link path remains unverified; no
+Rust/native or SDK gate ran.

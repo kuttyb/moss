@@ -794,7 +794,7 @@ public class Main {
         return new String(bytes, StandardCharsets.ISO_8859_1);
     }
 
-    static void loadMossiFunctions(Path cand, String modName, Program program) throws CompileError {
+    public static void loadMossiFunctions(Path cand, String modName, Program program) throws CompileError {
         try {
             byte[] rawBytes = Files.readAllBytes(cand);
             String text = readMossiText(cand);
