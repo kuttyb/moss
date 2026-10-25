@@ -905,12 +905,14 @@ public class Main {
 
             boolean inContract = false;
             boolean inSemanticExports = false;
+            List<String> sourceFreeContractLines = new ArrayList<>();
             org.mosslang.compiler.ast.Function currentFn = null;
             org.mosslang.compiler.ast.ObjectType currentObject = null;
             org.mosslang.compiler.ast.EnumType currentEnum = null;
             org.mosslang.compiler.ast.Domain currentDomain = null;
             for (String line : text.split("\\R")) {
                 line = line.trim();
+                if (inContract) sourceFreeContractLines.add(line);
                 if (line.equals("contract")) {
                     inContract = true;
                     inSemanticExports = false;
@@ -1384,12 +1386,87 @@ public class Main {
                     currentFn = null;
                 }
             }
+            restoreSourceFreeFailureArms(sourceFreeContractLines, program, modName, cand);
         } catch (CompileError error) {
             throw error;
         } catch (Exception error) {
             throw new CompileError("SOURCE_FREE_CONTRACT_INVALID",
                     "cannot parse source-free function metadata from '" + cand + "': " + error.getMessage(),
                     cand.toString(), 1);
+        }
+    }
+
+    private static void restoreSourceFreeFailureArms(List<String> contractLines, Program program,
+                                                      String modName, Path interfaceFile)
+            throws CompileError {
+        String currentDomain = null;
+        Map<String, Map<Integer, org.mosslang.compiler.ast.FailureArm>> arms = new HashMap<>();
+        for (String line : contractLines) {
+            if (line.startsWith("domain ")) {
+                String[] words = line.split("\\s+");
+                currentDomain = words.length > 1 ? words[1] : null;
+                continue;
+            }
+            if (currentDomain == null || !line.startsWith("handler_failure_arm ")) continue;
+            List<String> quoted = parseMossiQuotedFields(line);
+            String[] words = line.replaceAll("\"[^\"]*\"", " QUOTED ").trim().split("\\s+");
+            if (quoted.size() < 4 || words.length < 7) {
+                throw new CompileError("SOURCE_FREE_ABI_INVALID",
+                        "compiled provider has malformed ABI-v9 failure-arm metadata",
+                        interfaceFile.toString(), 1);
+            }
+            int index;
+            try { index = Integer.parseInt(words[2]); }
+            catch (NumberFormatException error) {
+                throw new CompileError("SOURCE_FREE_ABI_INVALID",
+                        "compiled provider has malformed ABI-v9 failure-arm index",
+                        interfaceFile.toString(), 1);
+            }
+            String domainKey = currentDomain;
+            org.mosslang.compiler.ast.Domain domain = program.domains.stream()
+                    .filter(candidate -> candidate.name.equals(modName + "__" + domainKey))
+                    .findFirst().orElse(null);
+            if (domain == null) continue;
+            org.mosslang.compiler.ast.Handler handler = domain.handlers.stream()
+                    .filter(candidate -> candidate.name.equals(quoted.get(0))).findFirst().orElse(null);
+            if (handler == null) continue;
+            org.mosslang.compiler.ast.FailureArm arm = new org.mosslang.compiler.ast.FailureArm(
+                    1, interfaceFile.toString());
+            arm.patterns.add(quoted.get(1));
+            while (handler.failureArms.size() <= index) {
+                handler.failureArms.add(new org.mosslang.compiler.ast.FailureArm(1, interfaceFile.toString()));
+            }
+            handler.failureArms.set(index, arm);
+            arms.computeIfAbsent(domainKey + "::" + quoted.get(0), ignored -> new HashMap<>())
+                    .put(index, arm);
+        }
+        currentDomain = null;
+        for (String line : contractLines) {
+            if (line.startsWith("domain ")) {
+                String[] words = line.split("\\s+");
+                currentDomain = words.length > 1 ? words[1] : null;
+                continue;
+            }
+            if (currentDomain == null || !line.startsWith("handler_failure_capture ")) continue;
+            List<String> quoted = parseMossiQuotedFields(line);
+            String[] words = line.replaceAll("\"[^\"]*\"", " QUOTED ").trim().split("\\s+");
+            if (quoted.size() < 5 || words.length < 9) {
+                throw new CompileError("SOURCE_FREE_ABI_INVALID",
+                        "compiled provider has malformed ABI-v9 failure-capture metadata",
+                        interfaceFile.toString(), 1);
+            }
+            int index;
+            try { index = Integer.parseInt(words[2]); }
+            catch (NumberFormatException error) {
+                throw new CompileError("SOURCE_FREE_ABI_INVALID",
+                        "compiled provider has malformed ABI-v9 failure-capture index",
+                        interfaceFile.toString(), 1);
+            }
+            Map<Integer, org.mosslang.compiler.ast.FailureArm> handlerArms =
+                    arms.get(currentDomain + "::" + quoted.get(0));
+            org.mosslang.compiler.ast.FailureArm arm = handlerArms == null
+                    ? null : handlerArms.get(index);
+            if (arm != null) arm.checkedCaptures.put(quoted.get(1), quoted.get(2));
         }
     }
 

@@ -13102,3 +13102,15 @@ Validation update for the capture-row checkpoint: `ProjectBuilderMetadataTest`
 passes after a clean Java build in default ABI-v9 and staged ABI-v10 modes;
 `tests/tooling/check_agent_feedback.py` passes. No native or Rust compilation
 was run.
+
+### Phase 25.3 continuation — restore source-free failure-arm metadata
+
+The Java `.mossi` loader now restores ABI-v9 handler failure arms and their
+capture name/type facts after loading exported domain signatures. A source-free
+metadata regression verifies a `Fault.Bad` arm and its `Int` capture. This
+restores interface facts only; it does not establish cross-crate native error
+propagation or capture lifetime correctness.
+
+Validation: Java build and `SourceFreeObjectMetadataTest` pass (the test also
+exercises ABI-v10 metadata). No Rust compilation, native execution, or SDK gate
+ran.

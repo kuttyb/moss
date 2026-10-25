@@ -28,7 +28,13 @@ public final class SourceFreeObjectMetadataTest {
         String content = "moss-module-interface-v2\n"
                 + "provider_contract_digest sha256:" + "0".repeat(64) + "\n"
                 + "module_id sample::provider\ncontract\nobject Point\ncomment Café\n"
+                + "domain Worker opaque\n"
+                + "  handler_failure_arms \"Work\" 1\n"
+                + "  handler_failure_arm \"Work\" 0 \"Fault.Bad\" \"__moss_on_fail_provider__Worker_Work_0\" 1 1 0 0 0\n"
+                + "  handler_failure_capture \"Work\" 0 \"attempt\" \"int\" \"attempt\" 1 1 \"0:3:int:0:\"\n"
                 + "semantic_exports\n"
+                + "export domain Worker opaque\n"
+                + "  handler Work reply=unit effects=local_capture_read=0;local_mutation=0;domain_read=0;domain_write=0;message=0;external_io=0;fileio=0;fileio_unknown=0;may_panic=0;raise_set=enum:provider__Fault:Bad;may_diverge=0;unresolved=0\n"
                 + "export enum LegacyResult\n"
                 + "  declaration_id nominal-enum-v1:module-v1:sample@0.1.0::provider:enum:LegacyResult\n"
                 + "  enum_case \"Failed\" 2 \"code\" \"int\" \"message\" \"string\"\n"
@@ -45,6 +51,15 @@ public final class SourceFreeObjectMetadataTest {
         }
         Program program = new Program();
         Main.loadMossiFunctions(interfaceFile, "provider", program);
+        org.mosslang.compiler.ast.Domain importedWorker = program.domains.stream()
+                .filter(domain -> domain.name.equals("provider__Worker")).findFirst()
+                .orElseThrow(() -> new AssertionError("source-free domain declaration was not imported"));
+        if (importedWorker.handlers.size() != 1 || importedWorker.handlers.get(0).failureArms.size() != 1
+                || !importedWorker.handlers.get(0).failureArms.get(0).patterns.contains("Fault.Bad")
+                || !"int".equals(importedWorker.handlers.get(0).failureArms.get(0)
+                        .checkedCaptures.get("attempt"))) {
+            throw new AssertionError("ABI-v9 failure-arm capture metadata was not restored");
+        }
         ObjectType imported = program.objects.stream()
                 .filter(object -> object.name.equals("provider__Point"))
                 .findFirst().orElseThrow(() -> new AssertionError(
