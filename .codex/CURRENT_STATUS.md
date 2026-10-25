@@ -14309,3 +14309,17 @@ SemanticCheckerTest verifies the FileIO read/recover relationship. Both ABI
 Java suites pass, and the refreshed 91-file screen remains at 0 acceptance
 mismatches (61 both accepted, 30 both rejected). This remains bounded FileIO
 effect evidence rather than a full summary of every FileIO failure mode.
+
+### Phase 25.3 continuation — FileIO method arity checks
+
+The Java FileIO checker now enforces method arities for `open`, scalar/batch
+`read`, `write`, `sync`, `close`, and `chunks`, plus zero-argument
+`Range.length()`/`RangeBatch.length()`. Invalid `FileIO.open` and `close` call
+shapes have negative SemanticCheckerTest cases. The FileIO recovery test now
+also pairs the positive read case with a user-defined `Reader.read()` control,
+which must retain the unreachable `FileError.IO` warning.
+
+All 11 Java test classes pass under ABI-v9 and staged ABI-v10. The current
+91-fixture acceptance result remains 0 mismatches (61 both accepted, 30 both
+rejected). Native compilation and runtime behavior remain reserved for the
+frozen acceptance gate.

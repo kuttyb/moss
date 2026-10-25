@@ -1085,6 +1085,7 @@ public class ExpressionTyper {
 
         if ("FileIO".equals(targetType.name())) {
             if ("open".equals(member)) {
+                requireArgumentCount(line, "FileIO.open", argExprs, 2, 2);
                 for (int index = 0; index < argExprs.size(); index++) {
                     String argument = argExprs.get(index).trim();
                     if (index == 1 && ("ro".equals(argument) || "rw".equals(argument)
@@ -1094,16 +1095,28 @@ public class ExpressionTyper {
                 return TypeRef.primitive("FileIO");
             }
             if ("read".equals(member)) {
-                if (!argExprs.isEmpty() && argExprs.get(0).trim().startsWith("["))
+                if (argExprs.size() == 1 && argExprs.get(0).trim().startsWith("["))
                     return TypeRef.primitive("RangeBatch");
+                requireArgumentCount(line, "FileIO.read", argExprs, 2, 2);
                 for (String argument : argExprs) infer(argument, line, env);
                 return TypeRef.primitive("Range");
             }
-            if ("write".equals(member) || "sync".equals(member) || "close".equals(member)) {
+            if ("write".equals(member)) {
+                requireArgumentCount(line, "FileIO.write", argExprs, 2, 2);
                 for (String argument : argExprs) infer(argument, line, env);
                 return TypeRef.unit();
             }
+            if ("sync".equals(member)) {
+                requireArgumentCount(line, "FileIO.sync", argExprs, 0, 1);
+                for (String argument : argExprs) infer(argument, line, env);
+                return TypeRef.unit();
+            }
+            if ("close".equals(member)) {
+                requireArgumentCount(line, "FileIO.close", argExprs, 0, 0);
+                return TypeRef.unit();
+            }
             if ("chunks".equals(member)) {
+                requireArgumentCount(line, "FileIO.chunks", argExprs, 1, 1);
                 for (String argument : argExprs) infer(argument, line, env);
                 return TypeRef.builtin("vector", List.of(TypeRef.primitive("Range")));
             }
@@ -1388,13 +1401,26 @@ public class ExpressionTyper {
                     infer(arg, line, env);
                 }
             }
-            if ("length".equals(member)) return TypeRef.primitive("int");
+            if ("length".equals(member) && ("Range".equalsIgnoreCase(targetType.name())
+                    || "RangeBatch".equals(targetType.name()))) {
+                requireArgumentCount(line, targetType.toCanonicalString() + ".length", argExprs, 0, 0);
+                return TypeRef.primitive("int");
+            }
             if ("threads".equals(member) || "start".equals(member)) return TypeRef.primitive("Executor");
             if ("open".equals(member)) return TypeRef.primitive("FileIO");
             return solver.fresh(0);
         }
 
         throw new CompileError(line, "type '" + targetType.toCanonicalString() + "' has no method '" + member + "' (missing required method '" + member + "')", "METHOD_NOT_FOUND");
+    }
+
+    private void requireArgumentCount(int line, String callable, List<String> arguments,
+                                      int minimum, int maximum) {
+        if (arguments.size() >= minimum && arguments.size() <= maximum) return;
+        String expected = minimum == maximum ? Integer.toString(minimum)
+                : minimum + " to " + maximum;
+        throw new CompileError(line, callable + " expects " + expected
+                + " arguments, got " + arguments.size(), "TYPE_MISMATCH");
     }
 
     private List<TypeRef.FieldSub> checkConstructorArgs(String objectName, List<Field> fields, List<String> argExprs, int line, TypeEnv env) {

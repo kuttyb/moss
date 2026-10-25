@@ -52,6 +52,7 @@ public class SemanticCheckerTest {
         testRecoverBindingInfersRaisesThroughScalarCalls();
         testRangeIndexHasByteType();
         testFileIoReadMakesIoRecoveryReachable();
+        testFileIoBuiltinArityIsChecked();
         System.out.println("SemanticCheckerTest PASSED.");
     }
 
@@ -1025,6 +1026,36 @@ public class SemanticCheckerTest {
                 "RECOVER_UNREACHABLE_VARIANT".equals(warning.code()))) {
             throw new AssertionError("FileIO read must make FileError.IO recovery reachable");
         }
+
+        Program unrelatedReader = Parser.parseSource(""
+                + "enum FileError:\n"
+                + "  IO\n"
+                + "type Reader:\n"
+                + "  fn read() -> Int:\n"
+                + "    return 1\n"
+                + "fn use(reader: Reader):\n"
+                + "  try:\n"
+                + "    value = reader.read()\n"
+                + "  recover FileError.IO:\n"
+                + "    pass\n"
+                + "fn main():\n"
+                + "  pass\n", "unrelated-read-recovery-warning.moss");
+        SemanticChecker unrelatedReaderChecker = new SemanticChecker(unrelatedReader);
+        unrelatedReaderChecker.run();
+        if (unrelatedReaderChecker.getWarnings().stream().noneMatch(warning ->
+                "RECOVER_UNREACHABLE_VARIANT".equals(warning.code()))) {
+            throw new AssertionError("unrelated read method must not imply FileError.IO");
+        }
+    }
+
+    private static void testFileIoBuiltinArityIsChecked() {
+        assertCompileError(""
+                + "fn main():\n"
+                + "  source = FileIO.open(\"input\")\n", "TYPE_MISMATCH");
+        assertCompileError(""
+                + "fn main():\n"
+                + "  source = FileIO.open(\"input\", ro)\n"
+                + "  source.close(1)\n", "TYPE_MISMATCH");
     }
 
     private static void assertCompileError(String source, String code) {
