@@ -13587,3 +13587,16 @@ Validation: clean Java build; all eleven Java unit-test classes pass in default
 ABI-v9 and staged ABI-v10 modes. The Java interpreter's six fractional and
 mixed comparison outputs match the C++ Fast Debug probe. Native Rust, Margo,
 SDK, and full acceptance gates remain deferred; Phase 25.3 remains in progress.
+
+### Phase 25.3 continuation — align Fast Debug numeric equality
+
+A follow-up C++/Java Fast Debug probe found three equality divergences: mixed
+`Int == Float` used wrapper equality, `-0.0 == 0.0` was false, and `NaN ==
+NaN` was true. Java now applies numeric conversion for mixed Int/Float equality
+and IEEE comparisons for Float values. The regression covers `==` and `!=`
+across mixed numbers, signed zero, and NaN.
+
+Validation: clean Java build and all eleven Java unit-test classes pass in
+default ABI-v9 and staged ABI-v10 modes. The focused six-result Java Fast
+Debug probe matches C++. Native Rust, Margo, SDK, and full acceptance gates
+remain deferred.

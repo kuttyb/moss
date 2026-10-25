@@ -98,3 +98,13 @@ pair remains a `TYPE_MISMATCH`. A focused producer test and direct C++/Java
 interpreter probe cover the corrected semantics. All eleven Java unit-test
 classes pass in ABI-v9 and staged ABI-v10. Broader interpreter parity and the
 native/Margo/SDK acceptance gates remain open.
+
+## Phase 25.3 continuation — numeric equality in Java Fast Debug
+
+A focused C++/Java interpreter probe found Java using wrapper equality for
+numeric values: mixed `Int == Float` disagreed, signed zero compared unequal,
+and NaN compared equal to itself. The Java interpreter now converts mixed
+Int/Float values for numeric equality and uses IEEE Float equality semantics.
+Coverage exercises `==` and `!=` for mixed values, signed zero, and NaN; the
+six outputs match C++ Fast Debug. Clean build and all eleven Java unit tests
+pass in ABI-v9. Broader Fast Debug and native/Margo/SDK gates remain open.

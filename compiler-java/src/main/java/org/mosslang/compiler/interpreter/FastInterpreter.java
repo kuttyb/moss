@@ -853,12 +853,19 @@ public class FastInterpreter {
                     || right.kind == Value.Kind.FLOAT;
             double floatLeft = floatingComparison ? left.asFloat() : 0.0;
             double floatRight = floatingComparison ? right.asFloat() : 0.0;
+            boolean numericEquality = (left.kind == Value.Kind.INT || left.kind == Value.Kind.FLOAT)
+                    && (right.kind == Value.Kind.INT || right.kind == Value.Kind.FLOAT);
+            boolean equal = numericEquality
+                    ? (left.kind == Value.Kind.FLOAT || right.kind == Value.Kind.FLOAT
+                            ? left.asFloat() == right.asFloat()
+                            : left.asInt() == right.asInt())
+                    : Objects.equals(left.raw, right.raw);
             switch (oper) {
                 case "==" -> {
-                    return Value.ofBool(Objects.equals(left.raw, right.raw));
+                    return Value.ofBool(equal);
                 }
                 case "!=" -> {
-                    return Value.ofBool(!Objects.equals(left.raw, right.raw));
+                    return Value.ofBool(!equal);
                 }
                 case "<=" -> {
                     return Value.ofBool(floatingComparison

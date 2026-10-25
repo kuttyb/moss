@@ -10,6 +10,7 @@ import java.nio.charset.StandardCharsets;
 public final class FastInterpreterTest {
     public static void main(String[] args) {
         testFractionalAndMixedNumericComparisons();
+        testIeeeAndMixedNumericEquality();
         System.out.println("FastInterpreterTest PASSED.");
     }
 
@@ -33,6 +34,30 @@ public final class FastInterpreterTest {
         String expected = "true\ntrue\ntrue\ntrue\ntrue\ntrue\n";
         if (!expected.equals(actual)) {
             throw new AssertionError("fractional/mixed numeric comparisons were incorrect: " + actual);
+        }
+    }
+
+    private static void testIeeeAndMixedNumericEquality() {
+        var program = Parser.parseSource(""
+                + "fn main():\n"
+                + "  echo 2 == 2.0\n"
+                + "  echo 2 != 2.0\n"
+                + "  echo 0.0 == -0.0\n"
+                + "  echo 0.0 != -0.0\n"
+                + "  echo (0.0 / 0.0) == (0.0 / 0.0)\n"
+                + "  echo (0.0 / 0.0) != (0.0 / 0.0)\n",
+                "fast-interpreter-float-equality.moss");
+        new CheckedProgram(program).run();
+
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+        try (PrintStream captured = new PrintStream(stdout, true, StandardCharsets.UTF_8)) {
+            new FastInterpreter(program, false, captured,
+                    new PrintStream(new ByteArrayOutputStream())).run();
+        }
+        String actual = stdout.toString(StandardCharsets.UTF_8);
+        String expected = "true\nfalse\ntrue\nfalse\nfalse\ntrue\n";
+        if (!expected.equals(actual)) {
+            throw new AssertionError("IEEE/mixed numeric equality was incorrect: " + actual);
         }
     }
 }
