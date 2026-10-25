@@ -13277,3 +13277,20 @@ ABI-v9 and staged ABI-v10 modes; focused C++/Java positive and negative checks
 and type queries agree on the asserted facts. Feedback validation and
 `git diff --check` pass. Generic operator requirement serialization and broader
 structural constraints remain open; no native or SDK gate ran.
+
+### Phase 25.3 continuation — produce typed ABI-v10 records for direct identities
+
+The Java ABI-v10 project-interface producer now derives a callable summary and
+private checked-body record for the narrow checked case of an exported,
+one-parameter function that directly returns that parameter. It maps open
+checker variables to canonical summary ordinals, retains the checked parameter
+access mode, and binds the summary body hash to the canonical checked IR. Types
+that the current ABI-v10 type codec cannot represent are skipped safely. A
+source-free verifier round trip checks the generic identity relation and
+summary/body hash linkage. This is a bounded producer slice: general callable
+body projection, requirements/effects, source-free loader projection, and
+provider-consumer behavior remain open.
+
+Validation: all ten Java unit-test classes pass after clean builds in default
+ABI-v9 and staged ABI-v10 modes. `git diff --check` passes. No native or SDK
+gate ran.

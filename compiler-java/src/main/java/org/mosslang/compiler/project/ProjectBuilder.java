@@ -9,10 +9,13 @@ import org.mosslang.compiler.semantics.CheckedProgram;
 import org.mosslang.compiler.semantics.SemanticChecker;
 import org.mosslang.compiler.interpreter.FastInterpreter;
 import org.mosslang.compiler.abi.AbiV10Records;
+import org.mosslang.compiler.abi.CheckedExpr;
+import org.mosslang.compiler.abi.CheckedStmt;
 import org.mosslang.compiler.abi.CheckedBodyCodec;
 import org.mosslang.compiler.abi.MossiImport;
 import org.mosslang.compiler.abi.MossiInterface;
 import org.mosslang.compiler.abi.MossiRecord;
+import org.mosslang.compiler.types.TypeRef;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -1351,7 +1354,10 @@ public class ProjectBuilder {
             List<String[]> semRecords = new ArrayList<>();
             List<MossiRecord> nominalRecords = new ArrayList<>();
             List<MossiRecord> methodTemplateRecords = new ArrayList<>();
+            List<MossiRecord> callableSummaryRecords = new ArrayList<>();
+            List<MossiRecord> checkedBodyRecords = new ArrayList<>();
             List<AbiV10Records.SourceProvenance> provenanceRecords = new ArrayList<>();
+            Set<String> emittedCallableIds = new HashSet<>();
             int exportedDeclarationOrdinal = 0;
 
             for (EnumType e : prog.enums) {
@@ -1449,6 +1455,22 @@ public class ProjectBuilder {
                 appendV9FunctionRecord(semanticFunction, fn, fnName, effects, true);
                 binRecords.add(new String[]{"fn:" + fnName, binaryFunction.toString()});
                 semRecords.add(new String[]{"fn:" + fnName, semanticFunction.toString()});
+
+                boolean localFunction = fn.definingModule == null || fn.definingModule.isEmpty()
+                        || fn.definingModule.equals(module);
+                boolean sourceBackedFunction = fn.sourceFile == null
+                        || !fn.sourceFile.endsWith(".mossi");
+                if (localFunction && sourceBackedFunction && fn.semanticCallableId != null
+                        && !fn.semanticCallableId.isEmpty()
+                        && emittedCallableIds.add(fn.semanticCallableId)) {
+                    AbiV10Records.Summary summary = v10IdentitySummary(
+                            fn, modId, provenanceRecords);
+                    if (summary != null) {
+                        callableSummaryRecords.add(summary.record());
+                        AbiV10Records.CheckedBodyRecord body = v10IdentityBody(fn, summary);
+                        checkedBodyRecords.add(body.record());
+                    }
+                }
             }
 
             binRecords.sort(Comparator.comparing(record -> record[0]));
@@ -1478,7 +1500,9 @@ public class ProjectBuilder {
             }
             mossi.binaryContract.addAll(nominalRecords);
             mossi.binaryContract.addAll(methodTemplateRecords);
+            mossi.binaryContract.addAll(callableSummaryRecords);
             for (String[] record : semRecords) mossi.semanticContract.add(new MossiRecord(record[0], record[1]));
+            mossi.privateSemanticDependencies.addAll(checkedBodyRecords);
             for (AbiV10Records.SourceProvenance provenance : provenanceRecords) mossi.provenance.add(provenance.record());
             return CheckedBodyCodec.encodeMossiBytes(mossi);
         }
@@ -1508,6 +1532,120 @@ public class ProjectBuilder {
         int firstLine = material.indexOf('\n');
         return (material.substring(0, firstLine + 1) + "provider_contract_digest sha256:" + digest + "\n" + material.substring(firstLine + 1))
                 .getBytes(StandardCharsets.UTF_8);
+    }
+
+    private static AbiV10Records.Summary v10IdentitySummary(
+            Function function, String moduleId,
+            List<AbiV10Records.SourceProvenance> provenanceRecords) {
+        if (function.params.size() != 1 || function.returnTypeRef == null) return null;
+        String returned = null;
+        if (function.resultExpression != null && !function.resultExpression.isBlank()
+                && function.body.isEmpty()) {
+            returned = function.resultExpression.trim();
+        } else if (function.body.size() == 1
+                && function.body.get(0).kind == Stmt.Kind.Return) {
+            Stmt statement = function.body.get(0);
+            returned = statement.a != null && !statement.a.isBlank()
+                    ? statement.a.trim() : "";
+            if (returned.isEmpty() && statement.text != null
+                    && statement.text.trim().startsWith("return ")) {
+                returned = statement.text.trim().substring(7).trim();
+            }
+        }
+        if (returned == null || !returned.equals(function.params.get(0).name)) return null;
+        TypeRef parameterType = function.params.get(0).checkedTypeRef;
+        if (!isV10SummaryTypeRepresentable(parameterType)
+                || !isV10SummaryTypeRepresentable(function.returnTypeRef)) return null;
+
+        Map<org.mosslang.compiler.types.TypeVarId, Integer> ordinals = new LinkedHashMap<>();
+        collectV10SummaryVariables(parameterType, ordinals);
+        collectV10SummaryVariables(function.returnTypeRef, ordinals);
+        AbiV10Records.WireType parameterWire = AbiV10Records.fromTypeRef(parameterType, ordinals);
+        AbiV10Records.WireType resultWire = AbiV10Records.fromTypeRef(function.returnTypeRef, ordinals);
+
+        AbiV10Records.Summary summary = new AbiV10Records.Summary();
+        summary.callableId = function.semanticCallableId;
+        summary.variableCount = ordinals.size();
+        summary.parameters.add(parameterWire);
+        org.mosslang.compiler.types.AccessMode access = function.parameterAccessModes.isEmpty()
+                ? org.mosslang.compiler.types.AccessMode.Read : function.parameterAccessModes.get(0);
+        summary.parameterAccess.add(switch (access) {
+            case Read -> AbiV10Records.Access.Read;
+            case Write -> AbiV10Records.Access.Write;
+            case Consume -> AbiV10Records.Access.Consume;
+        });
+        summary.result = resultWire;
+        String bodyBytes = CheckedBodyCodec.encodeCheckedBodyV1(List.of(
+                CheckedStmt.returnStmt(CheckedExpr.parameter(0,
+                        canonicalV10SummaryType(parameterType, ordinals)))));
+        summary.bodySemanticHash = "body-semantic-v1:sha256:" + CheckedBodyCodec.sha256Hex(bodyBytes);
+        AbiV10Records.SourceProvenance provenance = AbiV10Records.SourceProvenance.create(
+                moduleId, summary.callableId, function.sourceFile, function.line);
+        summary.provenanceId = provenance.provenanceId();
+        provenanceRecords.add(provenance);
+        return summary;
+    }
+
+    private static boolean isV10SummaryTypeRepresentable(TypeRef type) {
+        if (type == null) return false;
+        return switch (type.kind()) {
+            case Primitive, Unit, InferenceVar -> true;
+            case Enum, Domain -> type.declaration() != null;
+            case Builtin -> type.typeArgs().stream().allMatch(ProjectBuilder::isV10SummaryTypeRepresentable);
+            case NominalInstance -> type.declaration() != null
+                    && type.fieldSubstitutions().stream()
+                            .allMatch(field -> isV10SummaryTypeRepresentable(field.type()));
+            case TraitConstraint -> false;
+        };
+    }
+
+    private static AbiV10Records.CheckedBodyRecord v10IdentityBody(
+            Function function, AbiV10Records.Summary summary) {
+        Map<org.mosslang.compiler.types.TypeVarId, Integer> ordinals = new LinkedHashMap<>();
+        collectV10SummaryVariables(function.params.get(0).checkedTypeRef, ordinals);
+        collectV10SummaryVariables(function.returnTypeRef, ordinals);
+        List<CheckedStmt> checkedStatements = List.of(CheckedStmt.returnStmt(
+                CheckedExpr.parameter(0, canonicalV10SummaryType(
+                        function.params.get(0).checkedTypeRef, ordinals))));
+        AbiV10Records.CheckedBodyRecord body = new AbiV10Records.CheckedBodyRecord();
+        body.callableId = summary.callableId;
+        body.checkedIrBytes = CheckedBodyCodec.encodeCheckedBodyV1(checkedStatements);
+        body.semanticHash = summary.bodySemanticHash;
+        return body;
+    }
+
+    private static void collectV10SummaryVariables(TypeRef type,
+            Map<org.mosslang.compiler.types.TypeVarId, Integer> ordinals) {
+        if (type == null) return;
+        if (type.kind() == org.mosslang.compiler.types.TypeKind.InferenceVar) {
+            ordinals.computeIfAbsent(type.varId(), ignored -> ordinals.size());
+        }
+        for (TypeRef argument : type.typeArgs()) collectV10SummaryVariables(argument, ordinals);
+        for (TypeRef.FieldSub field : type.fieldSubstitutions())
+            collectV10SummaryVariables(field.type(), ordinals);
+    }
+
+    private static TypeRef canonicalV10SummaryType(TypeRef type,
+            Map<org.mosslang.compiler.types.TypeVarId, Integer> ordinals) {
+        if (type.kind() == org.mosslang.compiler.types.TypeKind.InferenceVar) {
+            Integer ordinal = ordinals.get(type.varId());
+            if (ordinal == null) throw new CompileError("SOURCE_FREE_SUMMARY_INVALID",
+                    "checked callable type variable has no summary ordinal", "", 1);
+            return TypeRef.var(new org.mosslang.compiler.types.TypeVarId(0, 0, ordinal));
+        }
+        return switch (type.kind()) {
+            case Primitive, Unit, Enum, Domain -> type;
+            case Builtin -> TypeRef.builtin(type.name(), type.typeArgs().stream()
+                    .map(argument -> canonicalV10SummaryType(argument, ordinals)).toList());
+            case NominalInstance -> {
+                List<TypeRef.FieldSub> substitutions = type.fieldSubstitutions().stream()
+                        .map(field -> new TypeRef.FieldSub(field.name(),
+                                canonicalV10SummaryType(field.type(), ordinals))).toList();
+                yield TypeRef.nominalBound(type.declaration(), type.name(), substitutions);
+            }
+            default -> throw new CompileError("SOURCE_FREE_SUMMARY_INVALID",
+                    "checked callable type is not representable in ABI-v10", "", 1);
+        };
     }
 
     private static String raisedErrorIdentity(String module, List<Stmt> body) {

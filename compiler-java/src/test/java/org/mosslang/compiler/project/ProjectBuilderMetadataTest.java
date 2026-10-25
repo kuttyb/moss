@@ -321,6 +321,34 @@ public final class ProjectBuilderMetadataTest {
                     && record.payload.contains(" 1 \"retries\" 1 \"retries\" 0\n"))) {
             throw new AssertionError("Margo ABI-v10 producer did not derive failure-arm state effects");
         }
+
+        Program identityProgram = Parser.parseSource(""
+                + "module provider\n"
+                + "export fn identity(value):\n"
+                + "  return value\n", "identity-provider.moss");
+        new org.mosslang.compiler.semantics.CheckedProgram(identityProgram).run();
+        MossiInterface identityInterface = CheckedBodyCodec.verifySourceFree(
+                ProjectBuilder.generateMossiInterface(manifest, "provider", identityProgram,
+                        toolchain, java.util.List.of(), Path.of("tmp"), java.util.Map.of()));
+        AbiV10Records.Summary identitySummary = identityInterface.binaryContract.stream()
+                .filter(record -> record.payloadBytes().length > 0
+                        && (record.payloadBytes()[0] == 3 || record.payloadBytes()[0] == 4))
+                .map(AbiV10Records.Summary::decode).findFirst().orElseThrow(() ->
+                        new AssertionError("ABI-v10 producer omitted the checked generic identity summary"));
+        AbiV10Records.CheckedBodyRecord identityBody = identityInterface.privateSemanticDependencies.stream()
+                .filter(record -> record.id.startsWith("checked-body-v1:"))
+                .map(AbiV10Records.CheckedBodyRecord::decode).findFirst().orElseThrow(() ->
+                        new AssertionError("ABI-v10 producer omitted the checked generic identity body"));
+        if (!identitySummary.callableId.equals(identityBody.callableId)
+                || identitySummary.variableCount != 1
+                || identitySummary.parameters.size() != 1
+                || identitySummary.parameters.get(0).kind != AbiV10Records.WireTypeKind.BoundVar
+                || identitySummary.parameters.get(0).ordinal != 0
+                || identitySummary.result.kind != AbiV10Records.WireTypeKind.BoundVar
+                || identitySummary.result.ordinal != 0
+                || !identitySummary.bodySemanticHash.equals(identityBody.semanticHash)) {
+            throw new AssertionError("ABI-v10 identity summary/body did not retain its checked type relation");
+        }
     }
 
     private static void assertEquals(String expected, String actual) {
