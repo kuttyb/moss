@@ -16456,6 +16456,9 @@ drains queued roots at `join()` using a bounded worker queue with the requested
 thread count and queue-capacity backpressure. Generated Rust was inspected, not
 compiled. Full Phase 20 root admission/fairness, compensation-worker behavior,
 and OS affinity/priority hints remain unimplemented or unverified.
+Additionally, Java lowers a synchronous `message` from `main` directly to the
+handler `_root` call, while C++ routes that ingress through `runtime_invoke`;
+the observable effect with an active Executor remains to be tested.
 All 12 Java test classes pass under ABI-v9 and staged ABI-v10. The standalone
 JAR packages successfully, and the packaged launcher generated the expected
 queue and handler-call Rust for the positive Executor fixture. Feedback
