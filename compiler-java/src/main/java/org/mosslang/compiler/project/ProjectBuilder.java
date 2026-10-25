@@ -1230,7 +1230,7 @@ public class ProjectBuilder {
             if (method.resultExpression != null && !method.resultExpression.isEmpty()) return null;
             boolean noOpBody = method.body.stream().allMatch(statement ->
                     statement.kind == org.mosslang.compiler.ast.Stmt.Kind.Pass);
-            boolean literalReturnBody = v10PureIntegerLiteralMethod(method);
+            boolean literalReturnBody = v10PurePrimitiveLiteralMethod(method);
             if (!noOpBody && !literalReturnBody) return null;
             if (method.returnType != null && !method.returnType.isEmpty()
                     && !"unit".equalsIgnoreCase(method.returnType) && !literalReturnBody) return null;
@@ -1272,24 +1272,37 @@ public class ProjectBuilder {
         return template;
     }
 
-    private static boolean v10PureIntegerLiteralMethod(Method method) {
+    private static boolean v10PurePrimitiveLiteralMethod(Method method) {
         if (!method.params.isEmpty() || method.body.size() != 1
                 || method.body.get(0).kind != org.mosslang.compiler.ast.Stmt.Kind.Return
-                || method.returnType == null
-                || !"int".equalsIgnoreCase(method.returnType)) return false;
+                || method.returnType == null) return false;
         org.mosslang.compiler.ast.Stmt statement = method.body.get(0);
         String expression = statement.a != null ? statement.a.trim() : "";
         if (expression.isEmpty() && statement.text != null
                 && statement.text.trim().startsWith("return ")) {
             expression = statement.text.trim().substring(7).trim();
         }
-        if (!expression.matches("-?[0-9](?:_?[0-9])*")) return false;
-        try {
-            Long.parseLong(expression.replace("_", ""));
-            return true;
-        } catch (NumberFormatException ignored) {
-            return false;
+        String type = method.returnType.toLowerCase(Locale.ROOT);
+        if ("int".equals(type)) {
+            if (!expression.matches("-?[0-9](?:_?[0-9])*")) return false;
+            try {
+                Long.parseLong(expression.replace("_", ""));
+                return true;
+            } catch (NumberFormatException ignored) {
+                return false;
+            }
         }
+        if ("bool".equals(type)) return "true".equals(expression) || "false".equals(expression);
+        if ("string".equals(type)) return v10StringLiteralPayload(expression) != null;
+        if ("float".equals(type) && expression.matches(
+                "[-+]?(?:[0-9]+\\.[0-9]+|[0-9]+[eE][+-]?[0-9]+|[0-9]+\\.[0-9]+[eE][+-]?[0-9]+)")) {
+            try {
+                return Double.isFinite(Double.parseDouble(expression));
+            } catch (NumberFormatException ignored) {
+                return false;
+            }
+        }
+        return false;
     }
 
     static byte[] generateMossiInterface(ProjectManifest manifest, String module, Program prog, BackendToolchain toolchain, List<String> deps, Path buildDir, Map<String, List<Path>> externalCandidateProviders) {

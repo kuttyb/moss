@@ -419,6 +419,12 @@ public final class ProjectBuilderMetadataTest {
                 + "  y: Int\n"
                 + "  fn ready() -> Int:\n"
                 + "    return 7\n"
+                + "  fn enabled() -> Bool:\n"
+                + "    return true\n"
+                + "  fn label() -> String:\n"
+                + "    return \"point\"\n"
+                + "  fn measure() -> Float:\n"
+                + "    return 1.5\n"
                 + "enum Outcome:\n"
                 + "  Ready(code: Int)\n"
                 + "  Done\n"
@@ -449,12 +455,13 @@ public final class ProjectBuilderMetadataTest {
         AbiV10Records.NominalTemplate pointTemplate = decoded.binaryContract.stream()
                 .filter(record -> record.id.startsWith("nominal-template-v1:"))
                 .map(AbiV10Records.NominalTemplate::decode).findFirst().orElseThrow();
-        if (pointTemplate.methodTemplateIds.size() != 1) {
+        if (pointTemplate.methodTemplateIds.size() != 4) {
             throw new AssertionError("ABI-v10 nominal template omitted its method reference");
         }
         AbiV10Records.MethodTemplate methodTemplate = decoded.binaryContract.stream()
-                .filter(record -> record.id.equals(pointTemplate.methodTemplateIds.get(0)))
-                .map(AbiV10Records.MethodTemplate::decode).findFirst().orElseThrow();
+                .filter(record -> pointTemplate.methodTemplateIds.contains(record.id))
+                .map(AbiV10Records.MethodTemplate::decode)
+                .filter(method -> "ready".equals(method.methodName)).findFirst().orElseThrow();
         if (!"ready".equals(methodTemplate.methodName)
                 || methodTemplate.receiverAccess != AccessMode.Read.ordinal() + 1
                 || !methodTemplate.parameterAccess.isEmpty()
@@ -471,6 +478,12 @@ public final class ProjectBuilderMetadataTest {
             Program methodConsumer = Parser.parseSource(""
                     + "fn call(point: provider__Point) -> Int:\n"
                     + "  return point.ready()\n"
+                    + "fn enabled(point: provider__Point) -> Bool:\n"
+                    + "  return point.enabled()\n"
+                    + "fn label(point: provider__Point) -> String:\n"
+                    + "  return point.label()\n"
+                    + "fn measure(point: provider__Point) -> Float:\n"
+                    + "  return point.measure()\n"
                     + "fn main():\n"
                     + "  pass\n", "method-template-consumer.moss");
             org.mosslang.compiler.cli.Main.loadMossiFunctions(
@@ -478,7 +491,16 @@ public final class ProjectBuilderMetadataTest {
             new org.mosslang.compiler.semantics.SemanticChecker(methodConsumer).run();
             if (methodConsumer.objects.stream().noneMatch(object -> object.name.equals("provider__Point")
                     && object.methods.stream().anyMatch(method -> method.name.equals("ready")
-                            && "int".equalsIgnoreCase(method.returnType)))) {
+                            && "int".equalsIgnoreCase(method.returnType)))
+                    || methodConsumer.objects.stream().noneMatch(object -> object.name.equals("provider__Point")
+                            && object.methods.stream().anyMatch(method -> method.name.equals("enabled")
+                                    && "bool".equalsIgnoreCase(method.returnType)))
+                    || methodConsumer.objects.stream().noneMatch(object -> object.name.equals("provider__Point")
+                            && object.methods.stream().anyMatch(method -> method.name.equals("label")
+                                    && "string".equalsIgnoreCase(method.returnType)))
+                    || methodConsumer.objects.stream().noneMatch(object -> object.name.equals("provider__Point")
+                            && object.methods.stream().anyMatch(method -> method.name.equals("measure")
+                                    && "float".equalsIgnoreCase(method.returnType)))) {
                 throw new AssertionError("ABI-v10 method template did not supply source-free method typing");
             }
         } catch (java.io.IOException error) {

@@ -14870,11 +14870,11 @@ The ABI-v10 nominal-template writer previously rejected an exported object
 template when any method had a body beyond `pass`, suppressing the object's
 canonical template and its method records. It now retains templates when a
 method is a zero-argument, read-receiver method whose sole body statement
-returns a closed integer literal. The source-free regression removes the
-object's legacy semantic rows, imports only its nominal and method-template
-records, and successfully type-checks a consumer call to `Point.ready()`.
+returns a closed Int, Bool, Float, or String literal. The source-free regression
+removes the object's legacy semantic rows, imports only its nominal and
+method-template records, and type-checks calls to all four method signatures.
 
 Validation: all eleven Java unit-test classes pass in staged ABI-v10 and ABI-v9.
-This proves only signature projection for the pure literal-return method; body
-summaries, effects, generic methods, native linkage, and general ABI-v10
-contract completeness remain open.
+This proves only signature projection for pure primitive-literal return
+methods; body summaries, effects, generic methods, native linkage, and general
+ABI-v10 contract completeness remain open.
