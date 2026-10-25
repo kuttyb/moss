@@ -13624,3 +13624,13 @@ counter-loop regression emits `0`, `1`, `2`, matching C++ Fast Debug.
 Validation: clean Java build and all eleven Java unit-test classes pass in
 default ABI-v9 and staged ABI-v10 modes; focused Java/C++ while-loop output
 matches. Native, Margo, SDK, and full acceptance gates remain deferred.
+
+### Phase 25.3 checkpoint — standalone compiler packaging and launcher
+
+Built `compiler-java/dist/moss.jar` and its generated `moss` wrapper using
+`scripts/java/package.sh`. Invoking the packaged launcher with
+`agent bootstrap --json` returns compiler `0.1.0` and language `moss-0.1`.
+The optional JDT daemon client lifecycle unit tests also pass (5/5 mocked tests);
+this does not claim a live daemon startup or shutdown test.
+
+No native/project acceptance was run. Phase 25.3 remains in progress.
