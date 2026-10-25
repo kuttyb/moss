@@ -14384,3 +14384,16 @@ source of effect information. The Java build and all eleven Java unit-test
 classes pass under ABI-v9 and staged ABI-v10. Five related Phase 21 fixtures
 are accepted by both C++ and Java. This change removes fixture-specific
 behavior; it does not establish complete raised-effect parity.
+
+### Phase 25.3 continuation — Julia Accumulator loop-method repro
+
+Reduced the existing `examples/swarm/Julia/Accumulator` checker disagreement
+to an object method that loops over `other.keys()` and passes the `String` loop
+binding plus `other.get(key)` to another object method. C++ rejects the call as
+having no matching method; Java accepts it. The Moss practical guide explicitly
+documents iteration over `Map.keys()` snapshots. A paired Java negative test
+confirms the same call rejects a `Bool` in the `Int` argument position. This
+supports Java's argument-type checking but does not resolve whether the C++
+rejection is an oracle defect or intended restriction. The focused Java suite
+passes in ABI-v9 and staged ABI-v10; no generated Rust or runtime check was
+performed.

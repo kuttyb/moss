@@ -656,6 +656,8 @@ public class SemanticCheckerTest {
         Program program = Parser.parseSource(""
                 + "type Accumulator:\n"
                 + "  data: Map [String, Int]\n"
+                + "  fn get(key: String) -> Int:\n"
+                + "    return data.get(key, 0)\n"
                 + "  fn keys() -> Vector [String]:\n"
                 + "    return data.keys()\n"
                 + "  fn increment_by(key: String, amount: Int) -> Int:\n"
@@ -664,10 +666,26 @@ public class SemanticCheckerTest {
                 + "    return next\n"
                 + "  fn merge(other: Accumulator):\n"
                 + "    for key in other.keys():\n"
-                + "      self.increment_by(key, 1)\n"
+                + "      self.increment_by(key, other.get(key))\n"
                 + "fn main():\n"
                 + "  pass\n", "method-loop-argument.moss");
         new SemanticChecker(program).run();
+        assertCompileError(""
+                + "type Accumulator:\n"
+                + "  data: Map [String, Int]\n"
+                + "  fn get(key: String) -> Int:\n"
+                + "    return data.get(key, 0)\n"
+                + "  fn keys() -> Vector [String]:\n"
+                + "    return data.keys()\n"
+                + "  fn increment_by(key: String, amount: Int) -> Int:\n"
+                + "    next = data.get(key, 0) + amount\n"
+                + "    data [key] = next\n"
+                + "    return next\n"
+                + "  fn merge(other: Accumulator):\n"
+                + "    for key in other.keys():\n"
+                + "      self.increment_by(key, true)\n"
+                + "fn main():\n"
+                + "  pass\n", "TYPE_MISMATCH");
     }
 
     private static void testCustomIteratorNamedCounterWithoutRaisesIsAccepted() {
