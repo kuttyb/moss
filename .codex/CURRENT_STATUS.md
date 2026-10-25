@@ -15189,6 +15189,20 @@ All eleven Java test classes pass under ABI-v9 and staged ABI-v10; generic
 receiver substitutions and imported method summaries remain open.
 
 
+### Phase 25.3 continuation — summarize constructor argument consumption
+
+`wrap(value) -> Box(payload=value)` moved an owned function parameter into a
+new object, but Java summarized constructor arguments as READ. Function consume
+summary inference now recognizes named and positional object constructor
+arguments and propagates their transfers to the enclosing function. Java and
+C++ now reject the caller's later use of `value`.
+
+The focused regression covers a function returning a constructed object that
+owns its parameter. All eleven Java test classes pass under ABI-v9 and staged
+ABI-v10; generic object construction and branch-sensitive argument aliases
+remain open.
+
+
 ### Phase 25.3 continuation — source-free ABI-v10 consuming receivers
 
 Extended `SourceFreeObjectMetadataTest` to round-trip a method template with

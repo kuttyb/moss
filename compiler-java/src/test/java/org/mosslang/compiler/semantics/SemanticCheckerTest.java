@@ -17,6 +17,7 @@ public class SemanticCheckerTest {
         testInferredMethodReturnSatisfiesStructuralTrait();
         testInferredMethodReturnMustMatchStructuralTrait();
         testFunctionParameterAccessModesAreRetained();
+        testFunctionConsumeSummaryIncludesObjectConstructors();
         testFunctionRetainsResolvedOpenParameterTypes();
         testGenericNumericOperationRetainsOpenTypeUntilSpecialization();
         testMixedIntFloatComparisons();
@@ -637,6 +638,20 @@ public class SemanticCheckerTest {
         assertEquals(AccessMode.Read, program.functions.get(0).parameterAccessModes.get(0));
         assertEquals(AccessMode.Write, program.functions.get(1).parameterAccessModes.get(0));
         assertEquals(AccessMode.Consume, program.functions.get(2).parameterAccessModes.get(0));
+    }
+
+    private static void testFunctionConsumeSummaryIncludesObjectConstructors() {
+        assertCompileError(""
+                + "type Payload:\n"
+                + "  value: String\n"
+                + "type Box:\n"
+                + "  payload: Payload\n"
+                + "fn wrap(value: Payload) -> Box:\n"
+                + "  return Box(payload=value)\n"
+                + "fn main():\n"
+                + "  value = Payload(value=\"x\")\n"
+                + "  box = wrap(value)\n"
+                + "  echo value.value\n", "OWNERSHIP_USE_AFTER_CONSUME");
     }
 
     private static void testObjectMethodAccessModesAreRetained() {

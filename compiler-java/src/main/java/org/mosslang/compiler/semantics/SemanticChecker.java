@@ -2125,9 +2125,7 @@ public class SemanticChecker {
                     for (int index = 0; index < args.size() && index < callee.params.size(); index++) {
                         if (index >= callee.parameterAccessModes.size()
                                 || callee.parameterAccessModes.get(index) != AccessMode.Consume) continue;
-                        String argument = args.get(index).trim();
-                        int colon = argument.indexOf(':');
-                        if (colon >= 0) argument = argument.substring(colon + 1).trim();
+                        String argument = callArgumentValue(args.get(index));
                         if (argument.equals(paramName) && parameterType != null
                                 && transferType(parameterType)) return true;
                         TypeRef movedType = resolveReceiverPathType(parameterType, argument, paramName);
@@ -2172,9 +2170,7 @@ public class SemanticChecker {
                         for (int index = 0; index < args.size()
                                 && index < method.parameterAccessModes.size(); index++) {
                             if (method.parameterAccessModes.get(index) != AccessMode.Consume) continue;
-                            String argument = args.get(index).trim();
-                            int colon = argument.indexOf(':');
-                            if (colon >= 0) argument = argument.substring(colon + 1).trim();
+                            String argument = callArgumentValue(args.get(index));
                             if (argument.equals(paramName) && parameterType != null
                                     && transferType(parameterType)) return true;
                             if (transferType(resolveReceiverPathType(parameterType, argument, paramName)))
@@ -2184,7 +2180,50 @@ public class SemanticChecker {
                 }
             }
         }
+        for (ObjectType object : program.objects) {
+            java.util.regex.Pattern constructor = java.util.regex.Pattern.compile(
+                    "(?<![A-Za-z0-9_.])" + java.util.regex.Pattern.quote(object.name)
+                            + "\\s*\\(");
+            for (String expression : expressions) {
+                java.util.regex.Matcher call = constructor.matcher(expression);
+                while (call.find()) {
+                    int open = expression.indexOf('(', call.start());
+                    int close = -1;
+                    for (int cursor = open + 1; cursor < expression.length(); cursor++) {
+                        if (expression.charAt(cursor) == ')'
+                                && ExpressionTyper.findMatchingOpenParen(expression, cursor) == open) {
+                            close = cursor;
+                            break;
+                        }
+                    }
+                    if (close < 0) continue;
+                    List<String> args = ExpressionTyper.parseArguments(
+                            expression.substring(open + 1, close));
+                    for (String rawArgument : args) {
+                        String argument = callArgumentValue(rawArgument);
+                        if (argument.equals(paramName) && parameterType != null
+                                && transferType(parameterType)) return true;
+                        if (transferType(resolveReceiverPathType(parameterType, argument, paramName)))
+                            return true;
+                    }
+                }
+            }
+        }
         return false;
+    }
+
+    private String callArgumentValue(String rawArgument) {
+        if (rawArgument == null) return "";
+        String argument = rawArgument.trim();
+        int equals = argument.indexOf('=');
+        if (equals > 0 && (equals + 1 >= argument.length() || argument.charAt(equals + 1) != '=')
+                && argument.substring(0, equals).trim().matches("[A-Za-z_][A-Za-z0-9_]*")) {
+            return argument.substring(equals + 1).trim();
+        }
+        int colon = argument.indexOf(':');
+        if (colon > 0 && argument.substring(0, colon).trim().matches("[A-Za-z_][A-Za-z0-9_]*"))
+            return argument.substring(colon + 1).trim();
+        return argument;
     }
 
     private void closeFunctionConsumeModes() {

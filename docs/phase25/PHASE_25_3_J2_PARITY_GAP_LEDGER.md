@@ -529,6 +529,18 @@ All eleven Java test classes pass under ABI-v9 and staged ABI-v10. Generic
 receiver substitutions and imported method summaries remain open.
 
 
+### Follow-up — summarize object constructor argument consumption
+
+For `wrap(value) -> Box(payload=value)`, C++ inferred that `wrap` consumes
+the owned parameter while Java previously left it in READ mode. Java consume
+summary inference now recognizes constructor arguments, strips named argument
+labels, and marks a transferred parameter CONSUME.
+
+The focused Java regression and C++/Java diagnostic pair cover caller reuse.
+All eleven Java test classes pass under ABI-v9 and staged ABI-v10. Generic
+object construction and branch-sensitive aliases remain open.
+
+
 ### Follow-up — source-free ABI-v10 consuming receiver metadata
 
 The source-free object test now encodes and imports an ABI-v10 method template
