@@ -1289,22 +1289,18 @@ public class SemanticQueryEngine {
                     && statement.text.trim().startsWith("raise ")) {
                 expression = statement.text.trim().substring(6).trim();
             }
+            if (expression.isEmpty()) {
+                String recoveredPattern = enclosingRecoverPattern(body, index);
+                String canonical = canonicalRaisedVariant(recoveredPattern, program);
+                if (canonical != null && !isRaisedVariantRecovered(body, index, canonical)) {
+                    variants.add(canonical);
+                }
+                continue;
+            }
             int open = expression.indexOf('(');
             if (open >= 0) expression = expression.substring(0, open).trim();
-            int dot = expression.lastIndexOf('.');
-            if (dot <= 0 || dot == expression.length() - 1) continue;
-            String enumName = expression.substring(0, dot).replace('.', '_');
-            String caseName = expression.substring(dot + 1).trim();
-            if (program != null && program.enums != null) {
-                for (EnumType declaration : program.enums) {
-                    if (declaration.name.equals(enumName)
-                            || declaration.name.endsWith("__" + enumName)) {
-                        enumName = declaration.name.replace('.', '_');
-                        break;
-                    }
-                }
-            }
-            String canonical = "enum:" + enumName + ":" + caseName;
+            String canonical = canonicalRaisedVariant(expression, program);
+            if (canonical == null) continue;
             if (!isRaisedVariantRecovered(body, index, canonical)) variants.add(canonical);
         }
         if (function != null && program != null && program.functions != null) {
@@ -1372,6 +1368,41 @@ public class SemanticQueryEngine {
             }
         }
         return variants;
+    }
+
+    private static String enclosingRecoverPattern(List<Stmt> body, int raiseIndex) {
+        Stmt raised = body.get(raiseIndex);
+        for (int recoverIndex = raiseIndex - 1; recoverIndex >= 0; recoverIndex--) {
+            Stmt recover = body.get(recoverIndex);
+            if (recover == null || recover.kind != Stmt.Kind.Recover
+                    || recover.indent >= raised.indent) continue;
+            int recoverEnd = recoverIndex + 1;
+            while (recoverEnd < body.size()
+                    && body.get(recoverEnd).indent > recover.indent) recoverEnd++;
+            if (raiseIndex < recoverEnd) return recover.a == null ? "" : recover.a.trim();
+        }
+        return "";
+    }
+
+    private static String canonicalRaisedVariant(String expression, Program program) {
+        if (expression == null || expression.isBlank()) return null;
+        String normalized = expression.trim();
+        int payload = normalized.indexOf('(');
+        if (payload >= 0) normalized = normalized.substring(0, payload).trim();
+        int dot = normalized.lastIndexOf('.');
+        if (dot <= 0 || dot == normalized.length() - 1) return null;
+        String enumName = normalized.substring(0, dot).replace('.', '_');
+        String caseName = normalized.substring(dot + 1).trim();
+        if (program != null && program.enums != null) {
+            for (EnumType declaration : program.enums) {
+                if (declaration.name.equals(enumName)
+                        || declaration.name.endsWith("__" + enumName)) {
+                    enumName = declaration.name;
+                    break;
+                }
+            }
+        }
+        return "enum:" + enumName + ":" + caseName;
     }
 
     private static boolean containsFunctionCall(String expression, String functionName) {

@@ -323,3 +323,13 @@ including method tail-result expressions. The focused `Box.calculate()` to
 `self.source_fault()` case reports `enum:Trouble:Bad` under both C++ and Java.
 All eleven Java unit tests pass in ABI-v9. This does not close effects for
 arbitrary receivers, generic/cross-module methods, or callbacks.
+
+## Phase 25.3 continuation — explicit bare-reraise effect query
+
+A bare `raise` inside `recover Trouble.Bad` now contributes that explicit
+variant to the selected callable's escaping raise set, subject to any outer
+matching recovery. The minimized `reraiser()` query matches C++ on
+`enum:Trouble:Bad`; helper and handled-call controls also match.
+
+All eleven Java unit tests pass in ABI-v9. Catch-all reraises and generalized
+multiple-variant/cross-module effect closure remain open.

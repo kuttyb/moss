@@ -14763,3 +14763,16 @@ receiver resolution and generic/cross-module method summaries remain open.
 
 Validation: all eleven Java unit-test classes pass under ABI-v9; focused C++
 and Java queries agree on the method raise set.
+
+### Phase 25.3 continuation — preserve explicit bare-reraise effects
+
+The query's recover-aware body walk now recognizes bare `raise` within an
+explicit `recover Trouble.Bad` arm as re-propagating that variant. An enclosing
+outer recover still filters the re-raised variant using the same lexical path.
+The focused `reraiser()` query matches C++ on `enum:Trouble:Bad`; source-helper
+and handled-call controls remain green.
+
+Validation: all eleven Java unit-test classes pass under ABI-v9, and focused
+C++/Java effects queries match for both the source helper and bare reraiser.
+Catch-all reraises, multiple recovered variants, and complete effect closure
+remain unverified.
