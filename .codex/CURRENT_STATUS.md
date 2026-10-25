@@ -13378,3 +13378,20 @@ Validation after this checkpoint's edits: all ten Java unit-test classes pass
 in default ABI-v9 and staged ABI-v10 modes; `git diff --check` passes. No native
 execution, Rust compilation, Margo provider-consumer build, SDK gate, or full
 `make check` was run. Phase 25.3 remains incomplete.
+
+### Phase 25.3 continuation — project pure Float expressions in ABI-v10
+
+The ABI-v10 source-free callable producer now emits canonical summary and
+checked-body records for a bounded pure Float expression shape: one return
+statement, Float parameters, Float literals, nested `+`, `-`, `*`, and `/`, and
+unary negation. Float literal parsing reuses Moss `NumericLiteral` validation
+and canonicalization, including leading-dot and digit-separated forms. The
+source-free loader projects only matching typed Float trees. The producer to
+consumer regression removes legacy generic body rows and checks Float calls.
+
+Validation after these edits: all ten Java unit-test classes pass after a clean
+build in default ABI-v9 and staged ABI-v10 modes. C++ and Java both accept a
+focused standalone Float probe. Agent-feedback validation and `git diff
+--check` pass. No native Rust compilation/execution, Margo provider-consumer
+build, SDK gate, or full `make check` was run; ABI-v10 general body projection
+and Phase 25.3 remain incomplete.

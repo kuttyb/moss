@@ -1451,6 +1451,7 @@ public class Main {
             int returnedParameter = -1;
             String returnedLiteral = null;
             String closedIntExpression = null;
+            String closedFloatExpression = null;
             if (statement.expr.kind == org.mosslang.compiler.abi.CheckedExprKind.Parameter) {
                 returnedParameter = statement.expr.ordinal;
                 if (returnedParameter < 0 || returnedParameter >= parameterTypes.size()
@@ -1485,6 +1486,13 @@ public class Main {
                             && "int".equalsIgnoreCase(type.name()))) {
                 closedIntExpression = sourceFreeClosedIntExpression(statement.expr, parameterTypes, 0);
                 if (closedIntExpression == null) continue;
+            } else if (resultType.kind() == org.mosslang.compiler.types.TypeKind.Primitive
+                    && "float".equalsIgnoreCase(resultType.name())
+                    && parameterTypes.stream().allMatch(type -> type.kind()
+                            == org.mosslang.compiler.types.TypeKind.Primitive
+                            && "float".equalsIgnoreCase(type.name()))) {
+                closedFloatExpression = sourceFreeClosedFloatExpression(statement.expr, parameterTypes, 0);
+                if (closedFloatExpression == null) continue;
             } else {
                 continue;
             }
@@ -1510,8 +1518,9 @@ public class Main {
                 function.body.clear();
                 String returnExpression = returnedParameter >= 0
                         ? function.params.get(returnedParameter).name
-                        : closedIntExpression != null ? closedIntExpression : returnedLiteral;
-                if (closedIntExpression != null) {
+                        : closedIntExpression != null ? closedIntExpression
+                                : closedFloatExpression != null ? closedFloatExpression : returnedLiteral;
+                if (closedIntExpression != null || closedFloatExpression != null) {
                     for (int index = 0; index < function.params.size(); index++) {
                         returnExpression = returnExpression.replace("\u0001" + index + "\u0002",
                                 function.params.get(index).name);
@@ -1570,6 +1579,59 @@ public class Main {
             }
             default -> null;
         };
+    }
+
+    private static String sourceFreeClosedFloatExpression(
+            org.mosslang.compiler.abi.CheckedExpr expression,
+            List<org.mosslang.compiler.types.TypeRef> parameterTypes, int depth) {
+        if (expression == null || depth > 128 || expression.type == null
+                || expression.type.kind() != org.mosslang.compiler.types.TypeKind.Primitive
+                || !"float".equalsIgnoreCase(expression.type.name())) return null;
+        return switch (expression.kind) {
+            case Parameter -> expression.ordinal >= 0 && expression.ordinal < parameterTypes.size()
+                    && expression.type.equals(parameterTypes.get(expression.ordinal))
+                    ? "\u0001" + expression.ordinal + "\u0002" : null;
+            case FloatLiteral -> isSourceFreeFloatLiteral(expression.literalValue)
+                    ? expression.literalValue : null;
+            case Unary -> {
+                if (expression.unaryOp != org.mosslang.compiler.abi.CheckedUnaryOp.Neg
+                        || expression.operands.size() != 1) yield null;
+                String operand = sourceFreeClosedFloatExpression(
+                        expression.operands.get(0), parameterTypes, depth + 1);
+                yield operand == null ? null : "- (" + operand + ")";
+            }
+            case Binary -> {
+                if (!java.util.Set.of(org.mosslang.compiler.abi.CheckedBinaryOp.Add,
+                        org.mosslang.compiler.abi.CheckedBinaryOp.Sub,
+                        org.mosslang.compiler.abi.CheckedBinaryOp.Mul,
+                        org.mosslang.compiler.abi.CheckedBinaryOp.Div).contains(expression.binaryOp)
+                        || expression.operands.size() != 2) yield null;
+                String left = sourceFreeClosedFloatExpression(
+                        expression.operands.get(0), parameterTypes, depth + 1);
+                String right = sourceFreeClosedFloatExpression(
+                        expression.operands.get(1), parameterTypes, depth + 1);
+                if (left == null || right == null) yield null;
+                String operator = switch (expression.binaryOp) {
+                    case Add -> "+";
+                    case Sub -> "-";
+                    case Mul -> "*";
+                    case Div -> "/";
+                    default -> null;
+                };
+                yield operator == null ? null : "(" + left + " " + operator + " " + right + ")";
+            }
+            default -> null;
+        };
+    }
+
+    private static boolean isSourceFreeFloatLiteral(String value) {
+        if (value == null || value.isEmpty()
+                || !org.mosslang.compiler.parser.NumericLiteral.numericLiteralStartsAt(value, 0)) return false;
+        org.mosslang.compiler.parser.NumericLiteral literal =
+                org.mosslang.compiler.parser.NumericLiteral.scanNumericLiteral(value, 0);
+        return literal.ok && literal.end == value.length()
+                && literal.kind == org.mosslang.compiler.parser.NumericLiteral.Kind.Float
+                && literal.canonical.equals(value);
     }
 
     private static org.mosslang.compiler.types.TypeRef v10SimpleWireType(

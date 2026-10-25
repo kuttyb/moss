@@ -16,6 +16,7 @@ import org.mosslang.compiler.parser.Parser;
 
 import java.nio.file.Path;
 import java.nio.file.Files;
+import java.util.List;
 
 public final class ProjectBuilderMetadataTest {
     public static void main(String[] args) throws Exception {
@@ -354,6 +355,10 @@ public final class ProjectBuilderMetadataTest {
                 + "  return -42\n"
                 + "export fn negative_ratio() -> Float:\n"
                 + "  return -1.5\n"
+                + "export fn weighted(left: Float, right: Float) -> Float:\n"
+                + "  return left * 2.5 + right / 2.0\n"
+                + "export fn adjust_ratio(value: Float) -> Float:\n"
+                + "  return -value + .5\n"
                 + "export fn greeting() -> String:\n"
                 + "  return \"hello\"\n", "identity-provider.moss");
         new org.mosslang.compiler.semantics.CheckedProgram(identityProgram).run();
@@ -611,6 +616,30 @@ public final class ProjectBuilderMetadataTest {
                 throw new AssertionError("ABI-v10 integer-" + operation.getKey() + " checked body is incomplete");
             }
         }
+        for (String floatCallable : List.of("weighted", "adjust_ratio")) {
+            AbiV10Records.Summary floatSummary = identityInterface.binaryContract.stream()
+                    .filter(record -> record.payloadBytes().length > 0
+                            && (record.payloadBytes()[0] == 3 || record.payloadBytes()[0] == 4))
+                    .map(AbiV10Records.Summary::decode)
+                    .filter(summary -> summary.callableId.endsWith(":fn:" + floatCallable))
+                    .findFirst().orElseThrow(() -> new AssertionError(
+                            "ABI-v10 producer omitted the Float expression summary for " + floatCallable));
+            AbiV10Records.CheckedBodyRecord floatBody = identityInterface.privateSemanticDependencies.stream()
+                    .filter(record -> record.id.startsWith("checked-body-v1:"))
+                    .map(AbiV10Records.CheckedBodyRecord::decode)
+                    .filter(body -> body.callableId.endsWith(":fn:" + floatCallable))
+                    .findFirst().orElseThrow(() -> new AssertionError(
+                            "ABI-v10 producer omitted the Float expression body for " + floatCallable));
+            List<org.mosslang.compiler.abi.CheckedStmt> floatStatements =
+                    CheckedBodyCodec.decodeCheckedBody(floatBody.checkedIrBytes);
+            if (floatSummary.result.kind != AbiV10Records.WireTypeKind.Primitive
+                    || !"float".equals(floatSummary.result.identity)
+                    || floatStatements.size() != 1
+                    || floatStatements.get(0).kind != org.mosslang.compiler.abi.CheckedStmtKind.Return
+                    || !floatSummary.bodySemanticHash.equals(floatBody.semanticHash)) {
+                throw new AssertionError("ABI-v10 Float summary/body is incomplete for " + floatCallable);
+            }
+        }
         AbiV10Records.Summary combineSummary = identityInterface.binaryContract.stream()
                 .filter(record -> record.payloadBytes().length > 0
                         && (record.payloadBytes()[0] == 3 || record.payloadBytes()[0] == 4))
@@ -689,6 +718,10 @@ public final class ProjectBuilderMetadataTest {
                     + "  return provider__negative_ratio()\n"
                     + "fn use_greeting() -> String:\n"
                     + "  return provider__greeting()\n"
+                    + "fn use_weighted() -> Float:\n"
+                    + "  return provider__weighted(2.0, 4.0)\n"
+                    + "fn use_adjust_ratio() -> Float:\n"
+                    + "  return provider__adjust_ratio(3.0)\n"
                     + "fn use_increment() -> Int:\n"
                     + "  return provider__increment(41)\n"
                     + "fn use_scale() -> Int:\n"

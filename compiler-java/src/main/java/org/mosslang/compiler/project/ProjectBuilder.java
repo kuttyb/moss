@@ -1467,6 +1467,7 @@ public class ProjectBuilder {
                             fn, modId, provenanceRecords);
                     CheckedExpr constantReturn = null;
                     CheckedExpr arithmeticReturn = null;
+                    CheckedExpr floatArithmeticReturn = null;
                     if (summary == null) {
                         constantReturn = v10ZeroArgLiteralReturn(fn);
                         if (constantReturn != null) {
@@ -1481,13 +1482,22 @@ public class ProjectBuilder {
                                     fn, arithmeticReturn, modId, provenanceRecords);
                         }
                     }
+                    if (summary == null) {
+                        floatArithmeticReturn = v10ClosedFloatExpressionReturn(fn);
+                        if (floatArithmeticReturn != null) {
+                            summary = v10ClosedFloatExpressionSummary(
+                                    fn, floatArithmeticReturn, modId, provenanceRecords);
+                        }
+                    }
                     if (summary != null) {
                         callableSummaryRecords.add(summary.record());
                         AbiV10Records.CheckedBodyRecord body = constantReturn != null
                                 ? v10SimpleExpressionBody(summary, constantReturn)
                                 : arithmeticReturn != null
                                         ? v10SimpleExpressionBody(summary, arithmeticReturn)
-                                        : v10DirectReturnBody(fn, summary);
+                                        : floatArithmeticReturn != null
+                                                ? v10SimpleExpressionBody(summary, floatArithmeticReturn)
+                                                : v10DirectReturnBody(fn, summary);
                         checkedBodyRecords.add(body.record());
                     }
                 }
@@ -1701,6 +1711,99 @@ public class ProjectBuilder {
     private static boolean isV10IntType(TypeRef type) {
         return type != null && type.kind() == org.mosslang.compiler.types.TypeKind.Primitive
                 && "int".equalsIgnoreCase(type.name());
+    }
+
+    private static boolean isV10FloatType(TypeRef type) {
+        return type != null && type.kind() == org.mosslang.compiler.types.TypeKind.Primitive
+                && "float".equalsIgnoreCase(type.name());
+    }
+
+    private static CheckedExpr v10ClosedFloatExpressionReturn(Function function) {
+        if (!isV10FloatType(function.returnTypeRef)
+                || function.body.size() != 1 || function.body.get(0).kind != Stmt.Kind.Return) return null;
+        for (Param parameter : function.params) {
+            if (!isV10FloatType(parameter.checkedTypeRef)) return null;
+        }
+        Stmt statement = function.body.get(0);
+        String expression = statement.a != null ? statement.a.trim() : "";
+        if (expression.isEmpty() && statement.text != null
+                && statement.text.trim().startsWith("return ")) {
+            expression = statement.text.trim().substring(7).trim();
+        }
+        return v10LowerClosedFloatExpression(expression, function, 0);
+    }
+
+    private static CheckedExpr v10LowerClosedFloatExpression(
+            String source, Function function, int depth) {
+        if (source == null || depth > 128) return null;
+        String expression = source.trim();
+        while (v10ExpressionHasWrappingParens(expression)) {
+            expression = expression.substring(1, expression.length() - 1).trim();
+        }
+        TypeRef floatType = TypeRef.primitive("float");
+        if (!expression.isEmpty()
+                && org.mosslang.compiler.parser.NumericLiteral.numericLiteralStartsAt(expression, 0)) {
+            org.mosslang.compiler.parser.NumericLiteral literal =
+                    org.mosslang.compiler.parser.NumericLiteral.scanNumericLiteral(expression, 0);
+            if (literal.ok && literal.end == expression.length()
+                    && literal.kind == org.mosslang.compiler.parser.NumericLiteral.Kind.Float) {
+                return CheckedExpr.floatLiteral(literal.canonical, floatType);
+            }
+        }
+        for (int index = 0; index < function.params.size(); index++) {
+            if (function.params.get(index).name.equals(expression)) {
+                return CheckedExpr.parameter(index, floatType);
+            }
+        }
+        for (List<String> operators : List.of(List.of("+", "-"), List.of("*", "/"))) {
+            org.mosslang.compiler.semantics.ExpressionTyper.BinarySplit split =
+                    org.mosslang.compiler.semantics.ExpressionTyper.splitBinary(expression, operators);
+            if (split == null) continue;
+            CheckedExpr left = v10LowerClosedFloatExpression(split.left(), function, depth + 1);
+            CheckedExpr right = v10LowerClosedFloatExpression(split.right(), function, depth + 1);
+            if (left == null || right == null) return null;
+            org.mosslang.compiler.abi.CheckedBinaryOp operation = switch (split.op()) {
+                case "+" -> org.mosslang.compiler.abi.CheckedBinaryOp.Add;
+                case "-" -> org.mosslang.compiler.abi.CheckedBinaryOp.Sub;
+                case "*" -> org.mosslang.compiler.abi.CheckedBinaryOp.Mul;
+                case "/" -> org.mosslang.compiler.abi.CheckedBinaryOp.Div;
+                default -> null;
+            };
+            return operation == null ? null : CheckedExpr.binary(operation, left, right, floatType);
+        }
+        if (expression.startsWith("-") && !expression.equals("-")) {
+            CheckedExpr operand = v10LowerClosedFloatExpression(expression.substring(1).trim(), function, depth + 1);
+            return operand == null ? null : CheckedExpr.unary(
+                    org.mosslang.compiler.abi.CheckedUnaryOp.Neg, operand, floatType);
+        }
+        return null;
+    }
+
+    private static AbiV10Records.Summary v10ClosedFloatExpressionSummary(
+            Function function, CheckedExpr expression, String moduleId,
+            List<AbiV10Records.SourceProvenance> provenanceRecords) {
+        TypeRef floatType = TypeRef.primitive("float");
+        AbiV10Records.Summary summary = new AbiV10Records.Summary();
+        summary.callableId = function.semanticCallableId;
+        for (int index = 0; index < function.params.size(); index++) {
+            summary.parameters.add(AbiV10Records.fromTypeRef(floatType, Map.of()));
+            org.mosslang.compiler.types.AccessMode access = function.parameterAccessModes.size() > index
+                    ? function.parameterAccessModes.get(index)
+                    : org.mosslang.compiler.types.AccessMode.Read;
+            summary.parameterAccess.add(switch (access) {
+                case Read -> AbiV10Records.Access.Read;
+                case Write -> AbiV10Records.Access.Write;
+                case Consume -> AbiV10Records.Access.Consume;
+            });
+        }
+        summary.result = AbiV10Records.fromTypeRef(floatType, Map.of());
+        String bodyBytes = CheckedBodyCodec.encodeCheckedBodyV1(List.of(CheckedStmt.returnStmt(expression)));
+        summary.bodySemanticHash = "body-semantic-v1:sha256:" + CheckedBodyCodec.sha256Hex(bodyBytes);
+        AbiV10Records.SourceProvenance provenance = AbiV10Records.SourceProvenance.create(
+                moduleId, summary.callableId, function.sourceFile, function.line);
+        summary.provenanceId = provenance.provenanceId();
+        provenanceRecords.add(provenance);
+        return summary;
     }
 
     private static CheckedExpr v10LowerClosedIntExpression(
