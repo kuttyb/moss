@@ -14611,3 +14611,13 @@ pass all eleven classes; feedback validation and
 summaries with supported checked bodies. Generic functions, nominal methods,
 effects, dependencies, full ABI-v10 contract completeness, and native/SDK
 integration remain open.
+
+### Phase 25.3 continuation — refreshed failure-capture Fast Debug traces
+
+A fresh C++/Java interpreter comparison of all eleven positive
+`phase21_capture_*` fixtures now has identical stdout and complete JSON traces
+in every case. This supersedes the earlier trace-context note that listed
+`try_join`, `loop_reinit`, `method_early_raise`, and `owned_payload` differences;
+those were resolved by later branch, call, capture, and unwind trace changes.
+This is a focused failure-capture sample only, not complete Fast Debug trace
+parity. No native compilation or execution was performed.
