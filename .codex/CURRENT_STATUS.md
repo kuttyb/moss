@@ -14738,3 +14738,17 @@ continues to report its variant.
 Validation: all eleven Java test classes pass in default ABI-v9 and staged
 ABI-v10. This handles direct raises under explicit matching/catch-all recovery
 only; bare reraises and indirect/transitive summaries remain incomplete.
+
+### Phase 25.3 continuation — follow ordinary function raise effects
+
+The source-derived effects query now follows statically named ordinary function
+calls without revisiting a callable already on the current traversal. Caller
+try/recover arms are applied at the call site so a callee's raised variant is
+not reported as escaping when the caller catches it. Tests cover an arbitrary
+`calculate()` forwarding to `source_fault()` and a `handled_call()` that catches
+the same helper's variant.
+
+Validation: all eleven Java test classes pass in default ABI-v9 and staged
+ABI-v10. This covers direct, acyclic ordinary function calls and explicit
+call-site recovery; method/callback, bare-reraise, and cross-module effect
+closure remain open.

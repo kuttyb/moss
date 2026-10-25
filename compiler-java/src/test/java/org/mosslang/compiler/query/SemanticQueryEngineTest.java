@@ -13,6 +13,7 @@ public final class SemanticQueryEngineTest {
         effectsQueryUsesResolvedFunctionFacts();
         effectsQueryDoesNotInferPanicFromNames();
         effectsQueryCollectsDirectRaisesForArbitraryNames();
+        effectsQueryFollowsOrdinaryFunctionRaises();
         effectsQueryExcludesRecoveredDirectRaises();
         typeQueryPreservesOpenGenericResultFacts();
         System.out.println("SemanticQueryEngineTest PASSED.");
@@ -107,12 +108,37 @@ public final class SemanticQueryEngineTest {
                 + "  recover Trouble.Bad:\n"
                 + "    pass\n"
                 + "  return 1\n"
+                + "fn source_fault():\n"
+                + "  raise Trouble.Bad\n"
+                + "fn handled_call():\n"
+                + "  try:\n"
+                + "    source_fault()\n"
+                + "  recover Trouble.Bad:\n"
+                + "    pass\n"
                 + "fn main():\n"
                 + "  pass\n";
         Program program = Parser.parseSource(source, "effects-query-recovered-raise.moss");
         new SemanticChecker(program).run();
         String result = queryEffects(program, "handled");
         assertContains(result, "\"raise_set\": []");
+        String calledResult = queryEffects(program, "handled_call");
+        assertContains(calledResult, "\"raise_set\": []");
+    }
+
+    private static void effectsQueryFollowsOrdinaryFunctionRaises() {
+        String source = ""
+                + "enum Trouble:\n"
+                + "  Bad\n"
+                + "fn source_fault():\n"
+                + "  raise Trouble.Bad\n"
+                + "fn calculate():\n"
+                + "  source_fault()\n"
+                + "fn main():\n"
+                + "  pass\n";
+        Program program = Parser.parseSource(source, "effects-query-called-raise.moss");
+        new SemanticChecker(program).run();
+        String result = queryEffects(program, "calculate");
+        assertContains(result, "\"raise_set\": [\"enum:Trouble:Bad\"]");
     }
 
     private static void assertContains(String value, String expected) {

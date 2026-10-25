@@ -303,3 +303,15 @@ raise test retains `enum:Trouble:Bad`.
 All eleven Java unit-test classes pass in default ABI-v9 and staged ABI-v10.
 Bare reraises, indirect/transitive calls, and complete checker-owned effect
 summaries remain open.
+
+## Phase 25.3 continuation — ordinary call-chain raise query
+
+The Java effects query now follows ordinary statically named function calls to
+collect escaping direct raises, with cycle protection. It applies the caller's
+lexical recovery arms at each call site. Tests cover an arbitrary `calculate()`
+forwarding to a direct-raising helper and `handled_call()` catching that
+helper's variant; unhandled and directly recovered controls also remain.
+
+All eleven Java unit-test classes pass in default ABI-v9 and staged ABI-v10.
+This remains a bounded source walk, not complete method, callback, bare-reraise,
+or cross-module effect closure.

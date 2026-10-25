@@ -261,7 +261,7 @@ public class SemanticQueryEngine {
                 }
             }
             String raiseJson = "[]";
-            Set<String> directRaiseFacts = directRaisedVariants(
+            Set<String> directRaiseFacts = callableRaisedVariants(
                     queriedFunction, queriedMethod, queriedHandler, program);
             if (!directRaiseFacts.isEmpty()) {
                 raiseJson = jsonStringArray(directRaiseFacts);
@@ -1265,8 +1265,18 @@ public class SemanticQueryEngine {
                 .replace("\n", "\\n").replace("\r", "\\r");
     }
 
-    private static Set<String> directRaisedVariants(Function function, Method method,
-                                                    Handler handler, Program program) {
+    private static Set<String> callableRaisedVariants(Function function, Method method,
+                                                      Handler handler, Program program) {
+        return collectRaisedVariants(function, method, handler, program, new HashSet<>());
+    }
+
+    private static Set<String> collectRaisedVariants(Function function, Method method,
+                                                    Handler handler, Program program,
+                                                    Set<String> visited) {
+        String identity = function != null ? "fn:" + function.name
+                : method != null ? "method:" + method.owner + "." + method.name
+                : handler != null ? "handler:" + handler.name : "";
+        if (!identity.isEmpty() && !visited.add(identity)) return Set.of();
         List<Stmt> body = function != null ? function.body
                 : method != null ? method.body
                 : handler != null ? handler.body : List.of();
@@ -1297,7 +1307,43 @@ public class SemanticQueryEngine {
             String canonical = "enum:" + enumName + ":" + caseName;
             if (!isRaisedVariantRecovered(body, index, canonical)) variants.add(canonical);
         }
+        if (function != null && program != null && program.functions != null) {
+            for (int index = 0; index < body.size(); index++) {
+                Stmt statement = body.get(index);
+                if (statement == null) continue;
+                StringBuilder expressionBuilder = new StringBuilder();
+                if (statement.text != null) expressionBuilder.append(statement.text).append(' ');
+                if (statement.a != null) expressionBuilder.append(statement.a).append(' ');
+                if (statement.b != null) expressionBuilder.append(statement.b).append(' ');
+                if (statement.args != null) {
+                    for (String argument : statement.args) expressionBuilder.append(argument).append(' ');
+                }
+                String expression = expressionBuilder.toString();
+                for (Function candidate : program.functions) {
+                    if (candidate == function || !containsFunctionCall(expression, candidate.name)) continue;
+                    Set<String> calledRaises = collectRaisedVariants(candidate, null, null, program, visited);
+                    for (String raised : calledRaises) {
+                        if (!isRaisedVariantRecovered(body, index, raised)) variants.add(raised);
+                    }
+                }
+            }
+            if (function.resultExpression != null && !function.resultExpression.isBlank()) {
+                for (Function candidate : program.functions) {
+                    if (candidate != function
+                            && containsFunctionCall(function.resultExpression, candidate.name)) {
+                        variants.addAll(collectRaisedVariants(candidate, null, null, program, visited));
+                    }
+                }
+            }
+        }
         return variants;
+    }
+
+    private static boolean containsFunctionCall(String expression, String functionName) {
+        if (expression == null || expression.isEmpty() || functionName == null || functionName.isEmpty()) return false;
+        return java.util.regex.Pattern.compile("(?<![A-Za-z0-9_])"
+                + java.util.regex.Pattern.quote(functionName) + "\\s*\\(")
+                .matcher(expression).find();
     }
 
     private static boolean isRaisedVariantRecovered(List<Stmt> body, int raiseIndex,
