@@ -17,6 +17,7 @@ public class SemanticCheckerTest {
         testInferredMethodReturnSatisfiesStructuralTrait();
         testInferredMethodReturnMustMatchStructuralTrait();
         testFunctionParameterAccessModesAreRetained();
+        testInferredGenericConsumeSummaryUsesCheckedParameterType();
         testFunctionWriteSummaryPropagatesThroughHelperCalls();
         testFunctionWriteModePropagatesThroughNestedMethodReceiver();
         testFunctionConsumeSummaryIncludesObjectConstructors();
@@ -654,6 +655,28 @@ public class SemanticCheckerTest {
                 + "  value = Payload(value=\"x\")\n"
                 + "  box = wrap(value)\n"
                 + "  echo value.value\n", "OWNERSHIP_USE_AFTER_CONSUME");
+    }
+
+    private static void testInferredGenericConsumeSummaryUsesCheckedParameterType() {
+        assertCompileError(""
+                + "type Payload:\n"
+                + "  value: String\n"
+                + "fn take(value):\n"
+                + "  return value\n"
+                + "fn relay(value):\n"
+                + "  return take(value)\n"
+                + "fn main():\n"
+                + "  value = Payload(value=\"x\")\n"
+                + "  moved = relay(value)\n"
+                + "  echo value.value\n", "OWNERSHIP_USE_AFTER_CONSUME");
+
+        Program copyProgram = Parser.parseSource(""
+                + "fn identity(value):\n"
+                + "  return value\n"
+                + "fn main():\n"
+                + "  value = identity(1)\n"
+                + "  echo value\n", "inferred-generic-copy-value.moss");
+        new SemanticChecker(copyProgram).run();
     }
 
     private static void testFunctionWriteSummaryPropagatesThroughHelperCalls() {

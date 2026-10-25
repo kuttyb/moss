@@ -15235,3 +15235,17 @@ parameter. The focused effects queries now agree.
 The semantic regression covers the nested receiver path. All eleven Java test
 classes pass under ABI-v9 and staged ABI-v10; local alias and generic/cross-
 module receiver summaries remain open.
+
+
+### Phase 25.3 continuation — retain inferred parameter types in access summaries
+
+`take(value) -> value` and `relay(value) -> take(value)` used inferred
+parameter types. C++ rejected later reuse of a concrete owned `Payload`, but
+Java accepted it because its consume summary used only source annotations and
+discarded the checked parameter TypeRef. Java now falls back to the checked
+type when inferring function consume modes. The focused generic ownership
+reproducer now matches C++.
+
+Regression coverage also confirms an inferred generic identity called with an
+`Int` remains reusable. All eleven Java test classes pass under ABI-v9 and
+staged ABI-v10; generic cross-module summaries remain open.

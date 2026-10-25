@@ -971,6 +971,7 @@ public class SemanticChecker {
                 TypeRef parameterType = parameter.typeRef != null ? parameter.typeRef
                         : (parameter.type != null && !parameter.type.isEmpty()
                                 ? TypeParser.parseCanonical(parameter.type) : null);
+                if (parameterType == null) parameterType = parameter.checkedTypeRef;
                 if (doesFunctionConsumeParam(f, parameterIndex)
                         && parameterType != null && transferType(parameterType)) {
                     f.parameterAccessModes.add(AccessMode.Consume);
@@ -2035,13 +2036,10 @@ public class SemanticChecker {
     private boolean doesFunctionConsumeParam(Function fn, int paramIdx) {
         if (fn == null || paramIdx < 0 || paramIdx >= fn.params.size()) return false;
         String pName = fn.params.get(paramIdx).name;
+        TypeRef parameterType = functionParameterType(fn.params.get(paramIdx));
         if (fn.resultExpression != null && fn.resultExpression.trim().equals(pName)) {
             return true;
         }
-        TypeRef parameterType = fn.params.get(paramIdx).typeRef != null
-                ? fn.params.get(paramIdx).typeRef
-                : (fn.params.get(paramIdx).type != null && !fn.params.get(paramIdx).type.isEmpty()
-                        ? TypeParser.parseCanonical(fn.params.get(paramIdx).type) : null);
         if (parameterType != null) {
             java.util.regex.Pattern methodCall = java.util.regex.Pattern.compile(
                     "\\b" + java.util.regex.Pattern.quote(pName)
@@ -2234,11 +2232,7 @@ public class SemanticChecker {
                 while (function.parameterAccessModes.size() < function.params.size())
                     function.parameterAccessModes.add(AccessMode.Read);
                 for (int index = 0; index < function.params.size(); index++) {
-                    TypeRef type = function.params.get(index).typeRef != null
-                            ? function.params.get(index).typeRef
-                            : (function.params.get(index).type != null
-                                    && !function.params.get(index).type.isEmpty()
-                                            ? TypeParser.parseCanonical(function.params.get(index).type) : null);
+                    TypeRef type = functionParameterType(function.params.get(index));
                     AccessMode current = function.parameterAccessModes.get(index);
                     if (type != null && transferType(type) && doesFunctionConsumeParam(function, index)
                             && current != AccessMode.Consume) {
@@ -2258,10 +2252,7 @@ public class SemanticChecker {
     private boolean doesFunctionMutateParam(Function fn, int paramIdx) {
         if (fn == null || paramIdx < 0 || paramIdx >= fn.params.size()) return false;
         String pName = fn.params.get(paramIdx).name;
-        TypeRef parameterType = fn.params.get(paramIdx).typeRef != null
-                ? fn.params.get(paramIdx).typeRef
-                : (fn.params.get(paramIdx).type != null
-                        ? TypeParser.parseCanonical(fn.params.get(paramIdx).type) : null);
+        TypeRef parameterType = functionParameterType(fn.params.get(paramIdx));
         if (functionCallsWritingNestedReceiver(fn, pName, parameterType)) return true;
         if (functionCallWritesParam(fn, pName, parameterType)) return true;
         ObjectType parameterObject = parameterType != null
@@ -2310,6 +2301,14 @@ public class SemanticChecker {
             }
         }
         return false;
+    }
+
+    private TypeRef functionParameterType(Param parameter) {
+        if (parameter == null) return null;
+        if (parameter.typeRef != null) return parameter.typeRef;
+        if (parameter.type != null && !parameter.type.isEmpty())
+            return TypeParser.parseCanonical(parameter.type);
+        return parameter.checkedTypeRef;
     }
 
     private boolean functionCallsWritingNestedReceiver(Function caller, String paramName,

@@ -573,3 +573,17 @@ parameter.
 The semantic test covers the nested call, and focused C++/Java effects queries
 agree. All eleven Java test classes pass under ABI-v9 and staged ABI-v10.
 Local alias and generic/cross-module receiver summaries remain open.
+
+
+### Follow-up — use checked types for inferred function consume summaries
+
+For inferred `take(value) -> value` and `relay(value) -> take(value)`, C++
+rejected later reuse of a concrete owned `Payload` while Java accepted it.
+Java now uses the retained checked parameter TypeRef when the source has no
+annotation, allowing the function consume summary to propagate through the
+generic helper chain.
+
+The semantic test covers owned `Payload` rejection and confirms an inferred
+generic identity with an `Int` remains reusable. All eleven Java test classes
+pass under ABI-v9 and staged ABI-v10. Generic cross-module summaries remain
+open.
