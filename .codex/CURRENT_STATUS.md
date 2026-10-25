@@ -15173,3 +15173,12 @@ The summary scan also respects lexical `case` binders so a shadowed local does
 not count as a consume of a same-named parameter.
 The regression also declares the forwarding helper before the consuming helper
 to ensure closure does not depend on declaration order.
+
+
+### Phase 25.3 continuation — source-free ABI-v10 consuming receivers
+
+Extended `SourceFreeObjectMetadataTest` to round-trip a method template with
+receiver `CONSUME`, verify the imported method retains that mode, and reject a
+caller that uses its receiver after the imported method call. The focused
+source-free object metadata test passes. This is codec/importer and semantic
+call-site evidence, not native source-free linkage acceptance.

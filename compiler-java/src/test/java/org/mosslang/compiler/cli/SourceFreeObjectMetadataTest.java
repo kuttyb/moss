@@ -190,7 +190,7 @@ public final class SourceFreeObjectMetadataTest {
         AbiV10Records.MethodTemplate replaceMethod = AbiV10Records.MethodTemplate.create(
                 replaceMethodId, pointTemplate.templateId, "replace",
                 java.util.List.of(vectorInt), java.util.List.of(3),
-                AbiV10Records.WireType.unit(), 2, pointProvenance.provenanceId());
+                AbiV10Records.WireType.unit(), 3, pointProvenance.provenanceId());
         pointTemplate.methodTemplateIds.add(replaceMethodId);
         v10.binaryContract.add(pointTemplate.record());
         v10.binaryContract.add(replaceMethod.record());
@@ -226,11 +226,27 @@ public final class SourceFreeObjectMetadataTest {
                 || !"float".equals(v10Point.fields.get(0).type)
                 || !"unit".equals(v10Point.methods.get(0).returnType)
                 || v10Point.methods.get(0).receiverAccessMode
-                        != org.mosslang.compiler.types.AccessMode.Write
+                        != org.mosslang.compiler.types.AccessMode.Consume
                 || v10Point.methods.get(0).parameterAccessModes.size() != 1
                 || v10Point.methods.get(0).parameterAccessModes.get(0)
                         != org.mosslang.compiler.types.AccessMode.Consume) {
             throw new AssertionError("ABI-v10 source-free object method facts were not restored");
+        }
+        Program consumedMethodConsumer = Parser.parseSource(""
+                + "fn consume(point: provider__Point, values: Vector[Int]):\n"
+                + "  point.replace(values)\n"
+                + "  echo point.x\n"
+                + "fn main():\n"
+                + "  pass\n", "source-free-consuming-receiver.moss");
+        Main.loadMossiFunctions(v10File, "provider", consumedMethodConsumer);
+        try {
+            new SemanticChecker(consumedMethodConsumer).run();
+            throw new AssertionError("ABI-v10 source-free CONSUME receiver must consume its caller");
+        } catch (CompileError error) {
+            if (!"OWNERSHIP_USE_AFTER_CONSUME".equals(error.getCode())) {
+                throw new AssertionError("expected source-free receiver consumption, got "
+                        + error.getCode(), error);
+            }
         }
         EnumType v10Outcome = v10Consumer.enums.stream()
                 .filter(enumeration -> enumeration.name.equals("provider__Outcome"))
