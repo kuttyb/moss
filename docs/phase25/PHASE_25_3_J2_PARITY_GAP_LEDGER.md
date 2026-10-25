@@ -753,3 +753,13 @@ output and per-iteration trace context. The focused `FastInterpreterTest` passes
 The C++ Fast Debug probe for the same Moss program reports `Fast Debug cannot
 iterate this checked source`, so this confirms Java execution coverage rather than
 parity with the C++ interpreter.
+
+
+### Follow-up — READ-only branch-assigned receiver control
+
+The branch-assigned generic receiver alias was rechecked with a concrete
+`Reader.accept` implementation whose argument mode is READ. Both C++ and Java
+accept the later payload read. `SemanticCheckerTest` now retains this positive
+control alongside the consuming Mover negative. This narrows the recorded
+C++/Java discrepancy to the selected CONSUME method path; it does not resolve
+the C++ unresolved-effect result. The focused semantic test passes.

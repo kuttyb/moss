@@ -16642,3 +16642,14 @@ pass. A C++ Fast Debug probe on the corresponding accepted `Countdown` source
 returns `Fast Debug cannot iterate this checked source`; this is Java execution
 coverage, not C++ interpreter parity evidence. The current local changes since
 `3858f962` are not yet committed or pushed.
+
+
+### Phase 25.3 continuation — branch-alias READ control
+
+Added a positive `SemanticCheckerTest` for the existing branch-assigned generic
+receiver alias shape with a concrete READ-only `Reader.accept` implementation.
+Both `./moss check` and the Java checker accept a later read of the payload; the
+focused Java semantic test passes after a full Java build. This control sharpens
+the known Mover discrepancy: only the concrete CONSUME selection diverges, with
+Java rejecting reuse and C++ reporting an unresolved READ effect. No native
+backend claim is made.

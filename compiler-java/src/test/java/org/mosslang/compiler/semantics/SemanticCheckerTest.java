@@ -1007,6 +1007,20 @@ public class SemanticCheckerTest {
                 + "  relay(payload, Reader())\n"
                 + "  echo payload.value\n", "inferred-receiver-alias-read-only-argument.moss");
         new SemanticChecker(aliasReadOnly).run();
+
+        String branchAliasDeclarations = declarations
+                .replace("fn relay(value, item):\n", "fn relay(value, item, flag: Bool):\n")
+                .replace("  item.accept(value)\n", "  if flag:\n"
+                        + "    alias = item\n"
+                        + "  else:\n"
+                        + "    alias = item\n"
+                        + "  alias.accept(value)\n");
+        Program branchAliasReadOnly = Parser.parseSource(branchAliasDeclarations
+                + "fn main():\n"
+                + "  payload = Payload(value=\"keep\")\n"
+                + "  relay(payload, Reader(), true)\n"
+                + "  echo payload.value\n", "inferred-receiver-branch-alias-read-only-argument.moss");
+        new SemanticChecker(branchAliasReadOnly).run();
     }
 
     private static void testFunctionWriteModePropagatesThroughMethodArguments() {
