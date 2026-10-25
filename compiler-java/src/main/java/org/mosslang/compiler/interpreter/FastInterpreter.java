@@ -1016,6 +1016,8 @@ public class FastInterpreter {
                             if (candidate.patterns.isEmpty()) { arm = candidate; break; }
                             for (String pattern : candidate.patterns) {
                                 String normalized = pattern.replace("__", ".");
+                                int payloadStart = normalized.indexOf('(');
+                                if (payloadStart >= 0) normalized = normalized.substring(0, payloadStart).trim();
                                 String variant = rex.variantName;
                                 String shortName = normalized.substring(normalized.lastIndexOf('.') + 1);
                                 if (variant.equals(normalized) || variant.endsWith("." + normalized)
@@ -1030,6 +1032,23 @@ public class FastInterpreter {
                         for (String capture : arm.checkedCaptures.keySet()) {
                             Value captured = rex.edgeLocals.get(capture);
                             if (captured != null) handlerLocals.put(capture, captured);
+                        }
+                        String payloadBinding = arm.binding == null ? "" : arm.binding;
+                        if (payloadBinding.isEmpty() && !arm.patterns.isEmpty()) {
+                            String selectedPattern = arm.patterns.get(0);
+                            int open = selectedPattern.indexOf('(');
+                            int close = selectedPattern.lastIndexOf(')');
+                            if (open >= 0 && close > open) payloadBinding = selectedPattern.substring(open + 1, close).trim();
+                        }
+                        if (!payloadBinding.isEmpty() && rex.raisedValue != null) {
+                            Value bindingValue = rex.raisedValue;
+                            if (bindingValue.raw instanceof EnumValue enumValue) {
+                                Value payload = enumValue.fields.get(payloadBinding);
+                                if (payload == null && enumValue.fields.size() == 1)
+                                    payload = enumValue.fields.values().iterator().next();
+                                if (payload != null) bindingValue = payload;
+                            }
+                            handlerLocals.put(payloadBinding, bindingValue);
                         }
                         String failFunction = targetDomain.domain.name + "." + handlerName + "$fail";
                         if (trace) {

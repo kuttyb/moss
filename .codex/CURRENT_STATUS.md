@@ -13901,3 +13901,11 @@ Validation: Java build passes, and all eleven unit-test classes pass in ABI-v9
 and staged ABI-v10. Focused stdout and failure-arm event values match C++; full
 trace comparison identifies remaining unrelated event differences. Phase 25.3
 remains in progress.
+
+Follow-up within the `on_fail` check: multi-arm fixture
+`phase21_peer_on_fail_parity.moss` exposed payload patterns such as
+`Failure.First(code)`; Java matched the arm but did not bind the payload name.
+Java now extracts the binding from the selected pattern and reads the raised
+enum payload. Its output (`first 7`, `second 9`) matches C++ for both arms.
+ABI-v9 and staged ABI-v10 Java suites pass; broad trace parity and final
+acceptance remain open.
