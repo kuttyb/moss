@@ -932,8 +932,26 @@ public class ExpressionTyper {
         if (stageExpr.equals("count")) {
             return TypeRef.primitive("int");
         }
-        if (stageExpr.equals("any") || stageExpr.equals("all") ||
-            stageExpr.startsWith("any(") || stageExpr.startsWith("all(")) {
+        if (stageExpr.equals("any") || stageExpr.equals("all")) {
+            return TypeRef.primitive("bool");
+        }
+        if ((stageExpr.startsWith("any(") || stageExpr.startsWith("all("))
+                && stageExpr.endsWith(")")) {
+            String operation = stageExpr.substring(0, stageExpr.indexOf('('));
+            List<String> args = parseArguments(stageExpr.substring(
+                    stageExpr.indexOf('(') + 1, stageExpr.length() - 1));
+            if (args.size() > 1) {
+                throw new CompileError(line, operation + " stage accepts zero or one predicate",
+                        "ARGUMENT_COUNT_MISMATCH");
+            }
+            if (!args.isEmpty()) {
+                TypeRef result = inferBooleanPipelineCallback(args.get(0), elemType,
+                        line, env);
+                if (result != null && !solver.unify(result, TypeRef.primitive("bool"))) {
+                    throw new CompileError(line, operation + " predicate must return bool, got '"
+                            + solver.resolve(result).toCanonicalString() + "'", "TYPE_MISMATCH");
+                }
+            }
             return TypeRef.primitive("bool");
         }
         if (stageExpr.startsWith("map(") && stageExpr.endsWith(")")) {
@@ -960,33 +978,15 @@ public class ExpressionTyper {
                 TypeRef ret = infer((callback != null ? callback : inner) + "(" + argument + ")", line, callbackEnv);
                 return TypeRef.builtin("vector", List.of(ret));
             }
-            return TypeRef.builtin("vector", List.of(solver.fresh(0)));
+            if (isOpenCallbackBinding(inner, env))
+                return TypeRef.builtin("vector", List.of(solver.fresh(0)));
+            throw new CompileError(line, "unresolved functional callable '" + inner + "'",
+                    "FUNCTIONAL_SEMANTIC_ERROR");
         }
         if (stageExpr.startsWith("filter(") && stageExpr.endsWith(")")) {
             String inner = stageExpr.substring(7, stageExpr.length() - 1).trim();
-            String placeholder = "__moss_pipeline_item";
-            while (env.containsKey(placeholder)) {
-                placeholder += "_";
-            }
-            String substituted = replacePipelinePlaceholder(inner, placeholder);
-            TypeRef predicateResult = null;
-            if (!substituted.equals(inner)) {
-                TypeEnv callbackEnv = env.copy();
-                callbackEnv.put(placeholder, elemType);
-                predicateResult = infer(substituted, line, callbackEnv);
-            } else {
-                String callback = functions.containsKey(inner) ? inner : currentCallableBindings.get(inner);
-                if (callback != null || inner.contains(".")) {
-                    String argument = "__moss_pipeline_arg";
-                    while (env.containsKey(argument)) {
-                        argument += "_";
-                    }
-                    TypeEnv callbackEnv = env.copy();
-                    callbackEnv.put(argument, elemType);
-                    predicateResult = infer((callback != null ? callback : inner)
-                            + "(" + argument + ")", line, callbackEnv);
-                }
-            }
+            TypeRef predicateResult = inferBooleanPipelineCallback(inner, elemType,
+                    line, env);
             if (predicateResult != null && !solver.unify(predicateResult, TypeRef.primitive("bool"))) {
                 throw new CompileError(line, "filter predicate must return bool, got '"
                         + solver.resolve(predicateResult).toCanonicalString() + "'", "TYPE_MISMATCH");
@@ -1037,6 +1037,40 @@ public class ExpressionTyper {
         }
 
         return TypeRef.builtin("vector", List.of(elemType));
+    }
+
+    private TypeRef inferBooleanPipelineCallback(String expression, TypeRef elemType,
+                                                int line, TypeEnv env) {
+        String inner = expression == null ? "" : expression.trim();
+        String placeholder = "__moss_pipeline_item";
+        while (env.containsKey(placeholder)) placeholder += "_";
+        String substituted = replacePipelinePlaceholder(inner, placeholder);
+        if (!substituted.equals(inner)) {
+            TypeEnv callbackEnv = env.copy();
+            callbackEnv.put(placeholder, elemType);
+            return infer(substituted, line, callbackEnv);
+        }
+        String callback = functions.containsKey(inner) ? inner : currentCallableBindings.get(inner);
+        if (callback != null || inner.contains(".")) {
+            String argument = "__moss_pipeline_arg";
+            while (env.containsKey(argument)) argument += "_";
+            TypeEnv callbackEnv = env.copy();
+            callbackEnv.put(argument, elemType);
+            return infer((callback != null ? callback : inner) + "(" + argument + ")",
+                    line, callbackEnv);
+        }
+        if (isOpenCallbackBinding(inner, env)) return null;
+        throw new CompileError(line, "unresolved functional callable '" + inner + "'",
+                "FUNCTIONAL_SEMANTIC_ERROR");
+    }
+
+    private boolean isOpenCallbackBinding(String name, TypeEnv env) {
+        if (name == null || env == null || !env.containsKey(name)) return false;
+        TypeRef binding = env.get(name);
+        if (binding == null) return true;
+        TypeRef resolved = solver.resolve(binding);
+        return resolved != null && (resolved.kind() == TypeKind.InferenceVar
+                || (resolved.kind() == TypeKind.Builtin && "callable".equals(resolved.name())));
     }
 
     private static String replacePipelinePlaceholder(String expression, String replacement) {

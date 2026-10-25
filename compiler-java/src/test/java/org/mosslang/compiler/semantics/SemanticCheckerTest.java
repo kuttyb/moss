@@ -57,6 +57,7 @@ public class SemanticCheckerTest {
         testFunctionalMapRejectsNoncopySourceAliases();
         testFunctionalPipelinesMustBeMaterializedAtDomainBoundary();
         testCollectionTypeArgumentsRequireExactArity();
+        testUnknownFunctionalCallbackIsRejected();
         testDirectVectorSumTypeAndLowering();
         testValueHandlerRepliesOnEveryNormalPath();
         testUnsupportedCollectionsAreRejectedAsForIterablesAtLoopSite();
@@ -1418,6 +1419,19 @@ public class SemanticCheckerTest {
                 + "fn main():\n"
                 + "  echo 1\n", "nested-collection-arity.moss");
         new SemanticChecker(valid).run();
+    }
+
+    private static void testUnknownFunctionalCallbackIsRejected() {
+        for (String stage : java.util.List.of("map(missing)", "filter(missing)",
+                "any(missing)", "all(missing)")) {
+            Program invalid = Parser.parseSource(""
+                    + "fn main():\n"
+                    + "  values = [20, 22]\n"
+                    + "  result = values |> " + stage + "\n"
+                    + "  echo result\n", "unknown-functional-callback.moss");
+            expectCompileError(invalid, "FUNCTIONAL_SEMANTIC_ERROR",
+                    "functional stages require a statically known callback: " + stage);
+        }
     }
 
     private static void testNestedFieldReadInBranchConditionKeepsReceiverReadOnly() {

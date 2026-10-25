@@ -16332,3 +16332,17 @@ cases, 1 transitive message-payload write, and 2 iterator restrictions. All
 twelve Java test classes pass under ABI-v9 and staged ABI-v10. Packaging and
 packaged bootstrap, feedback validation, and diff checks pass. Native and
 release gates remain unrun.
+
+### Phase 25.3 continuation — unresolved functional callables
+
+Java now fails closed for unresolved callback names in `map`, `filter`,
+`any`, and `all`, while retaining open callback bindings used by generic
+higher-order helpers. The negative fixture
+`phase221_unknown_pipeline_callable.moss` now rejects with
+`FUNCTIONAL_SEMANTIC_ERROR`. The second 50-file negative slice is down to 21
+Java-only accepts, with no C++ accepts or malformed outputs.
+
+All twelve Java test classes pass under ABI-v9 and staged ABI-v10. Packaging
+and packaged bootstrap, feedback validation, and diff checks pass. The
+remaining sample mismatches are still concentrated in route/capability,
+Executor/FileIO, source-free, transitive payload effect, and iteration checks.
