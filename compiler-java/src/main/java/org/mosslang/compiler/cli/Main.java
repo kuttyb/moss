@@ -1450,7 +1450,7 @@ public class Main {
                     .map(parameter -> parameter.name)
                     .collect(java.util.stream.Collectors.toSet());
             List<org.mosslang.compiler.ast.Stmt> projectedIntLocals =
-                    projectV10IntLocalBody(statements, parameterTypes, resultType,
+                    projectV10NumericLocalBody(statements, parameterTypes, resultType,
                             interfaceFile, reservedLocalNames);
             if (projectedIntLocals != null) {
                 List<org.mosslang.compiler.ast.Function> localMatches = program.functions.stream()
@@ -1472,8 +1472,17 @@ public class Main {
                     }
                     function.bindReturnType(resultType);
                     function.body.clear();
-                    function.body.addAll(projectedIntLocals);
-                    org.mosslang.compiler.ast.Stmt returned = projectedIntLocals.get(projectedIntLocals.size() - 1);
+                    for (org.mosslang.compiler.ast.Stmt statement : projectedIntLocals) {
+                        org.mosslang.compiler.ast.Stmt rebound = new org.mosslang.compiler.ast.Stmt(
+                                statement.kind, statement.line, statement.indent,
+                                replaceSourceFreeParameterOrdinals(statement.text, function),
+                                replaceSourceFreeParameterOrdinals(statement.a, function),
+                                replaceSourceFreeParameterOrdinals(statement.b, function));
+                        rebound.semanticType = statement.semanticType;
+                        rebound.sourceFile = statement.sourceFile;
+                        function.body.add(rebound);
+                    }
+                    org.mosslang.compiler.ast.Stmt returned = function.body.get(function.body.size() - 1);
                     function.resultExpression = returned.a;
                     function.resultLine = returned.line;
                     function.generic = summary.variableCount > 0;
@@ -1587,15 +1596,23 @@ public class Main {
         }
     }
 
-    private static List<org.mosslang.compiler.ast.Stmt> projectV10IntLocalBody(
+    private static String replaceSourceFreeParameterOrdinals(String expression,
+            org.mosslang.compiler.ast.Function function) {
+        String rebound = expression != null ? expression : "";
+        for (int index = 0; index < function.params.size(); index++) {
+            rebound = rebound.replace("\u0001" + index + "\u0002", function.params.get(index).name);
+        }
+        return rebound;
+    }
+
+    private static List<org.mosslang.compiler.ast.Stmt> projectV10NumericLocalBody(
             List<org.mosslang.compiler.abi.CheckedStmt> statements,
             List<org.mosslang.compiler.types.TypeRef> parameterTypes,
             org.mosslang.compiler.types.TypeRef resultType, Path interfaceFile,
             Set<String> reservedLocalNames) {
-        org.mosslang.compiler.types.TypeRef intType =
-                org.mosslang.compiler.types.TypeRef.primitive("int");
-        if (statements.size() < 2 || !intType.equals(resultType)
-                || parameterTypes.stream().anyMatch(type -> !intType.equals(type))) return null;
+        if (statements.size() < 2 || !isSourceFreeIntType(resultType) && !isSourceFreeFloatType(resultType)
+                || parameterTypes.stream().anyMatch(type -> !resultType.equals(type))) return null;
+        String sourceType = resultType.name();
         Map<Integer, String> localNames = new HashMap<>();
         Map<Integer, Boolean> localMutability = new HashMap<>();
         List<org.mosslang.compiler.ast.Stmt> projected = new ArrayList<>();
@@ -1604,8 +1621,8 @@ public class Main {
             org.mosslang.compiler.abi.CheckedStmt checked = statements.get(index);
             if (checked.kind == org.mosslang.compiler.abi.CheckedStmtKind.Return) {
                 if (index != statements.size() - 1 || checked.expr == null
-                        || !intType.equals(checked.expr.type)) return null;
-                String expression = sourceFreeClosedIntExpression(
+                        || !resultType.equals(checked.expr.type)) return null;
+                String expression = sourceFreeNumericExpression(
                         checked.expr, parameterTypes, localNames, 0);
                 if (expression == null) return null;
                 org.mosslang.compiler.ast.Stmt returned = new org.mosslang.compiler.ast.Stmt(
@@ -1625,11 +1642,11 @@ public class Main {
             }
             if (checked.kind == org.mosslang.compiler.abi.CheckedStmtKind.Let
                     || checked.kind == org.mosslang.compiler.abi.CheckedStmtKind.Var) {
-                if (!intType.equals(checked.type) || checked.expr == null
-                        || !intType.equals(checked.expr.type)
+                if (!resultType.equals(checked.type) || checked.expr == null
+                        || !resultType.equals(checked.expr.type)
                         || checked.localOrdinal != localNames.size()
                         || localNames.containsKey(checked.localOrdinal)) return null;
-                String value = sourceFreeClosedIntExpression(
+                String value = sourceFreeNumericExpression(
                         checked.expr, parameterTypes, localNames, 0);
                 if (value == null) return null;
                 String name = "moss_abi_local_" + checked.localOrdinal;
@@ -1639,7 +1656,7 @@ public class Main {
                         mutable ? org.mosslang.compiler.ast.Stmt.Kind.Var
                                 : org.mosslang.compiler.ast.Stmt.Kind.Let,
                         1, 1, (mutable ? "var " : "let ") + name + " = " + value, name, value);
-                declaration.semanticType = "int";
+                declaration.semanticType = sourceType;
                 declaration.sourceFile = interfaceFile.toString();
                 projected.add(declaration);
                 localNames.put(checked.localOrdinal, name);
@@ -1649,16 +1666,16 @@ public class Main {
             }
             if (checked.kind == org.mosslang.compiler.abi.CheckedStmtKind.Assign) {
                 if (index == statements.size() - 1 || checked.expr == null
-                        || !intType.equals(checked.expr.type)
+                        || !resultType.equals(checked.expr.type)
                         || !Boolean.TRUE.equals(localMutability.get(checked.localOrdinal))) return null;
-                String value = sourceFreeClosedIntExpression(
+                String value = sourceFreeNumericExpression(
                         checked.expr, parameterTypes, localNames, 0);
                 String name = localNames.get(checked.localOrdinal);
                 if (name == null || value == null) return null;
                 org.mosslang.compiler.ast.Stmt assignment = new org.mosslang.compiler.ast.Stmt(
                         org.mosslang.compiler.ast.Stmt.Kind.Assign,
                         1, 1, name + " = " + value, name, value);
-                assignment.semanticType = "int";
+                assignment.semanticType = sourceType;
                 assignment.sourceFile = interfaceFile.toString();
                 projected.add(assignment);
                 hasLocal = true;
@@ -1727,6 +1744,13 @@ public class Main {
     private static String sourceFreeClosedFloatExpression(
             org.mosslang.compiler.abi.CheckedExpr expression,
             List<org.mosslang.compiler.types.TypeRef> parameterTypes, int depth) {
+        return sourceFreeClosedFloatExpression(expression, parameterTypes, Map.of(), depth);
+    }
+
+    private static String sourceFreeClosedFloatExpression(
+            org.mosslang.compiler.abi.CheckedExpr expression,
+            List<org.mosslang.compiler.types.TypeRef> parameterTypes,
+            Map<Integer, String> localNames, int depth) {
         if (expression == null || depth > 128 || expression.type == null
                 || expression.type.kind() != org.mosslang.compiler.types.TypeKind.Primitive
                 || !"float".equalsIgnoreCase(expression.type.name())) return null;
@@ -1734,13 +1758,14 @@ public class Main {
             case Parameter -> expression.ordinal >= 0 && expression.ordinal < parameterTypes.size()
                     && expression.type.equals(parameterTypes.get(expression.ordinal))
                     ? "\u0001" + expression.ordinal + "\u0002" : null;
+            case LocalRead -> localNames.get(expression.ordinal);
             case FloatLiteral -> isSourceFreeFloatLiteral(expression.literalValue)
                     ? expression.literalValue : null;
             case Unary -> {
                 if (expression.unaryOp != org.mosslang.compiler.abi.CheckedUnaryOp.Neg
                         || expression.operands.size() != 1) yield null;
                 String operand = sourceFreeClosedFloatExpression(
-                        expression.operands.get(0), parameterTypes, depth + 1);
+                        expression.operands.get(0), parameterTypes, localNames, depth + 1);
                 yield operand == null ? null : "- (" + operand + ")";
             }
             case Binary -> {
@@ -1750,9 +1775,9 @@ public class Main {
                         org.mosslang.compiler.abi.CheckedBinaryOp.Div).contains(expression.binaryOp)
                         || expression.operands.size() != 2) yield null;
                 String left = sourceFreeClosedFloatExpression(
-                        expression.operands.get(0), parameterTypes, depth + 1);
+                        expression.operands.get(0), parameterTypes, localNames, depth + 1);
                 String right = sourceFreeClosedFloatExpression(
-                        expression.operands.get(1), parameterTypes, depth + 1);
+                        expression.operands.get(1), parameterTypes, localNames, depth + 1);
                 if (left == null || right == null) yield null;
                 String operator = switch (expression.binaryOp) {
                     case Add -> "+";
@@ -1840,12 +1865,19 @@ public class Main {
     private static String sourceFreeNumericExpression(
             org.mosslang.compiler.abi.CheckedExpr expression,
             List<org.mosslang.compiler.types.TypeRef> parameterTypes, int depth) {
+        return sourceFreeNumericExpression(expression, parameterTypes, Map.of(), depth);
+    }
+
+    private static String sourceFreeNumericExpression(
+            org.mosslang.compiler.abi.CheckedExpr expression,
+            List<org.mosslang.compiler.types.TypeRef> parameterTypes,
+            Map<Integer, String> localNames, int depth) {
         if (expression == null || expression.type == null) return null;
         if (expression.type.kind() != org.mosslang.compiler.types.TypeKind.Primitive) return null;
         if ("int".equalsIgnoreCase(expression.type.name()))
-            return sourceFreeClosedIntExpression(expression, parameterTypes, depth + 1);
+            return sourceFreeClosedIntExpression(expression, parameterTypes, localNames, depth + 1);
         if ("float".equalsIgnoreCase(expression.type.name()))
-            return sourceFreeClosedFloatExpression(expression, parameterTypes, depth + 1);
+            return sourceFreeClosedFloatExpression(expression, parameterTypes, localNames, depth + 1);
         return null;
     }
 

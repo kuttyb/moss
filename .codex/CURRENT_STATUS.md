@@ -13461,3 +13461,22 @@ ABI-v9 and staged ABI-v10 modes. C++ and Java both accept the focused local-body
 probe. Feedback validation and `git diff --check` pass. No native Rust compile
 or run, Margo provider-consumer build, SDK gate, or full `make check` ran.
 Phase 25.3 remains incomplete.
+
+### Phase 25.3 continuation — generalize numeric source-free local bodies
+
+Straight-line ABI-v10 local-body production and projection now support
+homogeneous `Int` and `Float` parameters/results. Both paths carry `let`,
+implicit mutable local bindings, reassignment, `pass`, and final return through
+checked IR. The source-free loader validates local ordinals, types, mutability,
+and prior reads; it binds parameter ordinals separately for each imported
+callable before semantic checking. A Float mutable-local test initially exposed
+an unbound parameter placeholder that was inferred as Int; per-function
+placeholder rebinding fixed it. The regression now removes legacy generic body
+rows and checks immutable and mutable paths for both numeric types.
+
+Validation after the fix: clean Java build and all ten Java unit-test classes
+pass in default ABI-v9 and staged ABI-v10 modes. C++ and Java accept the focused
+numeric local-body probe. Feedback validation and `git diff --check` pass. No
+native Rust compile/run, Margo provider-consumer build, SDK gate, or full
+`make check` ran. Control flow, calls, effects, general local types, and Phase
+25.3 completion remain open.

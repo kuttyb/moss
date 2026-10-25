@@ -12,6 +12,7 @@ import org.mosslang.compiler.abi.MossiRecord;
 import org.mosslang.compiler.abi.AbiV10Records;
 import org.mosslang.compiler.diagnostics.CompileError;
 import org.mosslang.compiler.types.AccessMode;
+import org.mosslang.compiler.types.TypeRef;
 import org.mosslang.compiler.parser.Parser;
 
 import java.nio.file.Path;
@@ -356,6 +357,13 @@ public final class ProjectBuilderMetadataTest {
                 + "  count = value\n"
                 + "  count = count + 1\n"
                 + "  return count\n"
+                + "export fn with_float_local(value: Float) -> Float:\n"
+                + "  let adjusted = value + .5\n"
+                + "  return adjusted * 2.0\n"
+                + "export fn with_mutable_float_local(value: Float) -> Float:\n"
+                + "  result = value\n"
+                + "  result = result + 1.0\n"
+                + "  return result\n"
                 + "export fn negated(value: Int) -> Int:\n"
                 + "  return -value + 4\n"
                 + "export fn negative() -> Int:\n"
@@ -631,7 +639,8 @@ public final class ProjectBuilderMetadataTest {
                 throw new AssertionError("ABI-v10 integer-" + operation.getKey() + " checked body is incomplete");
             }
         }
-        for (String localCallable : List.of("with_local", "with_mutable_local")) {
+        for (String localCallable : List.of("with_local", "with_mutable_local",
+                "with_float_local", "with_mutable_float_local")) {
             AbiV10Records.CheckedBodyRecord localBody = identityInterface.privateSemanticDependencies.stream()
                     .filter(record -> record.id.startsWith("checked-body-v1:"))
                     .map(AbiV10Records.CheckedBodyRecord::decode)
@@ -640,16 +649,19 @@ public final class ProjectBuilderMetadataTest {
                             "ABI-v10 producer omitted local-body IR for " + localCallable));
             List<org.mosslang.compiler.abi.CheckedStmt> localStatements =
                     CheckedBodyCodec.decodeCheckedBody(localBody.checkedIrBytes);
-            org.mosslang.compiler.abi.CheckedStmtKind expectedDeclaration = localCallable.equals("with_local")
+            boolean floatLocal = localCallable.contains("float");
+            boolean mutableLocal = localCallable.contains("mutable");
+            org.mosslang.compiler.abi.CheckedStmtKind expectedDeclaration = !mutableLocal
                     ? org.mosslang.compiler.abi.CheckedStmtKind.Let
                     : org.mosslang.compiler.abi.CheckedStmtKind.Var;
-            int expectedSize = localCallable.equals("with_local") ? 2 : 3;
+            int expectedSize = mutableLocal ? 3 : 2;
             int returnIndex = expectedSize - 1;
             if (localStatements.size() != expectedSize
                     || localStatements.get(0).kind != expectedDeclaration
-                    || (localCallable.equals("with_mutable_local")
+                    || (mutableLocal
                             && localStatements.get(1).kind != org.mosslang.compiler.abi.CheckedStmtKind.Assign)
-                    || localStatements.get(returnIndex).kind != org.mosslang.compiler.abi.CheckedStmtKind.Return) {
+                    || localStatements.get(returnIndex).kind != org.mosslang.compiler.abi.CheckedStmtKind.Return
+                    || !localStatements.get(0).type.equals(TypeRef.primitive(floatLocal ? "float" : "int"))) {
                 throw new AssertionError("ABI-v10 local statement body is incomplete for " + localCallable);
             }
         }
@@ -825,6 +837,10 @@ public final class ProjectBuilderMetadataTest {
                     + "  return provider__with_local(20)\n"
                     + "fn use_with_mutable_local() -> Int:\n"
                     + "  return provider__with_mutable_local(20)\n"
+                    + "fn use_with_float_local() -> Float:\n"
+                    + "  return provider__with_float_local(2.0)\n"
+                    + "fn use_with_mutable_float_local() -> Float:\n"
+                    + "  return provider__with_mutable_float_local(2.0)\n"
                     + "fn use_negated() -> Int:\n"
                     + "  return provider__negated(3)\n"
                     + "fn main():\n"

@@ -1467,7 +1467,7 @@ public class ProjectBuilder {
                             fn, modId, provenanceRecords);
                     CheckedExpr constantReturn = null;
                     CheckedExpr arithmeticReturn = null;
-                    List<CheckedStmt> intLocalBody = null;
+                    List<CheckedStmt> numericLocalBody = null;
                     CheckedExpr floatArithmeticReturn = null;
                     CheckedExpr numericPredicateReturn = null;
                     if (summary == null) {
@@ -1485,9 +1485,10 @@ public class ProjectBuilder {
                         }
                     }
                     if (summary == null) {
-                        intLocalBody = v10ClosedIntLocalBody(fn);
-                        if (intLocalBody != null) {
-                            summary = v10ClosedIntBodySummary(fn, intLocalBody, modId, provenanceRecords);
+                        numericLocalBody = v10ClosedNumericLocalBody(fn);
+                        if (numericLocalBody != null) {
+                            summary = v10ClosedNumericBodySummary(
+                                    fn, numericLocalBody, modId, provenanceRecords);
                         }
                     }
                     if (summary == null) {
@@ -1510,8 +1511,8 @@ public class ProjectBuilder {
                                 ? v10SimpleExpressionBody(summary, constantReturn)
                                 : arithmeticReturn != null
                                         ? v10SimpleExpressionBody(summary, arithmeticReturn)
-                                        : intLocalBody != null
-                                                ? v10CheckedBodyRecord(summary, intLocalBody)
+                                        : numericLocalBody != null
+                                                ? v10CheckedBodyRecord(summary, numericLocalBody)
                                         : floatArithmeticReturn != null
                                                 ? v10SimpleExpressionBody(summary, floatArithmeticReturn)
                                         : numericPredicateReturn != null
@@ -1754,6 +1755,11 @@ public class ProjectBuilder {
 
     private static CheckedExpr v10LowerClosedFloatExpression(
             String source, Function function, int depth) {
+        return v10LowerClosedFloatExpression(source, function, Map.of(), depth);
+    }
+
+    private static CheckedExpr v10LowerClosedFloatExpression(
+            String source, Function function, Map<String, Integer> localOrdinals, int depth) {
         if (source == null || depth > 128) return null;
         String expression = source.trim();
         while (v10ExpressionHasWrappingParens(expression)) {
@@ -1774,12 +1780,14 @@ public class ProjectBuilder {
                 return CheckedExpr.parameter(index, floatType);
             }
         }
+        Integer localOrdinal = localOrdinals.get(expression);
+        if (localOrdinal != null) return CheckedExpr.localRead(localOrdinal, floatType);
         for (List<String> operators : List.of(List.of("+", "-"), List.of("*", "/"))) {
             org.mosslang.compiler.semantics.ExpressionTyper.BinarySplit split =
                     org.mosslang.compiler.semantics.ExpressionTyper.splitBinary(expression, operators);
             if (split == null) continue;
-            CheckedExpr left = v10LowerClosedFloatExpression(split.left(), function, depth + 1);
-            CheckedExpr right = v10LowerClosedFloatExpression(split.right(), function, depth + 1);
+            CheckedExpr left = v10LowerClosedFloatExpression(split.left(), function, localOrdinals, depth + 1);
+            CheckedExpr right = v10LowerClosedFloatExpression(split.right(), function, localOrdinals, depth + 1);
             if (left == null || right == null) return null;
             org.mosslang.compiler.abi.CheckedBinaryOp operation = switch (split.op()) {
                 case "+" -> org.mosslang.compiler.abi.CheckedBinaryOp.Add;
@@ -1791,7 +1799,8 @@ public class ProjectBuilder {
             return operation == null ? null : CheckedExpr.binary(operation, left, right, floatType);
         }
         if (expression.startsWith("-") && !expression.equals("-")) {
-            CheckedExpr operand = v10LowerClosedFloatExpression(expression.substring(1).trim(), function, depth + 1);
+            CheckedExpr operand = v10LowerClosedFloatExpression(
+                    expression.substring(1).trim(), function, localOrdinals, depth + 1);
             return operand == null ? null : CheckedExpr.unary(
                     org.mosslang.compiler.abi.CheckedUnaryOp.Neg, operand, floatType);
         }
@@ -2030,13 +2039,13 @@ public class ProjectBuilder {
         return summary;
     }
 
-    private static List<CheckedStmt> v10ClosedIntLocalBody(Function function) {
-        if (!isV10IntType(function.returnTypeRef) || function.body.size() < 2) return null;
-        if (function.params.stream().anyMatch(parameter -> !isV10IntType(parameter.checkedTypeRef))) return null;
+    private static List<CheckedStmt> v10ClosedNumericLocalBody(Function function) {
+        TypeRef valueType = function.returnTypeRef;
+        if ((!isV10IntType(valueType) && !isV10FloatType(valueType)) || function.body.size() < 2) return null;
+        if (function.params.stream().anyMatch(parameter -> !valueType.equals(parameter.checkedTypeRef))) return null;
         Map<String, Integer> localOrdinals = new LinkedHashMap<>();
         Map<String, Boolean> localMutability = new HashMap<>();
         List<CheckedStmt> checked = new ArrayList<>();
-        TypeRef intType = TypeRef.primitive("int");
         boolean hasLocal = false;
         for (int index = 0; index < function.body.size(); index++) {
             Stmt statement = function.body.get(index);
@@ -2047,8 +2056,8 @@ public class ProjectBuilder {
                         && statement.text.trim().startsWith("return ")) {
                     expression = statement.text.trim().substring(7).trim();
                 }
-                CheckedExpr value = v10LowerClosedIntExpression(
-                        expression, function, localOrdinals, 0);
+                CheckedExpr value = v10LowerClosedNumericExpression(
+                        expression, function, localOrdinals, valueType, 0);
                 if (value == null) return null;
                 checked.add(CheckedStmt.returnStmt(value));
                 continue;
@@ -2064,8 +2073,8 @@ public class ProjectBuilder {
             String name = statement.a != null ? statement.a.trim() : "";
             if (!name.matches("[A-Za-z_][A-Za-z0-9_]*")) return null;
             String sourceExpression = statement.b != null ? statement.b.trim() : "";
-            CheckedExpr value = v10LowerClosedIntExpression(
-                    sourceExpression, function, localOrdinals, 0);
+            CheckedExpr value = v10LowerClosedNumericExpression(
+                    sourceExpression, function, localOrdinals, valueType, 0);
             if (value == null) return null;
             if (statement.kind == Stmt.Kind.Assign && localOrdinals.containsKey(name)) {
                 if (!Boolean.TRUE.equals(localMutability.get(name))) return null;
@@ -2077,7 +2086,7 @@ public class ProjectBuilder {
             int ordinal = localOrdinals.size();
             CheckedStmt declaration = statement.kind == Stmt.Kind.Let
                     ? CheckedStmt.letStmt(ordinal, value) : CheckedStmt.varStmt(ordinal, value);
-            declaration.type = intType;
+            declaration.type = valueType;
             checked.add(declaration);
             localOrdinals.put(name, ordinal);
             localMutability.put(name, statement.kind != Stmt.Kind.Let);
@@ -2088,14 +2097,24 @@ public class ProjectBuilder {
         return checked;
     }
 
-    private static AbiV10Records.Summary v10ClosedIntBodySummary(
+    private static CheckedExpr v10LowerClosedNumericExpression(
+            String source, Function function, Map<String, Integer> localOrdinals,
+            TypeRef valueType, int depth) {
+        if (isV10IntType(valueType))
+            return v10LowerClosedIntExpression(source, function, localOrdinals, depth);
+        if (isV10FloatType(valueType))
+            return v10LowerClosedFloatExpression(source, function, localOrdinals, depth);
+        return null;
+    }
+
+    private static AbiV10Records.Summary v10ClosedNumericBodySummary(
             Function function, List<CheckedStmt> statements, String moduleId,
             List<AbiV10Records.SourceProvenance> provenanceRecords) {
-        TypeRef intType = TypeRef.primitive("int");
+        TypeRef valueType = function.returnTypeRef;
         AbiV10Records.Summary summary = new AbiV10Records.Summary();
         summary.callableId = function.semanticCallableId;
         for (int index = 0; index < function.params.size(); index++) {
-            summary.parameters.add(AbiV10Records.fromTypeRef(intType, Map.of()));
+            summary.parameters.add(AbiV10Records.fromTypeRef(valueType, Map.of()));
             org.mosslang.compiler.types.AccessMode access = function.parameterAccessModes.size() > index
                     ? function.parameterAccessModes.get(index)
                     : org.mosslang.compiler.types.AccessMode.Read;
@@ -2105,7 +2124,7 @@ public class ProjectBuilder {
                 case Consume -> AbiV10Records.Access.Consume;
             });
         }
-        summary.result = AbiV10Records.fromTypeRef(intType, Map.of());
+        summary.result = AbiV10Records.fromTypeRef(valueType, Map.of());
         String bodyBytes = CheckedBodyCodec.encodeCheckedBodyV1(statements);
         summary.bodySemanticHash = "body-semantic-v1:sha256:" + CheckedBodyCodec.sha256Hex(bodyBytes);
         AbiV10Records.SourceProvenance provenance = AbiV10Records.SourceProvenance.create(
