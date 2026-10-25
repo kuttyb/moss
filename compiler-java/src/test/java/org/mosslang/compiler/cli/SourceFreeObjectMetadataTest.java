@@ -102,6 +102,26 @@ public final class SourceFreeObjectMetadataTest {
                         + error.getCode(), error);
             }
         }
+        String twoVariantContract = content.replace(
+                "raise_set=enum:provider__Fault:Bad;",
+                "raise_set=enum:provider__Fault:Bad,enum:provider__Fault:Other;");
+        Path partialFailureInterface = scratch.resolve("provider-partial-failure.mossi");
+        Files.writeString(partialFailureInterface, twoVariantContract);
+        Program partialImportedFailure = Parser.parseSource(""
+                + "import provider\n"
+                + "fn main():\n"
+                + "  worker = provider.Worker()\n"
+                + "  message worker.Work()\n", "source-free-handler-partial-failure.moss");
+        Main.loadMossiFunctions(partialFailureInterface, "provider", partialImportedFailure);
+        try {
+            new SemanticChecker(partialImportedFailure).run();
+            throw new AssertionError("source-free on_fail arms must cover every imported raise variant");
+        } catch (CompileError error) {
+            if (!"ROOT_UNHANDLED_RAISE".equals(error.getCode())) {
+                throw new AssertionError("expected ROOT_UNHANDLED_RAISE for partial source-free coverage, got "
+                        + error.getCode(), error);
+            }
+        }
         ObjectType imported = program.objects.stream()
                 .filter(object -> object.name.equals("provider__Point"))
                 .findFirst().orElseThrow(() -> new AssertionError(
@@ -323,8 +343,9 @@ public final class SourceFreeObjectMetadataTest {
         v10.binaryContract.add(new MossiRecord("type:Point", "type Point nominal\n"));
         v10.binaryContract.add(new MossiRecord("domain:Worker", ""
                 + "domain Worker opaque\n"
-                + "  handler_failure_arms \"Work\" 1\n"
-                + "  handler_failure_arm \"Work\" 0 \"Fault.Bad\" \"__moss_on_fail_provider__Worker_Work_0\" 0 1 0 0 0\n"));
+                + "  handler_failure_arms \"Work\" 2\n"
+                + "  handler_failure_arm \"Work\" 0 \"Fault.Bad\" \"__moss_on_fail_provider__Worker_Work_0\" 0 1 0 0 0\n"
+                + "  handler_failure_arm \"Work\" 1 \"Fault.Other\" \"__moss_on_fail_provider__Worker_Work_1\" 0 1 0 0 0\n"));
         AbiV10Records.SourceProvenance pointProvenance = AbiV10Records.SourceProvenance.create(
                 v10.moduleId, "nominal-template-v1:" + v10.moduleId + ":type:Point",
                 "provider.moss", 1);
@@ -364,7 +385,7 @@ public final class SourceFreeObjectMetadataTest {
         v10.semanticContract.add(new MossiRecord("00000002 export Worker", ""
                 + "export domain Worker opaque\n"
                 + "  declaration_id nominal-domain-v1:module-v1:sample@0.1.0::provider:domain:Worker\n"
-                + "  handler Work reply=unit effects=local_capture_read=0;local_mutation=0;domain_read=0;domain_write=0;message=0;external_io=0;fileio=0;fileio_unknown=0;may_panic=0;raise_set=enum:provider__Fault:Bad;may_diverge=0;unresolved=0\n"));
+                + "  handler Work reply=unit effects=local_capture_read=0;local_mutation=0;domain_read=0;domain_write=0;message=0;external_io=0;fileio=0;fileio_unknown=0;may_panic=0;raise_set=enum:provider__Fault:Bad,enum:provider__Fault:Other;may_diverge=0;unresolved=0\n"));
         Path v10File = scratch.resolve("provider-v10.mossi");
         String encodedV10 = CheckedBodyCodec.encodeMossi(v10);
         Files.writeString(v10File, encodedV10, java.nio.charset.StandardCharsets.UTF_8);
@@ -459,7 +480,7 @@ public final class SourceFreeObjectMetadataTest {
         v10WithoutFailure.semanticContract.add(new MossiRecord("00000000 export Worker", ""
                 + "export domain Worker opaque\n"
                 + "  declaration_id nominal-domain-v1:module-v1:sample@0.1.0::provider:domain:Worker\n"
-                + "  handler Work reply=unit effects=local_capture_read=0;local_mutation=0;domain_read=0;domain_write=0;message=0;external_io=0;fileio=0;fileio_unknown=0;may_panic=0;raise_set=enum:provider__Fault:Bad;may_diverge=0;unresolved=0\n"));
+                + "  handler Work reply=unit effects=local_capture_read=0;local_mutation=0;domain_read=0;domain_write=0;message=0;external_io=0;fileio=0;fileio_unknown=0;may_panic=0;raise_set=enum:provider__Fault:Bad,enum:provider__Fault:Other;may_diverge=0;unresolved=0\n"));
         Path v10NoFailureFile = scratch.resolve("provider-v10-no-failure.mossi");
         Files.writeString(v10NoFailureFile, CheckedBodyCodec.encodeMossi(v10WithoutFailure));
         Program v10UnhandledHandler = Parser.parseSource(""
@@ -477,6 +498,30 @@ public final class SourceFreeObjectMetadataTest {
                         + error.getCode(), error);
             }
         }
+        MossiInterface v10PartialFailure = new MossiInterface(v10.moduleId);
+        v10PartialFailure.compiler = v10.compiler;
+        v10PartialFailure.binaryContract.add(new MossiRecord("domain:Worker", ""
+                + "domain Worker opaque\n"
+                + "  handler_failure_arms \"Work\" 1\n"
+                + "  handler_failure_arm \"Work\" 0 \"Fault.Bad\" \"__moss_on_fail_provider__Worker_Work_0\" 0 1 0 0 0\n"));
+        v10PartialFailure.semanticContract.addAll(v10WithoutFailure.semanticContract);
+        Path v10PartialFailureFile = scratch.resolve("provider-v10-partial-failure.mossi");
+        Files.writeString(v10PartialFailureFile, CheckedBodyCodec.encodeMossi(v10PartialFailure));
+        Program v10PartialHandler = Parser.parseSource(""
+                + "import provider\n"
+                + "fn main():\n"
+                + "  worker = provider.Worker()\n"
+                + "  message worker.Work()\n", "source-free-v10-handler-partial-failure.moss");
+        Main.loadMossiFunctions(v10PartialFailureFile, "provider", v10PartialHandler);
+        try {
+            new SemanticChecker(v10PartialHandler).run();
+            throw new AssertionError("ABI-v10 on_fail arms must cover every imported raise variant");
+        } catch (CompileError error) {
+            if (!"ROOT_UNHANDLED_RAISE".equals(error.getCode())) {
+                throw new AssertionError("expected ABI-v10 ROOT_UNHANDLED_RAISE for partial coverage, got "
+                        + error.getCode(), error);
+            }
+        }
         Program v10HandledHandler = Parser.parseSource(""
                 + "import provider\n"
                 + "fn main():\n"
@@ -489,7 +534,7 @@ public final class SourceFreeObjectMetadataTest {
         org.mosslang.compiler.ast.Domain importedV10Worker = v10HandledHandler.domains.stream()
                 .filter(domain -> domain.name.equals("provider__Worker")).findFirst()
                 .orElseThrow(() -> new AssertionError("ABI-v10 source-free Worker was not imported"));
-        if (importedV10Worker.handlers.size() != 1 || importedV10Worker.handlers.get(0).failureArms.size() != 1) {
+        if (importedV10Worker.handlers.size() != 1 || importedV10Worker.handlers.get(0).failureArms.size() != 2) {
             throw new AssertionError("ABI-v10 source-free failure-arm metadata was not restored");
         }
         String v10HandledRust = NativeGenerator.generate(v10HandledHandler, false);
@@ -498,8 +543,10 @@ public final class SourceFreeObjectMetadataTest {
         }
         Files.deleteIfExists(interfaceFile);
         Files.deleteIfExists(raisingInterface);
+        Files.deleteIfExists(partialFailureInterface);
         Files.deleteIfExists(v10File);
         Files.deleteIfExists(v10NoFailureFile);
+        Files.deleteIfExists(v10PartialFailureFile);
         Files.deleteIfExists(scratch);
         System.out.println("SourceFreeObjectMetadataTest PASSED.");
     }

@@ -1266,6 +1266,10 @@ public class Main {
                             .compile("(?:^|[;\\s])raise_set=([^;\\s]+)").matcher(line);
                     if (raiseMatcher.find() && !"-".equals(raiseMatcher.group(1))) {
                         handler.sourceFreeMayRaise = true;
+                        for (String variant : parseSourceFreeRaiseVariants(line)) {
+                            if (!handler.sourceFreeRaiseVariants.contains(variant))
+                                handler.sourceFreeRaiseVariants.add(variant);
+                        }
                     }
                     continue;
                 }

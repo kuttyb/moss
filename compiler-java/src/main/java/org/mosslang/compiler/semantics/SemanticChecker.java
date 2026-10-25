@@ -999,6 +999,7 @@ public class SemanticChecker {
             copy.replyType = declaredReplyType ? handler.replyType : null;
             copy.replyTypeRef = declaredReplyType ? handler.replyTypeRef : null;
             copy.sourceFreeMayRaise = handler.sourceFreeMayRaise;
+            copy.sourceFreeRaiseVariants.addAll(handler.sourceFreeRaiseVariants);
             for (Param parameter : handler.params) {
                 Param parameterCopy = new Param(parameter.name, parameter.type, parameter.inferred);
                 if (parameter.typeRef != null) parameterCopy.bindType(parameter.typeRef);
@@ -4474,17 +4475,32 @@ public class SemanticChecker {
         if (domain == null) return;
         Handler handler = domain.handlers.stream()
                 .filter(candidate -> handlerName.equals(candidate.name)).findFirst().orElse(null);
-        if (handler == null || !handler.failureArms.isEmpty()
-                || handler.body.stream().anyMatch(s -> s.kind == Stmt.Kind.Try
-                        || s.kind == Stmt.Kind.Recover)) return;
+        if (handler == null || handler.body.stream().anyMatch(s -> s.kind == Stmt.Kind.Try
+                || s.kind == Stmt.Kind.Recover)) return;
         if (handler.sourceFreeMayRaise) {
-            CompileError error = new CompileError(line, ingress + " of '" + domain.name + "."
-                    + handlerName + "' may raise according to its imported contract"
-                    + " and requires an exhaustive on_fail trailer",
-                    "ROOT_UNHANDLED_RAISE");
-            error.setSemanticIdentity(currentSemanticIdentity);
-            throw error;
+            boolean catchAll = handler.failureArms.stream().anyMatch(arm ->
+                    (arm.binding == null || arm.binding.isBlank())
+                            && (arm.patterns == null || arm.patterns.isEmpty()));
+            Set<String> missing = new LinkedHashSet<>();
+            if (handler.sourceFreeRaiseVariants.isEmpty()) {
+                if (!catchAll) missing.add("unknown imported raise variant");
+            } else if (!catchAll) {
+                for (String variant : handler.sourceFreeRaiseVariants) {
+                    boolean covered = handler.failureArms.stream().flatMap(arm -> arm.patterns.stream())
+                            .anyMatch(pattern -> sourceFreeRaisePatternMatches(variant, pattern));
+                    if (!covered) missing.add(variant);
+                }
+            }
+            if (!missing.isEmpty()) {
+                CompileError error = new CompileError(line, ingress + " of '" + domain.name + "."
+                        + handlerName + "' has imported raise variants without exhaustive on_fail coverage: "
+                        + String.join(", ", missing), "ROOT_UNHANDLED_RAISE");
+                error.setSemanticIdentity(currentSemanticIdentity);
+                throw error;
+            }
+            return;
         }
+        if (!handler.failureArms.isEmpty()) return;
         Set<String> raised = new LinkedHashSet<>();
         Set<String> visitedFunctions = new HashSet<>();
         for (Stmt bodyStatement : handler.body) {
@@ -4514,6 +4530,16 @@ public class SemanticChecker {
                 "ROOT_UNHANDLED_RAISE");
         error.setSemanticIdentity(currentSemanticIdentity);
         throw error;
+    }
+
+    private static boolean sourceFreeRaisePatternMatches(String variant, String pattern) {
+        if (variant == null || pattern == null) return false;
+        String normalizedVariant = variant.trim().replace("::", "__");
+        String normalizedPattern = pattern.trim().replace("::", "__");
+        int payload = normalizedPattern.indexOf('(');
+        if (payload >= 0) normalizedPattern = normalizedPattern.substring(0, payload).trim();
+        return normalizedVariant.equals(normalizedPattern)
+                || normalizedVariant.endsWith("__" + normalizedPattern);
     }
 
     private void collectRootVisibleFunctionRaises(Function function, Set<String> raised,

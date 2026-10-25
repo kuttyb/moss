@@ -17,6 +17,7 @@ public class Handler {
     public int line = 0;
     public String sourceFile = "";
     public boolean sourceFreeMayRaise = false;
+    public java.util.List<String> sourceFreeRaiseVariants = new java.util.ArrayList<>();
 
     public Handler() {}
 

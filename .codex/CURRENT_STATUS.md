@@ -16502,3 +16502,13 @@ emits the configured value. The runtime now stores queue capacity and blocks
 submissions when the pending queue is full. All 12 Java test classes pass
 under ABI-v9 and staged ABI-v10, packaging and feedback validation pass, and
 native Rust compilation remains unrun.
+
+### Source-free imported handler raise coverage
+
+Imported domain handler raise sets are now retained as explicit variants in
+`Handler`, and root ingress checks that restored failure arms cover every
+variant. ABI-v9 and ABI-v10 fixtures each cover an unhandled raise, a two-case
+raise set with only one handled arm (rejected), and exhaustive arms (accepted).
+Generated Executor Rust selects `_root` for the handled cases. All 12 Java test
+classes pass under ABI-v9 and staged ABI-v10. Provider artifact generation,
+native linkage, and runtime execution remain pending.
