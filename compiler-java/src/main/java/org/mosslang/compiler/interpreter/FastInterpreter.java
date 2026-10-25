@@ -917,6 +917,7 @@ public class FastInterpreter {
                     int openB = varName.indexOf('[');
                     String baseName = varName.substring(0, openB).trim();
                     String keyExpr = varName.substring(openB + 1, varName.length() - 1).trim();
+                    if (locals.containsKey(baseName)) traceLocalRead(baseName);
                     Value baseVal = locals.containsKey(baseName) ? locals.get(baseName) : (currentDomain != null ? currentDomain.state.get(baseName) : null);
                     Value keyVal = evalExpr(keyExpr, locals, currentDomain);
                     if (baseVal != null && baseVal.raw instanceof Map<?, ?> mp) {

@@ -24,6 +24,7 @@ public final class FastInterpreterTest {
         testObjectMethodTraceCarriesCallContext();
         testMapGetInsideObjectMethodReturnsStoredOrFallbackValue();
         testMapSizeAndMembershipMethods();
+        testMapIndexedWritesTraceReceiverReads();
         testBuiltinMethodReceiverReadIsTraced();
         testEnumLocalWriteUsesCompactTypeSummary();
         testExceptionalFunctionTraceUnwindsCallContext();
@@ -451,6 +452,38 @@ public final class FastInterpreterTest {
         String actual = stdout.toString(StandardCharsets.UTF_8);
         if (!"1\n1\n1\ntrue\ntrue\nfalse\n".equals(actual)) {
             throw new AssertionError("Map size or membership methods returned incorrect results: " + actual);
+        }
+    }
+
+    private static void testMapIndexedWritesTraceReceiverReads() {
+        var program = Parser.parseSource(""
+                + "fn main():\n"
+                + "  values = Map()\n"
+                + "  values[\"alpha\"] = 3\n"
+                + "  values[\"beta\"] = 7\n"
+                + "  for key in values.keys():\n"
+                + "    echo key\n",
+                "fast-interpreter-map-loop-trace.moss");
+        new CheckedProgram(program).run();
+
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+        ByteArrayOutputStream trace = new ByteArrayOutputStream();
+        new FastInterpreter(program, true,
+                new PrintStream(stdout, true, StandardCharsets.UTF_8),
+                new PrintStream(trace, true, StandardCharsets.UTF_8)).run();
+        String expectedTrace = ""
+                + "{\"event_id\":1,\"event\":\"LocalWrite\",\"function\":\"main\",\"source_file\":\"fast-interpreter-map-loop-trace.moss\",\"semantic_identity\":\"main@1\",\"line\":2,\"depth\":0,\"detail\":\"values\",\"after\":\"Map(size=0)\"}\n"
+                + "{\"event_id\":2,\"event\":\"LocalRead\",\"function\":\"main\",\"source_file\":\"fast-interpreter-map-loop-trace.moss\",\"semantic_identity\":\"main@1\",\"line\":3,\"depth\":0,\"detail\":\"values\"}\n"
+                + "{\"event_id\":3,\"event\":\"LocalRead\",\"function\":\"main\",\"source_file\":\"fast-interpreter-map-loop-trace.moss\",\"semantic_identity\":\"main@1\",\"line\":4,\"depth\":0,\"detail\":\"values\"}\n"
+                + "{\"event_id\":4,\"event\":\"LocalRead\",\"function\":\"main\",\"source_file\":\"fast-interpreter-map-loop-trace.moss\",\"semantic_identity\":\"main@1\",\"line\":5,\"depth\":0,\"detail\":\"values\"}\n"
+                + "{\"event_id\":5,\"event\":\"LoopIteration\",\"function\":\"main\",\"source_file\":\"fast-interpreter-map-loop-trace.moss\",\"semantic_identity\":\"main@1\",\"line\":5,\"depth\":0,\"detail\":\"1\"}\n"
+                + "{\"event_id\":6,\"event\":\"LocalRead\",\"function\":\"main\",\"source_file\":\"fast-interpreter-map-loop-trace.moss\",\"semantic_identity\":\"main@1\",\"line\":6,\"parent_event_id\":5,\"control_event_id\":5,\"depth\":1,\"detail\":\"key\"}\n"
+                + "{\"event_id\":7,\"event\":\"LoopIteration\",\"function\":\"main\",\"source_file\":\"fast-interpreter-map-loop-trace.moss\",\"semantic_identity\":\"main@1\",\"line\":5,\"depth\":0,\"detail\":\"2\"}\n"
+                + "{\"event_id\":8,\"event\":\"LocalRead\",\"function\":\"main\",\"source_file\":\"fast-interpreter-map-loop-trace.moss\",\"semantic_identity\":\"main@1\",\"line\":6,\"parent_event_id\":7,\"control_event_id\":7,\"depth\":1,\"detail\":\"key\"}\n";
+        if (!"alpha\nbeta\n".equals(stdout.toString(StandardCharsets.UTF_8))
+                || !expectedTrace.equals(trace.toString(StandardCharsets.UTF_8))) {
+            throw new AssertionError("Map indexed-write receiver reads or key-loop trace were incorrect: "
+                    + trace.toString(StandardCharsets.UTF_8));
         }
     }
 

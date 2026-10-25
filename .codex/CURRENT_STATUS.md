@@ -14465,3 +14465,16 @@ legacy body rows and checks an imported `Vector[String]` result.
 All eleven Java unit-test classes pass under ABI-v9 and staged ABI-v10;
 feedback validation and `git diff --check` pass. Escaped strings, nested/generic
 vectors, native linkage, SDK integration, and final release gates remain open.
+
+### Phase 25.3 continuation — trace Map indexed-write receiver reads
+
+A C++/Java Fast Debug trace comparison over `Map.keys()` iteration showed
+matching printed keys and loop events, but Java omitted the `LocalRead` events
+for the Map receiver on each indexed assignment. Java now traces a local
+collection receiver when assigning through an index. The exact stdout and
+complete trace for the two-key Map loop match the C++ result, and a Java unit
+regression asserts the full event sequence.
+
+All eleven Java unit-test classes pass under ABI-v9 and staged ABI-v10. This
+closes the selected indexed-write/Map-keys trace path only; other collection
+mutation, message/state, and full Fast Debug trace parity remain open.
