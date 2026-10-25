@@ -477,20 +477,24 @@ public class FastInterpreter {
                         elseEnd++;
                     }
                 }
+                Set<String> joinedNames = new HashSet<>(blockDeclarations(stmts, i + 1, thenEnd));
+                if (elseStart != -1) joinedNames.retainAll(blockDeclarations(stmts, elseStart, elseEnd));
+                else joinedNames.clear();
+                joinedNames.removeAll(locals.keySet());
                 Value cond = evalExpr(s.a, locals, currentDomain);
                 if (cond.asBool()) {
                     traceControlEvent(s, funcName, "BranchTaken", "then", depth);
                     try {
-                        lastVal = evalScopedBlock(stmts, i + 1, thenEnd, locals,
-                                currentDomain, funcName, depth + 1, Set.of());
+                        lastVal = evalJoinedScopedBlock(stmts, i + 1, thenEnd, locals,
+                                currentDomain, funcName, depth + 1, joinedNames);
                     } finally {
                         endTraceLoopIteration();
                     }
                 } else if (elseStart != -1) {
                     traceControlEvent(s, funcName, "BranchTaken", "else", depth);
                     try {
-                        lastVal = evalScopedBlock(stmts, elseStart, elseEnd, locals,
-                                currentDomain, funcName, depth + 1, Set.of());
+                        lastVal = evalJoinedScopedBlock(stmts, elseStart, elseEnd, locals,
+                                currentDomain, funcName, depth + 1, joinedNames);
                     } finally {
                         endTraceLoopIteration();
                     }

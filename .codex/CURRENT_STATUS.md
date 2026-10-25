@@ -13909,3 +13909,13 @@ Java now extracts the binding from the selected pattern and reads the raised
 enum payload. Its output (`first 7`, `second 9`) matches C++ for both arms.
 ABI-v9 and staged ABI-v10 Java suites pass; broad trace parity and final
 acceptance remain open.
+
+Additional bounded probes found `phase21_capture_if_join.moss` returned `()`
+for both branches in Java while C++ returned `yes` and `no`. Java now joins
+same-named branch declarations across `if/else` and exposes the executed
+binding to a later selected failure arm. The focused output matches C++.
+
+The distinct `phase21_capture_method_early_raise.moss` fixture is accepted by
+C++ but Java rejects it with `OWNERSHIP_USE_AFTER_CONSUME` for `data` after a
+possibly raising first argument. This appears to be an ownership exceptional-
+edge parity gap and remains open for a separate minimal diagnosis.
