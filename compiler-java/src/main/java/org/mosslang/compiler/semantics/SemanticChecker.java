@@ -2361,6 +2361,11 @@ public class SemanticChecker {
                         String receiver = matchedCall.substring(0, matchedCall.lastIndexOf('.')).trim();
                         String receiverType = resolveFunctionReceiverType(receiver, bindings);
                         if (matchesObjectTypeName(receiverType, object.name)) return true;
+                        // An inferred parameter may retain a placeholder type even though
+                        // generic method resolution accepted this direct receiver call.
+                        // Preserve the method's WRITE requirement rather than publishing
+                        // an unsound READ summary for that parameter.
+                        if (receiver.equals(paramName)) return true;
                     }
                 }
             }

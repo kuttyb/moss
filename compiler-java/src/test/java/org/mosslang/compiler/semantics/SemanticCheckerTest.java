@@ -21,6 +21,7 @@ public class SemanticCheckerTest {
         testFunctionConsumeSummaryIncludesNestedFieldMoves();
         testFunctionWriteSummaryPropagatesThroughHelperCalls();
         testFunctionWriteModePropagatesThroughNestedMethodReceiver();
+        testInferredFunctionReceiverRetainsWriteMode();
         testFunctionWriteModePropagatesThroughMethodArguments();
         testFunctionConsumeSummaryIncludesObjectConstructors();
         testFunctionRetainsResolvedOpenParameterTypes();
@@ -740,6 +741,25 @@ public class SemanticCheckerTest {
                 + "  echo box.sink.value\n", "function-write-nested-receiver.moss");
         new SemanticChecker(program).run();
         Function relay = program.functions.stream().filter(function -> function.name.equals("relay"))
+                .findFirst().orElseThrow();
+        assertEquals(AccessMode.Write, relay.parameterAccessModes.get(0));
+    }
+
+    private static void testInferredFunctionReceiverRetainsWriteMode() {
+        Program program = Parser.parseSource(""
+                + "type Counter:\n"
+                + "  value: Int\n"
+                + "  fn bump():\n"
+                + "    self.value = self.value + 1\n"
+                + "fn relay(counter):\n"
+                + "  counter.bump()\n"
+                + "fn main():\n"
+                + "  counter = Counter(value=0)\n"
+                + "  relay(counter)\n"
+                + "  echo counter.value\n", "inferred-function-receiver-write.moss");
+        new SemanticChecker(program).run();
+        Function relay = program.functions.stream()
+                .filter(function -> function.name.equals("relay"))
                 .findFirst().orElseThrow();
         assertEquals(AccessMode.Write, relay.parameterAccessModes.get(0));
     }

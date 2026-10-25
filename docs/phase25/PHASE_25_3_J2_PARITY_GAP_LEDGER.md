@@ -613,3 +613,14 @@ The semantic regression covers this owned-field move and confirms reading a
 Copy `Int` field does not consume its owner. Focused C++/Java diagnostics
 agree. All eleven Java test classes pass under ABI-v9 and staged ABI-v10;
 alias and branch-sensitive field moves remain open.
+
+
+### Follow-up — retain WRITE for inferred method receivers
+
+For `fn relay(counter): counter.bump()` with a concrete `Counter` callsite,
+C++ reported `counter: WRITE`, while Java reported READ because its checked
+parameter type remained a placeholder. Java now preserves WRITE for a direct
+inferred-parameter receiver call when a matching object method requires WRITE.
+The focused C++/Java effects queries agree. All eleven Java test classes pass
+under ABI-v9 and staged ABI-v10. Ambiguous same-name methods across structural
+receiver types remain an area for focused coverage.
