@@ -13315,7 +13315,7 @@ identities are validated by the existing verifier before projection. The
 end-to-end Java test removes legacy generic body rows from the provider
 interface, then checks imported Int and String specializations, including a
 two-parameter callable that returns its second argument, zero-argument signed
-integer, boolean, and positive float constant functions, a concrete `Vector[Int]`
+integer and float, boolean, a concrete `Vector[Int]`
 direct-return callable, and checked `Int` calls covering addition, subtraction,
 multiplication, division, and modulo by a nonnegative literal. The collection
 signature retains its nested element type during source-free semantic checking.
