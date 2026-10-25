@@ -31,6 +31,7 @@ public final class SourceFreeFunctionMetadataTest {
                       param 0 vector mode=WRITE name="values"
                     fn consume kind=concrete return=unit effects=local_capture_read=0;local_mutation=0;domain_read=0;domain_write=0;message=0;external_io=0;fileio=0;fileio_unknown=0;may_panic=0;raise_set=-;may_diverge=0;unresolved=0 symbol=moss__function__service__consume__abcd
                       param 0 string mode=CONSUME name="value"
+                    fn fail kind=concrete return=unit effects=local_capture_read=0;local_mutation=0;domain_read=0;domain_write=0;message=0;external_io=0;fileio=0;fileio_unknown=0;may_panic=0;raise_set=enum:Fault:Bad;may_diverge=0;unresolved=0 symbol=moss__function__service__fail__abcd
                     semantic_exports
                     export fn map kind=generic semantic_hash=0123456789abcdef return=vector effects=local_capture_read=0;local_mutation=0;domain_read=0;domain_write=0;message=0;external_io=0;fileio=0;fileio_unknown=0;may_panic=0;raise_set=-;may_diverge=0;unresolved=0
                       param 0 vector mode=WRITE name="values"
@@ -41,6 +42,7 @@ public final class SourceFreeFunctionMetadataTest {
                       generic_ir_end
                     export fn consume semantic_hash=0123456789abcdef return=unit effects=local_capture_read=0;local_mutation=0;domain_read=0;domain_write=0;message=0;external_io=0;fileio=0;fileio_unknown=0;may_panic=0;raise_set=-;may_diverge=0;unresolved=0
                       param 0 string mode=CONSUME name="value"
+                    export fn fail semantic_hash=0123456789abcdef return=unit effects=local_capture_read=0;local_mutation=0;domain_read=0;domain_write=0;message=0;external_io=0;fileio=0;fileio_unknown=0;may_panic=0;raise_set=enum:Fault:Bad;may_diverge=0;unresolved=0
                     """);
 
             Program program = new Program();
@@ -64,6 +66,34 @@ public final class SourceFreeFunctionMetadataTest {
                     .findFirst().orElseThrow(() -> new AssertionError("ABI-v9 consuming function missing"));
             assertEquals(AccessMode.Consume, v9Consume.parameterAccessModes.get(0),
                     "ABI-v9 consuming function access mode");
+            Program v9RaiseConsumer = Parser.parseSource(""
+                    + "enum Fault:\n"
+                    + "  Bad\n"
+                    + "fn main():\n"
+                    + "  service.fail()\n", "source-free-v9-raise-consumer.moss");
+            Main.loadMossiFunctions(interfaceFile, "service", v9RaiseConsumer);
+            v9RaiseConsumer.functions.removeIf(function -> !function.name.equals("main")
+                    && !function.name.equals("service.fail")
+                    && !function.name.equals("service__fail"));
+            try {
+                new SemanticChecker(v9RaiseConsumer).run();
+                throw new AssertionError("ABI-v9 source-free raise was allowed to escape main");
+            } catch (org.mosslang.compiler.diagnostics.CompileError error) {
+                if (!"MOSS_COMPILE_ERROR".equals(error.getCode())) throw error;
+            }
+            Program handledRaiseConsumer = Parser.parseSource(""
+                    + "enum Fault:\n"
+                    + "  Bad\n"
+                    + "fn main():\n"
+                    + "  try:\n"
+                    + "    service.fail()\n"
+                    + "  recover Fault.Bad:\n"
+                    + "    pass\n", "source-free-v9-handled-raise-consumer.moss");
+            Main.loadMossiFunctions(interfaceFile, "service", handledRaiseConsumer);
+            handledRaiseConsumer.functions.removeIf(function -> !function.name.equals("main")
+                    && !function.name.equals("service.fail")
+                    && !function.name.equals("service__fail"));
+            new SemanticChecker(handledRaiseConsumer).run();
             Program v9Consumer = Parser.parseSource(""
                     + "fn main():\n"
                     + "  value = \"moved\"\n"

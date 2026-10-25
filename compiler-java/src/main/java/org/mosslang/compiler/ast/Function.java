@@ -26,6 +26,7 @@ public class Function {
     public boolean staticDispatch = false;
     public int sourceFreeAbiVersion = 0;
     public boolean sourceFreeCheckedBodyAvailable = false;
+    public java.util.List<String> sourceFreeRaiseVariants = new java.util.ArrayList<>();
     public java.util.List<AccessMode> parameterAccessModes = new java.util.ArrayList<>();
     public java.util.List<FunctionSpecialization> specializations = new java.util.ArrayList<>();
     public int line = 0;

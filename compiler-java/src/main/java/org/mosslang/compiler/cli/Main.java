@@ -772,6 +772,22 @@ public class Main {
         };
     }
 
+    private static List<String> parseSourceFreeRaiseVariants(String record) {
+        java.util.regex.Matcher matcher = java.util.regex.Pattern
+                .compile("(?:^|[;\\s])raise_set=([^;\\s]+)").matcher(record);
+        if (!matcher.find() || "-".equals(matcher.group(1))) return List.of();
+        List<String> variants = new ArrayList<>();
+        for (String tag : matcher.group(1).split(",")) {
+            if (!tag.startsWith("enum:")) continue;
+            String identity = tag.substring("enum:".length());
+            int separator = identity.lastIndexOf(':');
+            if (separator <= 0 || separator + 1 >= identity.length()) continue;
+            String type = identity.substring(0, separator).replace("::", "__");
+            variants.add(type + "." + identity.substring(separator + 1));
+        }
+        return variants;
+    }
+
     private static Set<String> seedV10FunctionDeclarations(
             Program program, String moduleName, String moduleId,
             Map<String, org.mosslang.compiler.abi.AbiV10Records.Summary> summaries,
@@ -1497,7 +1513,12 @@ public class Main {
                         alias.params = currentFn.params;
                         alias.body = currentFn.body;
                         alias.returnType = currentFn.returnType;
+                        alias.sourceFreeRaiseVariants = currentFn.sourceFreeRaiseVariants;
                         program.functions.add(alias);
+                    }
+                    for (String variant : parseSourceFreeRaiseVariants(line)) {
+                        if (!currentFn.sourceFreeRaiseVariants.contains(variant))
+                            currentFn.sourceFreeRaiseVariants.add(variant);
                     }
                     currentFn.sourceFreeAbiVersion = sourceFreeV10 ? 10 : 9;
                     currentFn.sourceFreeCheckedBodyAvailable = false;
@@ -1506,6 +1527,7 @@ public class Main {
                                 && currentFn.semanticCallableId.equals(alias.semanticCallableId)) {
                             alias.sourceFreeAbiVersion = currentFn.sourceFreeAbiVersion;
                             alias.sourceFreeCheckedBodyAvailable = false;
+                            alias.sourceFreeRaiseVariants = currentFn.sourceFreeRaiseVariants;
                         }
                     }
                 } else if (currentFn != null && line.startsWith("param ")) {

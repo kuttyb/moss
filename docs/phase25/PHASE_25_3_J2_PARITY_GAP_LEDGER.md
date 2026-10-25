@@ -659,3 +659,13 @@ sources. The packaged bootstrap reports `language_version: moss-0.1`; a valid
 inferred-WRITE example checks successfully, and the consuming-receiver reuse
 example is rejected with `OWNERSHIP_USE_AFTER_CONSUME`. This is a packaging
 smoke check, not native Rust or Margo integration evidence.
+
+### Phase 25.3 continuation — preserve source-free typed raise metadata
+
+An ABI-v9 imported function with `raise_set=enum:Fault:Bad` was accepted in
+`main` without recovery because the function had no body from which to infer
+raises. Java now retains source-free enum variants and includes them in root
+raise closure. The regression rejects the unhandled call and accepts an exact
+`recover Fault.Bad` arm. All eleven Java test classes pass under ABI-v9 and
+staged ABI-v10. Multi-variant ABI encoding and source-free native execution
+remain open.

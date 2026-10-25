@@ -1688,6 +1688,7 @@ public class SemanticChecker {
     private Set<String> collectFunctionRaiseVariants(Function function, Set<String> visited) {
         Set<String> variants = new LinkedHashSet<>();
         if (function == null || !visited.add(function.name)) return variants;
+        variants.addAll(function.sourceFreeRaiseVariants);
         for (int index = 0; index < function.body.size(); index++) {
             Stmt statement = function.body.get(index);
             if (statement == null) continue;
@@ -3134,6 +3135,7 @@ public class SemanticChecker {
         if (function == null || !visited.add(function.name)
                 || function.body.stream().anyMatch(s -> s.kind == Stmt.Kind.Try
                         || s.kind == Stmt.Kind.Recover)) return;
+        raised.addAll(function.sourceFreeRaiseVariants);
         for (Stmt statement : function.body) {
             if (statement.kind == Stmt.Kind.Raise && statement.a != null && !statement.a.isBlank()) {
                 String variant = statement.a.trim();
@@ -3234,6 +3236,7 @@ public class SemanticChecker {
 
     private void collectFunctionRaisedVariants(Function function, Set<String> variants, Set<String> visited) {
         if (function == null || !visited.add(function.name)) return;
+        variants.addAll(function.sourceFreeRaiseVariants);
         for (Stmt statement : function.body) {
             if (statement.kind == Stmt.Kind.Raise && statement.a != null) {
                 String raised = statement.a.trim();
