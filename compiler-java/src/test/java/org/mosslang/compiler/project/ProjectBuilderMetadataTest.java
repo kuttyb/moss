@@ -429,6 +429,8 @@ public final class ProjectBuilderMetadataTest {
                 + "    return 8\n"
                 + "  fn identity(value: Int) -> Int:\n"
                 + "    return value\n"
+                + "  fn identity_collection(values: Vector[Int]) -> Vector[Int]:\n"
+                + "    return values\n"
                 + "enum Outcome:\n"
                 + "  Ready(code: Int)\n"
                 + "  Done\n"
@@ -449,6 +451,7 @@ public final class ProjectBuilderMetadataTest {
         program.enums.get(0).exported = true;
         program.domains.get(0).exported = true;
         program.domains.get(1).exported = true;
+        new org.mosslang.compiler.semantics.CheckedProgram(program).run();
         ProjectManifest manifest = new ProjectManifest(Path.of("tmp"),
                 Path.of("tmp", "moss.toml"), "sample", "1.0.0", Path.of("src"));
         BackendToolchain toolchain = new BackendToolchain("rustc", "rustc 1.80.0 (test)\n",
@@ -459,7 +462,7 @@ public final class ProjectBuilderMetadataTest {
         AbiV10Records.NominalTemplate pointTemplate = decoded.binaryContract.stream()
                 .filter(record -> record.id.startsWith("nominal-template-v1:"))
                 .map(AbiV10Records.NominalTemplate::decode).findFirst().orElseThrow();
-        if (pointTemplate.methodTemplateIds.size() != 6) {
+        if (pointTemplate.methodTemplateIds.size() != 7) {
             throw new AssertionError("ABI-v10 nominal template omitted its method reference");
         }
         AbiV10Records.MethodTemplate methodTemplate = decoded.binaryContract.stream()
@@ -491,6 +494,19 @@ public final class ProjectBuilderMetadataTest {
                 || !identityMethodTemplate.parameterAccess.equals(List.of(AccessMode.Read.ordinal() + 1))) {
             throw new AssertionError("ABI-v10 method template lost its pure parameter/result relation");
         }
+        AbiV10Records.MethodTemplate consumingIdentityTemplate = decoded.binaryContract.stream()
+                .filter(record -> pointTemplate.methodTemplateIds.contains(record.id))
+                .map(AbiV10Records.MethodTemplate::decode)
+                .filter(method -> "identity_collection".equals(method.methodName)).findFirst().orElseThrow();
+        if (consumingIdentityTemplate.parameters.size() != 1
+                || !"vector[int]".equalsIgnoreCase(consumingIdentityTemplate.parameters.get(0).canonicalName())
+                || !"vector[int]".equalsIgnoreCase(consumingIdentityTemplate.result.canonicalName())
+                || !consumingIdentityTemplate.parameterAccess.equals(List.of(AccessMode.Consume.ordinal() + 1))) {
+            throw new AssertionError("ABI-v10 method template lost its consumed collection identity relation: "
+                    + consumingIdentityTemplate.parameters.stream().map(AbiV10Records.WireType::canonicalName).toList()
+                    + " -> " + consumingIdentityTemplate.result.canonicalName() + " / "
+                    + consumingIdentityTemplate.parameterAccess);
+        }
         MossiInterface methodTemplateOnly = CheckedBodyCodec.verifySourceFree(generated);
         methodTemplateOnly.semanticContract.clear();
         methodTemplateOnly.binaryContract.removeIf(record ->
@@ -511,6 +527,8 @@ public final class ProjectBuilderMetadataTest {
                     + "  return point.ready_after(delay)\n"
                     + "fn identity(point: provider__Point, value: Int) -> Int:\n"
                     + "  return point.identity(value)\n"
+                    + "fn identity_collection(point: provider__Point, values: Vector[Int]) -> Vector[Int]:\n"
+                    + "  return point.identity_collection(values)\n"
                     + "fn main():\n"
                     + "  pass\n", "method-template-consumer.moss");
             org.mosslang.compiler.cli.Main.loadMossiFunctions(
@@ -536,8 +554,30 @@ public final class ProjectBuilderMetadataTest {
                             && object.methods.stream().anyMatch(method -> method.name.equals("identity")
                                     && method.params.size() == 1
                                     && "int".equalsIgnoreCase(method.params.get(0).type)
-                                    && "int".equalsIgnoreCase(method.returnType)))) {
+                                    && "int".equalsIgnoreCase(method.returnType)))
+                    || methodConsumer.objects.stream().noneMatch(object -> object.name.equals("provider__Point")
+                            && object.methods.stream().anyMatch(method -> method.name.equals("identity_collection")
+                                    && method.params.size() == 1
+                                    && "vector[int]".equalsIgnoreCase(method.params.get(0).type)
+                                    && "vector[int]".equalsIgnoreCase(method.returnType)))) {
                 throw new AssertionError("ABI-v10 method template did not supply source-free method typing");
+            }
+            Program consumingMethodConsumer = Parser.parseSource(""
+                    + "fn invalid(point: provider__Point, values: Vector[Int]) -> Vector[Int]:\n"
+                    + "  result = point.identity_collection(values)\n"
+                    + "  return values\n"
+                    + "fn main():\n"
+                    + "  pass\n", "method-template-consume-consumer.moss");
+            org.mosslang.compiler.cli.Main.loadMossiFunctions(
+                    methodTemplateOnlyFile, "provider", consumingMethodConsumer);
+            try {
+                new org.mosslang.compiler.semantics.SemanticChecker(consumingMethodConsumer).run();
+                throw new AssertionError("source-free Consume method must consume its collection argument");
+            } catch (CompileError error) {
+                if (!"OWNERSHIP_USE_AFTER_CONSUME".equals(error.getCode())) {
+                    throw new AssertionError("expected source-free method consume diagnostic, got "
+                            + error.getCode(), error);
+                }
             }
         } catch (java.io.IOException error) {
             throw new AssertionError("could not create method-template-only source-free interface", error);

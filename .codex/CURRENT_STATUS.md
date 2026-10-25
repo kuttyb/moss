@@ -14870,14 +14870,15 @@ The ABI-v10 nominal-template writer previously rejected an exported object
 template when any method had a body beyond `pass`, suppressing the object's
 canonical template and its method records. It now retains templates when a
 method is a read-receiver method whose sole body statement returns a closed
-Int, Bool, Float, or String literal. Typed READ parameters are retained in the
-method-template record even when the method body does not use them. A separate
-pure identity profile carries one closed Copy primitive READ parameter through
-as the result. The source-free regression removes the object's legacy semantic
-rows, imports only its nominal and method-template records, and type-checks
-calls to all six method signatures, including both parameterized shapes.
+Int, Bool, Float, or String literal, or returns its sole representable typed
+parameter unchanged. Typed READ parameters are retained for literal methods;
+the identity profile preserves the checked READ or CONSUME access mode. The
+source-free regression removes the object's legacy semantic rows, imports only
+its nominal and method-template records, and type-checks calls to all seven
+signatures, including a `Vector[Int]` identity method whose parameter remains
+consumed after import.
 
 Validation: all eleven Java unit-test classes pass in staged ABI-v10 and ABI-v9.
 This proves only signature projection for pure primitive-literal returns and
-the closed primitive identity profile; general body summaries, effects,
-generic methods, native linkage, and ABI-v10 contract completeness remain open.
+unchanged typed parameter returns; general body summaries, effects, generic
+methods, native linkage, and ABI-v10 contract completeness remain open.
