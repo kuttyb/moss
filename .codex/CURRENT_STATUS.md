@@ -14997,3 +14997,19 @@ Validation: the uncaught local-alias reproducer is rejected by both compilers;
 all eleven Java unit-test classes pass. This is limited to straight-line simple
 assignments; branch-sensitive or loop aliases, generic substitution, imported
 methods, and complete effect closure remain open.
+
+### Phase 25.3 continuation — refresh standalone package and recheck two ownership pairs
+
+Rebuilt `compiler-java/dist/moss.jar` and the standalone `compiler-java/dist/moss`
+launcher from the current source. Running both the launcher and `java -jar`
+from the repository succeeded; `moss agent bootstrap --json` reports
+`language_version: moss-0.1`.
+
+Rechecked the historically recorded vector exceptional-edge pair and pipeline
+shared-variant pair individually. On this tree, both compilers reject
+`phase21_vector_consume_before_raise` and accept `phase21_vector_raise_before_consume`;
+both reject `phase21_pipeline_shared_variant_edges` and accept
+`phase21_pipeline_source_before_consume`. Java's diagnostics use a different
+transfer destination phrase in the negative cases, but the acceptance outcomes
+match. This focused check does not supersede the historic broader screen or
+establish full ownership parity.
