@@ -14567,3 +14567,14 @@ project tests successfully. Its benchmark command evaluated four declared
 bodies from the source and bench files, reporting 31 samples after five warmups
 and 100 iterations per sample. This confirms the current test and benchmark
 paths still execute real Moss bodies; no native project build or SDK gate ran.
+
+### Phase 25.3 continuation — source-free nested primitive vectors
+
+ABI-v10 closed-vector lowering and import projection now recurse through nested
+`Vector` types, with a depth bound and exact checked child-type validation.
+The provider regression exports `Vector[Vector[Int]]`, confirms nested checked
+body structure, strips legacy generic body rows, imports the source-free
+provider, and executes `matrix[1][0]` as `3`. All eleven Java unit-test classes
+pass under ABI-v9 and staged ABI-v10. This adds nested primitive vector
+literals only; general collection expressions, native linkage, SDK integration,
+and the full ABI-v10 contract remain incomplete.

@@ -1768,8 +1768,7 @@ public class ProjectBuilder {
                 || function.returnTypeRef.kind() != org.mosslang.compiler.types.TypeKind.Builtin
                 || !"vector".equalsIgnoreCase(function.returnTypeRef.name())
                 || function.returnTypeRef.typeArgs().size() != 1
-                || !Set.of("int", "float", "bool", "string").contains(
-                        function.returnTypeRef.typeArgs().get(0).name().toLowerCase(Locale.ROOT))
+                || !v10ClosedVectorElementSupported(function.returnTypeRef.typeArgs().get(0), 0)
                 || function.body.size() != 1 || function.body.get(0).kind != Stmt.Kind.Return) return null;
         Stmt statement = function.body.get(0);
         String expression = statement.a != null && !statement.a.isBlank()
@@ -1783,16 +1782,47 @@ public class ProjectBuilder {
         List<String> elements = org.mosslang.compiler.parser.ParserSupport.splitTopLevel(
                 expression.substring(1, expression.length() - 1), ',');
         if (elements.isEmpty() || elements.stream().anyMatch(String::isBlank)) return null;
+        return v10LowerClosedVectorLiteral(expression, function.returnTypeRef, function, 0);
+    }
+
+    private static boolean v10ClosedVectorElementSupported(TypeRef type, int depth) {
+        if (type == null || depth > 16) return false;
+        if (type.kind() == org.mosslang.compiler.types.TypeKind.Primitive) {
+            return Set.of("int", "float", "bool", "string").contains(
+                    type.name().toLowerCase(Locale.ROOT));
+        }
+        return type.kind() == org.mosslang.compiler.types.TypeKind.Builtin
+                && "vector".equalsIgnoreCase(type.name())
+                && type.typeArgs().size() == 1
+                && v10ClosedVectorElementSupported(type.typeArgs().get(0), depth + 1);
+    }
+
+    private static CheckedExpr v10LowerClosedVectorLiteral(
+            String source, TypeRef vectorType, Function function, int depth) {
+        if (depth > 16 || vectorType == null
+                || vectorType.kind() != org.mosslang.compiler.types.TypeKind.Builtin
+                || !"vector".equalsIgnoreCase(vectorType.name())
+                || vectorType.typeArgs().size() != 1
+                || !v10ClosedVectorElementSupported(vectorType.typeArgs().get(0), depth + 1)) return null;
+        String expression = source.trim();
+        if (expression.length() < 2 || expression.charAt(0) != '['
+                || expression.charAt(expression.length() - 1) != ']') return null;
+        List<String> elements = org.mosslang.compiler.parser.ParserSupport.splitTopLevel(
+                expression.substring(1, expression.length() - 1), ',');
+        if (elements.stream().anyMatch(String::isBlank)) return null;
         CheckedExpr vector = new CheckedExpr();
         vector.kind = org.mosslang.compiler.abi.CheckedExprKind.VectorLiteral;
-        vector.type = function.returnTypeRef;
-        TypeRef elementType = function.returnTypeRef.typeArgs().get(0);
+        vector.type = vectorType;
+        TypeRef elementType = vectorType.typeArgs().get(0);
         for (String element : elements) {
             CheckedExpr child;
-            if (TypeRef.primitive("int").equals(elementType)) {
-                child = v10LowerClosedIntExpression(element, function, 0);
+            if (elementType.kind() == org.mosslang.compiler.types.TypeKind.Builtin
+                    && "vector".equalsIgnoreCase(elementType.name())) {
+                child = v10LowerClosedVectorLiteral(element, elementType, function, depth + 1);
+            } else if (TypeRef.primitive("int").equals(elementType)) {
+                child = v10LowerClosedIntExpression(element, function, depth + 1);
             } else if (TypeRef.primitive("float").equals(elementType)) {
-                child = v10LowerClosedFloatExpression(element, function, 0);
+                child = v10LowerClosedFloatExpression(element, function, depth + 1);
             } else if (TypeRef.primitive("bool").equals(elementType)) {
                 child = "true".equals(element.trim()) ? CheckedExpr.boolLiteral(true, elementType)
                         : "false".equals(element.trim()) ? CheckedExpr.boolLiteral(false, elementType) : null;

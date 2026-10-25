@@ -1648,9 +1648,8 @@ public class Main {
                     && resultType.kind() == org.mosslang.compiler.types.TypeKind.Builtin
                     && "vector".equalsIgnoreCase(resultType.name())
                     && resultType.typeArgs().size() == 1
-                    && Set.of("int", "float", "bool", "string").contains(
-                            resultType.typeArgs().get(0).name().toLowerCase(java.util.Locale.ROOT))) {
-                returnedLiteral = sourceFreeClosedIntVectorLiteral(statement.expr, parameterTypes,
+                    && sourceFreeClosedVectorElementSupported(resultType.typeArgs().get(0), 0)) {
+                returnedLiteral = sourceFreeClosedVectorLiteral(statement.expr, parameterTypes,
                         resultType.typeArgs().get(0));
                 if (returnedLiteral == null) continue;
             } else if (statement.expr.kind == org.mosslang.compiler.abi.CheckedExprKind.VectorLiteral
@@ -1888,11 +1887,13 @@ public class Main {
         return sourceFreeClosedIntExpression(expression, parameterTypes, Map.of(), depth);
     }
 
-    private static String sourceFreeClosedIntVectorLiteral(
+    private static String sourceFreeClosedVectorLiteral(
             org.mosslang.compiler.abi.CheckedExpr expression,
             List<org.mosslang.compiler.types.TypeRef> parameterTypes,
             org.mosslang.compiler.types.TypeRef elementType) {
-        if (expression.operands.isEmpty()) return null;
+        if (expression == null
+                || expression.kind != org.mosslang.compiler.abi.CheckedExprKind.VectorLiteral) return null;
+        if (expression.operands.isEmpty()) return "[]";
         List<String> elements = new ArrayList<>();
         org.mosslang.compiler.types.TypeRef intType =
                 org.mosslang.compiler.types.TypeRef.primitive("int");
@@ -1905,7 +1906,12 @@ public class Main {
         for (org.mosslang.compiler.abi.CheckedExpr element : expression.operands) {
             if (!elementType.equals(element.type)) return null;
             String source;
-            if (intType.equals(elementType)) {
+            if (elementType.kind() == org.mosslang.compiler.types.TypeKind.Builtin
+                    && "vector".equalsIgnoreCase(elementType.name())
+                    && elementType.typeArgs().size() == 1) {
+                source = sourceFreeClosedVectorLiteral(element, parameterTypes,
+                        elementType.typeArgs().get(0));
+            } else if (intType.equals(elementType)) {
                 source = sourceFreeClosedIntExpression(element, parameterTypes, 0);
             } else if (floatType.equals(elementType)) {
                 source = sourceFreeClosedFloatExpression(element, parameterTypes, 0);
@@ -1924,6 +1930,19 @@ public class Main {
             elements.add(source);
         }
         return "[" + String.join(", ", elements) + "]";
+    }
+
+    private static boolean sourceFreeClosedVectorElementSupported(
+            org.mosslang.compiler.types.TypeRef type, int depth) {
+        if (type == null || depth > 16) return false;
+        if (type.kind() == org.mosslang.compiler.types.TypeKind.Primitive) {
+            return Set.of("int", "float", "bool", "string").contains(
+                    type.name().toLowerCase(java.util.Locale.ROOT));
+        }
+        return type.kind() == org.mosslang.compiler.types.TypeKind.Builtin
+                && "vector".equalsIgnoreCase(type.name())
+                && type.typeArgs().size() == 1
+                && sourceFreeClosedVectorElementSupported(type.typeArgs().get(0), depth + 1);
     }
 
     private static String sourceFreeClosedIntExpression(
