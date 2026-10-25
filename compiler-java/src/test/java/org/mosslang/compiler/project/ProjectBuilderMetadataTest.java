@@ -427,6 +427,8 @@ public final class ProjectBuilderMetadataTest {
                 + "    return 1.5\n"
                 + "  fn ready_after(delay: Int) -> Int:\n"
                 + "    return 8\n"
+                + "  fn identity(value: Int) -> Int:\n"
+                + "    return value\n"
                 + "enum Outcome:\n"
                 + "  Ready(code: Int)\n"
                 + "  Done\n"
@@ -457,7 +459,7 @@ public final class ProjectBuilderMetadataTest {
         AbiV10Records.NominalTemplate pointTemplate = decoded.binaryContract.stream()
                 .filter(record -> record.id.startsWith("nominal-template-v1:"))
                 .map(AbiV10Records.NominalTemplate::decode).findFirst().orElseThrow();
-        if (pointTemplate.methodTemplateIds.size() != 5) {
+        if (pointTemplate.methodTemplateIds.size() != 6) {
             throw new AssertionError("ABI-v10 nominal template omitted its method reference");
         }
         AbiV10Records.MethodTemplate methodTemplate = decoded.binaryContract.stream()
@@ -479,6 +481,16 @@ public final class ProjectBuilderMetadataTest {
                 || !parameterizedMethodTemplate.parameterAccess.equals(List.of(AccessMode.Read.ordinal() + 1))) {
             throw new AssertionError("ABI-v10 pure method template lost its typed READ parameter");
         }
+        AbiV10Records.MethodTemplate identityMethodTemplate = decoded.binaryContract.stream()
+                .filter(record -> pointTemplate.methodTemplateIds.contains(record.id))
+                .map(AbiV10Records.MethodTemplate::decode)
+                .filter(method -> "identity".equals(method.methodName)).findFirst().orElseThrow();
+        if (identityMethodTemplate.parameters.size() != 1
+                || !"int".equals(identityMethodTemplate.parameters.get(0).canonicalName())
+                || !"int".equals(identityMethodTemplate.result.canonicalName())
+                || !identityMethodTemplate.parameterAccess.equals(List.of(AccessMode.Read.ordinal() + 1))) {
+            throw new AssertionError("ABI-v10 method template lost its pure parameter/result relation");
+        }
         MossiInterface methodTemplateOnly = CheckedBodyCodec.verifySourceFree(generated);
         methodTemplateOnly.semanticContract.clear();
         methodTemplateOnly.binaryContract.removeIf(record ->
@@ -497,6 +509,8 @@ public final class ProjectBuilderMetadataTest {
                     + "  return point.measure()\n"
                     + "fn delayed(point: provider__Point, delay: Int) -> Int:\n"
                     + "  return point.ready_after(delay)\n"
+                    + "fn identity(point: provider__Point, value: Int) -> Int:\n"
+                    + "  return point.identity(value)\n"
                     + "fn main():\n"
                     + "  pass\n", "method-template-consumer.moss");
             org.mosslang.compiler.cli.Main.loadMossiFunctions(
@@ -517,7 +531,12 @@ public final class ProjectBuilderMetadataTest {
                     || methodConsumer.objects.stream().noneMatch(object -> object.name.equals("provider__Point")
                             && object.methods.stream().anyMatch(method -> method.name.equals("ready_after")
                                     && method.params.size() == 1
-                                    && "int".equalsIgnoreCase(method.params.get(0).type)))) {
+                                    && "int".equalsIgnoreCase(method.params.get(0).type)))
+                    || methodConsumer.objects.stream().noneMatch(object -> object.name.equals("provider__Point")
+                            && object.methods.stream().anyMatch(method -> method.name.equals("identity")
+                                    && method.params.size() == 1
+                                    && "int".equalsIgnoreCase(method.params.get(0).type)
+                                    && "int".equalsIgnoreCase(method.returnType)))) {
                 throw new AssertionError("ABI-v10 method template did not supply source-free method typing");
             }
         } catch (java.io.IOException error) {

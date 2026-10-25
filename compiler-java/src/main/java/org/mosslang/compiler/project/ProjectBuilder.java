@@ -1230,10 +1230,10 @@ public class ProjectBuilder {
             if (method.resultExpression != null && !method.resultExpression.isEmpty()) return null;
             boolean noOpBody = method.body.stream().allMatch(statement ->
                     statement.kind == org.mosslang.compiler.ast.Stmt.Kind.Pass);
-            boolean literalReturnBody = v10PurePrimitiveLiteralMethod(method);
-            if (!noOpBody && !literalReturnBody) return null;
+            boolean sourceFreePureBody = v10PurePrimitiveMethod(method);
+            if (!noOpBody && !sourceFreePureBody) return null;
             if (method.returnType != null && !method.returnType.isEmpty()
-                    && !"unit".equalsIgnoreCase(method.returnType) && !literalReturnBody) return null;
+                    && !"unit".equalsIgnoreCase(method.returnType) && !sourceFreePureBody) return null;
             if (method.receiverAccessMode != org.mosslang.compiler.types.AccessMode.Read
                     || method.parameterAccessModes.stream().anyMatch(mode ->
                             mode != org.mosslang.compiler.types.AccessMode.Read)) return null;
@@ -1272,7 +1272,7 @@ public class ProjectBuilder {
         return template;
     }
 
-    private static boolean v10PurePrimitiveLiteralMethod(Method method) {
+    private static boolean v10PurePrimitiveMethod(Method method) {
         if (method.body.size() != 1
                 || method.body.get(0).kind != org.mosslang.compiler.ast.Stmt.Kind.Return
                 || method.returnType == null) return false;
@@ -1283,6 +1283,13 @@ public class ProjectBuilder {
             expression = statement.text.trim().substring(7).trim();
         }
         String type = method.returnType.toLowerCase(Locale.ROOT);
+        if (method.params.size() == 1
+                && expression.equals(method.params.get(0).name)
+                && Set.of("int", "float", "bool", "char").contains(type)
+                && method.params.get(0).type != null
+                && type.equals(method.params.get(0).type.toLowerCase(Locale.ROOT))) {
+            return true;
+        }
         if ("int".equals(type)) {
             if (!expression.matches("-?[0-9](?:_?[0-9])*")) return false;
             try {
