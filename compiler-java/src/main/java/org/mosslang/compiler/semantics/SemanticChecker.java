@@ -1799,6 +1799,25 @@ public class SemanticChecker {
         return typeName;
     }
 
+    private TypeRef resolveReceiverPathType(TypeRef rootType, String receiverPath, String rootName) {
+        if (rootType == null || receiverPath == null || rootName == null) return null;
+        String[] path = receiverPath.replaceAll("\\s", "").split("\\.");
+        if (path.length == 0 || !rootName.equals(path[0])) return null;
+        TypeRef type = rootType;
+        for (int index = 1; index < path.length; index++) {
+            ObjectType owner = findObjectType(type.name());
+            if (owner == null) return null;
+            String fieldName = path[index];
+            Field field = owner.fields.stream().filter(candidate -> candidate.name.equals(fieldName))
+                    .findFirst().orElse(null);
+            if (field == null) return null;
+            type = field.typeRef != null ? field.typeRef
+                    : (field.type != null ? TypeParser.parseCanonical(field.type) : null);
+            if (type == null) return null;
+        }
+        return type;
+    }
+
     private ObjectType findObjectType(String typeName) {
         if (typeName == null) return null;
         for (ObjectType object : objects.values()) {
@@ -1953,12 +1972,10 @@ public class SemanticChecker {
                 ? fn.params.get(paramIdx).typeRef
                 : (fn.params.get(paramIdx).type != null && !fn.params.get(paramIdx).type.isEmpty()
                         ? TypeParser.parseCanonical(fn.params.get(paramIdx).type) : null);
-        ObjectType parameterObject = parameterType != null
-                && parameterType.kind() == TypeKind.NominalInstance
-                        ? objects.get(parameterType.name()) : null;
-        if (parameterObject != null) {
+        if (parameterType != null) {
             java.util.regex.Pattern methodCall = java.util.regex.Pattern.compile(
                     "\\b" + java.util.regex.Pattern.quote(pName)
+                            + "(?:\\s*\\.\\s*[A-Za-z_][A-Za-z0-9_]*)*"
                             + "\\.([A-Za-z_][A-Za-z0-9_]*)\\s*\\(");
             List<String> expressions = new ArrayList<>();
             for (Stmt statement : fn.body) expressions.add(statementExpressionText(statement));
@@ -1966,10 +1983,15 @@ public class SemanticChecker {
             for (String expression : expressions) {
                 java.util.regex.Matcher call = methodCall.matcher(expression);
                 while (call.find()) {
-                    for (Method method : parameterObject.methods) {
+                    String matchedCall = expression.substring(call.start(), call.end());
+                    String receiver = matchedCall.substring(0, matchedCall.lastIndexOf('.')).trim();
+                    TypeRef receiverType = resolveReceiverPathType(parameterType, receiver, pName);
+                    ObjectType receiverObject = receiverType != null
+                            ? findObjectType(receiverType.name()) : null;
+                    if (receiverObject == null) continue;
+                    for (Method method : receiverObject.methods)
                         if (method.name.equals(call.group(1))
                                 && method.receiverAccessMode == AccessMode.Consume) return true;
-                    }
                 }
             }
         }
@@ -2161,10 +2183,12 @@ public class SemanticChecker {
             if (fn == null && methodSeparator > 0) {
                 String receiver = callee.substring(0, methodSeparator).trim();
                 String member = callee.substring(methodSeparator + 1).trim();
-                TypeRef receiverType = env.get(receiver);
+                String receiverRoot = receiver.contains(".")
+                        ? receiver.substring(0, receiver.indexOf('.')) : receiver;
+                TypeRef rootType = env.get(receiverRoot);
+                TypeRef receiverType = resolveReceiverPathType(rootType, receiver, receiverRoot);
                 ObjectType receiverObject = receiverType != null
-                        && receiverType.kind() == TypeKind.NominalInstance
-                                ? objects.get(receiverType.name()) : null;
+                        ? findObjectType(receiverType.name()) : null;
                 if (receiverObject != null) {
                     for (Method candidate : receiverObject.methods) {
                         if (candidate.name.equals(member)) {

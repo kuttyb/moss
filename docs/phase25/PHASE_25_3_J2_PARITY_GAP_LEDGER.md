@@ -443,3 +443,18 @@ and staged ABI-v10. No Rust compilation or native execution was run. Nested
 consuming receiver expressions outside the direct receiver path,
 control-flow-sensitive field moves, and generic/cross-module summaries remain
 open.
+
+
+### Follow-up — propagate consumption through nested method receivers
+
+For `consume(box) → box.sink.take_payload()`, C++ rejected a later use of
+`box`, while Java previously missed the nested receiver path and accepted it.
+Java now resolves declared field types along the receiver expression, infers
+the function parameter's CONSUME mode from the called method, and consumes the
+root local at the nested method call. The focused effects query reports
+`box: CONSUME` in Java and C++.
+
+The semantic regression now covers this nested path alongside the direct
+receiver case. All eleven Java test classes pass under ABI-v9 and staged
+ABI-v10. Generic field substitutions and branch-sensitive receiver inference
+remain open.

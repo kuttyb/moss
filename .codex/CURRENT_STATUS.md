@@ -15098,3 +15098,18 @@ Java receiver codegen is covered by a unit assertion. Both eleven-class Java
 test runs pass under ABI-v9 and staged ABI-v10. Native Rust compilation was not
 run. Nested consuming method receivers, control-flow-sensitive moves, and
 generic/cross-module receiver summaries remain open.
+
+
+### Phase 25.3 continuation — consume owners of nested method receivers
+
+A function calling `box.sink.take_payload()` previously kept its `box`
+parameter in READ mode because method lookup only handled simple receivers.
+The checker now resolves the declared field path to its receiver type, detects
+the consuming method, marks the root parameter as CONSUME, and consumes that
+root at the call site. The nested receiver reproducer now agrees with C++ on
+the later use-after-consume rejection and effects query.
+
+The direct receiver and nested path regressions are in the same Java semantic
+test. All eleven Java test classes pass under ABI-v9 and staged ABI-v10. Native
+Rust compilation was not run. Generic field substitutions and dynamic or
+branch-sensitive receiver paths remain open.
