@@ -1,0 +1,21 @@
+module app
+import mod_01
+import mod_02
+import mod_03
+import mod_04
+import mod_05
+import mod_06
+import mod_07
+import mod_08
+
+fn main():
+  var total = 0
+  total = total + mod_01.evaluate_01(mod_01.Item01(val: 5))
+  total = total + mod_02.evaluate_02(mod_02.Item02(val: 5))
+  total = total + mod_03.evaluate_03(mod_03.Item03(val: 5))
+  total = total + mod_04.evaluate_04(mod_04.Item04(val: 5))
+  total = total + mod_05.evaluate_05(mod_05.Item05(val: 5))
+  total = total + mod_06.evaluate_06(mod_06.Item06(val: 5))
+  total = total + mod_07.evaluate_07(mod_07.Item07(val: 5))
+  total = total + mod_08.evaluate_08(mod_08.Item08(val: 5))
+  echo total

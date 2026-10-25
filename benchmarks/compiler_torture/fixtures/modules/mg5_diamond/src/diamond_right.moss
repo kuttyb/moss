@@ -1,0 +1,6 @@
+module diamond_right
+import diamond_base
+
+export fn right_flow(val: Int) -> Int:
+  let m = diamond_base.Metric(value: val)
+  return diamond_base.format_metric(m) + 20

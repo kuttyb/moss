@@ -1,0 +1,14 @@
+# Generated Portable Moss Benchmark: W7 Nested Collections
+# Generator: 1.0.0, Nesting Depth=5
+
+fn main():
+  var v_1 = [1, 2, 3]
+  var v_2 = [v_1]
+  var v_3 = [v_2]
+  var v_4 = [v_3]
+  var v_5 = [v_4]
+  var cur_4 = v_5[0]
+  var cur_3 = cur_4[0]
+  var cur_2 = cur_3[0]
+  var cur_1 = cur_2[0]
+  echo cur_1[0]

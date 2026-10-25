@@ -1,0 +1,456 @@
+# Generated Portable Moss Benchmark: W6 Types Count Stress
+# Generator: 1.0.0, Type Count=50
+
+type Entity000:
+  id: Int
+  weight: Int
+
+  fn score() -> Int:
+    return id * weight
+
+type Entity001:
+  id: Int
+  weight: Int
+
+  fn score() -> Int:
+    return id * weight
+
+type Entity002:
+  id: Int
+  weight: Int
+
+  fn score() -> Int:
+    return id * weight
+
+type Entity003:
+  id: Int
+  weight: Int
+
+  fn score() -> Int:
+    return id * weight
+
+type Entity004:
+  id: Int
+  weight: Int
+
+  fn score() -> Int:
+    return id * weight
+
+type Entity005:
+  id: Int
+  weight: Int
+
+  fn score() -> Int:
+    return id * weight
+
+type Entity006:
+  id: Int
+  weight: Int
+
+  fn score() -> Int:
+    return id * weight
+
+type Entity007:
+  id: Int
+  weight: Int
+
+  fn score() -> Int:
+    return id * weight
+
+type Entity008:
+  id: Int
+  weight: Int
+
+  fn score() -> Int:
+    return id * weight
+
+type Entity009:
+  id: Int
+  weight: Int
+
+  fn score() -> Int:
+    return id * weight
+
+type Entity010:
+  id: Int
+  weight: Int
+
+  fn score() -> Int:
+    return id * weight
+
+type Entity011:
+  id: Int
+  weight: Int
+
+  fn score() -> Int:
+    return id * weight
+
+type Entity012:
+  id: Int
+  weight: Int
+
+  fn score() -> Int:
+    return id * weight
+
+type Entity013:
+  id: Int
+  weight: Int
+
+  fn score() -> Int:
+    return id * weight
+
+type Entity014:
+  id: Int
+  weight: Int
+
+  fn score() -> Int:
+    return id * weight
+
+type Entity015:
+  id: Int
+  weight: Int
+
+  fn score() -> Int:
+    return id * weight
+
+type Entity016:
+  id: Int
+  weight: Int
+
+  fn score() -> Int:
+    return id * weight
+
+type Entity017:
+  id: Int
+  weight: Int
+
+  fn score() -> Int:
+    return id * weight
+
+type Entity018:
+  id: Int
+  weight: Int
+
+  fn score() -> Int:
+    return id * weight
+
+type Entity019:
+  id: Int
+  weight: Int
+
+  fn score() -> Int:
+    return id * weight
+
+type Entity020:
+  id: Int
+  weight: Int
+
+  fn score() -> Int:
+    return id * weight
+
+type Entity021:
+  id: Int
+  weight: Int
+
+  fn score() -> Int:
+    return id * weight
+
+type Entity022:
+  id: Int
+  weight: Int
+
+  fn score() -> Int:
+    return id * weight
+
+type Entity023:
+  id: Int
+  weight: Int
+
+  fn score() -> Int:
+    return id * weight
+
+type Entity024:
+  id: Int
+  weight: Int
+
+  fn score() -> Int:
+    return id * weight
+
+type Entity025:
+  id: Int
+  weight: Int
+
+  fn score() -> Int:
+    return id * weight
+
+type Entity026:
+  id: Int
+  weight: Int
+
+  fn score() -> Int:
+    return id * weight
+
+type Entity027:
+  id: Int
+  weight: Int
+
+  fn score() -> Int:
+    return id * weight
+
+type Entity028:
+  id: Int
+  weight: Int
+
+  fn score() -> Int:
+    return id * weight
+
+type Entity029:
+  id: Int
+  weight: Int
+
+  fn score() -> Int:
+    return id * weight
+
+type Entity030:
+  id: Int
+  weight: Int
+
+  fn score() -> Int:
+    return id * weight
+
+type Entity031:
+  id: Int
+  weight: Int
+
+  fn score() -> Int:
+    return id * weight
+
+type Entity032:
+  id: Int
+  weight: Int
+
+  fn score() -> Int:
+    return id * weight
+
+type Entity033:
+  id: Int
+  weight: Int
+
+  fn score() -> Int:
+    return id * weight
+
+type Entity034:
+  id: Int
+  weight: Int
+
+  fn score() -> Int:
+    return id * weight
+
+type Entity035:
+  id: Int
+  weight: Int
+
+  fn score() -> Int:
+    return id * weight
+
+type Entity036:
+  id: Int
+  weight: Int
+
+  fn score() -> Int:
+    return id * weight
+
+type Entity037:
+  id: Int
+  weight: Int
+
+  fn score() -> Int:
+    return id * weight
+
+type Entity038:
+  id: Int
+  weight: Int
+
+  fn score() -> Int:
+    return id * weight
+
+type Entity039:
+  id: Int
+  weight: Int
+
+  fn score() -> Int:
+    return id * weight
+
+type Entity040:
+  id: Int
+  weight: Int
+
+  fn score() -> Int:
+    return id * weight
+
+type Entity041:
+  id: Int
+  weight: Int
+
+  fn score() -> Int:
+    return id * weight
+
+type Entity042:
+  id: Int
+  weight: Int
+
+  fn score() -> Int:
+    return id * weight
+
+type Entity043:
+  id: Int
+  weight: Int
+
+  fn score() -> Int:
+    return id * weight
+
+type Entity044:
+  id: Int
+  weight: Int
+
+  fn score() -> Int:
+    return id * weight
+
+type Entity045:
+  id: Int
+  weight: Int
+
+  fn score() -> Int:
+    return id * weight
+
+type Entity046:
+  id: Int
+  weight: Int
+
+  fn score() -> Int:
+    return id * weight
+
+type Entity047:
+  id: Int
+  weight: Int
+
+  fn score() -> Int:
+    return id * weight
+
+type Entity048:
+  id: Int
+  weight: Int
+
+  fn score() -> Int:
+    return id * weight
+
+type Entity049:
+  id: Int
+  weight: Int
+
+  fn score() -> Int:
+    return id * weight
+
+fn main():
+  var total = 0
+  let e000 = Entity000(id: 1, weight: 2)
+  total = total + e000.score()
+  let e001 = Entity001(id: 2, weight: 2)
+  total = total + e001.score()
+  let e002 = Entity002(id: 3, weight: 2)
+  total = total + e002.score()
+  let e003 = Entity003(id: 4, weight: 2)
+  total = total + e003.score()
+  let e004 = Entity004(id: 5, weight: 2)
+  total = total + e004.score()
+  let e005 = Entity005(id: 6, weight: 2)
+  total = total + e005.score()
+  let e006 = Entity006(id: 7, weight: 2)
+  total = total + e006.score()
+  let e007 = Entity007(id: 8, weight: 2)
+  total = total + e007.score()
+  let e008 = Entity008(id: 9, weight: 2)
+  total = total + e008.score()
+  let e009 = Entity009(id: 10, weight: 2)
+  total = total + e009.score()
+  let e010 = Entity010(id: 11, weight: 2)
+  total = total + e010.score()
+  let e011 = Entity011(id: 12, weight: 2)
+  total = total + e011.score()
+  let e012 = Entity012(id: 13, weight: 2)
+  total = total + e012.score()
+  let e013 = Entity013(id: 14, weight: 2)
+  total = total + e013.score()
+  let e014 = Entity014(id: 15, weight: 2)
+  total = total + e014.score()
+  let e015 = Entity015(id: 16, weight: 2)
+  total = total + e015.score()
+  let e016 = Entity016(id: 17, weight: 2)
+  total = total + e016.score()
+  let e017 = Entity017(id: 18, weight: 2)
+  total = total + e017.score()
+  let e018 = Entity018(id: 19, weight: 2)
+  total = total + e018.score()
+  let e019 = Entity019(id: 20, weight: 2)
+  total = total + e019.score()
+  let e020 = Entity020(id: 21, weight: 2)
+  total = total + e020.score()
+  let e021 = Entity021(id: 22, weight: 2)
+  total = total + e021.score()
+  let e022 = Entity022(id: 23, weight: 2)
+  total = total + e022.score()
+  let e023 = Entity023(id: 24, weight: 2)
+  total = total + e023.score()
+  let e024 = Entity024(id: 25, weight: 2)
+  total = total + e024.score()
+  let e025 = Entity025(id: 26, weight: 2)
+  total = total + e025.score()
+  let e026 = Entity026(id: 27, weight: 2)
+  total = total + e026.score()
+  let e027 = Entity027(id: 28, weight: 2)
+  total = total + e027.score()
+  let e028 = Entity028(id: 29, weight: 2)
+  total = total + e028.score()
+  let e029 = Entity029(id: 30, weight: 2)
+  total = total + e029.score()
+  let e030 = Entity030(id: 31, weight: 2)
+  total = total + e030.score()
+  let e031 = Entity031(id: 32, weight: 2)
+  total = total + e031.score()
+  let e032 = Entity032(id: 33, weight: 2)
+  total = total + e032.score()
+  let e033 = Entity033(id: 34, weight: 2)
+  total = total + e033.score()
+  let e034 = Entity034(id: 35, weight: 2)
+  total = total + e034.score()
+  let e035 = Entity035(id: 36, weight: 2)
+  total = total + e035.score()
+  let e036 = Entity036(id: 37, weight: 2)
+  total = total + e036.score()
+  let e037 = Entity037(id: 38, weight: 2)
+  total = total + e037.score()
+  let e038 = Entity038(id: 39, weight: 2)
+  total = total + e038.score()
+  let e039 = Entity039(id: 40, weight: 2)
+  total = total + e039.score()
+  let e040 = Entity040(id: 41, weight: 2)
+  total = total + e040.score()
+  let e041 = Entity041(id: 42, weight: 2)
+  total = total + e041.score()
+  let e042 = Entity042(id: 43, weight: 2)
+  total = total + e042.score()
+  let e043 = Entity043(id: 44, weight: 2)
+  total = total + e043.score()
+  let e044 = Entity044(id: 45, weight: 2)
+  total = total + e044.score()
+  let e045 = Entity045(id: 46, weight: 2)
+  total = total + e045.score()
+  let e046 = Entity046(id: 47, weight: 2)
+  total = total + e046.score()
+  let e047 = Entity047(id: 48, weight: 2)
+  total = total + e047.score()
+  let e048 = Entity048(id: 49, weight: 2)
+  total = total + e048.score()
+  let e049 = Entity049(id: 50, weight: 2)
+  total = total + e049.score()
+  echo total

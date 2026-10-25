@@ -1,0 +1,6 @@
+module consumer_08
+import shared_provider
+
+export fn run_worker_08(input_val: Int) -> Int:
+  let cfg = shared_provider.Config(multiplier: 8)
+  return shared_provider.transform(cfg, input_val)

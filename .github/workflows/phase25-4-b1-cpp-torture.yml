@@ -20,21 +20,24 @@ jobs:
           nproc
           clang++ --version
           free -h
-      - name: Build C++ Moss compiler (no full regression)
-        run: make --jobs=2 MOSS_LDFLAGS= moss-dev
-      - name: Run matched W2/W3 semantic-only stress, seven paired repetitions
+      - name: Build optimized C++ Moss compiler (-O2)
+        run: make --jobs=2 MOSS_LDFLAGS= moss-opt
+      - name: Validate portable torture suite
         run: |
-          python3 benchmarks/phase25_4/b1_cpp/torture.py run \
-            --moss ./build/compiler/moss-dev \
-            --sizes 8,16,32 \
-            --reps 7 \
-            --cap-seconds 40
-      - name: Upload raw evidence and generated fixtures
+          python3 benchmarks/compiler_torture/generate.py --validate-only --moss ./build/compiler/moss-opt
+      - name: Run Phase 25.4 B1 C++ Performance Baseline
+        run: |
+          python3 benchmarks/phase25_4/cpp_baseline/run.py \
+            --moss ./build/compiler/moss-opt \
+            --reps 5 \
+            --timeout 40
+      - name: Upload benchmark artifacts and report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: phase25-4-b1-cpp
+          name: phase25-4-b1-cpp-baseline
           path: |
-            benchmarks/phase25_4/b1_cpp/results/
-            benchmarks/phase25_4/b1_cpp/fixtures/
+            benchmarks/compiler_torture/
+            benchmarks/phase25_4/cpp_baseline/results/
+            benchmarks/phase25_4/cpp_baseline/REPORT.md
           if-no-files-found: warn

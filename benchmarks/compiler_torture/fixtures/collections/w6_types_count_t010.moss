@@ -1,0 +1,96 @@
+# Generated Portable Moss Benchmark: W6 Types Count Stress
+# Generator: 1.0.0, Type Count=10
+
+type Entity000:
+  id: Int
+  weight: Int
+
+  fn score() -> Int:
+    return id * weight
+
+type Entity001:
+  id: Int
+  weight: Int
+
+  fn score() -> Int:
+    return id * weight
+
+type Entity002:
+  id: Int
+  weight: Int
+
+  fn score() -> Int:
+    return id * weight
+
+type Entity003:
+  id: Int
+  weight: Int
+
+  fn score() -> Int:
+    return id * weight
+
+type Entity004:
+  id: Int
+  weight: Int
+
+  fn score() -> Int:
+    return id * weight
+
+type Entity005:
+  id: Int
+  weight: Int
+
+  fn score() -> Int:
+    return id * weight
+
+type Entity006:
+  id: Int
+  weight: Int
+
+  fn score() -> Int:
+    return id * weight
+
+type Entity007:
+  id: Int
+  weight: Int
+
+  fn score() -> Int:
+    return id * weight
+
+type Entity008:
+  id: Int
+  weight: Int
+
+  fn score() -> Int:
+    return id * weight
+
+type Entity009:
+  id: Int
+  weight: Int
+
+  fn score() -> Int:
+    return id * weight
+
+fn main():
+  var total = 0
+  let e000 = Entity000(id: 1, weight: 2)
+  total = total + e000.score()
+  let e001 = Entity001(id: 2, weight: 2)
+  total = total + e001.score()
+  let e002 = Entity002(id: 3, weight: 2)
+  total = total + e002.score()
+  let e003 = Entity003(id: 4, weight: 2)
+  total = total + e003.score()
+  let e004 = Entity004(id: 5, weight: 2)
+  total = total + e004.score()
+  let e005 = Entity005(id: 6, weight: 2)
+  total = total + e005.score()
+  let e006 = Entity006(id: 7, weight: 2)
+  total = total + e006.score()
+  let e007 = Entity007(id: 8, weight: 2)
+  total = total + e007.score()
+  let e008 = Entity008(id: 9, weight: 2)
+  total = total + e008.score()
+  let e009 = Entity009(id: 10, weight: 2)
+  total = total + e009.score()
+  echo total

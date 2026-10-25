@@ -1,0 +1,792 @@
+{
+  "suite_name": "moss_compiler_torture",
+  "version": "1.0.0",
+  "seed": 20261025,
+  "total_fixtures": 54,
+  "fixtures": [
+    {
+      "id": "w2_spec_distinct_n008",
+      "category": "specialization",
+      "path": "fixtures/specialization/w2_spec_distinct_n008.moss",
+      "is_project": false,
+      "expected_status": "pass",
+      "sha256": "3c246f91beacb983ffe4ce00e520df637b555b44d049efa129acd3b9603d6afe",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261025,
+      "metadata": {
+        "workload": "W2",
+        "n": 8,
+        "distinct_signatures": 64,
+        "call_sites": 64
+      }
+    },
+    {
+      "id": "w3_spec_repeated_n008",
+      "category": "specialization",
+      "path": "fixtures/specialization/w3_spec_repeated_n008.moss",
+      "is_project": false,
+      "expected_status": "pass",
+      "sha256": "cc19fbb5b2ccff11ca8b80142b5188ec02ae24855eb316659d8e6177eca04d51",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261025,
+      "metadata": {
+        "workload": "W3",
+        "n": 8,
+        "distinct_signatures": 4,
+        "call_sites": 64
+      }
+    },
+    {
+      "id": "w2_spec_distinct_n016",
+      "category": "specialization",
+      "path": "fixtures/specialization/w2_spec_distinct_n016.moss",
+      "is_project": false,
+      "expected_status": "pass",
+      "sha256": "4c6fddac377aa99258e485e47636cd3f201b3a35d832b888cbe78499c13318b8",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261025,
+      "metadata": {
+        "workload": "W2",
+        "n": 16,
+        "distinct_signatures": 256,
+        "call_sites": 256
+      }
+    },
+    {
+      "id": "w3_spec_repeated_n016",
+      "category": "specialization",
+      "path": "fixtures/specialization/w3_spec_repeated_n016.moss",
+      "is_project": false,
+      "expected_status": "pass",
+      "sha256": "c7c717ef1fe12dbbf9e758f1e2819b753159ab3e12564dfe10dfb8033a85b30c",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261025,
+      "metadata": {
+        "workload": "W3",
+        "n": 16,
+        "distinct_signatures": 4,
+        "call_sites": 256
+      }
+    },
+    {
+      "id": "w2_spec_distinct_n032",
+      "category": "specialization",
+      "path": "fixtures/specialization/w2_spec_distinct_n032.moss",
+      "is_project": false,
+      "expected_status": "pass",
+      "sha256": "7bc3a540b1326fb58fad2e4cfa03d1118685b362808c2482f84eb9dc8638b8ad",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261025,
+      "metadata": {
+        "workload": "W2",
+        "n": 32,
+        "distinct_signatures": 1024,
+        "call_sites": 1024
+      }
+    },
+    {
+      "id": "w3_spec_repeated_n032",
+      "category": "specialization",
+      "path": "fixtures/specialization/w3_spec_repeated_n032.moss",
+      "is_project": false,
+      "expected_status": "pass",
+      "sha256": "8764da9d663378451c128dc5784d050da7ba4b3a69b13b0a842d126485893359",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261025,
+      "metadata": {
+        "workload": "W3",
+        "n": 32,
+        "distinct_signatures": 4,
+        "call_sites": 1024
+      }
+    },
+    {
+      "id": "w4_infer_deep_d005",
+      "category": "inference",
+      "path": "fixtures/inference/w4_infer_deep_d005.moss",
+      "is_project": false,
+      "expected_status": "pass",
+      "sha256": "a2f8ef760dc654f9f6d99d4075429bab11b3a17b7be3b11b0d1788d91c08d539",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261025,
+      "metadata": {
+        "workload": "W4",
+        "depth": 5,
+        "chain_length": 6
+      }
+    },
+    {
+      "id": "w4_infer_deep_d010",
+      "category": "inference",
+      "path": "fixtures/inference/w4_infer_deep_d010.moss",
+      "is_project": false,
+      "expected_status": "pass",
+      "sha256": "9bbb312edd979ac8eae2ddd4e46d5e267fb0431f45be2d205bb877c2267a68a3",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261025,
+      "metadata": {
+        "workload": "W4",
+        "depth": 10,
+        "chain_length": 11
+      }
+    },
+    {
+      "id": "w4_infer_deep_d015",
+      "category": "inference",
+      "path": "fixtures/inference/w4_infer_deep_d015.moss",
+      "is_project": false,
+      "expected_status": "pass",
+      "sha256": "e4d67f44cf0a3649fb501bf0f663cfa04aba226dfcd9dd99a2b631c77aa7cd37",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261025,
+      "metadata": {
+        "workload": "W4",
+        "depth": 15,
+        "chain_length": 16
+      }
+    },
+    {
+      "id": "w4_infer_deep_d018",
+      "category": "inference",
+      "path": "fixtures/inference/w4_infer_deep_d018.moss",
+      "is_project": false,
+      "expected_status": "pass",
+      "sha256": "c266a70fa71ad33b897b1044eba65b36e31ce6f63018546b456605df6540377a",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261025,
+      "metadata": {
+        "workload": "W4",
+        "depth": 18,
+        "chain_length": 19
+      }
+    },
+    {
+      "id": "w5_infer_wide_w010",
+      "category": "inference",
+      "path": "fixtures/inference/w5_infer_wide_w010.moss",
+      "is_project": false,
+      "expected_status": "pass",
+      "sha256": "481ce1aea435532f159fdf2004045d0b4c063bb976900e0e9e1a46e548ff6f56",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261025,
+      "metadata": {
+        "workload": "W5",
+        "width": 10,
+        "independent_chains": 10
+      }
+    },
+    {
+      "id": "w5_infer_wide_w025",
+      "category": "inference",
+      "path": "fixtures/inference/w5_infer_wide_w025.moss",
+      "is_project": false,
+      "expected_status": "pass",
+      "sha256": "ee83d75888d5a9508e96d587c170c45df1e5615ce42bd73a7306300a68b6bfd0",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261025,
+      "metadata": {
+        "workload": "W5",
+        "width": 25,
+        "independent_chains": 25
+      }
+    },
+    {
+      "id": "w5_infer_wide_w050",
+      "category": "inference",
+      "path": "fixtures/inference/w5_infer_wide_w050.moss",
+      "is_project": false,
+      "expected_status": "pass",
+      "sha256": "b1b537cc89d9769452ef5fc53767c066bed98662e0b579770eae2dbe69ad3e88",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261025,
+      "metadata": {
+        "workload": "W5",
+        "width": 50,
+        "independent_chains": 50
+      }
+    },
+    {
+      "id": "w5_infer_wide_w100",
+      "category": "inference",
+      "path": "fixtures/inference/w5_infer_wide_w100.moss",
+      "is_project": false,
+      "expected_status": "pass",
+      "sha256": "5ead37f622b01676d6a37e472787bc36f64e46274dc0ce8631b6487d96be9d0e",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261025,
+      "metadata": {
+        "workload": "W5",
+        "width": 100,
+        "independent_chains": 100
+      }
+    },
+    {
+      "id": "w6_types_count_t010",
+      "category": "collections",
+      "path": "fixtures/collections/w6_types_count_t010.moss",
+      "is_project": false,
+      "expected_status": "pass",
+      "sha256": "11212ff3c1bc09787f4e29ca7bd8d05f1398f0e513ac12f5cb8edddd16f55346",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261025,
+      "metadata": {
+        "workload": "W6",
+        "type_count": 10
+      }
+    },
+    {
+      "id": "w6_types_count_t025",
+      "category": "collections",
+      "path": "fixtures/collections/w6_types_count_t025.moss",
+      "is_project": false,
+      "expected_status": "pass",
+      "sha256": "edb0f4a296509f8168fe78df311981eea6ac542fc510bcbcc14996cbfd0bd89c",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261025,
+      "metadata": {
+        "workload": "W6",
+        "type_count": 25
+      }
+    },
+    {
+      "id": "w6_types_count_t050",
+      "category": "collections",
+      "path": "fixtures/collections/w6_types_count_t050.moss",
+      "is_project": false,
+      "expected_status": "pass",
+      "sha256": "e1f110d91d6b6121616ee604ced5fd876f40b28670fd01086e4a83b50618ad9f",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261025,
+      "metadata": {
+        "workload": "W6",
+        "type_count": 50
+      }
+    },
+    {
+      "id": "w6_types_count_t100",
+      "category": "collections",
+      "path": "fixtures/collections/w6_types_count_t100.moss",
+      "is_project": false,
+      "expected_status": "pass",
+      "sha256": "a8f73b688e3993a0907dd68e4ad691fb965bf23610e9cd59144ec22177d94357",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261025,
+      "metadata": {
+        "workload": "W6",
+        "type_count": 100
+      }
+    },
+    {
+      "id": "w7_collections_nested_k1",
+      "category": "collections",
+      "path": "fixtures/collections/w7_collections_nested_k1.moss",
+      "is_project": false,
+      "expected_status": "pass",
+      "sha256": "27d349961a3b3d23f543160d67ee680b1b619de267021b86090881bfd4a196fd",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261025,
+      "metadata": {
+        "workload": "W7",
+        "nesting_depth": 1
+      }
+    },
+    {
+      "id": "w7_collections_nested_k2",
+      "category": "collections",
+      "path": "fixtures/collections/w7_collections_nested_k2.moss",
+      "is_project": false,
+      "expected_status": "pass",
+      "sha256": "9c70b5f764ae4aea8ec02b479be43ec0b214470337f953cee38034ef5a4dd2a9",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261025,
+      "metadata": {
+        "workload": "W7",
+        "nesting_depth": 2
+      }
+    },
+    {
+      "id": "w7_collections_nested_k3",
+      "category": "collections",
+      "path": "fixtures/collections/w7_collections_nested_k3.moss",
+      "is_project": false,
+      "expected_status": "pass",
+      "sha256": "add76dc5ead7f88885bf02db1b1fae898f11bb4e59cefdab659776d65becd635",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261025,
+      "metadata": {
+        "workload": "W7",
+        "nesting_depth": 3
+      }
+    },
+    {
+      "id": "w7_collections_nested_k4",
+      "category": "collections",
+      "path": "fixtures/collections/w7_collections_nested_k4.moss",
+      "is_project": false,
+      "expected_status": "pass",
+      "sha256": "baf1194b2cc7eb18b339e014cd156ced30a932b15ecdcf9a49c41178c279f2d7",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261025,
+      "metadata": {
+        "workload": "W7",
+        "nesting_depth": 4
+      }
+    },
+    {
+      "id": "w7_collections_nested_k5",
+      "category": "collections",
+      "path": "fixtures/collections/w7_collections_nested_k5.moss",
+      "is_project": false,
+      "expected_status": "pass",
+      "sha256": "03ef6f24a0f0ca149b52b5828ba9a8e254219a453af37da25a62838d64d53288",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261025,
+      "metadata": {
+        "workload": "W7",
+        "nesting_depth": 5
+      }
+    },
+    {
+      "id": "w8_traits_dispatch_c010",
+      "category": "traits",
+      "path": "fixtures/traits/w8_traits_dispatch_c010.moss",
+      "is_project": false,
+      "expected_status": "pass",
+      "sha256": "1cd9a64ff9f04b7f3e426abd54ed90b02947d70f0f10e4e3a74d47f3f03c8cf7",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261025,
+      "metadata": {
+        "workload": "W8",
+        "concrete_types": 10
+      }
+    },
+    {
+      "id": "w8_traits_dispatch_c025",
+      "category": "traits",
+      "path": "fixtures/traits/w8_traits_dispatch_c025.moss",
+      "is_project": false,
+      "expected_status": "pass",
+      "sha256": "21a63ec96044af07d86a8aea4f4f00c046c77ba632dadd8aba4fb6777b7d9d73",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261025,
+      "metadata": {
+        "workload": "W8",
+        "concrete_types": 25
+      }
+    },
+    {
+      "id": "w8_traits_dispatch_c050",
+      "category": "traits",
+      "path": "fixtures/traits/w8_traits_dispatch_c050.moss",
+      "is_project": false,
+      "expected_status": "pass",
+      "sha256": "3f2242232a47bf8267293530f425a507ccfe22dad1f6480843f2273ca33053a1",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261025,
+      "metadata": {
+        "workload": "W8",
+        "concrete_types": 50
+      }
+    },
+    {
+      "id": "w8_traits_dispatch_c100",
+      "category": "traits",
+      "path": "fixtures/traits/w8_traits_dispatch_c100.moss",
+      "is_project": false,
+      "expected_status": "pass",
+      "sha256": "1685b2528557e3279cf188ced95fb3d6b457008d125627c4a6c28593393e57ea",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261025,
+      "metadata": {
+        "workload": "W8",
+        "concrete_types": 100
+      }
+    },
+    {
+      "id": "mg1_multi_file",
+      "category": "modules",
+      "path": "fixtures/modules/mg1_multi_file",
+      "is_project": true,
+      "expected_status": "pass",
+      "sha256": "42ba06d47d547c11a39407d5a1e321ac3793ea7a8d3bf76ecf7788848bf5166c",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261025,
+      "metadata": {
+        "workload": "MG1",
+        "modules": 1,
+        "files": 11
+      }
+    },
+    {
+      "id": "mg2_multi_module",
+      "category": "modules",
+      "path": "fixtures/modules/mg2_multi_module",
+      "is_project": true,
+      "expected_status": "pass",
+      "sha256": "5131e0f1dc4962d49edebb93452233c61a22b82937cc4b2e3b96489f40bbf60e",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261025,
+      "metadata": {
+        "workload": "MG2",
+        "modules": 9,
+        "files": 9
+      }
+    },
+    {
+      "id": "mg3_deep_chain",
+      "category": "modules",
+      "path": "fixtures/modules/mg3_deep_chain",
+      "is_project": true,
+      "expected_status": "pass",
+      "sha256": "ebbc23d6a8c116f10d85558cc8fb155f81d2b01652f4a7041aa428c9b186c66b",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261025,
+      "metadata": {
+        "workload": "MG3",
+        "modules": 9,
+        "chain_depth": 8,
+        "files": 9
+      }
+    },
+    {
+      "id": "mg4_fan_out",
+      "category": "modules",
+      "path": "fixtures/modules/mg4_fan_out",
+      "is_project": true,
+      "expected_status": "pass",
+      "sha256": "eadb58deb83d15995640f211ca659dadeaf5e93cd32178f5796699c09b8053a8",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261025,
+      "metadata": {
+        "workload": "MG4",
+        "modules": 10,
+        "consumers": 8,
+        "files": 10
+      }
+    },
+    {
+      "id": "mg5_diamond",
+      "category": "modules",
+      "path": "fixtures/modules/mg5_diamond",
+      "is_project": true,
+      "expected_status": "pass",
+      "sha256": "1b16203eee98f0095600258ae6a640cc3c274ec2c43c8fe232f3945c95e4f807",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261025,
+      "metadata": {
+        "workload": "MG5",
+        "modules": 4,
+        "topology": "diamond",
+        "files": 4
+      }
+    },
+    {
+      "id": "example_checkout",
+      "category": "examples",
+      "path": "fixtures/examples/checkout.moss",
+      "is_project": false,
+      "expected_status": "pass",
+      "sha256": "a746151d39c8663a7d8bde2bc9ce94dd1e3cbbff4e2b30c7ae8c0ed7ba480ba5",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261025,
+      "metadata": {
+        "workload": "example",
+        "source": "checkout.moss"
+      }
+    },
+    {
+      "id": "example_collections",
+      "category": "examples",
+      "path": "fixtures/examples/collections.moss",
+      "is_project": false,
+      "expected_status": "pass",
+      "sha256": "d7adce5e32a8ef0d6bfc1015373681c0ccf69572ac83b875a11ec69bf68f966b",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261025,
+      "metadata": {
+        "workload": "example",
+        "source": "collections.moss"
+      }
+    },
+    {
+      "id": "example_counter",
+      "category": "examples",
+      "path": "fixtures/examples/counter.moss",
+      "is_project": false,
+      "expected_status": "pass",
+      "sha256": "0bed96bb16e60a746649aa7db7893f70692fbbfb7b047acc0c15e06e1c4c5243",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261025,
+      "metadata": {
+        "workload": "example",
+        "source": "counter.moss"
+      }
+    },
+    {
+      "id": "example_domain_typing",
+      "category": "examples",
+      "path": "fixtures/examples/domain_typing.moss",
+      "is_project": false,
+      "expected_status": "pass",
+      "sha256": "7ce0618fe68c23e27f06df190f8eaea2e8fc5fada71976531b8c9e6e7f975cc6",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261025,
+      "metadata": {
+        "workload": "example",
+        "source": "domain_typing.moss"
+      }
+    },
+    {
+      "id": "example_domains_and_messages",
+      "category": "examples",
+      "path": "fixtures/examples/domains_and_messages.moss",
+      "is_project": false,
+      "expected_status": "pass",
+      "sha256": "41215f7161b7525fb7256a9bc1a4a46cd045ae74d74120b08e5be4fbb55be6a9",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261025,
+      "metadata": {
+        "workload": "example",
+        "source": "domains_and_messages.moss"
+      }
+    },
+    {
+      "id": "example_functional_basics",
+      "category": "examples",
+      "path": "fixtures/examples/functional_basics.moss",
+      "is_project": false,
+      "expected_status": "pass",
+      "sha256": "caf5f9bbfdd6ebf31ffdea02edc381f1b23b3cdaa54b39da3aa310e70dbf0596",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261025,
+      "metadata": {
+        "workload": "example",
+        "source": "functional_basics.moss"
+      }
+    },
+    {
+      "id": "example_functional_dataflow",
+      "category": "examples",
+      "path": "fixtures/examples/functional_dataflow.moss",
+      "is_project": false,
+      "expected_status": "pass",
+      "sha256": "a8ffb5a0c044fb0eda987ccc554acffec6932c6dc76ed3e95524ff14c40b620d",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261025,
+      "metadata": {
+        "workload": "example",
+        "source": "functional_dataflow.moss"
+      }
+    },
+    {
+      "id": "example_functional_pipeline",
+      "category": "examples",
+      "path": "fixtures/examples/functional_pipeline.moss",
+      "is_project": false,
+      "expected_status": "pass",
+      "sha256": "feb1a3b7523559803db563775be4a23ccf475a5ffed164cf01d709b7605b8951",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261025,
+      "metadata": {
+        "workload": "example",
+        "source": "functional_pipeline.moss"
+      }
+    },
+    {
+      "id": "example_shared_memory",
+      "category": "examples",
+      "path": "fixtures/examples/shared_memory.moss",
+      "is_project": false,
+      "expected_status": "pass",
+      "sha256": "62ad21d507acb5338742ffb9583121caf1621b9a77cff13982347cbb61216bd9",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261025,
+      "metadata": {
+        "workload": "example",
+        "source": "shared_memory.moss"
+      }
+    },
+    {
+      "id": "example_static_duck_typing",
+      "category": "examples",
+      "path": "fixtures/examples/static_duck_typing.moss",
+      "is_project": false,
+      "expected_status": "pass",
+      "sha256": "e67b07ba6b54111bdff1f2df1e10cdeb3d792599bc48cf23f79a367f83f0f959",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261025,
+      "metadata": {
+        "workload": "example",
+        "source": "static_duck_typing.moss"
+      }
+    },
+    {
+      "id": "negative_await_retired",
+      "category": "negative",
+      "path": "fixtures/negative/await_retired.moss",
+      "is_project": false,
+      "expected_status": "fail",
+      "sha256": "eda1bd2ceb5fb11be1f918943942bea8c98d7eea19e1e8c19d23b3c25d3780c7",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261025,
+      "metadata": {
+        "workload": "negative",
+        "source": "await_retired.moss"
+      }
+    },
+    {
+      "id": "negative_domain_route_cycle",
+      "category": "negative",
+      "path": "fixtures/negative/domain_route_cycle.moss",
+      "is_project": false,
+      "expected_status": "fail",
+      "sha256": "97363b74dd6e923e8bf9dc8a0496b15aabe605c0e281313ad6c3406d181db0aa",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261025,
+      "metadata": {
+        "workload": "negative",
+        "source": "domain_route_cycle.moss"
+      }
+    },
+    {
+      "id": "negative_duck_missing_method",
+      "category": "negative",
+      "path": "fixtures/negative/duck_missing_method.moss",
+      "is_project": false,
+      "expected_status": "fail",
+      "sha256": "d532c87f61c7fe82706fbc2966c7dabe656f291f2b945837b4454e61bc60d02e",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261025,
+      "metadata": {
+        "workload": "negative",
+        "source": "duck_missing_method.moss"
+      }
+    },
+    {
+      "id": "negative_heterogeneous_collection",
+      "category": "negative",
+      "path": "fixtures/negative/heterogeneous_collection.moss",
+      "is_project": false,
+      "expected_status": "fail",
+      "sha256": "a3f5854b99c2731048678c6717febf18920e73c7fbd2465426f53a39f8b934ab",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261025,
+      "metadata": {
+        "workload": "negative",
+        "source": "heterogeneous_collection.moss"
+      }
+    },
+    {
+      "id": "negative_mutually_recursive_functions",
+      "category": "negative",
+      "path": "fixtures/negative/mutually_recursive_functions.moss",
+      "is_project": false,
+      "expected_status": "fail",
+      "sha256": "2e530ada99facb3a02673d461e3d602c0e93b94fe6676066a128f2b76100990f",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261025,
+      "metadata": {
+        "workload": "negative",
+        "source": "mutually_recursive_functions.moss"
+      }
+    },
+    {
+      "id": "negative_self_send_rejected",
+      "category": "negative",
+      "path": "fixtures/negative/self_send_rejected.moss",
+      "is_project": false,
+      "expected_status": "fail",
+      "sha256": "2d1acb984e91d1d352983053df3e0ff492277d20d49b75607e362e94af73119d",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261025,
+      "metadata": {
+        "workload": "negative",
+        "source": "self_send_rejected.moss"
+      }
+    },
+    {
+      "id": "negative_spawn_retired",
+      "category": "negative",
+      "path": "fixtures/negative/spawn_retired.moss",
+      "is_project": false,
+      "expected_status": "fail",
+      "sha256": "8e37c62d0e0da4ea9cafbb05280afa23ce1b5e1f9486b99ea9a309d10402575d",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261025,
+      "metadata": {
+        "workload": "negative",
+        "source": "spawn_retired.moss"
+      }
+    },
+    {
+      "id": "negative_trait_missing_method",
+      "category": "negative",
+      "path": "fixtures/negative/trait_missing_method.moss",
+      "is_project": false,
+      "expected_status": "fail",
+      "sha256": "0739de88e9458df9362263053956f9b41b3b4365f73322ffe5c7691e832890c7",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261025,
+      "metadata": {
+        "workload": "negative",
+        "source": "trait_missing_method.moss"
+      }
+    },
+    {
+      "id": "negative_write_write_alias",
+      "category": "negative",
+      "path": "fixtures/negative/write_write_alias.moss",
+      "is_project": false,
+      "expected_status": "fail",
+      "sha256": "59547bff87712b124709e58ca889f35a23331a7f8def62afc3ef77a1cb8da2b0",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261025,
+      "metadata": {
+        "workload": "negative",
+        "source": "write_write_alias.moss"
+      }
+    },
+    {
+      "id": "test_phase45_short_circuit_failure_barrier",
+      "category": "tests",
+      "path": "fixtures/tests/phase45_short_circuit_failure_barrier.moss",
+      "is_project": false,
+      "expected_status": "pass",
+      "sha256": "22b76ba53f8eb17ee3389cce6765430a58a9fc93b796b66196c8ac58817527e4",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261025,
+      "metadata": {
+        "workload": "test",
+        "source": "phase45_short_circuit_failure_barrier.moss"
+      }
+    },
+    {
+      "id": "test_trait_open_forwarding",
+      "category": "tests",
+      "path": "fixtures/tests/trait_open_forwarding.moss",
+      "is_project": false,
+      "expected_status": "pass",
+      "sha256": "acc8f97a36423e74a8fa0bfe79ed42edd96253d26139cb581cc3dd720233efdd",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261025,
+      "metadata": {
+        "workload": "test",
+        "source": "trait_open_forwarding.moss"
+      }
+    },
+    {
+      "id": "test_unused_inferred_field_template",
+      "category": "tests",
+      "path": "fixtures/tests/unused_inferred_field_template.moss",
+      "is_project": false,
+      "expected_status": "pass",
+      "sha256": "d0f94b6f7b7fadb1113b405e5c8c273ee66d7738ca0f7649c711f3768293dd23",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261025,
+      "metadata": {
+        "workload": "test",
+        "source": "unused_inferred_field_template.moss"
+      }
+    }
+  ]
+}

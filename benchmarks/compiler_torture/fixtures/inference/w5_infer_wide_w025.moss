@@ -1,0 +1,181 @@
+# Generated Portable Moss Benchmark: W5 Wide Independent Inference
+# Generator: 1.0.0, Width=25
+
+fn wide_000_a(x):
+  return x + 1
+
+fn wide_000_b(x):
+  return wide_000_a(x) + 1
+
+fn wide_001_a(x):
+  return x + 2
+
+fn wide_001_b(x):
+  return wide_001_a(x) + 1
+
+fn wide_002_a(x):
+  return x + 3
+
+fn wide_002_b(x):
+  return wide_002_a(x) + 1
+
+fn wide_003_a(x):
+  return x + 4
+
+fn wide_003_b(x):
+  return wide_003_a(x) + 1
+
+fn wide_004_a(x):
+  return x + 5
+
+fn wide_004_b(x):
+  return wide_004_a(x) + 1
+
+fn wide_005_a(x):
+  return x + 6
+
+fn wide_005_b(x):
+  return wide_005_a(x) + 1
+
+fn wide_006_a(x):
+  return x + 7
+
+fn wide_006_b(x):
+  return wide_006_a(x) + 1
+
+fn wide_007_a(x):
+  return x + 8
+
+fn wide_007_b(x):
+  return wide_007_a(x) + 1
+
+fn wide_008_a(x):
+  return x + 9
+
+fn wide_008_b(x):
+  return wide_008_a(x) + 1
+
+fn wide_009_a(x):
+  return x + 10
+
+fn wide_009_b(x):
+  return wide_009_a(x) + 1
+
+fn wide_010_a(x):
+  return x + 11
+
+fn wide_010_b(x):
+  return wide_010_a(x) + 1
+
+fn wide_011_a(x):
+  return x + 12
+
+fn wide_011_b(x):
+  return wide_011_a(x) + 1
+
+fn wide_012_a(x):
+  return x + 13
+
+fn wide_012_b(x):
+  return wide_012_a(x) + 1
+
+fn wide_013_a(x):
+  return x + 14
+
+fn wide_013_b(x):
+  return wide_013_a(x) + 1
+
+fn wide_014_a(x):
+  return x + 15
+
+fn wide_014_b(x):
+  return wide_014_a(x) + 1
+
+fn wide_015_a(x):
+  return x + 16
+
+fn wide_015_b(x):
+  return wide_015_a(x) + 1
+
+fn wide_016_a(x):
+  return x + 17
+
+fn wide_016_b(x):
+  return wide_016_a(x) + 1
+
+fn wide_017_a(x):
+  return x + 18
+
+fn wide_017_b(x):
+  return wide_017_a(x) + 1
+
+fn wide_018_a(x):
+  return x + 19
+
+fn wide_018_b(x):
+  return wide_018_a(x) + 1
+
+fn wide_019_a(x):
+  return x + 20
+
+fn wide_019_b(x):
+  return wide_019_a(x) + 1
+
+fn wide_020_a(x):
+  return x + 21
+
+fn wide_020_b(x):
+  return wide_020_a(x) + 1
+
+fn wide_021_a(x):
+  return x + 22
+
+fn wide_021_b(x):
+  return wide_021_a(x) + 1
+
+fn wide_022_a(x):
+  return x + 23
+
+fn wide_022_b(x):
+  return wide_022_a(x) + 1
+
+fn wide_023_a(x):
+  return x + 24
+
+fn wide_023_b(x):
+  return wide_023_a(x) + 1
+
+fn wide_024_a(x):
+  return x + 25
+
+fn wide_024_b(x):
+  return wide_024_a(x) + 1
+
+fn main():
+  var total = 0
+  total = total + wide_000_b(1)
+  total = total + wide_001_b(1)
+  total = total + wide_002_b(1)
+  total = total + wide_003_b(1)
+  total = total + wide_004_b(1)
+  total = total + wide_005_b(1)
+  total = total + wide_006_b(1)
+  total = total + wide_007_b(1)
+  total = total + wide_008_b(1)
+  total = total + wide_009_b(1)
+  total = total + wide_010_b(1)
+  total = total + wide_011_b(1)
+  total = total + wide_012_b(1)
+  total = total + wide_013_b(1)
+  total = total + wide_014_b(1)
+  total = total + wide_015_b(1)
+  total = total + wide_016_b(1)
+  total = total + wide_017_b(1)
+  total = total + wide_018_b(1)
+  total = total + wide_019_b(1)
+  total = total + wide_020_b(1)
+  total = total + wide_021_b(1)
+  total = total + wide_022_b(1)
+  total = total + wide_023_b(1)
+  total = total + wide_024_b(1)
+  echo total

@@ -1,0 +1,15 @@
+module mg1_multi_file
+
+fn main():
+  var total = 0
+  total = total + compute_part_01(10)
+  total = total + compute_part_02(10)
+  total = total + compute_part_03(10)
+  total = total + compute_part_04(10)
+  total = total + compute_part_05(10)
+  total = total + compute_part_06(10)
+  total = total + compute_part_07(10)
+  total = total + compute_part_08(10)
+  total = total + compute_part_09(10)
+  total = total + compute_part_10(10)
+  echo total

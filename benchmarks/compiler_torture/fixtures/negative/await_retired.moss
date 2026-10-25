@@ -1,0 +1,8 @@
+# Focused rejection of removed asynchronous-call syntax.
+domain Worker:
+  fn Get() -> Int:
+    reply 1
+
+fn main():
+  worker = Worker()
+  value = await worker.Get()

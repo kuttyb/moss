@@ -1,0 +1,8 @@
+module app
+import diamond_left
+import diamond_right
+
+fn main():
+  let res_l = diamond_left.left_flow(5)
+  let res_r = diamond_right.right_flow(5)
+  echo res_l + res_r

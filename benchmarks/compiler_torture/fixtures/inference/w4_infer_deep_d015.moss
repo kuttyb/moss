@@ -1,0 +1,53 @@
+# Generated Portable Moss Benchmark: W4 Deep Dependent Inference
+# Generator: 1.0.0, Depth=15
+
+fn step000(x):
+  return x + 1
+
+fn step001(x):
+  return step000(x) + 1
+
+fn step002(x):
+  return step001(x) + 1
+
+fn step003(x):
+  return step002(x) + 1
+
+fn step004(x):
+  return step003(x) + 1
+
+fn step005(x):
+  return step004(x) + 1
+
+fn step006(x):
+  return step005(x) + 1
+
+fn step007(x):
+  return step006(x) + 1
+
+fn step008(x):
+  return step007(x) + 1
+
+fn step009(x):
+  return step008(x) + 1
+
+fn step010(x):
+  return step009(x) + 1
+
+fn step011(x):
+  return step010(x) + 1
+
+fn step012(x):
+  return step011(x) + 1
+
+fn step013(x):
+  return step012(x) + 1
+
+fn step014(x):
+  return step013(x) + 1
+
+fn step015(x):
+  return step014(x) + 1
+
+fn main():
+  echo step015(10)

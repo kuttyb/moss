@@ -1,0 +1,8 @@
+# Focused rejection of removed domain-construction syntax.
+domain D:
+  fn Run():
+    echo "ok"
+
+fn main():
+  d = spawn D()
+  message d.Run()

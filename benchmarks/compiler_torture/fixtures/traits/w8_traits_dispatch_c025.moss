@@ -1,0 +1,184 @@
+# Generated Portable Moss Benchmark: W8 Static Method Resolution
+# Generator: 1.0.0, Concrete Types=25
+
+type Worker000:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 1
+
+type Worker001:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 2
+
+type Worker002:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 3
+
+type Worker003:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 4
+
+type Worker004:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 5
+
+type Worker005:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 6
+
+type Worker006:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 7
+
+type Worker007:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 8
+
+type Worker008:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 9
+
+type Worker009:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 10
+
+type Worker010:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 11
+
+type Worker011:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 12
+
+type Worker012:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 13
+
+type Worker013:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 14
+
+type Worker014:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 15
+
+type Worker015:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 16
+
+type Worker016:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 17
+
+type Worker017:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 18
+
+type Worker018:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 19
+
+type Worker019:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 20
+
+type Worker020:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 21
+
+type Worker021:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 22
+
+type Worker022:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 23
+
+type Worker023:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 24
+
+type Worker024:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 25
+
+fn dispatch(w):
+  return w.execute()
+
+fn main():
+  var total = 0
+  total = total + dispatch(Worker000(code: 10))
+  total = total + dispatch(Worker001(code: 10))
+  total = total + dispatch(Worker002(code: 10))
+  total = total + dispatch(Worker003(code: 10))
+  total = total + dispatch(Worker004(code: 10))
+  total = total + dispatch(Worker005(code: 10))
+  total = total + dispatch(Worker006(code: 10))
+  total = total + dispatch(Worker007(code: 10))
+  total = total + dispatch(Worker008(code: 10))
+  total = total + dispatch(Worker009(code: 10))
+  total = total + dispatch(Worker010(code: 10))
+  total = total + dispatch(Worker011(code: 10))
+  total = total + dispatch(Worker012(code: 10))
+  total = total + dispatch(Worker013(code: 10))
+  total = total + dispatch(Worker014(code: 10))
+  total = total + dispatch(Worker015(code: 10))
+  total = total + dispatch(Worker016(code: 10))
+  total = total + dispatch(Worker017(code: 10))
+  total = total + dispatch(Worker018(code: 10))
+  total = total + dispatch(Worker019(code: 10))
+  total = total + dispatch(Worker020(code: 10))
+  total = total + dispatch(Worker021(code: 10))
+  total = total + dispatch(Worker022(code: 10))
+  total = total + dispatch(Worker023(code: 10))
+  total = total + dispatch(Worker024(code: 10))
+  echo total

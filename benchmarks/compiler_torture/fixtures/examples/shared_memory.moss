@@ -1,0 +1,22 @@
+# Static-DAG migration: dependencies are routes, never runtime payloads.
+# Synchronous calls enter compiler-planned handler-level 2PL at every
+# optimization level. Each handler retains exactly its class guards until return.
+
+domain Counter:
+  total = 0
+
+  fn Add(amount: int) -> int:
+    total = total + amount
+    reply total
+
+domain Client:
+  domainroutes(counter: Counter)
+  fn Run():
+    first = message counter.Add(10)
+    second = message counter.Add(32)
+    echo "shared total:", first, second
+
+fn main():
+  counter = Counter()
+  client = Client(counter: counter)
+  message client.Run()

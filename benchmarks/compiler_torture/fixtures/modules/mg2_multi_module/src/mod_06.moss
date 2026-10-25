@@ -1,0 +1,7 @@
+module mod_06
+
+export type Item06:
+  val: Int
+
+export fn evaluate_06(item: Item06) -> Int:
+  return item.val * 6

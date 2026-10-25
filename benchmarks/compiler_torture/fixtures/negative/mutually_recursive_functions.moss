@@ -1,0 +1,8 @@
+fn first(value: Int):
+  second(value)
+
+fn second(value: Int):
+  first(value)
+
+fn main():
+  first(1)

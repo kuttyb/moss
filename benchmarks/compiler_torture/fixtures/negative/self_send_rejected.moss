@@ -1,0 +1,8 @@
+domain Worker:
+  fn Work() -> Bool:
+    result = message self.Work()
+    reply result
+
+fn main():
+  worker = Worker()
+  message worker.Work()

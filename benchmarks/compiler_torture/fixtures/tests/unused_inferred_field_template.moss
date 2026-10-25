@@ -1,0 +1,6 @@
+type Unresolved:
+  field
+
+fn main():
+  value = 1
+  echo value

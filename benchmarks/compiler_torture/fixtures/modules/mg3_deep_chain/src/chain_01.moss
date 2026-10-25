@@ -1,0 +1,4 @@
+module chain_01
+
+export fn calculate_01(x: Int) -> Int:
+  return x + 1

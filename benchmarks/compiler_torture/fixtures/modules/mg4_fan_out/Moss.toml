@@ -1,0 +1,6 @@
+[project]
+name = "mg4-fan-out"
+version = "0.1.0"
+
+[build]
+source = "src"

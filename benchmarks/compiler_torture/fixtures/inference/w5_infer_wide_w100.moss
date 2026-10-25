@@ -1,0 +1,706 @@
+# Generated Portable Moss Benchmark: W5 Wide Independent Inference
+# Generator: 1.0.0, Width=100
+
+fn wide_000_a(x):
+  return x + 1
+
+fn wide_000_b(x):
+  return wide_000_a(x) + 1
+
+fn wide_001_a(x):
+  return x + 2
+
+fn wide_001_b(x):
+  return wide_001_a(x) + 1
+
+fn wide_002_a(x):
+  return x + 3
+
+fn wide_002_b(x):
+  return wide_002_a(x) + 1
+
+fn wide_003_a(x):
+  return x + 4
+
+fn wide_003_b(x):
+  return wide_003_a(x) + 1
+
+fn wide_004_a(x):
+  return x + 5
+
+fn wide_004_b(x):
+  return wide_004_a(x) + 1
+
+fn wide_005_a(x):
+  return x + 6
+
+fn wide_005_b(x):
+  return wide_005_a(x) + 1
+
+fn wide_006_a(x):
+  return x + 7
+
+fn wide_006_b(x):
+  return wide_006_a(x) + 1
+
+fn wide_007_a(x):
+  return x + 8
+
+fn wide_007_b(x):
+  return wide_007_a(x) + 1
+
+fn wide_008_a(x):
+  return x + 9
+
+fn wide_008_b(x):
+  return wide_008_a(x) + 1
+
+fn wide_009_a(x):
+  return x + 10
+
+fn wide_009_b(x):
+  return wide_009_a(x) + 1
+
+fn wide_010_a(x):
+  return x + 11
+
+fn wide_010_b(x):
+  return wide_010_a(x) + 1
+
+fn wide_011_a(x):
+  return x + 12
+
+fn wide_011_b(x):
+  return wide_011_a(x) + 1
+
+fn wide_012_a(x):
+  return x + 13
+
+fn wide_012_b(x):
+  return wide_012_a(x) + 1
+
+fn wide_013_a(x):
+  return x + 14
+
+fn wide_013_b(x):
+  return wide_013_a(x) + 1
+
+fn wide_014_a(x):
+  return x + 15
+
+fn wide_014_b(x):
+  return wide_014_a(x) + 1
+
+fn wide_015_a(x):
+  return x + 16
+
+fn wide_015_b(x):
+  return wide_015_a(x) + 1
+
+fn wide_016_a(x):
+  return x + 17
+
+fn wide_016_b(x):
+  return wide_016_a(x) + 1
+
+fn wide_017_a(x):
+  return x + 18
+
+fn wide_017_b(x):
+  return wide_017_a(x) + 1
+
+fn wide_018_a(x):
+  return x + 19
+
+fn wide_018_b(x):
+  return wide_018_a(x) + 1
+
+fn wide_019_a(x):
+  return x + 20
+
+fn wide_019_b(x):
+  return wide_019_a(x) + 1
+
+fn wide_020_a(x):
+  return x + 21
+
+fn wide_020_b(x):
+  return wide_020_a(x) + 1
+
+fn wide_021_a(x):
+  return x + 22
+
+fn wide_021_b(x):
+  return wide_021_a(x) + 1
+
+fn wide_022_a(x):
+  return x + 23
+
+fn wide_022_b(x):
+  return wide_022_a(x) + 1
+
+fn wide_023_a(x):
+  return x + 24
+
+fn wide_023_b(x):
+  return wide_023_a(x) + 1
+
+fn wide_024_a(x):
+  return x + 25
+
+fn wide_024_b(x):
+  return wide_024_a(x) + 1
+
+fn wide_025_a(x):
+  return x + 26
+
+fn wide_025_b(x):
+  return wide_025_a(x) + 1
+
+fn wide_026_a(x):
+  return x + 27
+
+fn wide_026_b(x):
+  return wide_026_a(x) + 1
+
+fn wide_027_a(x):
+  return x + 28
+
+fn wide_027_b(x):
+  return wide_027_a(x) + 1
+
+fn wide_028_a(x):
+  return x + 29
+
+fn wide_028_b(x):
+  return wide_028_a(x) + 1
+
+fn wide_029_a(x):
+  return x + 30
+
+fn wide_029_b(x):
+  return wide_029_a(x) + 1
+
+fn wide_030_a(x):
+  return x + 31
+
+fn wide_030_b(x):
+  return wide_030_a(x) + 1
+
+fn wide_031_a(x):
+  return x + 32
+
+fn wide_031_b(x):
+  return wide_031_a(x) + 1
+
+fn wide_032_a(x):
+  return x + 33
+
+fn wide_032_b(x):
+  return wide_032_a(x) + 1
+
+fn wide_033_a(x):
+  return x + 34
+
+fn wide_033_b(x):
+  return wide_033_a(x) + 1
+
+fn wide_034_a(x):
+  return x + 35
+
+fn wide_034_b(x):
+  return wide_034_a(x) + 1
+
+fn wide_035_a(x):
+  return x + 36
+
+fn wide_035_b(x):
+  return wide_035_a(x) + 1
+
+fn wide_036_a(x):
+  return x + 37
+
+fn wide_036_b(x):
+  return wide_036_a(x) + 1
+
+fn wide_037_a(x):
+  return x + 38
+
+fn wide_037_b(x):
+  return wide_037_a(x) + 1
+
+fn wide_038_a(x):
+  return x + 39
+
+fn wide_038_b(x):
+  return wide_038_a(x) + 1
+
+fn wide_039_a(x):
+  return x + 40
+
+fn wide_039_b(x):
+  return wide_039_a(x) + 1
+
+fn wide_040_a(x):
+  return x + 41
+
+fn wide_040_b(x):
+  return wide_040_a(x) + 1
+
+fn wide_041_a(x):
+  return x + 42
+
+fn wide_041_b(x):
+  return wide_041_a(x) + 1
+
+fn wide_042_a(x):
+  return x + 43
+
+fn wide_042_b(x):
+  return wide_042_a(x) + 1
+
+fn wide_043_a(x):
+  return x + 44
+
+fn wide_043_b(x):
+  return wide_043_a(x) + 1
+
+fn wide_044_a(x):
+  return x + 45
+
+fn wide_044_b(x):
+  return wide_044_a(x) + 1
+
+fn wide_045_a(x):
+  return x + 46
+
+fn wide_045_b(x):
+  return wide_045_a(x) + 1
+
+fn wide_046_a(x):
+  return x + 47
+
+fn wide_046_b(x):
+  return wide_046_a(x) + 1
+
+fn wide_047_a(x):
+  return x + 48
+
+fn wide_047_b(x):
+  return wide_047_a(x) + 1
+
+fn wide_048_a(x):
+  return x + 49
+
+fn wide_048_b(x):
+  return wide_048_a(x) + 1
+
+fn wide_049_a(x):
+  return x + 50
+
+fn wide_049_b(x):
+  return wide_049_a(x) + 1
+
+fn wide_050_a(x):
+  return x + 51
+
+fn wide_050_b(x):
+  return wide_050_a(x) + 1
+
+fn wide_051_a(x):
+  return x + 52
+
+fn wide_051_b(x):
+  return wide_051_a(x) + 1
+
+fn wide_052_a(x):
+  return x + 53
+
+fn wide_052_b(x):
+  return wide_052_a(x) + 1
+
+fn wide_053_a(x):
+  return x + 54
+
+fn wide_053_b(x):
+  return wide_053_a(x) + 1
+
+fn wide_054_a(x):
+  return x + 55
+
+fn wide_054_b(x):
+  return wide_054_a(x) + 1
+
+fn wide_055_a(x):
+  return x + 56
+
+fn wide_055_b(x):
+  return wide_055_a(x) + 1
+
+fn wide_056_a(x):
+  return x + 57
+
+fn wide_056_b(x):
+  return wide_056_a(x) + 1
+
+fn wide_057_a(x):
+  return x + 58
+
+fn wide_057_b(x):
+  return wide_057_a(x) + 1
+
+fn wide_058_a(x):
+  return x + 59
+
+fn wide_058_b(x):
+  return wide_058_a(x) + 1
+
+fn wide_059_a(x):
+  return x + 60
+
+fn wide_059_b(x):
+  return wide_059_a(x) + 1
+
+fn wide_060_a(x):
+  return x + 61
+
+fn wide_060_b(x):
+  return wide_060_a(x) + 1
+
+fn wide_061_a(x):
+  return x + 62
+
+fn wide_061_b(x):
+  return wide_061_a(x) + 1
+
+fn wide_062_a(x):
+  return x + 63
+
+fn wide_062_b(x):
+  return wide_062_a(x) + 1
+
+fn wide_063_a(x):
+  return x + 64
+
+fn wide_063_b(x):
+  return wide_063_a(x) + 1
+
+fn wide_064_a(x):
+  return x + 65
+
+fn wide_064_b(x):
+  return wide_064_a(x) + 1
+
+fn wide_065_a(x):
+  return x + 66
+
+fn wide_065_b(x):
+  return wide_065_a(x) + 1
+
+fn wide_066_a(x):
+  return x + 67
+
+fn wide_066_b(x):
+  return wide_066_a(x) + 1
+
+fn wide_067_a(x):
+  return x + 68
+
+fn wide_067_b(x):
+  return wide_067_a(x) + 1
+
+fn wide_068_a(x):
+  return x + 69
+
+fn wide_068_b(x):
+  return wide_068_a(x) + 1
+
+fn wide_069_a(x):
+  return x + 70
+
+fn wide_069_b(x):
+  return wide_069_a(x) + 1
+
+fn wide_070_a(x):
+  return x + 71
+
+fn wide_070_b(x):
+  return wide_070_a(x) + 1
+
+fn wide_071_a(x):
+  return x + 72
+
+fn wide_071_b(x):
+  return wide_071_a(x) + 1
+
+fn wide_072_a(x):
+  return x + 73
+
+fn wide_072_b(x):
+  return wide_072_a(x) + 1
+
+fn wide_073_a(x):
+  return x + 74
+
+fn wide_073_b(x):
+  return wide_073_a(x) + 1
+
+fn wide_074_a(x):
+  return x + 75
+
+fn wide_074_b(x):
+  return wide_074_a(x) + 1
+
+fn wide_075_a(x):
+  return x + 76
+
+fn wide_075_b(x):
+  return wide_075_a(x) + 1
+
+fn wide_076_a(x):
+  return x + 77
+
+fn wide_076_b(x):
+  return wide_076_a(x) + 1
+
+fn wide_077_a(x):
+  return x + 78
+
+fn wide_077_b(x):
+  return wide_077_a(x) + 1
+
+fn wide_078_a(x):
+  return x + 79
+
+fn wide_078_b(x):
+  return wide_078_a(x) + 1
+
+fn wide_079_a(x):
+  return x + 80
+
+fn wide_079_b(x):
+  return wide_079_a(x) + 1
+
+fn wide_080_a(x):
+  return x + 81
+
+fn wide_080_b(x):
+  return wide_080_a(x) + 1
+
+fn wide_081_a(x):
+  return x + 82
+
+fn wide_081_b(x):
+  return wide_081_a(x) + 1
+
+fn wide_082_a(x):
+  return x + 83
+
+fn wide_082_b(x):
+  return wide_082_a(x) + 1
+
+fn wide_083_a(x):
+  return x + 84
+
+fn wide_083_b(x):
+  return wide_083_a(x) + 1
+
+fn wide_084_a(x):
+  return x + 85
+
+fn wide_084_b(x):
+  return wide_084_a(x) + 1
+
+fn wide_085_a(x):
+  return x + 86
+
+fn wide_085_b(x):
+  return wide_085_a(x) + 1
+
+fn wide_086_a(x):
+  return x + 87
+
+fn wide_086_b(x):
+  return wide_086_a(x) + 1
+
+fn wide_087_a(x):
+  return x + 88
+
+fn wide_087_b(x):
+  return wide_087_a(x) + 1
+
+fn wide_088_a(x):
+  return x + 89
+
+fn wide_088_b(x):
+  return wide_088_a(x) + 1
+
+fn wide_089_a(x):
+  return x + 90
+
+fn wide_089_b(x):
+  return wide_089_a(x) + 1
+
+fn wide_090_a(x):
+  return x + 91
+
+fn wide_090_b(x):
+  return wide_090_a(x) + 1
+
+fn wide_091_a(x):
+  return x + 92
+
+fn wide_091_b(x):
+  return wide_091_a(x) + 1
+
+fn wide_092_a(x):
+  return x + 93
+
+fn wide_092_b(x):
+  return wide_092_a(x) + 1
+
+fn wide_093_a(x):
+  return x + 94
+
+fn wide_093_b(x):
+  return wide_093_a(x) + 1
+
+fn wide_094_a(x):
+  return x + 95
+
+fn wide_094_b(x):
+  return wide_094_a(x) + 1
+
+fn wide_095_a(x):
+  return x + 96
+
+fn wide_095_b(x):
+  return wide_095_a(x) + 1
+
+fn wide_096_a(x):
+  return x + 97
+
+fn wide_096_b(x):
+  return wide_096_a(x) + 1
+
+fn wide_097_a(x):
+  return x + 98
+
+fn wide_097_b(x):
+  return wide_097_a(x) + 1
+
+fn wide_098_a(x):
+  return x + 99
+
+fn wide_098_b(x):
+  return wide_098_a(x) + 1
+
+fn wide_099_a(x):
+  return x + 100
+
+fn wide_099_b(x):
+  return wide_099_a(x) + 1
+
+fn main():
+  var total = 0
+  total = total + wide_000_b(1)
+  total = total + wide_001_b(1)
+  total = total + wide_002_b(1)
+  total = total + wide_003_b(1)
+  total = total + wide_004_b(1)
+  total = total + wide_005_b(1)
+  total = total + wide_006_b(1)
+  total = total + wide_007_b(1)
+  total = total + wide_008_b(1)
+  total = total + wide_009_b(1)
+  total = total + wide_010_b(1)
+  total = total + wide_011_b(1)
+  total = total + wide_012_b(1)
+  total = total + wide_013_b(1)
+  total = total + wide_014_b(1)
+  total = total + wide_015_b(1)
+  total = total + wide_016_b(1)
+  total = total + wide_017_b(1)
+  total = total + wide_018_b(1)
+  total = total + wide_019_b(1)
+  total = total + wide_020_b(1)
+  total = total + wide_021_b(1)
+  total = total + wide_022_b(1)
+  total = total + wide_023_b(1)
+  total = total + wide_024_b(1)
+  total = total + wide_025_b(1)
+  total = total + wide_026_b(1)
+  total = total + wide_027_b(1)
+  total = total + wide_028_b(1)
+  total = total + wide_029_b(1)
+  total = total + wide_030_b(1)
+  total = total + wide_031_b(1)
+  total = total + wide_032_b(1)
+  total = total + wide_033_b(1)
+  total = total + wide_034_b(1)
+  total = total + wide_035_b(1)
+  total = total + wide_036_b(1)
+  total = total + wide_037_b(1)
+  total = total + wide_038_b(1)
+  total = total + wide_039_b(1)
+  total = total + wide_040_b(1)
+  total = total + wide_041_b(1)
+  total = total + wide_042_b(1)
+  total = total + wide_043_b(1)
+  total = total + wide_044_b(1)
+  total = total + wide_045_b(1)
+  total = total + wide_046_b(1)
+  total = total + wide_047_b(1)
+  total = total + wide_048_b(1)
+  total = total + wide_049_b(1)
+  total = total + wide_050_b(1)
+  total = total + wide_051_b(1)
+  total = total + wide_052_b(1)
+  total = total + wide_053_b(1)
+  total = total + wide_054_b(1)
+  total = total + wide_055_b(1)
+  total = total + wide_056_b(1)
+  total = total + wide_057_b(1)
+  total = total + wide_058_b(1)
+  total = total + wide_059_b(1)
+  total = total + wide_060_b(1)
+  total = total + wide_061_b(1)
+  total = total + wide_062_b(1)
+  total = total + wide_063_b(1)
+  total = total + wide_064_b(1)
+  total = total + wide_065_b(1)
+  total = total + wide_066_b(1)
+  total = total + wide_067_b(1)
+  total = total + wide_068_b(1)
+  total = total + wide_069_b(1)
+  total = total + wide_070_b(1)
+  total = total + wide_071_b(1)
+  total = total + wide_072_b(1)
+  total = total + wide_073_b(1)
+  total = total + wide_074_b(1)
+  total = total + wide_075_b(1)
+  total = total + wide_076_b(1)
+  total = total + wide_077_b(1)
+  total = total + wide_078_b(1)
+  total = total + wide_079_b(1)
+  total = total + wide_080_b(1)
+  total = total + wide_081_b(1)
+  total = total + wide_082_b(1)
+  total = total + wide_083_b(1)
+  total = total + wide_084_b(1)
+  total = total + wide_085_b(1)
+  total = total + wide_086_b(1)
+  total = total + wide_087_b(1)
+  total = total + wide_088_b(1)
+  total = total + wide_089_b(1)
+  total = total + wide_090_b(1)
+  total = total + wide_091_b(1)
+  total = total + wide_092_b(1)
+  total = total + wide_093_b(1)
+  total = total + wide_094_b(1)
+  total = total + wide_095_b(1)
+  total = total + wide_096_b(1)
+  total = total + wide_097_b(1)
+  total = total + wide_098_b(1)
+  total = total + wide_099_b(1)
+  echo total

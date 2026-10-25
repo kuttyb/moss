@@ -1,0 +1,5 @@
+module chain_06
+import chain_05
+
+export fn calculate_06(x: Int) -> Int:
+  return chain_05.calculate_05(x) + 6

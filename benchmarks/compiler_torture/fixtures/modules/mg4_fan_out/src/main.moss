@@ -1,0 +1,21 @@
+module app
+import consumer_01
+import consumer_02
+import consumer_03
+import consumer_04
+import consumer_05
+import consumer_06
+import consumer_07
+import consumer_08
+
+fn main():
+  var total = 0
+  total = total + consumer_01.run_worker_01(10)
+  total = total + consumer_02.run_worker_02(10)
+  total = total + consumer_03.run_worker_03(10)
+  total = total + consumer_04.run_worker_04(10)
+  total = total + consumer_05.run_worker_05(10)
+  total = total + consumer_06.run_worker_06(10)
+  total = total + consumer_07.run_worker_07(10)
+  total = total + consumer_08.run_worker_08(10)
+  echo total

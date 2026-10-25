@@ -1,0 +1,11 @@
+{
+  "git_sha": "8884d0abbac345ab4598092acb047c98a7bb9a58",
+  "binary_sha256": "a207f09d8039c561b4ac02fcaaead3a3feaa58754393adeb83c741e62a299601",
+  "moss_binary": "/home/owner/daji/code/moss2/build/compiler/moss-opt",
+  "platform": "Linux-6.18.33.2-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+  "cpus": 16,
+  "torture_version": "1.0.0",
+  "total_fixtures": 54,
+  "repetitions": 5,
+  "timestamp": "2026-10-25T21:01:53Z"
+}

@@ -1,0 +1,22 @@
+# Untyped parameters are statically duck typed. These unrelated concrete types
+# both provide describe(), so Moss emits one concrete describe specialization
+# for each call site. There is no source-level generic parameter or runtime search.
+type Build:
+  minutes: Int
+
+  fn describe():
+    return minutes + 100
+
+type Shipment:
+  distance: Int
+  stops: Int
+
+  fn describe():
+    return distance + stops
+
+fn describe(value):
+  return value.describe()
+
+fn main():
+  echo describe(Build(minutes = 12))
+  echo describe(Shipment(distance = 40, stops = 5))

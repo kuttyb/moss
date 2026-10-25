@@ -1,0 +1,4 @@
+module mg1_multi_file
+
+export fn compute_part_08(x: Int) -> Int:
+  return x + 8

@@ -1,0 +1,20 @@
+# Moss keeps this high-level dataflow structure in typed functional IR. -O0
+# executes eager stages in source order; -O proves these callbacks pure and
+# emits one straightforward loop with no intermediate vectors.
+fn normalize(value: Int) -> Int:
+  return value * 2
+
+fn score(value: Int) -> Int:
+  return value * 3
+
+fn evaluate(values: Vector) -> Int:
+  return values
+    |> map(normalize)
+    |> filter(_ > 4)
+    |> map(score)
+    |> sum
+
+proc main():
+  values = [1, 2, 3, 4]
+  total = evaluate(values)
+  echo "pipeline total:", total

@@ -1,0 +1,11 @@
+domain Counter:
+  value = 0
+
+  fn Add(amount: int):
+    value = value + amount
+    echo "counter:", value
+
+fn main():
+  let counter = Counter()
+  message counter.Add(41)
+  message counter.Add(1)

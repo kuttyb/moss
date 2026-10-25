@@ -1,0 +1,7 @@
+module diamond_base
+
+export type Metric:
+  value: Int
+
+export fn format_metric(m: Metric) -> Int:
+  return m.value * 2

@@ -1,0 +1,709 @@
+# Generated Portable Moss Benchmark: W8 Static Method Resolution
+# Generator: 1.0.0, Concrete Types=100
+
+type Worker000:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 1
+
+type Worker001:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 2
+
+type Worker002:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 3
+
+type Worker003:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 4
+
+type Worker004:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 5
+
+type Worker005:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 6
+
+type Worker006:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 7
+
+type Worker007:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 8
+
+type Worker008:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 9
+
+type Worker009:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 10
+
+type Worker010:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 11
+
+type Worker011:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 12
+
+type Worker012:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 13
+
+type Worker013:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 14
+
+type Worker014:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 15
+
+type Worker015:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 16
+
+type Worker016:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 17
+
+type Worker017:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 18
+
+type Worker018:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 19
+
+type Worker019:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 20
+
+type Worker020:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 21
+
+type Worker021:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 22
+
+type Worker022:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 23
+
+type Worker023:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 24
+
+type Worker024:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 25
+
+type Worker025:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 26
+
+type Worker026:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 27
+
+type Worker027:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 28
+
+type Worker028:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 29
+
+type Worker029:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 30
+
+type Worker030:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 31
+
+type Worker031:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 32
+
+type Worker032:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 33
+
+type Worker033:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 34
+
+type Worker034:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 35
+
+type Worker035:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 36
+
+type Worker036:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 37
+
+type Worker037:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 38
+
+type Worker038:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 39
+
+type Worker039:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 40
+
+type Worker040:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 41
+
+type Worker041:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 42
+
+type Worker042:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 43
+
+type Worker043:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 44
+
+type Worker044:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 45
+
+type Worker045:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 46
+
+type Worker046:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 47
+
+type Worker047:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 48
+
+type Worker048:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 49
+
+type Worker049:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 50
+
+type Worker050:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 51
+
+type Worker051:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 52
+
+type Worker052:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 53
+
+type Worker053:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 54
+
+type Worker054:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 55
+
+type Worker055:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 56
+
+type Worker056:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 57
+
+type Worker057:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 58
+
+type Worker058:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 59
+
+type Worker059:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 60
+
+type Worker060:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 61
+
+type Worker061:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 62
+
+type Worker062:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 63
+
+type Worker063:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 64
+
+type Worker064:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 65
+
+type Worker065:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 66
+
+type Worker066:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 67
+
+type Worker067:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 68
+
+type Worker068:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 69
+
+type Worker069:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 70
+
+type Worker070:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 71
+
+type Worker071:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 72
+
+type Worker072:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 73
+
+type Worker073:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 74
+
+type Worker074:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 75
+
+type Worker075:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 76
+
+type Worker076:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 77
+
+type Worker077:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 78
+
+type Worker078:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 79
+
+type Worker079:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 80
+
+type Worker080:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 81
+
+type Worker081:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 82
+
+type Worker082:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 83
+
+type Worker083:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 84
+
+type Worker084:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 85
+
+type Worker085:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 86
+
+type Worker086:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 87
+
+type Worker087:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 88
+
+type Worker088:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 89
+
+type Worker089:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 90
+
+type Worker090:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 91
+
+type Worker091:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 92
+
+type Worker092:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 93
+
+type Worker093:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 94
+
+type Worker094:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 95
+
+type Worker095:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 96
+
+type Worker096:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 97
+
+type Worker097:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 98
+
+type Worker098:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 99
+
+type Worker099:
+  code: Int
+
+  fn execute() -> Int:
+    return code + 100
+
+fn dispatch(w):
+  return w.execute()
+
+fn main():
+  var total = 0
+  total = total + dispatch(Worker000(code: 10))
+  total = total + dispatch(Worker001(code: 10))
+  total = total + dispatch(Worker002(code: 10))
+  total = total + dispatch(Worker003(code: 10))
+  total = total + dispatch(Worker004(code: 10))
+  total = total + dispatch(Worker005(code: 10))
+  total = total + dispatch(Worker006(code: 10))
+  total = total + dispatch(Worker007(code: 10))
+  total = total + dispatch(Worker008(code: 10))
+  total = total + dispatch(Worker009(code: 10))
+  total = total + dispatch(Worker010(code: 10))
+  total = total + dispatch(Worker011(code: 10))
+  total = total + dispatch(Worker012(code: 10))
+  total = total + dispatch(Worker013(code: 10))
+  total = total + dispatch(Worker014(code: 10))
+  total = total + dispatch(Worker015(code: 10))
+  total = total + dispatch(Worker016(code: 10))
+  total = total + dispatch(Worker017(code: 10))
+  total = total + dispatch(Worker018(code: 10))
+  total = total + dispatch(Worker019(code: 10))
+  total = total + dispatch(Worker020(code: 10))
+  total = total + dispatch(Worker021(code: 10))
+  total = total + dispatch(Worker022(code: 10))
+  total = total + dispatch(Worker023(code: 10))
+  total = total + dispatch(Worker024(code: 10))
+  total = total + dispatch(Worker025(code: 10))
+  total = total + dispatch(Worker026(code: 10))
+  total = total + dispatch(Worker027(code: 10))
+  total = total + dispatch(Worker028(code: 10))
+  total = total + dispatch(Worker029(code: 10))
+  total = total + dispatch(Worker030(code: 10))
+  total = total + dispatch(Worker031(code: 10))
+  total = total + dispatch(Worker032(code: 10))
+  total = total + dispatch(Worker033(code: 10))
+  total = total + dispatch(Worker034(code: 10))
+  total = total + dispatch(Worker035(code: 10))
+  total = total + dispatch(Worker036(code: 10))
+  total = total + dispatch(Worker037(code: 10))
+  total = total + dispatch(Worker038(code: 10))
+  total = total + dispatch(Worker039(code: 10))
+  total = total + dispatch(Worker040(code: 10))
+  total = total + dispatch(Worker041(code: 10))
+  total = total + dispatch(Worker042(code: 10))
+  total = total + dispatch(Worker043(code: 10))
+  total = total + dispatch(Worker044(code: 10))
+  total = total + dispatch(Worker045(code: 10))
+  total = total + dispatch(Worker046(code: 10))
+  total = total + dispatch(Worker047(code: 10))
+  total = total + dispatch(Worker048(code: 10))
+  total = total + dispatch(Worker049(code: 10))
+  total = total + dispatch(Worker050(code: 10))
+  total = total + dispatch(Worker051(code: 10))
+  total = total + dispatch(Worker052(code: 10))
+  total = total + dispatch(Worker053(code: 10))
+  total = total + dispatch(Worker054(code: 10))
+  total = total + dispatch(Worker055(code: 10))
+  total = total + dispatch(Worker056(code: 10))
+  total = total + dispatch(Worker057(code: 10))
+  total = total + dispatch(Worker058(code: 10))
+  total = total + dispatch(Worker059(code: 10))
+  total = total + dispatch(Worker060(code: 10))
+  total = total + dispatch(Worker061(code: 10))
+  total = total + dispatch(Worker062(code: 10))
+  total = total + dispatch(Worker063(code: 10))
+  total = total + dispatch(Worker064(code: 10))
+  total = total + dispatch(Worker065(code: 10))
+  total = total + dispatch(Worker066(code: 10))
+  total = total + dispatch(Worker067(code: 10))
+  total = total + dispatch(Worker068(code: 10))
+  total = total + dispatch(Worker069(code: 10))
+  total = total + dispatch(Worker070(code: 10))
+  total = total + dispatch(Worker071(code: 10))
+  total = total + dispatch(Worker072(code: 10))
+  total = total + dispatch(Worker073(code: 10))
+  total = total + dispatch(Worker074(code: 10))
+  total = total + dispatch(Worker075(code: 10))
+  total = total + dispatch(Worker076(code: 10))
+  total = total + dispatch(Worker077(code: 10))
+  total = total + dispatch(Worker078(code: 10))
+  total = total + dispatch(Worker079(code: 10))
+  total = total + dispatch(Worker080(code: 10))
+  total = total + dispatch(Worker081(code: 10))
+  total = total + dispatch(Worker082(code: 10))
+  total = total + dispatch(Worker083(code: 10))
+  total = total + dispatch(Worker084(code: 10))
+  total = total + dispatch(Worker085(code: 10))
+  total = total + dispatch(Worker086(code: 10))
+  total = total + dispatch(Worker087(code: 10))
+  total = total + dispatch(Worker088(code: 10))
+  total = total + dispatch(Worker089(code: 10))
+  total = total + dispatch(Worker090(code: 10))
+  total = total + dispatch(Worker091(code: 10))
+  total = total + dispatch(Worker092(code: 10))
+  total = total + dispatch(Worker093(code: 10))
+  total = total + dispatch(Worker094(code: 10))
+  total = total + dispatch(Worker095(code: 10))
+  total = total + dispatch(Worker096(code: 10))
+  total = total + dispatch(Worker097(code: 10))
+  total = total + dispatch(Worker098(code: 10))
+  total = total + dispatch(Worker099(code: 10))
+  echo total

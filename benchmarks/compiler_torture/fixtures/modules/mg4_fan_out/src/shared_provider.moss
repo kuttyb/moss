@@ -1,0 +1,7 @@
+module shared_provider
+
+export type Config:
+  multiplier: Int
+
+export fn transform(cfg: Config, base: Int) -> Int:
+  return cfg.multiplier * base

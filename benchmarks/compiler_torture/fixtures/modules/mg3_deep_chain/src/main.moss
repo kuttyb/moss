@@ -1,0 +1,5 @@
+module app
+import chain_08
+
+fn main():
+  echo chain_08.calculate_08(0)

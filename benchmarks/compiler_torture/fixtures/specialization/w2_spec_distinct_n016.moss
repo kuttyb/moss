@@ -1,0 +1,364 @@
+# Generated Portable Moss Benchmark: W2 Concrete Specialization (Distinct)
+# Generator: 1.0.0, N=16, Distinct Call Sites=256
+
+type Sensor000:
+  value: Int
+
+  fn score() -> Int:
+    return value + 1
+
+type Sensor001:
+  value: Int
+
+  fn score() -> Int:
+    return value + 2
+
+type Sensor002:
+  value: Int
+
+  fn score() -> Int:
+    return value + 3
+
+type Sensor003:
+  value: Int
+
+  fn score() -> Int:
+    return value + 4
+
+type Sensor004:
+  value: Int
+
+  fn score() -> Int:
+    return value + 5
+
+type Sensor005:
+  value: Int
+
+  fn score() -> Int:
+    return value + 6
+
+type Sensor006:
+  value: Int
+
+  fn score() -> Int:
+    return value + 7
+
+type Sensor007:
+  value: Int
+
+  fn score() -> Int:
+    return value + 8
+
+type Sensor008:
+  value: Int
+
+  fn score() -> Int:
+    return value + 9
+
+type Sensor009:
+  value: Int
+
+  fn score() -> Int:
+    return value + 10
+
+type Sensor010:
+  value: Int
+
+  fn score() -> Int:
+    return value + 11
+
+type Sensor011:
+  value: Int
+
+  fn score() -> Int:
+    return value + 12
+
+type Sensor012:
+  value: Int
+
+  fn score() -> Int:
+    return value + 13
+
+type Sensor013:
+  value: Int
+
+  fn score() -> Int:
+    return value + 14
+
+type Sensor014:
+  value: Int
+
+  fn score() -> Int:
+    return value + 15
+
+type Sensor015:
+  value: Int
+
+  fn score() -> Int:
+    return value + 16
+
+fn project(item):
+  return item.score()
+
+fn combine(a, b):
+  return project(a) + project(b)
+
+fn main():
+  var total = 0
+  total = total + combine(Sensor000(value: 1), Sensor000(value: 2))
+  total = total + combine(Sensor000(value: 1), Sensor001(value: 2))
+  total = total + combine(Sensor000(value: 1), Sensor002(value: 2))
+  total = total + combine(Sensor000(value: 1), Sensor003(value: 2))
+  total = total + combine(Sensor000(value: 1), Sensor004(value: 2))
+  total = total + combine(Sensor000(value: 1), Sensor005(value: 2))
+  total = total + combine(Sensor000(value: 1), Sensor006(value: 2))
+  total = total + combine(Sensor000(value: 1), Sensor007(value: 2))
+  total = total + combine(Sensor000(value: 1), Sensor008(value: 2))
+  total = total + combine(Sensor000(value: 1), Sensor009(value: 2))
+  total = total + combine(Sensor000(value: 1), Sensor010(value: 2))
+  total = total + combine(Sensor000(value: 1), Sensor011(value: 2))
+  total = total + combine(Sensor000(value: 1), Sensor012(value: 2))
+  total = total + combine(Sensor000(value: 1), Sensor013(value: 2))
+  total = total + combine(Sensor000(value: 1), Sensor014(value: 2))
+  total = total + combine(Sensor000(value: 1), Sensor015(value: 2))
+  total = total + combine(Sensor001(value: 1), Sensor000(value: 2))
+  total = total + combine(Sensor001(value: 1), Sensor001(value: 2))
+  total = total + combine(Sensor001(value: 1), Sensor002(value: 2))
+  total = total + combine(Sensor001(value: 1), Sensor003(value: 2))
+  total = total + combine(Sensor001(value: 1), Sensor004(value: 2))
+  total = total + combine(Sensor001(value: 1), Sensor005(value: 2))
+  total = total + combine(Sensor001(value: 1), Sensor006(value: 2))
+  total = total + combine(Sensor001(value: 1), Sensor007(value: 2))
+  total = total + combine(Sensor001(value: 1), Sensor008(value: 2))
+  total = total + combine(Sensor001(value: 1), Sensor009(value: 2))
+  total = total + combine(Sensor001(value: 1), Sensor010(value: 2))
+  total = total + combine(Sensor001(value: 1), Sensor011(value: 2))
+  total = total + combine(Sensor001(value: 1), Sensor012(value: 2))
+  total = total + combine(Sensor001(value: 1), Sensor013(value: 2))
+  total = total + combine(Sensor001(value: 1), Sensor014(value: 2))
+  total = total + combine(Sensor001(value: 1), Sensor015(value: 2))
+  total = total + combine(Sensor002(value: 1), Sensor000(value: 2))
+  total = total + combine(Sensor002(value: 1), Sensor001(value: 2))
+  total = total + combine(Sensor002(value: 1), Sensor002(value: 2))
+  total = total + combine(Sensor002(value: 1), Sensor003(value: 2))
+  total = total + combine(Sensor002(value: 1), Sensor004(value: 2))
+  total = total + combine(Sensor002(value: 1), Sensor005(value: 2))
+  total = total + combine(Sensor002(value: 1), Sensor006(value: 2))
+  total = total + combine(Sensor002(value: 1), Sensor007(value: 2))
+  total = total + combine(Sensor002(value: 1), Sensor008(value: 2))
+  total = total + combine(Sensor002(value: 1), Sensor009(value: 2))
+  total = total + combine(Sensor002(value: 1), Sensor010(value: 2))
+  total = total + combine(Sensor002(value: 1), Sensor011(value: 2))
+  total = total + combine(Sensor002(value: 1), Sensor012(value: 2))
+  total = total + combine(Sensor002(value: 1), Sensor013(value: 2))
+  total = total + combine(Sensor002(value: 1), Sensor014(value: 2))
+  total = total + combine(Sensor002(value: 1), Sensor015(value: 2))
+  total = total + combine(Sensor003(value: 1), Sensor000(value: 2))
+  total = total + combine(Sensor003(value: 1), Sensor001(value: 2))
+  total = total + combine(Sensor003(value: 1), Sensor002(value: 2))
+  total = total + combine(Sensor003(value: 1), Sensor003(value: 2))
+  total = total + combine(Sensor003(value: 1), Sensor004(value: 2))
+  total = total + combine(Sensor003(value: 1), Sensor005(value: 2))
+  total = total + combine(Sensor003(value: 1), Sensor006(value: 2))
+  total = total + combine(Sensor003(value: 1), Sensor007(value: 2))
+  total = total + combine(Sensor003(value: 1), Sensor008(value: 2))
+  total = total + combine(Sensor003(value: 1), Sensor009(value: 2))
+  total = total + combine(Sensor003(value: 1), Sensor010(value: 2))
+  total = total + combine(Sensor003(value: 1), Sensor011(value: 2))
+  total = total + combine(Sensor003(value: 1), Sensor012(value: 2))
+  total = total + combine(Sensor003(value: 1), Sensor013(value: 2))
+  total = total + combine(Sensor003(value: 1), Sensor014(value: 2))
+  total = total + combine(Sensor003(value: 1), Sensor015(value: 2))
+  total = total + combine(Sensor004(value: 1), Sensor000(value: 2))
+  total = total + combine(Sensor004(value: 1), Sensor001(value: 2))
+  total = total + combine(Sensor004(value: 1), Sensor002(value: 2))
+  total = total + combine(Sensor004(value: 1), Sensor003(value: 2))
+  total = total + combine(Sensor004(value: 1), Sensor004(value: 2))
+  total = total + combine(Sensor004(value: 1), Sensor005(value: 2))
+  total = total + combine(Sensor004(value: 1), Sensor006(value: 2))
+  total = total + combine(Sensor004(value: 1), Sensor007(value: 2))
+  total = total + combine(Sensor004(value: 1), Sensor008(value: 2))
+  total = total + combine(Sensor004(value: 1), Sensor009(value: 2))
+  total = total + combine(Sensor004(value: 1), Sensor010(value: 2))
+  total = total + combine(Sensor004(value: 1), Sensor011(value: 2))
+  total = total + combine(Sensor004(value: 1), Sensor012(value: 2))
+  total = total + combine(Sensor004(value: 1), Sensor013(value: 2))
+  total = total + combine(Sensor004(value: 1), Sensor014(value: 2))
+  total = total + combine(Sensor004(value: 1), Sensor015(value: 2))
+  total = total + combine(Sensor005(value: 1), Sensor000(value: 2))
+  total = total + combine(Sensor005(value: 1), Sensor001(value: 2))
+  total = total + combine(Sensor005(value: 1), Sensor002(value: 2))
+  total = total + combine(Sensor005(value: 1), Sensor003(value: 2))
+  total = total + combine(Sensor005(value: 1), Sensor004(value: 2))
+  total = total + combine(Sensor005(value: 1), Sensor005(value: 2))
+  total = total + combine(Sensor005(value: 1), Sensor006(value: 2))
+  total = total + combine(Sensor005(value: 1), Sensor007(value: 2))
+  total = total + combine(Sensor005(value: 1), Sensor008(value: 2))
+  total = total + combine(Sensor005(value: 1), Sensor009(value: 2))
+  total = total + combine(Sensor005(value: 1), Sensor010(value: 2))
+  total = total + combine(Sensor005(value: 1), Sensor011(value: 2))
+  total = total + combine(Sensor005(value: 1), Sensor012(value: 2))
+  total = total + combine(Sensor005(value: 1), Sensor013(value: 2))
+  total = total + combine(Sensor005(value: 1), Sensor014(value: 2))
+  total = total + combine(Sensor005(value: 1), Sensor015(value: 2))
+  total = total + combine(Sensor006(value: 1), Sensor000(value: 2))
+  total = total + combine(Sensor006(value: 1), Sensor001(value: 2))
+  total = total + combine(Sensor006(value: 1), Sensor002(value: 2))
+  total = total + combine(Sensor006(value: 1), Sensor003(value: 2))
+  total = total + combine(Sensor006(value: 1), Sensor004(value: 2))
+  total = total + combine(Sensor006(value: 1), Sensor005(value: 2))
+  total = total + combine(Sensor006(value: 1), Sensor006(value: 2))
+  total = total + combine(Sensor006(value: 1), Sensor007(value: 2))
+  total = total + combine(Sensor006(value: 1), Sensor008(value: 2))
+  total = total + combine(Sensor006(value: 1), Sensor009(value: 2))
+  total = total + combine(Sensor006(value: 1), Sensor010(value: 2))
+  total = total + combine(Sensor006(value: 1), Sensor011(value: 2))
+  total = total + combine(Sensor006(value: 1), Sensor012(value: 2))
+  total = total + combine(Sensor006(value: 1), Sensor013(value: 2))
+  total = total + combine(Sensor006(value: 1), Sensor014(value: 2))
+  total = total + combine(Sensor006(value: 1), Sensor015(value: 2))
+  total = total + combine(Sensor007(value: 1), Sensor000(value: 2))
+  total = total + combine(Sensor007(value: 1), Sensor001(value: 2))
+  total = total + combine(Sensor007(value: 1), Sensor002(value: 2))
+  total = total + combine(Sensor007(value: 1), Sensor003(value: 2))
+  total = total + combine(Sensor007(value: 1), Sensor004(value: 2))
+  total = total + combine(Sensor007(value: 1), Sensor005(value: 2))
+  total = total + combine(Sensor007(value: 1), Sensor006(value: 2))
+  total = total + combine(Sensor007(value: 1), Sensor007(value: 2))
+  total = total + combine(Sensor007(value: 1), Sensor008(value: 2))
+  total = total + combine(Sensor007(value: 1), Sensor009(value: 2))
+  total = total + combine(Sensor007(value: 1), Sensor010(value: 2))
+  total = total + combine(Sensor007(value: 1), Sensor011(value: 2))
+  total = total + combine(Sensor007(value: 1), Sensor012(value: 2))
+  total = total + combine(Sensor007(value: 1), Sensor013(value: 2))
+  total = total + combine(Sensor007(value: 1), Sensor014(value: 2))
+  total = total + combine(Sensor007(value: 1), Sensor015(value: 2))
+  total = total + combine(Sensor008(value: 1), Sensor000(value: 2))
+  total = total + combine(Sensor008(value: 1), Sensor001(value: 2))
+  total = total + combine(Sensor008(value: 1), Sensor002(value: 2))
+  total = total + combine(Sensor008(value: 1), Sensor003(value: 2))
+  total = total + combine(Sensor008(value: 1), Sensor004(value: 2))
+  total = total + combine(Sensor008(value: 1), Sensor005(value: 2))
+  total = total + combine(Sensor008(value: 1), Sensor006(value: 2))
+  total = total + combine(Sensor008(value: 1), Sensor007(value: 2))
+  total = total + combine(Sensor008(value: 1), Sensor008(value: 2))
+  total = total + combine(Sensor008(value: 1), Sensor009(value: 2))
+  total = total + combine(Sensor008(value: 1), Sensor010(value: 2))
+  total = total + combine(Sensor008(value: 1), Sensor011(value: 2))
+  total = total + combine(Sensor008(value: 1), Sensor012(value: 2))
+  total = total + combine(Sensor008(value: 1), Sensor013(value: 2))
+  total = total + combine(Sensor008(value: 1), Sensor014(value: 2))
+  total = total + combine(Sensor008(value: 1), Sensor015(value: 2))
+  total = total + combine(Sensor009(value: 1), Sensor000(value: 2))
+  total = total + combine(Sensor009(value: 1), Sensor001(value: 2))
+  total = total + combine(Sensor009(value: 1), Sensor002(value: 2))
+  total = total + combine(Sensor009(value: 1), Sensor003(value: 2))
+  total = total + combine(Sensor009(value: 1), Sensor004(value: 2))
+  total = total + combine(Sensor009(value: 1), Sensor005(value: 2))
+  total = total + combine(Sensor009(value: 1), Sensor006(value: 2))
+  total = total + combine(Sensor009(value: 1), Sensor007(value: 2))
+  total = total + combine(Sensor009(value: 1), Sensor008(value: 2))
+  total = total + combine(Sensor009(value: 1), Sensor009(value: 2))
+  total = total + combine(Sensor009(value: 1), Sensor010(value: 2))
+  total = total + combine(Sensor009(value: 1), Sensor011(value: 2))
+  total = total + combine(Sensor009(value: 1), Sensor012(value: 2))
+  total = total + combine(Sensor009(value: 1), Sensor013(value: 2))
+  total = total + combine(Sensor009(value: 1), Sensor014(value: 2))
+  total = total + combine(Sensor009(value: 1), Sensor015(value: 2))
+  total = total + combine(Sensor010(value: 1), Sensor000(value: 2))
+  total = total + combine(Sensor010(value: 1), Sensor001(value: 2))
+  total = total + combine(Sensor010(value: 1), Sensor002(value: 2))
+  total = total + combine(Sensor010(value: 1), Sensor003(value: 2))
+  total = total + combine(Sensor010(value: 1), Sensor004(value: 2))
+  total = total + combine(Sensor010(value: 1), Sensor005(value: 2))
+  total = total + combine(Sensor010(value: 1), Sensor006(value: 2))
+  total = total + combine(Sensor010(value: 1), Sensor007(value: 2))
+  total = total + combine(Sensor010(value: 1), Sensor008(value: 2))
+  total = total + combine(Sensor010(value: 1), Sensor009(value: 2))
+  total = total + combine(Sensor010(value: 1), Sensor010(value: 2))
+  total = total + combine(Sensor010(value: 1), Sensor011(value: 2))
+  total = total + combine(Sensor010(value: 1), Sensor012(value: 2))
+  total = total + combine(Sensor010(value: 1), Sensor013(value: 2))
+  total = total + combine(Sensor010(value: 1), Sensor014(value: 2))
+  total = total + combine(Sensor010(value: 1), Sensor015(value: 2))
+  total = total + combine(Sensor011(value: 1), Sensor000(value: 2))
+  total = total + combine(Sensor011(value: 1), Sensor001(value: 2))
+  total = total + combine(Sensor011(value: 1), Sensor002(value: 2))
+  total = total + combine(Sensor011(value: 1), Sensor003(value: 2))
+  total = total + combine(Sensor011(value: 1), Sensor004(value: 2))
+  total = total + combine(Sensor011(value: 1), Sensor005(value: 2))
+  total = total + combine(Sensor011(value: 1), Sensor006(value: 2))
+  total = total + combine(Sensor011(value: 1), Sensor007(value: 2))
+  total = total + combine(Sensor011(value: 1), Sensor008(value: 2))
+  total = total + combine(Sensor011(value: 1), Sensor009(value: 2))
+  total = total + combine(Sensor011(value: 1), Sensor010(value: 2))
+  total = total + combine(Sensor011(value: 1), Sensor011(value: 2))
+  total = total + combine(Sensor011(value: 1), Sensor012(value: 2))
+  total = total + combine(Sensor011(value: 1), Sensor013(value: 2))
+  total = total + combine(Sensor011(value: 1), Sensor014(value: 2))
+  total = total + combine(Sensor011(value: 1), Sensor015(value: 2))
+  total = total + combine(Sensor012(value: 1), Sensor000(value: 2))
+  total = total + combine(Sensor012(value: 1), Sensor001(value: 2))
+  total = total + combine(Sensor012(value: 1), Sensor002(value: 2))
+  total = total + combine(Sensor012(value: 1), Sensor003(value: 2))
+  total = total + combine(Sensor012(value: 1), Sensor004(value: 2))
+  total = total + combine(Sensor012(value: 1), Sensor005(value: 2))
+  total = total + combine(Sensor012(value: 1), Sensor006(value: 2))
+  total = total + combine(Sensor012(value: 1), Sensor007(value: 2))
+  total = total + combine(Sensor012(value: 1), Sensor008(value: 2))
+  total = total + combine(Sensor012(value: 1), Sensor009(value: 2))
+  total = total + combine(Sensor012(value: 1), Sensor010(value: 2))
+  total = total + combine(Sensor012(value: 1), Sensor011(value: 2))
+  total = total + combine(Sensor012(value: 1), Sensor012(value: 2))
+  total = total + combine(Sensor012(value: 1), Sensor013(value: 2))
+  total = total + combine(Sensor012(value: 1), Sensor014(value: 2))
+  total = total + combine(Sensor012(value: 1), Sensor015(value: 2))
+  total = total + combine(Sensor013(value: 1), Sensor000(value: 2))
+  total = total + combine(Sensor013(value: 1), Sensor001(value: 2))
+  total = total + combine(Sensor013(value: 1), Sensor002(value: 2))
+  total = total + combine(Sensor013(value: 1), Sensor003(value: 2))
+  total = total + combine(Sensor013(value: 1), Sensor004(value: 2))
+  total = total + combine(Sensor013(value: 1), Sensor005(value: 2))
+  total = total + combine(Sensor013(value: 1), Sensor006(value: 2))
+  total = total + combine(Sensor013(value: 1), Sensor007(value: 2))
+  total = total + combine(Sensor013(value: 1), Sensor008(value: 2))
+  total = total + combine(Sensor013(value: 1), Sensor009(value: 2))
+  total = total + combine(Sensor013(value: 1), Sensor010(value: 2))
+  total = total + combine(Sensor013(value: 1), Sensor011(value: 2))
+  total = total + combine(Sensor013(value: 1), Sensor012(value: 2))
+  total = total + combine(Sensor013(value: 1), Sensor013(value: 2))
+  total = total + combine(Sensor013(value: 1), Sensor014(value: 2))
+  total = total + combine(Sensor013(value: 1), Sensor015(value: 2))
+  total = total + combine(Sensor014(value: 1), Sensor000(value: 2))
+  total = total + combine(Sensor014(value: 1), Sensor001(value: 2))
+  total = total + combine(Sensor014(value: 1), Sensor002(value: 2))
+  total = total + combine(Sensor014(value: 1), Sensor003(value: 2))
+  total = total + combine(Sensor014(value: 1), Sensor004(value: 2))
+  total = total + combine(Sensor014(value: 1), Sensor005(value: 2))
+  total = total + combine(Sensor014(value: 1), Sensor006(value: 2))
+  total = total + combine(Sensor014(value: 1), Sensor007(value: 2))
+  total = total + combine(Sensor014(value: 1), Sensor008(value: 2))
+  total = total + combine(Sensor014(value: 1), Sensor009(value: 2))
+  total = total + combine(Sensor014(value: 1), Sensor010(value: 2))
+  total = total + combine(Sensor014(value: 1), Sensor011(value: 2))
+  total = total + combine(Sensor014(value: 1), Sensor012(value: 2))
+  total = total + combine(Sensor014(value: 1), Sensor013(value: 2))
+  total = total + combine(Sensor014(value: 1), Sensor014(value: 2))
+  total = total + combine(Sensor014(value: 1), Sensor015(value: 2))
+  total = total + combine(Sensor015(value: 1), Sensor000(value: 2))
+  total = total + combine(Sensor015(value: 1), Sensor001(value: 2))
+  total = total + combine(Sensor015(value: 1), Sensor002(value: 2))
+  total = total + combine(Sensor015(value: 1), Sensor003(value: 2))
+  total = total + combine(Sensor015(value: 1), Sensor004(value: 2))
+  total = total + combine(Sensor015(value: 1), Sensor005(value: 2))
+  total = total + combine(Sensor015(value: 1), Sensor006(value: 2))
+  total = total + combine(Sensor015(value: 1), Sensor007(value: 2))
+  total = total + combine(Sensor015(value: 1), Sensor008(value: 2))
+  total = total + combine(Sensor015(value: 1), Sensor009(value: 2))
+  total = total + combine(Sensor015(value: 1), Sensor010(value: 2))
+  total = total + combine(Sensor015(value: 1), Sensor011(value: 2))
+  total = total + combine(Sensor015(value: 1), Sensor012(value: 2))
+  total = total + combine(Sensor015(value: 1), Sensor013(value: 2))
+  total = total + combine(Sensor015(value: 1), Sensor014(value: 2))
+  total = total + combine(Sensor015(value: 1), Sensor015(value: 2))
+  echo total

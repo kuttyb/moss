@@ -1,0 +1,356 @@
+# Generated Portable Moss Benchmark: W5 Wide Independent Inference
+# Generator: 1.0.0, Width=50
+
+fn wide_000_a(x):
+  return x + 1
+
+fn wide_000_b(x):
+  return wide_000_a(x) + 1
+
+fn wide_001_a(x):
+  return x + 2
+
+fn wide_001_b(x):
+  return wide_001_a(x) + 1
+
+fn wide_002_a(x):
+  return x + 3
+
+fn wide_002_b(x):
+  return wide_002_a(x) + 1
+
+fn wide_003_a(x):
+  return x + 4
+
+fn wide_003_b(x):
+  return wide_003_a(x) + 1
+
+fn wide_004_a(x):
+  return x + 5
+
+fn wide_004_b(x):
+  return wide_004_a(x) + 1
+
+fn wide_005_a(x):
+  return x + 6
+
+fn wide_005_b(x):
+  return wide_005_a(x) + 1
+
+fn wide_006_a(x):
+  return x + 7
+
+fn wide_006_b(x):
+  return wide_006_a(x) + 1
+
+fn wide_007_a(x):
+  return x + 8
+
+fn wide_007_b(x):
+  return wide_007_a(x) + 1
+
+fn wide_008_a(x):
+  return x + 9
+
+fn wide_008_b(x):
+  return wide_008_a(x) + 1
+
+fn wide_009_a(x):
+  return x + 10
+
+fn wide_009_b(x):
+  return wide_009_a(x) + 1
+
+fn wide_010_a(x):
+  return x + 11
+
+fn wide_010_b(x):
+  return wide_010_a(x) + 1
+
+fn wide_011_a(x):
+  return x + 12
+
+fn wide_011_b(x):
+  return wide_011_a(x) + 1
+
+fn wide_012_a(x):
+  return x + 13
+
+fn wide_012_b(x):
+  return wide_012_a(x) + 1
+
+fn wide_013_a(x):
+  return x + 14
+
+fn wide_013_b(x):
+  return wide_013_a(x) + 1
+
+fn wide_014_a(x):
+  return x + 15
+
+fn wide_014_b(x):
+  return wide_014_a(x) + 1
+
+fn wide_015_a(x):
+  return x + 16
+
+fn wide_015_b(x):
+  return wide_015_a(x) + 1
+
+fn wide_016_a(x):
+  return x + 17
+
+fn wide_016_b(x):
+  return wide_016_a(x) + 1
+
+fn wide_017_a(x):
+  return x + 18
+
+fn wide_017_b(x):
+  return wide_017_a(x) + 1
+
+fn wide_018_a(x):
+  return x + 19
+
+fn wide_018_b(x):
+  return wide_018_a(x) + 1
+
+fn wide_019_a(x):
+  return x + 20
+
+fn wide_019_b(x):
+  return wide_019_a(x) + 1
+
+fn wide_020_a(x):
+  return x + 21
+
+fn wide_020_b(x):
+  return wide_020_a(x) + 1
+
+fn wide_021_a(x):
+  return x + 22
+
+fn wide_021_b(x):
+  return wide_021_a(x) + 1
+
+fn wide_022_a(x):
+  return x + 23
+
+fn wide_022_b(x):
+  return wide_022_a(x) + 1
+
+fn wide_023_a(x):
+  return x + 24
+
+fn wide_023_b(x):
+  return wide_023_a(x) + 1
+
+fn wide_024_a(x):
+  return x + 25
+
+fn wide_024_b(x):
+  return wide_024_a(x) + 1
+
+fn wide_025_a(x):
+  return x + 26
+
+fn wide_025_b(x):
+  return wide_025_a(x) + 1
+
+fn wide_026_a(x):
+  return x + 27
+
+fn wide_026_b(x):
+  return wide_026_a(x) + 1
+
+fn wide_027_a(x):
+  return x + 28
+
+fn wide_027_b(x):
+  return wide_027_a(x) + 1
+
+fn wide_028_a(x):
+  return x + 29
+
+fn wide_028_b(x):
+  return wide_028_a(x) + 1
+
+fn wide_029_a(x):
+  return x + 30
+
+fn wide_029_b(x):
+  return wide_029_a(x) + 1
+
+fn wide_030_a(x):
+  return x + 31
+
+fn wide_030_b(x):
+  return wide_030_a(x) + 1
+
+fn wide_031_a(x):
+  return x + 32
+
+fn wide_031_b(x):
+  return wide_031_a(x) + 1
+
+fn wide_032_a(x):
+  return x + 33
+
+fn wide_032_b(x):
+  return wide_032_a(x) + 1
+
+fn wide_033_a(x):
+  return x + 34
+
+fn wide_033_b(x):
+  return wide_033_a(x) + 1
+
+fn wide_034_a(x):
+  return x + 35
+
+fn wide_034_b(x):
+  return wide_034_a(x) + 1
+
+fn wide_035_a(x):
+  return x + 36
+
+fn wide_035_b(x):
+  return wide_035_a(x) + 1
+
+fn wide_036_a(x):
+  return x + 37
+
+fn wide_036_b(x):
+  return wide_036_a(x) + 1
+
+fn wide_037_a(x):
+  return x + 38
+
+fn wide_037_b(x):
+  return wide_037_a(x) + 1
+
+fn wide_038_a(x):
+  return x + 39
+
+fn wide_038_b(x):
+  return wide_038_a(x) + 1
+
+fn wide_039_a(x):
+  return x + 40
+
+fn wide_039_b(x):
+  return wide_039_a(x) + 1
+
+fn wide_040_a(x):
+  return x + 41
+
+fn wide_040_b(x):
+  return wide_040_a(x) + 1
+
+fn wide_041_a(x):
+  return x + 42
+
+fn wide_041_b(x):
+  return wide_041_a(x) + 1
+
+fn wide_042_a(x):
+  return x + 43
+
+fn wide_042_b(x):
+  return wide_042_a(x) + 1
+
+fn wide_043_a(x):
+  return x + 44
+
+fn wide_043_b(x):
+  return wide_043_a(x) + 1
+
+fn wide_044_a(x):
+  return x + 45
+
+fn wide_044_b(x):
+  return wide_044_a(x) + 1
+
+fn wide_045_a(x):
+  return x + 46
+
+fn wide_045_b(x):
+  return wide_045_a(x) + 1
+
+fn wide_046_a(x):
+  return x + 47
+
+fn wide_046_b(x):
+  return wide_046_a(x) + 1
+
+fn wide_047_a(x):
+  return x + 48
+
+fn wide_047_b(x):
+  return wide_047_a(x) + 1
+
+fn wide_048_a(x):
+  return x + 49
+
+fn wide_048_b(x):
+  return wide_048_a(x) + 1
+
+fn wide_049_a(x):
+  return x + 50
+
+fn wide_049_b(x):
+  return wide_049_a(x) + 1
+
+fn main():
+  var total = 0
+  total = total + wide_000_b(1)
+  total = total + wide_001_b(1)
+  total = total + wide_002_b(1)
+  total = total + wide_003_b(1)
+  total = total + wide_004_b(1)
+  total = total + wide_005_b(1)
+  total = total + wide_006_b(1)
+  total = total + wide_007_b(1)
+  total = total + wide_008_b(1)
+  total = total + wide_009_b(1)
+  total = total + wide_010_b(1)
+  total = total + wide_011_b(1)
+  total = total + wide_012_b(1)
+  total = total + wide_013_b(1)
+  total = total + wide_014_b(1)
+  total = total + wide_015_b(1)
+  total = total + wide_016_b(1)
+  total = total + wide_017_b(1)
+  total = total + wide_018_b(1)
+  total = total + wide_019_b(1)
+  total = total + wide_020_b(1)
+  total = total + wide_021_b(1)
+  total = total + wide_022_b(1)
+  total = total + wide_023_b(1)
+  total = total + wide_024_b(1)
+  total = total + wide_025_b(1)
+  total = total + wide_026_b(1)
+  total = total + wide_027_b(1)
+  total = total + wide_028_b(1)
+  total = total + wide_029_b(1)
+  total = total + wide_030_b(1)
+  total = total + wide_031_b(1)
+  total = total + wide_032_b(1)
+  total = total + wide_033_b(1)
+  total = total + wide_034_b(1)
+  total = total + wide_035_b(1)
+  total = total + wide_036_b(1)
+  total = total + wide_037_b(1)
+  total = total + wide_038_b(1)
+  total = total + wide_039_b(1)
+  total = total + wide_040_b(1)
+  total = total + wide_041_b(1)
+  total = total + wide_042_b(1)
+  total = total + wide_043_b(1)
+  total = total + wide_044_b(1)
+  total = total + wide_045_b(1)
+  total = total + wide_046_b(1)
+  total = total + wide_047_b(1)
+  total = total + wide_048_b(1)
+  total = total + wide_049_b(1)
+  echo total
