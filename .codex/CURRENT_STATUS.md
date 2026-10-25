@@ -14516,3 +14516,8 @@ runs the compiler build before compiling/running unit tests. All eleven Java
 unit-test classes pass under ABI-v9 and staged ABI-v10 after this change. This
 is focused Fast Debug and unit-test evidence; native execution and final release
 gates remain outstanding.
+
+The object-field regression also pins Moss's same-named field/parameter rule:
+inside the tested object method, the object field resolves before the parameter
+for both reads and writes. A C++/Java Fast Debug probe now prints `11` in both
+compilers for that case.

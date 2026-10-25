@@ -23,6 +23,7 @@ public final class FastInterpreterTest {
         testRaiseRecoverTraceCarriesErrorIdentity();
         testObjectMethodTraceCarriesCallContext();
         testObjectMethodUpdatesScalarField();
+        testObjectMethodFieldShadowsSameNamedParameter();
         testMapGetInsideObjectMethodReturnsStoredOrFallbackValue();
         testMapSizeAndMembershipMethods();
         testMapIndexedWritesTraceReceiverReads();
@@ -408,6 +409,30 @@ public final class FastInterpreterTest {
         if (!"5\n".equals(actual) || !events.contains("\"event\":\"LocalWrite\"")
                 || !events.contains("\"detail\":\"count\",\"before\":\"4\",\"after\":\"5\"")) {
             throw new AssertionError("object method scalar field write was lost: " + actual);
+        }
+    }
+
+    private static void testObjectMethodFieldShadowsSameNamedParameter() {
+        var program = Parser.parseSource(""
+                + "type Box:\n"
+                + "  value: Int\n"
+                + "  fn set(value: Int):\n"
+                + "    value = value + 1\n"
+                + "  fn get() -> Int:\n"
+                + "    return value\n"
+                + "fn main():\n"
+                + "  box = Box(value: 10)\n"
+                + "  box.set(2)\n"
+                + "  echo box.get()\n", "fast-interpreter-object-parameter-shadow.moss");
+        new CheckedProgram(program).run();
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+        try (PrintStream captured = new PrintStream(stdout, true, StandardCharsets.UTF_8)) {
+            new FastInterpreter(program, false, captured,
+                    new PrintStream(new ByteArrayOutputStream())).run();
+        }
+        String actual = stdout.toString(StandardCharsets.UTF_8);
+        if (!"11\n".equals(actual)) {
+            throw new AssertionError("object field binding did not win over a same-named parameter: " + actual);
         }
     }
 

@@ -2258,6 +2258,14 @@ public class FastInterpreter {
             return currentDomain.state.get(expr);
         }
 
+        Value selfValue = locals.get("self");
+        if (selfValue != null && selfValue.kind == Value.Kind.OBJECT
+                && selfValue.raw instanceof Map<?, ?> fields
+                && fields.get(expr) instanceof Value fieldValue) {
+            traceLocalRead(expr);
+            return fieldValue;
+        }
+
         // Local variable read
         if (locals.containsKey(expr)) {
             traceLocalRead(expr);
