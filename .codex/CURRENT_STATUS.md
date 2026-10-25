@@ -13847,3 +13847,16 @@ now returns 42 and its full trace matches C++ exactly.
 Validation: clean Java build and all eleven unit-test classes pass in ABI-v9
 and staged ABI-v10; C++/Java stdout and trace comparisons pass for the routed
 composition. Broader route/state profiles and final acceptance remain open.
+
+### Phase 25.3 continuation — trace Java bare pipeline function stages
+
+The Java Fast Interpreter already executes bare pipeline stages such as
+`value |> twice`, but it bypassed normal function lifecycle tracing. Bare
+stages now route through ordinary function invocation, preserving function
+identity, call context, and return/exit events. The C++ Fast Debug currently
+rejects this form as an unsupported checked pipeline stage, so Java's supported
+execution and trace are verified locally without claiming C++ parity.
+
+Validation: all eleven Java unit-test classes pass in ABI-v9 and staged
+ABI-v10; the focused test checks the result and function lifecycle events.
+Phase 25.3 remains in progress.

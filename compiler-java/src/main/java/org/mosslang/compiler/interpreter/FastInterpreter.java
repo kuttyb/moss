@@ -1248,18 +1248,10 @@ public class FastInterpreter {
                 if (!(function.name.equals(stage) || function.name.endsWith("__" + stage)
                         || stage.endsWith("." + function.name)) || function.params.size() != 1) continue;
                 Map<String, Value> fnLocals = new HashMap<>();
-                fnLocals.put(function.params.get(0).name, left);
-                Value result = Value.ofUnit();
-                try {
-                    result = evalBlock(function.body, 0, function.body.size(), fnLocals,
-                            null, function.name, 0);
-                    if (function.resultExpression != null && !function.resultExpression.isEmpty()) {
-                        result = evalExpr(function.resultExpression, fnLocals, null);
-                    }
-                } catch (ReturnSignal signal) {
-                    result = signal.returnValue;
-                }
-                return result;
+                String pipelineParameter = "__moss_pipeline_value";
+                while (locals.containsKey(pipelineParameter)) pipelineParameter += "_";
+                fnLocals.put(pipelineParameter, left);
+                return evalExpr(function.name + "(" + pipelineParameter + ")", fnLocals, currentDomain);
             }
         }
 

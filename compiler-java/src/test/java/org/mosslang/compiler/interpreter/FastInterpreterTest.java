@@ -27,6 +27,7 @@ public final class FastInterpreterTest {
         testDomainMessageTraceCarriesHandlerContext();
         testLocalArgumentTraceOccursInsideCallee();
         testNamedDomainStateAndNestedRoutes();
+        testPipelineStageUsesFunctionCallTrace();
         System.out.println("FastInterpreterTest PASSED.");
     }
 
@@ -505,6 +506,30 @@ public final class FastInterpreterTest {
                 || !events.contains("\"detail\":\"42\"")) {
             throw new AssertionError("named domain state or nested route was not preserved: " + events
                     + " stdout=" + stdout);
+        }
+    }
+
+    private static void testPipelineStageUsesFunctionCallTrace() {
+        var program = Parser.parseSource(""
+                + "fn twice(value: Int) -> Int:\n"
+                + "  return value * 2\n"
+                + "fn main():\n"
+                + "  let number = 3\n"
+                + "  echo number |> twice\n",
+                "fast-interpreter-pipeline-call-trace.moss");
+        new CheckedProgram(program).run();
+
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+        ByteArrayOutputStream trace = new ByteArrayOutputStream();
+        new FastInterpreter(program, true,
+                new PrintStream(stdout, true, StandardCharsets.UTF_8),
+                new PrintStream(trace, true, StandardCharsets.UTF_8)).run();
+        String events = trace.toString(StandardCharsets.UTF_8);
+        if (!"6\n".equals(stdout.toString(StandardCharsets.UTF_8))
+                || !events.contains("\"event\":\"FunctionEnter\",\"function\":\"twice\"")
+                || !events.contains("\"semantic_identity\":\"fn:twice@1\"")
+                || !events.contains("\"event\":\"FunctionExit\",\"function\":\"twice\"")) {
+            throw new AssertionError("pipeline callback bypassed normal call tracing: " + events);
         }
     }
 }
