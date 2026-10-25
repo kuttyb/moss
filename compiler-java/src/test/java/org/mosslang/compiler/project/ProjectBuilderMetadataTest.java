@@ -337,7 +337,9 @@ public final class ProjectBuilderMetadataTest {
                 + "export fn ratio() -> Float:\n"
                 + "  return 1.5\n"
                 + "export fn increment(value: Int) -> Int:\n"
-                + "  return value + 1\n", "identity-provider.moss");
+                + "  return value + 1\n"
+                + "export fn scale(value: Int) -> Int:\n"
+                + "  return value * 2\n", "identity-provider.moss");
         new org.mosslang.compiler.semantics.CheckedProgram(identityProgram).run();
         identityProgram.functions.forEach(function -> {
             String name = function.name;
@@ -511,6 +513,20 @@ public final class ProjectBuilderMetadataTest {
                 || !incrementSummary.bodySemanticHash.equals(incrementBody.semanticHash)) {
             throw new AssertionError("ABI-v10 integer-add summary/body is incomplete");
         }
+        AbiV10Records.CheckedBodyRecord scaleBody = identityInterface.privateSemanticDependencies.stream()
+                .filter(record -> record.id.startsWith("checked-body-v1:"))
+                .map(AbiV10Records.CheckedBodyRecord::decode)
+                .filter(body -> body.callableId.endsWith(":fn:scale"))
+                .findFirst().orElseThrow(() ->
+                        new AssertionError("ABI-v10 producer omitted the integer-multiply body"));
+        java.util.List<org.mosslang.compiler.abi.CheckedStmt> scaleStatements =
+                CheckedBodyCodec.decodeCheckedBody(scaleBody.checkedIrBytes);
+        if (scaleStatements.size() != 1
+                || scaleStatements.get(0).expr.kind != org.mosslang.compiler.abi.CheckedExprKind.Binary
+                || scaleStatements.get(0).expr.binaryOp != org.mosslang.compiler.abi.CheckedBinaryOp.Mul
+                || !"2".equals(scaleStatements.get(0).expr.operands.get(1).literalValue)) {
+            throw new AssertionError("ABI-v10 integer-multiply checked body is incomplete");
+        }
         Path identityMossi = null;
         try {
             identityMossi = Files.createTempFile(Path.of("tmp"), "identity-provider-", ".mossi");
@@ -542,6 +558,8 @@ public final class ProjectBuilderMetadataTest {
                     + "  return provider__ratio()\n"
                     + "fn use_increment() -> Int:\n"
                     + "  return provider__increment(41)\n"
+                    + "fn use_scale() -> Int:\n"
+                    + "  return provider__scale(21)\n"
                     + "fn main():\n"
                     + "  pass\n", "identity-consumer.moss");
             org.mosslang.compiler.cli.Main.loadMossiFunctions(identityMossi, "provider", consumer);

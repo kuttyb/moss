@@ -1475,7 +1475,7 @@ public class ProjectBuilder {
                         }
                     }
                     if (summary == null) {
-                        arithmeticReturn = v10SingleIntAddReturn(fn);
+                        arithmeticReturn = v10SingleIntBinaryReturn(fn);
                         if (arithmeticReturn != null) {
                             summary = v10SingleExpressionSummary(
                                     fn, arithmeticReturn, modId, provenanceRecords);
@@ -1679,7 +1679,7 @@ public class ProjectBuilder {
         return summary;
     }
 
-    private static CheckedExpr v10SingleIntAddReturn(Function function) {
+    private static CheckedExpr v10SingleIntBinaryReturn(Function function) {
         if (function.params.size() != 1 || function.returnTypeRef == null
                 || function.returnTypeRef.kind() != org.mosslang.compiler.types.TypeKind.Primitive
                 || !"int".equalsIgnoreCase(function.returnTypeRef.name())
@@ -1687,14 +1687,24 @@ public class ProjectBuilder {
                 || function.body.size() != 1 || function.body.get(0).kind != Stmt.Kind.Return) return null;
         String expression = function.body.get(0).a != null ? function.body.get(0).a.trim() : "";
         org.mosslang.compiler.semantics.ExpressionTyper.BinarySplit split =
-                org.mosslang.compiler.semantics.ExpressionTyper.splitBinary(expression, List.of("+"));
+                org.mosslang.compiler.semantics.ExpressionTyper.splitBinary(
+                        expression, List.of("+", "-", "*", "/", "%"));
         if (split == null || !function.params.get(0).name.equals(split.left().trim())
                 || !split.right().trim().matches("[0-9](?:_?[0-9])*")) return null;
         long literal;
         try { literal = Long.parseLong(split.right().trim().replace("_", "")); }
         catch (NumberFormatException ignored) { return null; }
+        org.mosslang.compiler.abi.CheckedBinaryOp operation = switch (split.op()) {
+            case "+" -> org.mosslang.compiler.abi.CheckedBinaryOp.Add;
+            case "-" -> org.mosslang.compiler.abi.CheckedBinaryOp.Sub;
+            case "*" -> org.mosslang.compiler.abi.CheckedBinaryOp.Mul;
+            case "/" -> org.mosslang.compiler.abi.CheckedBinaryOp.Div;
+            case "%" -> org.mosslang.compiler.abi.CheckedBinaryOp.Mod;
+            default -> null;
+        };
+        if (operation == null) return null;
         TypeRef intType = canonicalV10SummaryType(function.returnTypeRef, Map.of());
-        return CheckedExpr.binary(org.mosslang.compiler.abi.CheckedBinaryOp.Add,
+        return CheckedExpr.binary(operation,
                 CheckedExpr.parameter(0, intType), CheckedExpr.integerLiteral(literal, intType), intType);
     }
 

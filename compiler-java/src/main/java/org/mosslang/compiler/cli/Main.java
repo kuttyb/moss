@@ -1450,7 +1450,8 @@ public class Main {
                     || statement.expr == null || !resultType.equals(statement.expr.type)) continue;
             int returnedParameter = -1;
             String returnedLiteral = null;
-            String integerAddRight = null;
+            String integerBinaryRight = null;
+            String integerBinaryOperator = null;
             if (statement.expr.kind == org.mosslang.compiler.abi.CheckedExprKind.Parameter) {
                 returnedParameter = statement.expr.ordinal;
                 if (returnedParameter < 0 || returnedParameter >= parameterTypes.size()
@@ -1474,7 +1475,12 @@ public class Main {
                             "(?:[0-9]+\\.[0-9]+|[0-9]+[eE][+-]?[0-9]+|[0-9]+\\.[0-9]+[eE][+-]?[0-9]+)")) {
                 returnedLiteral = statement.expr.literalValue;
             } else if (statement.expr.kind == org.mosslang.compiler.abi.CheckedExprKind.Binary
-                    && statement.expr.binaryOp == org.mosslang.compiler.abi.CheckedBinaryOp.Add
+                    && java.util.Set.of(org.mosslang.compiler.abi.CheckedBinaryOp.Add,
+                            org.mosslang.compiler.abi.CheckedBinaryOp.Sub,
+                            org.mosslang.compiler.abi.CheckedBinaryOp.Mul,
+                            org.mosslang.compiler.abi.CheckedBinaryOp.Div,
+                            org.mosslang.compiler.abi.CheckedBinaryOp.Mod)
+                            .contains(statement.expr.binaryOp)
                     && parameterTypes.size() == 1
                     && resultType.kind() == org.mosslang.compiler.types.TypeKind.Primitive
                     && "int".equalsIgnoreCase(resultType.name())
@@ -1486,7 +1492,16 @@ public class Main {
                         || right.kind != org.mosslang.compiler.abi.CheckedExprKind.IntegerLiteral
                         || !resultType.equals(right.type)
                         || !right.literalValue.matches("[0-9](?:_?[0-9])*")) continue;
-                integerAddRight = right.literalValue;
+                integerBinaryRight = right.literalValue;
+                integerBinaryOperator = switch (statement.expr.binaryOp) {
+                    case Add -> "+";
+                    case Sub -> "-";
+                    case Mul -> "*";
+                    case Div -> "/";
+                    case Mod -> "%";
+                    default -> null;
+                };
+                if (integerBinaryOperator == null) continue;
             } else {
                 continue;
             }
@@ -1512,8 +1527,9 @@ public class Main {
                 function.body.clear();
                 String returnExpression = returnedParameter >= 0
                         ? function.params.get(returnedParameter).name : returnedLiteral;
-                if (integerAddRight != null) {
-                    returnExpression = function.params.get(0).name + " + " + integerAddRight;
+                if (integerBinaryRight != null) {
+                    returnExpression = function.params.get(0).name + " " + integerBinaryOperator
+                            + " " + integerBinaryRight;
                 }
                 org.mosslang.compiler.ast.Stmt projected = new org.mosslang.compiler.ast.Stmt(
                         org.mosslang.compiler.ast.Stmt.Kind.Return, 1, 1,
