@@ -13794,3 +13794,16 @@ The same iterability classification issue also affected Queue. A focused Queue
 loop comparison showed C++ rejecting Queue at the loop as non-iterable while
 Java reported unresolved element inference at the header. The bounded checker
 guard and regression now cover both Map and Queue.
+
+### Phase 25.3 continuation — domain construction trace records
+
+A domain/message trace comparison found Java's `domain_instance` event used the
+declaration line, omitted source and semantic identity, and was followed by an
+opaque Java object address in a `LocalWrite`. Java now emits the active source
+location, main identity, and domain specialization, and suppresses the domain
+handle local write. The domain construction event matches C++ exactly. Message
+and state events in the broader probe still diverge and remain open.
+
+Validation: clean Java build and all eleven unit-test classes pass in ABI-v9
+and staged ABI-v10. Broader message/state trace parity and release acceptance
+remain open.

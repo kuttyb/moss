@@ -23,6 +23,7 @@ public final class FastInterpreterTest {
         testRaiseRecoverTraceCarriesErrorIdentity();
         testObjectMethodTraceCarriesCallContext();
         testExceptionalFunctionTraceUnwindsCallContext();
+        testDomainConstructionTraceIsStructured();
         System.out.println("FastInterpreterTest PASSED.");
     }
 
@@ -374,6 +375,28 @@ public final class FastInterpreterTest {
         if (!expected.equals(trace.toString(StandardCharsets.UTF_8))
                 || !"2\n".equals(stdout.toString(StandardCharsets.UTF_8))) {
             throw new AssertionError("exceptional function trace did not unwind call context: " + trace);
+        }
+    }
+
+    private static void testDomainConstructionTraceIsStructured() {
+        var program = Parser.parseSource(""
+                + "domain Worker:\n"
+                + "  count: Int\n"
+                + "fn main():\n"
+                + "  let worker = Worker()\n",
+                "fast-interpreter-domain-instance.moss");
+        new CheckedProgram(program).run();
+
+        ByteArrayOutputStream trace = new ByteArrayOutputStream();
+        new FastInterpreter(program, true,
+                new PrintStream(new ByteArrayOutputStream()),
+                new PrintStream(trace, true, StandardCharsets.UTF_8)).run();
+        String expected = "{\"event_id\":1,\"event\":\"domain_instance\",\"function\":\"main\","
+                + "\"source_file\":\"fast-interpreter-domain-instance.moss\",\"semantic_identity\":\"main@3\","
+                + "\"line\":4,\"depth\":0,\"instance\":\"main::worker\","
+                + "\"specialization\":\"domain-specialization:Worker:worker\"}\n";
+        if (!expected.equals(trace.toString(StandardCharsets.UTF_8))) {
+            throw new AssertionError("domain construction trace was incomplete: " + trace);
         }
     }
 }

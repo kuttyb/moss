@@ -826,7 +826,8 @@ public class FastInterpreter {
                 } else {
                     Value before = s.kind == Stmt.Kind.Assign ? locals.get(varName) : null;
                     locals.put(varName, val);
-                    traceLocalWrite(s, varName, val, before, funcName, depth);
+                    if (val.kind != Value.Kind.DOMAIN)
+                        traceLocalWrite(s, varName, val, before, funcName, depth);
                 }
                 return Value.ofUnit();
             }
@@ -1519,8 +1520,13 @@ public class FastInterpreter {
                         }
                     }
                     eventId++;
-                    traceEvent("{\"event_id\":" + eventId + ",\"event\":\"domain_instance\",\"function\":\"main\",\"line\":" +
-                            d.line + ",\"instance\":\"" + inst.name + "\"}");
+                    traceEvent("{\"event_id\":" + eventId + ",\"event\":\"domain_instance\",\"function\":\""
+                            + jsonEscape(traceFunction) + "\",\"source_file\":\"" + jsonEscape(traceSourceFile)
+                            + "\",\"semantic_identity\":\"" + jsonEscape(traceIdentity())
+                            + "\",\"line\":" + traceLine + ",\"depth\":" + traceDepth
+                            + ",\"instance\":\"" + jsonEscape(inst.name)
+                            + "\",\"specialization\":\"domain-specialization:" + jsonEscape(d.name)
+                            + ":" + jsonEscape(callee.toLowerCase()) + "\"}");
                     return Value.ofDomain(inst);
                 }
             }
