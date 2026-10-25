@@ -2085,7 +2085,8 @@ public class FastInterpreter {
                 String recvName = callee.substring(0, dot).trim();
                 String methodName = callee.substring(dot + 1).trim();
                 Value recvVal = locals.containsKey(recvName) ? locals.get(recvName)
-                        : (currentDomain != null && currentDomain.state.containsKey(recvName) ? currentDomain.state.get(recvName) : null);
+                        : (currentDomain != null && currentDomain.state.containsKey(recvName)
+                        ? withTraceStatePath(currentDomain.state.get(recvName), recvName) : null);
                 if (recvVal == null) {
                     try {
                         recvVal = evalExpr(recvName, locals, currentDomain);
@@ -2221,7 +2222,8 @@ public class FastInterpreter {
                                 if (recvVal.raw instanceof Map<?, ?> fm) {
                                     for (Map.Entry<?, ?> entry : fm.entrySet()) {
                                         if (entry.getKey() instanceof String k && entry.getValue() instanceof Value v) {
-                                            mLocals.put(k, v);
+                                            mLocals.put(k, recvVal.traceStatePath == null ? v
+                                                    : withTraceStatePath(v, recvVal.traceStatePath + "." + k));
                                         }
                                     }
                                 }

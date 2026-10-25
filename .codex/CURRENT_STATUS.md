@@ -15733,3 +15733,14 @@ fallback. In this current environment the explicit daemon start reports
 `Eclipse JDT is unavailable`, so persistent JDT startup/build/stop remains
 unverified; the supported fallback works. This packaging check does not cover
 native artifacts, Margo projects, or SDK integration.
+
+
+### Phase 25.3 continuation — retain state paths on nested method receivers
+
+Method dispatch now wraps a receiver taken directly from domain state with its
+state path and carries nested field paths into method locals. The borrowed-reads
+trace probe now reports nested `Record.score` reads as `record.profile.*`
+state paths. Java/C++ stdout remains identical on that fixture; traces remain
+different (217 C++ events, 212 Java events) due to other handler and pipeline
+path differences. All twelve Java unit classes pass under ABI-v9 and staged
+ABI-v10 after this change.
