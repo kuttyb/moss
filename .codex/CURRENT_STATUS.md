@@ -12387,3 +12387,15 @@ not a bounded metadata tweak. The audit ran no tests, native gates, SDK checks,
 or parity harness. This is an early architecture review, not the required
 frozen-candidate release review. Phase 25.3 remains active and is not release
 ready.
+
+### Phase 25.3 continuation — preserve all exported enum payload fields
+
+The Java Margo interface writer previously serialized only the first field in a
+payload enum case in both ABI-v9 contract sections and the ABI-v10 binary
+contract. It now writes every field with its declared type in both encodings.
+Added focused metadata serialization coverage for a three-field case. This
+closes one concrete truncation defect; ABI-v10 semantic enum records and the
+larger source-free ABI gaps identified by the Architect remain open.
+
+Validation: Java build; all eight Java test classes; feedback validation; and
+`git diff --check` passed. No native or source-free project build was run.

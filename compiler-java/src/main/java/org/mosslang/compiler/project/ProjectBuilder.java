@@ -861,6 +861,33 @@ public class ProjectBuilder {
         return String.format("%016x", hash);
     }
 
+    static void appendEnumCaseContract(StringBuilder out, EnumCase enumCase) {
+        out.append("case ").append(enumCase.name);
+        if (enumCase.fields != null) {
+            for (Field field : enumCase.fields) {
+                out.append(" ").append(field.name).append(":")
+                        .append(field.type != null && !field.type.isEmpty()
+                                ? field.type.toLowerCase() : "int");
+            }
+        }
+        out.append("\n");
+    }
+
+    static void appendEnumCaseSemantic(StringBuilder out, EnumCase enumCase) {
+        int fieldCount = enumCase.fields != null ? enumCase.fields.size() : 0;
+        out.append("  enum_case \"").append(enumCase.name).append("\" ")
+                .append(fieldCount);
+        if (enumCase.fields != null) {
+            for (Field field : enumCase.fields) {
+                out.append(" \"").append(field.name).append("\" \"")
+                        .append(field.type != null && !field.type.isEmpty()
+                                ? field.type.toLowerCase() : "int")
+                        .append("\"");
+            }
+        }
+        out.append("\n");
+    }
+
     private static String generateMossiInterface(ProjectManifest manifest, String module, Program prog, BackendToolchain toolchain, List<String> deps, Path buildDir, Map<String, List<Path>> externalCandidateProviders) {
         StringBuilder contractBuf = new StringBuilder();
         StringBuilder semanticBuf = new StringBuilder();
@@ -868,24 +895,13 @@ public class ProjectBuilder {
         for (EnumType e : prog.enums) {
             contractBuf.append("enum ").append(e.name).append("\n");
             for (EnumCase c : e.cases) {
-                contractBuf.append("case ").append(c.name);
-                if (c.fields != null && !c.fields.isEmpty()) {
-                    Field f = c.fields.get(0);
-                    contractBuf.append(" ").append(f.name).append(":").append(f.type != null ? f.type.toLowerCase() : "int");
-                }
-                contractBuf.append("\n");
+                appendEnumCaseContract(contractBuf, c);
             }
 
             semanticBuf.append("export enum ").append(e.name).append("\n");
             semanticBuf.append("  declaration_id nominal-enum-v1:module-v1:").append(manifest.getName()).append("@").append(manifest.getVersion()).append("::").append(module).append(":enum:").append(e.name).append("\n");
             for (EnumCase c : e.cases) {
-                semanticBuf.append("  enum_case \"").append(c.name).append("\" ");
-                if (c.fields != null && !c.fields.isEmpty()) {
-                    Field f = c.fields.get(0);
-                    semanticBuf.append("1 \"").append(f.name).append("\" \"").append(f.type != null ? f.type.toLowerCase() : "int").append("\"\n");
-                } else {
-                    semanticBuf.append("0\n");
-                }
+                appendEnumCaseSemantic(semanticBuf, c);
             }
         }
 
@@ -984,12 +1000,7 @@ public class ProjectBuilder {
                 StringBuilder b = new StringBuilder();
                 b.append("enum ").append(e.name).append("\n");
                 for (EnumCase c : e.cases) {
-                    b.append("case ").append(c.name);
-                    if (c.fields != null && !c.fields.isEmpty()) {
-                        Field f = c.fields.get(0);
-                        b.append(" ").append(f.name).append(":").append(f.type != null ? f.type.toLowerCase() : "int");
-                    }
-                    b.append("\n");
+                    appendEnumCaseContract(b, c);
                 }
                 binRecords.add(new String[]{"enum:" + e.name, b.toString()});
             }
