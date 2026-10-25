@@ -16346,3 +16346,22 @@ All twelve Java test classes pass under ABI-v9 and staged ABI-v10. Packaging
 and packaged bootstrap, feedback validation, and diff checks pass. The
 remaining sample mismatches are still concentrated in route/capability,
 Executor/FileIO, source-free, transitive payload effect, and iteration checks.
+
+### Phase 25.3 continuation — custom iterator checking and Fast Debug execution
+
+Java now validates the `Iterator` protocol for concrete `for` sources, rejects
+non-iterable values, and rejects structural mutation of a collection during
+an active READ traversal. Generic function specialization also binds custom
+iterator element types, and `Some(value)` is typed as `option[T]`. Fast Debug
+now executes object iterators through `next() -> option[T]` (or `iter()` then
+`next()`), and writes object method field updates back without overwriting
+nested method changes from stale local snapshots.
+
+Evidence: `phase47_iteration.moss` is accepted by both the Java and C++
+checkers; `phase47_missing_iterator.moss` is rejected by both. Added focused
+checker and Fast Debug regressions, including a two-element stateful iterator.
+All 12 Java test classes pass under ABI-v9 and staged ABI-v10. Packaging and
+the packaged compiler checks pass. This does not validate the full iterator
+surface or native generated-code behavior. The previous second 50-negative
+slice recorded 21 Java-only accepts before these iterator changes; that slice
+has not yet been refreshed. Native and release acceptance gates remain unrun.

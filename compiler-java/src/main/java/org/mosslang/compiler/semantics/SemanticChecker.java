@@ -23,6 +23,7 @@ public class SemanticChecker {
     private Set<String> currentHandlerStateFields = Collections.emptySet();
     private int sessionCounter = 1;
     private int activeRecoverDepth;
+    private final Deque<String> activeForSources = new ArrayDeque<>();
 
     public static class MoveInfo {
         public final int line;
@@ -3814,6 +3815,23 @@ public class SemanticChecker {
         return expression.substring(0, end).trim();
     }
 
+    private void rejectActiveForSourceMutation(Stmt statement) {
+        if (activeForSources.isEmpty() || statement == null) return;
+        String target = statement.kind == Stmt.Kind.Assign
+                ? ownershipRoot(statement.a) : "";
+        String expressions = statementExpressions(statement);
+        for (String source : activeForSources) {
+            boolean rebindsSource = !target.isEmpty() && target.equals(source);
+            boolean mutatesSource = expressionContainsWriteCall(expressions, source);
+            if (rebindsSource || mutatesSource) {
+                throw new CompileError(statement.line,
+                        "cannot structurally mutate collection '" + source
+                                + "' during an active READ traversal",
+                        "MOSS_COMPILE_ERROR");
+            }
+        }
+    }
+
     private AccessMode callArgumentAccessMode(Function function, Method method,
                                                int index, TypeRef argumentType) {
         if (function != null) {
@@ -3875,11 +3893,17 @@ public class SemanticChecker {
         int i = start;
         int activeRecoverIndent = -1;
         Map<Integer, List<LoopShadowSnapshot>> loopShadowRestores = new HashMap<>();
+        Map<Integer, List<String>> loopSourceRestores = new HashMap<>();
         while (i < end) {
             List<LoopShadowSnapshot> restores = loopShadowRestores.remove(i);
             if (restores != null) {
                 for (int restoreIndex = restores.size() - 1; restoreIndex >= 0; restoreIndex--)
                     restores.get(restoreIndex).restore(env);
+            }
+            List<String> endingLoopSources = loopSourceRestores.remove(i);
+            if (endingLoopSources != null) {
+                for (int restoreIndex = endingLoopSources.size() - 1; restoreIndex >= 0; restoreIndex--)
+                    if (!activeForSources.isEmpty()) activeForSources.pop();
             }
             Stmt s = stmts.get(i);
             if (activeRecoverIndent >= 0 && s.indent <= activeRecoverIndent
@@ -4125,21 +4149,34 @@ public class SemanticChecker {
             }
             LoopShadowSnapshot loopShadow = null;
             int loopBodyEnd = i + 1;
+            String loopSourceRoot = "";
             if (s.kind == Stmt.Kind.For) {
                 while (loopBodyEnd < end && stmts.get(loopBodyEnd).indent > s.indent) loopBodyEnd++;
                 String loopName = s.a == null ? "" : s.a.trim();
                 if (!loopName.isEmpty())
                     loopShadow = new LoopShadowSnapshot(loopName, env);
+                loopSourceRoot = ownershipRoot(s.b);
             }
             checkStatement(s, env, typer, solver, insideHandler, enclosingName, expectedType);
-            if (loopShadow != null)
+            if (loopShadow != null) {
                 loopShadowRestores.computeIfAbsent(loopBodyEnd, ignored -> new ArrayList<>()).add(loopShadow);
+                if (!loopSourceRoot.isEmpty() && env.containsKey(loopSourceRoot)) {
+                    activeForSources.push(loopSourceRoot);
+                    loopSourceRestores.computeIfAbsent(loopBodyEnd, ignored -> new ArrayList<>())
+                            .add(loopSourceRoot);
+                }
+            }
             i++;
         }
         List<LoopShadowSnapshot> finalRestores = loopShadowRestores.remove(end);
         if (finalRestores != null) {
             for (int restoreIndex = finalRestores.size() - 1; restoreIndex >= 0; restoreIndex--)
                 finalRestores.get(restoreIndex).restore(env);
+        }
+        List<String> finalLoopSources = loopSourceRestores.remove(end);
+        if (finalLoopSources != null) {
+            for (int restoreIndex = finalLoopSources.size() - 1; restoreIndex >= 0; restoreIndex--)
+                if (!activeForSources.isEmpty()) activeForSources.pop();
         }
         if (activeRecoverIndent >= 0) activeRecoverDepth--;
         return env;
@@ -4509,6 +4546,7 @@ public class SemanticChecker {
                                 boolean insideHandler, String enclosingName, TypeRef expectedType) {
         if (s == null) return;
         String text = s.text != null ? s.text.trim() : "";
+        rejectActiveForSourceMutation(s);
 
         // Keyword checks for retired syntax
         if (text.startsWith("await ") || text.equals("await")) {
@@ -4807,36 +4845,66 @@ public class SemanticChecker {
                 if (!iterExpr.isEmpty()) {
                     validateRangeForSource(s.line, iterExpr, typer, solver, env.typeEnv);
                     TypeRef iterType = typer.inferForLoopSource(iterExpr, s.line, env.typeEnv);
-                    if (iterType.kind() == TypeKind.Builtin
-                            && ("map".equals(iterType.name()) || "queue".equals(iterType.name()))) {
-                        throw new CompileError(s.line, "type '" + iterType.toCanonicalString()
-                                + "' is not statically iterable; expected Vector, range, or Iterator",
-                                "TYPE_MISMATCH");
-                    }
-                    if (program.objects != null) {
-                        for (ObjectType obj : program.objects) {
-                            if (obj.name.equals(iterType.name()) || (iterType.name() != null && iterType.name().endsWith("__" + obj.name))) {
-                                for (Method m : obj.methods) {
-                                    if (m.name.equals("next")) {
-                                        for (Stmt st : m.body) {
-                                            if (st.kind == Stmt.Kind.Raise || (st.text != null && st.text.trim().startsWith("raise "))) {
-                                                throw new CompileError(s.line, "custom iterator iter()/next() has unresolved or typed-raising effects; checked propagation through for is unsupported", "RAISING_ITERATOR_UNSUPPORTED");
-                                            }
-                                        }
-                                    }
-                                }
+                    TypeRef elemType = null;
+                    if (iterType.kind() == TypeKind.Builtin && "vector".equals(iterType.name())) {
+                        if (iterType.typeArgs().size() != 1) {
+                            throw new CompileError(s.line, "for loop source has an open element type",
+                                    "TYPE_AMBIGUOUS_OPEN_RESULT");
+                        }
+                        elemType = iterType.typeArgs().get(0);
+                    } else if ((iterType.kind() == TypeKind.Builtin && "range".equals(iterType.name()))
+                            || (iterType.kind() == TypeKind.Primitive && "Range".equals(iterType.name()))
+                            || iterExpr.startsWith("range(")) {
+                        elemType = TypeRef.primitive("int");
+                    } else if (iterType.kind() == TypeKind.InferenceVar
+                            || (iterType.kind() == TypeKind.Builtin && "vector".equals(iterType.name())
+                                    && iterType.typeArgs().isEmpty())) {
+                        elemType = solver.fresh(0);
+                    } else {
+                        ObjectType object = findObjectType(iterType.name());
+                        if (object == null) {
+                            throw new CompileError(s.line, "type '" + iterType.toCanonicalString()
+                                    + "' is not statically iterable; expected Vector, range, or Iterator",
+                                    "TYPE_MISMATCH");
+                        }
+                        Method next = object.methods.stream()
+                                .filter(method -> method.name.equals("next") && method.params.isEmpty())
+                                .findFirst().orElse(null);
+                        if (next == null) {
+                            Method iter = object.methods.stream()
+                                    .filter(method -> method.name.equals("iter") && method.params.isEmpty())
+                                    .findFirst().orElse(null);
+                            TypeRef iterResult = iter == null ? null
+                                    : (iter.returnTypeRef != null ? iter.returnTypeRef
+                                            : TypeParser.parseCanonical(iter.returnType));
+                            ObjectType iterator = iterResult == null ? null
+                                    : findObjectType(iterResult.name());
+                            next = iterator == null ? null : iterator.methods.stream()
+                                    .filter(method -> method.name.equals("next") && method.params.isEmpty())
+                                    .findFirst().orElse(null);
+                        }
+                        if (next == null) {
+                            throw new CompileError(s.line, "type '" + object.name
+                                    + "' does not satisfy Iterator: missing next() or iter()",
+                                    "TYPE_MISMATCH");
+                        }
+                        TypeRef nextResult = next.returnTypeRef != null ? next.returnTypeRef
+                                : TypeParser.parseCanonical(next.returnType);
+                        if (nextResult == null || nextResult.kind() != TypeKind.Builtin
+                                || !"option".equals(nextResult.name())
+                                || nextResult.typeArgs().size() != 1) {
+                            throw new CompileError(s.line, "iterator type '" + object.name
+                                    + "' has next() without an Option result", "TYPE_MISMATCH");
+                        }
+                        for (Stmt statement : next.body) {
+                            if (statement.kind == Stmt.Kind.Raise
+                                    || (statement.text != null && statement.text.trim().startsWith("raise "))) {
+                                throw new CompileError(s.line,
+                                        "custom iterator iter()/next() has unresolved or typed-raising effects; checked propagation through for is unsupported",
+                                        "RAISING_ITERATOR_UNSUPPORTED");
                             }
                         }
-                    }
-                    TypeRef elemType = solver.fresh(0);
-                    if (iterType.kind() == TypeKind.Builtin && "vector".equals(iterType.name())) {
-                        if (!iterType.typeArgs().isEmpty()) {
-                            elemType = iterType.typeArgs().get(0);
-                        }
-                    } else if (iterType.kind() == TypeKind.Builtin && "range".equals(iterType.name())) {
-                        elemType = TypeRef.primitive("int");
-                    } else if (iterExpr.startsWith("range(") || iterType.sameHead(TypeRef.primitive("int"))) {
-                        elemType = TypeRef.primitive("int");
+                        elemType = nextResult.typeArgs().get(0);
                     }
                     env.put(varName, elemType);
                 }

@@ -44,6 +44,7 @@ public class ExpressionTyper {
     }
 
     public record BinarySplit(String left, String op, String right) {}
+    private record SpecializedLoopBinding(String name, int indent, boolean existed, TypeRef prior) {}
 
     public TypeRef inferForLoopSource(String expression, int line, TypeEnv env) {
         String previous = allowedRangeForSource;
@@ -357,6 +358,13 @@ public class ExpressionTyper {
                 }
 
                 // Builtin functions and collections constructors
+                if ("Some".equals(callee)) {
+                    if (argExprs.size() != 1) {
+                        throw new CompileError(line, "Some expects 1 argument, got " + argExprs.size(),
+                                "ARGUMENT_COUNT_MISMATCH");
+                    }
+                    return TypeRef.builtin("option", List.of(infer(argExprs.get(0), line, env)));
+                }
                 if ("sqrt".equals(callee)) {
                     for (String arg : argExprs) {
                         infer(arg, line, env);
@@ -669,7 +677,26 @@ public class ExpressionTyper {
                             for (int i = 0; i < fn.params.size(); i++) {
                                 callEnv.put(fn.params.get(i).name, actualArgs.get(i));
                             }
+                            Deque<SpecializedLoopBinding> loopBindings = new ArrayDeque<>();
                             for (Stmt s : fn.body) {
+                                while (!loopBindings.isEmpty()
+                                        && s.indent <= loopBindings.peek().indent()) {
+                                    SpecializedLoopBinding binding = loopBindings.pop();
+                                    if (binding.existed()) callEnv.put(binding.name(), binding.prior());
+                                    else callEnv.remove(binding.name());
+                                }
+                                if (s.kind == Stmt.Kind.For) {
+                                    String loopName = s.a == null ? "" : s.a.trim();
+                                    if (!loopName.isEmpty()) {
+                                        boolean existed = callEnv.containsKey(loopName);
+                                        TypeRef prior = callEnv.get(loopName);
+                                        TypeRef element = inferSpecializedIteratorElement(
+                                                s.b, s.line, callEnv);
+                                        callEnv.put(loopName, element);
+                                        loopBindings.push(new SpecializedLoopBinding(
+                                                loopName, s.indent, existed, prior));
+                                    }
+                                }
                                 if (s.kind == Stmt.Kind.Return) {
                                     String retExpr = s.a != null && !s.a.isEmpty() ? s.a.trim() : s.text.trim();
                                     if (retExpr.startsWith("return ")) {
@@ -701,6 +728,11 @@ public class ExpressionTyper {
                                 } else if (s.kind == Stmt.Kind.Call && s.text != null) {
                                     infer(s.text.trim(), s.line, callEnv);
                                 }
+                            }
+                            while (!loopBindings.isEmpty()) {
+                                SpecializedLoopBinding binding = loopBindings.pop();
+                                if (binding.existed()) callEnv.put(binding.name(), binding.prior());
+                                else callEnv.remove(binding.name());
                             }
                             if (fn.resultExpression != null && !fn.resultExpression.isEmpty()) {
                                 TypeRef res = infer(fn.resultExpression, fn.resultLine != 0 ? fn.resultLine : line, callEnv);
@@ -1037,6 +1069,51 @@ public class ExpressionTyper {
         }
 
         return TypeRef.builtin("vector", List.of(elemType));
+    }
+
+    private TypeRef inferSpecializedIteratorElement(String source, int line, TypeEnv env) {
+        if (source == null || source.isBlank())
+            throw new CompileError(line, "cannot infer the static iterator source type", "TYPE_MISMATCH");
+        TypeRef sourceType = solver.resolve(inferForLoopSource(source, line, env));
+        if (sourceType.kind() == TypeKind.InferenceVar) return solver.fresh(0);
+        if (sourceType.kind() == TypeKind.Builtin && "vector".equals(sourceType.name())) {
+            return sourceType.typeArgs().size() == 1 ? sourceType.typeArgs().get(0) : solver.fresh(0);
+        }
+        if ((sourceType.kind() == TypeKind.Builtin && "range".equals(sourceType.name()))
+                || (sourceType.kind() == TypeKind.Primitive && "Range".equals(sourceType.name())))
+            return TypeRef.primitive("int");
+
+        ObjectType object = objects.get(sourceType.name());
+        if (object == null) {
+            object = objects.values().stream()
+                    .filter(candidate -> sourceType.name() != null
+                            && sourceType.name().endsWith("__" + candidate.name))
+                    .findFirst().orElse(null);
+        }
+        Method next = object == null ? null : object.methods.stream()
+                .filter(method -> method.name.equals("next") && method.params.isEmpty())
+                .findFirst().orElse(null);
+        if (next == null && object != null) {
+            Method iter = object.methods.stream()
+                    .filter(method -> method.name.equals("iter") && method.params.isEmpty())
+                    .findFirst().orElse(null);
+            TypeRef iterType = iter == null ? null : (iter.returnTypeRef != null
+                    ? iter.returnTypeRef : TypeParser.parseCanonical(iter.returnType));
+            ObjectType iterator = iterType == null ? null : objects.get(iterType.name());
+            if (iterator != null) {
+                next = iterator.methods.stream()
+                        .filter(method -> method.name.equals("next") && method.params.isEmpty())
+                        .findFirst().orElse(null);
+            }
+        }
+        TypeRef result = next == null ? null : (next.returnTypeRef != null
+                ? next.returnTypeRef : TypeParser.parseCanonical(next.returnType));
+        if (result != null && result.kind() == TypeKind.Builtin
+                && "option".equals(result.name()) && result.typeArgs().size() == 1)
+            return result.typeArgs().get(0);
+        throw new CompileError(line, "type '" + sourceType.toCanonicalString()
+                + "' is not statically iterable; expected Vector, range, or Iterator",
+                "TYPE_MISMATCH");
     }
 
     private TypeRef inferBooleanPipelineCallback(String expression, TypeRef elemType,

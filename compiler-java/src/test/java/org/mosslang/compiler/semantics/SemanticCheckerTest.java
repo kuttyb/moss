@@ -58,6 +58,7 @@ public class SemanticCheckerTest {
         testFunctionalPipelinesMustBeMaterializedAtDomainBoundary();
         testCollectionTypeArgumentsRequireExactArity();
         testUnknownFunctionalCallbackIsRejected();
+        testForLoopRequiresIteratorProtocol();
         testDirectVectorSumTypeAndLowering();
         testValueHandlerRepliesOnEveryNormalPath();
         testUnsupportedCollectionsAreRejectedAsForIterablesAtLoopSite();
@@ -1432,6 +1433,37 @@ public class SemanticCheckerTest {
             expectCompileError(invalid, "FUNCTIONAL_SEMANTIC_ERROR",
                     "functional stages require a statically known callback: " + stage);
         }
+    }
+
+    private static void testForLoopRequiresIteratorProtocol() {
+        Program invalid = Parser.parseSource(""
+                + "type NotAnIterator:\n"
+                + "  value: Int\n"
+                + "fn main():\n"
+                + "  source = NotAnIterator(value = 1)\n"
+                + "  for item in source:\n"
+                + "    echo item\n", "missing-iterator-protocol.moss");
+        expectCompileError(invalid, "TYPE_MISMATCH",
+                "for loops require a vector, range, or Iterator protocol");
+
+        Program valid = Parser.parseSource(""
+                + "type Counter:\n"
+                + "  current: Int\n"
+                + "  fn next() -> option[Int]:\n"
+                + "    return None\n"
+                + "fn main():\n"
+                + "  counter = Counter(current = 0)\n"
+                + "  for item in counter:\n"
+                + "    echo item\n", "custom-iterator-protocol.moss");
+        new SemanticChecker(valid).run();
+
+        Program mutation = Parser.parseSource(""
+                + "fn main():\n"
+                + "  values = [1, 2]\n"
+                + "  for item in values:\n"
+                + "    values.push(item)\n", "mutation-during-for.moss");
+        expectCompileError(mutation, "MOSS_COMPILE_ERROR",
+                "a collection cannot be structurally mutated during a read traversal");
     }
 
     private static void testNestedFieldReadInBranchConditionKeepsReceiverReadOnly() {

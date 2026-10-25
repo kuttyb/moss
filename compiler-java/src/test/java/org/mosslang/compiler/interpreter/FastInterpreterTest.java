@@ -14,6 +14,7 @@ public final class FastInterpreterTest {
         testAssertionFailureEmitsStructuredTrace();
         testIeeeAndMixedNumericEquality();
         testWhileLoopRepeatsCheckedBody();
+        testCustomIteratorForLoopUsesOptionProtocol();
         testLocalWriteTraceIsStructuredAndEscaped();
         testMossStringEscapeDecoding();
         testLexicalBlocksRestoreShadowedLocals();
@@ -144,6 +145,30 @@ public final class FastInterpreterTest {
         if (!expected.equals(actual)) {
             throw new AssertionError("IEEE/mixed numeric equality was incorrect: " + actual);
         }
+    }
+
+    private static void testCustomIteratorForLoopUsesOptionProtocol() {
+        var program = Parser.parseSource(""
+                + "type Countdown:\n"
+                + "  current: Int\n"
+                + "  fn next() -> option[Int]:\n"
+                + "    if current <= 0:\n"
+                + "      return None\n"
+                + "    value = current\n"
+                + "    current = current - 1\n"
+                + "    Some(value)\n"
+                + "fn main():\n"
+                + "  counter = Countdown(current = 2)\n"
+                + "  total = 0\n"
+                + "  for value in counter:\n"
+                + "    total = total + value\n"
+                + "  assertEqual(total, 3)\n"
+                + "  assertEqual(counter.current, 0)\n",
+                "fast-interpreter-custom-iterator.moss");
+        new CheckedProgram(program).run();
+        new FastInterpreter(program, false,
+                new PrintStream(new ByteArrayOutputStream()),
+                new PrintStream(new ByteArrayOutputStream())).run();
     }
 
     private static void testWhileLoopRepeatsCheckedBody() {

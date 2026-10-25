@@ -911,12 +911,47 @@ public class FastInterpreter {
                         @SuppressWarnings("unchecked")
                         List<Value> l = (List<Value>) lst;
                         items.addAll(l);
-                    } else if (iterVal.raw instanceof Map<?, ?> mp) {
+                    } else if (iterVal.kind == Value.Kind.MAP && iterVal.raw instanceof Map<?, ?> mp) {
                         @SuppressWarnings("unchecked")
                         Map<Object, Value> m = (Map<Object, Value>) mp;
                         for (Object k : m.keySet()) {
                             items.add(k instanceof Value ? (Value) k : Value.ofString(k.toString()));
                         }
+                    } else if (iterVal.kind == Value.Kind.OBJECT) {
+                        // The checked Iterator protocol is a synchronous next() method
+                        // returning option[T]. Materialize the values before entering
+                        // the loop body, matching the checker’s READ traversal model.
+                        String iteratorExpr = iterExpr;
+                        String iteratorType = iterVal.typeName;
+                        ObjectType sourceObject = program.objects.stream()
+                                .filter(object -> object.name.equals(iteratorType))
+                                .findFirst().orElse(null);
+                        boolean hasNext = sourceObject != null && sourceObject.methods.stream()
+                                .anyMatch(method -> method.name.equals("next"));
+                        if (!hasNext && sourceObject != null && sourceObject.methods.stream()
+                                .anyMatch(method -> method.name.equals("iter"))) {
+                            iteratorExpr = iterExpr + ".iter()";
+                            iterVal = evalExpr(iteratorExpr, locals, currentDomain);
+                        }
+                        int guard = 0;
+                        boolean iteratorEnded = false;
+                        while (guard < 1_000_000) {
+                            guard++;
+                            Value next = evalExpr(iteratorExpr + ".next()", locals, currentDomain);
+                            if (!(next.raw instanceof EnumValue option))
+                                throw new IllegalStateException("Iterator.next() must return an option value");
+                            if (option.variant.equals("None")) {
+                                iteratorEnded = true;
+                                break;
+                            }
+                            if (!option.variant.equals("Some") || option.fields.isEmpty())
+                                throw new IllegalStateException("Iterator.next() returned an invalid option value");
+                            Value item = option.fields.get("value");
+                            if (item == null) item = option.fields.values().iterator().next();
+                            items.add(item);
+                        }
+                        if (!iteratorEnded)
+                            throw new IllegalStateException("Iterator exceeded Fast Debug iteration limit");
                     }
                 }
                 int iterations = 0;
@@ -2026,6 +2061,7 @@ public class FastInterpreter {
         }
         if (expr.equals("true")) return Value.ofBool(true);
         if (expr.equals("false")) return Value.ofBool(false);
+        if (expr.equals("None")) return Value.ofEnum("option", "None", Map.of());
         if (expr.matches("^-?\\d+$")) {
             return Value.ofInt(Long.parseLong(expr));
         }
@@ -2256,6 +2292,9 @@ public class FastInterpreter {
 
             Value enumConstructor = makeEnumValue(callee, argList, evaluatedArgs);
             if (enumConstructor != null) return enumConstructor;
+            if (callee.equals("Some") && evaluatedArgs.size() == 1) {
+                return Value.ofEnum("option", "Some", Map.of("value", evaluatedArgs.get(0)));
+            }
 
             if (builtinSort) {
                 if (evaluatedArgs.isEmpty() || !(evaluatedArgs.get(0).raw instanceof List<?> rawValues))
@@ -2561,11 +2600,13 @@ public class FastInterpreter {
                         for (Method m : obj.methods) {
                             if (m.name.equals(methodName)) {
                                 Map<String, Value> mLocals = new HashMap<>();
+                                Map<String, Value> initialReceiverFields = new HashMap<>();
                                 if (recvVal.raw instanceof Map<?, ?> fm) {
                                     for (Map.Entry<?, ?> entry : fm.entrySet()) {
                                         if (entry.getKey() instanceof String k && entry.getValue() instanceof Value v) {
                                             mLocals.put(k, recvVal.traceStatePath == null ? v
                                                     : withTraceStatePath(v, recvVal.traceStatePath + "." + k));
+                                            initialReceiverFields.put(k, mLocals.get(k));
                                         }
                                     }
                                 }
@@ -2637,6 +2678,15 @@ public class FastInterpreter {
                                                 && mLocals.containsKey(pName)) {
                                             locals.put(rawArg, mLocals.get(pName));
                                         }
+                                    }
+                                }
+                                if (recvVal.raw instanceof Map<?, ?> rawFields) {
+                                    @SuppressWarnings("unchecked")
+                                    Map<String, Value> receiverFields = (Map<String, Value>) rawFields;
+                                    for (String fieldName : receiverFields.keySet()) {
+                                        if (mLocals.containsKey(fieldName)
+                                                && mLocals.get(fieldName) != initialReceiverFields.get(fieldName))
+                                            receiverFields.put(fieldName, mLocals.get(fieldName));
                                     }
                                 }
                                 return res;
