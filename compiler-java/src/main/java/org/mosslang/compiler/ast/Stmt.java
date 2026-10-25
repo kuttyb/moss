@@ -35,6 +35,15 @@ public class Stmt {
         this.sourceFile = sourceFile != null ? sourceFile : "";
     }
 
+    public Stmt(Kind kind, int line, int indent, String text, String a, String b) {
+        this.kind = kind;
+        this.line = line;
+        this.indent = indent;
+        this.text = text != null ? text : "";
+        this.a = a != null ? a : "";
+        this.b = b != null ? b : "";
+    }
+
     @Override
     public String toString() {
         return "Stmt{" + kind + " line=" + line + " text='" + text + "'}";

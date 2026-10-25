@@ -1314,6 +1314,37 @@ public class NativeGenerator {
             String inner = mossType.substring(6, mossType.length() - 1).trim();
             return "std::collections::VecDeque<" + rustType(inner) + ">";
         }
+        if (mossType.endsWith("]") && mossType.contains("[")) {
+            int br = mossType.indexOf('[');
+            String base = mossType.substring(0, br).trim();
+            String inside = mossType.substring(br + 1, mossType.length() - 1).trim();
+            Program prog = currentProgram.get();
+            boolean isGeneric = true;
+            if (prog != null) {
+                for (ObjectType obj : prog.objects) {
+                    if (obj.name.equals(base)) {
+                        boolean hasOpen = obj.fields.stream().anyMatch(f -> f.type == null || f.type.isEmpty());
+                        if (!hasOpen) {
+                            isGeneric = false;
+                        }
+                        break;
+                    }
+                }
+            }
+            if (!isGeneric) {
+                return base;
+            }
+            List<String> parts = splitTopLevel(inside, ',');
+            List<String> loweredParts = new ArrayList<>();
+            for (String p : parts) {
+                p = p.trim();
+                if (p.contains("=")) {
+                    p = p.split("=", 2)[1].trim();
+                }
+                loweredParts.add(rustType(p));
+            }
+            return base + "<" + String.join(", ", loweredParts) + ">";
+        }
         if (mossType.contains(".")) {
             return mossType.replace(".", "__");
         }

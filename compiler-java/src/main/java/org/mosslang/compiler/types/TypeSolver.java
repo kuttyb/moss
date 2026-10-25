@@ -81,19 +81,20 @@ public class TypeSolver {
         return true;
     }
 
+    private Variable getVariable(TypeVarId id) {
+        return variables.computeIfAbsent(id, Variable::new);
+    }
+
     public void require(TypeVarId id, Requirement requirement) {
-        variables.get(root(id, null)).requirements.add(requirement);
+        getVariable(root(id, null)).requirements.add(requirement);
     }
 
     public List<Requirement> requirements(TypeVarId id) {
-        return Collections.unmodifiableList(variables.get(root(id, null)).requirements);
+        return Collections.unmodifiableList(getVariable(root(id, null)).requirements);
     }
 
     private TypeVarId root(TypeVarId id, List<Undo> trail) {
-        Variable var = variables.get(id);
-        if (var == null) {
-            return id;
-        }
+        Variable var = getVariable(id);
         if (var.parent.equals(id)) {
             return id;
         }
@@ -111,7 +112,7 @@ public class TypeSolver {
         if (value == null) return null;
         if (value.kind() == TypeKind.InferenceVar) {
             TypeVarId id = root(value.varId(), trail);
-            Variable var = variables.get(id);
+            Variable var = getVariable(id);
             return var.binding != null ? resolveImpl(var.binding, trail) : TypeRef.var(id);
         }
         if (value.typeArgs().isEmpty() && value.fieldSubstitutions().isEmpty()) {
@@ -159,8 +160,8 @@ public class TypeSolver {
                 id = other;
                 other = tmp;
             }
-            Variable primary = variables.get(id);
-            Variable secondary = variables.get(other);
+            Variable primary = getVariable(id);
+            Variable secondary = getVariable(other);
             trail.add(new Undo(Undo.Kind.Parent, other, secondary.parent, null, 0));
             secondary.parent = id;
             trail.add(new Undo(Undo.Kind.RequirementSize, id, null, null, primary.requirements.size()));
@@ -177,7 +178,7 @@ public class TypeSolver {
         if (occurs(id, resolved, trail)) {
             return false;
         }
-        Variable var = variables.get(id);
+        Variable var = getVariable(id);
         if (var.binding != null) {
             return unifyImpl(var.binding, resolved, trail);
         }

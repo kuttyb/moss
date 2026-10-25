@@ -287,43 +287,18 @@ public class ExpressionTyper {
 
                 // Method or member call: target.member(args...)
                 int dot = callee.lastIndexOf('.');
-                if (dot > 0 && !callee.startsWith("\"")) {
+                boolean isFunctionCall = functions.containsKey(callee) ||
+                        (dot > 0 && (functions.containsKey(callee.substring(0, dot) + "." + callee.substring(dot + 1)) ||
+                                     functions.containsKey(callee.substring(0, dot) + "__" + callee.substring(dot + 1))));
+                if (dot > 0 && !callee.startsWith("\"") && !isFunctionCall) {
                     String target = callee.substring(0, dot).trim();
                     String member = callee.substring(dot + 1).trim();
                     if (enums.containsKey(target)) {
                         return TypeRef.enumeration(target);
                     }
                     if (program != null && program.imports.anySatisfy(imp -> imp.name.equals(target))) {
-                        Function fn = functions.get(target + "." + member);
-                        if (fn == null) fn = functions.get(target + "__" + member);
-                        if (fn == null) fn = functions.get(callee);
-                        if (fn != null) {
-                            if (argExprs.size() != fn.params.size()) {
-                                throw new CompileError(line, "function " + callee + " expects " +
-                                        fn.params.size() + " arguments, got " + argExprs.size(), "TYPE_MISMATCH");
-                            }
-                            for (int i = 0; i < argExprs.size(); i++) {
-                                String aExpr = stripNamedArgPrefix(argExprs.get(i));
-                                TypeRef actual = infer(aExpr, line, env);
-                                Param param = fn.params.get(i);
-                                TypeRef expected = param.typeRef != null ? param.typeRef : TypeParser.parseCanonical(param.type);
-                                if (expected != null && !solver.unify(actual, expected)) {
-                                    throw new CompileError(line, "argument " + (i + 1) + " to function '" +
-                                            callee + "' has incompatible type '" + actual.toCanonicalString() +
-                                            "', expected '" + expected.toCanonicalString() + "'", "TYPE_MISMATCH");
-                                }
-                            }
-                            if (fn.returnTypeRef != null) {
-                                return fn.returnTypeRef;
-                            }
-                            if (fn.returnType != null && !fn.returnType.isEmpty()) {
-                                TypeRef ret = TypeParser.parseCanonical(fn.returnType);
-                                if (ret != null) return ret;
-                            }
-                        } else {
-                            for (String arg : argExprs) {
-                                infer(stripNamedArgPrefix(arg), line, env);
-                            }
+                        for (String arg : argExprs) {
+                            infer(stripNamedArgPrefix(arg), line, env);
                         }
                         if (!member.isEmpty() && Character.isUpperCase(member.charAt(0))) {
                             return TypeRef.domain(target + "." + member);
@@ -358,7 +333,13 @@ public class ExpressionTyper {
                 }
                 if (callee.startsWith("Vector[") && callee.endsWith("]")) {
                     String inner = callee.substring(7, callee.length() - 1).trim();
+                    if (inner.isEmpty()) {
+                        throw new CompileError(line, "invalid typed Vector constructor '" + callee + "()'", "INVALID_TYPED_VECTOR_CONSTRUCTOR");
+                    }
                     TypeRef elem = TypeParser.parseCanonical(inner);
+                    if (elem == null) {
+                        throw new CompileError(line, "invalid typed Vector constructor '" + callee + "()'", "INVALID_TYPED_VECTOR_CONSTRUCTOR");
+                    }
                     return TypeRef.builtin("vector", List.of(elem != null ? elem : TypeRef.primitive(inner.toLowerCase())));
                 }
                 if (callee.startsWith("Queue[") && callee.endsWith("]")) {
@@ -415,8 +396,17 @@ public class ExpressionTyper {
                 }
 
                 // Check Function call
-                if (functions.containsKey(callee)) {
-                    Function fn = functions.get(callee);
+                Function fn = functions.get(callee);
+                if (fn == null && currentCallingFunction != null && currentCallingFunction.startsWith("fn:")) {
+                    String curFn = currentCallingFunction.substring(3);
+                    int dotIdx = curFn.lastIndexOf('.');
+                    if (dotIdx > 0) {
+                        String mod = curFn.substring(0, dotIdx);
+                        fn = functions.get(mod + "." + callee);
+                        if (fn == null) fn = functions.get(mod + "__" + callee);
+                    }
+                }
+                if (fn != null) {
                     if (argExprs.size() != fn.params.size()) {
                         throw new CompileError(line, "function " + callee + " expects " +
                                 fn.params.size() + " arguments, got " + argExprs.size(), "TYPE_MISMATCH");
@@ -640,7 +630,16 @@ public class ExpressionTyper {
                                 return res;
                             }
                         } catch (CompileError ce) {
-                            if ("METHOD_NOT_FOUND".equals(ce.getCode()) || "LOCAL_MUTATION".equals(ce.getCode())
+                            if ("METHOD_NOT_FOUND".equals(ce.getCode())) {
+                                String originFile = (fn.providerOriginFile != null && !fn.providerOriginFile.isEmpty())
+                                        ? fn.providerOriginFile
+                                        : (fn.sourceFile != null && fn.sourceFile.endsWith(".moss") ? fn.sourceFile : (fn.definingModule.toLowerCase() + ".moss"));
+                                ce.related.add(new CompileError.RelatedNote(
+                                        "provider function '" + fn.name + "' requires method 'length'",
+                                        originFile, fn.line > 0 ? fn.line : 1, 1));
+                                throw ce;
+                            }
+                            if ("LOCAL_MUTATION".equals(ce.getCode())
                                     || (ce.getMessage() != null && ce.getMessage().contains("is incompatible with argument types"))) {
                                 throw ce;
                             }
@@ -659,9 +658,14 @@ public class ExpressionTyper {
                         if (callEdge != null) callEdge.returnTypeRef = fn.returnTypeRef;
                         return fn.returnTypeRef;
                     }
+                    if (fn.returnTypeRef != null) {
+                        TypeRef res = freshen(fn.returnTypeRef);
+                        if (callEdge != null) callEdge.returnTypeRef = res;
+                        return res;
+                    }
                     if (fn.returnType != null && !fn.returnType.isEmpty()) {
                         TypeRef parsed = TypeParser.parseCanonical(fn.returnType);
-                        TypeRef res = parsed != null ? parsed : TypeRef.primitive(fn.returnType);
+                        TypeRef res = parsed != null ? freshen(parsed) : TypeRef.primitive(fn.returnType);
                         if (callEdge != null) callEdge.returnTypeRef = res;
                         return res;
                     }
@@ -1080,7 +1084,12 @@ public class ExpressionTyper {
                         TypeRef actual = infer(argExprs.get(i), line, env);
                         actualTypeNames.add(solver.resolve(actual).toCanonicalString());
                         if (expected != null && !solver.unify(actual, expected)) {
-                            throw new CompileError(line, "method '" + member + "' is incompatible with argument types (" + String.join(", ", actualTypeNames) + ")", "TYPE_MISMATCH");
+                            String caller = (currentCallingFunction != null && !currentCallingFunction.isEmpty()) ?
+                                    (currentCallingFunction.startsWith("fn:") ? currentCallingFunction.substring(3) : currentCallingFunction) : "";
+                            String prefix = (!caller.isEmpty() && !caller.equals("main")) ?
+                                    ("argument to function '" + caller + "' has type '" + targetType.name() + "'") :
+                                    ("receiver has type '" + targetType.name() + "'");
+                            throw new CompileError(line, prefix + " whose method '" + member + "' is incompatible with argument types (" + String.join(", ", actualTypeNames) + ")", "TYPE_MISMATCH");
                         }
                         methodEnv.put(p.name, actual);
                     }
@@ -1282,6 +1291,38 @@ public class ExpressionTyper {
             }
         }
         return null;
+    }
+
+    public TypeRef freshen(TypeRef type) {
+        if (type == null) return null;
+        if (type.isClosed()) return type;
+        if (type.kind() == TypeKind.InferenceVar) {
+            return solver.fresh(0);
+        }
+        if (type.kind() == TypeKind.Builtin) {
+            List<TypeRef> args = new ArrayList<>();
+            if (type.typeArgs().isEmpty()) {
+                if ("vector".equals(type.name()) || "Vector".equals(type.name()) || "queue".equals(type.name()) || "Queue".equals(type.name()) || "set".equals(type.name()) || "Set".equals(type.name())) {
+                    args.add(solver.fresh(0));
+                } else if ("map".equals(type.name()) || "Map".equals(type.name())) {
+                    args.add(solver.fresh(0));
+                    args.add(solver.fresh(0));
+                }
+            } else {
+                for (TypeRef a : type.typeArgs()) {
+                    args.add(freshen(a));
+                }
+            }
+            return TypeRef.builtin(type.name(), args);
+        }
+        if (type.kind() == TypeKind.NominalInstance) {
+            List<TypeRef.FieldSub> subs = new ArrayList<>();
+            for (TypeRef.FieldSub s : type.fieldSubstitutions()) {
+                subs.add(new TypeRef.FieldSub(s.name(), freshen(s.type())));
+            }
+            return TypeRef.nominalBound(type.declaration(), type.name(), subs);
+        }
+        return type;
     }
 
     public static List<String> parseArguments(String argsString) {

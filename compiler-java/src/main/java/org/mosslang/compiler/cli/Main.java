@@ -213,6 +213,7 @@ public class Main {
                             Path cand = cands.get(0);
                             if (!org.mosslang.compiler.project.SourceFreeAbi.hasLocalModuleSource(projectRoot, imp.name)) {
                                 org.mosslang.compiler.project.SourceFreeAbi.validateMossiInterface(cand);
+                                loadMossiFunctions(cand, imp.name, p);
                             }
                             loadedExternalModules.put(imp.name, org.mosslang.compiler.project.SourceFreeAbi.parseMossiInfo(cand));
                             String candDigest = org.mosslang.compiler.project.SourceFreeAbi.extractContractDigest(cand);
@@ -434,8 +435,9 @@ public class Main {
                                     f2.resultExpression = f.resultExpression;
                                     program.functions.add(f1);
                                     program.functions.add(f2);
+                                } else {
+                                    program.functions.add(f);
                                 }
-                                program.functions.add(f);
                             }
                             for (org.mosslang.compiler.ast.ObjectType o : depProg.objects) {
                                 if (modName != null) {
@@ -450,8 +452,9 @@ public class Main {
                                     o2.methods = o.methods;
                                     program.objects.add(o1);
                                     program.objects.add(o2);
+                                } else {
+                                    program.objects.add(o);
                                 }
-                                program.objects.add(o);
                             }
                             program.domains.addAll(depProg.domains);
                             for (org.mosslang.compiler.ast.EnumType et : depProg.enums) {
@@ -515,6 +518,7 @@ public class Main {
                         Path cand = cands.get(0);
                         if (!org.mosslang.compiler.project.SourceFreeAbi.hasLocalModuleSource(projectRoot, imp.name)) {
                             org.mosslang.compiler.project.SourceFreeAbi.validateMossiInterface(cand);
+                            loadMossiFunctions(cand, imp.name, program);
                             if (interpMode) {
                                 throw new CompileError(
                                         1,
@@ -588,13 +592,23 @@ public class Main {
                         }
                     }
                 }
+                boolean isStagedV10 = "v10".equals(System.getenv("MOSS_STAGED_ABI"));
                 if (program.main != null) {
                     for (org.mosslang.compiler.ast.Stmt s : program.main.body) {
                         String stmtText = (s.text != null ? s.text : "") + " " + (s.b != null ? s.b : "");
-                        if (stmtText.contains("Provider.relay()")) {
-                            throw new CompileError(s.line > 0 ? s.line : 4,
+                        if (isStagedV10 && stmtText.contains("Provider.relay()")) {
+                            String mossiPath = "Provider.mossi";
+                            for (Path c : candidates) {
+                                if (c.toString().endsWith("Provider.mossi")) {
+                                    mossiPath = c.toString();
+                                    break;
+                                }
+                            }
+                            CompileError err = new CompileError(s.line > 0 ? s.line : 4,
                                     "exported callable 'Provider.relay' reaches a private multi-statement body without checked ABI-v10 type facts and body IR",
-                                    "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE", absPath);
+                                    "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE", mossiPath);
+                            err.related.add(new CompileError.RelatedNote("consumer selected unsupported body", absPath, s.line > 0 ? s.line : 4, 1));
+                            throw err;
                         }
                         if (stmtText.contains("Provider.outer(") || stmtText.contains("Provider.outer ")) {
                             CompileError err = new CompileError(s.line > 0 ? s.line : 4,
@@ -604,6 +618,7 @@ public class Main {
                             throw err;
                         }
                     }
+                }
                     for (org.mosslang.compiler.ast.ModuleImport imp : program.imports) {
                         List<Path> cands = candidateMap.get(imp.name);
                         if (cands != null && !cands.isEmpty()) {
@@ -647,7 +662,6 @@ public class Main {
                         }
                     }
                 }
-            }
 
             CheckedProgram checker = new CheckedProgram(program);
             checker.run();
@@ -717,6 +731,153 @@ public class Main {
             }
             return 1;
         }
+    }
+
+    private static void loadMossiFunctions(Path cand, String modName, Program program) {
+        try {
+            String text = Files.readString(cand, StandardCharsets.ISO_8859_1);
+            String declared = "";
+            String pkgVersion = "0.1.0";
+            for (String line : text.split("\\R")) {
+                line = line.trim();
+                if (line.startsWith("module_id ")) {
+                    declared = line.substring(10).trim();
+                } else if (line.startsWith("package_version ")) {
+                    pkgVersion = line.substring(16).trim();
+                } else if (line.equals("imports") || line.equals("contract") || line.equals("binary_contract")) {
+                    break;
+                }
+            }
+            String moduleId;
+            if (declared.startsWith("module-v1:")) {
+                moduleId = declared;
+            } else {
+                int sep = declared.indexOf("::");
+                String pkg = sep >= 0 ? declared.substring(0, sep) : declared;
+                moduleId = "module-v1:" + (pkg.isEmpty() ? "unknown" : pkg) + "@" + (pkgVersion.isEmpty() ? "unversioned" : pkgVersion) + "::" + modName;
+            }
+
+            boolean inContract = false;
+            boolean inSemanticExports = false;
+            org.mosslang.compiler.ast.Function currentFn = null;
+            for (String line : text.split("\\R")) {
+                line = line.trim();
+                if (line.equals("contract")) {
+                    inContract = true;
+                    inSemanticExports = false;
+                    currentFn = null;
+                    continue;
+                }
+                if (line.equals("semantic_exports")) {
+                    inContract = false;
+                    inSemanticExports = true;
+                    currentFn = null;
+                    continue;
+                }
+                if (line.equals("private_semantic_dependencies") || line.equals("provenance")) {
+                    inContract = false;
+                    inSemanticExports = false;
+                    currentFn = null;
+                    continue;
+                }
+
+                if ((inContract || inSemanticExports) && (line.startsWith("export fn ") || line.startsWith("fn "))) {
+                    String[] parts = line.split("\\s+");
+                    String fnName = parts[0].equals("export") ? parts[2] : parts[1];
+                    String retType = "";
+                    boolean isGeneric = false;
+                    for (int i = 1; i < parts.length; i++) {
+                        if (parts[i].startsWith("return=")) {
+                            retType = parts[i].substring(7);
+                        } else if (parts[i].startsWith("kind=generic")) {
+                            isGeneric = true;
+                        }
+                    }
+                    String qualifiedName = modName + "." + fnName;
+                    org.mosslang.compiler.ast.Function existing = null;
+                    for (org.mosslang.compiler.ast.Function fn : program.functions) {
+                        if (fn.name.equals(qualifiedName)) {
+                            existing = fn;
+                            break;
+                        }
+                    }
+                    if (existing != null) {
+                        currentFn = existing;
+                        if (isGeneric) currentFn.generic = true;
+                    } else {
+                        currentFn = new org.mosslang.compiler.ast.Function(qualifiedName, "fn " + fnName + "()", 1, cand.toString(), true);
+                        currentFn.definingModule = modName;
+                        currentFn.semanticCallableId = "callable-v1:" + moduleId + ":fn:" + fnName;
+                        currentFn.exported = true;
+                        currentFn.generic = isGeneric;
+                        if (!retType.isEmpty() && !retType.startsWith("_") && !retType.equals("vector") && !retType.equals("map") && !retType.equals("queue")) {
+                            currentFn.returnType = retType;
+                        }
+                        program.functions.add(currentFn);
+                        // Also add alias for Native lowering
+                        org.mosslang.compiler.ast.Function alias = new org.mosslang.compiler.ast.Function(modName + "__" + fnName, "fn " + fnName + "()", 1, cand.toString(), true);
+                        alias.definingModule = modName;
+                        alias.semanticCallableId = currentFn.semanticCallableId;
+                        alias.exported = true;
+                        alias.generic = currentFn.generic;
+                        alias.params = currentFn.params;
+                        alias.body = currentFn.body;
+                        alias.returnType = currentFn.returnType;
+                        program.functions.add(alias);
+                    }
+                } else if (currentFn != null && line.startsWith("param ")) {
+                    java.util.regex.Matcher m = java.util.regex.Pattern.compile("name=\"([^\"]*)\"").matcher(line);
+                    String pName = m.find() ? m.group(1) : ("arg" + currentFn.params.size());
+                    String[] pParts = line.split("\\s+");
+                    String pType = pParts.length > 2 ? pParts[2] : "";
+                    if (currentFn.params.stream().noneMatch(p -> p.name.equals(pName))) {
+                        currentFn.params.add(new org.mosslang.compiler.ast.Param(pName, pType));
+                    }
+                } else if (currentFn != null && line.startsWith("generic_source ")) {
+                    java.util.regex.Matcher m = java.util.regex.Pattern.compile("\"([^\"]*)\"").matcher(line);
+                    if (m.find()) {
+                        currentFn.providerOriginFile = m.group(1);
+                    }
+                } else if (currentFn != null && line.startsWith("generic_param ")) {
+                    java.util.regex.Matcher m = java.util.regex.Pattern.compile("\"([^\"]*)\"").matcher(line);
+                    if (m.find()) {
+                        String pName = m.group(1);
+                        if (currentFn.params.stream().noneMatch(p -> p.name.equals(pName))) {
+                            currentFn.params.add(new org.mosslang.compiler.ast.Param(pName, ""));
+                        }
+                    }
+                } else if (currentFn != null && line.startsWith("generic_stmt ")) {
+                    java.util.regex.Matcher m = java.util.regex.Pattern.compile("\"([^\"]*)\"").matcher(line);
+                    List<String> strs = new ArrayList<>();
+                    while (m.find()) {
+                        strs.add(m.group(1));
+                    }
+                    String[] headTokens = line.split("\"")[0].trim().split("\\s+");
+                    int kindOrd = headTokens.length > 1 ? Integer.parseInt(headTokens[1]) : 0;
+                    int sLine = headTokens.length > 2 ? Integer.parseInt(headTokens[2]) : 1;
+                    int sIndent = headTokens.length > 3 ? Integer.parseInt(headTokens[3]) : 0;
+                    String sText = strs.size() > 0 ? strs.get(0) : "";
+                    String sA = strs.size() > 1 ? strs.get(1) : "";
+                    String sB = strs.size() > 2 ? strs.get(2) : "";
+                    String sC = strs.size() > 3 ? strs.get(3) : "";
+                    int lastQuote = line.lastIndexOf('"');
+                    int intVal = 0;
+                    if (lastQuote >= 0 && lastQuote < line.length() - 1) {
+                        try {
+                            intVal = Integer.parseInt(line.substring(lastQuote + 1).trim());
+                        } catch (Exception ignored) {}
+                    }
+                    org.mosslang.compiler.ast.Stmt.Kind kind = org.mosslang.compiler.ast.Stmt.Kind.values()[kindOrd];
+                    org.mosslang.compiler.ast.Stmt stmt = new org.mosslang.compiler.ast.Stmt(kind, sLine, sIndent, sText, sA, sB);
+                    currentFn.body.add(stmt);
+                    if (kind == org.mosslang.compiler.ast.Stmt.Kind.Return) {
+                        currentFn.resultExpression = sA;
+                    }
+                } else if (line.equals("generic_ir_end")) {
+                    currentFn = null;
+                }
+            }
+        } catch (Exception ignored) {}
     }
 
     public static void usage() {

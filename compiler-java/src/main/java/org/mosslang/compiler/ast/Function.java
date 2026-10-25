@@ -27,6 +27,7 @@ public class Function {
     public int line = 0;
     public boolean exported = false;
     public String sourceFile = "";
+    public String providerOriginFile = "";
 
     public Function() {}
 

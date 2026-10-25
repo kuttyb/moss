@@ -83,6 +83,8 @@ public class SemanticChecker {
         return Collections.unmodifiableList(warnings);
     }
 
+    private CompileError deferredEchoError = null;
+
     public void run() {
         program.typeContext = this.typeContext;
         try (var scope = TypeContext.openScope(typeContext)) {
@@ -94,6 +96,9 @@ public class SemanticChecker {
             checkFunctions();
             checkMain();
             checkTests();
+            if (deferredEchoError != null) {
+                throw deferredEchoError;
+            }
         }
     }
 
@@ -205,10 +210,13 @@ public class SemanticChecker {
             typeContext.declare(DeclarationKind.Domain, d.name, currentModuleId, d.name, Collections.emptyList());
         }
         for (Function f : program.functions) {
-            String modId = f.definingModule != null && !f.definingModule.isEmpty() ?
-                (f.definingModule.equals("std") ? "module-v1:moss-std@0.1.0::std" : ("module-v1:" + f.definingModule + "@0.1.0::" + f.definingModule))
-                : currentModuleId;
-            f.semanticCallableId = "callable-v1:" + modId + ":fn:" + f.name;
+            if (f.semanticCallableId == null || f.semanticCallableId.isEmpty()) {
+                String baseFnName = f.name.contains(".") ? f.name.substring(f.name.lastIndexOf('.') + 1) : f.name;
+                String modId = f.definingModule != null && !f.definingModule.isEmpty() ?
+                    (f.definingModule.equals("std") ? "module-v1:moss-std@0.1.0::std" : ("module-v1:" + f.definingModule + "@0.1.0::" + f.definingModule))
+                    : currentModuleId;
+                f.semanticCallableId = "callable-v1:" + modId + ":fn:" + baseFnName;
+            }
             if (functions.put(f.name, f) != null) {
                 throw new CompileError(f.line, "duplicate function '" + f.name + "'", "DUPLICATE_DECLARATION");
             }
@@ -237,6 +245,27 @@ public class SemanticChecker {
                 String stem = cand.getFileName().toString().replaceAll("\\.mossi$", "");
                 try {
                     String text = java.nio.file.Files.readString(cand, java.nio.charset.StandardCharsets.ISO_8859_1);
+                    String declared = "";
+                    String pkgVersion = "0.1.0";
+                    for (String l : text.split("\\R")) {
+                        l = l.trim();
+                        if (l.startsWith("module_id ")) {
+                            declared = l.substring(10).trim();
+                        } else if (l.startsWith("package_version ")) {
+                            pkgVersion = l.substring(16).trim();
+                        } else if (l.equals("imports") || l.equals("contract") || l.equals("binary_contract")) {
+                            break;
+                        }
+                    }
+                    String moduleId;
+                    if (declared.startsWith("module-v1:")) {
+                        moduleId = declared;
+                    } else {
+                        int sep = declared.indexOf("::");
+                        String pkgName = sep >= 0 ? declared.substring(0, sep) : declared;
+                        moduleId = "module-v1:" + (pkgName.isEmpty() ? "unknown" : pkgName) + "@" + (pkgVersion.isEmpty() ? "unversioned" : pkgVersion) + "::" + stem;
+                    }
+
                     for (String l : text.split("\\R")) {
                         l = l.trim();
                         if (l.startsWith("declaration_id nominal-template-v1:")) {
@@ -254,22 +283,40 @@ public class SemanticChecker {
                         }
                     }
                     Function currentFn = null;
+                    String genericSource = "";
                     for (String l : text.split("\\R")) {
                         l = l.trim();
+                        if (l.startsWith("generic_source ")) {
+                            java.util.regex.Matcher sm = java.util.regex.Pattern.compile("\"([^\"]*)\"").matcher(l);
+                            if (sm.find()) {
+                                genericSource = sm.group(1);
+                                if (currentFn != null) currentFn.providerOriginFile = genericSource;
+                            }
+                        }
                         java.util.regex.Matcher m = fnPat.matcher(l);
                         if (m.find()) {
                             String fnName = m.group(1);
                             String retTypeStr = m.group(2);
-                            currentFn = new Function();
-                            currentFn.name = fnName;
-                            TypeRef retRef = TypeParser.parseCanonical(retTypeStr);
-                            if (retRef != null) {
-                                currentFn.bindReturnType(retRef);
+                            String callableId = "callable-v1:" + moduleId + ":fn:" + fnName;
+                            currentFn = functions.get(stem + "." + fnName);
+                            if (currentFn == null) {
+                                currentFn = new Function();
+                                currentFn.name = stem + "." + fnName;
+                                currentFn.definingModule = stem;
+                                currentFn.semanticCallableId = callableId;
+                                currentFn.providerOriginFile = genericSource;
+                                TypeRef retRef = TypeParser.parseCanonical(retTypeStr);
+                                if (retRef != null) {
+                                    currentFn.bindReturnType(retRef);
+                                } else {
+                                    currentFn.setReturnType(retTypeStr);
+                                }
+                                functions.put(stem + "." + fnName, currentFn);
+                                functions.put(stem + "__" + fnName, currentFn);
                             } else {
-                                currentFn.setReturnType(retTypeStr);
+                                currentFn.semanticCallableId = callableId;
+                                if (!genericSource.isEmpty()) currentFn.providerOriginFile = genericSource;
                             }
-                            functions.put(stem + "." + fnName, currentFn);
-                            functions.put(stem + "__" + fnName, currentFn);
                             continue;
                         }
                         if (l.startsWith("param ") && currentFn != null) {
@@ -620,7 +667,7 @@ public class SemanticChecker {
                 program.localBindingLines.computeIfAbsent("main", k -> new HashMap<>()).put(entry.getKey(), bLine);
                 if (resolved != null && !resolved.isClosed()) {
                     throw new CompileError(bLine,
-                            "local binding '" + entry.getKey() + "' has unpinned open type '" + resolved.toCanonicalString() + "'",
+                            "unbound open result type for variable '" + entry.getKey() + "'; heterogeneous or unresolved collection element type",
                             "TYPE_AMBIGUOUS_OPEN_RESULT");
                 }
             }
@@ -1235,9 +1282,11 @@ public class SemanticChecker {
                         TypeRef argType = solver.resolve(typer.infer(trimmed, s.line, env.typeEnv));
                         if (argType != null && !argType.isClosed() && argType.kind() == TypeKind.Builtin
                                 && ("vector".equals(argType.name()) || "map".equals(argType.name()))) {
-                            throw new CompileError(s.line,
-                                    "cannot display unpinned collection of type '" + argType.toCanonicalString() + "' in echo",
-                                    "ECHO_DISPLAY_UNSUPPORTED");
+                            if (deferredEchoError == null) {
+                                deferredEchoError = new CompileError(s.line,
+                                        "cannot display unpinned collection of type '" + argType.toCanonicalString() + "' in echo",
+                                        "ECHO_DISPLAY_UNSUPPORTED");
+                            }
                         }
                         if ("Map().get(1, 2)".equals(trimmed)) {
                             throw new CompileError(s.line,
