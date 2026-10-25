@@ -14602,8 +14602,10 @@ from a checked ABI-v10 summary when the legacy semantic declaration row is
 absent. Seeding runs after legacy rows are parsed so existing declarations keep
 their source parameter names. The new regression removes the `answer` and `increment` legacy declarations,
 retains their ABI-v10 summaries and checked bodies, and imports the provider,
-and executes `provider__answer()` and `provider__increment(41)` as `42`, covering
-zero and one closed parameter. Both staged ABI-v10 and default ABI-v9 Java suites
+and executes `provider__answer()`/`provider__increment(41)` as `42`,
+`provider__enabled()` as `true`, and an indexed source-free String vector read
+as `two`. This covers zero/one closed parameter and Int, Bool, and
+Vector[String] results. Both staged ABI-v10 and default ABI-v9 Java suites
 pass all eleven classes; feedback validation and
 `git diff --check` pass. Coverage is limited to closed, monomorphic function
 summaries with supported checked bodies. Generic functions, nominal methods,
