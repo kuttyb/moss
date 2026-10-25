@@ -14491,5 +14491,9 @@ failed). C++ still rejects the project at the concrete specialization inside
 `IntegratorService.SimulateDecay` with `TYPE_AMBIGUOUS_OPEN_RESULT` (“member
 summary did not close at concrete specialization”). The runtime results support
 the Java implementation on this project path but do not independently prove
-checker parity; treat the C++/Java disagreement as unresolved until the
-specialization diagnostic is reduced. No native compilation or execution ran.
+checker parity. A minimal standalone probe reduces the C++ rejection to two
+calls to the same `System.evaluate` member in one generic `step` body; one call
+checks in both compilers, while two calls fail only in C++. Java accepts both
+the probe and the full project. Treat this as a C++ member-summary closure
+disagreement, not evidence that Java should change. No native compilation or
+execution ran.
