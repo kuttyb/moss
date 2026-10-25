@@ -179,7 +179,7 @@ public class FastInterpreter {
 
     public static class DomainInstance {
         public final Domain domain;
-        public final String name;
+        public String name;
         public final Map<String, Value> state = new HashMap<>();
 
         public DomainInstance(Domain domain, String name) {
@@ -237,6 +237,28 @@ public class FastInterpreter {
         }
         return ",\"instance\":\"" + jsonEscape(traceInstance) + "\",\"specialization\":\""
                 + jsonEscape(traceSpecialization) + "\",\"handler\":\"" + jsonEscape(traceHandler) + "\"";
+    }
+
+    private void traceDomainConstruction(DomainInstance instance, String bindingName) {
+        String normalizedName = bindingName.toLowerCase(Locale.ROOT);
+        instance.name = "main::" + normalizedName;
+        eventId++;
+        traceEvent("{\"event_id\":" + eventId + ",\"event\":\"domain_instance\",\"function\":\""
+                + jsonEscape(traceFunction) + "\",\"source_file\":\"" + jsonEscape(traceSourceFile)
+                + "\",\"semantic_identity\":\"" + jsonEscape(traceIdentity()) + "\",\"line\":"
+                + traceLine + traceContextFields() + ",\"depth\":" + traceDepth
+                + ",\"instance\":\"" + jsonEscape(instance.name)
+                + "\",\"specialization\":\"domain-specialization:" + jsonEscape(instance.domain.name)
+                + ":" + jsonEscape(normalizedName) + "\"}");
+    }
+
+    private boolean isDirectDomainConstruction(String expression) {
+        if (expression == null) return false;
+        int open = expression.indexOf('(');
+        if (open <= 0 || !expression.endsWith(")")) return false;
+        String callee = expression.substring(0, open).trim();
+        return program.domains.stream().anyMatch(domain -> domain.name.equals(callee)
+                || domain.name.endsWith("__" + callee) || callee.endsWith("." + domain.name));
     }
 
     private static String specializationForCall(Function function, List<Value> args) {
@@ -1045,6 +1067,10 @@ public class FastInterpreter {
                 }
                 String exprStr = s.b != null ? s.b.trim() : "";
                 Value val = evalExpr(exprStr, locals, currentDomain);
+                if (val.kind == Value.Kind.DOMAIN && "main".equals(funcName)
+                        && isDirectDomainConstruction(exprStr)) {
+                    traceDomainConstruction(val.asDomain(), varName);
+                }
                 if (varName.endsWith("]") && varName.contains("[")) {
                     int openB = varName.indexOf('[');
                     String baseName = varName.substring(0, openB).trim();
@@ -1161,7 +1187,7 @@ public class FastInterpreter {
                 for (int i = 0; i < s.args.size(); i++) {
                     if (i > 0) argDetails.append(", ");
                     Value v = evalExpr(s.args.get(i), locals, currentDomain);
-                    args.add(v);
+                    args.add(copyReturnedValue(v));
                     argDetails.append(traceValueSummary(v));
                 }
 
@@ -1950,12 +1976,15 @@ public class FastInterpreter {
                 String receiverName = callee.substring(0, receiverDot).trim();
                 if (locals.containsKey(receiverName))
                     traceValueRead(receiverName, locals.get(receiverName), null);
+                else if (currentDomain != null && currentDomain.state.containsKey(receiverName))
+                    traceStateRead(receiverName);
             }
             List<Value> evaluatedArgs = new ArrayList<>();
             boolean wasDeferringStateTrace = deferDomainStateTrace;
             if (sourceCallable && currentDomain != null) deferDomainStateTrace = true;
             try {
-            for (String a : argList) {
+            for (int argumentIndex = 0; argumentIndex < argList.size(); argumentIndex++) {
+                String a = argList.get(argumentIndex);
                 if (!a.isEmpty()) {
                     int colIdx = -1;
                     int pDepth = 0;
@@ -1982,8 +2011,9 @@ public class FastInterpreter {
                         if (sourceCallable && tracesArgumentRead(callee, evaluatedArgs.size(), locals, currentDomain))
                             traceValueRead(a, locals.get(a), null);
                         evaluatedArgs.add(locals.get(a));
-                    } else
+                    } else {
                         evaluatedArgs.add(evalExpr(a, locals, currentDomain));
+                    }
                 }
             }
             } finally {
@@ -2027,14 +2057,6 @@ public class FastInterpreter {
                             inst.state.put(routeName, evaluatedArgs.get(i));
                         }
                     }
-                    eventId++;
-                    traceEvent("{\"event_id\":" + eventId + ",\"event\":\"domain_instance\",\"function\":\""
-                            + jsonEscape(traceFunction) + "\",\"source_file\":\"" + jsonEscape(traceSourceFile)
-                            + "\",\"semantic_identity\":\"" + jsonEscape(traceIdentity())
-                            + "\",\"line\":" + traceLine + ",\"depth\":" + traceDepth
-                            + ",\"instance\":\"" + jsonEscape(inst.name)
-                            + "\",\"specialization\":\"domain-specialization:" + jsonEscape(d.name)
-                            + ":" + jsonEscape(callee.toLowerCase()) + "\"}");
                     return Value.ofDomain(inst);
                 }
             }
@@ -2472,12 +2494,9 @@ public class FastInterpreter {
         // Domain state read e.g. value
         if (currentDomain != null && currentDomain.state.containsKey(expr)) {
             Value stateValue = currentDomain.state.get(expr);
-            if (deferDomainStateTrace || (stateValue != null
-                    && (stateValue.kind == Value.Kind.OBJECT || stateValue.kind == Value.Kind.VECTOR
-                    || stateValue.kind == Value.Kind.MAP || stateValue.kind == Value.Kind.QUEUE)))
-                return withTraceStatePath(stateValue, expr);
+            if (deferDomainStateTrace) return withTraceStatePath(stateValue, expr);
             traceStateRead(expr);
-            return stateValue;
+            return withTraceStatePath(stateValue, expr);
         }
 
         Value selfValue = locals.get("self");

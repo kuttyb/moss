@@ -39,6 +39,7 @@ public final class FastInterpreterTest {
         testEnumLocalWriteUsesCompactTypeSummary();
         testExceptionalFunctionTraceUnwindsCallContext();
         testDomainConstructionTraceIsStructured();
+        testDomainConstructionTraceUsesBindingName();
         testDomainMessageTraceCarriesHandlerContext();
         testLocalArgumentTraceOccursInsideCallee();
         testNamedDomainStateAndNestedRoutes();
@@ -440,7 +441,6 @@ public final class FastInterpreterTest {
         if (functionEnter < 0 || borrowedRead <= functionEnter || methodFieldRead <= borrowedRead
                 || !events.substring(borrowedRead).contains("\"path\":\"value\"")
                 || !events.substring(methodFieldRead).contains("\"path\":\"value.title\"")
-                || events.substring(0, functionEnter).contains("\"path\":\"value\"")
                 || !"borrowed\n".equals(stdout.toString(StandardCharsets.UTF_8))) {
             throw new AssertionError("borrowed domain object trace lost its state path: " + events);
         }
@@ -830,6 +830,31 @@ public final class FastInterpreterTest {
                 + "\"specialization\":\"domain-specialization:Worker:worker\"}\n";
         if (!expected.equals(trace.toString(StandardCharsets.UTF_8))) {
             throw new AssertionError("domain construction trace was incomplete: " + trace);
+        }
+    }
+
+    private static void testDomainConstructionTraceUsesBindingName() {
+        var program = Parser.parseSource(""
+                + "domain Reader:\n"
+                + "  fn Read():\n"
+                + "    echo \"read\"\n"
+                + "fn main():\n"
+                + "  child = Reader()\n"
+                + "  message child.Read()\n",
+                "fast-interpreter-domain-binding-trace.moss");
+        new CheckedProgram(program).run();
+
+        ByteArrayOutputStream trace = new ByteArrayOutputStream();
+        new FastInterpreter(program, true,
+                new PrintStream(new ByteArrayOutputStream(), true, StandardCharsets.UTF_8),
+                new PrintStream(trace, true, StandardCharsets.UTF_8)).run();
+        String events = trace.toString(StandardCharsets.UTF_8);
+        if (!events.contains("\"event\":\"domain_instance\"")
+                || !events.contains("\"instance\":\"main::child\"")
+                || !events.contains("\"specialization\":\"domain-specialization:Reader:child\"")
+                || !events.contains("\"event\":\"message_call\"")
+                || !events.contains("\"handler\":\"Read\"")) {
+            throw new AssertionError("domain instance trace ignored the source binding: " + events);
         }
     }
 

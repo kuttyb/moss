@@ -15715,9 +15715,10 @@ object field and emit the full domain-state write path.
 A focused regression verifies that a nested object snapshot stays unchanged
 after the domain mutates its source. On the full borrowed-reads fixture, Java
 and C++ stdout now match exactly (`31 13 31 12 39`, then `13 31`). The JSON
-trace is still not fully equal (217 C++ events versus 212 Java events, with an
-earlier domain-instance naming difference), so this is targeted semantics
-evidence rather than broad Fast Debug parity. All twelve Java test classes
+trace is still not fully equal (217 C++ events versus 224 Java events; the
+domain-instance naming difference is now fixed, with extra pipeline and
+message-payload events remaining), so this is targeted semantics evidence
+rather than broad Fast Debug parity. All twelve Java test classes
 pass under ABI-v9 and staged ABI-v10. Native/backend and SDK acceptance,
 source-free integration, daemon readiness, and the broader semantic/codegen
 scope remain open.
@@ -15740,7 +15741,20 @@ native artifacts, Margo projects, or SDK integration.
 Method dispatch now wraps a receiver taken directly from domain state with its
 state path and carries nested field paths into method locals. The borrowed-reads
 trace probe now reports nested `Record.score` reads as `record.profile.*`
-state paths. Java/C++ stdout remains identical on that fixture; traces remain
-different (217 C++ events, 212 Java events) due to other handler and pipeline
-path differences. All twelve Java unit classes pass under ABI-v9 and staged
-ABI-v10 after this change.
+state paths, and domain instance names follow their source binding. Java/C++
+stdout remains identical on that fixture; traces remain different (217 C++
+events, 224 Java events) due to extra pipeline and message-payload events. All
+twelve Java unit classes pass under ABI-v9 and staged ABI-v10 after this change.
+
+
+### Phase 25.3 continuation — preserve domain binding identities and message snapshots
+
+The interpreter now names constructed domains from their source binding
+(`child = Reader()` becomes `main::child`) instead of deriving identity from
+the domain type. Synchronous message payloads are copied at the boundary to
+retain snapshot semantics. Trace state reads for source-call arguments remain
+deferred to the consumer. The borrowed-reads output still matches C++, and the
+trace comparison now has 217 C++ events versus 224 Java events; the remaining
+Java-only events are pipeline and message-payload reads. All twelve Java unit
+classes pass under ABI-v9 and staged ABI-v10. The domain-binding identity has
+a focused test.
