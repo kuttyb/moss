@@ -11,6 +11,7 @@ import java.nio.charset.StandardCharsets;
 public final class SemanticQueryEngineTest {
     public static void main(String[] args) {
         effectsQueryUsesResolvedFunctionFacts();
+        effectsQueryDoesNotInferPanicFromNames();
         typeQueryPreservesOpenGenericResultFacts();
         System.out.println("SemanticQueryEngineTest PASSED.");
     }
@@ -52,6 +53,32 @@ public final class SemanticQueryEngineTest {
         }
         String json = output.toString(StandardCharsets.UTF_8);
         assertContains(json, "\"resolved_type\": \"_specialized_result:plus_one\"");
+    }
+
+    private static void effectsQueryDoesNotInferPanicFromNames() {
+        String source = ""
+                + "fn panic_free() -> Int:\n"
+                + "  return 7\n"
+                + "fn checked_assertion():\n"
+                + "  assert(false)\n"
+                + "fn main():\n"
+                + "  pass\n";
+        Program program = Parser.parseSource(source, "effects-query-panic-name.moss");
+        new SemanticChecker(program).run();
+
+        String harmless = queryEffects(program, "panic_free");
+        assertContains(harmless, "\"may_panic\": false");
+        String panicking = queryEffects(program, "checked_assertion");
+        assertContains(panicking, "\"may_panic\": true");
+    }
+
+    private static String queryEffects(Program program, String target) {
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        try (PrintStream stream = new PrintStream(output, true, StandardCharsets.UTF_8)) {
+            SemanticQueryEngine.executeQuery("effects", target, program,
+                    "effects-query-panic-name.moss", true, null, null, stream);
+        }
+        return output.toString(StandardCharsets.UTF_8);
     }
 
     private static void assertContains(String value, String expected) {

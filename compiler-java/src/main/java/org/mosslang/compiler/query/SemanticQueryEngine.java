@@ -207,7 +207,7 @@ public class SemanticQueryEngine {
                     queriedSourceFile = queriedMethod.sourceFile;
                 }
             }
-            boolean mayPanic = itemName.contains("panic");
+            boolean mayPanic = false;
             boolean externalIo = false;
             boolean localCaptureRead = false;
             boolean domainRead = false;

@@ -14700,3 +14700,15 @@ Validation: six mocked/local-socket lifecycle tests pass, including exact
 positive and negative PING responses; Python byte-compilation and `git diff
 --check` pass. Eclipse is not installed (`command -v eclipse` found none), so
 live JDT startup/build/stop remains unverified.
+
+### Phase 25.3 continuation — derive query panic effects from code
+
+`SemanticQueryEngine` initially set `may_panic` when the query target's name
+contained `panic`, so a harmless function named `panic_free` received a false
+observable effect. The name heuristic is removed; the existing body scan now
+determines the represented assertion-panic cases. `SemanticQueryEngineTest`
+checks that `panic_free` is non-panicking and a differently named function
+with `assert(false)` is marked as potentially panicking.
+
+Validation: all eleven Java unit-test classes pass under ABI-v9. This removes
+one target-name shortcut; complete checked-effect query derivation remains open.

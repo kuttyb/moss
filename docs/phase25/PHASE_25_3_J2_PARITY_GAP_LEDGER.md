@@ -267,3 +267,13 @@ Six `scripts/java/test_jdt_client.py` lifecycle tests pass, including positive
 and negative local socket handshake cases. Python byte-compilation and
 `git diff --check` pass. No Eclipse executable is available in this workspace,
 so live daemon startup/build/stop is still unverified.
+
+## Phase 25.3 continuation — remove name-based `may_panic` query result
+
+Java effects queries treated any target name containing `panic` as evidence
+that the callable may panic. A harmless `panic_free() -> Int` returned
+`may_panic: true` solely because of its name. That shortcut is removed. The
+current source/body scan reports the test's `assert(false)` callable as
+potentially panicking while `panic_free` reports false. All eleven Java unit
+test classes pass in ABI-v9. Broader checked-operation and transitive panic
+summary derivation remains incomplete.
