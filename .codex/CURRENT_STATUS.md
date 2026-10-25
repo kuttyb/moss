@@ -12713,3 +12713,9 @@ is `WRITE` and lowers with `&mut self`.
 
 Validation: Java build and all ten unit-test classes pass. Generated Rust
 signatures are asserted; Rust compilation/native execution remains unrun.
+
+The source-free object metadata regression now also checks the consumer Rust
+signature after importing WRITE receiver and CONSUME parameter effects: the
+receiver lowers as `&mut moss_provider::Point` and the vector parameter remains
+owned. This remains generated-text evidence only, not Rust compilation or
+provider artifact linkage.

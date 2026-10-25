@@ -81,10 +81,17 @@ public final class SourceFreeObjectMetadataTest {
         Program checkedConsumer = Parser.parseSource(""
                 + "fn use_point(point: provider__Point) -> Float:\n"
                 + "  return point.shift(2.0)\n"
+                + "fn replace_values(point: provider__Point, values: Vector[Int]):\n"
+                + "  point.replace(values)\n"
                 + "fn main():\n"
                 + "  pass\n", "consumer.moss");
         Main.loadMossiFunctions(interfaceFile, "provider", checkedConsumer);
         new SemanticChecker(checkedConsumer).run();
+        String checkedRust = NativeGenerator.generate(checkedConsumer, false);
+        if (!checkedRust.contains("fn replace_values(point: &mut moss_provider::Point, values: std::vec::Vec<i64>)")) {
+            throw new AssertionError("source-free WRITE/CONSUME modes did not reach Rust parameter lowering: "
+                    + checkedRust);
+        }
         Program consumingConsumer = Parser.parseSource(""
                 + "fn use_point(point: provider__Point, values: Vector[Int]) -> Vector[Int]:\n"
                 + "  point.replace(values)\n"
