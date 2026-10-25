@@ -162,14 +162,35 @@ public final class FastInterpreterTest {
                 + "  counter = Countdown(current = 2)\n"
                 + "  total = 0\n"
                 + "  for value in counter:\n"
+                + "    echo value\n"
                 + "    total = total + value\n"
                 + "  assertEqual(total, 3)\n"
                 + "  assertEqual(counter.current, 0)\n",
                 "fast-interpreter-custom-iterator.moss");
         new CheckedProgram(program).run();
-        new FastInterpreter(program, false,
-                new PrintStream(new ByteArrayOutputStream()),
-                new PrintStream(new ByteArrayOutputStream())).run();
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+        ByteArrayOutputStream trace = new ByteArrayOutputStream();
+        new FastInterpreter(program, true,
+                new PrintStream(stdout, true, StandardCharsets.UTF_8),
+                new PrintStream(trace, true, StandardCharsets.UTF_8)).run();
+        String events = trace.toString(StandardCharsets.UTF_8);
+        String[] lines = events.split("\\R");
+        int iterations = 0;
+        for (String line : lines) {
+            if (!line.contains("\"event\":\"LoopIteration\"")) {
+                continue;
+            }
+            iterations++;
+            String eventId = line.split("\"event_id\":", 2)[1].split(",", 2)[0];
+            if (!events.contains("\"parent_event_id\":" + eventId
+                    + ",\"control_event_id\":" + eventId
+                    + ",\"depth\":1,\"detail\":\"value\"")) {
+                throw new AssertionError("custom iterator body read lost loop context: " + events);
+            }
+        }
+        if (iterations != 2 || !"2\n1\n".equals(stdout.toString(StandardCharsets.UTF_8))) {
+            throw new AssertionError("custom iterator trace or output was incorrect: " + events);
+        }
     }
 
     private static void testWhileLoopRepeatsCheckedBody() {

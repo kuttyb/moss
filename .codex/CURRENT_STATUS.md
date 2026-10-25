@@ -16631,3 +16631,14 @@ remaining collections, and package dependencies, is still outstanding. Latest
 verified checkpoint before this change: `38a38e4926f731858b59b7ff50fcc33e863dbb84`;
 the vector regression is not yet committed or pushed. No final candidate or
 expensive acceptance gate has been run.
+
+
+### Phase 25.3 continuation — custom iterator Fast Debug trace
+
+Extended `testCustomIteratorForLoopUsesOptionProtocol` to assert yielded output
+and ensure each custom-iterator body read retains its `LoopIteration` parent
+and control event. `scripts/java/build.sh` and focused `FastInterpreterTest`
+pass. A C++ Fast Debug probe on the corresponding accepted `Countdown` source
+returns `Fast Debug cannot iterate this checked source`; this is Java execution
+coverage, not C++ interpreter parity evidence. The current local changes since
+`3858f962` are not yet committed or pushed.

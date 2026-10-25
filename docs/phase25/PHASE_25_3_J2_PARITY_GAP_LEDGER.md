@@ -742,3 +742,14 @@ structure for a two-element vector. The focused test passes. Queue iteration is
 rejected by both checkers as not statically iterable; vector and range iteration
 are the accepted forms covered here. Other collection, message, state, and
 cross-project Fast Debug paths remain open.
+
+
+### Follow-up — custom iterator Fast Debug trace
+
+The accepted `Countdown.next() -> option[Int]` custom iterator also executes in
+Java Fast Debug, with two yielded values and each body read nested under its
+`LoopIteration`. The existing custom iterator unit regression now checks both
+output and per-iteration trace context. The focused `FastInterpreterTest` passes.
+The C++ Fast Debug probe for the same Moss program reports `Fast Debug cannot
+iterate this checked source`, so this confirms Java execution coverage rather than
+parity with the C++ interpreter.
