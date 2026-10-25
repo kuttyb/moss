@@ -12,6 +12,7 @@ public final class SemanticQueryEngineTest {
     public static void main(String[] args) {
         effectsQueryUsesResolvedFunctionFacts();
         effectsQueryDoesNotInferPanicFromNames();
+        effectsQueryCollectsDirectRaisesForArbitraryNames();
         typeQueryPreservesOpenGenericResultFacts();
         System.out.println("SemanticQueryEngineTest PASSED.");
     }
@@ -79,6 +80,20 @@ public final class SemanticQueryEngineTest {
                     "effects-query-panic-name.moss", true, null, null, stream);
         }
         return output.toString(StandardCharsets.UTF_8);
+    }
+
+    private static void effectsQueryCollectsDirectRaisesForArbitraryNames() {
+        String source = ""
+                + "enum Trouble:\n"
+                + "  Bad\n"
+                + "fn calculate() -> Int:\n"
+                + "  raise Trouble.Bad\n"
+                + "fn main():\n"
+                + "  pass\n";
+        Program program = Parser.parseSource(source, "effects-query-direct-raise.moss");
+        new SemanticChecker(program).run();
+        String result = queryEffects(program, "calculate");
+        assertContains(result, "\"raise_set\": [\"enum:Trouble:Bad\"]");
     }
 
     private static void assertContains(String value, String expected) {

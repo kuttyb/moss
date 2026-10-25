@@ -14712,3 +14712,17 @@ with `assert(false)` is marked as potentially panicking.
 
 Validation: all eleven Java unit-test classes pass under ABI-v9. This removes
 one target-name shortcut; complete checked-effect query derivation remains open.
+
+### Phase 25.3 continuation — report direct enum raises for arbitrary callables
+
+Effects queries previously returned an empty `raise_set` for an otherwise
+unrecognized function name even when its checked body contained a direct typed
+raise. The query now extracts explicit raised enum variants from function,
+method, and handler bodies, canonicalizes them, and reports them ahead of the
+legacy name-specific fallback. A generic `calculate()` fixture reports
+`enum:Trouble:Bad`, matching C++'s `observable_effects.raise_set` for that
+callable; other effect fields still differ in representation/completeness.
+
+Validation: all eleven Java unit-test classes pass under ABI-v9, and the focused
+C++/Java query confirms the same direct raise fact. Transitive, recovered, and
+callback raises still need a complete checker-owned effect model.

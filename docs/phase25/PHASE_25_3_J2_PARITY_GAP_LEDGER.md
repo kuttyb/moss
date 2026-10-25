@@ -277,3 +277,17 @@ current source/body scan reports the test's `assert(false)` callable as
 potentially panicking while `panic_free` reports false. All eleven Java unit
 test classes pass in ABI-v9. Broader checked-operation and transitive panic
 summary derivation remains incomplete.
+
+## Phase 25.3 continuation — source-derived direct raise facts in effects queries
+
+The Java query returned an empty `raise_set` for a generic function name even
+when its body directly raised a typed enum case. It now collects direct
+`Stmt.Raise` variants from queried functions, methods, and handlers and emits
+those facts before legacy fallback handling. The minimized arbitrary-name
+`calculate()` query reports `enum:Trouble:Bad`, matching the C++ result's
+`observable_effects.raise_set`.
+
+All eleven Java unit-test classes pass under ABI-v9. This verifies direct typed
+raises only; transitive, recovered, callback, and complete other effects remain
+open. The full C++ and Java JSON response objects still differ in shape and
+availability of retained facts.

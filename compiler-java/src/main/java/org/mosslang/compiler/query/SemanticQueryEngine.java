@@ -261,7 +261,11 @@ public class SemanticQueryEngine {
                 }
             }
             String raiseJson = "[]";
-            if (itemName.equals("Reset")) {
+            Set<String> directRaiseFacts = directRaisedVariants(
+                    queriedFunction, queriedMethod, queriedHandler, program);
+            if (!directRaiseFacts.isEmpty()) {
+                raiseJson = jsonStringArray(directRaiseFacts);
+            } else if (itemName.equals("Reset")) {
                 raiseJson = "[\"enum:" + modPrefix + "__Failure:Bad\"]";
             } else if (itemName.endsWith("fail")) {
                 raiseJson = "[\"enum:" + modPrefix + "__Fault:Bad\"]";
@@ -1259,6 +1263,44 @@ public class SemanticQueryEngine {
         if (value == null) return "";
         return value.replace("\\", "\\\\").replace("\"", "\\\"")
                 .replace("\n", "\\n").replace("\r", "\\r");
+    }
+
+    private static Set<String> directRaisedVariants(Function function, Method method,
+                                                    Handler handler, Program program) {
+        List<Stmt> body = function != null ? function.body
+                : method != null ? method.body
+                : handler != null ? handler.body : List.of();
+        Set<String> variants = new java.util.TreeSet<>();
+        for (Stmt statement : body) {
+            if (statement == null || statement.kind != Stmt.Kind.Raise) continue;
+            String expression = statement.a == null ? "" : statement.a.trim();
+            if (expression.isEmpty() && statement.text != null
+                    && statement.text.trim().startsWith("raise ")) {
+                expression = statement.text.trim().substring(6).trim();
+            }
+            int open = expression.indexOf('(');
+            if (open >= 0) expression = expression.substring(0, open).trim();
+            int dot = expression.lastIndexOf('.');
+            if (dot <= 0 || dot == expression.length() - 1) continue;
+            String enumName = expression.substring(0, dot).replace('.', '_');
+            String caseName = expression.substring(dot + 1).trim();
+            if (program != null && program.enums != null) {
+                for (EnumType declaration : program.enums) {
+                    if (declaration.name.equals(enumName)
+                            || declaration.name.endsWith("__" + enumName)) {
+                        enumName = declaration.name.replace('.', '_');
+                        break;
+                    }
+                }
+            }
+            variants.add("enum:" + enumName + ":" + caseName);
+        }
+        return variants;
+    }
+
+    private static String jsonStringArray(Set<String> values) {
+        return "[" + values.stream().map(value -> "\"" + jsonString(value) + "\"")
+                .collect(java.util.stream.Collectors.joining(", ")) + "]";
     }
 
     private static String buildHandlerDomainJson(Domain domain, Handler handler, Program program) {
