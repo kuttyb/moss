@@ -193,9 +193,11 @@ public class FastInterpreter {
     private int traceDepth = 0;
     private final Deque<Integer> traceParentStack = new ArrayDeque<>();
     private final Deque<Integer> traceControlStack = new ArrayDeque<>();
+    private final Deque<Integer> traceCallStack = new ArrayDeque<>();
+    private String traceSemanticIdentity = "main@1";
 
     private String traceIdentity() {
-        return "main".equals(traceFunction) ? "main@1" : traceFunction;
+        return traceSemanticIdentity;
     }
 
     private void setTraceContext(Stmt statement, String function, int depth) {
@@ -208,6 +210,7 @@ public class FastInterpreter {
     private String traceContextFields() {
         StringBuilder fields = new StringBuilder();
         if (!traceParentStack.isEmpty()) fields.append(",\"parent_event_id\":").append(traceParentStack.peek());
+        if (!traceCallStack.isEmpty()) fields.append(",\"call_event_id\":").append(traceCallStack.peek());
         if (!traceControlStack.isEmpty()) fields.append(",\"control_event_id\":").append(traceControlStack.peek());
         return fields.toString();
     }
@@ -291,6 +294,39 @@ public class FastInterpreter {
                 + ",\"detail\":\"" + jsonEscape(detail) + "\"}");
         traceParentStack.push(controlEventId);
         traceControlStack.push(controlEventId);
+    }
+
+    private void traceSimpleEvent(Stmt statement, String function, String event,
+                                  String detail, int depth) {
+        if (!trace) return;
+        setTraceContext(statement, function, depth);
+        eventId++;
+        traceEvent("{\"event_id\":" + eventId + ",\"event\":\"" + event
+                + "\",\"function\":\"" + jsonEscape(function)
+                + "\",\"source_file\":\"" + jsonEscape(traceSourceFile)
+                + "\",\"semantic_identity\":\"" + jsonEscape(traceIdentity())
+                + "\",\"line\":" + statement.line + traceContextFields()
+                + ",\"depth\":" + depth + ",\"detail\":\""
+                + jsonEscape(detail) + "\"}");
+    }
+
+    private int traceFunctionEvent(Function function, String event, int line) {
+        return traceFunctionEvent(function, event, line, null);
+    }
+
+    private int traceFunctionEvent(Function function, String event, int line, String detail) {
+        if (!trace) return 0;
+        eventId++;
+        String source = function.sourceFile == null ? "" : function.sourceFile;
+        String identity = "fn:" + function.name + "@" + function.line;
+        traceEvent("{\"event_id\":" + eventId + ",\"event\":\"" + event
+                + "\",\"function\":\"" + jsonEscape(function.name)
+                + "\",\"source_file\":\"" + jsonEscape(source)
+                + "\",\"semantic_identity\":\"" + jsonEscape(identity)
+                + "\",\"line\":" + line + traceContextFields()
+                + ",\"depth\":" + traceParentStack.size()
+                + (detail == null ? "" : ",\"detail\":\"" + jsonEscape(detail) + "\"") + "}");
+        return eventId;
     }
 
     private void endTraceLoopIteration() {
@@ -597,6 +633,8 @@ public class FastInterpreter {
                 throw new RaisedException(rVal, vName);
             } else if (s.kind == Stmt.Kind.Reply || s.kind == Stmt.Kind.Return) {
                 Value rVal = (s.a != null && !s.a.isEmpty()) ? evalExpr(s.a, locals, currentDomain) : Value.ofUnit();
+                if (s.kind == Stmt.Kind.Return)
+                    traceSimpleEvent(s, funcName, "Return", rVal.toString(), depth);
                 throw new ReturnSignal(rVal);
             }
             lastVal = evalStmt(s, locals, currentDomain, funcName, depth);
@@ -1710,14 +1748,48 @@ public class FastInterpreter {
                         fnLocals.put(f.params.get(i).name, evaluatedArgs.get(i));
                     }
                     Value res = Value.ofUnit();
+                    String oldFunction = traceFunction;
+                    String oldSource = traceSourceFile;
+                    String oldIdentity = traceSemanticIdentity;
+                    int oldLine = traceLine;
+                    int oldDepth = traceDepth;
+                    int enterId = traceFunctionEvent(f, "FunctionEnter", f.line);
+                    if (trace && enterId != 0) {
+                        traceParentStack.push(enterId);
+                        traceCallStack.push(enterId);
+                    }
+                    traceFunction = f.name;
+                    traceSourceFile = f.sourceFile == null ? "" : f.sourceFile;
+                    traceSemanticIdentity = "fn:" + f.name + "@" + f.line;
+                    boolean explicitReturn = false;
+                    boolean completed = false;
                     try {
-                        res = evalBlock(f.body, 0, f.body.size(), fnLocals, null, f.name, 0);
+                        res = evalBlock(f.body, 0, f.body.size(), fnLocals, null, f.name,
+                                trace && enterId != 0 ? 1 : 0);
                         if (f.resultExpression != null && !f.resultExpression.isEmpty()) {
                             res = evalExpr(f.resultExpression, fnLocals, null);
                         }
+                        completed = true;
                     } catch (ReturnSignal rs) {
                         res = rs.returnValue;
+                        explicitReturn = true;
+                        completed = true;
                     } finally {
+                        if (completed) {
+                            if (!explicitReturn)
+                                traceFunctionEvent(f, "Return", f.resultLine > 0 ? f.resultLine : f.line,
+                                        res.toString());
+                            traceFunctionEvent(f, "FunctionExit", f.resultLine > 0 ? f.resultLine : f.line);
+                        }
+                        if (trace && enterId != 0) {
+                            traceCallStack.pop();
+                            traceParentStack.pop();
+                        }
+                        traceFunction = oldFunction;
+                        traceSourceFile = oldSource;
+                        traceSemanticIdentity = oldIdentity;
+                        traceLine = oldLine;
+                        traceDepth = oldDepth;
                         for (int i = 0; i < f.params.size() && i < argList.size(); i++) {
                             String rawArg = argList.get(i).trim();
                             String pName = f.params.get(i).name;

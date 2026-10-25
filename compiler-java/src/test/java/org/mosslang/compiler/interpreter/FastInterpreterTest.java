@@ -18,6 +18,7 @@ public final class FastInterpreterTest {
         testRecoveryPayloadBindingIsScoped();
         testForLoopTraceMatchesIterationStructure();
         testBranchTraceCarriesControlContext();
+        testFunctionCallTraceCarriesCallContext();
         System.out.println("FastInterpreterTest PASSED.");
     }
 
@@ -237,6 +238,32 @@ public final class FastInterpreterTest {
                 || !events.contains("\"detail\":\"else\"")
                 || !events.contains("\"line\":4,\"parent_event_id\":3,\"control_event_id\":3,\"depth\":1")) {
             throw new AssertionError("branch trace omitted selected-arm context: " + events);
+        }
+    }
+
+    private static void testFunctionCallTraceCarriesCallContext() {
+        var program = Parser.parseSource(""
+                + "fn add_one(x: Int) -> Int:\n"
+                + "  return x + 1\n"
+                + "\n"
+                + "fn main():\n"
+                + "  echo add_one(4)\n",
+                "fast-interpreter-function-trace.moss");
+        new CheckedProgram(program).run();
+
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+        ByteArrayOutputStream trace = new ByteArrayOutputStream();
+        new FastInterpreter(program, true,
+                new PrintStream(stdout, true, StandardCharsets.UTF_8),
+                new PrintStream(trace, true, StandardCharsets.UTF_8)).run();
+        String events = trace.toString(StandardCharsets.UTF_8);
+        String expected = ""
+                + "{\"event_id\":1,\"event\":\"FunctionEnter\",\"function\":\"add_one\",\"source_file\":\"fast-interpreter-function-trace.moss\",\"semantic_identity\":\"fn:add_one@1\",\"line\":1,\"depth\":0}\n"
+                + "{\"event_id\":2,\"event\":\"LocalRead\",\"function\":\"add_one\",\"source_file\":\"fast-interpreter-function-trace.moss\",\"semantic_identity\":\"fn:add_one@1\",\"line\":2,\"parent_event_id\":1,\"call_event_id\":1,\"depth\":1,\"detail\":\"x\"}\n"
+                + "{\"event_id\":3,\"event\":\"Return\",\"function\":\"add_one\",\"source_file\":\"fast-interpreter-function-trace.moss\",\"semantic_identity\":\"fn:add_one@1\",\"line\":2,\"parent_event_id\":1,\"call_event_id\":1,\"depth\":1,\"detail\":\"5\"}\n"
+                + "{\"event_id\":4,\"event\":\"FunctionExit\",\"function\":\"add_one\",\"source_file\":\"fast-interpreter-function-trace.moss\",\"semantic_identity\":\"fn:add_one@1\",\"line\":1,\"parent_event_id\":1,\"call_event_id\":1,\"depth\":1}\n";
+        if (!expected.equals(events) || !"5\n".equals(stdout.toString(StandardCharsets.UTF_8))) {
+            throw new AssertionError("function trace did not retain call context: " + events);
         }
     }
 }

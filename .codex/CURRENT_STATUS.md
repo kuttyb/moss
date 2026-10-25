@@ -13715,3 +13715,16 @@ stdout exactly.
 Validation: all eleven Java unit-test classes pass in ABI-v9 and staged
 ABI-v10 modes; feedback validation and `git diff --check` pass. Other nested
 control and message/state trace paths remain open.
+
+### Phase 25.3 continuation — trace direct function calls
+
+Java Fast Debug now emits `FunctionEnter`, explicit or implicit `Return`, and
+`FunctionExit` events around direct source function calls. Callee local events
+carry the function's semantic identity and active call event ID. A checked
+`add_one(4)` probe matches the complete C++ trace and stdout exactly. Pipeline
+callbacks, methods, and exceptional function exits remain unverified.
+
+Validation: clean Java build and all eleven Java unit-test classes pass in
+ABI-v9 and staged ABI-v10. `python3 tests/tooling/check_agent_feedback.py` and
+`git diff --check` pass. Native, project, SDK, and full acceptance gates remain
+deferred; Phase 25.3 remains in progress.
