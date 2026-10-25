@@ -541,9 +541,23 @@ public class CheckedBodyCodecTest {
         variant.variantId = "nominal-enum-variant-v1:" + declarationId + ":case:Missing";
         enumeration.variants.add(variant);
         MossiRecord enumRecord = enumeration.record();
-        if (!java.util.Arrays.equals(enumRecord.payloadBytes(),
-                AbiV10Records.PrivateEnumDeclaration.decode(enumRecord).record().payloadBytes())) {
-            throw new AssertionError("private enum record did not round trip");
+        String expectedPayload = "01000000456e6f6d696e616c2d656e756d2d76313a6d6f64756c652d76313a"
+                + "707269766174652d656e756d2d64657040312e302e303a3a70726f76696465723a656e756d3a"
+                + "4661756c740000002a6d6f64756c652d76313a707269766174652d656e756d2d64657040312e302e"
+                + "303a3a70726f7669646572000000054661756c7400000001000000074d697373696e670000006a"
+                + "6e6f6d696e616c2d656e756d2d76617269616e742d76313a6e6f6d696e616c2d656e756d2d7631"
+                + "3a6d6f64756c652d76313a707269766174652d656e756d2d64657040312e302e303a3a70726f76"
+                + "696465723a656e756d3a4661756c743a636173653a4d697373696e670000000000000047"
+                + "7368613235363a303266353939306463336361303536643735333663623634346533643637313236"
+                + "37316336376533633130313661336364336632366538333265356461303339";
+        if (!expectedPayload.equals(java.util.HexFormat.of().formatHex(enumRecord.payloadBytes()))
+                || !"sha256:7560c76be901dfe24b28bf1c508672cf4e2d2828b14da17beb2cdafe720773fc"
+                        .equals(enumeration.dependencyHash())
+                || !java.util.Arrays.equals(enumRecord.payloadBytes(),
+                        AbiV10Records.PrivateEnumDeclaration.decode(enumRecord).record().payloadBytes())) {
+            throw new AssertionError("private enum record did not match C++ payload/hash: "
+                    + java.util.HexFormat.of().formatHex(enumRecord.payloadBytes()) + " "
+                    + enumeration.dependencyHash());
         }
 
         String callable = module + "::make";

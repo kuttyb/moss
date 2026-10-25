@@ -13209,3 +13209,7 @@ ABI-v9 and staged ABI-v10 modes; `git diff --check` passes. The Java
 ProjectBuilder still does not derive private enum records from checker facts,
 and source-free loader projection and end-to-end provider-consumer checks remain
 open. No native or SDK gate ran.
+
+Follow-up ABI verification: the private enum codec's fixed payload bytes and
+`moss-abi-v10-private-enum-dependency` hash match a C++ fixture generated from
+`src/abi_v10_records.hpp` using the same declaration and provenance identity.
