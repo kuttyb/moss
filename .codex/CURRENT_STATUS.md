@@ -16539,3 +16539,14 @@ Rust compilation, execution, Margo package acceptance, SDK gate, full `make
 check`, or Architect review has been run. Work is currently uncommitted at the
 continuation SHA; the next step is feedback validation, checkpoint, and push,
 then continue the remaining parity/runtime gaps.
+
+### Phase 25.3 continuation — source-free method modes through inferred helpers
+
+Extended the ABI-v9 and ABI-v10 source-free object regressions with a helper
+whose argument type is inferred from an imported method signature. When the
+imported method consumes that argument, a caller's subsequent read now has an
+explicit negative test. `SourceFreeObjectMetadataTest` passes under the staged
+ABI-v10 environment. The complete Java suites under both ABI modes were last
+run immediately before this test-only addition. The parity ledger now records
+this evidence; generic receiver substitutions and native source-free linkage
+remain open. No Rust or SDK gates were run.

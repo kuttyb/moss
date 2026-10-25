@@ -206,6 +206,21 @@ public final class SourceFreeObjectMetadataTest {
             throw new AssertionError("source-free WRITE/CONSUME modes did not reach Rust parameter lowering: "
                     + checkedRust);
         }
+        Program forwardedImportedConsume = Parser.parseSource(""
+                + "fn relay(values, point: provider__Point):\n"
+                + "  point.replace(values)\n"
+                + "fn main():\n"
+                + "  point = provider__Point(x=0.0, label=\"x\")\n"
+                + "  values = [1]\n"
+                + "  relay(values, point)\n"
+                + "  echo values |> count\n", "source-free-method-consume-forwarded.moss");
+        Main.loadMossiFunctions(interfaceFile, "provider", forwardedImportedConsume);
+        try {
+            new SemanticChecker(forwardedImportedConsume).run();
+            throw new AssertionError("imported CONSUME method mode was not propagated through relay");
+        } catch (CompileError error) {
+            if (!"OWNERSHIP_USE_AFTER_CONSUME".equals(error.getCode())) throw error;
+        }
         Program unhandledMethodRaise = Parser.parseSource(""
                 + "enum Fault:\n"
                 + "  Bad\n"
@@ -424,6 +439,21 @@ public final class SourceFreeObjectMetadataTest {
                 throw new AssertionError("expected source-free receiver consumption, got "
                         + error.getCode(), error);
             }
+        }
+        Program v10ForwardedMethodConsume = Parser.parseSource(""
+                + "fn relay(values, point: provider__Point):\n"
+                + "  point.replace(values)\n"
+                + "fn main():\n"
+                + "  point = provider__Point(x=0.0)\n"
+                + "  values = [1]\n"
+                + "  relay(values, point)\n"
+                + "  echo values |> count\n", "source-free-v10-method-consume-forwarded.moss");
+        Main.loadMossiFunctions(v10File, "provider", v10ForwardedMethodConsume);
+        try {
+            new SemanticChecker(v10ForwardedMethodConsume).run();
+            throw new AssertionError("ABI-v10 imported CONSUME method mode was not propagated through relay");
+        } catch (CompileError error) {
+            if (!"OWNERSHIP_USE_AFTER_CONSUME".equals(error.getCode())) throw error;
         }
         EnumType v10Outcome = v10Consumer.enums.stream()
                 .filter(enumeration -> enumeration.name.equals("provider__Outcome"))

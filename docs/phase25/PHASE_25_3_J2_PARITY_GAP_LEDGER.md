@@ -670,3 +670,18 @@ Regressions reject unhandled direct and helper-forwarded calls and accept exact
 `recover Fault.Bad` arms.
 All eleven Java test classes pass under ABI-v9 and staged ABI-v10. Multi-variant
 ABI encoding and source-free native execution remain open.
+
+
+### Follow-up — source-free method consume through inferred helper parameters
+
+Added ABI-v9 and ABI-v10 consumer regressions where an imported method consumes
+an untyped helper parameter and a caller attempts to reuse that value after the
+helper returns. Both source-free method metadata forms preserve the CONSUME
+mode through the inferred helper summary, and Java rejects the caller reuse with
+`OWNERSHIP_USE_AFTER_CONSUME`. This narrows the generic/imported method-summary
+gap for concrete imported receivers; generic receiver substitutions and native
+source-free linkage remain open.
+
+The focused `SourceFreeObjectMetadataTest` passes under the staged ABI-v10
+environment. Full Java test suites under both ABI modes were last run before
+this test-only addition.
