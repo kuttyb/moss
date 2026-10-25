@@ -15416,3 +15416,14 @@ records.
 All twelve Java unit-test classes pass under ABI-v9 defaults and staged
 ABI-v10; `git diff --check` passes. These are Fast Debug project-driver checks,
 not native project acceptance.
+
+
+### Phase 25.3 continuation — verify optional JDT lifecycle and fallback
+
+The six `scripts/java/test_jdt_client.py` lifecycle tests pass. They cover
+daemon protocol identity, portable executable discovery, explicit status and
+stop behavior, failed-child cleanup, and javac fallback. On this host no
+Eclipse JDT executable is available: `--start` reports that cleanly,
+`--status`/`--stop` report no daemon, and `scripts/java/dev-build.sh --full`
+successfully uses the standalone javac build. Actual Eclipse startup and
+incremental builds remain environment-dependent and unverified.
