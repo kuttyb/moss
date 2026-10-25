@@ -469,9 +469,19 @@ public final class SemanticQueryEngineTest {
                 + "  return values |> all(risky_predicate)\n"
                 + "fn reduced(values: Vector[Int]) -> Int:\n"
                 + "  return values |> reduce(0, risky_combine)\n"
+                + "type Box:\n"
+                + "  fn risky_method(value: Int) -> Int:\n"
+                + "    raise Fault.Bad\n"
+                + "fn mapped_method(box: Box, values: Vector[Int]) -> Vector[Int]:\n"
+                + "  return values |> map(box.risky_method)\n"
                 + "fn handled(values: Vector[Int]):\n"
                 + "  try:\n"
                 + "    mapped(values)\n"
+                + "  recover Fault.Bad:\n"
+                + "    pass\n"
+                + "fn handled_method(box: Box, values: Vector[Int]):\n"
+                + "  try:\n"
+                + "    mapped_method(box, values)\n"
                 + "  recover Fault.Bad:\n"
                 + "    pass\n"
                 + "fn main():\n"
@@ -486,6 +496,9 @@ public final class SemanticQueryEngineTest {
                     "\"raise_set\": [\"enum:Fault:Bad\"]");
         }
         assertContains(queryEffects(program, "handled"), "\"raise_set\": []");
+        assertContains(queryEffects(program, "mapped_method"),
+                "\"raise_set\": [\"enum:Fault:Bad\"]");
+        assertContains(queryEffects(program, "handled_method"), "\"raise_set\": []");
     }
 
     private static void assertContains(String value, String expected) {

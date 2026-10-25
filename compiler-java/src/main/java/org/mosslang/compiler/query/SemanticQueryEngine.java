@@ -1641,6 +1641,21 @@ public class SemanticQueryEngine {
                         }
                     }
                 }
+                for (String callback : org.mosslang.compiler.parser.ParserSupport
+                        .pipelineCallbacks(expression)) {
+                    int dot = callback.lastIndexOf('.');
+                    if (dot <= 0 || !method.name.equals(callback.substring(dot + 1))) continue;
+                    String typeName = resolveObjectMethodReceiverTypeName(
+                            callback.substring(0, dot), program, bindings, ownerMethod);
+                    if (!matchesObjectTypeName(typeName, object.name)) continue;
+                    Set<String> methodRaises = collectRaisedVariants(null, method, null, program, visited);
+                    for (String raised : methodRaises) {
+                        if (statementIndex >= callerBody.size()
+                                || !isRaisedVariantRecovered(callerBody, statementIndex, raised)) {
+                            result.add(raised);
+                        }
+                    }
+                }
             }
         }
     }

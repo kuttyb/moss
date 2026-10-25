@@ -2642,6 +2642,20 @@ public class SemanticChecker {
                             }
                         }
                     }
+                    for (String callback : org.mosslang.compiler.parser.ParserSupport
+                            .pipelineCallbacks(maskStringLiterals(expression))) {
+                        int dot = callback.lastIndexOf('.');
+                        if (dot <= 0 || !method.name.equals(callback.substring(dot + 1))) continue;
+                        String receiverType = resolveMainReceiverType(callback.substring(0, dot), env, solver);
+                        if (!matchesObjectTypeName(receiverType, object.name)) continue;
+                        for (String variant : collectMethodRaiseVariants(method, new HashSet<>())) {
+                            if (!isRaiseHandled(statements, statementIndex, variant)) {
+                                throw new CompileError(program.main.line,
+                                        "main may not let typed errors escape; handle every raised variant with try/recover",
+                                        "MOSS_COMPILE_ERROR");
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -2715,6 +2729,16 @@ public class SemanticChecker {
                         .matcher(maskStringLiterals(expression));
                 while (matcher.find()) {
                     String receiverType = resolveFunctionReceiverType(matcher.group(1), bindings);
+                    if (!matchesObjectTypeName(receiverType, object.name)) continue;
+                    for (String raised : collectMethodRaiseVariants(method, visited)) {
+                        if (!isRaiseHandled(caller.body, callIndex, raised)) variants.add(raised);
+                    }
+                }
+                for (String callback : org.mosslang.compiler.parser.ParserSupport
+                        .pipelineCallbacks(maskStringLiterals(expression))) {
+                    int dot = callback.lastIndexOf('.');
+                    if (dot <= 0 || !method.name.equals(callback.substring(dot + 1))) continue;
+                    String receiverType = resolveFunctionReceiverType(callback.substring(0, dot), bindings);
                     if (!matchesObjectTypeName(receiverType, object.name)) continue;
                     for (String raised : collectMethodRaiseVariants(method, visited)) {
                         if (!isRaiseHandled(caller.body, callIndex, raised)) variants.add(raised);
@@ -2836,6 +2860,17 @@ public class SemanticChecker {
                         .matcher(maskStringLiterals(expression));
                 while (matcher.find()) {
                     String receiverType = resolveMethodReceiverType(matcher.group(1), ownerMethod, localTypes);
+                    if (!matchesObjectTypeName(receiverType, object.name)) continue;
+                    for (String raised : collectMethodRaiseVariants(candidate, visited)) {
+                        if (!isRaiseHandled(ownerMethod.body, callIndex, raised)) variants.add(raised);
+                    }
+                }
+                for (String callback : org.mosslang.compiler.parser.ParserSupport
+                        .pipelineCallbacks(maskStringLiterals(expression))) {
+                    int dot = callback.lastIndexOf('.');
+                    if (dot <= 0 || !candidate.name.equals(callback.substring(dot + 1))) continue;
+                    String receiverType = resolveMethodReceiverType(
+                            callback.substring(0, dot), ownerMethod, localTypes);
                     if (!matchesObjectTypeName(receiverType, object.name)) continue;
                     for (String raised : collectMethodRaiseVariants(candidate, visited)) {
                         if (!isRaiseHandled(ownerMethod.body, callIndex, raised)) variants.add(raised);

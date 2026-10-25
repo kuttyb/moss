@@ -16694,3 +16694,16 @@ parser: `scripts/java/test.sh` and `MOSS_STAGED_ABI=v10 scripts/java/test.sh`
 each pass all 12 Java test classes. Agent-feedback validation and
 `git diff --check` pass. The test suite verifies Java compiler units only; no
 native Rust build, execution, SDK integration, or final acceptance gate was run.
+
+
+### Phase 25.3 continuation — bound-method pipeline callback raises
+
+Extended root raise checking and effects-query closure to named bound-method
+callbacks such as `map(box.risky)`. The checker resolves the receiver's checked
+type and follows method raises through helpers; direct `main` callback calls
+and matching recover arms are covered too. Java effects-query tests cover an
+unhandled method callback and a recovered wrapper. Focused C++/Java query probes
+agree for both. The full 12-class Java suite passed under ABI-v9 and staged
+ABI-v10 after the implementation change; after adding direct-main controls,
+`SemanticCheckerTest` passes again. Generic and cross-module method callbacks
+remain open; no native Rust validation was performed.

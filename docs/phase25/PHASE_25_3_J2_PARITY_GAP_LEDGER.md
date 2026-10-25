@@ -805,3 +805,20 @@ Validation refresh: after the root callback raise correction and shared pipeline
 callback parser, `scripts/java/test.sh` and
 `MOSS_STAGED_ABI=v10 scripts/java/test.sh` each pass all 12 Java test classes.
 No Rust compilation/native execution or SDK gate was run.
+
+
+### Follow-up — bound-method pipeline callback raises
+
+The raise traversal was extended to callbacks such as `map(box.risky)`. It uses
+the caller's checked receiver type to select the method, propagates its raise
+through helper functions and direct `main` pipelines, and applies matching
+recovery. Semantic query traversal now includes the same bound-method callback
+path. Tests cover unhandled and recovered direct/helper calls plus query output.
+The focused semantic/query tests pass. With recovery in place, minimized C++
+and Java effects queries agree for the method callback and its recovered
+wrapper. This remains bounded to locally resolved receivers; generic and
+cross-module callback methods remain open.
+
+Validation refresh after bound-method callback handling: all 12 Java test
+classes pass under ABI-v9 and staged ABI-v10; the added direct-main positive
+and negative controls pass in `SemanticCheckerTest`.

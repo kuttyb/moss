@@ -5,6 +5,7 @@ import org.eclipse.collections.impl.list.mutable.FastList;
 import org.mosslang.compiler.ast.Line;
 
 import java.util.Collection;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -68,7 +69,18 @@ public final class ParserSupport {
 
     /** Whether an expression uses a named function as a functional pipeline callback. */
     public static boolean usesPipelineFunctionCallback(String expression, String functionName) {
-        if (expression == null || functionName == null || !expression.contains("|>")) return false;
+        if (functionName == null) return false;
+        for (String callback : pipelineCallbacks(expression)) {
+            if (callback.equals(functionName) || callback.endsWith("." + functionName)
+                    || callback.endsWith("::" + functionName)) return true;
+        }
+        return false;
+    }
+
+    /** Named callbacks passed to map/filter/any/all/reduce pipeline stages. */
+    public static List<String> pipelineCallbacks(String expression) {
+        if (expression == null || !expression.contains("|>")) return List.of();
+        List<String> callbacks = new ArrayList<>();
         for (String stage : splitPipeline(expression)) {
             int open = stage.indexOf('(');
             if (open <= 0 || !stage.endsWith(")")) continue;
@@ -83,10 +95,10 @@ public final class ParserSupport {
                     stage.substring(open + 1, stage.length() - 1), ',');
             if (callbackIndex >= arguments.size()) continue;
             String callback = trim(arguments.get(callbackIndex));
-            if (callback.equals(functionName) || callback.endsWith("." + functionName)
-                    || callback.endsWith("::" + functionName)) return true;
+            if (callback.matches("[A-Za-z_][A-Za-z0-9_]*(?:\\s*(?:\\.|::)\\s*[A-Za-z_][A-Za-z0-9_]*)*"))
+                callbacks.add(callback.replaceAll("\\s", ""));
         }
-        return false;
+        return callbacks;
     }
 
     private static List<String> splitPipeline(String expression) {

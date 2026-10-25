@@ -2290,6 +2290,37 @@ public class SemanticCheckerTest {
                 + "    pass\n", "main-recovers-pipeline-callback-raise.moss");
         new SemanticChecker(callbackHandled).run();
 
+        String methodCallbackPrefix = prefix
+                + "type Box:\n"
+                + "  fn risky(value: Int) -> Int:\n"
+                + "    raise Trouble.Bad\n"
+                + "fn mapped(box: Box, values: Vector[Int]) -> Vector[Int]:\n"
+                + "  return values |> map(box.risky)\n";
+        assertCompileError(methodCallbackPrefix
+                + "fn main():\n"
+                + "  box = Box()\n"
+                + "  mapped(box, [1])\n", "MOSS_COMPILE_ERROR");
+        Program methodCallbackHandled = Parser.parseSource(methodCallbackPrefix
+                + "fn main():\n"
+                + "  box = Box()\n"
+                + "  try:\n"
+                + "    mapped(box, [1])\n"
+                + "  recover Trouble.Bad:\n"
+                + "    pass\n", "main-recovers-method-pipeline-callback-raise.moss");
+        new SemanticChecker(methodCallbackHandled).run();
+        assertCompileError(methodCallbackPrefix
+                + "fn main():\n"
+                + "  box = Box()\n"
+                + "  mapped_values = [1] |> map(box.risky)\n", "MOSS_COMPILE_ERROR");
+        Program directMethodCallbackHandled = Parser.parseSource(methodCallbackPrefix
+                + "fn main():\n"
+                + "  box = Box()\n"
+                + "  try:\n"
+                + "    mapped_values = [1] |> map(box.risky)\n"
+                + "  recover Trouble.Bad:\n"
+                + "    pass\n", "main-recovers-direct-method-pipeline-callback.moss");
+        new SemanticChecker(directMethodCallbackHandled).run();
+
         Program handled = Parser.parseSource(prefix
                 + "fn main():\n"
                 + "  try:\n"
