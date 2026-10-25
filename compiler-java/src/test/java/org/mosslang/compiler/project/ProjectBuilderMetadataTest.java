@@ -29,6 +29,7 @@ public final class ProjectBuilderMetadataTest {
         testV10ImportRecordRequiresModuleBoundHashes();
         testV10SectionHashValidation();
         testV9FunctionParameterAccessSerialization();
+        testExportedObjectFieldSerialization();
         System.out.println("ProjectBuilderMetadataTest PASSED.");
     }
 
@@ -46,6 +47,21 @@ public final class ProjectBuilderMetadataTest {
         assertContains(record.toString(), "param 0 Int mode=READ name=\"a\"");
         assertContains(record.toString(), "param 1 Vector[Int] mode=WRITE name=\"b\"");
         assertContains(record.toString(), "param 2 Vector[Int] mode=CONSUME name=\"c\"");
+    }
+
+    private static void testExportedObjectFieldSerialization() {
+        org.mosslang.compiler.ast.ObjectType object =
+                new org.mosslang.compiler.ast.ObjectType("Point", "type Point", 1,
+                        "provider.moss", true);
+        object.fields.add(new Field("x", "float", "", "", 2,
+                "provider.moss", false, true));
+        object.fields.add(new Field("label", "string", "", "", 3,
+                "provider.moss", false, true));
+        StringBuilder fields = new StringBuilder();
+        ProjectBuilder.appendExportedObjectFields(fields, object);
+        assertEquals("  public_representation field x float\n"
+                        + "  public_representation field label string\n",
+                fields.toString());
     }
 
     private static void testV10ImportRecordRequiresModuleBoundHashes() {

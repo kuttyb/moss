@@ -12578,3 +12578,19 @@ repeated-call reproducer, Java accepts while C++ still rejects with
 result as a likely closure false rejection. Do not copy that rejection into
 Java. The exact C++ closure bookkeeping defect and general Java per-call
 member-fact retention remain open. No native or broad acceptance gates were run.
+
+### Phase 25.3 continuation — preserve source-free nominal fields
+
+The Java source-free writer emitted a placeholder `value` for every ABI-v10
+nominal and omitted `public_representation` fields from ABI-v9 semantic
+exports. The loader also ignored exported type records. The writer now emits
+actual exported field names/types for v9 and v10 semantic records; the loader
+restores `ObjectType` entries under canonical and qualified module names and
+retains their fields. Added focused writer and v9 loader tests.
+
+Validation: Java build and all ten Java unit-test classes pass, including the
+new source-free object metadata test. This fixes nominal field metadata only;
+method templates/effects, provider Rust type linkage, canonical binary ABI-v10
+nominal records, and source-free native behavior remain open. No native or SDK
+gate was run. Feedback is recorded in
+`agent-feedback/phase25/team-l7-phase25-3/source-free-object-fields/observations.jsonl`.

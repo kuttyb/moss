@@ -902,6 +902,16 @@ public class ProjectBuilder {
         return dependency.moduleId + " " + dependency.binaryHash + " " + dependency.semanticHash + "\n";
     }
 
+    static void appendExportedObjectFields(StringBuilder out, ObjectType object) {
+        for (Field field : object.fields) {
+            out.append("  public_representation field ").append(field.name);
+            if (field.type != null && !field.type.isEmpty()) {
+                out.append(" ").append(field.type);
+            }
+            out.append("\n");
+        }
+    }
+
     static void appendV9FunctionRecord(StringBuilder out, Function function, String publicName,
                                        String effects, boolean semanticRecord) {
         String kind = function.generic ? "generic"
@@ -1036,6 +1046,7 @@ public class ProjectBuilder {
                            .append(";may_diverge=0;unresolved=0\n");
             }
             semanticBuf.append("export type ").append(objName).append("\n");
+            appendExportedObjectFields(semanticBuf, obj);
             for (Method m : obj.methods) {
                 String raiseIdent = raisedErrorIdentity(module, m.body);
                 boolean raises = !raiseIdent.equals("-");
@@ -1125,7 +1136,7 @@ public class ProjectBuilder {
                 StringBuilder s = new StringBuilder();
                 s.append("export type ").append(objName).append(" nominal\n");
                 s.append("  declaration_id nominal-template-v1:").append(modId).append(":type:").append(objName).append("\n");
-                s.append("  public_representation field value \n");
+                appendExportedObjectFields(s, obj);
                 semRecords.add(new String[]{"type:" + objName, s.toString()});
             }
 

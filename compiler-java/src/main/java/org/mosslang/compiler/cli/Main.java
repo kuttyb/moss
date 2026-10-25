@@ -817,28 +817,82 @@ public class Main {
             boolean inContract = false;
             boolean inSemanticExports = false;
             org.mosslang.compiler.ast.Function currentFn = null;
+            org.mosslang.compiler.ast.ObjectType currentObject = null;
             for (String line : text.split("\\R")) {
                 line = line.trim();
                 if (line.equals("contract")) {
                     inContract = true;
                     inSemanticExports = false;
                     currentFn = null;
+                    currentObject = null;
                     continue;
                 }
                 if (line.equals("semantic_exports")) {
                     inContract = false;
                     inSemanticExports = true;
                     currentFn = null;
+                    currentObject = null;
                     continue;
                 }
                 if (line.equals("private_semantic_dependencies") || line.equals("provenance")) {
                     inContract = false;
                     inSemanticExports = false;
                     currentFn = null;
+                    currentObject = null;
+                    continue;
+                }
+
+                if (inSemanticExports && line.startsWith("export type ")) {
+                    String[] parts = line.split("\\s+");
+                    if (parts.length >= 3) {
+                        String typeName = parts[2];
+                        if ("nominal".equals(typeName) && parts.length >= 4) typeName = parts[3];
+                        String canonicalName = modName + "__" + typeName;
+                        currentObject = null;
+                        for (org.mosslang.compiler.ast.ObjectType object : program.objects) {
+                            if (object.name.equals(canonicalName)) {
+                                currentObject = object;
+                                break;
+                            }
+                        }
+                        if (currentObject == null) {
+                            currentObject = new org.mosslang.compiler.ast.ObjectType(
+                                    canonicalName, "type " + typeName, 1, cand.toString(), true);
+                            currentObject.definingModule = modName;
+                            currentObject.declarationName = typeName;
+                            program.objects.add(currentObject);
+                        }
+                        String qualifiedName = modName + "." + typeName;
+                        if (program.objects.stream().noneMatch(object -> object.name.equals(qualifiedName))) {
+                            org.mosslang.compiler.ast.ObjectType alias = new org.mosslang.compiler.ast.ObjectType(
+                                    qualifiedName, currentObject.header, currentObject.line,
+                                    currentObject.sourceFile, true);
+                            alias.definingModule = modName;
+                            alias.declarationName = typeName;
+                            alias.fields = currentObject.fields;
+                            alias.methods = currentObject.methods;
+                            program.objects.add(alias);
+                        }
+                    }
+                    currentFn = null;
+                    continue;
+                }
+                if (inSemanticExports && currentObject != null
+                        && line.startsWith("public_representation field ")) {
+                    String[] parts = line.substring("public_representation field ".length())
+                            .trim().split("\\s+", 2);
+                    String fieldName = parts[0];
+                    String fieldType = parts.length > 1 ? parts[1].trim() : "";
+                    if (currentObject.fields.stream().noneMatch(field -> field.name.equals(fieldName))) {
+                        currentObject.fields.add(new org.mosslang.compiler.ast.Field(
+                                fieldName, fieldType, "", "", 1, cand.toString(),
+                                fieldType.isEmpty(), true));
+                    }
                     continue;
                 }
 
                 if ((inContract || inSemanticExports) && (line.startsWith("export fn ") || line.startsWith("fn "))) {
+                    currentObject = null;
                     String[] parts = line.split("\\s+");
                     String fnName = parts[0].equals("export") ? parts[2] : parts[1];
                     String retType = "";
