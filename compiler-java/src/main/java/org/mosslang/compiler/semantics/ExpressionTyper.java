@@ -1234,6 +1234,23 @@ public class ExpressionTyper {
                         throw new CompileError(line, "no matching method '" + targetType.name() + "." + member
                                 + "' for supplied arguments", "MOSS_COMPILE_ERROR");
                     }
+                    for (int i = 0; i < argExprs.size(); i++) {
+                        Param parameter = m.params.get(i);
+                        TypeRef expected = parameter.type != null && !parameter.type.isEmpty()
+                                ? TypeParser.parseCanonical(parameter.type) : null;
+                        if (expected == null && parameter.typeRef != null
+                                && parameter.typeRef.isClosed()) {
+                            expected = TypeParser.parseCanonical(
+                                    parameter.typeRef.toCanonicalString());
+                        }
+                        TypeRef actual = solver.resolve(infer(argExprs.get(i), line, env));
+                        if (expected != null && !solver.unify(actual, expected)) {
+                            throw new CompileError(line, "argument " + (i + 1)
+                                    + " to trait method '" + member + "' has type '"
+                                    + actual.toCanonicalString() + "', expected '"
+                                    + expected.toCanonicalString() + "'", "TYPE_MISMATCH");
+                        }
+                    }
                     TypeRef ret = m.returnTypeRef != null ? m.returnTypeRef :
                             (m.returnType != null && !m.returnType.isEmpty() ? TypeParser.parseCanonical(m.returnType) : TypeRef.unit());
                     return ret != null ? ret : TypeRef.unit();

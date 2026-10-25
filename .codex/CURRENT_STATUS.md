@@ -12559,3 +12559,22 @@ results; one-call and 2–4-call focused variants. The finding is recorded in
 `agent-feedback/phase25/team-l7-phase25-3/generic-member-summary/observations.jsonl`.
 The generic requirement-closure diagnosis and correction remain open. No native,
 Rust compilation, SDK, or broad conformance gate was run.
+
+### Phase 25.3 continuation — check generic trait method arguments
+
+A minimal uninstantiated generic body that passed `Bool` to a trait method
+requiring `Float` was accepted by Java but rejected by C++ with
+`TYPE_MISMATCH`. The cause was confirmed in Java's trait-member path: it checked
+arity and returned the declared result type without checking each argument
+against the trait signature. The checker now infers each argument and unifies it
+with the declared parameter type. Focused unit coverage verifies invalid bodies
+reject before concrete instantiation and well-typed repeated trait calls remain
+accepted.
+
+Validation: Java build and all ten Java unit-test classes pass. Direct C++/Java
+checks both reject the invalid uninstantiated source. For the separate valid
+repeated-call reproducer, Java accepts while C++ still rejects with
+`TYPE_AMBIGUOUS_OPEN_RESULT`; Architect's focused review classifies that C++
+result as a likely closure false rejection. Do not copy that rejection into
+Java. The exact C++ closure bookkeeping defect and general Java per-call
+member-fact retention remain open. No native or broad acceptance gates were run.

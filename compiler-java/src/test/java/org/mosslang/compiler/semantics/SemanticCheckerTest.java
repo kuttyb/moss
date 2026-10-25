@@ -10,6 +10,8 @@ public class SemanticCheckerTest {
         testSameTraitConstraintCanBeForwarded();
         testDifferentTraitConstraintIsNotAssumed();
         testStructuralMethodSignatureIsChecked();
+        testTraitMethodArgumentsAreCheckedWithoutInstantiation();
+        testRepeatedTraitMethodCallsRemainWellTyped();
         testInferredMethodReturnSatisfiesStructuralTrait();
         testInferredMethodReturnMustMatchStructuralTrait();
         testFunctionParameterAccessModesAreRetained();
@@ -71,6 +73,42 @@ public class SemanticCheckerTest {
                 throw new AssertionError("expected TYPE_MISMATCH, got " + error.getCode(), error);
             }
         }
+    }
+
+    private static void testTraitMethodArgumentsAreCheckedWithoutInstantiation() {
+        Program program = Parser.parseSource(""
+                + "trait Evaluator:\n"
+                + "  fn evaluate(value: Float) -> Float\n"
+                + "fn invalid(value: Evaluator) -> Float:\n"
+                + "  return value.evaluate(true)\n"
+                + "fn main():\n"
+                + "  pass\n", "trait-method-argument.moss");
+        try {
+            new SemanticChecker(program).run();
+            throw new AssertionError("trait method arguments must be checked in the generic body");
+        } catch (CompileError error) {
+            if (!"TYPE_MISMATCH".equals(error.getCode())) {
+                throw new AssertionError("expected TYPE_MISMATCH, got " + error.getCode(), error);
+            }
+        }
+    }
+
+    private static void testRepeatedTraitMethodCallsRemainWellTyped() {
+        Program program = Parser.parseSource(""
+                + "trait Evaluator:\n"
+                + "  fn evaluate(value: Float) -> Float\n"
+                + "type Linear:\n"
+                + "  scale: Float\n"
+                + "  fn evaluate(value: Float) -> Float:\n"
+                + "    return scale * value\n"
+                + "fn combine(value: Evaluator, x: Float) -> Float:\n"
+                + "  left = value.evaluate(x)\n"
+                + "  right = value.evaluate(x + 1.0)\n"
+                + "  return left + right\n"
+                + "fn main():\n"
+                + "  linear = Linear(scale: 2.0)\n"
+                + "  result = combine(linear, 1.0)\n", "trait-method-repeated-calls.moss");
+        new SemanticChecker(program).run();
     }
 
     private static void testInferredMethodReturnSatisfiesStructuralTrait() {
