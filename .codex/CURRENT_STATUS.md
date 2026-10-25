@@ -12719,3 +12719,16 @@ signature after importing WRITE receiver and CONSUME parameter effects: the
 receiver lowers as `&mut moss_provider::Point` and the vector parameter remains
 owned. This remains generated-text evidence only, not Rust compilation or
 provider artifact linkage.
+
+### Phase 25.3 continuation — optional JDT daemon lifecycle
+
+The developer build helper no longer assumes an Eclipse install at a fixed
+absolute path; it discovers an explicit `MOSS_JDT_EXECUTABLE` or an `eclipse`
+executable on `PATH`. It exposes `--start`, `--status`, and `--stop`. Failed
+launch, readiness, or initialization paths terminate the child process, and a
+normal development build falls back to standalone `javac` when startup fails.
+
+Validation: `python3 scripts/java/test_jdt_client.py` passes all five mocked
+lifecycle/discovery tests; Python bytecode compilation and `git diff --check`
+pass. The live Eclipse daemon was not launched, so its actual socket handshake
+and stop behavior remain unverified.

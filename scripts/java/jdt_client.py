@@ -25,7 +25,7 @@ BUILD_SCRIPT = REPO_ROOT / "scripts" / "java" / "build.sh"
 
 def find_eclipse():
     configured = os.environ.get("MOSS_JDT_EXECUTABLE")
-    candidates = [configured] if configured else ["/opt/eclipse-jdt/eclipse", shutil.which("eclipse")]
+    candidates = [configured, shutil.which("eclipse")]
     for candidate in candidates:
         if candidate and os.path.isfile(candidate) and os.access(candidate, os.X_OK):
             return candidate
@@ -58,7 +58,11 @@ def start_daemon(port=JDT_PORT):
     log_fp = open(LOG_FILE, "a", encoding="utf-8")
     log_fp.write(f"\n--- Starting JDT Daemon at {time.ctime()} ---\n")
     log_fp.flush()
-    proc = subprocess.Popen(cmd, stdout=log_fp, stderr=subprocess.STDOUT)
+    try:
+        proc = subprocess.Popen(cmd, stdout=log_fp, stderr=subprocess.STDOUT)
+    except OSError as error:
+        sys.stderr.write(f"Could not launch Eclipse JDT: {error}\n")
+        return False
     
     ready = False
     for _ in range(50):
@@ -67,14 +71,32 @@ def start_daemon(port=JDT_PORT):
             ready = True
             break
     if not ready:
-        sys.stderr.write(f"Error: JDT daemon failed to start on port {port}. Check {LOG_FILE}\n")
-        sys.exit(1)
+        stop_process(proc)
+        sys.stderr.write(f"JDT daemon did not start on port {port}. Check {LOG_FILE}\n")
+        return False
     
     # Initialize workspace project
-    resp, _ = send_command(f"INIT {SRC_DIR} {LIB_DIR} {BIN_DIR}", port)
+    try:
+        resp, _ = send_command(f"INIT {SRC_DIR} {LIB_DIR} {BIN_DIR}", port)
+    except OSError as error:
+        stop_process(proc)
+        sys.stderr.write(f"JDT daemon initialization failed: {error}\n")
+        return False
     if "OK" not in resp:
-        sys.stderr.write(f"Error initializing JDT project: {resp}\n")
-        sys.exit(1)
+        stop_process(proc)
+        sys.stderr.write(f"JDT daemon initialization failed: {resp}\n")
+        return False
+    return True
+
+def stop_process(proc):
+    if proc.poll() is not None:
+        return
+    proc.terminate()
+    try:
+        proc.wait(timeout=3)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait(timeout=3)
 
 def send_command(cmd_str, port=JDT_PORT):
     s = socket.socket()
@@ -90,30 +112,48 @@ def send_command(cmd_str, port=JDT_PORT):
     elapsed_ms = (t1 - t0) * 1000.0
     return resp, elapsed_ms
 
-def main():
+def main(argv=None):
+    argv = list(sys.argv[1:] if argv is None else argv)
     action = "BUILD_INCREMENTAL"
     subsystem = "all"
-    for arg in sys.argv[1:]:
+    for arg in argv:
         if arg == "--clean":
             action = "BUILD_CLEAN"
         elif arg == "--full":
             action = "BUILD_FULL"
         elif arg.startswith("--subsystem="):
             subsystem = arg.split("=", 1)[1]
+        elif arg == "--status":
+            print("JDT daemon is running." if is_daemon_running() else "JDT daemon is not running.")
+            return 0
         elif arg == "--stop":
             if is_daemon_running():
                 send_command("STOP")
                 print("JDT daemon stopped.")
             else:
                 print("JDT daemon is not running.")
-            return
+            return 0
+        elif arg == "--start":
+            if is_daemon_running():
+                print("JDT daemon is already running.")
+                return 0
+            if find_eclipse() is None:
+                print("Eclipse JDT is unavailable; daemon was not started.")
+                return 0
+            if start_daemon():
+                print(f"JDT daemon started on port {JDT_PORT}.")
+                return 0
+            return 1
 
     if not is_daemon_running():
         if find_eclipse() is None:
             print("Eclipse JDT is unavailable; using the standalone javac build.")
             fallback_args = ["--clean"] if action == "BUILD_CLEAN" else []
             return subprocess.call([str(BUILD_SCRIPT), *fallback_args])
-        start_daemon()
+        if not start_daemon():
+            print("JDT daemon startup failed; using the standalone javac build.")
+            fallback_args = ["--clean"] if action == "BUILD_CLEAN" else []
+            return subprocess.call([str(BUILD_SCRIPT), *fallback_args])
 
     # Always refresh to ensure file modifications on disk are observed
     _, refresh_ms = send_command("REFRESH")
@@ -146,4 +186,4 @@ def main():
         sys.exit(1)
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
