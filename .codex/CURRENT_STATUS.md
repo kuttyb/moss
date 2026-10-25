@@ -15042,3 +15042,9 @@ both effects queries report `self: WRITE`, and generated method signatures use
 `&mut self -> ()`. All eleven Java unit-test classes pass in ABI-v9 and staged
 ABI-v10. Generated Rust was inspected but not compiled; broader receiver effect
 closure remains open.
+
+
+The receiver-write regression also covers propagation into an ordinary function
+parameter: `apply(box: Box)` calling `box.run()` reports `box: WRITE` in both
+compilers. This confirms the method access mode is available before function
+parameter effects are finalized.

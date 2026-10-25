@@ -212,13 +212,17 @@ public final class SemanticQueryEngineTest {
                 + "    self.value = self.value + 1\n"
                 + "  fn run():\n"
                 + "    self.bump()\n"
+                + "fn apply(box: Box):\n"
+                + "  box.run()\n"
                 + "fn main():\n"
                 + "  box = Box(value=0)\n"
-                + "  box.run()\n";
+                + "  apply(box)\n";
         Program program = Parser.parseSource(source, "effects-query-sibling-receiver-write.moss");
         new SemanticChecker(program).run();
         assertContains(queryEffects(program, "method:Box.run"),
                 "\"name\": \"self\", \"type\": \"box\", \"effect\": \"WRITE\"");
+        assertContains(queryEffects(program, "apply"),
+                "\"name\": \"box\", \"type\": \"box\", \"effect\": \"WRITE\"");
     }
 
     private static void effectsQueryExcludesRecoveredDirectRaises() {
