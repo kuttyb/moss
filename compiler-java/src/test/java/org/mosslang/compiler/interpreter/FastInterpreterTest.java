@@ -1134,7 +1134,6 @@ public final class FastInterpreterTest {
                 + "type VisitCounter:\n"
                 + "  visited: Int\n"
                 + "  fn positive(value: Int) -> Bool:\n"
-                + "    visited = visited + 1\n"
                 + "    return value > 0\n"
                 + "fn double(value: Int) -> Int:\n"
                 + "  return value * 2\n"
@@ -1151,7 +1150,7 @@ public final class FastInterpreterTest {
                 + "  found = values |> any(_ == 2)\n"
                 + "  all_positive = values |> all(_ > 0)\n"
                 + "  counter = VisitCounter(visited: 0)\n"
-                + "  effectful_any = values |> any(counter.positive)\n"
+                + "  bound_any = values |> any(counter.positive)\n"
                 + "  flags = [true, false, true]\n"
                 + "  any_flag = flags |> any\n"
                 + "  all_flags = flags |> all\n"
@@ -1162,7 +1161,7 @@ public final class FastInterpreterTest {
                 + "  echo biased\n"
                 + "  echo found\n"
                 + "  echo all_positive\n"
-                + "  echo effectful_any, counter.visited\n"
+                + "  echo bound_any, counter.visited\n"
                 + "  echo any_flag\n"
                 + "  echo all_flags\n"
                 + "  echo sensor_ids[0], sensor_ids[1]\n", "fast-interpreter-general-pipeline.moss");
@@ -1171,7 +1170,7 @@ public final class FastInterpreterTest {
         new FastInterpreter(program, false,
                 new PrintStream(stdout, true, StandardCharsets.UTF_8),
                 new PrintStream(new ByteArrayOutputStream())).run();
-        String expected = "12\n24\n5\ntrue\ntrue\ntrue 3\ntrue\nfalse\n101 103\n";
+        String expected = "12\n24\n5\ntrue\ntrue\ntrue 0\ntrue\nfalse\n101 103\n";
         if (!expected.equals(stdout.toString(StandardCharsets.UTF_8))) {
             throw new AssertionError("general pipeline callback or terminal result was wrong: " + stdout);
         }

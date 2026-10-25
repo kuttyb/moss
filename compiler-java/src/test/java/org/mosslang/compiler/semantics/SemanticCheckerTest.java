@@ -53,6 +53,9 @@ public class SemanticCheckerTest {
         testReduceCallbackResultMatchesAccumulator();
         testEnumValuesAreRejectedAsMapKeys();
         testOverlappingConsumeArgumentsAreRejected();
+        testFunctionalCallbacksRejectMutableCaptures();
+        testFunctionalMapRejectsNoncopySourceAliases();
+        testFunctionalPipelinesMustBeMaterializedAtDomainBoundary();
         testDirectVectorSumTypeAndLowering();
         testValueHandlerRepliesOnEveryNormalPath();
         testUnsupportedCollectionsAreRejectedAsForIterablesAtLoopSite();
@@ -1274,6 +1277,109 @@ public class SemanticCheckerTest {
                 + "  echo result[0]\n", "return-call-ownership-alias.moss");
         expectCompileError(callbackAlias, "OWNERSHIP_CONFLICTING_ACCESS",
                 "return calls must validate overlapping write and read arguments");
+    }
+
+    private static void testFunctionalCallbacksRejectMutableCaptures() {
+        Program direct = Parser.parseSource(""
+                + "fn main():\n"
+                + "  values = [1, 2, 3]\n"
+                + "  captured = [0]\n"
+                + "  invalid = values |> map(captured.push(_))\n"
+                + "  echo invalid[0]\n", "functional-mutable-capture.moss");
+        expectCompileError(direct, "FUNCTIONAL_CAPTURE_MUTATION",
+                "functional callbacks cannot mutate captured collections");
+
+        Program bound = Parser.parseSource(""
+                + "type Accumulator:\n"
+                + "  total: Int\n"
+                + "  fn add(value: Int) -> Int:\n"
+                + "    total = total + value\n"
+                + "    return total\n"
+                + "fn main():\n"
+                + "  accumulator = Accumulator(total = 0)\n"
+                + "  values = [1, 2, 3]\n"
+                + "  invalid = values |> map(accumulator.add)\n"
+                + "  echo invalid[0]\n", "functional-bound-method-capture.moss");
+        expectCompileError(bound, "FUNCTIONAL_CAPTURE_MUTATION",
+                "functional callbacks cannot mutate bound receiver captures");
+
+        Program forwarded = Parser.parseSource(""
+                + "type Accumulator:\n"
+                + "  total: Int\n"
+                + "  fn add(value: Int) -> Int:\n"
+                + "    total = total + value\n"
+                + "    return total\n"
+                + "fn update(accumulator: Accumulator, value: Int) -> Int:\n"
+                + "  return accumulator.add(value)\n"
+                + "fn update_through_helper(accumulator: Accumulator, value: Int) -> Int:\n"
+                + "  return update(accumulator, value)\n"
+                + "fn main():\n"
+                + "  values = [1, 2, 3]\n"
+                + "  captured = Accumulator(total = 0)\n"
+                + "  invalid = values |> map(update_through_helper(captured, _))\n"
+                + "  echo invalid[0]\n", "functional-helper-mutable-capture.moss");
+        expectCompileError(forwarded, "FUNCTIONAL_CAPTURE_MUTATION",
+                "functional callbacks cannot mutate captures through helper calls");
+
+        Program readCapture = Parser.parseSource(""
+                + "fn main():\n"
+                + "  threshold = 2\n"
+                + "  values = [1, 2, 3]\n"
+                + "  result = values |> map(_ + threshold)\n"
+                + "  echo result[0]\n", "functional-read-capture.moss");
+        new SemanticChecker(readCapture).run();
+    }
+
+    private static void testFunctionalPipelinesMustBeMaterializedAtDomainBoundary() {
+        Program invalid = Parser.parseSource(""
+                + "domain Sink:\n"
+                + "  fn Store(values: Vector):\n"
+                + "    echo \"stored\"\n"
+                + "fn double(value: Int) -> Int:\n"
+                + "  return value * 2\n"
+                + "fn main():\n"
+                + "  sink = Sink()\n"
+                + "  values = [1, 2, 3]\n"
+                + "  message sink.Store(values |> map(double))\n", "pipeline-domain-inline.moss");
+        expectCompileError(invalid, "MOSS_COMPILE_ERROR",
+                "a collection-producing pipeline must be materialized before a domain send");
+
+        Program valid = Parser.parseSource(""
+                + "domain Sink:\n"
+                + "  fn Store(values: Vector):\n"
+                + "    echo \"stored\"\n"
+                + "fn double(value: Int) -> Int:\n"
+                + "  return value * 2\n"
+                + "fn main():\n"
+                + "  sink = Sink()\n"
+                + "  values = [1, 2, 3]\n"
+                + "  mapped = values |> map(double)\n"
+                + "  message sink.Store(mapped)\n", "pipeline-domain-materialized.moss");
+        new SemanticChecker(valid).run();
+    }
+
+    private static void testFunctionalMapRejectsNoncopySourceAliases() {
+        Program identity = Parser.parseSource(""
+                + "type Payload:\n"
+                + "  label: String\n"
+                + "fn main():\n"
+                + "  values = [Payload(label = \"first\")]\n"
+                + "  invalid = values |> map(_)\n"
+                + "  echo invalid[0]\n", "functional-map-alias-identity.moss");
+        expectCompileError(identity, "FUNCTIONAL_SEMANTIC_ERROR",
+                "map cannot return noncopy source elements without a copy");
+
+        Program field = Parser.parseSource(""
+                + "type Payload:\n"
+                + "  label: String\n"
+                + "type Envelope:\n"
+                + "  payload: Payload\n"
+                + "fn main():\n"
+                + "  values = [Envelope(payload = Payload(label = \"first\"))]\n"
+                + "  invalid = values |> map(_.payload)\n"
+                + "  echo invalid[0].label\n", "functional-map-alias-field.moss");
+        expectCompileError(field, "FUNCTIONAL_SEMANTIC_ERROR",
+                "map cannot return a noncopy source field without a copy");
     }
 
     private static void testNestedFieldReadInBranchConditionKeepsReceiverReadOnly() {

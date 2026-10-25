@@ -3443,6 +3443,7 @@ public class SemanticChecker {
             if (currentHandlerRaises != null) recordDirectCallRaises(pipeline.left(), env);
             consumeCallArguments(line, pipeline.left(), env, fallbackDest);
             String stage = pipeline.right().trim();
+            rejectFunctionalCallbackOwnership(line, pipeline.left(), stage, env);
             if (stage.startsWith("reduce(") && stage.endsWith(")")) {
                 List<String> arguments = ExpressionTyper.parseArguments(
                         stage.substring("reduce(".length(), stage.length() - 1));
@@ -3611,6 +3612,134 @@ public class SemanticChecker {
             if (currentHandlerRaises != null && fn != null)
                 recordDirectCallRaises(callee + "()", env);
         }
+    }
+
+    private void rejectFunctionalCallbackOwnership(int line, String source,
+                                                   String stage, OwnershipEnv env) {
+        if (stage == null || !stage.endsWith(")")) return;
+        int open = stage.indexOf('(');
+        if (open <= 0) return;
+        String operation = stage.substring(0, open).trim();
+        if (!Set.of("map", "filter", "any", "all", "reduce").contains(operation)) return;
+        List<String> arguments = ExpressionTyper.parseArguments(
+                stage.substring(open + 1, stage.length() - 1));
+        int callbackIndex = "reduce".equals(operation) ? 1 : 0;
+        if (arguments.size() <= callbackIndex) return;
+        String callback = arguments.get(callbackIndex).trim();
+        boolean hasPlaceholder = java.util.regex.Pattern.compile(
+                "(?<![A-Za-z0-9_])_(?![A-Za-z0-9_])").matcher(callback).find();
+        TypeRef elementType = null;
+        String sourceRoot = ownershipRoot(source);
+        TypeRef sourceType = env.get(sourceRoot);
+        if (sourceType != null && sourceType.kind() == TypeKind.Builtin
+                && "vector".equals(sourceType.name()) && !sourceType.typeArgs().isEmpty()) {
+            elementType = sourceType.typeArgs().get(0);
+        }
+        if ("map".equals(operation) && hasPlaceholder && elementType != null
+                && transferType(elementType)) {
+            TypeRef resultType = callback.equals("_") ? elementType
+                    : callback.startsWith("_.")
+                            ? resolveReceiverPathType(elementType, callback, "_") : null;
+            if (resultType != null && transferType(resultType)) {
+                throw new CompileError(line,
+                        "functional map result aliases nontrivial source storage through '_'; "
+                                + "map reads its source and no implicit copy is inserted",
+                        "FUNCTIONAL_SEMANTIC_ERROR");
+            }
+        }
+
+        java.util.regex.Matcher bound = java.util.regex.Pattern.compile(
+                "^([A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)*)\\.([A-Za-z_][A-Za-z0-9_]*)$")
+                .matcher(callback);
+        if (bound.matches()) {
+            String receiver = bound.group(1);
+            String root = ownershipRoot(receiver);
+            TypeRef receiverType = resolveReceiverPathType(env.get(root), receiver, root);
+            if (receiverType != null) {
+                ObjectType object = findObjectType(receiverType.name());
+                if (object != null) {
+                    for (Method method : object.methods) {
+                        if (method.name.equals(bound.group(2))
+                                && method.receiverAccessMode != AccessMode.Read) {
+                            throw functionalCaptureMutation(line, callback, receiver,
+                                    method.receiverAccessMode);
+                        }
+                    }
+                }
+            }
+        }
+
+        if (!hasPlaceholder) {
+            Function function = functions.get(callback);
+            if (function != null && elementType != null && transferType(elementType)
+                    && functionParameterMode(function, callbackIndex == 1 ? 1 : 0)
+                            == AccessMode.Consume) {
+                throw new CompileError(line,
+                        "functional callback '" + callback + "' consumes a nontrivial source element; "
+                                + "the pipeline only reads its source",
+                        "FUNCTIONAL_ELEMENT_CONSUME");
+            }
+            return;
+        }
+
+        String code = callback;
+        for (Map.Entry<String, TypeRef> binding : env.typeEnv.getBindings().entrySet()) {
+            String capture = binding.getKey();
+            if (capture.equals("_")) continue;
+            java.util.regex.Pattern identifier = java.util.regex.Pattern.compile(
+                    "(?<![A-Za-z0-9_])" + java.util.regex.Pattern.quote(capture)
+                            + "(?![A-Za-z0-9_])");
+            if (!identifier.matcher(code).find()) continue;
+            TypeRef captureType = binding.getValue();
+            java.util.regex.Matcher memberCall = java.util.regex.Pattern.compile(
+                    "(?<![A-Za-z0-9_])" + java.util.regex.Pattern.quote(capture)
+                            + "\\s*\\.\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*\\(").matcher(code);
+            while (memberCall.find()) {
+                String methodName = memberCall.group(1);
+                if (isBuiltinMutatingMethod(captureType, methodName)) {
+                    throw functionalCaptureMutation(line, callback, capture, AccessMode.Write);
+                }
+                ObjectType object = captureType != null ? findObjectType(captureType.name()) : null;
+                if (object != null) {
+                    for (Method method : object.methods) {
+                        if (method.name.equals(methodName)
+                                && method.receiverAccessMode != AccessMode.Read) {
+                            throw functionalCaptureMutation(line, callback, capture,
+                                    method.receiverAccessMode);
+                        }
+                    }
+                }
+            }
+            for (Function function : functions.values()) {
+                java.util.regex.Matcher call = java.util.regex.Pattern.compile(
+                        "(?<![A-Za-z0-9_.])" + java.util.regex.Pattern.quote(function.name)
+                                + "\\s*\\(").matcher(code);
+                while (call.find()) {
+                    int callOpen = code.indexOf('(', call.start());
+                    int callClose = matchingCloseParen(code, callOpen);
+                    if (callClose < 0) continue;
+                    List<String> callArgs = ExpressionTyper.parseArguments(
+                            code.substring(callOpen + 1, callClose));
+                    for (int index = 0; index < callArgs.size()
+                            && index < function.params.size(); index++) {
+                        if (!ownershipRoot(callArgumentValue(callArgs.get(index)).trim())
+                                .equals(capture)) continue;
+                        AccessMode mode = functionParameterMode(function, index);
+                        if (mode != AccessMode.Read) {
+                            throw functionalCaptureMutation(line, callback, capture, mode);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private CompileError functionalCaptureMutation(int line, String callback,
+                                                  String capture, AccessMode mode) {
+        return new CompileError(line, "functional callback '" + callback
+                + "' requires " + mode.name().toUpperCase()
+                + " access to captured binding '" + capture + "'",
+                "FUNCTIONAL_CAPTURE_MUTATION");
     }
 
     private String ownershipRoot(String expression) {

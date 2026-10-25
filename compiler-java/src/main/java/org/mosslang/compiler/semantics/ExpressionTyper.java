@@ -1110,6 +1110,17 @@ public class ExpressionTyper {
                     target.params.size() + " arguments, got " + argExprs.size(), "ARGUMENT_COUNT_MISMATCH");
         }
         for (int i = 0; i < argExprs.size(); i++) {
+            BinarySplit pipeline = splitBinary(argExprs.get(i), List.of("|>"));
+            if (pipeline != null) {
+                String terminal = pipeline.right().trim();
+                int terminalOpen = terminal.indexOf('(');
+                if (terminalOpen >= 0) terminal = terminal.substring(0, terminalOpen).trim();
+                if (!Set.of("reduce", "sum", "count", "any", "all").contains(terminal)) {
+                    throw new CompileError(line,
+                            "functional pipeline must be materialized in a local binding before crossing a domain boundary",
+                            "MOSS_COMPILE_ERROR");
+                }
+            }
             TypeRef actual = infer(argExprs.get(i), line, env);
             Param param = target.params.get(i);
             TypeRef expected = param.typeRef != null ? param.typeRef : TypeParser.parseCanonical(param.type);

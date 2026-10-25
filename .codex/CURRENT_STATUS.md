@@ -16279,3 +16279,23 @@ capture, per-element consume, domain-boundary, and noncopy placeholder cases.
 All twelve Java tests pass under ABI-v9 and staged ABI-v10. Packaging/bootstrap,
 feedback validation, and diff checks pass. Native and release gates remain
 unrun.
+
+### Phase 25.3 continuation — functional callback ownership and boundaries
+
+Java now rejects functional callbacks that WRITE or CONSUME captured bindings
+through collection methods, bound object methods, or resolved helper parameters.
+Named callbacks that CONSUME noncopy source elements are rejected; map
+placeholders that return a noncopy source element or field are rejected; and a
+collection-producing pipeline passed inline across a domain message boundary
+must first be assigned to a local. A prior Fast Debug unit sample used a
+mutating bound predicate despite the C++ language checker rejecting that
+callback form; its predicate is now pure while the test continues to exercise
+the bound callback and terminal behavior.
+
+The refreshed 50-file negative sample now has 0 C++ and 0 Java acceptances,
+with no malformed outputs. The earlier 100-file positive sample has matching
+99/100 acceptance in both compilers and no acceptance mismatches. These are
+bounded checker screens, not semantic or backend parity proofs. All twelve
+Java tests pass under ABI-v9 and staged ABI-v10; standalone packaging/bootstrap,
+feedback validation, and diff checks pass. Native and release gates remain
+unrun.
