@@ -13942,3 +13942,9 @@ records them as captures on matching raise edges. Java Fast Debug returns
 fact. The borrowed-payload fixture remains rejected, currently with generic
 `UNKNOWN_SYMBOL_OR_TYPE` rather than C++'s more specific
 `ON_FAIL_CAPTURE_NOT_OWNED` diagnostic.
+
+The borrowed-payload diagnostic now matches C++ for the capture ownership rule:
+Java binds case payload types while validating failure arms, then rejects a
+payload originating from non-consuming `match` with
+`ON_FAIL_CAPTURE_NOT_OWNED`. A semantic test confirms rejection, alongside the
+positive consumed-payload capture test. ABI-v9 and staged ABI-v10 suites pass.

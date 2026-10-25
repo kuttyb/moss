@@ -32,6 +32,7 @@ public class SemanticCheckerTest {
         testOnFailRejectsLocalInitializedAfterRaise();
         testOnFailCaptureUsesMatchingRaisedVariant();
         testOwnedMatchPayloadCanBeOnFailCapture();
+        testBorrowedMatchPayloadCannotBeOnFailCapture();
         testSameCrateRaisingCallPreservesErrorCarrier();
         System.out.println("SemanticCheckerTest PASSED.");
     }
@@ -229,6 +230,34 @@ public class SemanticCheckerTest {
         if (!program.domains.get(0).handlers.get(0).failureArms.get(0)
                 .checkedCaptures.containsKey("value")) {
             throw new AssertionError("owned match payload was not captured on the raise edge");
+        }
+    }
+
+    private static void testBorrowedMatchPayloadCannotBeOnFailCapture() {
+        Program program = Parser.parseSource(""
+                + "enum Failure:\n"
+                + "  Bad\n"
+                + "enum Data:\n"
+                + "  Have(value: String)\n"
+                + "domain Worker:\n"
+                + "  fn Run() -> String:\n"
+                + "    data = Data.Have(value: \"hello\")\n"
+                + "    match data:\n"
+                + "      case Have(value):\n"
+                + "        raise Failure.Bad\n"
+                + "  on_fail Failure.Bad:\n"
+                + "    reply value\n"
+                + "fn main():\n"
+                + "  worker = Worker()\n"
+                + "  echo message worker.Run()\n", "borrowed-match-on-fail-capture.moss");
+        try {
+            new SemanticChecker(program).run();
+            throw new AssertionError("borrowed match payload cannot escape into on_fail");
+        } catch (CompileError error) {
+            if (!"ON_FAIL_CAPTURE_NOT_OWNED".equals(error.getCode())) {
+                throw new AssertionError("expected ON_FAIL_CAPTURE_NOT_OWNED, got "
+                        + error.getCode(), error);
+            }
         }
     }
 

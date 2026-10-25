@@ -505,20 +505,28 @@ public class SemanticChecker {
         if (handler.failureArms != null) {
             // Match payload binders are available on explicit raise edges from
             // their case bodies and may be checked as on_fail captures.
-            for (Stmt statement : handler.body) {
-                if (statement.kind != Stmt.Kind.Case || statement.semanticType == null) continue;
-                EnumType matchedEnum = enums.get(statement.semanticType);
+            for (int matchIndex = 0; matchIndex < handler.body.size(); matchIndex++) {
+                Stmt match = handler.body.get(matchIndex);
+                if (match.kind != Stmt.Kind.Match) continue;
+                TypeRef matchType = match.semanticType != null
+                        ? TypeParser.parseCanonical(match.semanticType)
+                        : typer.infer(match.a, match.line, env.typeEnv);
+                EnumType matchedEnum = matchType == null ? null : enums.get(matchType.name());
                 if (matchedEnum == null) continue;
-                for (EnumCase enumCase : matchedEnum.cases) {
-                    if (!enumCase.name.equals(statement.a)) continue;
-                    for (int index = 0; index < statement.args.size() && index < enumCase.fields.size(); index++) {
-                        Field field = enumCase.fields.get(index);
-                        TypeRef fieldType = TypeParser.parseCanonical(field.type);
-                        if (fieldType == null) fieldType = TypeRef.primitive(field.type.toLowerCase(Locale.ROOT));
-                        if ("consume".equals(statement.b))
-                            env.put(statement.args.get(index), fieldType, statement.line);
+                for (int caseIndex = matchIndex + 1; caseIndex < handler.body.size()
+                        && handler.body.get(caseIndex).indent > match.indent; caseIndex++) {
+                    Stmt caseStmt = handler.body.get(caseIndex);
+                    if (caseStmt.kind != Stmt.Kind.Case) continue;
+                    for (EnumCase enumCase : matchedEnum.cases) {
+                        if (!enumCase.name.equals(caseStmt.a)) continue;
+                        for (int index = 0; index < caseStmt.args.size() && index < enumCase.fields.size(); index++) {
+                            Field field = enumCase.fields.get(index);
+                            TypeRef fieldType = TypeParser.parseCanonical(field.type);
+                            if (fieldType == null) fieldType = TypeRef.primitive(field.type.toLowerCase(Locale.ROOT));
+                            env.put(caseStmt.args.get(index), fieldType, caseStmt.line);
+                        }
+                        break;
                     }
-                    break;
                 }
             }
             for (FailureArm arm : handler.failureArms) {
@@ -616,6 +624,13 @@ public class SemanticChecker {
                 if (statement.args != null) for (String arg : statement.args) read |= expressionUses(arg, name);
             }
             if (!read) continue;
+            for (Stmt statement : handler.body) {
+                if (statement.kind == Stmt.Kind.Case && statement.args != null
+                        && statement.args.contains(name) && !"consume".equals(statement.b)) {
+                    throw new CompileError(arm.line, "on_fail capture '" + name
+                            + "' must be an owned non-capability value", "ON_FAIL_CAPTURE_NOT_OWNED");
+                }
+            }
             TypeRef expected = null;
             for (OwnershipEnv edge : selectedEdges) {
                 TypeRef actual = edge.get(name);
