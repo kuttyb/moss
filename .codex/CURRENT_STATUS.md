@@ -13654,3 +13654,7 @@ String escape coverage was broadened after the local trace checkpoint: the
 FastInterpreter regression and a direct C++/Java probe now cover newline,
 ASCII hex, Unicode scalar, and backslash escapes. Outputs match; all eleven Java
 test classes pass in both default ABI-v9 and staged ABI-v10 modes.
+
+Rebuilt the standalone JAR after the Fast Debug changes and re-ran the packaged
+launcher bootstrap. It still reports compiler `0.1.0` and language `moss-0.1`.
+The JDT daemon client tests remain mocked lifecycle tests only.
