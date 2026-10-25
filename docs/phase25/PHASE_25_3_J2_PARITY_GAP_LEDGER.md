@@ -731,3 +731,14 @@ mode. The Java result follows the concrete selected method, but the C++ baseline
 verdict/effect closure disagrees. No generated Rust compilation or native run
 was performed, so this remains an unresolved acceptance discrepancy rather
 than a parity claim.
+
+
+### Follow-up — vector iteration trace structure
+
+A focused `for value in values` vector probe produced the same stdout and
+structured trace events in C++ and Java: each body read is nested under its
+corresponding `LoopIteration`. Java's `FastInterpreterTest` now asserts this
+structure for a two-element vector. The focused test passes. Queue iteration is
+rejected by both checkers as not statically iterable; vector and range iteration
+are the accepted forms covered here. Other collection, message, state, and
+cross-project Fast Debug paths remain open.

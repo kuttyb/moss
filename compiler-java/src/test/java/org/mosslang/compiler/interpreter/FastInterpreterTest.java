@@ -20,6 +20,7 @@ public final class FastInterpreterTest {
         testLexicalBlocksRestoreShadowedLocals();
         testRecoveryPayloadBindingIsScoped();
         testForLoopTraceMatchesIterationStructure();
+        testVectorForLoopTraceMatchesIterationStructure();
         testBranchTraceCarriesControlContext();
         testFunctionCallTraceCarriesCallContext();
         testCollectionTraceUsesCompactSummary();
@@ -311,6 +312,27 @@ public final class FastInterpreterTest {
                 || !events.contains("\"line\":4,\"parent_event_id\":2,\"control_event_id\":2,\"depth\":1")
                 || !"0\n1\n".equals(stdout.toString(StandardCharsets.UTF_8))) {
             throw new AssertionError("for-loop trace omitted iteration context: " + events);
+        }
+    }
+
+    private static void testVectorForLoopTraceMatchesIterationStructure() {
+        var program = Parser.parseSource(""
+                + "fn main():\n"
+                + "  values = [3, 5]\n"
+                + "  for value in values:\n"
+                + "    echo value\n", "fast-interpreter-vector-for-trace.moss");
+        new CheckedProgram(program).run();
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+        ByteArrayOutputStream trace = new ByteArrayOutputStream();
+        new FastInterpreter(program, true,
+                new PrintStream(stdout, true, StandardCharsets.UTF_8),
+                new PrintStream(trace, true, StandardCharsets.UTF_8)).run();
+        String events = trace.toString(StandardCharsets.UTF_8);
+        if (events.split("\"event\":\"LoopIteration\"", -1).length != 3
+                || !events.contains("\"line\":4,\"parent_event_id\":3,\"control_event_id\":3,\"depth\":1")
+                || !events.contains("\"line\":4,\"parent_event_id\":5,\"control_event_id\":5,\"depth\":1")
+                || !"3\n5\n".equals(stdout.toString(StandardCharsets.UTF_8))) {
+            throw new AssertionError("vector for-loop trace omitted iteration context: " + events);
         }
     }
 

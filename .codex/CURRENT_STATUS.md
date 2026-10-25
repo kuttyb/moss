@@ -16616,3 +16616,18 @@ ABI-v10. The same project’s declared benchmark body ran through
 unsupported; `margo bench` itself builds the package graph first, so native
 benchmark execution remains deferred to the frozen-candidate acceptance gate.
 No performance conclusion is drawn from this small smoke workload.
+
+
+### Phase 25.3 continuation — vector Fast Debug iteration trace
+
+Added a focused `FastInterpreterTest` regression for iterating a two-element
+Vector. It asserts two `LoopIteration` events and verifies each loop body's
+local read carries the corresponding iteration as parent/control context. The
+focused test passed after a full Java compiler build. A saved C++/Java probe
+produced identical stdout and trace events. A Queue loop probe was rejected by
+both checkers as not statically iterable. This adds coverage for accepted
+vector iteration; broader Fast Debug coverage, including messages, state,
+remaining collections, and package dependencies, is still outstanding. Latest
+verified checkpoint before this change: `38a38e4926f731858b59b7ff50fcc33e863dbb84`;
+the vector regression is not yet committed or pushed. No final candidate or
+expensive acceptance gate has been run.
