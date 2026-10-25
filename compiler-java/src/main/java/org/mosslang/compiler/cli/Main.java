@@ -788,6 +788,11 @@ public class Main {
         return variants;
     }
 
+    private static boolean parseSourceFreeMayPanic(String record) {
+        return java.util.regex.Pattern.compile("(?:^|[;\\s])may_panic=1(?:;|\\s|$)")
+                .matcher(record == null ? "" : record).find();
+    }
+
     private static Set<String> seedV10FunctionDeclarations(
             Program program, String moduleName, String moduleId,
             Map<String, org.mosslang.compiler.abi.AbiV10Records.Summary> summaries,
@@ -1458,6 +1463,7 @@ public class Main {
                                 : org.mosslang.compiler.types.AccessMode.Read);
                     }
                     method.sourceFreeRaiseVariants.addAll(parseSourceFreeRaiseVariants(line));
+                    method.sourceFreeMayPanic = parseSourceFreeMayPanic(line);
                     currentObject.methods.add(method);
                     continue;
                 }
@@ -1515,12 +1521,14 @@ public class Main {
                         alias.body = currentFn.body;
                         alias.returnType = currentFn.returnType;
                         alias.sourceFreeRaiseVariants = currentFn.sourceFreeRaiseVariants;
+                        alias.sourceFreeMayPanic = currentFn.sourceFreeMayPanic;
                         program.functions.add(alias);
                     }
                     for (String variant : parseSourceFreeRaiseVariants(line)) {
                         if (!currentFn.sourceFreeRaiseVariants.contains(variant))
                             currentFn.sourceFreeRaiseVariants.add(variant);
                     }
+                    currentFn.sourceFreeMayPanic = parseSourceFreeMayPanic(line);
                     currentFn.sourceFreeAbiVersion = sourceFreeV10 ? 10 : 9;
                     currentFn.sourceFreeCheckedBodyAvailable = false;
                     for (org.mosslang.compiler.ast.Function alias : program.functions) {
@@ -1529,6 +1537,7 @@ public class Main {
                             alias.sourceFreeAbiVersion = currentFn.sourceFreeAbiVersion;
                             alias.sourceFreeCheckedBodyAvailable = false;
                             alias.sourceFreeRaiseVariants = currentFn.sourceFreeRaiseVariants;
+                            alias.sourceFreeMayPanic = currentFn.sourceFreeMayPanic;
                         }
                     }
                 } else if (currentFn != null && line.startsWith("param ")) {

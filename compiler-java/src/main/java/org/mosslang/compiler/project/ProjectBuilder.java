@@ -2545,6 +2545,7 @@ public class ProjectBuilder {
     private static boolean mayPanic(Function function, Program program, String module,
                                     Set<String> callPath) {
         if (function == null || program == null || !callPath.add(function.name)) return false;
+        if (function.sourceFreeAbiVersion > 0 && function.sourceFreeMayPanic) return true;
         if (mayPanic(function.body)) return true;
         if (mayPanicExpression(function.resultExpression)) return true;
         List<String> expressions = new ArrayList<>();
@@ -2560,7 +2561,8 @@ public class ProjectBuilder {
             if (expression == null || expression.isBlank()) continue;
             for (Function called : program.functions) {
                 if (called.definingModule != null && !called.definingModule.isEmpty()
-                        && !called.definingModule.equals(module)) continue;
+                        && !called.definingModule.equals(module)
+                        && !(called.sourceFreeAbiVersion > 0 && called.sourceFreeMayPanic)) continue;
                 String shortName = called.name;
                 int separator = shortName.lastIndexOf("__");
                 if (separator >= 0) shortName = shortName.substring(separator + 2);
@@ -2574,7 +2576,8 @@ public class ProjectBuilder {
             }
             for (ObjectType object : program.objects) {
                 if (object.definingModule != null && !object.definingModule.isEmpty()
-                        && !object.definingModule.equals(module)) continue;
+                        && !object.definingModule.equals(module)
+                        && object.methods.stream().noneMatch(method -> method.sourceFreeMayPanic)) continue;
                 for (Method method : object.methods) {
                     if (callsTypedMethod(expression, function, object, method, program)
                             && mayPanic(method, program, module, new HashSet<>())) return true;
@@ -2628,6 +2631,7 @@ public class ProjectBuilder {
     private static boolean mayPanic(Method method, Program program, String module,
                                     Set<String> callPath) {
         if (method == null || program == null || !callPath.add(method.owner + "." + method.name)) return false;
+        if (method.sourceFree && method.sourceFreeMayPanic) return true;
         if (mayPanic(method.body) || mayPanicExpression(method.resultExpression)) return true;
         List<String> expressions = new ArrayList<>();
         for (Stmt statement : method.body) {
@@ -2642,7 +2646,8 @@ public class ProjectBuilder {
             if (expression == null || expression.isBlank()) continue;
             for (Function called : program.functions) {
                 if (called.definingModule != null && !called.definingModule.isEmpty()
-                        && !called.definingModule.equals(module)) continue;
+                        && !called.definingModule.equals(module)
+                        && !(called.sourceFreeAbiVersion > 0 && called.sourceFreeMayPanic)) continue;
                 if (callsFunction(expression, called) && mayPanic(called, program, module, new HashSet<>())) {
                     return true;
                 }

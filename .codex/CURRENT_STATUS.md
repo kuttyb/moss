@@ -15571,3 +15571,29 @@ and complete effect inference remain open.
 
 All twelve Java unit-test classes pass in default ABI-v9 and staged ABI-v10;
 feedback and diff checks are pending for this checkpoint.
+
+
+### Phase 25.3 continuation — retain `may_panic` through source-free imports
+
+The source-free loader now parses `may_panic=1` for imported functions and
+object methods, including aliases. Export metadata closure treats these imported
+records as panic sources, so cross-module wrappers can preserve the provider's
+panic effect. A producer/loader regression checks both a function and method
+record restore the flag.
+
+All twelve Java unit-test classes pass under default ABI-v9 and staged
+ABI-v10; feedback and diff checks are pending for this checkpoint. The
+regression verifies field restoration; a real multi-module consumer export and
+native execution have not been tested, and `may_panic=0` remains the default
+for imported records without an explicit positive flag.
+
+
+### Phase 25.3 continuation — propagate imported panic effects across modules
+
+The local panic closure now consumes imported ABI-v9/v10 function and method
+records when their serialized `may_panic` bit is set. The focused provider /
+consumer metadata test loads a provider with `assert_failure`, exports a
+consumer `relay()` that calls `provider.assert_failure()`, and verifies the
+consumer record retains `may_panic=1`. Default and staged ABI test suites both
+pass. This is metadata propagation evidence; no Rust provider/consumer build or
+native execution was run.

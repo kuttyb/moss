@@ -220,6 +220,54 @@ public final class ProjectBuilderMetadataTest {
             throw new AssertionError("exported function panic effect omitted its typed method call: "
                     + methodCaller);
         }
+        Path interfaceFile = null;
+        try {
+            Path scratch = Path.of("tmp");
+            Files.createDirectories(scratch);
+            interfaceFile = Files.createTempFile(scratch, "java-panic-effects-", ".mossi");
+            Files.writeString(interfaceFile, text);
+            Program consumer = new Program();
+            org.mosslang.compiler.cli.Main.loadMossiFunctions(interfaceFile, "provider", consumer);
+            org.mosslang.compiler.ast.Function imported = consumer.functions.stream()
+                    .filter(function -> function.name.equals("provider.method_failure"))
+                    .findFirst().orElseThrow(() -> new AssertionError("method_failure was not imported"));
+            org.mosslang.compiler.ast.Method importedMethod = consumer.objects.stream()
+                    .filter(object -> object.name.equals("provider__Box"))
+                    .flatMap(object -> object.methods.stream())
+                    .filter(method -> method.name.equals("crash_forward"))
+                    .findFirst().orElseThrow(() -> new AssertionError("crash_forward was not imported"));
+            if (!imported.sourceFreeMayPanic || !importedMethod.sourceFreeMayPanic) {
+                throw new AssertionError("source-free loader dropped panic effects: function="
+                        + imported.sourceFreeMayPanic + " method=" + importedMethod.sourceFreeMayPanic);
+            }
+            Program consumerModule = Parser.parseSource(""
+                    + "module consumer\n"
+                    + "export fn relay():\n"
+                    + "  provider.assert_failure()\n"
+                    + "fn main():\n"
+                    + "  pass\n", "consumer-panic-effect.moss");
+            org.mosslang.compiler.cli.Main.loadMossiFunctions(
+                    interfaceFile, "provider", consumerModule);
+            String consumerText = new String(ProjectBuilder.generateMossiInterface(manifest, "consumer",
+                    consumerModule, toolchain, java.util.List.of(), Path.of("tmp"), java.util.Map.of()),
+                    java.nio.charset.StandardCharsets.UTF_8);
+            String relay = consumerText.lines().filter(line -> line.contains("relay ")
+                            && line.contains("may_panic="))
+                    .findFirst().orElse("");
+            if (!relay.contains("may_panic=1")) {
+                throw new AssertionError("consumer panic effect did not inherit imported helper: " + relay);
+            }
+        } catch (java.io.IOException | CompileError error) {
+            throw new AssertionError("could not verify source-free panic effect loading", error);
+        } finally {
+            if (interfaceFile != null) {
+                try {
+                    Files.deleteIfExists(interfaceFile);
+                } catch (java.io.IOException error) {
+                    throw new AssertionError("could not clean source-free panic fixture", error);
+                }
+            }
+        }
     }
 
     private static void testMethodRaiseSetIncludesTransitiveCalls() {
