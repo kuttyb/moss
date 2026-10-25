@@ -13768,3 +13768,12 @@ A follow-up exceptional-call regression now covers a helper raising into a
 `main` recovery arm. The trace retains the nested raise event, restores main's
 identity/depth for recovery, and emits no spurious function exit. All eleven
 Java unit-test classes pass in ABI-v9 and staged ABI-v10 after adding the test.
+
+### Phase 25.3 continuation — refresh standalone package after Fast Debug work
+
+Rebuilt the standalone fat JAR from the current source and verified the
+packaged `compiler-java/dist/moss` launcher. `agent bootstrap --json` reports
+`ok: true` and `language_version: moss-0.1`; a packaged `Box.get()` Fast Debug
+trace and stdout match the C++ probe exactly. This confirms local package
+startup and one interpreted method path only; live daemon lifecycle and project
+acceptance remain open.
