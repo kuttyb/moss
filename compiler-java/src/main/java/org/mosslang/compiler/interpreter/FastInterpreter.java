@@ -1688,7 +1688,27 @@ public class FastInterpreter {
             }
         }
         if (p > 0 && expr.endsWith(")")) {
-            String callee = expr.substring(0, p).trim();
+            String rawCallee = expr.substring(0, p).trim();
+            String resolvedCallee = rawCallee;
+            Value selfValue = locals.get("self");
+            if (!rawCallee.contains(".") && selfValue != null && selfValue.kind == Value.Kind.OBJECT) {
+                boolean topLevelFunction = false;
+                for (Function function : program.functions) {
+                    if (function.name.equals(rawCallee) || function.name.endsWith("__" + rawCallee)) {
+                        topLevelFunction = true;
+                        break;
+                    }
+                }
+                boolean currentObjectMethod = false;
+                for (ObjectType object : program.objects) {
+                    if (selfValue.typeName != null && !selfValue.typeName.equals(object.name)) continue;
+                    for (Method method : object.methods) {
+                        if (method.name.equals(rawCallee)) currentObjectMethod = true;
+                    }
+                }
+                if (currentObjectMethod && !topLevelFunction) resolvedCallee = "self." + rawCallee;
+            }
+            final String callee = resolvedCallee;
             boolean domainConstructor = program.domains.stream().anyMatch(d -> d.name.equals(callee)
                     || d.name.endsWith("__" + callee) || callee.endsWith("." + d.name));
             boolean sourceCallable = program.functions.stream().anyMatch(f -> f.name.equals(callee)
@@ -1922,6 +1942,9 @@ public class FastInterpreter {
                     } else if (recvVal.kind == Value.Kind.MAP && recvVal.raw instanceof Map<?, ?> mp) {
                         @SuppressWarnings("unchecked")
                         Map<Object, Value> m = (Map<Object, Value>) mp;
+                        if (methodName.equals("get") && evaluatedArgs.size() == 2) {
+                            return m.getOrDefault(evaluatedArgs.get(0).raw, evaluatedArgs.get(1));
+                        }
                         if (methodName.equals("keys")) {
                             List<Value> keys = new ArrayList<>();
                             for (Object k : m.keySet()) {
@@ -1964,6 +1987,7 @@ public class FastInterpreter {
                                         }
                                     }
                                 }
+                                mLocals.put("self", recvVal);
                                 for (int i = 0; i < m.params.size() && i < evaluatedArgs.size(); i++) {
                                     mLocals.put(m.params.get(i).name, evaluatedArgs.get(i));
                                 }

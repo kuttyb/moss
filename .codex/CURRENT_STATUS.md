@@ -14397,3 +14397,21 @@ supports Java's argument-type checking but does not resolve whether the C++
 rejection is an oracle defect or intended restriction. The focused Java suite
 passes in ABI-v9 and staged ABI-v10; no generated Rust or runtime check was
 performed.
+
+### Phase 25.3 continuation — execute object Map methods and nested loop tails
+
+The Java Fast Debug run of Julia Accumulator exposed three related execution
+gaps: `Map.get` returned unit, object-method frames did not retain `self` for
+bare sibling-method calls, and the parser promoted a `Call` at the end of a
+nested loop to the enclosing method's result expression. Implemented Map
+lookup with fallback, seeded `self` in method locals and resolved bare sibling
+calls through it, and limited method tail-expression extraction to top-level
+body statements. The focused interpreter test covers lookup, a bare
+`increment_by` call, and a loop-ending `self.increment_by` statement.
+
+All eleven Java unit-test classes pass under ABI-v9 and staged ABI-v10. After
+rebuilding the standalone package, `margo test --interp --json` in
+`examples/swarm/Julia/Accumulator` passes all five project tests. This is
+Fast Debug/project-test evidence; native Rust execution remains deferred. The
+C++ checker still rejects the project at the reduced loop-method call, so that
+checker disagreement remains open.

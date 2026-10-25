@@ -303,7 +303,8 @@ public class Parser {
                     m.setReturnType(canonicalTypeName(trim(suffix.substring(2))));
                 }
                 m.body = parseStmtBlock(L.indent + indentUnit);
-                if (!m.body.isEmpty() && (m.body.getLast().kind == Stmt.Kind.Raw || m.body.getLast().kind == Stmt.Kind.Call)) {
+                if (!m.body.isEmpty() && m.body.getLast().indent == 0
+                        && (m.body.getLast().kind == Stmt.Kind.Raw || m.body.getLast().kind == Stmt.Kind.Call)) {
                     Stmt last = m.body.remove(m.body.size() - 1);
                     m.resultExpression = last.text;
                     m.resultLine = last.line;

@@ -22,6 +22,7 @@ public final class FastInterpreterTest {
         testCollectionTraceUsesCompactSummary();
         testRaiseRecoverTraceCarriesErrorIdentity();
         testObjectMethodTraceCarriesCallContext();
+        testMapGetInsideObjectMethodReturnsStoredOrFallbackValue();
         testBuiltinMethodReceiverReadIsTraced();
         testEnumLocalWriteUsesCompactTypeSummary();
         testExceptionalFunctionTraceUnwindsCallContext();
@@ -47,7 +48,6 @@ public final class FastInterpreterTest {
                 + "  echo 1 < 1.5\n"
                 + "  echo 2.5 > 2\n", "fast-interpreter-float-comparison.moss");
         new CheckedProgram(program).run();
-
         ByteArrayOutputStream stdout = new ByteArrayOutputStream();
         try (PrintStream captured = new PrintStream(stdout, true, StandardCharsets.UTF_8)) {
             new FastInterpreter(program, false, captured,
@@ -378,6 +378,54 @@ public final class FastInterpreterTest {
                 || !lines[1].contains("\"detail\":\"text\"")
                 || !"3\n".equals(stdout.toString(StandardCharsets.UTF_8))) {
             throw new AssertionError("builtin method receiver read was not traced: " + events);
+        }
+    }
+
+    private static void testMapGetInsideObjectMethodReturnsStoredOrFallbackValue() {
+        var program = Parser.parseSource(""
+                + "type Accumulator:\n"
+                + "  data: Map [String, Int]\n"
+                + "  fn get(key: String) -> Int:\n"
+                + "    return data.get(key, 0)\n"
+                + "  fn increment_by(key: String, amount: Int) -> Int:\n"
+                + "    next = data.get(key, 0) + amount\n"
+                + "    data [key] = next\n"
+                + "    return next\n"
+                + "  fn increment(key: String) -> Int:\n"
+                + "    return increment_by(key, 1)\n"
+                + "  fn keys() -> Vector [String]:\n"
+                + "    return data.keys()\n"
+                + "  fn merge(other: Accumulator):\n"
+                + "    for key in other.keys():\n"
+                + "      self.increment_by(key, other.get(key))\n"
+                + "fn main():\n"
+                + "  data = Map()\n"
+                + "  data [\"present\"] = 5\n"
+                + "  accumulator = Accumulator(data: data)\n"
+                + "  echo accumulator.increment(\"present\")\n"
+                + "  echo accumulator.get(\"present\")\n"
+                + "  echo accumulator.get(\"missing\")\n"
+                + "  otherData = Map()\n"
+                + "  otherData [\"present\"] = 2\n"
+                + "  other = Accumulator(data: otherData)\n"
+                + "  accumulator.merge(other)\n"
+                + "  echo accumulator.get(\"present\")\n",
+                "fast-interpreter-object-map-get.moss");
+        new CheckedProgram(program).run();
+        var getMethod = program.objects.get(0).methods.stream()
+                .filter(method -> method.name.equals("get")).findFirst().orElseThrow();
+        if (getMethod.parameterAccessModes.size() != 1
+                || getMethod.parameterAccessModes.get(0) != org.mosslang.compiler.types.AccessMode.Read) {
+            throw new AssertionError("Map.get key parameter should remain a read-only method argument");
+        }
+
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+        new FastInterpreter(program, false,
+                new PrintStream(stdout, true, StandardCharsets.UTF_8),
+                new PrintStream(new ByteArrayOutputStream())).run();
+        String actual = stdout.toString(StandardCharsets.UTF_8);
+        if (!"6\n6\n0\n8\n".equals(actual)) {
+            throw new AssertionError("Map.get inside an object method returned incorrect values: " + actual);
         }
     }
 
