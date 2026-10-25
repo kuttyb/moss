@@ -345,7 +345,9 @@ public final class ProjectBuilderMetadataTest {
                 + "export fn divide(value: Int) -> Int:\n"
                 + "  return value / 2\n"
                 + "export fn modulo(value: Int) -> Int:\n"
-                + "  return value % 2\n", "identity-provider.moss");
+                + "  return value % 2\n"
+                + "export fn negative() -> Int:\n"
+                + "  return -42\n", "identity-provider.moss");
         new org.mosslang.compiler.semantics.CheckedProgram(identityProgram).run();
         identityProgram.functions.forEach(function -> {
             String name = function.name;
@@ -425,6 +427,28 @@ public final class ProjectBuilderMetadataTest {
                 || !"42".equals(answerStatements.get(0).expr.literalValue)
                 || !answerSummary.bodySemanticHash.equals(answerBody.semanticHash)) {
             throw new AssertionError("ABI-v10 constant-return summary/body is incomplete");
+        }
+        AbiV10Records.Summary negativeSummary = identityInterface.binaryContract.stream()
+                .filter(record -> record.payloadBytes().length > 0
+                        && (record.payloadBytes()[0] == 3 || record.payloadBytes()[0] == 4))
+                .map(AbiV10Records.Summary::decode)
+                .filter(summary -> summary.callableId.endsWith(":fn:negative"))
+                .findFirst().orElseThrow(() ->
+                        new AssertionError("ABI-v10 producer omitted the negative integer constant summary"));
+        AbiV10Records.CheckedBodyRecord negativeBody = identityInterface.privateSemanticDependencies.stream()
+                .filter(record -> record.id.startsWith("checked-body-v1:"))
+                .map(AbiV10Records.CheckedBodyRecord::decode)
+                .filter(body -> body.callableId.endsWith(":fn:negative"))
+                .findFirst().orElseThrow(() ->
+                        new AssertionError("ABI-v10 producer omitted the negative integer constant body"));
+        java.util.List<org.mosslang.compiler.abi.CheckedStmt> negativeStatements =
+                CheckedBodyCodec.decodeCheckedBody(negativeBody.checkedIrBytes);
+        if (!negativeSummary.parameters.isEmpty()
+                || negativeStatements.size() != 1
+                || negativeStatements.get(0).expr.kind != org.mosslang.compiler.abi.CheckedExprKind.IntegerLiteral
+                || !"-42".equals(negativeStatements.get(0).expr.literalValue)
+                || !negativeSummary.bodySemanticHash.equals(negativeBody.semanticHash)) {
+            throw new AssertionError("ABI-v10 negative integer constant body is incomplete");
         }
         AbiV10Records.Summary vectorSummary = identityInterface.binaryContract.stream()
                 .filter(record -> record.payloadBytes().length > 0
@@ -576,6 +600,8 @@ public final class ProjectBuilderMetadataTest {
                     + "  return provider__second(7, \"seven\")\n"
                     + "fn use_answer() -> Int:\n"
                     + "  return provider__answer()\n"
+                    + "fn use_negative() -> Int:\n"
+                    + "  return provider__negative()\n"
                     + "fn use_vector(value: Vector[Int]) -> Vector[Int]:\n"
                     + "  return provider__same_vector(value)\n"
                     + "fn use_enabled() -> Bool:\n"

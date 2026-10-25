@@ -1647,7 +1647,7 @@ public class ProjectBuilder {
             return CheckedExpr.floatLiteral(expression, resultType);
         }
         if ("int".equalsIgnoreCase(function.returnTypeRef.name())
-                && expression.matches("[0-9](?:_?[0-9])*")) {
+                && expression.matches("-?[0-9](?:_?[0-9])*")) {
             try {
                 return CheckedExpr.integerLiteral(Long.parseLong(expression.replace("_", "")), resultType);
             } catch (NumberFormatException ignored) {

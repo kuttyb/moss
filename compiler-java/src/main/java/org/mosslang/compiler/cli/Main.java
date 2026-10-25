@@ -1460,7 +1460,7 @@ public class Main {
             } else if (statement.expr.kind == org.mosslang.compiler.abi.CheckedExprKind.IntegerLiteral
                     && parameterTypes.isEmpty() && resultType.kind() == org.mosslang.compiler.types.TypeKind.Primitive
                     && "int".equalsIgnoreCase(resultType.name())
-                    && statement.expr.literalValue.matches("[0-9](?:_?[0-9])*")) {
+                    && statement.expr.literalValue.matches("-?[0-9](?:_?[0-9])*")) {
                 returnedLiteral = statement.expr.literalValue;
             } else if (statement.expr.kind == org.mosslang.compiler.abi.CheckedExprKind.BoolLiteral
                     && parameterTypes.isEmpty() && resultType.kind() == org.mosslang.compiler.types.TypeKind.Primitive
