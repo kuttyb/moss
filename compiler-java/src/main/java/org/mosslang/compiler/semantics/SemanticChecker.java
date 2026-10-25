@@ -633,6 +633,10 @@ public class SemanticChecker {
             currentSemanticIdentity = "fn:" + f.name + "@" + f.line;
             TypeSolver solver = new TypeSolver(sessionCounter++);
             ExpressionTyper typer = new ExpressionTyper(program, typeContext, solver, functions, domains, objects, enums, traits);
+            boolean hasUnannotatedParam = f.params.stream().anyMatch(p -> p.type == null || p.type.isEmpty()
+                    || traits.containsKey(p.type) || "Vector".equals(p.type) || "Map".equals(p.type));
+            if (hasUnannotatedParam) f.generic = true;
+            typer.allowOpenGenericArithmetic = f.generic;
             typer.currentCallingModule = f.definingModule != null && !f.definingModule.isEmpty() ? f.definingModule : program.moduleName;
             typer.currentCallingFunction = "fn:" + f.name;
             OwnershipEnv env = new OwnershipEnv();
@@ -730,7 +734,6 @@ public class SemanticChecker {
                 solver.unify(expectedReturn, TypeRef.unit());
                 resolvedReturn = TypeRef.unit();
             }
-            boolean hasUnannotatedParam = f.params.stream().anyMatch(p -> p.type == null || p.type.isEmpty() || traits.containsKey(p.type) || "Vector".equals(p.type) || "Map".equals(p.type));
             if (hasUnannotatedParam) {
                 f.generic = true;
             }

@@ -13260,3 +13260,20 @@ Validation: all ten Java unit-test classes pass after clean builds in default
 ABI-v9 and staged ABI-v10 modes. The C++ and Java compilers accept the
 Int/String identity reproducer; feedback validation and `git diff --check`
 pass. Broader specialization-key parity remains open.
+
+### Phase 25.3 continuation — defer generic numeric operand resolution
+
+An unannotated generic `value + 1` was being fixed to Int by Java during the
+open callable check, although C++ preserves an open result and accepts both Int
+and Float specializations. Java now retains open numeric operands for generic
+callables and rechecks the expression against each concrete call. The focused
+program specializes to Int and Float; a String call rejects with
+`TYPE_AMBIGUOUS_OPEN_RESULT` at the call site, matching the C++ diagnostic
+code and line. The Java `type` query also reports the C++
+`_specialized_result:plus_one` fact instead of the erroneous Int/Unit result.
+
+Validation: all ten Java unit-test classes pass after clean builds in default
+ABI-v9 and staged ABI-v10 modes; focused C++/Java positive and negative checks
+and type queries agree on the asserted facts. Feedback validation and
+`git diff --check` pass. Generic operator requirement serialization and broader
+structural constraints remain open; no native or SDK gate ran.

@@ -18,6 +18,7 @@ public class SemanticCheckerTest {
         testInferredMethodReturnMustMatchStructuralTrait();
         testFunctionParameterAccessModesAreRetained();
         testFunctionRetainsResolvedOpenParameterTypes();
+        testGenericNumericOperationRetainsOpenTypeUntilSpecialization();
         testObjectMethodAccessModesAreRetained();
         testForLoopValuesCanFlowToObjectMethodArguments();
         testObjectMethodArityIsChecked();
@@ -65,6 +66,46 @@ public class SemanticCheckerTest {
                         && "string".equals(s.returnTypeRef.toCanonicalString()))) {
             throw new AssertionError("generic identity calls did not retain both concrete argument/result types: "
                     + identity.specializations.stream().map(s -> s.parameterTypes.toString()).toList());
+        }
+    }
+
+    private static void testGenericNumericOperationRetainsOpenTypeUntilSpecialization() {
+        Program program = Parser.parseSource(""
+                + "fn plus_one(value):\n"
+                + "  return value + 1\n"
+                + "fn main():\n"
+                + "  integer = plus_one(1)\n"
+                + "  floating = plus_one(1.5)\n", "open-numeric-requirement.moss");
+        new SemanticChecker(program).run();
+        Function plusOne = program.functions.stream()
+                .filter(function -> function.name.equals("plus_one"))
+                .findFirst().orElseThrow();
+        if (plusOne.params.get(0).checkedTypeRef == null
+                || plusOne.params.get(0).checkedTypeRef.kind()
+                        != org.mosslang.compiler.types.TypeKind.InferenceVar
+                || plusOne.returnTypeRef == null
+                || plusOne.returnTypeRef.kind() != org.mosslang.compiler.types.TypeKind.InferenceVar) {
+            throw new AssertionError("generic arithmetic closed its open parameter/result to a literal type: "
+                    + plusOne.params.get(0).checkedTypeRef + " -> " + plusOne.returnTypeRef);
+        }
+        if (!plusOne.specializations.stream().anyMatch(s -> s.parameterTypes.contains("int")
+                    && s.returnTypeRef != null && "int".equals(s.returnTypeRef.toCanonicalString()))
+                || !plusOne.specializations.stream().anyMatch(s -> s.parameterTypes.contains("float")
+                    && s.returnTypeRef != null && "float".equals(s.returnTypeRef.toCanonicalString()))) {
+            throw new AssertionError("generic arithmetic did not specialize for both Int and Float: "
+                    + plusOne.specializations.stream().map(s -> s.parameterTypes + " -> " + s.returnType).toList());
+        }
+
+        Program invalid = Parser.parseSource(""
+                + "fn plus_one(value):\n"
+                + "  return value + 1\n"
+                + "fn main():\n"
+                + "  invalid = plus_one(\"x\")\n", "invalid-generic-numeric-operation.moss");
+        try {
+            new SemanticChecker(invalid).run();
+            throw new AssertionError("generic numeric operation accepted a String specialization");
+        } catch (CompileError error) {
+            if (!"TYPE_AMBIGUOUS_OPEN_RESULT".equals(error.getCode()) || error.getLine() != 4) throw error;
         }
     }
 

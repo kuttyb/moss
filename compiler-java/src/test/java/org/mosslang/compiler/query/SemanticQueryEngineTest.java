@@ -11,6 +11,7 @@ import java.nio.charset.StandardCharsets;
 public final class SemanticQueryEngineTest {
     public static void main(String[] args) {
         effectsQueryUsesResolvedFunctionFacts();
+        typeQueryPreservesOpenGenericResultFacts();
         System.out.println("SemanticQueryEngineTest PASSED.");
     }
 
@@ -33,6 +34,24 @@ public final class SemanticQueryEngineTest {
         assertContains(json, "\"semantic_identity\": \"fn:mutate@1\"");
         assertContains(json, "\"line\": 1");
         assertContains(json, "\"type\": \"unit\"");
+    }
+
+    private static void typeQueryPreservesOpenGenericResultFacts() {
+        String source = ""
+                + "fn plus_one(value):\n"
+                + "  return value + 1\n"
+                + "fn main():\n"
+                + "  integer = plus_one(1)\n"
+                + "  floating = plus_one(1.5)\n";
+        Program program = Parser.parseSource(source, "open-result-query.moss");
+        new SemanticChecker(program).run();
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        try (PrintStream stream = new PrintStream(output, true, StandardCharsets.UTF_8)) {
+            SemanticQueryEngine.executeQuery("type", "plus_one", program,
+                    "open-result-query.moss", true, null, null, stream);
+        }
+        String json = output.toString(StandardCharsets.UTF_8);
+        assertContains(json, "\"resolved_type\": \"_specialized_result:plus_one\"");
     }
 
     private static void assertContains(String value, String expected) {

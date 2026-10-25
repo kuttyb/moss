@@ -22,6 +22,7 @@ public class ExpressionTyper {
     public String currentCallingObject = null;
     public String currentCallerSpecializationKey = null;
     public TypeRef currentExpectedType = null;
+    public boolean allowOpenGenericArithmetic = false;
 
     public ExpressionTyper(Program program,
                            TypeContext typeContext,
@@ -174,6 +175,15 @@ public class ExpressionTyper {
             // Numeric arithmetic
             TypeRef intType = TypeRef.primitive("int");
             TypeRef floatType = TypeRef.primitive("float");
+
+            // An open operand in a generic callable is checked again after
+            // specialization, when its concrete Moss type is known. Binding it
+            // to Int here would erase the callable's open result scheme.
+            if (allowOpenGenericArithmetic
+                    && (left.kind() == TypeKind.InferenceVar
+                        || right.kind() == TypeKind.InferenceVar)) {
+                return left.kind() == TypeKind.InferenceVar ? left : right;
+            }
 
             // If operand is an unconstrained inference variable, arithmetic constrains it to numeric (int)
             if (left.kind() == TypeKind.InferenceVar) {

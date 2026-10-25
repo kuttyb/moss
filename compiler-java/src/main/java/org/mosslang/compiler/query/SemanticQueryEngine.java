@@ -170,8 +170,7 @@ public class SemanticQueryEngine {
                 queriedId = "entity-v1:function:" + queriedFunction.name;
                 queriedSemanticId = "fn:" + queriedFunction.name + "@" + queriedFunction.line;
                 queriedLine = queriedFunction.line;
-                queriedType = queriedFunction.returnType != null && !queriedFunction.returnType.isEmpty()
-                        ? queriedFunction.returnType : "unit";
+                queriedType = functionResultType(queriedFunction);
                 if (queriedFunction.sourceFile != null && !queriedFunction.sourceFile.isEmpty()) {
                     queriedSourceFile = queriedFunction.sourceFile;
                 }
@@ -646,7 +645,7 @@ public class SemanticQueryEngine {
             name = matchedFunction.name;
             type = matchedSpecialization != null && matchedSpecialization.returnType != null
                     && !matchedSpecialization.returnType.isEmpty() ? matchedSpecialization.returnType
-                    : (matchedFunction.returnType != null && !matchedFunction.returnType.isEmpty()) ? matchedFunction.returnType : "unit";
+                    : functionResultType(matchedFunction);
             line = matchedFunction.line;
             semanticId = "fn:" + matchedFunction.name + "@" + matchedFunction.line;
             durableId = "entity-v1:function:" + matchedFunction.name;
@@ -1013,6 +1012,20 @@ public class SemanticQueryEngine {
         return true;
     }
 
+    private static String functionResultType(Function function) {
+        if (function.returnType != null && !function.returnType.isEmpty()) return function.returnType;
+        if (function.returnTypeRef != null) {
+            if (function.returnTypeRef.kind() == org.mosslang.compiler.types.TypeKind.InferenceVar) {
+                String name = function.name;
+                int separator = name.lastIndexOf("__");
+                if (separator >= 0) name = name.substring(separator + 2);
+                return "_specialized_result:" + name;
+            }
+            return function.returnTypeRef.toCanonicalString();
+        }
+        return "unit";
+    }
+
     private static boolean resolveName(String target, Program program, String sourceFile, String kindFilter,
                                        String enclosingFilter, boolean json, PrintStream out) {
         List<ResolutionCandidate> candidates = new ArrayList<>();
@@ -1024,8 +1037,7 @@ public class SemanticQueryEngine {
                 candidate.name = function.name;
                 candidate.id = "entity-v1:function:" + function.name;
                 candidate.semanticIdentity = "fn:" + function.name + "@" + function.line;
-                candidate.type = function.returnType != null && !function.returnType.isEmpty()
-                        ? function.returnType : "unit";
+                candidate.type = functionResultType(function);
                 candidate.sourceFile = function.sourceFile;
                 candidate.line = function.line;
                 candidates.add(candidate);
@@ -1153,8 +1165,7 @@ public class SemanticQueryEngine {
                 candidate.name = function.name;
                 candidate.id = "entity-v1:function:" + function.name;
                 candidate.semanticIdentity = "fn:" + function.name + "@" + function.line;
-                candidate.type = function.returnType != null && !function.returnType.isEmpty()
-                        ? function.returnType : "unit";
+                candidate.type = functionResultType(function);
                 candidate.sourceFile = function.sourceFile;
                 candidate.line = line;
                 candidates.add(candidate);
@@ -1956,7 +1967,8 @@ public class SemanticQueryEngine {
                     }
                     sb.append("],\n");
 
-                    String retType = (fn.returnType != null && !fn.returnType.isEmpty()) ? fn.returnType : "unit";
+                    String retType = spec.returnTypeRef != null
+                            ? spec.returnTypeRef.toCanonicalString() : functionResultType(fn);
                     sb.append("          \"result_type_key\": \"").append(getStableTypeKeyForTypeString(retType)).append("\",\n");
                     sb.append("          \"receiver_type_key\": null,\n");
 
