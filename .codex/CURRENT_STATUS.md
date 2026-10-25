@@ -12691,3 +12691,14 @@ checks `fn take(box: Box) -> Box` is emitted by value.
 Validation: Java build and all ten Java test classes pass. Generated Rust was
 inspected through the unit assertion; no Rust compilation/native execution was
 run. ABI-v9/v10 source-free and broad ownership lowering remain open.
+
+### Phase 25.3 continuation — lower object method WRITE parameters
+
+The object method backend also ignored checker-derived parameter `WRITE` modes.
+A method parameter passed as receiver to another field-writing method was
+inferred `WRITE` but emitted by value. `NativeGenerator` now emits `&mut` for
+checker-marked object method parameters; a focused test asserts
+`update(&self, inner: &mut Inner)`.
+
+Validation: Java build and all ten Java test classes pass. Generated Rust was
+checked by the unit assertion; no Rust compilation/native execution was run.

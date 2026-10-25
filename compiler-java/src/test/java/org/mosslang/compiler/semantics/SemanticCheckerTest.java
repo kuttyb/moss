@@ -22,6 +22,7 @@ public class SemanticCheckerTest {
         testObjectMethodArityIsChecked();
         testObjectReceiverWriteEffectPropagatesToFunctionParameter();
         testConsumedObjectParameterLowersByValue();
+        testObjectMethodWriteParameterLowersMutably();
         System.out.println("SemanticCheckerTest PASSED.");
     }
 
@@ -264,6 +265,28 @@ public class SemanticCheckerTest {
         String rust = NativeGenerator.generate(program, false);
         if (!rust.contains("fn take(box: Box) -> Box")) {
             throw new AssertionError("consumed object parameter must lower by value");
+        }
+    }
+
+    private static void testObjectMethodWriteParameterLowersMutably() {
+        Program program = Parser.parseSource(""
+                + "type Inner:\n"
+                + "  value: Int\n"
+                + "  fn set(next: Int):\n"
+                + "    value = next\n"
+                + "type Outer:\n"
+                + "  fn update(inner: Inner):\n"
+                + "    inner.set(1)\n"
+                + "fn main():\n"
+                + "  pass\n", "method-parameter-write.moss");
+        new SemanticChecker(program).run();
+        var update = program.objects.stream()
+                .filter(object -> object.name.equals("Outer"))
+                .findFirst().orElseThrow().methods.get(0);
+        assertEquals(AccessMode.Write, update.parameterAccessModes.get(0));
+        String rust = NativeGenerator.generate(program, false);
+        if (!rust.contains("pub fn update(&self, inner: &mut Inner)")) {
+            throw new AssertionError("object method WRITE parameter must lower to a mutable Rust borrow");
         }
     }
 

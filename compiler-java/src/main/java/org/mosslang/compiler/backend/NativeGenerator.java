@@ -554,8 +554,11 @@ public class NativeGenerator {
                     declared.add(f.name);
                 }
                 Set<String> writeParams = new HashSet<>();
-                for (Param p : m.params) {
-                    boolean paramMutated = false;
+                for (int paramIndex = 0; paramIndex < m.params.size(); paramIndex++) {
+                    Param p = m.params.get(paramIndex);
+                    boolean paramMutated = paramIndex < m.parameterAccessModes.size()
+                            && m.parameterAccessModes.get(paramIndex)
+                                    == org.mosslang.compiler.types.AccessMode.Write;
                     for (Stmt s : m.body) {
                         if (s.kind == Stmt.Kind.Assign && p.name.equals(s.a != null ? s.a.trim() : "")) {
                             paramMutated = true;
