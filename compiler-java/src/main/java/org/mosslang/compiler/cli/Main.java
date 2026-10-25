@@ -1465,6 +1465,12 @@ public class Main {
                     && ("true".equals(statement.expr.literalValue)
                         || "false".equals(statement.expr.literalValue))) {
                 returnedLiteral = statement.expr.literalValue;
+            } else if (statement.expr.kind == org.mosslang.compiler.abi.CheckedExprKind.FloatLiteral
+                    && parameterTypes.isEmpty() && resultType.kind() == org.mosslang.compiler.types.TypeKind.Primitive
+                    && "float".equalsIgnoreCase(resultType.name())
+                    && statement.expr.literalValue.matches(
+                            "(?:[0-9]+\\.[0-9]+|[0-9]+[eE][+-]?[0-9]+|[0-9]+\\.[0-9]+[eE][+-]?[0-9]+)")) {
+                returnedLiteral = statement.expr.literalValue;
             } else {
                 continue;
             }

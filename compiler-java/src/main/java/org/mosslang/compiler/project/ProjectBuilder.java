@@ -1632,6 +1632,10 @@ public class ProjectBuilder {
             expression = statement.text.trim().substring(7).trim();
         }
         TypeRef resultType = canonicalV10SummaryType(function.returnTypeRef, Map.of());
+        if ("float".equalsIgnoreCase(function.returnTypeRef.name())
+                && expression.matches("(?:[0-9]+\\.[0-9]+|[0-9]+[eE][+-]?[0-9]+|[0-9]+\\.[0-9]+[eE][+-]?[0-9]+)")) {
+            return CheckedExpr.floatLiteral(expression, resultType);
+        }
         if ("int".equalsIgnoreCase(function.returnTypeRef.name())
                 && expression.matches("[0-9](?:_?[0-9])*")) {
             try {

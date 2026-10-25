@@ -333,7 +333,9 @@ public final class ProjectBuilderMetadataTest {
                 + "export fn same_vector(values: Vector[Int]) -> Vector[Int]:\n"
                 + "  return values\n"
                 + "export fn enabled() -> Bool:\n"
-                + "  return true\n", "identity-provider.moss");
+                + "  return true\n"
+                + "export fn ratio() -> Float:\n"
+                + "  return 1.5\n", "identity-provider.moss");
         new org.mosslang.compiler.semantics.CheckedProgram(identityProgram).run();
         identityProgram.functions.forEach(function -> {
             String name = function.name;
@@ -454,6 +456,30 @@ public final class ProjectBuilderMetadataTest {
                 || !enabledSummary.bodySemanticHash.equals(enabledBody.semanticHash)) {
             throw new AssertionError("ABI-v10 boolean constant summary/body is incomplete");
         }
+        AbiV10Records.Summary ratioSummary = identityInterface.binaryContract.stream()
+                .filter(record -> record.payloadBytes().length > 0
+                        && (record.payloadBytes()[0] == 3 || record.payloadBytes()[0] == 4))
+                .map(AbiV10Records.Summary::decode)
+                .filter(summary -> summary.callableId.endsWith(":fn:ratio"))
+                .findFirst().orElseThrow(() ->
+                        new AssertionError("ABI-v10 producer omitted the float constant summary"));
+        AbiV10Records.CheckedBodyRecord ratioBody = identityInterface.privateSemanticDependencies.stream()
+                .filter(record -> record.id.startsWith("checked-body-v1:"))
+                .map(AbiV10Records.CheckedBodyRecord::decode)
+                .filter(body -> body.callableId.endsWith(":fn:ratio"))
+                .findFirst().orElseThrow(() ->
+                        new AssertionError("ABI-v10 producer omitted the float constant body"));
+        java.util.List<org.mosslang.compiler.abi.CheckedStmt> ratioStatements =
+                CheckedBodyCodec.decodeCheckedBody(ratioBody.checkedIrBytes);
+        if (!ratioSummary.parameters.isEmpty()
+                || ratioSummary.result.kind != AbiV10Records.WireTypeKind.Primitive
+                || !"float".equals(ratioSummary.result.identity)
+                || ratioStatements.size() != 1
+                || ratioStatements.get(0).expr.kind != org.mosslang.compiler.abi.CheckedExprKind.FloatLiteral
+                || !"1.5".equals(ratioStatements.get(0).expr.literalValue)
+                || !ratioSummary.bodySemanticHash.equals(ratioBody.semanticHash)) {
+            throw new AssertionError("ABI-v10 float constant summary/body is incomplete");
+        }
         Path identityMossi = null;
         try {
             identityMossi = Files.createTempFile(Path.of("tmp"), "identity-provider-", ".mossi");
@@ -481,6 +507,8 @@ public final class ProjectBuilderMetadataTest {
                     + "  return provider__same_vector(value)\n"
                     + "fn use_enabled() -> Bool:\n"
                     + "  return provider__enabled()\n"
+                    + "fn use_ratio() -> Float:\n"
+                    + "  return provider__ratio()\n"
                     + "fn main():\n"
                     + "  pass\n", "identity-consumer.moss");
             org.mosslang.compiler.cli.Main.loadMossiFunctions(identityMossi, "provider", consumer);

@@ -13306,15 +13306,15 @@ into checker facts. No native build or execution was run.
 
 The source-free loader now recognizes canonical ABI-v10 callable summaries
 and checked-body records and projects narrowly supported pure direct
-parameter-return and zero-argument integer/boolean literal bodies into the Java
+parameter-return and zero-argument integer/boolean/float literal bodies into the Java
 Function AST. Parameter returns require matching open or simple wire types;
 all projected callables require no requirements or semantic dependencies and
 no observable effects. The checked-body and summary hashes and record
 identities are validated by the existing verifier before projection. The
 end-to-end Java test removes legacy generic body rows from the provider
 interface, then checks imported Int and String specializations, including a
-two-parameter callable that returns its second argument, zero-argument integer
-and boolean constant functions, and a concrete `Vector[Int]` direct-return callable
+two-parameter callable that returns its second argument, zero-argument integer,
+boolean, and positive float constant functions, and a concrete `Vector[Int]` direct-return callable
 also retains its nested element type and passes source-free semantic checking.
 General body projection, nominal type resolution, requirement and effect
 projection, and native source-free provider-consumer validation remain open.
