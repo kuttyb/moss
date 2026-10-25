@@ -1300,7 +1300,11 @@ public class SemanticCheckerTest {
         String rust = NativeGenerator.generate(valid, false);
         if (!rust.contains("__MossExecutor::new().threads(1_i64).queue_capacity(8_i64).start()")
                 || !rust.contains("pub fn enqueue<F>(&mut self, work: F)")
-                || !rust.contains("for work in std::mem::take(&mut self.pending)")
+                || !rust.contains("shared.space_available.wait(state)")
+                || !rust.contains("std::thread::Builder::new()")
+                || !rust.contains("__moss_executor_worker(worker_shared)")
+                || !rust.contains("state.shutdown = true")
+                || !rust.contains("worker.join().is_err()")
                 || !rust.contains("executor.enqueue(Box::new(move ||")
                 || !rust.contains("worker.clone()")
                 || !rust.contains("Process_shared(__moss_executor_arg_")

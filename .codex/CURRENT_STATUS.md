@@ -16452,9 +16452,10 @@ max-thread ordering, and unknown methods.
 The 13 Executor/FileIO negatives from the 51–100 sample all reject in Java,
 and `tests/phase20_executor_basic.moss` remains accepted. Java Rust lowering
 now snapshots the target and arguments, queues a one-way handler closure, and
-drains queued roots at `join()` using a deterministic sequential runtime.
-Generated Rust was inspected, not compiled. This runtime does not implement
-parallel worker scheduling, so production concurrency behavior remains open.
+drains queued roots at `join()` using a bounded worker queue with the requested
+thread count and queue-capacity backpressure. Generated Rust was inspected, not
+compiled. Full Phase 20 root admission/fairness, compensation-worker behavior,
+and OS affinity/priority hints remain unimplemented or unverified.
 All 12 Java test classes pass under ABI-v9 and staged ABI-v10. The standalone
 JAR packages successfully, and the packaged launcher generated the expected
 queue and handler-call Rust for the positive Executor fixture. Feedback
@@ -16462,13 +16463,13 @@ validation and `git diff --check` pass. Rust compilation/native execution have
 not been run. Native and release gates remain unrun.
 
 This is a bounded Executor lowering step, not a feature-complete runtime: the
-current queue drains sequentially and ignores worker configuration. Remaining
-Phase 25.3 scope includes broader semantic and codegen coverage, actual
-Executor concurrency/configuration semantics, source-free ABI-v9/v10
-compatibility evidence, Fast Debug/tracing parity, real Margo builds/tests and
-benchmarks, standalone launcher/daemon readiness, SDK compatibility, then the
-frozen-candidate native and SDK acceptance gates and independent Architect
-review. No release-candidate SHA is frozen.
+worker pool honors thread count and queue capacity but does not yet implement
+the full Phase 20 root runtime contract. Remaining Phase 25.3 scope includes
+broader semantic and codegen coverage, complete Executor/root semantics,
+source-free ABI-v9/v10 compatibility evidence, Fast Debug/tracing parity, real
+Margo builds/tests and benchmarks, standalone launcher/daemon readiness, SDK
+compatibility, then the frozen-candidate native and SDK acceptance gates and
+independent Architect review. No release-candidate SHA is frozen.
 
 Follow-up: generated Executor roots now call the handler `_root` wrapper when
 the handler raises or has `on_fail` arms; otherwise they call `_shared`. This
@@ -16476,14 +16477,15 @@ avoids leaving the handler's `Result` unhandled in the queued closure. A
 focused `SemanticCheckerTest` covers an `on_fail` Executor handler. All 12 Java
 test classes pass under ABI-v9 and staged ABI-v10; packaging succeeds, and the
 packaged compiler output was inspected to confirm `Process_root` in the queued
-closure. Rust compilation/native execution remain unrun and executor scheduling
-remains sequential.
+closure. Rust compilation/native execution remain unrun; later work replaced
+the initial sequential queue with a basic worker pool, whose full Phase 20
+correctness is not yet validated.
 
 Follow-up: Java now accepts `Executor().queue_capacity(n)`, checks its Int
 argument and positive literal bound, and lowers the chain to a runtime method.
 The existing `tests/phase20_executor_multi_root.moss` is accepted by both the
 C++ and Java checkers; Java rejects a zero capacity and the packaged compiler
-emits the configured value. That runtime method remains a stub until bounded
-queue scheduling is implemented. All 12 Java test classes pass under ABI-v9
-and staged ABI-v10, packaging and feedback validation pass, and native Rust
-compilation remains unrun.
+emits the configured value. The runtime now stores queue capacity and blocks
+submissions when the pending queue is full. All 12 Java test classes pass
+under ABI-v9 and staged ABI-v10, packaging and feedback validation pass, and
+native Rust compilation remains unrun.

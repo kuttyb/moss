@@ -108,23 +108,136 @@ impl __MossFile {
     pub fn close(&self) {}
 }
 #[allow(dead_code, non_camel_case_types)]
+type __MossExecutorJob = Box<dyn FnOnce() + Send + 'static>;
+struct __MossExecutorQueueState {
+    pending: std::collections::VecDeque<__MossExecutorJob>,
+    shutdown: bool,
+}
+struct __MossExecutorShared {
+    state: std::sync::Mutex<__MossExecutorQueueState>,
+    work_available: std::sync::Condvar,
+    space_available: std::sync::Condvar,
+}
+fn __moss_executor_worker(shared: std::sync::Arc<__MossExecutorShared>) {
+    loop {
+        let job = {
+            let mut state = shared.state.lock().unwrap_or_else(|error| error.into_inner());
+            while state.pending.is_empty() && !state.shutdown {
+                state = shared.work_available.wait(state).unwrap_or_else(|error| error.into_inner());
+            }
+            if state.pending.is_empty() && state.shutdown { return; }
+            let job = state.pending.pop_front().unwrap_or_else(|| std::process::abort());
+            shared.space_available.notify_one();
+            job
+        };
+        if std::panic::catch_unwind(std::panic::AssertUnwindSafe(job)).is_err() {
+            std::process::abort();
+        }
+    }
+}
+fn __moss_executor_positive_usize(name: &str, value: i64) -> usize {
+    match <usize as std::convert::TryFrom<i64>>::try_from(value) {
+        Ok(converted) if converted > 0 => converted,
+        _ => {
+            eprintln!("moss executor: {} must be a positive supported integer", name);
+            std::process::abort();
+        }
+    }
+}
 pub struct __MossExecutor {
-    pending: std::vec::Vec<Box<dyn FnOnce() + Send + 'static>>,
+    threads: std::option::Option<usize>,
+    max_threads: std::option::Option<usize>,
+    queue_capacity: std::option::Option<usize>,
+    affinity: std::option::Option<std::vec::Vec<usize>>,
+    priority: std::option::Option<i32>,
+    shared: std::option::Option<std::sync::Arc<__MossExecutorShared>>,
+    workers: std::vec::Vec<std::thread::JoinHandle<()>>,
 }
 impl __MossExecutor {
-    pub fn new() -> Self { Self { pending: std::vec::Vec::new() } }
-    pub fn threads(self, _n: i64) -> Self { self }
-    pub fn max_threads(self, _n: i64) -> Self { self }
-    pub fn queue_capacity(self, _n: i64) -> Self { self }
-    pub fn affinity(self, _cores: std::vec::Vec<i64>) -> Self { self }
-    pub fn priority(self, _level: i64) -> Self { self }
-    pub fn start(self) -> Self { self }
+    pub fn new() -> Self {
+        Self { threads: None, max_threads: None, queue_capacity: None, affinity: None,
+            priority: None, shared: None, workers: std::vec::Vec::new() }
+    }
+    pub fn threads(mut self, count: i64) -> Self {
+        self.threads = Some(__moss_executor_positive_usize("threads", count)); self
+    }
+    pub fn max_threads(mut self, count: i64) -> Self {
+        self.max_threads = Some(__moss_executor_positive_usize("max_threads", count)); self
+    }
+    pub fn queue_capacity(mut self, count: i64) -> Self {
+        self.queue_capacity = Some(__moss_executor_positive_usize("queue_capacity", count)); self
+    }
+    pub fn affinity(mut self, cores: std::vec::Vec<i64>) -> Self {
+        self.affinity = Some(cores.into_iter().map(|core|
+            match <usize as std::convert::TryFrom<i64>>::try_from(core) {
+                Ok(value) => value,
+                Err(_) => { eprintln!("moss executor: invalid affinity core id"); std::process::abort(); }
+            }).collect()); self
+    }
+    pub fn priority(mut self, level: i64) -> Self {
+        self.priority = Some(match <i32 as std::convert::TryFrom<i64>>::try_from(level) {
+            Ok(value) => value,
+            Err(_) => { eprintln!("moss executor: invalid priority"); std::process::abort(); }
+        }); self
+    }
+    pub fn start(mut self) -> Self {
+        let host_threads = std::thread::available_parallelism().map(|count| count.get()).unwrap_or(1);
+        let threads = self.threads.unwrap_or(host_threads);
+        let max_threads = self.max_threads.unwrap_or_else(|| threads.max(host_threads.saturating_mul(4)));
+        let queue_capacity = self.queue_capacity.unwrap_or(1024);
+        if max_threads < threads {
+            eprintln!("moss executor: max_threads cannot be less than threads");
+            std::process::abort();
+        }
+        if queue_capacity == 0 {
+            eprintln!("moss executor: queue_capacity must be positive");
+            std::process::abort();
+        }
+        let shared = std::sync::Arc::new(__MossExecutorShared {
+            state: std::sync::Mutex::new(__MossExecutorQueueState {
+                pending: std::collections::VecDeque::new(), shutdown: false,
+            }),
+            work_available: std::sync::Condvar::new(),
+            space_available: std::sync::Condvar::new(),
+        });
+        for worker_id in 0..threads.min(max_threads) {
+            let worker_shared = std::sync::Arc::clone(&shared);
+            let worker = std::thread::Builder::new()
+                .name(format!("moss-executor-{}", worker_id))
+                .spawn(move || __moss_executor_worker(worker_shared))
+                .unwrap_or_else(|error| {
+                    eprintln!("moss executor: failed to start worker: {}", error);
+                    std::process::abort();
+                });
+            self.workers.push(worker);
+        }
+        self.shared = Some(shared);
+        self
+    }
     pub fn enqueue<F>(&mut self, work: F)
     where F: FnOnce() + Send + 'static {
-        self.pending.push(Box::new(work));
+        let shared = self.shared.as_ref().unwrap_or_else(|| {
+            eprintln!("moss executor: invoke before start"); std::process::abort();
+        });
+        let capacity = self.queue_capacity.unwrap_or(1024);
+        let mut state = shared.state.lock().unwrap_or_else(|error| error.into_inner());
+        while state.pending.len() >= capacity && !state.shutdown {
+            state = shared.space_available.wait(state).unwrap_or_else(|error| error.into_inner());
+        }
+        if state.shutdown { std::process::abort(); }
+        state.pending.push_back(Box::new(work));
+        shared.work_available.notify_one();
     }
     pub fn join(&mut self) {
-        for work in std::mem::take(&mut self.pending) { work(); }
+        let Some(shared) = self.shared.take() else { return; };
+        let mut state = shared.state.lock().unwrap_or_else(|error| error.into_inner());
+        state.shutdown = true;
+        shared.work_available.notify_all();
+        shared.space_available.notify_all();
+        drop(state);
+        for worker in self.workers.drain(..) {
+            if worker.join().is_err() { std::process::abort(); }
+        }
     }
 }
 // ─── End Phase 20 Executor Runtime ───────────────────────────────────────
