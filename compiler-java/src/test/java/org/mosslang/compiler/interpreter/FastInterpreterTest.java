@@ -17,6 +17,7 @@ public final class FastInterpreterTest {
         testLexicalBlocksRestoreShadowedLocals();
         testRecoveryPayloadBindingIsScoped();
         testForLoopTraceMatchesIterationStructure();
+        testBranchTraceCarriesControlContext();
         System.out.println("FastInterpreterTest PASSED.");
     }
 
@@ -210,6 +211,32 @@ public final class FastInterpreterTest {
                 || !events.contains("\"line\":4,\"parent_event_id\":2,\"control_event_id\":2,\"depth\":1")
                 || !"0\n1\n".equals(stdout.toString(StandardCharsets.UTF_8))) {
             throw new AssertionError("for-loop trace omitted iteration context: " + events);
+        }
+    }
+
+    private static void testBranchTraceCarriesControlContext() {
+        var program = Parser.parseSource(""
+                + "fn main():\n"
+                + "  value = 1\n"
+                + "  if value > 0:\n"
+                + "    echo value\n"
+                + "  else:\n"
+                + "    echo 0\n"
+                + "  if value < 0:\n"
+                + "    echo 0\n"
+                + "  else:\n"
+                + "    echo value\n", "fast-interpreter-branch-trace.moss");
+        new CheckedProgram(program).run();
+        ByteArrayOutputStream trace = new ByteArrayOutputStream();
+        new FastInterpreter(program, true,
+                new PrintStream(new ByteArrayOutputStream()),
+                new PrintStream(trace, true, StandardCharsets.UTF_8)).run();
+        String events = trace.toString(StandardCharsets.UTF_8);
+        if (events.split("\\\"event\\\":\\\"BranchTaken\\\"", -1).length != 3
+                || !events.contains("\"detail\":\"then\"")
+                || !events.contains("\"detail\":\"else\"")
+                || !events.contains("\"line\":4,\"parent_event_id\":3,\"control_event_id\":3,\"depth\":1")) {
+            throw new AssertionError("branch trace omitted selected-arm context: " + events);
         }
     }
 }

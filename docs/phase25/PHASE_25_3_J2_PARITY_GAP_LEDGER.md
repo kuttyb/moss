@@ -176,3 +176,11 @@ body reads/writes with matching depth and control-event links. A full `range(0,
 2)` trace and stdout compare equal to C++. All eleven Java unit-test classes
 pass in ABI-v9 and staged ABI-v10. Vector/Map iteration traces and the remaining
 trace constructs are not yet covered.
+
+### Branch tracing follow-up
+
+Java now emits `BranchTaken` for selected then/else arms and nests selected
+branch body events under that control event with incremented depth. A probe
+covering both choices compares exactly with C++ event-for-event and stdout.
+All eleven Java unit-test classes pass in ABI-v9 and staged ABI-v10; other
+control, message, and state tracing remain open.

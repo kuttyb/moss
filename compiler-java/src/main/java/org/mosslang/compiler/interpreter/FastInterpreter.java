@@ -274,17 +274,23 @@ public class FastInterpreter {
     }
 
     private void traceLoopIteration(Stmt statement, String function, int iteration, int depth) {
+        traceControlEvent(statement, function, "LoopIteration", Integer.toString(iteration), depth);
+    }
+
+    private void traceControlEvent(Stmt statement, String function, String event,
+                                   String detail, int depth) {
         if (!trace) return;
         setTraceContext(statement, function, depth);
         eventId++;
-        int loopEventId = eventId;
-        traceEvent("{\"event_id\":" + loopEventId + ",\"event\":\"LoopIteration\",\"function\":\""
+        int controlEventId = eventId;
+        traceEvent("{\"event_id\":" + controlEventId + ",\"event\":\"" + event
+                + "\",\"function\":\""
                 + jsonEscape(function) + "\",\"source_file\":\"" + jsonEscape(traceSourceFile)
                 + "\",\"semantic_identity\":\"" + jsonEscape(traceIdentity()) + "\",\"line\":"
                 + statement.line + traceContextFields() + ",\"depth\":" + depth
-                + ",\"detail\":\"" + iteration + "\"}");
-        traceParentStack.push(loopEventId);
-        traceControlStack.push(loopEventId);
+                + ",\"detail\":\"" + jsonEscape(detail) + "\"}");
+        traceParentStack.push(controlEventId);
+        traceControlStack.push(controlEventId);
     }
 
     private void endTraceLoopIteration() {
@@ -353,11 +359,21 @@ public class FastInterpreter {
                 }
                 Value cond = evalExpr(s.a, locals, currentDomain);
                 if (cond.asBool()) {
-                    lastVal = evalScopedBlock(stmts, i + 1, thenEnd, locals,
-                            currentDomain, funcName, depth, Set.of());
+                    traceControlEvent(s, funcName, "BranchTaken", "then", depth);
+                    try {
+                        lastVal = evalScopedBlock(stmts, i + 1, thenEnd, locals,
+                                currentDomain, funcName, depth + 1, Set.of());
+                    } finally {
+                        endTraceLoopIteration();
+                    }
                 } else if (elseStart != -1) {
-                    lastVal = evalScopedBlock(stmts, elseStart, elseEnd, locals,
-                            currentDomain, funcName, depth, Set.of());
+                    traceControlEvent(s, funcName, "BranchTaken", "else", depth);
+                    try {
+                        lastVal = evalScopedBlock(stmts, elseStart, elseEnd, locals,
+                                currentDomain, funcName, depth + 1, Set.of());
+                    } finally {
+                        endTraceLoopIteration();
+                    }
                 }
                 i = elseEnd;
                 continue;

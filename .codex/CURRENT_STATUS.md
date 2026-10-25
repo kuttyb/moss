@@ -13704,3 +13704,14 @@ loop-variable trace event still need separate comparison.
 Validation: clean Java build and all eleven Java unit-test classes pass in
 ABI-v9 and staged ABI-v10 modes. Broader interpreter tracing and final
 acceptance remain open.
+
+### Phase 25.3 continuation — trace selected branch arms
+
+Java Fast Debug now emits `BranchTaken` events for selected `if` arms, nests
+branch-body reads/writes under the event, and increments body depth. A two-branch
+probe covering both `then` and `else` choices matches C++ trace JSON objects and
+stdout exactly.
+
+Validation: all eleven Java unit-test classes pass in ABI-v9 and staged
+ABI-v10 modes; feedback validation and `git diff --check` pass. Other nested
+control and message/state trace paths remain open.
