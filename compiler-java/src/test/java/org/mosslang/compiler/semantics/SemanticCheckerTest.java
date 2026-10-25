@@ -1268,6 +1268,13 @@ public class SemanticCheckerTest {
         expectCompileError(wrongConfig, "EXECUTOR_CONFIG_TYPE",
                 "Executor thread count must be an Int");
 
+        Program zeroQueueCapacity = Parser.parseSource(""
+                + "fn main():\n"
+                + "  executor = Executor().queue_capacity(0).start()\n"
+                + "  executor.join()\n", "executor-queue-capacity-range.moss");
+        expectCompileError(zeroQueueCapacity, "EXECUTOR_CONFIG_RANGE",
+                "Executor.queue_capacity must be positive");
+
         Program valueReturning = Parser.parseSource(""
                 + "domain Worker:\n"
                 + "  fn Read() -> Int:\n"
@@ -1286,12 +1293,12 @@ public class SemanticCheckerTest {
                 + "    pass\n"
                 + "fn main():\n"
                 + "  worker = Worker()\n"
-                + "  executor = Executor().threads(1).start()\n"
+                + "  executor = Executor().threads(1).queue_capacity(8).start()\n"
                 + "  executor.invoke(worker.Process(1))\n"
                 + "  executor.join()\n", "executor-valid-lifecycle.moss");
         new SemanticChecker(valid).run();
         String rust = NativeGenerator.generate(valid, false);
-        if (!rust.contains("__MossExecutor::new().threads(1_i64).start()")
+        if (!rust.contains("__MossExecutor::new().threads(1_i64).queue_capacity(8_i64).start()")
                 || !rust.contains("pub fn enqueue<F>(&mut self, work: F)")
                 || !rust.contains("for work in std::mem::take(&mut self.pending)")
                 || !rust.contains("executor.enqueue(Box::new(move ||")

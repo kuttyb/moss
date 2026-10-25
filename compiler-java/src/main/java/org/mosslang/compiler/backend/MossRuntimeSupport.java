@@ -115,6 +115,7 @@ impl __MossExecutor {
     pub fn new() -> Self { Self { pending: std::vec::Vec::new() } }
     pub fn threads(self, _n: i64) -> Self { self }
     pub fn max_threads(self, _n: i64) -> Self { self }
+    pub fn queue_capacity(self, _n: i64) -> Self { self }
     pub fn affinity(self, _cores: std::vec::Vec<i64>) -> Self { self }
     pub fn priority(self, _level: i64) -> Self { self }
     pub fn start(self) -> Self { self }

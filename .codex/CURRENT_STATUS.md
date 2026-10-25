@@ -16478,3 +16478,12 @@ test classes pass under ABI-v9 and staged ABI-v10; packaging succeeds, and the
 packaged compiler output was inspected to confirm `Process_root` in the queued
 closure. Rust compilation/native execution remain unrun and executor scheduling
 remains sequential.
+
+Follow-up: Java now accepts `Executor().queue_capacity(n)`, checks its Int
+argument and positive literal bound, and lowers the chain to a runtime method.
+The existing `tests/phase20_executor_multi_root.moss` is accepted by both the
+C++ and Java checkers; Java rejects a zero capacity and the packaged compiler
+emits the configured value. That runtime method remains a stub until bounded
+queue scheduling is implemented. All 12 Java test classes pass under ABI-v9
+and staged ABI-v10, packaging and feedback validation pass, and native Rust
+compilation remains unrun.

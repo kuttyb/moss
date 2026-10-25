@@ -1876,7 +1876,8 @@ public class ExpressionTyper {
             requireArgumentCount(line, "Executor.start", args, 0, 0);
             return TypeRef.primitive("Executor");
         }
-        if ("threads".equals(member) || "max_threads".equals(member) || "priority".equals(member)) {
+        if ("threads".equals(member) || "max_threads".equals(member)
+                || "queue_capacity".equals(member) || "priority".equals(member)) {
             requireArgumentCount(line, "Executor." + member, args, 1, 1);
             TypeRef actual = solver.resolve(infer(args.get(0), line, env));
             if (actual == null || actual.kind() != TypeKind.Primitive || !"int".equals(actual.name())) {
@@ -1884,9 +1885,10 @@ public class ExpressionTyper {
                         "EXECUTOR_CONFIG_TYPE");
             }
             String literal = args.get(0).trim();
-            if ("threads".equals(member) && literal.matches("-?\\d+")
+            if (("threads".equals(member) || "queue_capacity".equals(member))
+                    && literal.matches("-?\\d+")
                     && Long.parseLong(literal) <= 0) {
-                throw new CompileError(line, "Executor.threads must be positive",
+                throw new CompileError(line, "Executor." + member + " must be positive",
                         "EXECUTOR_CONFIG_RANGE");
             }
             if ("max_threads".equals(member) && literal.matches("-?\\d+")) {
