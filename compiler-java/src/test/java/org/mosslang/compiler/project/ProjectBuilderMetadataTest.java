@@ -349,6 +349,29 @@ public final class ProjectBuilderMetadataTest {
                 || !identitySummary.bodySemanticHash.equals(identityBody.semanticHash)) {
             throw new AssertionError("ABI-v10 identity summary/body did not retain its checked type relation");
         }
+        Path identityMossi = null;
+        try {
+            identityMossi = Files.createTempFile(Path.of("tmp"), "identity-provider-", ".mossi");
+            Files.write(identityMossi, CheckedBodyCodec.encodeMossiBytes(identityInterface));
+            Program consumer = Parser.parseSource(""
+                    + "fn use_int() -> Int:\n"
+                    + "  return provider__identity(7)\n"
+                    + "fn use_string() -> String:\n"
+                    + "  return provider__identity(\"seven\")\n"
+                    + "fn main():\n"
+                    + "  pass\n", "identity-consumer.moss");
+            org.mosslang.compiler.cli.Main.loadMossiFunctions(identityMossi, "provider", consumer);
+            new org.mosslang.compiler.semantics.SemanticChecker(consumer).run();
+        } catch (java.io.IOException error) {
+            throw new AssertionError("could not construct source-free identity consumer", error);
+        } finally {
+            if (identityMossi != null) {
+                try { Files.deleteIfExists(identityMossi); }
+                catch (java.io.IOException error) {
+                    throw new AssertionError("could not clean up source-free identity fixture", error);
+                }
+            }
+        }
     }
 
     private static void assertEquals(String expected, String actual) {

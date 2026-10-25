@@ -13294,3 +13294,10 @@ provider-consumer behavior remain open.
 Validation: all ten Java unit-test classes pass after clean builds in default
 ABI-v9 and staged ABI-v10 modes. `git diff --check` passes. No native or SDK
 gate ran.
+
+Follow-up consumer check: the generated and source-free-verified provider
+interface loads into a consumer program, where two calls specialize the
+identity function to `Int` and `String`; the Java semantic checker accepts
+both. The current loader still obtains callable body/signature behavior from
+legacy generic text and does not yet project typed summary/checked-body records
+into checker facts. No native build or execution was run.
