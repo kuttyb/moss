@@ -12805,3 +12805,13 @@ verifies the resulting source-free contract.
 Validation: Java build, focused `CheckedBodyCodecTest`, and all ten Java unit
 test classes pass. Malformed raw UTF-8 read-file behavior, native source-free
 linkage, and canonical logical ABI completion remain open.
+
+The ABI-v10 encoder now also rejects duplicate import module IDs and duplicate
+record IDs per section before sorting/framing. Previously, encoding could
+produce a container that the decoder itself rejected. The focused codec test
+covers duplicate imports and semantic records with the structured
+`SOURCE_FREE_CONTRACT_INVALID` error.
+
+Validation: Java build, focused codec test, all ten Java unit-test classes,
+feedback validation, and `git diff --check` pass. The v10 logical schema gap
+remains.

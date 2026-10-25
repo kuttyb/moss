@@ -246,6 +246,26 @@ public class CheckedBodyCodec {
         return sb.toString();
     }
 
+    private static void requireUniqueImports(List<MossiImport> imports) {
+        Set<String> ids = new HashSet<>();
+        if (imports == null) return;
+        for (MossiImport imp : imports) {
+            if (imp == null || imp.moduleId.isEmpty() || !ids.add(imp.moduleId)) {
+                throw new CompileError(0, "ABI-v10 import is malformed or duplicated", "SOURCE_FREE_CONTRACT_INVALID");
+            }
+        }
+    }
+
+    private static void requireUniqueRecords(List<MossiRecord> records, String sectionName) {
+        Set<String> ids = new HashSet<>();
+        if (records == null) return;
+        for (MossiRecord record : records) {
+            if (record == null || record.id.isEmpty() || !ids.add(record.id)) {
+                throw new CompileError(0, "ABI-v10 " + sectionName + " record is malformed or duplicated", "SOURCE_FREE_CONTRACT_INVALID");
+            }
+        }
+    }
+
     private static String frameRecords(List<MossiRecord> records, String sectionName) {
         List<MossiRecord> sorted = new ArrayList<>(records != null ? records : Collections.emptyList());
         sorted.sort(Comparator.comparing(a -> a.id));
@@ -269,6 +289,12 @@ public class CheckedBodyCodec {
         if (!isModuleIdValid(mossi.moduleId)) {
             throw new CompileError(0, "ABI-v10 module identity is malformed: " + mossi.moduleId, "SOURCE_FREE_CONTRACT_INVALID");
         }
+
+        requireUniqueImports(mossi.imports);
+        requireUniqueRecords(mossi.binaryContract, "binary_contract");
+        requireUniqueRecords(mossi.semanticContract, "semantic_contract");
+        requireUniqueRecords(mossi.privateSemanticDependencies, "private_semantic_dependencies");
+        requireUniqueRecords(mossi.provenance, "provenance");
 
         // Sort record lists in-place for canonical ordering
         if (mossi.imports != null) mossi.imports.sort(Comparator.comparing(a -> a.moduleId));

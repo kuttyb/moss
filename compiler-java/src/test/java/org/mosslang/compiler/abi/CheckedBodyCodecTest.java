@@ -18,6 +18,7 @@ public class CheckedBodyCodecTest {
         testComplexStatementsRoundTrip();
         testMossiSerializationAndParsing();
         testMossiUtf8ByteFraming();
+        testMossiEncoderRejectsDuplicateIds();
         testMossiRejectsUnboundedCounts();
         testSourceFreeVerificationSuccess();
         testSourceFreeVerificationTamperDetection();
@@ -225,6 +226,27 @@ public class CheckedBodyCodecTest {
             throw new AssertionError("ABI-v10 UTF-8 byte-framed record did not round-trip");
         }
         CheckedBodyCodec.verifySourceFree(decoded, encoded);
+    }
+
+    private static void testMossiEncoderRejectsDuplicateIds() {
+        MossiInterface duplicateRecord = new MossiInterface("module-v1:duplicate@1.0.0::provider");
+        duplicateRecord.semanticContract.add(new MossiRecord("fn:one", "payload\n"));
+        duplicateRecord.semanticContract.add(new MossiRecord("fn:one", "payload\n"));
+        assertMossiEncodeRejects(duplicateRecord, "duplicate semantic record ID");
+
+        MossiInterface duplicateImport = new MossiInterface("module-v1:duplicate@1.0.0::provider");
+        duplicateImport.addImport("module-v1:dep@1.0.0::api", "1", "2");
+        duplicateImport.addImport("module-v1:dep@1.0.0::api", "3", "4");
+        assertMossiEncodeRejects(duplicateImport, "duplicate import module ID");
+    }
+
+    private static void assertMossiEncodeRejects(MossiInterface mossi, String description) {
+        try {
+            CheckedBodyCodec.encodeMossi(mossi);
+            throw new AssertionError("ABI-v10 encoder accepted " + description);
+        } catch (CompileError error) {
+            if (!"SOURCE_FREE_CONTRACT_INVALID".equals(error.getCode())) throw error;
+        }
     }
 
     private static void testSourceFreeVerificationTamperDetection() {
