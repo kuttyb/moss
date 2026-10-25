@@ -4733,6 +4733,7 @@ public class SemanticChecker {
                             || org.mosslang.compiler.parser.ParserSupport
                                     .usesPipelineFunctionCallback(expression, function.name)) {
                         raised.addAll(collectFunctionRaiseVariants(function, visitedFunctions));
+                        collectHandlerFunctionMethodRaises(expression, function, domain, handler, raised);
                     }
                 }
                 collectHandlerMethodRaises(expression, domain, handler, raised);
@@ -4749,6 +4750,11 @@ public class SemanticChecker {
 
     private void collectHandlerMethodRaises(String expression, Domain domain, Handler handler,
                                            Set<String> raised) {
+        collectHandlerMethodRaises(expression, domain, handler, Map.of(), raised);
+    }
+
+    private void collectHandlerMethodRaises(String expression, Domain domain, Handler handler,
+                                            Map<String, String> contextualTypes, Set<String> raised) {
         String code = maskStringLiterals(expression);
         for (ObjectType object : program.objects) {
             for (Method method : object.methods) {
@@ -4756,19 +4762,46 @@ public class SemanticChecker {
                         + java.util.regex.Pattern.quote(method.name) + "\\s*\\(";
                 java.util.regex.Matcher calls = java.util.regex.Pattern.compile(callPattern).matcher(code);
                 while (calls.find()) {
-                    String receiverType = resolveHandlerReceiverType(calls.group(1), domain, handler);
+                    String receiverType = contextualTypes.getOrDefault(calls.group(1).replaceAll("\\s", ""),
+                            resolveHandlerReceiverType(calls.group(1), domain, handler));
                     if (matchesObjectTypeName(receiverType, object.name))
                         raised.addAll(collectMethodRaiseVariants(method, new HashSet<>()));
                 }
                 for (String callback : org.mosslang.compiler.parser.ParserSupport.pipelineCallbacks(code)) {
                     int dot = callback.lastIndexOf('.');
                     if (dot <= 0 || !method.name.equals(callback.substring(dot + 1))) continue;
-                    String receiverType = resolveHandlerReceiverType(
-                            callback.substring(0, dot), domain, handler);
+                    String receiverPath = callback.substring(0, dot);
+                    String receiverType = contextualTypes.getOrDefault(receiverPath,
+                            resolveHandlerReceiverType(receiverPath, domain, handler));
                     if (matchesObjectTypeName(receiverType, object.name))
                         raised.addAll(collectMethodRaiseVariants(method, new HashSet<>()));
                 }
             }
+        }
+    }
+
+    private void collectHandlerFunctionMethodRaises(String invocation, Function function,
+                                                    Domain domain, Handler handler,
+                                                    Set<String> raised) {
+        java.util.regex.Matcher calls = java.util.regex.Pattern.compile("(?<![A-Za-z0-9_])"
+                + java.util.regex.Pattern.quote(function.name) + "\\s*\\(([^()]*)\\)")
+                .matcher(maskStringLiterals(invocation));
+        while (calls.find()) {
+            List<String> arguments = org.mosslang.compiler.parser.ParserSupport
+                    .splitTopLevel(calls.group(1), ',');
+            Map<String, String> contextualTypes = new HashMap<>();
+            for (int index = 0; index < Math.min(function.params.size(), arguments.size()); index++) {
+                String actualType = resolveHandlerReceiverType(arguments.get(index), domain, handler);
+                if (actualType != null) contextualTypes.put(function.params.get(index).name, actualType);
+            }
+            for (Stmt statement : function.body) {
+                String bodyExpression = statementExpressionText(statement);
+                if (bodyExpression != null)
+                    collectHandlerMethodRaises(bodyExpression, domain, handler, contextualTypes, raised);
+            }
+            if (function.resultExpression != null)
+                collectHandlerMethodRaises(function.resultExpression, domain, handler,
+                        contextualTypes, raised);
         }
     }
 

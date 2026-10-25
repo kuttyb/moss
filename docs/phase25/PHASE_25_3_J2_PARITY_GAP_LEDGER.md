@@ -860,3 +860,15 @@ scans direct object-method calls, resolves their receiver from checked handler
 bindings, and includes the selected method's escaping raises. The regression
 checks rejection without `on_fail` and acceptance with `Failure.Bad`. All 12
 Java test classes pass under ABI-v9 and staged ABI-v10.
+
+
+### Follow-up — contextual method raises through generic helpers
+
+A handler calling `invoke(box)`, where `invoke` has an untyped parameter and
+calls `box.risky(1)`, exposed another Java root-ingress false acceptance:
+C++ rejected the unhandled `Failure.Bad`, Java accepted it. Root raise collection
+now resolves helper parameter receiver types from the checked handler callsite
+and scans the helper body for direct and pipeline method calls. The focused
+`SemanticCheckerTest` passes. Minimized C++ and Java probes both reject the
+unhandled form and accept the matching `on_fail` control. This does not yet
+cover transitive generic helper chains or provide native execution evidence.

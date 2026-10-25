@@ -96,6 +96,7 @@ public class SemanticCheckerTest {
         testMainRejectsUncaughtTypedRaise();
         testExecutorRootRequiresRaiseHandling();
         testRootIngressTracksMethodPipelineRaises();
+        testRootIngressTracksGenericHelperMethodRaises();
         testSynchronousRootMessagePropagatesHelperRaises();
         testRecoverUsesCallArgumentRaiseOrder();
         testRecoverUsesVectorElementRaiseOrder();
@@ -2510,6 +2511,42 @@ public class SemanticCheckerTest {
                 + "fn main():\n"
                 + "  worker = Worker()\n"
                 + "  message worker.Run()\n", "root-ingress-method-pipeline-raise-handled.moss");
+        new SemanticChecker(handled).run();
+    }
+
+    private static void testRootIngressTracksGenericHelperMethodRaises() {
+        assertCompileError(""
+                + "enum Failure:\n"
+                + "  Bad\n"
+                + "type Box:\n"
+                + "  fn risky(value: Int) -> Int:\n"
+                + "    raise Failure.Bad\n"
+                + "fn invoke(box):\n"
+                + "  value = box.risky(1)\n"
+                + "domain Worker:\n"
+                + "  fn Run():\n"
+                + "    box = Box()\n"
+                + "    invoke(box)\n"
+                + "fn main():\n"
+                + "  worker = Worker()\n"
+                + "  message worker.Run()\n", "ROOT_UNHANDLED_RAISE");
+        Program handled = Parser.parseSource(""
+                + "enum Failure:\n"
+                + "  Bad\n"
+                + "type Box:\n"
+                + "  fn risky(value: Int) -> Int:\n"
+                + "    raise Failure.Bad\n"
+                + "fn invoke(box):\n"
+                + "  value = box.risky(1)\n"
+                + "domain Worker:\n"
+                + "  fn Run():\n"
+                + "    box = Box()\n"
+                + "    invoke(box)\n"
+                + "  on_fail Failure.Bad:\n"
+                + "    pass\n"
+                + "fn main():\n"
+                + "  worker = Worker()\n"
+                + "  message worker.Run()\n", "root-ingress-generic-helper-method-handled.moss");
         new SemanticChecker(handled).run();
     }
 

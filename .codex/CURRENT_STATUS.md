@@ -16745,3 +16745,15 @@ locals, and propagates the method's escaping variants. Regressions cover
 rejection without `on_fail` and acceptance with `Failure.Bad`. Both full 12-class
 Java suites pass under ABI-v9 and staged ABI-v10; minimized C++/Java probes
 agree. No native execution or SDK integration was run.
+
+
+### Phase 25.3 continuation — contextual method raises through generic helpers
+
+A domain handler calling `invoke(box)` where untyped helper parameter `box`
+calls `box.risky(1)` was rejected by C++ for an unhandled `Failure.Bad`, but
+Java accepted it. Root ingress raise collection now supplies concrete handler
+call-site receiver types to method-call scans in the invoked helper. The focused
+`SemanticCheckerTest` passes; minimized C++ and Java checks both reject the
+unhandled form and accept the matching `on_fail` control. This is bounded to
+methods directly referenced in the invoked helper body; deeper generic helper
+chains, other contextual effects, native execution, and SDK gates remain open.
