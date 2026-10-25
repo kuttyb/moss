@@ -146,6 +146,7 @@ public class SemanticChecker {
         program.typeContext = this.typeContext;
         try (var scope = TypeContext.openScope(typeContext)) {
             collectDeclarations();
+            validateCollectionTypeArities();
             checkEnums();
             checkObjects();
             checkTraits();
@@ -406,6 +407,67 @@ public class SemanticChecker {
                         }
                     }
                 } catch (Exception ignored) {}
+            }
+        }
+    }
+
+    private void validateCollectionTypeArities() {
+        for (Function function : program.functions) {
+            for (Param parameter : function.params)
+                validateCollectionTypeArity(parameter.type, function.line);
+            validateCollectionTypeArity(function.returnType, function.line);
+        }
+        for (ObjectType object : program.objects) {
+            for (Field field : object.fields)
+                validateCollectionTypeArity(field.type, field.line);
+            for (Method method : object.methods) {
+                for (Param parameter : method.params)
+                    validateCollectionTypeArity(parameter.type, method.line);
+                validateCollectionTypeArity(method.returnType, method.line);
+            }
+        }
+        for (Domain domain : program.domains) {
+            for (Field field : domain.state)
+                validateCollectionTypeArity(field.type, field.line);
+            for (Handler handler : domain.handlers) {
+                for (Param parameter : handler.params)
+                    validateCollectionTypeArity(parameter.type, handler.line);
+                validateCollectionTypeArity(handler.replyType, handler.line);
+            }
+        }
+        for (Trait trait : program.traits) {
+            for (TraitMethod method : trait.methods) {
+                for (Param parameter : method.params)
+                    validateCollectionTypeArity(parameter.type, method.line);
+                validateCollectionTypeArity(method.returnType, method.line);
+            }
+        }
+    }
+
+    private void validateCollectionTypeArity(String type, int line) {
+        if (type == null || type.isBlank()) return;
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile(
+                "(?i)\\b(Vector|Map|Queue|Set|vector|map|queue|set)\\s*\\[").matcher(type);
+        while (matcher.find()) {
+            int open = matcher.end() - 1;
+            int depth = 0;
+            int close = -1;
+            for (int cursor = open; cursor < type.length(); cursor++) {
+                if (type.charAt(cursor) == '[') depth++;
+                else if (type.charAt(cursor) == ']' && --depth == 0) {
+                    close = cursor;
+                    break;
+                }
+            }
+            String name = matcher.group(1).toLowerCase(Locale.ROOT);
+            Integer expected = TypeRef.collectionArity(name);
+            if (expected == null) continue;
+            List<String> arguments = close < 0 ? List.of()
+                    : ExpressionTyper.parseArguments(type.substring(open + 1, close));
+            if (close < 0 || arguments.size() != expected) {
+                String malformed = name + "[" + (close < 0 ? "" : String.join(",", arguments)) + "]";
+                throw new CompileError(line, "malformed type expression '" + malformed + "'",
+                        "MALFORMED_TYPE_EXPRESSION");
             }
         }
     }

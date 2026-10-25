@@ -16316,3 +16316,19 @@ transitive message-payload writes (1), and iterator restrictions (2). This is
 not a full negative-corpus run. All Java test classes pass under ABI-v9 and
 staged ABI-v10; packaging/bootstrap and feedback validation pass. No native or
 release gate ran.
+
+### Phase 25.3 continuation — explicit collection type arity
+
+Java now validates explicit collection type argument counts across function,
+method, trait, object, and domain declarations. `Map[String]` and
+`Vector[Int, Int]` reject with `MALFORMED_TYPE_EXPRESSION`; nested valid
+`Map[String, Vector[Int]]` remains accepted. The second 50-file negative
+sample is down from 24 to 22 Java-only acceptances; C++ rejects all 50 and
+compiler outputs are well formed.
+
+The remaining 22 include 2 static domain route/capability cases, 13
+Executor/FileIO lifecycle or capability cases, 4 source-free callable/domain
+cases, 1 transitive message-payload write, and 2 iterator restrictions. All
+twelve Java test classes pass under ABI-v9 and staged ABI-v10. Packaging and
+packaged bootstrap, feedback validation, and diff checks pass. Native and
+release gates remain unrun.

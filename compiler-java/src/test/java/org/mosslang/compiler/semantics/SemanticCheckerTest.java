@@ -56,6 +56,7 @@ public class SemanticCheckerTest {
         testFunctionalCallbacksRejectMutableCaptures();
         testFunctionalMapRejectsNoncopySourceAliases();
         testFunctionalPipelinesMustBeMaterializedAtDomainBoundary();
+        testCollectionTypeArgumentsRequireExactArity();
         testDirectVectorSumTypeAndLowering();
         testValueHandlerRepliesOnEveryNormalPath();
         testUnsupportedCollectionsAreRejectedAsForIterablesAtLoopSite();
@@ -1392,6 +1393,31 @@ public class SemanticCheckerTest {
                 + "  echo invalid[0].label\n", "functional-map-alias-field.moss");
         expectCompileError(field, "FUNCTIONAL_SEMANTIC_ERROR",
                 "map cannot return a noncopy source field without a copy");
+    }
+
+    private static void testCollectionTypeArgumentsRequireExactArity() {
+        Program partialMap = Parser.parseSource(""
+                + "type Index:\n"
+                + "  entries: Map[String]\n"
+                + "fn main():\n"
+                + "  echo 1\n", "partial-map-arity.moss");
+        expectCompileError(partialMap, "MALFORMED_TYPE_EXPRESSION",
+                "Map requires exactly two type arguments");
+
+        Program extraVector = Parser.parseSource(""
+                + "fn total(values: Vector[Int, Int]) -> Int:\n"
+                + "  return 0\n"
+                + "fn main():\n"
+                + "  echo 1\n", "extra-vector-arity.moss");
+        expectCompileError(extraVector, "MALFORMED_TYPE_EXPRESSION",
+                "Vector requires exactly one type argument");
+
+        Program valid = Parser.parseSource(""
+                + "fn total(values: Map[String, Vector[Int]]) -> Int:\n"
+                + "  return 0\n"
+                + "fn main():\n"
+                + "  echo 1\n", "nested-collection-arity.moss");
+        new SemanticChecker(valid).run();
     }
 
     private static void testNestedFieldReadInBranchConditionKeepsReceiverReadOnly() {
