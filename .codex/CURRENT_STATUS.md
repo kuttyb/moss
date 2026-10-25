@@ -13860,3 +13860,15 @@ execution and trace are verified locally without claiming C++ parity.
 Validation: all eleven Java unit-test classes pass in ABI-v9 and staged
 ABI-v10; the focused test checks the result and function lifecycle events.
 Phase 25.3 remains in progress.
+
+### Phase 25.3 continuation — shared-state message trace ordering
+
+The `examples/shared_memory.moss` probe matched output and event nesting, but
+Java serialized domain context after LocalWrite values. The trace writer now
+places instance/specialization/handler metadata before before/after values, as
+C++ does. The complete shared-memory trace and stdout now match byte-for-byte,
+including repeated message state changes and handler-local result writes.
+
+Validation: all eleven Java unit-test classes pass in ABI-v9 and staged
+ABI-v10; feedback validation and `git diff --check` pass. Full acceptance
+remains open.

@@ -290,10 +290,9 @@ public class FastInterpreter {
                 + jsonEscape(function) + "\",\"source_file\":\"" + jsonEscape(statement.sourceFile)
                 + "\",\"semantic_identity\":\"" + jsonEscape(traceIdentity()) + "\",\"line\":"
                 + statement.line + traceContextFields() + ",\"depth\":" + depth + ",\"detail\":\""
-                + jsonEscape(name) + "\""
+                + jsonEscape(name) + "\"" + traceDomainFields()
                 + (before == null ? "" : ",\"before\":\"" + jsonEscape(traceValueSummary(before)) + "\"")
-                + ",\"after\":\"" + jsonEscape(traceValueSummary(value)) + "\""
-                + traceDomainFields() + "}");
+                + ",\"after\":\"" + jsonEscape(traceValueSummary(value)) + "\"}");
     }
 
     private void traceLocalRead(String name) {
