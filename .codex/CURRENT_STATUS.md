@@ -13789,3 +13789,8 @@ Validation: all eleven Java unit-test classes pass in ABI-v9 and staged
 ABI-v10. The focused Java diagnostic is `TYPE_MISMATCH` at line 5 with the
 non-iterable Map explanation, matching C++'s location/reason. Phase 25.3 remains
 in progress.
+
+The same iterability classification issue also affected Queue. A focused Queue
+loop comparison showed C++ rejecting Queue at the loop as non-iterable while
+Java reported unresolved element inference at the header. The bounded checker
+guard and regression now cover both Map and Queue.

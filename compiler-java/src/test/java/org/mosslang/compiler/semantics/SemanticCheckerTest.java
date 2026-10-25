@@ -27,7 +27,7 @@ public class SemanticCheckerTest {
         testConsumedObjectParameterLowersByValue();
         testObjectMethodWriteParameterLowersMutably();
         testNestedObjectFieldWriteLowersMutableReceiver();
-        testMapIsRejectedAsForIterableAtLoopSite();
+        testUnsupportedCollectionsAreRejectedAsForIterablesAtLoopSite();
         testTypedOnFailLocalCaptureLowering();
         testOnFailRejectsLocalInitializedAfterRaise();
         testOnFailCaptureUsesMatchingRaisedVariant();
@@ -532,21 +532,32 @@ public class SemanticCheckerTest {
         }
     }
 
-    private static void testMapIsRejectedAsForIterableAtLoopSite() {
-        Program program = Parser.parseSource(""
+    private static void testUnsupportedCollectionsAreRejectedAsForIterablesAtLoopSite() {
+        assertNotIterable(""
                 + "fn main():\n"
                 + "  var values = Map()\n"
                 + "  values[\"a\"] = 1\n"
                 + "  values[\"b\"] = 2\n"
                 + "  for key in values:\n"
-                + "    echo key\n", "map-not-iterable.moss");
+                + "    echo key\n");
+        assertNotIterable(""
+                + "fn main():\n"
+                + "  var values = Queue()\n"
+                + "  values.push(1)\n"
+                + "  values.push(2)\n"
+                + "  for item in values:\n"
+                + "    echo item\n");
+    }
+
+    private static void assertNotIterable(String source) {
+        Program program = Parser.parseSource(source, "collection-not-iterable.moss");
         try {
             new SemanticChecker(program).run();
-            throw new AssertionError("Map must not be accepted as a for-loop iterable");
+            throw new AssertionError("Map/Queue must not be accepted as a for-loop iterable");
         } catch (CompileError error) {
             if (!"TYPE_MISMATCH".equals(error.getCode()) || error.getLine() != 5
                     || !error.getMessage().contains("not statically iterable")) {
-                throw new AssertionError("Map iterability diagnostic was imprecise: " + error.getMessage(), error);
+                throw new AssertionError("collection iterability diagnostic was imprecise: " + error.getMessage(), error);
             }
         }
     }
