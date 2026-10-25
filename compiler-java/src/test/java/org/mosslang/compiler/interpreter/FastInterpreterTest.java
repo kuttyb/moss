@@ -239,14 +239,16 @@ public final class FastInterpreterTest {
                 + "  if value < 0:\n"
                 + "    echo 0\n"
                 + "  else:\n"
-                + "    echo value\n", "fast-interpreter-branch-trace.moss");
+                + "    echo value\n"
+                + "  if value < 0:\n"
+                + "    echo 0\n", "fast-interpreter-branch-trace.moss");
         new CheckedProgram(program).run();
         ByteArrayOutputStream trace = new ByteArrayOutputStream();
         new FastInterpreter(program, true,
                 new PrintStream(new ByteArrayOutputStream()),
                 new PrintStream(trace, true, StandardCharsets.UTF_8)).run();
         String events = trace.toString(StandardCharsets.UTF_8);
-        if (events.split("\\\"event\\\":\\\"BranchTaken\\\"", -1).length != 3
+        if (events.split("\\\"event\\\":\\\"BranchTaken\\\"", -1).length != 4
                 || !events.contains("\"detail\":\"then\"")
                 || !events.contains("\"detail\":\"else\"")
                 || !events.contains("\"line\":4,\"parent_event_id\":3,\"control_event_id\":3,\"depth\":1")) {

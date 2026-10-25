@@ -498,6 +498,9 @@ public class FastInterpreter {
                     } finally {
                         endTraceLoopIteration();
                     }
+                } else {
+                    traceControlEvent(s, funcName, "BranchTaken", "else", depth);
+                    endTraceLoopIteration();
                 }
                 i = elseEnd;
                 continue;

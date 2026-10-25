@@ -14069,3 +14069,21 @@ and `MOSS_STAGED_ABI=v10 ./scripts/java/test.sh` both pass all 11 Java test
 classes. This is a bounded trace-context correction, not completion of Fast
 Debug parity or the Phase 25.3 port. Continue with semantic/codegen correctness
 work after checkpointing.
+
+### Phase 25.3 continuation — trace implicit else branch and close its scope
+
+`phase21_capture_try_join.moss` exposed a trace omission when a false `if`
+condition had no explicit `else`: C++ emitted `BranchTaken: else`, while Java
+emitted no branch event. Java now emits that event and immediately closes its
+control scope. The scope close matters: the first focused diff caught branch
+context leaking into the subsequent `on_fail` events; after adding the close,
+the complete fixture stdout and trace compare byte-for-byte with C++.
+
+The refreshed eight-fixture failure-capture subset has matching stdout and
+acceptance in all eight; five have exact full traces (`if_join`,
+`loop-reinit` excluded, `message_result`, `nested_reraise`, `slot_combined`,
+and `try_join`; the peer trace is tracked separately). Three localized full
+trace differences remain in `loop_reinit`, `method_early_raise`, and
+`owned_payload`. ABI-v9 and staged ABI-v10 Java suites pass all 11 classes.
+This remains a bounded trace correction, not full Fast Debug or Phase 25.3
+completion.
