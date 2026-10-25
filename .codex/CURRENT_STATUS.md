@@ -15622,3 +15622,15 @@ exports `may_panic=1`; the quoted panic-like text control remains `0`.
 All twelve Java unit-test classes pass under default ABI-v9 and staged
 ABI-v10; feedback and diff checks are pending for the checkpoint. This remains
 conservative syntactic effect inference, not complete panic analysis.
+
+
+### Phase 25.3 continuation — propagate panic effects across method receiver paths
+
+Method panic closure now resolves `self`, a typed method parameter, and a typed
+object field before following a nested method call. The producer fixture
+verifies `crash_forward`, `crash_parameter(other: Box)`, and
+`Holder.crash_child()` all inherit the direct `Box.crash()` panic. This does
+not yet cover inferred local aliases or all imported receiver paths.
+
+All twelve Java unit-test classes pass under ABI-v9 defaults and staged
+ABI-v10; feedback and diff checks are pending for the checkpoint.

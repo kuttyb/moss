@@ -181,6 +181,12 @@ public final class ProjectBuilderMetadataTest {
                 + "    assert(false)\n"
                 + "  fn crash_forward():\n"
                 + "    self.crash()\n"
+                + "  fn crash_parameter(other: Box):\n"
+                + "    other.crash()\n"
+                + "type Holder:\n"
+                + "  child: Box\n"
+                + "  fn crash_child():\n"
+                + "    child.crash()\n"
                 + "export fn method_failure(box: Box):\n"
                 + "  box.crash()\n"
                 + "fn main():\n"
@@ -227,6 +233,15 @@ public final class ProjectBuilderMetadataTest {
         if (!methodCaller.contains("may_panic=1")) {
             throw new AssertionError("exported function panic effect omitted its typed method call: "
                     + methodCaller);
+        }
+        for (String methodName : List.of("crash_parameter", "crash_child")) {
+            String methodRecord = text.lines().filter(line -> line.contains("object_method "
+                            + methodName + " "))
+                    .findFirst().orElse("");
+            if (!methodRecord.contains("may_panic=1")) {
+                throw new AssertionError("method panic effect omitted typed receiver path for "
+                        + methodName + ": " + methodRecord);
+            }
         }
         Path interfaceFile = null;
         try {

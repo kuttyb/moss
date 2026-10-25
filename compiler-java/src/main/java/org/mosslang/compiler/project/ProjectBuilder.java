@@ -2653,19 +2653,79 @@ public class ProjectBuilder {
                     return true;
                 }
             }
-            for (Method called : program.objects.stream()
-                    .filter(object -> object.name.equals(method.owner)
-                            || object.name.endsWith("__" + method.owner))
-                    .flatMap(object -> object.methods.stream()).toList()) {
-                String selfCall = "(?s).*\\bself\\s*\\.\\s*"
-                        + java.util.regex.Pattern.quote(called.name) + "\\s*\\(.*";
-                if (org.mosslang.compiler.semantics.SemanticChecker
-                        .containsFunctionCall(expression, "self." + called.name)
-                        || org.mosslang.compiler.project.ProjectBuilder.maskStringLiterals(expression)
-                        .matches(selfCall)) {
-                    if (mayPanic(called, program, module, new HashSet<>(callPath))) return true;
+            for (ObjectType object : program.objects) {
+                for (Method called : object.methods) {
+                    if (callsTypedMethod(expression, method, object, called, program)
+                            && mayPanic(called, program, module, new HashSet<>(callPath))) return true;
                 }
             }
+        }
+        return false;
+    }
+
+    private static boolean callsTypedMethod(String expression, Method caller, ObjectType object,
+                                            Method method, Program program) {
+        String pattern = "(?<![A-Za-z0-9_])((?:self|[A-Za-z_][A-Za-z0-9_]*)(?:\\s*\\.\\s*[A-Za-z_][A-Za-z0-9_]*)*)\\s*\\.\\s*"
+                + java.util.regex.Pattern.quote(method.name) + "\\s*\\(";
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile(pattern)
+                .matcher(maskStringLiterals(expression));
+        while (matcher.find()) {
+            String[] path = matcher.group(1).replaceAll("\\s", "").split("\\.");
+            String typeName = null;
+            if ("self".equals(path[0])) {
+                typeName = caller.owner;
+            } else {
+                Param parameter = caller.params.stream().filter(candidate -> candidate.name.equals(path[0]))
+                        .findFirst().orElse(null);
+                if (parameter != null) {
+                    typeName = parameter.type;
+                } else {
+                    ObjectType callerOwner = null;
+                    for (ObjectType candidate : program.objects) {
+                        if (candidate.name.equals(caller.owner)
+                                || candidate.name.endsWith("__" + caller.owner)) {
+                            callerOwner = candidate;
+                            break;
+                        }
+                    }
+                    if (callerOwner != null) {
+                        Field rootField = callerOwner.fields.stream()
+                                .filter(candidate -> candidate.name.equals(path[0]))
+                                .findFirst().orElse(null);
+                        if (rootField != null) {
+                            org.mosslang.compiler.types.TypeRef fieldType = rootField.typeRef != null
+                                    ? rootField.typeRef
+                                    : org.mosslang.compiler.types.TypeParser.parseCanonical(rootField.type);
+                            typeName = fieldType == null ? rootField.type : fieldType.name();
+                        }
+                    }
+                }
+            }
+            for (int index = 1; typeName != null && index < path.length; index++) {
+                ObjectType owner = null;
+                for (ObjectType candidate : program.objects) {
+                    if (candidate.name.equals(typeName) || candidate.name.endsWith("__" + typeName)) {
+                        owner = candidate;
+                        break;
+                    }
+                }
+                if (owner == null) {
+                    typeName = null;
+                    break;
+                }
+                String fieldName = path[index];
+                Field field = owner.fields.stream().filter(candidate -> candidate.name.equals(fieldName))
+                        .findFirst().orElse(null);
+                if (field == null) {
+                    typeName = null;
+                    break;
+                }
+                org.mosslang.compiler.types.TypeRef fieldType = field.typeRef != null ? field.typeRef
+                        : org.mosslang.compiler.types.TypeParser.parseCanonical(field.type);
+                typeName = fieldType == null ? field.type : fieldType.name();
+            }
+            if (typeName != null && (typeName.equals(object.name)
+                    || typeName.endsWith("__" + object.name))) return true;
         }
         return false;
     }
