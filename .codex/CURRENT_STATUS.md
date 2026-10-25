@@ -12540,3 +12540,22 @@ The standalone distribution was rebuilt after the query changes with
 --version` and `scripts/java/moss --version` passed. This verifies the packaged
 artifact and launcher entry points only; it does not verify the persistent
 JDT daemon lifecycle or project/native acceptance.
+
+### Phase 25.3 continuation — isolate generic structural method closure difference
+
+Reduced the recorded Runge-Kutta acceptance difference to a small generic
+function constrained by a structural trait. With one trait-method call, C++ and
+Java both accept; with two calls to that method in the same generic body, C++
+rejects the concrete call with `TYPE_AMBIGUOUS_OPEN_RESULT` while Java accepts.
+The Java specialization path currently synthesizes member facts (including an
+`int` result placeholder), whereas the C++ path retains per-call requirements
+and closes them against the concrete specialization. This establishes a likely
+semantic-fact gap, but not whether the C++ rejection is semantically required or
+a checker defect; no compatibility rejection was added without resolving that
+contract.
+
+Evidence: `tmp/phase25_3_open_result_min.moss` and direct C++/Java `check --json`
+results; one-call and 2–4-call focused variants. The finding is recorded in
+`agent-feedback/phase25/team-l7-phase25-3/generic-member-summary/observations.jsonl`.
+The generic requirement-closure diagnosis and correction remain open. No native,
+Rust compilation, SDK, or broad conformance gate was run.
