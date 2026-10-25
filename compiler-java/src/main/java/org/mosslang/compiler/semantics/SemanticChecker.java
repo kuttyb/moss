@@ -2051,6 +2051,11 @@ public class SemanticChecker {
     private void consumeBinding(int line, String name, OwnershipEnv env, String destination) {
         TypeRef type = env.get(name);
         if (type == null || !transferType(type)) return;
+        if (currentMessagePayloads.contains(name)) {
+            throw new CompileError(line,
+                    "cannot CONSUME incoming message payload '" + name + "'; message payloads may only be read or forwarded",
+                    "MOSS_COMPILE_ERROR");
+        }
         if (currentHandlerStateFields.contains(name)) {
             throw new CompileError(line, "domain state '" + name + "' cannot be consumed into '"
                     + destination + "'", "MOSS_COMPILE_ERROR");

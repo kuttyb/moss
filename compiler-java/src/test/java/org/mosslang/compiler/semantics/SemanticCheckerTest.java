@@ -45,6 +45,7 @@ public class SemanticCheckerTest {
         testOnFailCaptureUsesMatchingRaisedVariant();
         testOwnedMatchPayloadCanBeOnFailCapture();
         testBorrowedMatchPayloadCannotBeOnFailCapture();
+        testIncomingMessageObjectPayloadCannotBeMovedIntoState();
         testSameCrateRaisingCallPreservesErrorCarrier();
         testOnFailCaptureUsesArgumentEvaluationRaiseEdge();
         testOnFailCannotConsumeDomainState();
@@ -366,6 +367,20 @@ public class SemanticCheckerTest {
                 throw new AssertionError("expected MOSS_COMPILE_ERROR, got " + error.getCode(), error);
             }
         }
+    }
+
+    private static void testIncomingMessageObjectPayloadCannotBeMovedIntoState() {
+        assertCompileError(""
+                + "type Payload:\n"
+                + "  value: Int\n"
+                + "domain Worker:\n"
+                + "  saved: Payload\n"
+                + "  fn Store(payload: Payload):\n"
+                + "    saved = payload\n"
+                + "fn main():\n"
+                + "  worker = Worker(saved: Payload(value: 0))\n"
+                + "  message worker.Store(Payload(value: 1))\n",
+                "MOSS_COMPILE_ERROR");
     }
 
     private static void testOnFailRejectsDistinctBranchBindings() {

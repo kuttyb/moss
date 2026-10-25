@@ -13705,6 +13705,7 @@ Validation: clean Java build and all eleven Java unit-test classes pass in
 ABI-v9 and staged ABI-v10 modes. Broader interpreter tracing and final
 acceptance remain open.
 
+
 ### Phase 25.3 continuation — trace selected branch arms
 
 Java Fast Debug now emits `BranchTaken` events for selected `if` arms, nests
@@ -13777,6 +13778,8 @@ packaged `compiler-java/dist/moss` launcher. `agent bootstrap --json` reports
 trace and stdout match the C++ probe exactly. This confirms local package
 startup and one interpreted method path only; live daemon lifecycle and project
 acceptance remain open.
+
+
 
 ### Phase 25.3 continuation — reject Map for-loop iterables at the source
 
@@ -15771,3 +15774,16 @@ current generic `MOSS_COMPILE_ERROR` envelope. This is a small acceptance
 sample, not evidence of full language parity; generic inference, cross-module
 ownership/effect closure, source-free execution, native correctness, and SDK
 acceptance remain open.
+
+
+### Phase 25.3 continuation — reject direct moves from incoming message payloads
+
+A focused checker probe found Java accepted `saved = payload` inside a handler,
+while C++ rejected moving the incoming object payload into domain state. The
+Java ownership checker now applies the existing immutable-message-payload
+restriction whenever `consumeBinding` transfers a value, covering direct
+assignments and local bindings as well as call arguments. C++ and Java now
+produce the same `MOSS_COMPILE_ERROR` and message on the minimal reproducer.
+All twelve Java test classes pass under ABI-v9 and staged ABI-v10. This closes
+the exercised direct move case; broader ownership and cross-module effects
+remain open.
