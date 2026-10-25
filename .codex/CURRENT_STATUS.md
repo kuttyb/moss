@@ -13195,3 +13195,17 @@ general source-free callable body production or checker projection.
 Validation: all ten Java unit-test classes pass after clean builds in default
 ABI-v9 and staged ABI-v10 modes; developer-experience feedback validation and
 `git diff --check` pass. No native or SDK gate ran.
+
+### Phase 25.3 continuation — validate ABI-v10 private enum dependencies
+
+Java now decodes canonical ABI-v10 private enum declarations, validates their
+module/declaration/variant/payload identities and provenance links, and checks
+checked-body nominal dependencies against private enum dependency hashes as well
+as nominal-template representation hashes. Focused coverage accepts a valid
+private enum link and rejects a forged hash.
+
+Validation: all ten Java unit-test classes pass after clean builds in default
+ABI-v9 and staged ABI-v10 modes; `git diff --check` passes. The Java
+ProjectBuilder still does not derive private enum records from checker facts,
+and source-free loader projection and end-to-end provider-consumer checks remain
+open. No native or SDK gate ran.

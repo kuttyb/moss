@@ -729,8 +729,21 @@ public class CheckedBodyCodec {
             }
         }
 
+        Map<String, AbiV10Records.PrivateEnumDeclaration> privateEnums = new HashMap<>();
         for (MossiRecord r : mossi.privateSemanticDependencies) {
             byte[] recordPayload = r.payloadBytes();
+            if (r.id.startsWith("private-enum-v1:")) {
+                AbiV10Records.PrivateEnumDeclaration enumeration =
+                        AbiV10Records.PrivateEnumDeclaration.decode(r);
+                if (!mossi.moduleId.equals(enumeration.moduleId)
+                        || !provenanceIds.contains(enumeration.provenanceId)
+                        || enumeration.variants.stream().flatMap(variant -> variant.fields.stream())
+                                .anyMatch(field -> !provenanceIds.contains(field.provenanceId()))
+                        || privateEnums.putIfAbsent(enumeration.declarationId, enumeration) != null) {
+                    throw new CompileError(0, "ABI-v10 private enum has invalid module, provenance, or identity references",
+                            "SOURCE_FREE_TYPE_IDENTITY_MISMATCH");
+                }
+            }
             if (isHexHash(r.id) && recordPayload.length > 0
                     && (recordPayload[0] == 2 || recordPayload[0] == 3)) {
                 AbiV10Records.Summary summary = AbiV10Records.Summary.decode(r);
@@ -771,12 +784,18 @@ public class CheckedBodyCodec {
             for (AbiV10Records.CheckedBodyRecord.Dependency dependency : body.dependencies) {
                 if (dependency.kind() == AbiV10Records.CheckedBodyRecord.DependencyKind.NominalType) {
                     String representationHash = nominalRepresentationHashes.get(dependency.targetId());
-                    // Private enum dependency records are decoded by a separate
-                    // ABI-v10 extension; until that projection is available,
-                    // validate the nominal-template dependencies we can identify.
-                    if (representationHash == null) continue;
-                    if (!representationHash.equals(dependency.expectedHash())) {
+                    if (representationHash != null) {
+                        if (representationHash.equals(dependency.expectedHash())) continue;
                         throw new CompileError(0, "Checked body nominal representation hash mismatch",
+                                "SOURCE_FREE_TYPE_IDENTITY_MISMATCH");
+                    }
+                    AbiV10Records.PrivateEnumDeclaration enumeration = privateEnums.get(dependency.targetId());
+                    if (enumeration == null) {
+                        throw new CompileError(0, "Checked body references an unknown nominal declaration",
+                                "SOURCE_FREE_TYPE_IDENTITY_MISMATCH");
+                    }
+                    if (!enumeration.dependencyHash().equals(dependency.expectedHash())) {
+                        throw new CompileError(0, "Checked body private enum declaration hash mismatch",
                                 "SOURCE_FREE_TYPE_IDENTITY_MISMATCH");
                     }
                     continue;

@@ -25,6 +25,7 @@ public class CheckedBodyCodecTest {
         testCanonicalOpenSummaryRecord();
         testCanonicalCheckedBodyRecord();
         testCheckedBodyNominalDependencyClosure();
+        testPrivateEnumBodyDependency();
         testExportedEnumIdentityValidation();
         testMossiRejectsUnboundedCounts();
         testCheckedBodyReaderBoundsAndTrailingData();
@@ -519,6 +520,66 @@ public class CheckedBodyCodecTest {
         try {
             CheckedBodyCodec.verifySourceFree(CheckedBodyCodec.encodeMossiBytes(forged));
             throw new AssertionError("ABI-v10 verifier accepted a mismatched nominal body dependency hash");
+        } catch (CompileError error) {
+            if (!"SOURCE_FREE_TYPE_IDENTITY_MISMATCH".equals(error.getCode())) throw error;
+        }
+    }
+
+    private static void testPrivateEnumBodyDependency() {
+        String module = "module-v1:private-enum-dep@1.0.0::provider";
+        String declarationId = "nominal-enum-v1:" + module + ":enum:Fault";
+        AbiV10Records.SourceProvenance provenance = AbiV10Records.SourceProvenance.create(
+                module, declarationId, "provider.moss", 1);
+        AbiV10Records.PrivateEnumDeclaration enumeration = new AbiV10Records.PrivateEnumDeclaration();
+        enumeration.declarationId = declarationId;
+        enumeration.moduleId = module;
+        enumeration.declarationName = "Fault";
+        enumeration.provenanceId = provenance.provenanceId();
+        AbiV10Records.PrivateEnumDeclaration.Variant variant =
+                new AbiV10Records.PrivateEnumDeclaration.Variant();
+        variant.name = "Missing";
+        variant.variantId = "nominal-enum-variant-v1:" + declarationId + ":case:Missing";
+        enumeration.variants.add(variant);
+        MossiRecord enumRecord = enumeration.record();
+        if (!java.util.Arrays.equals(enumRecord.payloadBytes(),
+                AbiV10Records.PrivateEnumDeclaration.decode(enumRecord).record().payloadBytes())) {
+            throw new AssertionError("private enum record did not round trip");
+        }
+
+        String callable = module + "::make";
+        String ir = CheckedBodyCodec.encodeCheckedBodyV1(List.of());
+        String bodyHash = "body-semantic-v1:sha256:" + CheckedBodyCodec.sha256Hex(ir);
+        AbiV10Records.CheckedBodyRecord body = new AbiV10Records.CheckedBodyRecord();
+        body.callableId = callable;
+        body.checkedIrBytes = ir;
+        body.semanticHash = bodyHash;
+        body.dependencies.add(new AbiV10Records.CheckedBodyRecord.Dependency(
+                AbiV10Records.CheckedBodyRecord.DependencyKind.NominalType,
+                declarationId, enumeration.dependencyHash()));
+        AbiV10Records.Summary summary = new AbiV10Records.Summary();
+        summary.callableId = callable;
+        summary.result = AbiV10Records.WireType.unit();
+        summary.bodySemanticHash = bodyHash;
+        summary.provenanceId = provenance.provenanceId();
+
+        MossiInterface valid = new MossiInterface(module);
+        valid.provenance.add(provenance.record());
+        valid.binaryContract.add(summary.record());
+        valid.privateSemanticDependencies.add(enumRecord);
+        valid.privateSemanticDependencies.add(body.record());
+        CheckedBodyCodec.verifySourceFree(CheckedBodyCodec.encodeMossiBytes(valid));
+
+        body.dependencies.set(0, new AbiV10Records.CheckedBodyRecord.Dependency(
+                AbiV10Records.CheckedBodyRecord.DependencyKind.NominalType,
+                declarationId, "sha256:" + "f".repeat(64)));
+        MossiInterface forged = new MossiInterface(module);
+        forged.provenance.add(provenance.record());
+        forged.binaryContract.add(summary.record());
+        forged.privateSemanticDependencies.add(enumRecord);
+        forged.privateSemanticDependencies.add(body.record());
+        try {
+            CheckedBodyCodec.verifySourceFree(CheckedBodyCodec.encodeMossiBytes(forged));
+            throw new AssertionError("ABI-v10 verifier accepted a mismatched private enum dependency hash");
         } catch (CompileError error) {
             if (!"SOURCE_FREE_TYPE_IDENTITY_MISMATCH".equals(error.getCode())) throw error;
         }

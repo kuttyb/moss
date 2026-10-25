@@ -343,6 +343,93 @@ public final class AbiV10Records {
         }
     }
 
+    /** Private enum declaration dependency, mirrored from abi_v10_records.hpp. */
+    public static final class PrivateEnumDeclaration {
+        public static final class Variant {
+            public String name = "";
+            public String variantId = "";
+            public List<NominalField> fields = new ArrayList<>();
+        }
+
+        public String declarationId = "";
+        public String moduleId = "";
+        public String declarationName = "";
+        public List<Variant> variants = new ArrayList<>();
+        public String provenanceId = "";
+
+        public byte[] encode() {
+            require(validModuleId(moduleId) && !declarationName.isEmpty()
+                            && declarationId.equals("nominal-enum-v1:" + moduleId + ":enum:" + declarationName)
+                            && !variants.isEmpty() && variants.size() <= 128 && !provenanceId.isEmpty(),
+                    "SOURCE_FREE_TYPE_IDENTITY_MISMATCH", "ABI-v10 private enum identity or shape is invalid");
+            Writer writer = new Writer();
+            writer.byteValue(1);
+            writer.string(declarationId);
+            writer.string(moduleId);
+            writer.string(declarationName);
+            writer.number(variants.size());
+            Set<String> names = new HashSet<>();
+            for (Variant variant : variants) {
+                require(variant != null && !variant.name.isEmpty() && names.add(variant.name)
+                                && variant.variantId.equals("nominal-enum-variant-v1:" + declarationId
+                                    + ":case:" + variant.name)
+                                && variant.fields.size() <= 64,
+                        "SOURCE_FREE_TYPE_IDENTITY_MISMATCH", "ABI-v10 private enum variant is invalid");
+                writer.string(variant.name);
+                writer.string(variant.variantId);
+                writer.number(variant.fields.size());
+                Set<String> fieldNames = new HashSet<>();
+                for (NominalField field : variant.fields) {
+                    require(!field.name().isEmpty() && fieldNames.add(field.name())
+                                    && !field.exported() && provenanceId.equals(field.provenanceId()),
+                            "SOURCE_FREE_TYPE_IDENTITY_MISMATCH", "ABI-v10 private enum payload field is invalid");
+                    writer.string(field.name());
+                    writeType(writer, field.type(), 0, 0);
+                    writer.string(field.provenanceId());
+                }
+            }
+            writer.string(provenanceId);
+            return writer.finish();
+        }
+
+        public String dependencyHash() {
+            return hash("moss-abi-v10-private-enum-dependency", encode());
+        }
+
+        public MossiRecord record() {
+            return MossiRecord.fromBytes("private-enum-v1:" + declarationId, encode());
+        }
+
+        public static PrivateEnumDeclaration decode(MossiRecord record) {
+            Reader reader = new Reader(record.payloadBytes());
+            require(reader.byteValue() == 1, "SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+                    "ABI-v10 private enum record version is unsupported");
+            PrivateEnumDeclaration value = new PrivateEnumDeclaration();
+            value.declarationId = reader.string();
+            value.moduleId = reader.string();
+            value.declarationName = reader.string();
+            int count = reader.count(128, "private enum variant count");
+            require(count > 0, "SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+                    "ABI-v10 private enum variant count is invalid");
+            for (int i = 0; i < count; i++) {
+                Variant variant = new Variant();
+                variant.name = reader.string();
+                variant.variantId = reader.string();
+                int fields = reader.count(64, "private enum payload count");
+                for (int f = 0; f < fields; f++) {
+                    variant.fields.add(new NominalField(reader.string(), readType(reader, 0, 0), false,
+                            reader.string()));
+                }
+                value.variants.add(variant);
+            }
+            value.provenanceId = reader.string();
+            require(reader.done() && Arrays.equals(value.encode(), record.payloadBytes())
+                            && record.id.equals("private-enum-v1:" + value.declarationId),
+                    "SOURCE_FREE_TYPE_IDENTITY_MISMATCH", "ABI-v10 private enum record is noncanonical");
+            return value;
+        }
+    }
+
     private static boolean validNominalDependency(String targetId, String expectedHash) {
         return (validTemplateId(targetId) || (targetId != null && targetId.startsWith("nominal-enum-v1:")))
                 && expectedHash != null && expectedHash.startsWith("sha256:")
