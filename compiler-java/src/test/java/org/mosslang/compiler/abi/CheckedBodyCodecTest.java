@@ -23,6 +23,7 @@ public class CheckedBodyCodecTest {
         testNominalRecordsRequireValidProvenanceReferences();
         testMethodTemplateNominalReferences();
         testCanonicalOpenSummaryRecord();
+        testCanonicalCheckedBodyRecord();
         testExportedEnumIdentityValidation();
         testMossiRejectsUnboundedCounts();
         testCheckedBodyReaderBoundsAndTrailingData();
@@ -379,12 +380,25 @@ public class CheckedBodyCodecTest {
             throw new AssertionError("canonical ABI-v10 summary v2 compatibility failed");
         }
         MossiInterface iface = new MossiInterface("module-v1:boxes@1.0.0::Boxes");
-        iface.semanticContract.add(record);
+        AbiV10Records.Summary verifiedSummary = copySummary(summary);
+        attachSummaryProvenance(verifiedSummary, iface);
+        iface.binaryContract.add(verifiedSummary.record());
         CheckedBodyCodec.verifySourceFree(CheckedBodyCodec.encodeMossiBytes(iface));
 
         MossiInterface forged = new MossiInterface(iface.moduleId);
-        forged.semanticContract.add(MossiRecord.fromBytes("sha256:" + "0".repeat(64),
-                record.payloadBytes()));
+        MossiRecord forgedRecord = MossiRecord.fromBytes("sha256:" + "0".repeat(64), record.payloadBytes());
+        try {
+            AbiV10Records.Summary.decode(forgedRecord);
+            throw new AssertionError("summary decoder accepted a forged record ID");
+        } catch (CompileError error) {
+            if (!"SOURCE_FREE_SUMMARY_INVALID".equals(error.getCode())) throw error;
+        }
+        forged.binaryContract.add(forgedRecord);
+        MossiInterface parsedForged = CheckedBodyCodec.decodeMossi(CheckedBodyCodec.encodeMossiBytes(forged));
+        if (parsedForged.binaryContract.size() != 1
+                || !parsedForged.binaryContract.get(0).id.equals(forgedRecord.id)) {
+            throw new AssertionError("ABI-v10 binary summary fixture was not retained by the interface codec");
+        }
         try {
             CheckedBodyCodec.verifySourceFree(CheckedBodyCodec.encodeMossiBytes(forged));
             throw new AssertionError("source-free verifier accepted a forged summary identity");
@@ -414,8 +428,104 @@ public class CheckedBodyCodecTest {
             throw new AssertionError("ABI-v10 v4 summary differs from C++ Callable-effect record");
         }
         MossiInterface effectInterface = new MossiInterface(iface.moduleId);
-        effectInterface.semanticContract.add(effectRecord);
+        AbiV10Records.Summary verifiedEffect = copySummary(effectful);
+        attachSummaryProvenance(verifiedEffect, effectInterface);
+        effectInterface.binaryContract.add(verifiedEffect.record());
         CheckedBodyCodec.verifySourceFree(CheckedBodyCodec.encodeMossiBytes(effectInterface));
+    }
+
+    private static void testCanonicalCheckedBodyRecord() {
+        CheckedStmt pass = new CheckedStmt();
+        pass.kind = CheckedStmtKind.Pass;
+        String checkedIr = CheckedBodyCodec.encodeCheckedBodyV1(List.of(pass));
+        if (!"moss-checked-body-v1\n1:12:131:01:01:01:0".equals(checkedIr)) {
+            throw new AssertionError("unexpected canonical checked-body fixture: " + checkedIr);
+        }
+        AbiV10Records.CheckedBodyRecord body = new AbiV10Records.CheckedBodyRecord();
+        body.callableId = "module-v1:boxes@1.0.0::Boxes::fresh";
+        body.checkedIrBytes = checkedIr;
+        body.semanticHash = "body-semantic-v1:sha256:" + CheckedBodyCodec.sha256Hex(checkedIr);
+        MossiRecord record = body.record();
+        String expectedPayloadHex = "010000000f636865636b65642d626f64792d7631000000236d6f64756c652d76313a626f78657340312e302e303a3a426f7865733a3a667265736800000058626f64792d73656d616e7469632d76313a7368613235363a37613661626537303466613234653835666165396263316632393764373962646566633561313162633563386535353731353237346139663066643932363161000000286d6f73732d636865636b65642d626f64792d76310a313a31323a3133313a30313a30313a30313a3000000000";
+        if (!expectedPayloadHex.equals(java.util.HexFormat.of().formatHex(record.payloadBytes()))
+                || !record.id.equals("checked-body-v1:" + body.callableId)) {
+            throw new AssertionError("Java checked-body record differs from canonical C++ ABI-v10 bytes");
+        }
+        AbiV10Records.CheckedBodyRecord decoded = AbiV10Records.CheckedBodyRecord.decode(record);
+        if (!decoded.checkedIrBytes.equals(checkedIr) || !decoded.semanticHash.equals(body.semanticHash)) {
+            throw new AssertionError("canonical ABI-v10 checked-body record did not round trip");
+        }
+        MossiInterface iface = new MossiInterface("module-v1:boxes@1.0.0::Boxes");
+        AbiV10Records.Summary summary = new AbiV10Records.Summary();
+        summary.callableId = body.callableId;
+        summary.result = AbiV10Records.WireType.unit();
+        summary.bodySemanticHash = body.semanticHash;
+        attachSummaryProvenance(summary, iface);
+        iface.binaryContract.add(summary.record());
+        iface.privateSemanticDependencies.add(record);
+        CheckedBodyCodec.verifySourceFree(CheckedBodyCodec.encodeMossiBytes(iface));
+
+        MossiInterface missingOwner = new MossiInterface(iface.moduleId);
+        missingOwner.privateSemanticDependencies.add(record);
+        expectSummaryInvalid(missingOwner, "accepted checked body without an open summary");
+
+        MossiInterface wrongOwnerHash = new MossiInterface(iface.moduleId);
+        summary.bodySemanticHash = "body-semantic-v1:sha256:" + "f".repeat(64);
+        wrongOwnerHash.binaryContract.add(summary.record());
+        wrongOwnerHash.provenance.addAll(iface.provenance);
+        wrongOwnerHash.privateSemanticDependencies.add(record);
+        expectSummaryInvalid(wrongOwnerHash, "accepted checked body with a mismatched summary hash");
+    }
+
+    private static void expectSummaryInvalid(MossiInterface iface, String failureMessage) {
+        try {
+            CheckedBodyCodec.verifySourceFree(CheckedBodyCodec.encodeMossiBytes(iface));
+            throw new AssertionError(failureMessage);
+        } catch (CompileError error) {
+            if (!"SOURCE_FREE_SUMMARY_INVALID".equals(error.getCode())) throw error;
+        }
+    }
+
+    private static AbiV10Records.Summary copySummary(AbiV10Records.Summary source) {
+        AbiV10Records.Summary copy = new AbiV10Records.Summary();
+        copy.callableId = source.callableId;
+        copy.variableCount = source.variableCount;
+        copy.parameters.addAll(source.parameters);
+        copy.parameterAccess.addAll(source.parameterAccess);
+        copy.result = source.result;
+        copy.effectDependencies.addAll(source.effectDependencies);
+        copy.dependencies.addAll(source.dependencies);
+        copy.observableEffectBits = source.observableEffectBits;
+        copy.observableEffectTags.addAll(source.observableEffectTags);
+        copy.bodySemanticHash = source.bodySemanticHash;
+        copy.requirements.addAll(source.requirements);
+        copy.provenanceId = source.provenanceId;
+        return copy;
+    }
+
+    private static void attachSummaryProvenance(AbiV10Records.Summary summary, MossiInterface iface) {
+        AbiV10Records.SourceProvenance callable = AbiV10Records.SourceProvenance.create(
+                iface.moduleId, summary.callableId, "Boxes.moss", 1);
+        summary.provenanceId = callable.provenanceId();
+        iface.provenance.add(callable.record());
+        for (int index = 0; index < summary.requirements.size(); index++) {
+            AbiV10Records.Requirement old = summary.requirements.get(index);
+            AbiV10Records.SourceProvenance requirement = AbiV10Records.SourceProvenance.create(
+                    iface.moduleId, summary.callableId + ":requirement:" + index,
+                    "Boxes.moss", index + 2);
+            AbiV10Records.Requirement replacement = new AbiV10Records.Requirement();
+            replacement.receiver = old.receiver;
+            replacement.operation = old.operation;
+            replacement.access = old.access;
+            replacement.parent = old.parent;
+            replacement.provenanceId = requirement.provenanceId();
+            replacement.arguments.addAll(old.arguments);
+            replacement.result = old.result;
+            replacement.argumentAccess.addAll(old.argumentAccess);
+            replacement.dependencies.addAll(old.dependencies);
+            summary.requirements.set(index, replacement);
+            iface.provenance.add(requirement.record());
+        }
     }
 
     private static void testExportedEnumIdentityValidation() {

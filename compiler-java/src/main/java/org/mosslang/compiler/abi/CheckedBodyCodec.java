@@ -627,6 +627,24 @@ public class CheckedBodyCodec {
                 }
             }
         }
+
+        Map<String, String> callableBodyHashes = new HashMap<>();
+        for (MossiRecord record : mossi.binaryContract) {
+            byte[] payload = record.payloadBytes();
+            if (!isHexHash(record.id) || payload.length == 0
+                    || (payload[0] != 2 && payload[0] != 3 && payload[0] != 4)) continue;
+            AbiV10Records.Summary summary = AbiV10Records.Summary.decode(record);
+            if (!provenanceIds.contains(summary.provenanceId)
+                    || summary.requirements.stream().anyMatch(requirement ->
+                            !provenanceIds.contains(requirement.provenanceId))) {
+                throw new CompileError(0, "Summary references unknown provenance",
+                        "SOURCE_FREE_SUMMARY_INVALID");
+            }
+            if (callableBodyHashes.putIfAbsent(summary.callableId, summary.bodySemanticHash) != null) {
+                throw new CompileError(0, "Duplicate public callable summary ID",
+                        "SOURCE_FREE_CONTRACT_INVALID");
+            }
+        }
         Set<String> nominalTemplateIds = new HashSet<>();
         for (MossiRecord record : mossi.binaryContract) {
             if (record.id.startsWith("nominal-template-v1:")) {
@@ -696,11 +714,6 @@ public class CheckedBodyCodec {
 
         // Verify checked bodies in semantic contract
         for (MossiRecord r : mossi.semanticContract) {
-            byte[] recordPayload = r.payloadBytes();
-            if (isHexHash(r.id) && recordPayload.length > 0
-                    && (recordPayload[0] == 2 || recordPayload[0] == 3 || recordPayload[0] == 4)) {
-                AbiV10Records.Summary.decode(r);
-            }
             if (r.id.startsWith("checked-body-v1:")) {
                 if (r.payload.contains("moss-checked-body-v1\n")) {
                     int irIdx = r.payload.indexOf("moss-checked-body-v1\n");
@@ -718,7 +731,52 @@ public class CheckedBodyCodec {
             byte[] recordPayload = r.payloadBytes();
             if (isHexHash(r.id) && recordPayload.length > 0
                     && (recordPayload[0] == 2 || recordPayload[0] == 3)) {
-                AbiV10Records.Summary.decode(r);
+                AbiV10Records.Summary summary = AbiV10Records.Summary.decode(r);
+                if (!provenanceIds.contains(summary.provenanceId)
+                        || summary.requirements.stream().anyMatch(requirement ->
+                                !provenanceIds.contains(requirement.provenanceId))) {
+                    throw new CompileError(0, "Summary references unknown provenance",
+                            "SOURCE_FREE_SUMMARY_INVALID");
+                }
+                if (callableBodyHashes.putIfAbsent(summary.callableId, summary.bodySemanticHash) != null) {
+                    throw new CompileError(0,
+                            "Callable summary appears in both public and private sections",
+                            "SOURCE_FREE_CONTRACT_INVALID");
+                }
+            }
+            if (r.id.startsWith("checked-body-v1:") && recordPayload.length > 0
+                    && recordPayload[0] == 1) {
+                AbiV10Records.CheckedBodyRecord.decode(r);
+            }
+        }
+
+        Map<String, AbiV10Records.CheckedBodyRecord> checkedBodies = new HashMap<>();
+        for (MossiRecord r : mossi.privateSemanticDependencies) {
+            byte[] payload = r.payloadBytes();
+            if (!r.id.startsWith("checked-body-v1:") || payload.length == 0 || payload[0] != 1) continue;
+            AbiV10Records.CheckedBodyRecord body = AbiV10Records.CheckedBodyRecord.decode(r);
+            if (checkedBodies.putIfAbsent(body.callableId, body) != null) {
+                throw new CompileError(0, "Duplicate checked body record ID",
+                        "SOURCE_FREE_CONTRACT_INVALID");
+            }
+        }
+        for (AbiV10Records.CheckedBodyRecord body : checkedBodies.values()) {
+            String ownerHash = callableBodyHashes.get(body.callableId);
+            if (ownerHash == null || !ownerHash.equals(body.semanticHash)) {
+                throw new CompileError(0, "Checked body has no matching callable summary hash",
+                        "SOURCE_FREE_SUMMARY_INVALID");
+            }
+            for (AbiV10Records.CheckedBodyRecord.Dependency dependency : body.dependencies) {
+                if (dependency.kind() != AbiV10Records.CheckedBodyRecord.DependencyKind.Callable) continue;
+                String targetHash = callableBodyHashes.get(dependency.targetId());
+                if (targetHash == null || !checkedBodies.containsKey(dependency.targetId())) {
+                    throw new CompileError(0, "Checked body references a missing callable dependency",
+                            "SOURCE_FREE_PRIVATE_DEPENDENCY_MISSING");
+                }
+                if (!targetHash.equals(dependency.expectedHash())) {
+                    throw new CompileError(0, "Checked body callable dependency hash mismatch",
+                            "SOURCE_FREE_CONTRACT_INVALID");
+                }
             }
         }
     }

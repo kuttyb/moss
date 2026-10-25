@@ -13162,3 +13162,23 @@ payload with the canonical re-encoded summary ID); the regression fixture was
 validated by C++ `validate_summary` and passes the Java production decoder.
 After this compatibility addition, the focused Java build and
 `CheckedBodyCodecTest` pass.
+
+### Phase 25.3 continuation — canonical ABI-v10 checked-body records
+
+Java now encodes/decodes the canonical private checked-body record envelope,
+validates its callable identity, exact checked-IR semantic hash, sorted callable
+and nominal dependencies, and requires the body IR itself to decode and
+re-encode canonically. The production source-free verifier recognizes these
+records in private dependencies, rejects duplicate bodies, requires a
+matching public/private callable summary hash, and validates callable-body
+dependency presence and hash links. Fixed checked-body payload bytes were
+generated and validated against C++ `checked_body_record`.
+
+Validation: all ten Java unit-test classes pass after clean Java builds in
+default ABI-v9 and staged ABI-v10 modes; tests cover valid record round-trip,
+source-free verification, missing summary, mismatched body hash, and forged
+summary identity. Feedback validation and `git diff --check` pass. ProjectBuilder
+still does not produce these records from checked Java function facts; loader
+projection and nominal-dependency closure remain open. Public/private summary
+and requirement provenance references are now validated against the provenance
+section.

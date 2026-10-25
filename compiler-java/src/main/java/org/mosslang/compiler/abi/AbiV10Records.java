@@ -270,6 +270,85 @@ public final class AbiV10Records {
         private int parametersAccess(int index) { return access(parameterAccess.get(index)); }
     }
 
+    public static final class CheckedBodyRecord {
+        public enum DependencyKind { Callable, NominalType }
+        public record Dependency(DependencyKind kind, String targetId, String expectedHash) {}
+
+        public String callableId = "";
+        public String semanticHash = "";
+        public String checkedIrBytes = "";
+        public List<Dependency> dependencies = new ArrayList<>();
+
+        public byte[] encode() {
+            require(callableId != null && !callableId.isEmpty()
+                            && checkedIrBytes != null && checkedIrBytes.startsWith(CheckedBodyCodec.HEADER)
+                            && validBodyHash(semanticHash)
+                            && semanticHash.equals("body-semantic-v1:sha256:"
+                                    + CheckedBodyCodec.sha256Hex(checkedIrBytes))
+                            && dependencies.size() <= 4096,
+                    "SOURCE_FREE_SUMMARY_INVALID", "ABI-v10 checked body has invalid version or semantic hash");
+            Writer writer = new Writer();
+            writer.byteValue(1);
+            writer.string("checked-body-v1");
+            writer.string(callableId);
+            writer.string(semanticHash);
+            writer.string(checkedIrBytes);
+            writer.number(dependencies.size());
+            String previous = "";
+            for (Dependency dependency : dependencies) {
+                require(dependency != null && dependency.kind() != null
+                                && dependency.targetId() != null && !dependency.targetId().isEmpty()
+                                && previous.compareTo(dependency.targetId()) < 0
+                                && (dependency.kind() == DependencyKind.Callable
+                                    ? validBodyHash(dependency.expectedHash())
+                                    : validNominalDependency(dependency.targetId(), dependency.expectedHash())),
+                        "SOURCE_FREE_SUMMARY_INVALID", "ABI-v10 checked body dependency is invalid");
+                previous = dependency.targetId();
+                writer.byteValue(dependency.kind().ordinal() + 1);
+                writer.string(dependency.targetId());
+                writer.string(dependency.expectedHash());
+            }
+            return writer.finish();
+        }
+
+        public MossiRecord record() {
+            return MossiRecord.fromBytes("checked-body-v1:" + callableId, encode());
+        }
+
+        public static CheckedBodyRecord decode(MossiRecord record) {
+            Reader reader = new Reader(record.payloadBytes());
+            require(reader.byteValue() == 1 && "checked-body-v1".equals(reader.string()),
+                    "SOURCE_FREE_SUMMARY_INVALID", "ABI-v10 checked body record version is unsupported");
+            CheckedBodyRecord value = new CheckedBodyRecord();
+            value.callableId = reader.string();
+            value.semanticHash = reader.string();
+            value.checkedIrBytes = reader.string();
+            int count = reader.count(4096, "checked-body dependency count");
+            for (int i = 0; i < count; i++) {
+                int kind = reader.byteValue();
+                require(kind >= 1 && kind <= DependencyKind.values().length,
+                        "SOURCE_FREE_SUMMARY_INVALID", "ABI-v10 checked body dependency kind is unknown");
+                value.dependencies.add(new Dependency(DependencyKind.values()[kind - 1],
+                        reader.string(), reader.string()));
+            }
+            require(reader.done() && Arrays.equals(value.encode(), record.payloadBytes())
+                            && record.id.equals("checked-body-v1:" + value.callableId),
+                    "SOURCE_FREE_SUMMARY_INVALID", "ABI-v10 checked body is noncanonical or forged");
+            // The semantic hash binds exact checked IR bytes; also require the IR
+            // itself to be a canonical Java checked-body encoding.
+            List<CheckedStmt> statements = CheckedBodyCodec.decodeCheckedBody(value.checkedIrBytes);
+            require(CheckedBodyCodec.encodeCheckedBodyV1(statements).equals(value.checkedIrBytes),
+                    "SOURCE_FREE_SUMMARY_INVALID", "ABI-v10 checked body IR is noncanonical");
+            return value;
+        }
+    }
+
+    private static boolean validNominalDependency(String targetId, String expectedHash) {
+        return (validTemplateId(targetId) || (targetId != null && targetId.startsWith("nominal-enum-v1:")))
+                && expectedHash != null && expectedHash.startsWith("sha256:")
+                && isHexHash(expectedHash);
+    }
+
     private static int access(Access access) {
         require(access != null, "SOURCE_FREE_SUMMARY_INVALID", "ABI-v10 access mode is missing");
         return access.ordinal() + 1;
