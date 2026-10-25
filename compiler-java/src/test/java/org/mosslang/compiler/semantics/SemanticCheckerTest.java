@@ -899,11 +899,15 @@ public class SemanticCheckerTest {
                 + "type Sink:\n"
                 + "  fn fail():\n"
                 + "    raise Trouble.Bad\n"
+                + "fn fail_helper():\n"
+                + "  raise Trouble.Bad\n"
                 + "type Box:\n"
                 + "  sink: Sink\n"
                 + "  fn relay():\n"
                 + "    target = self.sink\n"
-                + "    target.fail()\n";
+                + "    target.fail()\n"
+                + "  fn relay_function() -> unit:\n"
+                + "    fail_helper()\n";
         assertCompileError(methodPrefix
                 + "fn main():\n"
                 + "  box = Box(sink=Sink())\n"
@@ -928,6 +932,18 @@ public class SemanticCheckerTest {
                 + "  recover Trouble.Bad:\n"
                 + "    pass\n", "main-handles-nested-method-raised-variant.moss");
         new SemanticChecker(nestedMethodHandled).run();
+        assertCompileError(methodPrefix
+                + "fn main():\n"
+                + "  box = Box(sink=Sink())\n"
+                + "  box.relay_function()\n", "MOSS_COMPILE_ERROR");
+        Program methodFunctionHandled = Parser.parseSource(methodPrefix
+                + "fn main():\n"
+                + "  box = Box(sink=Sink())\n"
+                + "  try:\n"
+                + "    box.relay_function()\n"
+                + "  recover Trouble.Bad:\n"
+                + "    pass\n", "main-handles-method-function-raise.moss");
+        new SemanticChecker(methodFunctionHandled).run();
         String functionMethodPrefix = methodPrefix
                 + "fn invoke_method():\n"
                 + "  box = Box(sink=Sink())\n"

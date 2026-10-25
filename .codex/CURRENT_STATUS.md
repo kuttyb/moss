@@ -15013,3 +15013,16 @@ both reject `phase21_pipeline_shared_variant_edges` and accept
 transfer destination phrase in the negative cases, but the acceptance outcomes
 match. This focused check does not supersede the historic broader screen or
 establish full ownership parity.
+
+
+### Phase 25.3 continuation — follow helper raises from object methods
+
+Method raise closure now follows ordinary function calls made by a method and
+filters variants handled by that method's recover arms. A `main → Box.relay →
+fail_helper` path that raises `Trouble.Bad` is rejected when uncaught and
+accepted when recovered at the root.
+
+Validation: both compilers reject the uncaught helper path with
+`MOSS_COMPILE_ERROR`; all eleven Java unit-test classes pass in ABI-v9 and
+staged ABI-v10. Generic/imported effect summaries and complete call-graph
+closure remain open.

@@ -1603,6 +1603,7 @@ public class SemanticChecker {
                 if (!isMainRaiseHandled(method.body, index, variant)) variants.add(variant);
             }
             String expression = statementExpressionText(statement);
+            collectNestedFunctionRaiseVariants(expression, method.body, index, visited, variants);
             collectNestedMethodRaiseVariants(expression, method, localTypes, visited, variants);
             if (statement.kind == Stmt.Kind.Assign && statement.a != null && statement.b != null
                     && statement.a.trim().matches("[A-Za-z_][A-Za-z0-9_]*")) {
@@ -1610,8 +1611,11 @@ public class SemanticChecker {
                 if (typeName != null) localTypes.put(statement.a.trim(), typeName);
             }
         }
-        if (method.resultExpression != null)
+        if (method.resultExpression != null) {
+            collectNestedFunctionRaiseVariants(method.resultExpression, method.body,
+                    method.body.size(), visited, variants);
             collectNestedMethodRaiseVariants(method.resultExpression, method, localTypes, visited, variants);
+        }
         return variants;
     }
 
