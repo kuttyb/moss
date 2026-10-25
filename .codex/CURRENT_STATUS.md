@@ -16842,3 +16842,15 @@ The six JDT client lifecycle protocol tests pass, but a live daemon cannot be
 started in this environment: no Eclipse executable is on PATH or at the checked
 standard locations. Standalone JAR/launcher behavior is verified for this
 query; live JDT startup/build/stop and final packaging acceptance remain open.
+
+
+### Phase 25.3 continuation — normalize repeated semantic call query edges
+
+The existing `check_semantic_queries.py` found that one syntactic call at line
+44 appeared three times in Java's resolution candidates, and two identical
+calls on one line appeared six times in call queries. Repeated type-check
+inference had appended duplicate internal edges. Query projection now limits
+same-source/target/line edges to syntactic call occurrences on that source
+line, ignoring comments and quoted text; genuine repeated calls remain
+distinct. `SemanticQueryEngineTest` and `tests/tooling/check_semantic_queries.py`
+pass, including the existing specialized direct-call assertions.

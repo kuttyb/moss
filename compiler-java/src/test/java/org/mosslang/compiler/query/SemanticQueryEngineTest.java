@@ -25,6 +25,7 @@ public final class SemanticQueryEngineTest {
         effectsQueryFollowsFieldChainMethodRaises();
         effectsQueryFollowsSameObjectMethodRaises();
         effectsQueryMarksUnresolvedGenericMethodReceivers();
+        resolveLocationCountsRepeatedSyntacticCallsOnceEach();
         effectsQueryTracksMultipleRaiseVariantsAcrossRecovery();
         effectsQueryIncludesNamedPipelineCallbackRaises();
         effectsQueryExcludesRecoveredDirectRaises();
@@ -434,6 +435,44 @@ public final class SemanticQueryEngineTest {
         assertContains(json, "\"name\": \"box\", \"type\": null, \"effect\": \"READ\"");
         assertContains(json, "\"unresolved\": true");
         assertContains(json, "\"certainty\": \"conservative_unresolved\"");
+    }
+
+    private static void resolveLocationCountsRepeatedSyntacticCallsOnceEach() {
+        Program program = Parser.parseSource(""
+                + "fn inspect(value: Int) -> Int:\n"
+                + "  return value\n"
+                + "fn main():\n"
+                + "  result = inspect(1) + inspect(1)\n", "repeated-call-location.moss");
+        new SemanticChecker(program).run();
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        try (PrintStream stream = new PrintStream(output, true, StandardCharsets.UTF_8)) {
+            SemanticQueryEngine.executeQuery("resolve", "line:4", program,
+                    "repeated-call-location.moss", true, null, null, stream);
+        }
+        String json = output.toString(StandardCharsets.UTF_8);
+        if (countOccurrences(json, "\"kind\":\"call\"") != 2)
+            throw new AssertionError("line resolution did not retain exactly two syntactic calls: " + json);
+        assertContains(json, "entity-v1:call:main:fn:inspect:occurrence:2");
+
+        Program commented = Parser.parseSource(""
+                + "fn inspect(value: Int) -> Int:\n"
+                + "  return value\n"
+                + "fn main():\n"
+                + "  result = inspect(1) # inspect(2)\n", "commented-call-location.moss");
+        new SemanticChecker(commented).run();
+        ByteArrayOutputStream commentOutput = new ByteArrayOutputStream();
+        try (PrintStream stream = new PrintStream(commentOutput, true, StandardCharsets.UTF_8)) {
+            SemanticQueryEngine.executeQuery("resolve", "line:4", commented,
+                    "commented-call-location.moss", true, null, null, stream);
+        }
+        if (countOccurrences(commentOutput.toString(StandardCharsets.UTF_8), "\"kind\":\"call\"") != 1)
+            throw new AssertionError("comment text created a spurious source call candidate: " + commentOutput);
+    }
+
+    private static int countOccurrences(String value, String needle) {
+        int count = 0;
+        for (int offset = 0; (offset = value.indexOf(needle, offset)) >= 0; offset += needle.length()) count++;
+        return count;
     }
 
     private static void effectsQueryTracksMultipleRaiseVariantsAcrossRecovery() {

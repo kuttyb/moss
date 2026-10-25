@@ -954,3 +954,15 @@ lifecycle tests pass. A live JDT daemon could not be started because no Eclipse
 executable is installed at the checked standard paths or on PATH. This leaves
 live daemon startup/build/stop unverified; native and SDK acceptance remain
 deferred.
+
+
+### Correction — repeated semantic call query candidates
+
+The existing semantic-query tool failed because one syntactic call at a source
+line appeared three times among Java's resolution candidates; two same-target
+calls on one line appeared six times in Java call queries. Repeated type-check
+inference had accumulated duplicate internal call edges. Query projection now
+caps same-source/target/line edges at the number of syntactic calls on that
+line, masking comments and string literals. Genuine repeated calls remain
+distinct. `SemanticQueryEngineTest` and
+`tests/tooling/check_semantic_queries.py scripts/java/run.sh` pass.

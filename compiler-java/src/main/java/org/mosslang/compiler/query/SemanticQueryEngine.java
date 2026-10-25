@@ -677,6 +677,7 @@ public class SemanticQueryEngine {
                 }
             }
         }
+        calls = limitRepeatedSemanticCallEdges(calls, program);
 
         List<SemanticCallEdge> callers = new ArrayList<>();
         if (program.semanticCallEdges != null && ("function".equals(kind) || "method".equals(kind))) {
@@ -702,6 +703,7 @@ public class SemanticQueryEngine {
                 }
             }
         }
+        callers = limitRepeatedSemanticCallEdges(callers, program);
         StringBuilder transSb = new StringBuilder("[");
         int ti = 0;
         for (String t : transTargets) {
@@ -1158,8 +1160,14 @@ public class SemanticQueryEngine {
             }
         }
         if (program != null && program.semanticCallEdges != null) {
+            Map<String, Integer> includedCallOccurrences = new HashMap<>();
             for (SemanticCallEdge edge : program.semanticCallEdges) {
                 if (edge.line != line || !sameSource(edge.sourceFile, sourceFile)) continue;
+                String occurrenceKey = edge.source + "|" + edge.target + "|" + edge.line;
+                int allowedOccurrences = sourceCallOccurrenceCount(edge, program);
+                int includedOccurrences = includedCallOccurrences.getOrDefault(occurrenceKey, 0);
+                if (includedOccurrences >= allowedOccurrences) continue;
+                includedCallOccurrences.put(occurrenceKey, includedOccurrences + 1);
                 ResolutionCandidate candidate = new ResolutionCandidate();
                 candidate.kind = "call";
                 candidate.name = edge.target;
@@ -1738,6 +1746,68 @@ public class SemanticQueryEngine {
             }
         }
         return false;
+    }
+
+    private static int sourceCallOccurrenceCount(SemanticCallEdge edge, Program program) {
+        if (edge == null || program == null || program.sourceLines == null) return Integer.MAX_VALUE;
+        String target = edge.target == null ? "" : edge.target;
+        int separator = Math.max(target.lastIndexOf('.'), target.lastIndexOf(':'));
+        String name = separator >= 0 ? target.substring(separator + 1) : target;
+        if (name.isBlank()) return Integer.MAX_VALUE;
+        String sourceLine = null;
+        for (Line candidate : program.sourceLines) {
+            if (candidate.no == edge.line) {
+                sourceLine = candidate.text;
+                break;
+            }
+        }
+        if (sourceLine == null) return Integer.MAX_VALUE;
+        String codeLine = maskQueryStringsAndComment(sourceLine);
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile(
+                "(?<![A-Za-z0-9_])" + java.util.regex.Pattern.quote(name) + "\\s*\\(")
+                .matcher(codeLine);
+        int count = 0;
+        while (matcher.find()) count++;
+        return Math.max(1, count);
+    }
+
+    private static String maskQueryStringsAndComment(String source) {
+        StringBuilder masked = new StringBuilder(source.length());
+        char quote = 0;
+        boolean escaped = false;
+        for (int index = 0; index < source.length(); index++) {
+            char value = source.charAt(index);
+            if (quote != 0) {
+                masked.append(' ');
+                if (escaped) escaped = false;
+                else if (value == '\\') escaped = true;
+                else if (value == quote) quote = 0;
+            } else if (value == '\'' || value == '"') {
+                quote = value;
+                escaped = false;
+                masked.append(' ');
+            } else if (value == '#') {
+                while (masked.length() < source.length()) masked.append(' ');
+                break;
+            } else {
+                masked.append(value);
+            }
+        }
+        return masked.toString();
+    }
+
+    private static List<SemanticCallEdge> limitRepeatedSemanticCallEdges(
+            List<SemanticCallEdge> edges, Program program) {
+        Map<String, Integer> included = new HashMap<>();
+        List<SemanticCallEdge> result = new ArrayList<>();
+        for (SemanticCallEdge edge : edges) {
+            String key = edge.source + "|" + edge.target + "|" + edge.line;
+            int count = included.getOrDefault(key, 0);
+            if (count >= sourceCallOccurrenceCount(edge, program)) continue;
+            included.put(key, count + 1);
+            result.add(edge);
+        }
+        return result;
     }
 
     private static String jsonStringArray(Set<String> values) {
