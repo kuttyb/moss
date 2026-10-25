@@ -16653,3 +16653,13 @@ focused Java semantic test passes after a full Java build. This control sharpens
 the known Mover discrepancy: only the concrete CONSUME selection diverges, with
 Java rejecting reuse and C++ reporting an unresolved READ effect. No native
 backend claim is made.
+
+
+### Phase 25.3 continuation — multi-variant effect query recovery
+
+Added focused query regressions for a function raising two enum variants, a
+wrapper recovering one variant, and a wrapper recovering both.
+`SemanticQueryEngineTest` passes after a full Java build. Minimized C++ and Java
+CLI probes agree on the raise sets: both variants, the remaining variant, and
+an empty set. This validates only ordinary same-module direct-call and recovery
+closure; generic, callback, and cross-module effect propagation remain open.

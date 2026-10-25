@@ -763,3 +763,13 @@ accept the later payload read. `SemanticCheckerTest` now retains this positive
 control alongside the consuming Mover negative. This narrows the recorded
 C++/Java discrepancy to the selected CONSUME method path; it does not resolve
 the C++ unresolved-effect result. The focused semantic test passes.
+
+
+### Follow-up — multi-variant raise query recovery
+
+A focused Moss source raises two enum variants in separate branches. C++ and
+Java `effects` queries agree that the source function raises both variants, a
+wrapper recovering one variant retains only the other, and a wrapper recovering
+both reports an empty raise set. `SemanticQueryEngineTest` now covers all three
+outcomes. The focused test and both compilers' minimized probes pass. Generic,
+callback, and cross-module effect closure remain open.

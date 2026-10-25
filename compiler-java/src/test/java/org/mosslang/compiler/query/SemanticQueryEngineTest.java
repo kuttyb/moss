@@ -24,6 +24,7 @@ public final class SemanticQueryEngineTest {
         effectsQueryFollowsLocalObjectMethodRaises();
         effectsQueryFollowsFieldChainMethodRaises();
         effectsQueryFollowsSameObjectMethodRaises();
+        effectsQueryTracksMultipleRaiseVariantsAcrossRecovery();
         effectsQueryExcludesRecoveredDirectRaises();
         effectsQueryIncludesExplicitBareReraises();
         effectsQueryIncludesCatchAllBareReraises();
@@ -412,6 +413,39 @@ public final class SemanticQueryEngineTest {
         new SemanticChecker(program).run();
         String result = queryEffects(program, "method:Box.calculate");
         assertContains(result, "\"raise_set\": [\"enum:Trouble:Bad\"]");
+    }
+
+    private static void effectsQueryTracksMultipleRaiseVariantsAcrossRecovery() {
+        String source = ""
+                + "enum Fault:\n"
+                + "  Bad\n"
+                + "  Worse\n"
+                + "fn choose(flag: Bool):\n"
+                + "  if flag:\n"
+                + "    raise Fault.Bad\n"
+                + "  else:\n"
+                + "    raise Fault.Worse\n"
+                + "fn catches_bad(flag: Bool):\n"
+                + "  try:\n"
+                + "    choose(flag)\n"
+                + "  recover Fault.Bad:\n"
+                + "    pass\n"
+                + "fn catches_both(flag: Bool):\n"
+                + "  try:\n"
+                + "    choose(flag)\n"
+                + "  recover Fault.Bad:\n"
+                + "    pass\n"
+                + "  recover Fault.Worse:\n"
+                + "    pass\n"
+                + "fn main():\n"
+                + "  catches_both(true)\n";
+        Program program = Parser.parseSource(source, "effects-query-multiple-raise-recovery.moss");
+        new SemanticChecker(program).run();
+        assertContains(queryEffects(program, "choose"),
+                "\"raise_set\": [\"enum:Fault:Bad\", \"enum:Fault:Worse\"]");
+        assertContains(queryEffects(program, "catches_bad"),
+                "\"raise_set\": [\"enum:Fault:Worse\"]");
+        assertContains(queryEffects(program, "catches_both"), "\"raise_set\": []");
     }
 
     private static void assertContains(String value, String expected) {
