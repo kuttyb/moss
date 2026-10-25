@@ -22,6 +22,7 @@ public class SemanticCheckerTest {
         testFunctionWriteSummaryPropagatesThroughHelperCalls();
         testFunctionWriteModePropagatesThroughNestedMethodReceiver();
         testInferredFunctionReceiverRetainsWriteMode();
+        testInferredFunctionReceiverRetainsConsumeMode();
         testFunctionWriteModePropagatesThroughMethodArguments();
         testFunctionConsumeSummaryIncludesObjectConstructors();
         testFunctionRetainsResolvedOpenParameterTypes();
@@ -762,6 +763,53 @@ public class SemanticCheckerTest {
                 .filter(function -> function.name.equals("relay"))
                 .findFirst().orElseThrow();
         assertEquals(AccessMode.Write, relay.parameterAccessModes.get(0));
+    }
+
+    private static void testInferredFunctionReceiverRetainsConsumeMode() {
+        assertCompileError(""
+                + "type Box:\n"
+                + "  payload: String\n"
+                + "  fn take() -> String:\n"
+                + "    return self.payload\n"
+                + "fn relay(box):\n"
+                + "  discarded = box.take()\n"
+                + "fn main():\n"
+                + "  box = Box(payload=\"move\")\n"
+                + "  relay(box)\n"
+                + "  echo box.payload\n", "OWNERSHIP_USE_AFTER_CONSUME");
+
+        Program program = Parser.parseSource(""
+                + "type Box:\n"
+                + "  payload: String\n"
+                + "  fn take() -> String:\n"
+                + "    return self.payload\n"
+                + "fn relay(box):\n"
+                + "  discarded = box.take()\n"
+                + "fn main():\n"
+                + "  box = Box(payload=\"move\")\n"
+                + "  relay(box)\n", "inferred-function-receiver-consume.moss");
+        new SemanticChecker(program).run();
+        Function relay = program.functions.stream()
+                .filter(function -> function.name.equals("relay"))
+                .findFirst().orElseThrow();
+        assertEquals(AccessMode.Consume, relay.parameterAccessModes.get(0));
+
+        Program collisionProgram = Parser.parseSource(""
+                + "type Mover:\n"
+                + "  payload: String\n"
+                + "  fn touch() -> String:\n"
+                + "    return self.payload\n"
+                + "type Reader:\n"
+                + "  payload: String\n"
+                + "  fn touch():\n"
+                + "    echo self.payload\n"
+                + "fn relay(item):\n"
+                + "  item.touch()\n"
+                + "fn main():\n"
+                + "  item = Reader(payload=\"keep\")\n"
+                + "  relay(item)\n"
+                + "  echo item.payload\n", "inferred-function-receiver-collision.moss");
+        new SemanticChecker(collisionProgram).run();
     }
 
     private static void testFunctionWriteModePropagatesThroughMethodArguments() {

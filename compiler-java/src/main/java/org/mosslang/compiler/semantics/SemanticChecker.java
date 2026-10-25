@@ -2059,10 +2059,26 @@ public class SemanticChecker {
                     TypeRef receiverType = resolveReceiverPathType(parameterType, receiver, pName);
                     ObjectType receiverObject = receiverType != null
                             ? findObjectType(receiverType.name()) : null;
-                    if (receiverObject == null) continue;
-                    for (Method method : receiverObject.methods)
-                        if (method.name.equals(call.group(1))
-                                && method.receiverAccessMode == AccessMode.Consume) return true;
+                    if (receiverObject != null) {
+                        for (Method method : receiverObject.methods)
+                            if (method.name.equals(call.group(1))
+                                    && method.receiverAccessMode == AccessMode.Consume) return true;
+                    } else if (receiver.equals(pName)) {
+                        // Generic receiver calls can be accepted before this summary
+                        // has a concrete receiver TypeRef. Keep a consuming method
+                        // requirement only when every same-name candidate consumes;
+                        // otherwise a read-only structural receiver could be rejected.
+                        boolean hasCandidate = false;
+                        boolean allCandidatesConsume = true;
+                        for (ObjectType object : program.objects)
+                            for (Method method : object.methods)
+                                if (method.name.equals(call.group(1))) {
+                                    hasCandidate = true;
+                                    if (method.receiverAccessMode != AccessMode.Consume)
+                                        allCandidatesConsume = false;
+                                }
+                        if (hasCandidate && allCandidatesConsume) return true;
+                    }
                 }
             }
         }
@@ -2243,7 +2259,11 @@ public class SemanticChecker {
                 for (int index = 0; index < function.params.size(); index++) {
                     TypeRef type = functionParameterType(function.params.get(index));
                     AccessMode current = function.parameterAccessModes.get(index);
-                    if (type != null && transferType(type) && doesFunctionConsumeParam(function, index)
+                    boolean inferredParameter = function.params.get(index).typeRef == null
+                            && (function.params.get(index).type == null
+                                    || function.params.get(index).type.isEmpty());
+                    if (doesFunctionConsumeParam(function, index)
+                            && (inferredParameter || (type != null && transferType(type)))
                             && current != AccessMode.Consume) {
                         function.parameterAccessModes.set(index, AccessMode.Consume);
                         changed = true;

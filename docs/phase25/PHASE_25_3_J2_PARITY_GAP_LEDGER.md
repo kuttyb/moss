@@ -623,4 +623,7 @@ parameter type remained a placeholder. Java now preserves WRITE for a direct
 inferred-parameter receiver call when a matching object method requires WRITE.
 The focused C++/Java effects queries agree. All eleven Java test classes pass
 under ABI-v9 and staged ABI-v10. Ambiguous same-name methods across structural
-receiver types remain an area for focused coverage.
+receiver types remain an area for focused coverage. C++'s standalone `effects`
+query still labels the unresolved `relay(box)` parameter READ even though its
+caller-use check rejects reuse after `box.take()`; the diagnostic behavior
+agrees, but the query discrepancy remains open.
