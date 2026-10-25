@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 import importlib.util
+import socket
+import threading
 import tempfile
 import unittest
 from pathlib import Path
@@ -31,6 +33,27 @@ class FakeProcess:
 
 
 class JdtClientLifecycleTest(unittest.TestCase):
+    def test_daemon_probe_requires_moss_protocol_identity(self):
+        for response, expected in ((b"OK MOSS_JDT 1\n", True),
+                                   (b"ERROR Unknown command: PING\n", False)):
+            with socket.socket() as server:
+                server.bind(("127.0.0.1", 0))
+                server.listen(1)
+                port = server.getsockname()[1]
+
+                def serve_once():
+                    connection, _ = server.accept()
+                    with connection:
+                        request = connection.recv(128)
+                        self.assertEqual(b"PING\n", request)
+                        connection.sendall(response)
+
+                thread = threading.Thread(target=serve_once, daemon=True)
+                thread.start()
+                self.assertEqual(expected, jdt.is_daemon_running(port))
+                thread.join(timeout=1)
+                self.assertFalse(thread.is_alive())
+
     def test_eclipse_is_optional_and_discovered_portably(self):
         with patch.dict(jdt.os.environ, {}, clear=True), \
              patch.object(jdt.shutil, "which", return_value=None), \

@@ -14687,3 +14687,16 @@ exit status before loading the source. `BootstrapTest` covers the CLI response.
 
 Validation: all eleven Java unit-test classes pass under ABI-v9. This keeps the
 existing CLI contract; it does not change JSON diagnostics for check/compile.
+
+### Phase 25.3 continuation — identify the optional JDT daemon safely
+
+The daemon client's liveness check previously treated any listener on the fixed
+port as the Moss JDT daemon. That could misreport `--status` and send `STOP` to
+an unrelated local service. The client now requires the `OK MOSS_JDT 1` PING
+response; the headless JDT application answers that protocol. Unknown/older
+servers fail closed to the standalone javac path.
+
+Validation: six mocked/local-socket lifecycle tests pass, including exact
+positive and negative PING responses; Python byte-compilation and `git diff
+--check` pass. Eclipse is not installed (`command -v eclipse` found none), so
+live JDT startup/build/stop remains unverified.

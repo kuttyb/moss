@@ -254,3 +254,16 @@ JSON error labeled `compile`. Java now matches the unsupported-option response
 and exit status before reading source. `BootstrapTest` pins this CLI behavior.
 All eleven Java unit-test classes pass in ABI-v9. Check/compile JSON behavior is
 unchanged.
+
+## Phase 25.3 continuation — JDT daemon identity handshake
+
+The JDT client considered any process listening on port 45290 to be its daemon,
+so status and shutdown could target a foreign local service. Liveness now sends
+`PING` and accepts only `OK MOSS_JDT 1`; the repository's headless JDT
+application replies with that identity. Other listeners and old protocol
+servers select the existing javac fallback.
+
+Six `scripts/java/test_jdt_client.py` lifecycle tests pass, including positive
+and negative local socket handshake cases. Python byte-compilation and
+`git diff --check` pass. No Eclipse executable is available in this workspace,
+so live daemon startup/build/stop is still unverified.

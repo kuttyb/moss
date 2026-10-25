@@ -33,11 +33,16 @@ def find_eclipse():
 
 def is_daemon_running(port=JDT_PORT):
     try:
-        s = socket.socket()
-        s.settimeout(0.5)
-        s.connect(("127.0.0.1", port))
-        s.close()
-        return True
+        with socket.create_connection(("127.0.0.1", port), timeout=0.5) as s:
+            s.settimeout(0.5)
+            s.sendall(b"PING\n")
+            response = bytearray()
+            while len(response) <= 128 and not response.endswith(b"\n"):
+                chunk = s.recv(1)
+                if not chunk:
+                    break
+                response.extend(chunk)
+            return response.strip() == b"OK MOSS_JDT 1"
     except Exception:
         return False
 

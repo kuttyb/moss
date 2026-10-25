@@ -100,7 +100,9 @@ public class HeadlessBuilderApp implements IApplication {
                 String[] parts = line.split("\\s+");
                 String cmd = parts[0].toUpperCase();
 
-                if ("INIT".equals(cmd) && parts.length >= 4) {
+                if ("PING".equals(cmd)) {
+                    writer.println("OK MOSS_JDT 1");
+                } else if ("INIT".equals(cmd) && parts.length >= 4) {
                     initProject(parts[1], parts[2], parts[3]);
                     writer.println("OK INIT");
                 } else if ("BUILD_FULL".equals(cmd)) {
