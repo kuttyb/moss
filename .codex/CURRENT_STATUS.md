@@ -16262,3 +16262,20 @@ acceptances are ownership aliasing and functional callback capture, mutation,
 and domain-boundary cases. All twelve Java test classes pass under ABI-v9 and
 staged ABI-v10. Standalone packaging/bootstrap, feedback validation, and
 `git diff --check` pass. Native and release acceptance gates remain unrun.
+
+### Phase 25.3 continuation — ownership overlap in returned calls
+
+Java ownership validation now compares overlapping direct call arguments when
+one access writes or consumes transfer-type storage. The same validation runs
+for calls inside `return` expressions, which previously only received type
+checking. The first-50 negative sample's
+`consume_read_alias.moss`, `double_consume_alias.moss`, and
+`functional_callback_alias.moss` now reject; a READ/READ alias remains
+accepted.
+
+The refreshed first-50 negative sample has 0 C++ acceptances and 8 Java
+acceptances, with no malformed results. The remaining eight are functional
+capture, per-element consume, domain-boundary, and noncopy placeholder cases.
+All twelve Java tests pass under ABI-v9 and staged ABI-v10. Packaging/bootstrap,
+feedback validation, and diff checks pass. Native and release gates remain
+unrun.

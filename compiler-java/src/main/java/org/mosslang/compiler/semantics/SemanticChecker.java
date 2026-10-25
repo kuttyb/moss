@@ -3520,6 +3520,24 @@ public class SemanticChecker {
             boolean isObjCtor = objects.containsKey(callee);
             if (fn != null || method != null) {
                 for (int i = 0; i < args.size(); i++) {
+                    String leftValue = callArgumentValue(args.get(i)).trim();
+                    String leftRoot = ownershipRoot(leftValue);
+                    TypeRef leftType = env.get(leftRoot);
+                    if (leftRoot.isEmpty() || leftType == null || !transferType(leftType)) continue;
+                    AccessMode leftMode = callArgumentAccessMode(fn, method, i, leftType);
+                    for (int j = i + 1; j < args.size(); j++) {
+                        String rightValue = callArgumentValue(args.get(j)).trim();
+                        String rightRoot = ownershipRoot(rightValue);
+                        if (!leftRoot.equals(rightRoot)) continue;
+                        AccessMode rightMode = callArgumentAccessMode(fn, method, j, leftType);
+                        if (leftMode == AccessMode.Read && rightMode == AccessMode.Read) continue;
+                        throw new CompileError(line, "conflicting access to '" + leftRoot
+                                + "' in call to '" + callee + "': " + leftMode.name().toUpperCase()
+                                + " overlaps with " + rightMode.name().toUpperCase(),
+                                "OWNERSHIP_CONFLICTING_ACCESS");
+                    }
+                }
+                for (int i = 0; i < args.size(); i++) {
                     boolean writesArgument = fn != null
                             ? (isSourceFreeFunction(fn)
                                     ? functionParameterMode(fn, i) == AccessMode.Write
@@ -3593,6 +3611,29 @@ public class SemanticChecker {
             if (currentHandlerRaises != null && fn != null)
                 recordDirectCallRaises(callee + "()", env);
         }
+    }
+
+    private String ownershipRoot(String expression) {
+        if (expression == null) return "";
+        int end = expression.length();
+        int dot = expression.indexOf('.');
+        int bracket = expression.indexOf('[');
+        if (dot >= 0) end = Math.min(end, dot);
+        if (bracket >= 0) end = Math.min(end, bracket);
+        return expression.substring(0, end).trim();
+    }
+
+    private AccessMode callArgumentAccessMode(Function function, Method method,
+                                               int index, TypeRef argumentType) {
+        if (function != null) {
+            if (isSourceFreeFunction(function)) return functionParameterMode(function, index);
+            if (doesFunctionConsumeParam(function, index, argumentType)) return AccessMode.Consume;
+            if (doesFunctionMutateParam(function, index)) return AccessMode.Write;
+            return AccessMode.Read;
+        }
+        if (method != null && index < method.parameterAccessModes.size())
+            return method.parameterAccessModes.get(index);
+        return AccessMode.Read;
     }
 
     private void recordDirectCallRaises(String expression, OwnershipEnv env) {
@@ -4514,6 +4555,7 @@ public class SemanticChecker {
                 }
                 requireAvailable(s.line, retExpr, env);
                 TypeRef inferred = retExpr.isEmpty() ? TypeRef.unit() : typer.infer(retExpr, s.line, env.typeEnv);
+                if (!retExpr.isEmpty()) consumeCallArguments(s.line, retExpr, env, null);
                 if (expectedType != null && !solver.unify(inferred, expectedType)) {
                     Function f = functions.get(enclosingName);
                     boolean isAnnotated = f != null && (f.returnTypeRef != null || (f.returnType != null && !f.returnType.isEmpty()));

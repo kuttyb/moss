@@ -52,6 +52,7 @@ public class SemanticCheckerTest {
         testFilterRequiresBooleanPredicate();
         testReduceCallbackResultMatchesAccumulator();
         testEnumValuesAreRejectedAsMapKeys();
+        testOverlappingConsumeArgumentsAreRejected();
         testDirectVectorSumTypeAndLowering();
         testValueHandlerRepliesOnEveryNormalPath();
         testUnsupportedCollectionsAreRejectedAsForIterablesAtLoopSite();
@@ -1221,6 +1222,58 @@ public class SemanticCheckerTest {
                 + "  colors[\"red\"] = 1\n"
                 + "  echo colors[\"red\"]\n", "string-map-key.moss");
         new SemanticChecker(valid).run();
+    }
+
+    private static void testOverlappingConsumeArgumentsAreRejected() {
+        Program consumeRead = Parser.parseSource(""
+                + "type Box:\n"
+                + "  value: Int\n"
+                + "fn conflict(taken: Box, observed: Box):\n"
+                + "  let moved = taken\n"
+                + "  echo moved.value, observed.value\n"
+                + "fn main():\n"
+                + "  item = Box(value = 7)\n"
+                + "  conflict(item, item)\n", "consume-read-alias.moss");
+        expectCompileError(consumeRead, "OWNERSHIP_CONFLICTING_ACCESS",
+                "a consumed argument must not overlap a read argument");
+
+        Program doubleConsume = Parser.parseSource(""
+                + "type Box:\n"
+                + "  value: Int\n"
+                + "fn conflict(first: Box, second: Box):\n"
+                + "  let moved_first = first\n"
+                + "  let moved_second = second\n"
+                + "  echo moved_first.value, moved_second.value\n"
+                + "fn main():\n"
+                + "  item = Box(value = 7)\n"
+                + "  conflict(item, item)\n", "double-consume-alias.moss");
+        expectCompileError(doubleConsume, "OWNERSHIP_CONFLICTING_ACCESS",
+                "two consumed arguments must not overlap");
+
+        Program readRead = Parser.parseSource(""
+                + "type Box:\n"
+                + "  value: Int\n"
+                + "fn inspect(first: Box, second: Box) -> Int:\n"
+                + "  return first.value + second.value\n"
+                + "fn main():\n"
+                + "  item = Box(value = 7)\n"
+                + "  echo inspect(item, item)\n", "read-read-alias.moss");
+        new SemanticChecker(readRead).run();
+
+        Program callbackAlias = Parser.parseSource(""
+                + "type Box:\n"
+                + "  value: Int\n"
+                + "fn conflict(changed: Box, observed: Box) -> Int:\n"
+                + "  changed.value = changed.value + 1\n"
+                + "  return observed.value\n"
+                + "fn invalid_callback(item: Box) -> Int:\n"
+                + "  return conflict(item, item)\n"
+                + "fn main():\n"
+                + "  values = [Box(value = 1)]\n"
+                + "  result = values |> map(invalid_callback)\n"
+                + "  echo result[0]\n", "return-call-ownership-alias.moss");
+        expectCompileError(callbackAlias, "OWNERSHIP_CONFLICTING_ACCESS",
+                "return calls must validate overlapping write and read arguments");
     }
 
     private static void testNestedFieldReadInBranchConditionKeepsReceiverReadOnly() {
