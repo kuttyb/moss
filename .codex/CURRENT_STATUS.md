@@ -16754,6 +16754,18 @@ calls `box.risky(1)` was rejected by C++ for an unhandled `Failure.Bad`, but
 Java accepted it. Root ingress raise collection now supplies concrete handler
 call-site receiver types to method-call scans in the invoked helper. The focused
 `SemanticCheckerTest` passes; minimized C++ and Java checks both reject the
-unhandled form and accept the matching `on_fail` control. This is bounded to
-methods directly referenced in the invoked helper body; deeper generic helper
-chains, other contextual effects, native execution, and SDK gates remain open.
+unhandled form and accept the matching `on_fail` control. A transitive call
+chain was then confirmed as a follow-up gap and closed below. Other contextual
+effects, native execution, and SDK gates remain open.
+
+
+### Phase 25.3 continuation — transitive generic helper method raises
+
+A second minimized probe chained `invoke(box) -> forward(box) ->
+box.risky(1)`. After the direct-helper correction, Java still accepted the
+unhandled root while C++ rejected it. Contextual receiver types now propagate
+recursively through directly called helper functions, guarded by a visited key
+containing the function and contextual types. The focused `SemanticCheckerTest`
+passes, and minimized C++/Java checks agree on rejection without recovery and
+acceptance with `on_fail`. This covers local generic helper call chains only;
+other contextual effect families and runtime/SDK acceptance remain unverified.

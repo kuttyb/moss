@@ -4733,7 +4733,8 @@ public class SemanticChecker {
                             || org.mosslang.compiler.parser.ParserSupport
                                     .usesPipelineFunctionCallback(expression, function.name)) {
                         raised.addAll(collectFunctionRaiseVariants(function, visitedFunctions));
-                        collectHandlerFunctionMethodRaises(expression, function, domain, handler, raised);
+                        collectHandlerFunctionMethodRaises(expression, function, domain, handler,
+                                raised, Map.of(), new HashSet<>());
                     }
                 }
                 collectHandlerMethodRaises(expression, domain, handler, raised);
@@ -4782,7 +4783,9 @@ public class SemanticChecker {
 
     private void collectHandlerFunctionMethodRaises(String invocation, Function function,
                                                     Domain domain, Handler handler,
-                                                    Set<String> raised) {
+                                                    Set<String> raised,
+                                                    Map<String, String> inheritedTypes,
+                                                    Set<String> visited) {
         java.util.regex.Matcher calls = java.util.regex.Pattern.compile("(?<![A-Za-z0-9_])"
                 + java.util.regex.Pattern.quote(function.name) + "\\s*\\(([^()]*)\\)")
                 .matcher(maskStringLiterals(invocation));
@@ -4791,18 +4794,50 @@ public class SemanticChecker {
                     .splitTopLevel(calls.group(1), ',');
             Map<String, String> contextualTypes = new HashMap<>();
             for (int index = 0; index < Math.min(function.params.size(), arguments.size()); index++) {
-                String actualType = resolveHandlerReceiverType(arguments.get(index), domain, handler);
+                String actualType = resolveHandlerReceiverType(arguments.get(index), domain, handler,
+                        inheritedTypes);
                 if (actualType != null) contextualTypes.put(function.params.get(index).name, actualType);
             }
+            String visitKey = function.name + contextualTypes.entrySet().stream()
+                    .sorted(Map.Entry.comparingByKey())
+                    .map(entry -> ";" + entry.getKey() + "=" + entry.getValue())
+                    .collect(java.util.stream.Collectors.joining());
+            if (!visited.add(visitKey)) continue;
             for (Stmt statement : function.body) {
                 String bodyExpression = statementExpressionText(statement);
-                if (bodyExpression != null)
+                if (bodyExpression != null) {
                     collectHandlerMethodRaises(bodyExpression, domain, handler, contextualTypes, raised);
+                    for (Function nested : functions.values()) {
+                        if (containsFunctionCall(bodyExpression, nested.name)
+                                || org.mosslang.compiler.parser.ParserSupport
+                                        .usesPipelineFunctionCallback(bodyExpression, nested.name)) {
+                            collectHandlerFunctionMethodRaises(bodyExpression, nested, domain,
+                                    handler, raised, contextualTypes, visited);
+                        }
+                    }
+                }
             }
-            if (function.resultExpression != null)
+            if (function.resultExpression != null) {
                 collectHandlerMethodRaises(function.resultExpression, domain, handler,
                         contextualTypes, raised);
+                for (Function nested : functions.values()) {
+                    if (containsFunctionCall(function.resultExpression, nested.name)
+                            || org.mosslang.compiler.parser.ParserSupport
+                                    .usesPipelineFunctionCallback(function.resultExpression, nested.name)) {
+                        collectHandlerFunctionMethodRaises(function.resultExpression, nested,
+                                domain, handler, raised, contextualTypes, visited);
+                    }
+                }
+            }
         }
+    }
+
+    private String resolveHandlerReceiverType(String receiverPath, Domain domain, Handler handler,
+                                              Map<String, String> contextualTypes) {
+        String canonicalPath = receiverPath.replaceAll("\\s", "");
+        String contextual = contextualTypes.get(canonicalPath);
+        if (contextual != null) return contextual;
+        return resolveHandlerReceiverType(receiverPath, domain, handler);
     }
 
     private String resolveHandlerReceiverType(String receiverPath, Domain domain, Handler handler) {

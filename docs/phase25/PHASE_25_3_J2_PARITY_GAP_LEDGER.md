@@ -872,3 +872,15 @@ and scans the helper body for direct and pipeline method calls. The focused
 `SemanticCheckerTest` passes. Minimized C++ and Java probes both reject the
 unhandled form and accept the matching `on_fail` control. This does not yet
 cover transitive generic helper chains or provide native execution evidence.
+
+
+### Correction — transitive generic helper method raises
+
+A follow-up source chained `invoke(box) -> forward(box) -> box.risky(1)` and
+showed that the direct-helper correction still left Java accepting an
+unhandled root rejected by C++. Root validation now propagates contextual
+receiver types recursively through directly called helpers, with recursion
+deduplicated by helper and contextual type bindings. The focused semantic test
+passes. Minimized C++/Java checks agree on rejection without recovery and
+acceptance with `on_fail`. This does not establish parity for unrelated
+contextual effects or native execution.
