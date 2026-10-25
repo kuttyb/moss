@@ -14600,9 +14600,10 @@ full logical ABI-v10 compatibility and native/SDK linkage are open.
 The Java source-free loader seeds supported callable declarations from checked
 ABI-v10 summaries when legacy declaration rows are absent. Seeding runs after
 legacy parsing so existing declarations keep their source parameter names. The
-regression removes both legacy declaration copies for eleven functions while
-retaining their ABI-v10 summaries and checked bodies. It executes closed Int,
-Bool, String-vector, and nested Vector[Vector[Int]] results; generic `(T) -> T`
+regression removes both legacy declaration copies for thirteen functions while
+retaining their ABI-v10 summaries and checked bodies. It executes closed Int, Bool, Float, String, String-vector, and nested
+Vector[Vector[Int]] results, a two-parameter Int expression returning `64`,
+and unary negation returning `-42`; generic `(T) -> T`
 and `(T, U) -> U` pass-through calls; and a zero-argument empty `Vector[T]`
 call specialized as Int and Bool. The nested indexed read returns `3`.
 

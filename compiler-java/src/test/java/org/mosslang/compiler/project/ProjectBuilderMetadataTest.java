@@ -1119,7 +1119,9 @@ public final class ProjectBuilderMetadataTest {
                             || record.id.contains("matrix") || record.payload.contains("fn matrix")
                             || record.id.contains("escaped_names") || record.payload.contains("fn escaped_names")
                             || record.id.contains("ratio") || record.payload.contains("fn ratio")
-                            || record.id.contains("greeting") || record.payload.contains("fn greeting"))
+                            || record.id.contains("greeting") || record.payload.contains("fn greeting")
+                            || record.id.contains("combine") || record.payload.contains("fn combine")
+                            || record.id.contains("negative") || record.payload.contains("fn negative"))
                     .toList();
             if (answerRows.isEmpty()) {
                 throw new AssertionError("could not isolate legacy callable declarations for ABI-v10-only import");
@@ -1135,9 +1137,11 @@ public final class ProjectBuilderMetadataTest {
                             || record.id.equals("fn:matrix") || record.id.startsWith("fn:matrix::")
                             || record.id.equals("fn:escaped_names") || record.id.startsWith("fn:escaped_names::")
                             || record.id.equals("fn:ratio") || record.id.startsWith("fn:ratio::")
-                            || record.id.equals("fn:greeting") || record.id.startsWith("fn:greeting::"))
+                            || record.id.equals("fn:greeting") || record.id.startsWith("fn:greeting::")
+                            || record.id.equals("fn:combine") || record.id.startsWith("fn:combine::")
+                            || record.id.equals("fn:negative") || record.id.startsWith("fn:negative::"))
                     .toList();
-            for (String functionName : List.of("answer", "increment", "enabled", "names", "identity", "second", "fresh", "matrix", "escaped_names", "ratio", "greeting")) {
+            for (String functionName : List.of("answer", "increment", "enabled", "names", "identity", "second", "fresh", "matrix", "escaped_names", "ratio", "greeting", "combine", "negative")) {
                 String legacyPrefix = "fn:" + functionName;
                 if (answerRows.stream().noneMatch(record -> record.id.equals(legacyPrefix)
                                 || record.id.startsWith(legacyPrefix + "::"))
@@ -1149,7 +1153,7 @@ public final class ProjectBuilderMetadataTest {
             identityInterface.semanticContract.removeAll(answerRows);
             identityInterface.binaryContract.removeAll(binaryLegacyRows);
             for (String functionName : List.of("answer", "increment", "enabled", "names", "identity",
-                    "second", "fresh", "matrix", "escaped_names", "ratio", "greeting")) {
+                    "second", "fresh", "matrix", "escaped_names", "ratio", "greeting", "combine", "negative")) {
                 String legacyPrefix = "fn:" + functionName;
                 if (identityInterface.semanticContract.stream().anyMatch(record ->
                                 record.id.equals(legacyPrefix) || record.id.startsWith(legacyPrefix + "::"))
@@ -1178,6 +1182,8 @@ public final class ProjectBuilderMetadataTest {
                     + "  echo provider__escaped_names()[1].length()\n"
                     + "  echo provider__ratio()\n"
                     + "  echo provider__greeting()\n"
+                    + "  echo provider__combine(20, 8)\n"
+                    + "  echo provider__negative()\n"
                     + "  echo use_fresh_int().len()\n"
                     + "  echo use_fresh_bool().len()\n", "answer-consumer.moss");
             org.mosslang.compiler.cli.Main.loadMossiFunctions(identityMossi, "provider", answerConsumer);
@@ -1197,7 +1203,7 @@ public final class ProjectBuilderMetadataTest {
             new org.mosslang.compiler.interpreter.FastInterpreter(answerConsumer, false,
                     new java.io.PrintStream(answerOutput),
                     new java.io.PrintStream(new java.io.ByteArrayOutputStream())).run();
-            if (!"42\n42\ntrue\ntwo\n7\nseven\nseven\n3\n10\n14\n1.5\nhello\n0\n0\n".equals(
+            if (!"42\n42\ntrue\ntwo\n7\nseven\nseven\n3\n10\n14\n1.5\nhello\n64\n-42\n0\n0\n".equals(
                     answerOutput.toString(java.nio.charset.StandardCharsets.UTF_8))) {
                 throw new AssertionError("ABI-v10 summary bodies did not import without their v9 declarations: "
                         + answerOutput);
