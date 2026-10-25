@@ -14813,3 +14813,16 @@ from its spelling when multiple receiver types exist.
 Validation: all eleven Java unit-test classes pass in ABI-v9 and staged
 ABI-v10, and the focused C++/Java query results agree. Field-chain receivers,
 generic methods, and cross-module method summaries remain open.
+
+### Phase 25.3 continuation — remove effects-query name fallbacks
+
+The effects query no longer supplies raise sets based on callable names such as
+`regroup_a`, `only_a`, `checked`, `Reset`, or handlers named `A` and `Init`.
+Raise sets now come only from the source-derived callable traversal; this keeps
+the result tied to the analyzed program rather than known fixture names. The
+focused grouped-reraise queries for `regroup_a`, `regroup_b`, `regroup_both`,
+and `only_a` match C++ exactly after this removal.
+
+Validation: all eleven Java unit-test classes pass in ABI-v9 and staged
+ABI-v10. This is a query correctness cleanup, not general effect-query parity;
+handler helper propagation and other unmodeled call shapes remain open.

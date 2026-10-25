@@ -265,33 +265,6 @@ public class SemanticQueryEngine {
                     queriedFunction, queriedMethod, queriedHandler, program);
             if (!directRaiseFacts.isEmpty()) {
                 raiseJson = jsonStringArray(directRaiseFacts);
-            } else if (itemName.equals("Reset")) {
-                raiseJson = "[\"enum:" + modPrefix + "__Failure:Bad\"]";
-            } else if (itemName.endsWith("fail")) {
-                raiseJson = "[\"enum:" + modPrefix + "__Fault:Bad\"]";
-            } else if (itemName.endsWith("generic")) {
-                raiseJson = "[\"enum:" + modPrefix + "__Fault:Other\"]";
-            } else if (itemName.equals("via_local") || itemName.equals("poke")) {
-                boolean hasE = program.enums.stream().anyMatch(e -> e.name.equals("E"));
-                raiseJson = hasE ? "[\"enum:E:A\"]" : "[\"enum:Failure:Bad\"]";
-            } else if (itemName.equals("regroup_a")) {
-                raiseJson = "[\"enum:Failure:A\"]";
-            } else if (itemName.equals("regroup_b")) {
-                raiseJson = "[\"enum:Failure:B\"]";
-            } else if (itemName.equals("regroup_both")) {
-                raiseJson = "[\"enum:Failure:A\", \"enum:Failure:B\"]";
-            } else if (itemName.equals("Run") && isHandler) {
-                raiseJson = "[\"enum:Failure:A\"]";
-            } else if (itemName.equals("grouped_reraise") || (itemName.equals("only_a") && program.enums.stream().anyMatch(e -> e.name.equals("E")))) {
-                raiseJson = "[\"enum:E:A\"]";
-            } else if (itemName.equals("checked")) {
-                raiseJson = "[\"enum:FormatError:Bad\"]";
-            } else if (itemName.equals("seed")) {
-                raiseJson = "[\"enum:SetupError:Bad\"]";
-            } else if (itemName.equals("A") && isHandler) {
-                raiseJson = "[\"enum:FormatError:Bad\", \"enum:std__FileError:NotFound\", \"enum:std__FileError:PermissionDenied\", \"enum:std__FileError:NotRegularFile\", \"enum:std__FileError:InUse\", \"enum:std__FileError:Full\", \"enum:std__FileError:IO\"]";
-            } else if (itemName.equals("Init") && isHandler) {
-                raiseJson = "[\"enum:SetupError:Bad\", \"enum:std__FileError:NotFound\", \"enum:std__FileError:PermissionDenied\", \"enum:std__FileError:NotRegularFile\", \"enum:std__FileError:InUse\", \"enum:std__FileError:Full\", \"enum:std__FileError:IO\"]";
             }
             String syncPlanExtra = "";
             if (itemName.equals("Run") && isHandler) {
