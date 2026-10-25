@@ -15952,3 +15952,14 @@ The twelve Java unit-test classes pass under ABI-v9 and staged ABI-v10. The
 standalone JAR was rebuilt and also reports `RANGE_OUTSIDE_FOR` for the probe.
 Feedback validation and `git diff --check` pass. The Phase 25.3 native/backend,
 source-free, Margo/SDK, daemon, and frozen-candidate gates remain open.
+
+### Confirmed remaining gap — built-in sort
+
+A focused source probe using `sort(values, by: Reverse(identity))` passes C++
+checking but Java rejects it as an unknown function. The C++ checker supports
+`sort(v)`, `sort(v, by: key)`, and `sort(v, by: Reverse(key))`; the Rust backend
+lowers these as stable in-place sorts. Java currently has no sort intrinsic in
+its expression checker. This is a real supported-language gap that spans type
+checking, WRITE effects, Rust lowering, and Fast Debug. It remains open; the
+next useful milestone is to inspect those C++ contracts and implement the
+supported forms with focused tests. No sort code was changed in this checkpoint.
