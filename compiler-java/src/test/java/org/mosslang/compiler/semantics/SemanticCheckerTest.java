@@ -47,6 +47,7 @@ public class SemanticCheckerTest {
         testUniformDomainHandlerInferenceFromMainCalls();
         testPerInstanceDomainLayoutSpecialization();
         testConflictingDomainInstanceTypesAreRejected();
+        testDomainHandlersRequireMessageSyntax();
         testDirectVectorSumTypeAndLowering();
         testValueHandlerRepliesOnEveryNormalPath();
         testUnsupportedCollectionsAreRejectedAsForIterablesAtLoopSite();
@@ -1112,6 +1113,27 @@ public class SemanticCheckerTest {
                 || !rust.contains("sum::<f64>()")) {
             throw new AssertionError("direct sum must infer element types and preserve Moss numeric lowering");
         }
+    }
+
+    private static void testDomainHandlersRequireMessageSyntax() {
+        Program invalid = Parser.parseSource(""
+                + "domain Worker:\n"
+                + "  fn Ping():\n"
+                + "    echo \"ping\"\n"
+                + "fn main():\n"
+                + "  worker = Worker()\n"
+                + "  worker.Ping()\n", "naked-domain-handler.moss");
+        expectCompileError(invalid, "DOMAIN_HANDLER_REQUIRES_MESSAGE",
+                "domain handlers must be entered with message syntax");
+
+        Program valid = Parser.parseSource(""
+                + "domain Worker:\n"
+                + "  fn Ping():\n"
+                + "    echo \"ping\"\n"
+                + "fn main():\n"
+                + "  worker = Worker()\n"
+                + "  message worker.Ping()\n", "messaged-domain-handler.moss");
+        new SemanticChecker(valid).run();
     }
 
     private static void testNestedFieldReadInBranchConditionKeepsReceiverReadOnly() {

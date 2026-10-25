@@ -4001,6 +4001,28 @@ public class SemanticChecker {
         }
     }
 
+    private void rejectNakedDomainHandlerCall(int line, String expression,
+                                              OwnershipEnv env, TypeSolver solver) {
+        if (!expression.endsWith(")")) return;
+        int open = ExpressionTyper.findMatchingOpenParen(expression, expression.length() - 1);
+        if (open <= 0) return;
+        String callee = expression.substring(0, open).trim();
+        int dot = callee.lastIndexOf('.');
+        if (dot <= 0) return;
+        String receiver = callee.substring(0, dot).trim();
+        String handlerName = callee.substring(dot + 1).trim();
+        if (!env.containsKey(receiver)) return;
+        TypeRef receiverType = solver.resolve(env.get(receiver));
+        if (receiverType == null || receiverType.kind() != TypeKind.Domain) return;
+        Domain domain = domains.get(receiverType.name());
+        if (domain == null || domain.handlers.stream().noneMatch(handler -> handler.name.equals(handlerName))) return;
+        CompileError error = new CompileError(line,
+                "domain handler '" + domain.name + "." + handlerName + "' must be called with message",
+                "DOMAIN_HANDLER_REQUIRES_MESSAGE", program.sourceFile);
+        error.setSemanticIdentity(currentSemanticIdentity);
+        throw error;
+    }
+
     private TypeRef recoveryBindingType(List<Stmt> statements, int start, int recoverIndex, int indent) {
         int tryIndex = -1;
         for (int index = recoverIndex - 1; index >= start; index--) {
@@ -4505,6 +4527,7 @@ public class SemanticChecker {
                 requireAvailable(s.line, s.text, env);
                 String callExpr = s.text != null ? s.text.trim() : "";
                 if (!callExpr.isEmpty()) {
+                    rejectNakedDomainHandlerCall(s.line, callExpr, env, solver);
                     typer.infer(callExpr, s.line, env.typeEnv);
                     for (String payload : currentMessagePayloads) {
                         if (expressionContainsWriteCall(callExpr, payload)

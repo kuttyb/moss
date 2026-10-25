@@ -16191,3 +16191,25 @@ staged ABI-v10. Standalone packaging/bootstrap, feedback validation, and
 compilation, full `make check`, SDK, or multi-crate gate was run. Generalized
 sum over open generic collections and ABI-v10 source-free sum coverage remain
 unverified.
+
+### Phase 25.3 continuation — reject direct domain-handler calls
+
+A bounded negative-corpus screen examined the first 50 sorted
+`tests/negative/*.moss` fixtures. C++ rejected all 50; Java accepted 17. One
+clear root cause was Java accepting a bare `worker.Ping()` because its generic
+method typer treated any Domain receiver as an open method. Java now checks
+call statements against the receiver's domain declaration and rejects a direct
+handler call with `DOMAIN_HANDLER_REQUIRES_MESSAGE`. A focused positive
+control confirms `message worker.Ping()` remains accepted.
+
+The refreshed negative sample has 16 Java false acceptances remaining, mainly
+ownership alias conflicts and functional callback/effect restrictions, with an
+enum Map-key restriction also present. The 100-file positive checker sample
+remains 99/100 accepted by each compiler with no acceptance mismatches; one
+shared rejection remains. Negative acceptance is a distinct and more revealing
+screen, so parity is not established.
+
+Focused `SemanticCheckerTest` and the historical naked-call fixture pass the
+expected reject/accept behavior. All twelve Java test classes under ABI-v9 and
+staged ABI-v10, packaging/bootstrap, feedback validation, and final diff checks
+are pending for this checkpoint. No native or expensive acceptance gate ran.
