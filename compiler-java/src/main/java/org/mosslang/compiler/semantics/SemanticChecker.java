@@ -885,15 +885,6 @@ public class SemanticChecker {
                             ? functions.get(callTxt.substring(0, callOpen).trim()) : null;
                     if (called != null) {
                         collectFunctionRaisedVariants(called, tryRaisedVariants, new HashSet<>());
-                    } else if (callTxt.startsWith("only_a(")) {
-                        tryRaisedVariants.add("E.A");
-                    } else if (callTxt.startsWith("source_a(")) {
-                        tryRaisedVariants.add("Failure.A");
-                    } else if (callTxt.startsWith("source_b(")) {
-                        tryRaisedVariants.add("Failure.B");
-                    } else if (callTxt.startsWith("source_both(")) {
-                        tryRaisedVariants.add("Failure.A");
-                        tryRaisedVariants.add("Failure.B");
                     }
                 } else if (s.kind == Stmt.Kind.Recover) {
                     recoverIndent = s.indent;

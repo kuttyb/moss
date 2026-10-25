@@ -14374,3 +14374,13 @@ The machine-readable rows are in disposable
 `tmp/phase253_examples_semantic_screen.json`. This covers the repository's
 standalone language examples only; it does not cover the 776-file recursive
 examples tree, project builds, generated Rust compilation, or runtime behavior.
+
+### Phase 25.3 continuation — remove fixture-named try/recover fallback
+
+Removed four function-name-specific fallbacks (`only_a`, `source_a`,
+`source_b`, `source_both`) from try/recover raised-variant collection. The
+generic function lookup and recursive raised-variant collection remain the
+source of effect information. The Java build and all eleven Java unit-test
+classes pass under ABI-v9 and staged ABI-v10. Five related Phase 21 fixtures
+are accepted by both C++ and Java. This change removes fixture-specific
+behavior; it does not establish complete raised-effect parity.
