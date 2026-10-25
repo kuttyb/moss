@@ -758,6 +758,81 @@ public class Main {
         };
     }
 
+    private static void seedV10ClosedFunctionDeclarations(
+            Program program, String moduleName, String moduleId,
+            Map<String, org.mosslang.compiler.abi.AbiV10Records.Summary> summaries,
+            Map<String, org.mosslang.compiler.abi.AbiV10Records.CheckedBodyRecord> bodies,
+            Path interfaceFile) {
+        String callablePrefix = "callable-v1:" + moduleId + ":fn:";
+        for (Map.Entry<String, org.mosslang.compiler.abi.AbiV10Records.Summary> entry : summaries.entrySet()) {
+            String callableId = entry.getKey();
+            org.mosslang.compiler.abi.AbiV10Records.Summary summary = entry.getValue();
+            if (!callableId.startsWith(callablePrefix) || summary.variableCount != 0
+                    || summary.parameters.size() != summary.parameterAccess.size()
+                    || !summary.requirements.isEmpty() || !summary.dependencies.isEmpty()
+                    || summary.observableEffectBits != 0 || !summary.observableEffectTags.isEmpty()
+                    || !bodies.containsKey(callableId)) continue;
+            String functionName = callableId.substring(callablePrefix.length());
+            if (!functionName.matches("[A-Za-z_][A-Za-z0-9_]*")) continue;
+            org.mosslang.compiler.types.TypeRef result = v10SimpleWireType(summary.result, 0);
+            List<org.mosslang.compiler.types.TypeRef> parameters = new ArrayList<>();
+            for (org.mosslang.compiler.abi.AbiV10Records.WireType wire : summary.parameters) {
+                org.mosslang.compiler.types.TypeRef parameter = v10SimpleWireType(wire, 0);
+                if (parameter == null || !parameter.isClosed()) {
+                    parameters.clear();
+                    break;
+                }
+                parameters.add(parameter);
+            }
+            if (result == null || !result.isClosed() || parameters.size() != summary.parameters.size()) continue;
+
+            String qualifiedName = moduleName + "." + functionName;
+            org.mosslang.compiler.ast.Function primary = program.functions.stream()
+                    .filter(function -> callableId.equals(function.semanticCallableId)
+                            || function.name.equals(qualifiedName))
+                    .findFirst().orElse(null);
+            if (primary == null) {
+                primary = new org.mosslang.compiler.ast.Function(
+                        qualifiedName, "fn " + functionName + "()", 1, interfaceFile.toString(), true);
+                primary.definingModule = moduleName;
+                primary.semanticCallableId = callableId;
+                primary.exported = true;
+                primary.sourceFreeAbiVersion = 10;
+                program.functions.add(primary);
+                org.mosslang.compiler.ast.Function alias = new org.mosslang.compiler.ast.Function(
+                        moduleName + "__" + functionName, "fn " + functionName + "()", 1,
+                        interfaceFile.toString(), true);
+                alias.definingModule = moduleName;
+                alias.semanticCallableId = callableId;
+                alias.exported = true;
+                alias.sourceFreeAbiVersion = 10;
+                program.functions.add(alias);
+            }
+            List<org.mosslang.compiler.ast.Function> matches = program.functions.stream()
+                    .filter(function -> callableId.equals(function.semanticCallableId)).toList();
+            for (org.mosslang.compiler.ast.Function function : matches) {
+                if (!function.params.isEmpty() && function.params.size() != parameters.size()) continue;
+                for (int index = 0; index < parameters.size(); index++) {
+                    if (function.params.size() <= index) {
+                        function.params.add(new org.mosslang.compiler.ast.Param("arg" + index, parameters.get(index)));
+                    } else {
+                        function.params.get(index).bindType(parameters.get(index));
+                    }
+                }
+                function.parameterAccessModes.clear();
+                for (org.mosslang.compiler.abi.AbiV10Records.Access access : summary.parameterAccess) {
+                    function.parameterAccessModes.add(switch (access) {
+                        case Read -> org.mosslang.compiler.types.AccessMode.Read;
+                        case Write -> org.mosslang.compiler.types.AccessMode.Write;
+                        case Consume -> org.mosslang.compiler.types.AccessMode.Consume;
+                    });
+                }
+                function.bindReturnType(result);
+                function.sourceFreeAbiVersion = 10;
+            }
+        }
+    }
+
     private static void rejectUnavailableSourceFreeV10Calls(Program program, String consumerFile)
             throws CompileError {
         List<org.mosslang.compiler.ast.Stmt> useSites = new ArrayList<>();
@@ -1471,6 +1546,8 @@ public class Main {
                     currentFn = null;
                 }
             }
+            seedV10ClosedFunctionDeclarations(program, modName, moduleId,
+                    typedV10Summaries, typedV10Bodies, cand);
             projectV10DirectReturnCallables(program, cand, typedV10Summaries, typedV10Bodies);
             restoreSourceFreeFailureArms(sourceFreeContractLines, program, modName, cand);
         } catch (CompileError error) {

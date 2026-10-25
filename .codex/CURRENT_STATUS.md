@@ -14594,3 +14594,17 @@ escaped quotes through `Vector[String]`, strips legacy generic rows, and
 executes string-length checks after import. All eleven Java unit-test classes
 pass under ABI-v9 and staged ABI-v10. This remains a closed literal profile;
 full logical ABI-v10 compatibility and native/SDK linkage are open.
+
+### Phase 25.3 continuation — seed closed ABI-v10 callables without legacy declarations
+
+The Java source-free loader now seeds a closed monomorphic callable declaration
+from a checked ABI-v10 summary when the legacy semantic declaration row is
+absent. Seeding runs after legacy rows are parsed so existing declarations keep
+their source parameter names. The new regression removes the `answer` legacy
+declaration, retains its ABI-v10 summary and checked body, imports the provider,
+and executes `provider__answer()` as `42`. Both staged ABI-v10 and default
+ABI-v9 Java suites pass all eleven classes; feedback validation and
+`git diff --check` pass. Coverage is limited to closed, monomorphic function
+summaries with supported checked bodies. Generic functions, nominal methods,
+effects, dependencies, full ABI-v10 contract completeness, and native/SDK
+integration remain open.

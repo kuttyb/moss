@@ -1108,6 +1108,28 @@ public final class ProjectBuilderMetadataTest {
         Path identityMossi = null;
         try {
             identityMossi = Files.createTempFile(Path.of("tmp"), "identity-provider-", ".mossi");
+            List<MossiRecord> answerRows = identityInterface.semanticContract.stream()
+                    .filter(record -> record.id.contains("answer") || record.payload.contains("fn answer"))
+                    .toList();
+            if (answerRows.isEmpty()) {
+                throw new AssertionError("could not isolate the legacy answer declaration for ABI-v10-only import");
+            }
+            identityInterface.semanticContract.removeAll(answerRows);
+            Files.write(identityMossi, CheckedBodyCodec.encodeMossiBytes(identityInterface));
+            Program answerConsumer = Parser.parseSource(""
+                    + "fn main():\n"
+                    + "  echo provider__answer()\n", "answer-consumer.moss");
+            org.mosslang.compiler.cli.Main.loadMossiFunctions(identityMossi, "provider", answerConsumer);
+            new org.mosslang.compiler.semantics.SemanticChecker(answerConsumer).run();
+            java.io.ByteArrayOutputStream answerOutput = new java.io.ByteArrayOutputStream();
+            new org.mosslang.compiler.interpreter.FastInterpreter(answerConsumer, false,
+                    new java.io.PrintStream(answerOutput),
+                    new java.io.PrintStream(new java.io.ByteArrayOutputStream())).run();
+            if (!"42\n".equals(answerOutput.toString(java.nio.charset.StandardCharsets.UTF_8))) {
+                throw new AssertionError("ABI-v10 closed summary/body did not import without its v9 declaration: "
+                        + answerOutput);
+            }
+            identityInterface.semanticContract.addAll(answerRows);
             for (int index = 0; index < identityInterface.semanticContract.size(); index++) {
                 MossiRecord record = identityInterface.semanticContract.get(index);
                 String withoutLegacyBody = record.payload.lines()
