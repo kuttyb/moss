@@ -208,6 +208,7 @@ public class FastInterpreter {
     private String traceCallableSpecialization = "";
     private String traceSemanticIdentity = "main@1";
     private boolean deferDomainStateTrace = false;
+    private int deferredSourceArgumentReads = 0;
 
     private String traceIdentity() {
         return traceSemanticIdentity;
@@ -383,6 +384,7 @@ public class FastInterpreter {
     private void traceLocalWrite(Stmt statement, String name, Value value, Value before,
                                  String function, int depth) {
         if (!trace) return;
+        String after = traceWriteValueSummary(value);
         eventId++;
         traceEvent("{\"event_id\":" + eventId + ",\"event\":\"LocalWrite\",\"function\":\""
                 + jsonEscape(function) + "\",\"source_file\":\"" + jsonEscape(statement.sourceFile)
@@ -390,11 +392,12 @@ public class FastInterpreter {
                 + statement.line + traceContextFields() + ",\"depth\":" + depth + ",\"detail\":\""
                 + jsonEscape(name) + "\"" + traceDomainFields()
                 + (before == null ? "" : ",\"before\":\"" + jsonEscape(traceWriteValueSummary(before)) + "\"")
-                + ",\"after\":\"" + jsonEscape(traceWriteValueSummary(value)) + "\"}");
+                + (after.isEmpty() ? "" : ",\"after\":\"" + jsonEscape(after) + "\"") + "}");
     }
 
     private void traceLocalWriteCurrent(String name, Value value, Value before) {
         if (!trace) return;
+        String after = traceWriteValueSummary(value);
         eventId++;
         traceEvent("{\"event_id\":" + eventId + ",\"event\":\"LocalWrite\",\"function\":\""
                 + jsonEscape(traceFunction) + "\",\"source_file\":\"" + jsonEscape(traceSourceFile)
@@ -402,7 +405,7 @@ public class FastInterpreter {
                 + traceLine + traceContextFields() + ",\"depth\":" + traceDepth + ",\"detail\":\""
                 + jsonEscape(name) + "\"" + traceDomainFields()
                 + (before == null ? "" : ",\"before\":\"" + jsonEscape(traceWriteValueSummary(before)) + "\"")
-                + ",\"after\":\"" + jsonEscape(traceWriteValueSummary(value)) + "\"}");
+                + (after.isEmpty() ? "" : ",\"after\":\"" + jsonEscape(after) + "\"") + "}");
     }
 
     private void traceLocalMutation(String name) {
@@ -428,7 +431,7 @@ public class FastInterpreter {
     }
 
     private void traceLocalRead(String name) {
-        if (!trace) return;
+        if (!trace || deferredSourceArgumentReads > 0) return;
         eventId++;
         traceEvent("{\"event_id\":" + eventId + ",\"event\":\"LocalRead\",\"function\":\""
                 + jsonEscape(traceFunction) + "\",\"source_file\":\"" + jsonEscape(traceSourceFile)
@@ -977,7 +980,7 @@ public class FastInterpreter {
             } else if (s.kind == Stmt.Kind.Reply || s.kind == Stmt.Kind.Return) {
                 Value rVal = (s.a != null && !s.a.isEmpty()) ? evalExpr(s.a, locals, currentDomain) : Value.ofUnit();
                 traceSimpleEvent(s, funcName, s.kind == Stmt.Kind.Reply ? "reply" : "Return",
-                        traceReturnValueSummary(rVal), depth);
+                        s.kind == Stmt.Kind.Reply ? traceValueSummary(rVal) : traceReturnValueSummary(rVal), depth);
                 throw new ReturnSignal(rVal);
             }
             lastVal = evalStmt(s, locals, currentDomain, funcName, depth);
@@ -1180,7 +1183,7 @@ public class FastInterpreter {
                                     + ",\"path\":\"" + jsonEscape(statePath)
                                     + "\",\"before\":\"" + jsonEscape(traceValueSummary(before))
                                     + "\",\"after\":\"" + jsonEscape(traceValueSummary(val)) + "\"}");
-                        }
+                        } else traceLocalWriteCurrent(varName, val, before);
                     }
                     return Value.ofUnit();
                 }
@@ -2057,6 +2060,8 @@ public class FastInterpreter {
             }
             List<Value> evaluatedArgs = new ArrayList<>();
             boolean wasDeferringStateTrace = deferDomainStateTrace;
+            int previousDeferredSourceArgumentReads = deferredSourceArgumentReads;
+            if (sourceCallable) deferredSourceArgumentReads++;
             if (sourceCallable && currentDomain != null) deferDomainStateTrace = true;
             try {
             for (int argumentIndex = 0; argumentIndex < argList.size(); argumentIndex++) {
@@ -2086,8 +2091,6 @@ public class FastInterpreter {
                         evaluatedArgs.add(Value.ofUnit());
                     } else if ((sourceCallable || domainConstructor)
                             && a.matches("[A-Za-z_][A-Za-z0-9_]*") && locals.containsKey(a)) {
-                        if (sourceCallable && tracesArgumentRead(callee, evaluatedArgs.size(), locals, currentDomain))
-                            traceValueRead(a, locals.get(a), null);
                         evaluatedArgs.add(locals.get(a));
                     } else {
                         evaluatedArgs.add(evalExpr(a, locals, currentDomain));
@@ -2096,6 +2099,7 @@ public class FastInterpreter {
             }
             } finally {
                 deferDomainStateTrace = wasDeferringStateTrace;
+                deferredSourceArgumentReads = previousDeferredSourceArgumentReads;
             }
 
             Value enumConstructor = makeEnumValue(callee, argList, evaluatedArgs);
@@ -2355,6 +2359,7 @@ public class FastInterpreter {
                                 String oldCallableSpecialization = traceCallableSpecialization;
                                 int oldLine = traceLine;
                                 int oldDepth = traceDepth;
+                                int oldDeferredSourceArgumentReads = deferredSourceArgumentReads;
                                 String methodFunction = m.owner + "." + m.name;
                                 int enterId = traceMethodEvent(m, "MethodEnter", m.line, null);
                                 if (trace && enterId != 0) {
@@ -2365,12 +2370,16 @@ public class FastInterpreter {
                                 traceSourceFile = m.sourceFile == null ? "" : m.sourceFile;
                                 traceSemanticIdentity = "method:" + methodFunction + "@" + m.line;
                                 traceCallableSpecialization = "";
+                                deferredSourceArgumentReads = 0;
+                                traceLine = m.body.isEmpty() ? m.line : m.body.get(0).line;
                                 boolean explicitReturn = false;
                                 boolean completed = false;
                                 try {
                                     res = evalBlock(m.body, 0, m.body.size(), mLocals, null, methodFunction,
                                             trace && enterId != 0 ? traceParentStack.size() : 0);
                                     if (m.resultExpression != null && !m.resultExpression.isEmpty()) {
+                                        traceLine = m.resultLine > 0 ? m.resultLine : m.line;
+                                        traceDepth = trace && enterId != 0 ? traceParentStack.size() : 0;
                                         res = evalExpr(m.resultExpression, mLocals, null);
                                     }
                                     completed = true;
@@ -2395,6 +2404,7 @@ public class FastInterpreter {
                                     traceCallableSpecialization = oldCallableSpecialization;
                                     traceLine = oldLine;
                                     traceDepth = oldDepth;
+                                    deferredSourceArgumentReads = oldDeferredSourceArgumentReads;
                                     for (int i = 0; i < m.params.size() && i < argList.size(); i++) {
                                         String rawArg = argList.get(i).trim();
                                         String pName = m.params.get(i).name;
@@ -2480,6 +2490,7 @@ public class FastInterpreter {
                     String oldCallableSpecialization = traceCallableSpecialization;
                     int oldLine = traceLine;
                     int oldDepth = traceDepth;
+                    int oldDeferredSourceArgumentReads = deferredSourceArgumentReads;
                     traceCallableSpecialization = specializationForCall(f, evaluatedArgs);
                     int enterId = traceFunctionEvent(f, "FunctionEnter", f.line);
                     if (trace && enterId != 0) {
@@ -2489,12 +2500,16 @@ public class FastInterpreter {
                     traceFunction = f.name;
                     traceSourceFile = f.sourceFile == null ? "" : f.sourceFile;
                     traceSemanticIdentity = "fn:" + f.name + "@" + f.line;
+                    deferredSourceArgumentReads = 0;
+                    traceLine = f.body.isEmpty() ? f.line : f.body.get(0).line;
                     boolean explicitReturn = false;
                     boolean completed = false;
                     try {
                         res = evalBlock(f.body, 0, f.body.size(), fnLocals, null, f.name,
                                 trace && enterId != 0 ? traceParentStack.size() : 0);
                         if (f.resultExpression != null && !f.resultExpression.isEmpty()) {
+                            traceLine = f.resultLine > 0 ? f.resultLine : f.line;
+                            traceDepth = trace && enterId != 0 ? traceParentStack.size() : 0;
                             res = evalExpr(f.resultExpression, fnLocals, null);
                         }
                         completed = true;
@@ -2519,6 +2534,7 @@ public class FastInterpreter {
                         traceCallableSpecialization = oldCallableSpecialization;
                         traceLine = oldLine;
                         traceDepth = oldDepth;
+                        deferredSourceArgumentReads = oldDeferredSourceArgumentReads;
                         for (int i = 0; i < f.params.size() && i < argList.size(); i++) {
                             String rawArg = argList.get(i).trim();
                             String pName = f.params.get(i).name;
@@ -2635,33 +2651,4 @@ public class FastInterpreter {
         return Value.ofUnit();
     }
 
-    private boolean tracesArgumentRead(String callee, int argumentIndex,
-                                       Map<String, Value> locals,
-                                       DomainInstance currentDomain) {
-        for (Function function : program.functions) {
-            if (!(function.name.equals(callee) || function.name.endsWith("__" + callee)
-                    || callee.endsWith("." + function.name)
-                    || (callee.contains(".") && function.name.equals(callee.replace('.', '_')))
-                    || (callee.contains(".") && function.name.endsWith("__"
-                    + callee.substring(callee.lastIndexOf('.') + 1))))
-                    || argumentIndex >= function.parameterAccessModes.size()) continue;
-            return function.parameterAccessModes.get(argumentIndex) != AccessMode.Read;
-        }
-        int dot = callee.lastIndexOf('.');
-        if (dot <= 0) return false;
-        String receiverName = callee.substring(0, dot).trim();
-        String methodName = callee.substring(dot + 1).trim();
-        Value receiver = locals.get(receiverName);
-        if (receiver == null && currentDomain != null) receiver = currentDomain.state.get(receiverName);
-        if (receiver == null || receiver.kind != Value.Kind.OBJECT) return false;
-        for (ObjectType object : program.objects) {
-            if (receiver.typeName == null || !receiver.typeName.equals(object.name)) continue;
-            for (Method method : object.methods) {
-                if (!method.name.equals(methodName)
-                        || argumentIndex >= method.parameterAccessModes.size()) continue;
-                return method.parameterAccessModes.get(argumentIndex) != AccessMode.Read;
-            }
-        }
-        return false;
-    }
 }

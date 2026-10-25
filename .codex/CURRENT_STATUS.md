@@ -15854,22 +15854,25 @@ also pass; live Eclipse JDT startup remains unavailable in this environment.
 These samples do not establish complete trace parity or live daemon readiness.
 
 ### Phase 25.3 continuation — focused Fast Debug trace follow-up
+### Phase 25.3 continuation — restore selected Fast Debug trace parity
 
-At the current uncommitted continuation, the Fast Debug interpreter now keeps
-match case binders from escaping into shadowed locals and reports local
-collection element reads with indexed paths. Enum return/reply trace details
-include the selected variant. The string-map fixture
-`tests/phase15_15_string_map.moss` now has identical C++/Java stdout and all 35
-trace events. `tests/phase15_15_enum_message.moss` has matching stdout and 32
-events, though event details still differ; `tests/phase15_15_enum_positive.moss`
-has matching stdout but 70 C++ versus 71 Java events. The mutable string
-fixture `tests/phase24_string_concat.moss` has matching stdout but 59 C++ versus
-63 Java events. These trace deltas are still being investigated and are not
-semantic parity evidence.
+A focused C++/Java trace comparison exposed three interpreter-tracing defects:
+source-call arguments emitted an extra caller-local read, expression-bodied
+function/method traces reused the caller's source line and depth, and local
+object field assignment omitted its write event. Java now attributes source
+argument reads to accesses inside the callee, restores the expression body's
+line/depth context, and emits local dotted-field writes with before/after
+values. Regression coverage checks local object field writes and match binder
+scope.
 
-Validation after these changes: `./scripts/java/test.sh` passes all twelve
-Java test classes, and `./scripts/java/package.sh` rebuilds the standalone JAR.
-No native execution, Rust compilation, Margo/SDK matrix, or full `make check`
-was run. Broad generic/effect/ownership coverage, native/source-free
-compatibility, real project gates, live Eclipse JDT daemon, and frozen
-candidate review remain open.
+Seven selected fixtures now match C++ stdout and complete JSON traces:
+`tests/phase15_15_enum_message.moss` (32 events),
+`tests/phase15_15_enum_positive.moss` (70),
+`tests/phase15_15_string_map.moss` (35),
+`tests/phase24_string_concat.moss` (59),
+`tests/phase106d1_borrowed_reads.moss` (217),
+`tests/phase106d1_read_projection.moss` (137), and
+`tests/phase5_tooling.moss` (57). All twelve Java unit-test classes pass under
+ABI-v9 and staged ABI-v10, and the standalone JAR was rebuilt. This evidence is
+limited to selected Fast Debug paths; broad interpreter, native/backend,
+source-free, Margo/SDK, and frozen-candidate acceptance remain open.

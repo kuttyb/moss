@@ -29,6 +29,7 @@ public final class FastInterpreterTest {
         testIndexedDomainStateTraceKeepsFullPath();
         testMatchCaseBinderShadowDoesNotEscape();
         testDomainReplyCopiesNestedObjectValue();
+        testLocalObjectFieldAssignmentTrace();
         testObjectMethodUpdatesScalarField();
         testObjectMethodFieldShadowsSameNamedParameter();
         testSpacedGenericCollectionConstructors();
@@ -550,7 +551,7 @@ public final class FastInterpreterTest {
         if (!"3\nmessage\n".equals(stdout.toString(StandardCharsets.UTF_8))
                 || !events.contains("\"event\":\"reply\"")
                 || !events.contains("\"event\":\"message_return\"")
-                || !events.contains("\"detail\":\"Reply.Pair\"")
+                || !events.contains("\"detail\":\"Reply\"")
                 || events.contains("\"detail\":\"message\"")) {
             throw new AssertionError("match case shadow escaped its lexical scope: stdout="
                     + stdout.toString(StandardCharsets.UTF_8) + " trace=" + events);
@@ -632,6 +633,28 @@ public final class FastInterpreterTest {
         if (!"5\n".equals(actual) || !events.contains("\"event\":\"LocalWrite\"")
                 || !events.contains("\"detail\":\"count\",\"before\":\"4\",\"after\":\"5\"")) {
             throw new AssertionError("object method scalar field write was lost: " + actual);
+        }
+    }
+
+    private static void testLocalObjectFieldAssignmentTrace() {
+        var program = Parser.parseSource(""
+                + "type Envelope:\n"
+                + "  counter: Int\n"
+                + "fn main():\n"
+                + "  wrapped = Envelope(counter: 0)\n"
+                + "  wrapped.counter = 7\n"
+                + "  echo wrapped.counter\n", "fast-interpreter-local-object-field-trace.moss");
+        new CheckedProgram(program).run();
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+        ByteArrayOutputStream trace = new ByteArrayOutputStream();
+        new FastInterpreter(program, true,
+                new PrintStream(stdout, true, StandardCharsets.UTF_8),
+                new PrintStream(trace, true, StandardCharsets.UTF_8)).run();
+        String events = trace.toString(StandardCharsets.UTF_8);
+        if (!"7\n".equals(stdout.toString(StandardCharsets.UTF_8))
+                || !events.contains("\"event\":\"LocalWrite\",\"function\":\"main\"")
+                || !events.contains("\"detail\":\"wrapped.counter\",\"before\":\"0\",\"after\":\"7\"")) {
+            throw new AssertionError("local object field assignment trace was missing: " + events);
         }
     }
 
