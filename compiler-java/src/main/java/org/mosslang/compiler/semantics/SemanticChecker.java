@@ -4805,7 +4805,10 @@ public class SemanticChecker {
             if (!visited.add(visitKey)) continue;
             int bodyIndent = function.body.stream().filter(Objects::nonNull)
                     .mapToInt(statement -> statement.indent).min().orElse(-1);
-            for (Stmt statement : function.body) {
+            Map<Integer, Map<String, String>> branchAliases = collectHandlerBranchAliasJoins(
+                    function.body, bodyIndent, domain, handler, contextualTypes);
+            for (int statementIndex = 0; statementIndex < function.body.size(); statementIndex++) {
+                Stmt statement = function.body.get(statementIndex);
                 String bodyExpression = statementExpressionText(statement);
                 if (bodyExpression != null) {
                     collectHandlerMethodRaises(bodyExpression, domain, handler, contextualTypes, raised);
@@ -4829,6 +4832,8 @@ public class SemanticChecker {
                     if (aliasType != null) contextualTypes.put(statement.a.trim(), aliasType);
                     else contextualTypes.remove(statement.a.trim());
                 }
+                Map<String, String> joinedAliases = branchAliases.get(statementIndex);
+                if (joinedAliases != null) contextualTypes.putAll(joinedAliases);
             }
             if (function.resultExpression != null) {
                 collectHandlerMethodRaises(function.resultExpression, domain, handler,
@@ -4843,6 +4848,69 @@ public class SemanticChecker {
                 }
             }
         }
+    }
+
+    private Map<Integer, Map<String, String>> collectHandlerBranchAliasJoins(
+            List<Stmt> statements, int baseIndent, Domain domain, Handler handler,
+            Map<String, String> contextualTypes) {
+        Map<Integer, Map<String, String>> joins = new HashMap<>();
+        if (baseIndent < 0) return joins;
+        for (int ifIndex = 0; ifIndex < statements.size(); ifIndex++) {
+            Stmt branch = statements.get(ifIndex);
+            if (branch == null || branch.kind != Stmt.Kind.If || branch.indent != baseIndent) continue;
+            int thenEnd = ifIndex + 1;
+            while (thenEnd < statements.size()) {
+                Stmt candidate = statements.get(thenEnd);
+                if (candidate != null && candidate.indent <= baseIndent) break;
+                thenEnd++;
+            }
+            if (thenEnd >= statements.size()) continue;
+            Stmt otherwise = statements.get(thenEnd);
+            if (otherwise == null || otherwise.kind != Stmt.Kind.Else
+                    || otherwise.indent != baseIndent) continue;
+            int elseEnd = thenEnd + 1;
+            while (elseEnd < statements.size()) {
+                Stmt candidate = statements.get(elseEnd);
+                if (candidate != null && candidate.indent <= baseIndent) break;
+                elseEnd++;
+            }
+            Map<String, String> thenAliases = collectHandlerBlockAliases(
+                    statements, ifIndex + 1, thenEnd, domain, handler, contextualTypes);
+            Map<String, String> elseAliases = collectHandlerBlockAliases(
+                    statements, thenEnd + 1, elseEnd, domain, handler, contextualTypes);
+            Map<String, String> common = new HashMap<>();
+            for (Map.Entry<String, String> alias : thenAliases.entrySet()) {
+                if (alias.getValue().equals(elseAliases.get(alias.getKey())))
+                    common.put(alias.getKey(), alias.getValue());
+            }
+            if (!common.isEmpty() && elseEnd > thenEnd)
+                joins.put(elseEnd - 1, common);
+            if (elseEnd > thenEnd) ifIndex = elseEnd - 1;
+        }
+        return joins;
+    }
+
+    private Map<String, String> collectHandlerBlockAliases(List<Stmt> statements,
+                                                           int start, int end,
+                                                           Domain domain, Handler handler,
+                                                           Map<String, String> contextualTypes) {
+        Map<String, String> aliases = new HashMap<>();
+        int blockIndent = statements.subList(start, end).stream().filter(Objects::nonNull)
+                .mapToInt(statement -> statement.indent).min().orElse(-1);
+        if (blockIndent < 0) return aliases;
+        for (int index = start; index < end; index++) {
+            Stmt statement = statements.get(index);
+            if (statement == null || statement.indent != blockIndent
+                    || (statement.kind != Stmt.Kind.Let && statement.kind != Stmt.Kind.Var
+                        && statement.kind != Stmt.Kind.Assign)
+                    || statement.a == null || statement.b == null
+                    || !statement.a.trim().matches("[A-Za-z_][A-Za-z0-9_]*")
+                    || !statement.b.trim().matches("[A-Za-z_][A-Za-z0-9_]*")) continue;
+            String aliasType = resolveHandlerReceiverType(statement.b, domain, handler,
+                    contextualTypes);
+            if (aliasType != null) aliases.put(statement.a.trim(), aliasType);
+        }
+        return aliases;
     }
 
     private String resolveHandlerReceiverType(String receiverPath, Domain domain, Handler handler,

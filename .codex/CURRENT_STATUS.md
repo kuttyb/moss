@@ -16782,6 +16782,18 @@ both reject the unhandled alias chain and accept its matching `on_fail` control.
 Branch-dependent aliases and native execution remain unverified.
 
 
+### Phase 25.3 continuation — same-type branch aliases through helper chains
+
+A branch alias repro assigned `alias = box` in both arms before passing it to
+a second generic helper that called `value.risky(1)`. C++ rejected the unhandled
+root while Java accepted it after the prior straight-line alias correction.
+Root raise traversal now joins same-name aliases only when both top-level arms
+resolve to the same concrete receiver type, then propagates the joined type to
+subsequent calls. `SemanticCheckerTest` passes; C++ and Java reject the
+unhandled case and accept its `on_fail` control. Different-type and nested
+branch joins remain open.
+
+
 ### Phase 25.3 continuation — Fast Debug indexed string-key trace
 
 A C++/Java `examples/collections.moss` trace comparison found one event detail

@@ -2565,6 +2565,35 @@ public class SemanticCheckerTest {
                 + "fn main():\n"
                 + "  worker = Worker()\n"
                 + "  message worker.Run()\n", "ROOT_UNHANDLED_RAISE");
+        String branchAlias = ""
+                + "enum Failure:\n"
+                + "  Bad\n"
+                + "type Box:\n"
+                + "  fn risky(value: Int) -> Int:\n"
+                + "    raise Failure.Bad\n"
+                + "fn invoke(box):\n"
+                + "  if true:\n"
+                + "    alias = box\n"
+                + "  else:\n"
+                + "    alias = box\n"
+                + "  forward(alias)\n"
+                + "fn forward(value):\n"
+                + "  result = value.risky(1)\n"
+                + "domain Worker:\n"
+                + "  fn Run():\n"
+                + "    box = Box()\n"
+                + "    invoke(box)\n";
+        assertCompileError(branchAlias
+                + "fn main():\n"
+                + "  worker = Worker()\n"
+                + "  message worker.Run()\n", "ROOT_UNHANDLED_RAISE");
+        Program branchAliasHandled = Parser.parseSource(branchAlias
+                + "  on_fail Failure.Bad:\n"
+                + "    pass\n"
+                + "fn main():\n"
+                + "  worker = Worker()\n"
+                + "  message worker.Run()\n", "root-ingress-branch-alias-method-handled.moss");
+        new SemanticChecker(branchAliasHandled).run();
         Program handled = Parser.parseSource(""
                 + "enum Failure:\n"
                 + "  Bad\n"

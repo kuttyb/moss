@@ -897,6 +897,17 @@ accept the matching `on_fail` control. Branch-dependent aliases and native
 execution remain open.
 
 
+### Correction — same-type branch aliases through helper chains
+
+The helper-chain receiver was assigned `alias = box` in both arms of an
+`if/else`; Java still accepted the unhandled root while C++ rejected it. Root
+raise traversal now joins aliases only when both top-level arms resolve the
+same alias name to the same concrete receiver type, then forwards that type to
+subsequent helpers. `SemanticCheckerTest` passes; C++ and Java reject the
+unhandled case and accept its `on_fail` control. Different-type and nested
+branch joins remain open.
+
+
 ### Correction — indexed string-key Fast Debug trace detail
 
 `examples/collections.moss` produced identical output in C++ and Java Fast
