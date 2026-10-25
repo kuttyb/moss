@@ -1,0 +1,49 @@
+{
+  "traceEvents": [
+    {"name": "process_name", "ph": "M", "pid": 2382754, "args": {"name": "moss"}},
+    {"name": "thread_name", "ph": "M", "pid": 2382754, "tid": 1, "args": {"name": "main"}},
+    {"name": "project_discovery", "cat": "compiler", "ph": "X", "ts": 27, "dur": 70, "pid": 2382754, "tid": 1, "args": {}},
+    {"name": "parsing", "cat": "compiler", "ph": "X", "ts": 108, "dur": 816, "pid": 2382754, "tid": 1, "args": {}},
+    {"name": "parsing", "cat": "compiler", "ph": "X", "ts": 1004, "dur": 707, "pid": 2382754, "tid": 1, "args": {}},
+    {"name": "parsing", "cat": "compiler", "ph": "X", "ts": 1785, "dur": 111, "pid": 2382754, "tid": 1, "args": {}},
+    {"name": "parsing", "cat": "compiler", "ph": "X", "ts": 1917, "dur": 645, "pid": 2382754, "tid": 1, "args": {}},
+    {"name": "parsing", "cat": "compiler", "ph": "X", "ts": 2592, "dur": 957, "pid": 2382754, "tid": 1, "args": {}},
+    {"name": "parsing", "cat": "compiler", "ph": "X", "ts": 3581, "dur": 119, "pid": 2382754, "tid": 1, "args": {}},
+    {"name": "module_resolution", "cat": "compiler", "ph": "X", "ts": 3710, "dur": 24, "pid": 2382754, "tid": 1, "args": {}},
+    {"name": "process_main", "cat": "compiler", "ph": "X", "ts": 1, "dur": 3931, "pid": 2382754, "tid": 1, "args": {}},
+    {"name": "compiler_counters", "cat": "counters", "ph": "C", "ts": 3965, "pid": 2382754, "tid": 1, "args": {}}
+  ],
+  "displayTimeUnit": "ms",
+  "metadata": {
+    "format": "Chrome Trace Event JSON",
+    "compiler": "moss-opt",
+    "counters": {
+
+    },
+    "operations": {
+
+    },
+    "stage_totals": {
+      "module_resolution": {
+        "calls": 1,
+        "total_ms": 0.024618,
+        "total_ns": 24618
+      },
+      "parsing": {
+        "calls": 6,
+        "total_ms": 3.35703,
+        "total_ns": 3357027
+      },
+      "process_main": {
+        "calls": 1,
+        "total_ms": 3.93179,
+        "total_ns": 3931792
+      },
+      "project_discovery": {
+        "calls": 1,
+        "total_ms": 0.070188,
+        "total_ns": 70188
+      }
+    }
+  }
+}

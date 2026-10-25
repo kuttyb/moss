@@ -1,0 +1,51 @@
+{
+  "traceEvents": [
+    {"name": "process_name", "ph": "M", "pid": 2382737, "args": {"name": "moss"}},
+    {"name": "thread_name", "ph": "M", "pid": 2382737, "tid": 1, "args": {"name": "main"}},
+    {"name": "project_discovery", "cat": "compiler", "ph": "X", "ts": 56, "dur": 112, "pid": 2382737, "tid": 1, "args": {}},
+    {"name": "parsing", "cat": "compiler", "ph": "X", "ts": 199, "dur": 2208, "pid": 2382737, "tid": 1, "args": {}},
+    {"name": "parsing", "cat": "compiler", "ph": "X", "ts": 2539, "dur": 440, "pid": 2382737, "tid": 1, "args": {}},
+    {"name": "parsing", "cat": "compiler", "ph": "X", "ts": 3022, "dur": 251, "pid": 2382737, "tid": 1, "args": {}},
+    {"name": "parsing", "cat": "compiler", "ph": "X", "ts": 3302, "dur": 731, "pid": 2382737, "tid": 1, "args": {}},
+    {"name": "parsing", "cat": "compiler", "ph": "X", "ts": 4115, "dur": 1672, "pid": 2382737, "tid": 1, "args": {}},
+    {"name": "parsing", "cat": "compiler", "ph": "X", "ts": 5828, "dur": 770, "pid": 2382737, "tid": 1, "args": {}},
+    {"name": "parsing", "cat": "compiler", "ph": "X", "ts": 6628, "dur": 453, "pid": 2382737, "tid": 1, "args": {}},
+    {"name": "parsing", "cat": "compiler", "ph": "X", "ts": 7106, "dur": 1331, "pid": 2382737, "tid": 1, "args": {}},
+    {"name": "module_resolution", "cat": "compiler", "ph": "X", "ts": 8471, "dur": 38, "pid": 2382737, "tid": 1, "args": {}},
+    {"name": "process_main", "cat": "compiler", "ph": "X", "ts": 2, "dur": 8815, "pid": 2382737, "tid": 1, "args": {}},
+    {"name": "compiler_counters", "cat": "counters", "ph": "C", "ts": 8875, "pid": 2382737, "tid": 1, "args": {}}
+  ],
+  "displayTimeUnit": "ms",
+  "metadata": {
+    "format": "Chrome Trace Event JSON",
+    "compiler": "moss-opt",
+    "counters": {
+
+    },
+    "operations": {
+
+    },
+    "stage_totals": {
+      "module_resolution": {
+        "calls": 1,
+        "total_ms": 0.038283,
+        "total_ns": 38283
+      },
+      "parsing": {
+        "calls": 8,
+        "total_ms": 7.85931,
+        "total_ns": 7859315
+      },
+      "process_main": {
+        "calls": 1,
+        "total_ms": 8.81577,
+        "total_ns": 8815769
+      },
+      "project_discovery": {
+        "calls": 1,
+        "total_ms": 0.112951,
+        "total_ns": 112951
+      }
+    }
+  }
+}

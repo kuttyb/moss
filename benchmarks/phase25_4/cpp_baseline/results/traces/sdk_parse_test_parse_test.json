@@ -1,0 +1,47 @@
+{
+  "traceEvents": [
+    {"name": "process_name", "ph": "M", "pid": 2382757, "args": {"name": "moss"}},
+    {"name": "thread_name", "ph": "M", "pid": 2382757, "tid": 1, "args": {"name": "main"}},
+    {"name": "project_discovery", "cat": "compiler", "ph": "X", "ts": 37, "dur": 99, "pid": 2382757, "tid": 1, "args": {}},
+    {"name": "parsing", "cat": "compiler", "ph": "X", "ts": 153, "dur": 405, "pid": 2382757, "tid": 1, "args": {}},
+    {"name": "parsing", "cat": "compiler", "ph": "X", "ts": 596, "dur": 187, "pid": 2382757, "tid": 1, "args": {}},
+    {"name": "parsing", "cat": "compiler", "ph": "X", "ts": 811, "dur": 298, "pid": 2382757, "tid": 1, "args": {}},
+    {"name": "parsing", "cat": "compiler", "ph": "X", "ts": 1150, "dur": 167, "pid": 2382757, "tid": 1, "args": {}},
+    {"name": "module_resolution", "cat": "compiler", "ph": "X", "ts": 1340, "dur": 34, "pid": 2382757, "tid": 1, "args": {}},
+    {"name": "process_main", "cat": "compiler", "ph": "X", "ts": 2, "dur": 1450, "pid": 2382757, "tid": 1, "args": {}},
+    {"name": "compiler_counters", "cat": "counters", "ph": "C", "ts": 1482, "pid": 2382757, "tid": 1, "args": {}}
+  ],
+  "displayTimeUnit": "ms",
+  "metadata": {
+    "format": "Chrome Trace Event JSON",
+    "compiler": "moss-opt",
+    "counters": {
+
+    },
+    "operations": {
+
+    },
+    "stage_totals": {
+      "module_resolution": {
+        "calls": 1,
+        "total_ms": 0.034085,
+        "total_ns": 34085
+      },
+      "parsing": {
+        "calls": 4,
+        "total_ms": 1.05826,
+        "total_ns": 1058259
+      },
+      "process_main": {
+        "calls": 1,
+        "total_ms": 1.45029,
+        "total_ns": 1450286
+      },
+      "project_discovery": {
+        "calls": 1,
+        "total_ms": 0.099504,
+        "total_ns": 99504
+      }
+    }
+  }
+}
