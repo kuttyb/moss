@@ -15758,3 +15758,16 @@ trace comparison now has 217 C++ events versus 224 Java events; the remaining
 Java-only events are pipeline and message-payload reads. All twelve Java unit
 classes pass under ABI-v9 and staged ABI-v10. The domain-binding identity has
 a focused test.
+
+
+### Phase 25.3 continuation — focused compiler acceptance sample
+
+Compared `moss --check --json` on eight standalone examples with the C++ and
+Java compilers. Both accept `functional_objects`, `domains_and_messages`,
+`traits`, `static_duck_typing`, `collections_and_methods`, and
+`message_payload_reply`. Both reject `use_after_transfer` with
+`OWNERSHIP_USE_AFTER_CONSUME`, and both reject `domain_route_cycle` with the
+current generic `MOSS_COMPILE_ERROR` envelope. This is a small acceptance
+sample, not evidence of full language parity; generic inference, cross-module
+ownership/effect closure, source-free execution, native correctness, and SDK
+acceptance remain open.
