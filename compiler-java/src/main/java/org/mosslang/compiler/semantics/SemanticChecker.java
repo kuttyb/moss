@@ -4393,6 +4393,24 @@ public class SemanticChecker {
         throw error;
     }
 
+    private void rejectSameDomainMessage(int line, String call, OwnershipEnv env, TypeSolver solver) {
+        String target = call == null ? "" : call.trim();
+        if (target.startsWith("message ")) target = target.substring("message ".length()).trim();
+        int dot = target.indexOf('.');
+        int open = target.indexOf('(');
+        if (dot <= 0 || open <= dot || !target.endsWith(")")
+                || currentSemanticIdentity == null || !currentSemanticIdentity.startsWith("handler:")) return;
+        TypeRef targetType = env.get(target.substring(0, dot).trim());
+        TypeRef resolvedTarget = targetType == null ? null : solver.resolve(targetType);
+        int separator = currentSemanticIdentity.indexOf('.', "handler:".length());
+        if (separator > 0 && resolvedTarget != null && resolvedTarget.kind() == TypeKind.Domain
+                && currentSemanticIdentity.substring("handler:".length(), separator).equals(resolvedTarget.name())) {
+            throw new CompileError(line,
+                    "same-domain handler-to-handler messages are illegal; use an ordinary helper function",
+                    "MOSS_COMPILE_ERROR");
+        }
+    }
+
     private TypeRef recoveryBindingType(List<Stmt> statements, int start, int recoverIndex, int indent) {
         int tryIndex = -1;
         for (int index = recoverIndex - 1; index >= start; index--) {
@@ -4740,21 +4758,8 @@ public class SemanticChecker {
                     if (insideHandler && s.a.equals("self")) {
                         throw new CompileError(s.line, "self-send is illegal; use helper functions", "ILLEGAL_SELF_SEND");
                     }
-                    if (insideHandler && !s.a.equals("self")
-                            && currentSemanticIdentity != null
-                            && currentSemanticIdentity.startsWith("handler:")) {
-                        int separator = currentSemanticIdentity.indexOf('.', "handler:".length());
-                        TypeRef targetType = env.get(s.a.trim());
-                        TypeRef resolvedTarget = targetType != null ? solver.resolve(targetType) : null;
-                        if (separator > 0 && resolvedTarget != null
-                                && resolvedTarget.kind() == TypeKind.Domain
-                                && currentSemanticIdentity.substring("handler:".length(), separator)
-                                        .equals(resolvedTarget.name())) {
-                            throw new CompileError(s.line,
-                                    "same-domain handler-to-handler messages are illegal; use an ordinary helper function",
-                                    "MOSS_COMPILE_ERROR");
-                        }
-                    }
+                    rejectSameDomainMessage(s.line,
+                            s.a + "." + s.b + "(" + String.join(", ", s.args) + ")", env, solver);
                 }
                 requireAvailable(s.line, s.text, env);
                 String callExpr;
@@ -4816,6 +4821,8 @@ public class SemanticChecker {
                 } else if (replyExpr.startsWith("reply ")) {
                     replyExpr = replyExpr.substring(6).trim();
                 }
+                if (replyExpr.startsWith("message "))
+                    rejectSameDomainMessage(s.line, replyExpr, env, solver);
                 TypeRef inferred = replyExpr.isEmpty() ? TypeRef.unit() : typer.infer(replyExpr, s.line, env.typeEnv);
                 if (expectedType != null && !solver.unify(inferred, expectedType)) {
                     throw new CompileError(s.line, "conflicting reply types in handler: expected '" +

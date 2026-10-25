@@ -16400,5 +16400,17 @@ message payload indirectly. The regression
 `phase26_payload_transitive_write.moss` now rejects in both Java and C++ with
 `MOSS_COMPILE_ERROR`. This supplements the existing direct payload-write
 checks; broader nested and callback paths remain unverified. The bounded
-50-file negative slice has not yet been rerun. Native and release gates remain
-unrun.
+50-file negative slice was refreshed: C++ accepts 0, Java accepts 15, and
+there are no C++-only acceptances. The remaining Java-only accepts are 13
+Executor/FileIO lifecycle or capability cases, one historical domain-handle
+case, and one callable-result inference case. This is a bounded negative
+checker screen, not proof of semantic or backend parity. Native and release
+gates remain unrun.
+
+### Phase 25.3 continuation — same-domain messages nested in reply expressions
+
+Java's same-domain handler-message restriction now also checks a `message`
+expression used directly as a handler reply. The fixture
+`phase221_same_domain_handler.moss` now rejects in both compilers. The
+refreshed 51–100 negative slice was run before this narrow correction and
+showed 15 Java-only accepts; the slice will be refreshed at the next checkpoint.

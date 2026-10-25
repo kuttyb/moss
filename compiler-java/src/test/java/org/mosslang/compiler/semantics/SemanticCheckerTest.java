@@ -1169,6 +1169,18 @@ public class SemanticCheckerTest {
                 + "  pass\n", "same-domain-handler-message.moss");
         expectCompileError(sameDomain, "MOSS_COMPILE_ERROR",
                 "same-domain handlers must use ordinary helper calls");
+
+        Program sameDomainReply = Parser.parseSource(""
+                + "domain Worker:\n"
+                + "  domainroutes(peer: Worker)\n"
+                + "  fn Read() -> Int:\n"
+                + "    reply 42\n"
+                + "  fn Forward() -> Int:\n"
+                + "    reply message peer.Read()\n"
+                + "fn main():\n"
+                + "  pass\n", "same-domain-reply-message.moss");
+        expectCompileError(sameDomainReply, "MOSS_COMPILE_ERROR",
+                "a reply expression cannot hide a same-domain handler message");
     }
 
     private static void testDomainRoutesCannotBeReassigned() {
