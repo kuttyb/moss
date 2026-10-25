@@ -14957,3 +14957,17 @@ Validation: uncaught and recovered method-chain reproductions agree with C++;
 all eleven Java unit-test classes pass. Method-local calls through local aliases,
 generic substitutions, imported methods, and full transitive raise closure
 remain open.
+
+
+### Phase 25.3 continuation — propagate raises across ordinary helper chains
+
+Main-root validation now recursively collects direct raised variants through
+ordinary function calls. It checks recovery at each function callsite, so
+variants caught inside a helper do not escape to its caller. The minimized
+`main → relay → fail` chain is rejected when uncaught; matching recovery remains
+accepted.
+
+Validation: both compilers reject the uncaught chain with `MOSS_COMPILE_ERROR`;
+all eleven Java unit-test classes pass, including scalar-return error carrier
+and multi-arm recovery reachability coverage. Interprocedural method calls from
+ordinary functions, generic summaries, and imported raise closure remain open.

@@ -1323,6 +1323,7 @@ public class SemanticChecker {
             }
             env = checkBlock(program.main.body, 0, program.main.body.size(), env, typer, solver, false, "main", TypeRef.unit());
             validateDirectMainRaises(program.main.body);
+            validateMainFunctionRaises(program.main.body);
             validateMainMethodRaises(program.main.body, env, solver);
             validateRootIngressRaiseTotality(program.main.body, env, solver);
             checkConcreteDomainRouteCycles(program.main.body);
@@ -1425,6 +1426,7 @@ public class SemanticChecker {
     }
 
     private boolean isMainRaiseHandled(List<Stmt> statements, int raiseIndex, String variant) {
+        if (statements == null || raiseIndex < 0 || raiseIndex >= statements.size()) return false;
         Stmt raised = statements.get(raiseIndex);
         for (int tryIndex = 0; tryIndex < raiseIndex; tryIndex++) {
             Stmt tryStatement = statements.get(tryIndex);
@@ -1435,17 +1437,23 @@ public class SemanticChecker {
                 bodyEnd++;
             }
             if (raiseIndex >= bodyEnd || bodyEnd >= statements.size()) continue;
-            Stmt recover = statements.get(bodyEnd);
-            if (recover == null || recover.kind != Stmt.Kind.Recover
-                    || recover.indent != tryStatement.indent) continue;
-            String pattern = recover.a == null ? "" : recover.a.trim();
-            if (pattern.isEmpty()) return true;
-            for (String part : org.mosslang.compiler.parser.ParserSupport.splitTopLevel(pattern, ',')) {
-                String selected = part.trim();
-                if (!selected.contains(".")) return true;
-                int payload = selected.indexOf('(');
-                if (payload >= 0) selected = selected.substring(0, payload).trim();
-                if (variant.equals(selected)) return true;
+            int recoverIndex = bodyEnd;
+            while (recoverIndex < statements.size()) {
+                Stmt recover = statements.get(recoverIndex);
+                if (recover == null || recover.kind != Stmt.Kind.Recover
+                        || recover.indent != tryStatement.indent) break;
+                String pattern = recover.a == null ? "" : recover.a.trim();
+                if (pattern.isEmpty()) return true;
+                for (String part : org.mosslang.compiler.parser.ParserSupport.splitTopLevel(pattern, ',')) {
+                    String selected = part.trim();
+                    if (!selected.contains(".")) return true;
+                    int payload = selected.indexOf('(');
+                    if (payload >= 0) selected = selected.substring(0, payload).trim();
+                    if (variant.equals(selected)) return true;
+                }
+                recoverIndex++;
+                while (recoverIndex < statements.size()
+                        && statements.get(recoverIndex).indent > tryStatement.indent) recoverIndex++;
             }
         }
         return false;
@@ -1474,6 +1482,68 @@ public class SemanticChecker {
                 }
             }
         }
+    }
+
+    private void validateMainFunctionRaises(List<Stmt> statements) {
+        for (int statementIndex = 0; statementIndex < statements.size(); statementIndex++) {
+            String expression = statementExpressionText(statements.get(statementIndex));
+            if (expression.isBlank()) continue;
+            for (Function function : functions.values()) {
+                if (function.returnType != null && !function.returnType.isBlank()
+                        && !"unit".equalsIgnoreCase(function.returnType)) continue;
+                if (!containsFunctionCall(expression, function.name)) continue;
+                for (String variant : collectFunctionRaiseVariants(function, new HashSet<>())) {
+                    if (!isMainRaiseHandled(statements, statementIndex, variant)) {
+                        throw new CompileError(program.main.line,
+                                "main may not let typed errors escape; handle every raised variant with try/recover",
+                                "MOSS_COMPILE_ERROR");
+                    }
+                }
+            }
+        }
+    }
+
+    private Set<String> collectFunctionRaiseVariants(Function function, Set<String> visited) {
+        Set<String> variants = new LinkedHashSet<>();
+        if (function == null || !visited.add(function.name)) return variants;
+        for (int index = 0; index < function.body.size(); index++) {
+            Stmt statement = function.body.get(index);
+            if (statement == null) continue;
+            if (statement.kind == Stmt.Kind.Raise && statement.a != null && !statement.a.isBlank()) {
+                String variant = statement.a.trim();
+                int payload = variant.indexOf('(');
+                String callee = payload > 0 ? variant.substring(0, payload).trim() : "";
+                boolean raisesFromFunctionCall = payload > 0 && functions.containsKey(callee);
+                if (!raisesFromFunctionCall) {
+                    if (payload >= 0) variant = variant.substring(0, payload).trim();
+                    if (!isMainRaiseHandled(function.body, index, variant)) variants.add(variant);
+                }
+            }
+            collectNestedFunctionRaiseVariants(statementExpressionText(statement), function.body, index,
+                    visited, variants);
+        }
+        if (function.resultExpression != null)
+            collectNestedFunctionRaiseVariants(function.resultExpression, function.body,
+                    function.body.size(), visited, variants);
+        return variants;
+    }
+
+    private void collectNestedFunctionRaiseVariants(String expression, List<Stmt> callerBody,
+                                                    int callIndex, Set<String> visited,
+                                                    Set<String> variants) {
+        for (Function candidate : functions.values()) {
+            if (!containsFunctionCall(expression, candidate.name)) continue;
+            for (String raised : collectFunctionRaiseVariants(candidate, visited)) {
+                if (!isMainRaiseHandled(callerBody, callIndex, raised)) variants.add(raised);
+            }
+        }
+    }
+
+    private boolean containsFunctionCall(String expression, String functionName) {
+        return expression != null && functionName != null
+                && java.util.regex.Pattern.compile("(?<![A-Za-z0-9_])"
+                        + java.util.regex.Pattern.quote(functionName) + "\\s*\\(")
+                        .matcher(expression).find();
     }
 
     private Set<String> collectMethodRaiseVariants(Method method, Set<String> visited) {

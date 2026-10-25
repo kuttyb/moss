@@ -927,6 +927,22 @@ public class SemanticCheckerTest {
                 + "  recover Trouble.Bad:\n"
                 + "    pass\n", "main-handles-nested-method-raised-variant.moss");
         new SemanticChecker(nestedMethodHandled).run();
+
+        String functionPrefix = prefix
+                + "fn fail():\n"
+                + "  raise Trouble.Bad\n"
+                + "fn relay():\n"
+                + "  fail()\n";
+        assertCompileError(functionPrefix
+                + "fn main():\n"
+                + "  relay()\n", "MOSS_COMPILE_ERROR");
+        Program functionHandled = Parser.parseSource(functionPrefix
+                + "fn main():\n"
+                + "  try:\n"
+                + "    relay()\n"
+                + "  recover Trouble.Bad:\n"
+                + "    pass\n", "main-handles-function-chain-raised-variant.moss");
+        new SemanticChecker(functionHandled).run();
     }
 
     private static void testExecutorRootRequiresRaiseHandling() {
