@@ -147,6 +147,7 @@ public class SemanticChecker {
         program.typeContext = this.typeContext;
         try (var scope = TypeContext.openScope(typeContext)) {
             collectDeclarations();
+            validateDomainHandleDeclarations();
             validateCollectionTypeArities();
             checkEnums();
             checkObjects();
@@ -411,6 +412,68 @@ public class SemanticChecker {
                 } catch (Exception ignored) {}
             }
         }
+    }
+
+    private void validateDomainHandleDeclarations() {
+        for (ObjectType object : program.objects) {
+            for (Field field : object.fields)
+                rejectDomainHandleType("object field '" + object.name + "." + field.name + "'",
+                        field.type, field.typeRef, field.line);
+            for (Method method : object.methods) {
+                for (Param parameter : method.params)
+                    rejectDomainHandleType("method parameter '" + method.name + "." + parameter.name + "'",
+                            parameter.type, parameter.typeRef, method.line);
+                rejectDomainHandleType("method result '" + method.name + "'", method.returnType,
+                        method.returnTypeRef, method.line);
+            }
+        }
+        for (Trait trait : program.traits) {
+            for (TraitMethod method : trait.methods) {
+                for (Param parameter : method.params)
+                    rejectDomainHandleType("trait method parameter '" + method.name + "." + parameter.name + "'",
+                            parameter.type, parameter.typeRef, method.line);
+                rejectDomainHandleType("trait method result '" + method.name + "'", method.returnType,
+                        method.returnTypeRef, method.line);
+            }
+        }
+        for (Domain domain : program.domains) {
+            for (Field field : domain.state)
+                rejectDomainHandleType("domain state field '" + domain.name + "." + field.name + "'",
+                        field.type, field.typeRef, field.line);
+            for (Handler handler : domain.handlers) {
+                for (Param parameter : handler.params)
+                    rejectDomainHandleType("handler payload '" + domain.name + "." + handler.name + "."
+                                    + parameter.name,
+                            parameter.type, parameter.typeRef, handler.line);
+                rejectDomainHandleType("handler reply '" + domain.name + "." + handler.name + "'",
+                        handler.replyType, handler.replyTypeRef, handler.line);
+            }
+        }
+        for (Function function : program.functions) {
+            for (Param parameter : function.params)
+                rejectDomainHandleType("function parameter '" + function.name + "." + parameter.name + "'",
+                        parameter.type, parameter.typeRef, function.line);
+            rejectDomainHandleType("function result '" + function.name + "'", function.returnType,
+                    function.returnTypeRef, function.line);
+        }
+    }
+
+    private void rejectDomainHandleType(String context, String rawType, TypeRef explicitType, int line) {
+        TypeRef type = explicitType != null ? explicitType
+                : rawType == null || rawType.isBlank() ? null : TypeParser.parseCanonical(rawType);
+        if (containsDomainHandleType(type)) {
+            throw new CompileError(line, context
+                    + " cannot use a domain handle as data; domain handles are static routing capabilities",
+                    "MOSS_COMPILE_ERROR", program.sourceFile);
+        }
+    }
+
+    private boolean containsDomainHandleType(TypeRef type) {
+        if (type == null) return false;
+        if (type.kind() == TypeKind.Domain) return true;
+        for (TypeRef argument : type.typeArgs())
+            if (containsDomainHandleType(argument)) return true;
+        return false;
     }
 
     private void validateCollectionTypeArities() {

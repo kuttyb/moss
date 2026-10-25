@@ -16414,3 +16414,14 @@ expression used directly as a handler reply. The fixture
 `phase221_same_domain_handler.moss` now rejects in both compilers. The
 refreshed 51–100 negative slice was run before this narrow correction and
 showed 15 Java-only accepts; the slice will be refreshed at the next checkpoint.
+
+### Phase 25.3 continuation — domain handles prohibited as signature data
+
+Java now rejects domain handle types in object/domain state, function and
+method parameters or results, trait method signatures, and handler payload or
+reply types. This enforces the static-routing capability rule at declarations,
+including nested collection type arguments. The historical negative fixture
+`phase106b1_historical_handle_calls.moss` now rejects in both compilers.
+Focused `SemanticCheckerTest` coverage was added. The 51–100 sample was not
+rerun after this change; the prior count was 15 Java-only accepts and 0 C++
+accepts. Native and release gates remain unrun.

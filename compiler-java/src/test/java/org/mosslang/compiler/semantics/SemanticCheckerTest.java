@@ -50,6 +50,7 @@ public class SemanticCheckerTest {
         testDomainHandlersRequireMessageSyntax();
         testDomainRoutesCannotBeReassigned();
         testTransitiveMessagePayloadWritesAreRejected();
+        testDomainHandlesCannotAppearInDataSignatures();
         testRecursionThroughFunctionalCallbacksIsRejected();
         testFilterRequiresBooleanPredicate();
         testReduceCallbackResultMatchesAccumulator();
@@ -1216,6 +1217,20 @@ public class SemanticCheckerTest {
                 + "  message worker.Process(Buffer(value = 1))\n", "transitive-message-payload-write.moss");
         expectCompileError(invalid, "MOSS_COMPILE_ERROR",
                 "a helper that writes an incoming payload must be rejected");
+    }
+
+    private static void testDomainHandlesCannotAppearInDataSignatures() {
+        Program invalid = Parser.parseSource(""
+                + "domain Worker:\n"
+                + "  fn Run():\n"
+                + "    pass\n"
+                + "fn take(worker: Worker):\n"
+                + "  pass\n"
+                + "fn main():\n"
+                + "  worker = Worker()\n"
+                + "  take(worker)\n", "domain-handle-data-parameter.moss");
+        expectCompileError(invalid, "MOSS_COMPILE_ERROR",
+                "a domain handle cannot be used as a function data parameter");
     }
 
     private static void testRecursionThroughFunctionalCallbacksIsRejected() {
