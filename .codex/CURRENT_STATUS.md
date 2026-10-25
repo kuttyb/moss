@@ -13314,9 +13314,10 @@ identities are validated by the existing verifier before projection. The
 end-to-end Java test removes legacy generic body rows from the provider
 interface, then checks imported Int and String specializations, including a
 two-parameter callable that returns its second argument, and a zero-argument
-integer constant function. General body projection, nominal type resolution, requirement
-and effect projection, and native source-free provider-consumer validation
-remain open.
+integer constant function. A concrete `Vector[Int]` direct-return callable
+also retains its nested element type and passes source-free semantic checking.
+General body projection, nominal type resolution, requirement and effect
+projection, and native source-free provider-consumer validation remain open.
 
 Validation: all ten Java unit-test classes pass after clean builds in default
 ABI-v9 and staged ABI-v10 modes; agent-feedback validation and `git diff

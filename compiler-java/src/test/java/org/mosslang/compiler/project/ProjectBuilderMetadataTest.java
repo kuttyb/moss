@@ -329,7 +329,9 @@ public final class ProjectBuilderMetadataTest {
                 + "export fn second(left, right):\n"
                 + "  return right\n"
                 + "export fn answer() -> Int:\n"
-                + "  return 42\n", "identity-provider.moss");
+                + "  return 42\n"
+                + "export fn same_vector(values: Vector[Int]) -> Vector[Int]:\n"
+                + "  return values\n", "identity-provider.moss");
         new org.mosslang.compiler.semantics.CheckedProgram(identityProgram).run();
         identityProgram.functions.forEach(function -> {
             String name = function.name;
@@ -410,6 +412,22 @@ public final class ProjectBuilderMetadataTest {
                 || !answerSummary.bodySemanticHash.equals(answerBody.semanticHash)) {
             throw new AssertionError("ABI-v10 constant-return summary/body is incomplete");
         }
+        AbiV10Records.Summary vectorSummary = identityInterface.binaryContract.stream()
+                .filter(record -> record.payloadBytes().length > 0
+                        && (record.payloadBytes()[0] == 3 || record.payloadBytes()[0] == 4))
+                .map(AbiV10Records.Summary::decode)
+                .filter(summary -> summary.callableId.endsWith(":fn:same_vector"))
+                .findFirst().orElseThrow(() ->
+                        new AssertionError("ABI-v10 producer omitted the concrete collection identity summary"));
+        if (vectorSummary.parameters.size() != 1
+                || vectorSummary.parameters.get(0).kind != AbiV10Records.WireTypeKind.Builtin
+                || vectorSummary.parameters.get(0).arguments.size() != 1
+                || vectorSummary.parameters.get(0).arguments.get(0).kind != AbiV10Records.WireTypeKind.Primitive
+                || !"int".equals(vectorSummary.parameters.get(0).arguments.get(0).identity)
+                || vectorSummary.result.kind != AbiV10Records.WireTypeKind.Builtin
+                || !"vector".equals(vectorSummary.result.identity)) {
+            throw new AssertionError("ABI-v10 collection identity signature lost its nested element type");
+        }
         Path identityMossi = null;
         try {
             identityMossi = Files.createTempFile(Path.of("tmp"), "identity-provider-", ".mossi");
@@ -433,6 +451,8 @@ public final class ProjectBuilderMetadataTest {
                     + "  return provider__second(7, \"seven\")\n"
                     + "fn use_answer() -> Int:\n"
                     + "  return provider__answer()\n"
+                    + "fn use_vector(value: Vector[Int]) -> Vector[Int]:\n"
+                    + "  return provider__same_vector(value)\n"
                     + "fn main():\n"
                     + "  pass\n", "identity-consumer.moss");
             org.mosslang.compiler.cli.Main.loadMossiFunctions(identityMossi, "provider", consumer);
