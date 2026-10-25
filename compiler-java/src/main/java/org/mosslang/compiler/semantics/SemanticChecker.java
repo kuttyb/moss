@@ -4803,6 +4803,8 @@ public class SemanticChecker {
                     .map(entry -> ";" + entry.getKey() + "=" + entry.getValue())
                     .collect(java.util.stream.Collectors.joining());
             if (!visited.add(visitKey)) continue;
+            int bodyIndent = function.body.stream().filter(Objects::nonNull)
+                    .mapToInt(statement -> statement.indent).min().orElse(-1);
             for (Stmt statement : function.body) {
                 String bodyExpression = statementExpressionText(statement);
                 if (bodyExpression != null) {
@@ -4815,6 +4817,17 @@ public class SemanticChecker {
                                     handler, raised, contextualTypes, visited);
                         }
                     }
+                }
+                if (statement != null && statement.indent == bodyIndent
+                        && (statement.kind == Stmt.Kind.Let || statement.kind == Stmt.Kind.Var
+                            || statement.kind == Stmt.Kind.Assign)
+                        && statement.a != null && statement.b != null
+                        && statement.a.trim().matches("[A-Za-z_][A-Za-z0-9_]*")
+                        && statement.b.trim().matches("[A-Za-z_][A-Za-z0-9_]*")) {
+                    String aliasType = resolveHandlerReceiverType(statement.b, domain, handler,
+                            contextualTypes);
+                    if (aliasType != null) contextualTypes.put(statement.a.trim(), aliasType);
+                    else contextualTypes.remove(statement.a.trim());
                 }
             }
             if (function.resultExpression != null) {

@@ -886,6 +886,17 @@ acceptance with `on_fail`. This does not establish parity for unrelated
 contextual effects or native execution.
 
 
+### Correction — local aliases through generic helper chains
+
+The transitive helper path still missed a straight-line alias in the first
+helper: `alias = box; forward(alias)`. C++ rejected the unhandled root while
+Java accepted it. The contextual raise walker now carries simple top-level
+local aliases before following nested helper calls. `SemanticCheckerTest`
+passes; minimized C++/Java checks now reject the unhandled alias chain and
+accept the matching `on_fail` control. Branch-dependent aliases and native
+execution remain open.
+
+
 ### Correction — indexed string-key Fast Debug trace detail
 
 `examples/collections.moss` produced identical output in C++ and Java Fast

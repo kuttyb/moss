@@ -16771,6 +16771,17 @@ acceptance with `on_fail`. This covers local generic helper call chains only;
 other contextual effect families and runtime/SDK acceptance remain unverified.
 
 
+### Phase 25.3 continuation — aliases through generic helper chains
+
+A follow-up alias probe (`invoke(box)` assigns `alias = box`, then calls
+`forward(alias)`, whose body calls `value.risky(1)`) still passed Java after the
+transitive helper fix, while C++ rejected the unhandled root. The contextual
+raise walker now carries simple top-level local aliases in each helper before
+following nested calls. `SemanticCheckerTest` passes; minimized C++/Java checks
+both reject the unhandled alias chain and accept its matching `on_fail` control.
+Branch-dependent aliases and native execution remain unverified.
+
+
 ### Phase 25.3 continuation — Fast Debug indexed string-key trace
 
 A C++/Java `examples/collections.moss` trace comparison found one event detail
