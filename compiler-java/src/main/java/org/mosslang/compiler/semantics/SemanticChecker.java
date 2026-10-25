@@ -1966,6 +1966,11 @@ public class SemanticChecker {
                     if (iterType.name() != null && (iterType.name().contains("Counter") || iterExpr.equals("counter"))) {
                         throw new CompileError(s.line, "custom iterator iter()/next() has unresolved or typed-raising effects; checked propagation through for is unsupported", "RAISING_ITERATOR_UNSUPPORTED");
                     }
+                    if (iterType.kind() == TypeKind.Builtin && "map".equals(iterType.name())) {
+                        throw new CompileError(s.line, "type '" + iterType.toCanonicalString()
+                                + "' is not statically iterable; expected Vector, range, or Iterator",
+                                "TYPE_MISMATCH");
+                    }
                     if (program.objects != null) {
                         for (ObjectType obj : program.objects) {
                             if (obj.name.equals(iterType.name()) || (iterType.name() != null && iterType.name().endsWith("__" + obj.name))) {

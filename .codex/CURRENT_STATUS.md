@@ -13777,3 +13777,15 @@ packaged `compiler-java/dist/moss` launcher. `agent bootstrap --json` reports
 trace and stdout match the C++ probe exactly. This confirms local package
 startup and one interpreted method path only; live daemon lifecycle and project
 acceptance remain open.
+
+### Phase 25.3 continuation — reject Map for-loop iterables at the source
+
+A minimal typed Map loop was rejected by both compilers, but Java previously
+reported an unrelated unresolved loop-variable error at line 1. The checker now
+rejects Map as non-iterable at the loop line, matching the C++ diagnostic's
+location and reason. Vector and range handling are unaffected.
+
+Validation: all eleven Java unit-test classes pass in ABI-v9 and staged
+ABI-v10. The focused Java diagnostic is `TYPE_MISMATCH` at line 5 with the
+non-iterable Map explanation, matching C++'s location/reason. Phase 25.3 remains
+in progress.

@@ -27,6 +27,7 @@ public class SemanticCheckerTest {
         testConsumedObjectParameterLowersByValue();
         testObjectMethodWriteParameterLowersMutably();
         testNestedObjectFieldWriteLowersMutableReceiver();
+        testMapIsRejectedAsForIterableAtLoopSite();
         testTypedOnFailLocalCaptureLowering();
         testOnFailRejectsLocalInitializedAfterRaise();
         testOnFailCaptureUsesMatchingRaisedVariant();
@@ -527,6 +528,25 @@ public class SemanticCheckerTest {
         } catch (CompileError error) {
             if (!code.equals(error.getCode())) {
                 throw new AssertionError("expected " + code + ", got " + error.getCode(), error);
+            }
+        }
+    }
+
+    private static void testMapIsRejectedAsForIterableAtLoopSite() {
+        Program program = Parser.parseSource(""
+                + "fn main():\n"
+                + "  var values = Map()\n"
+                + "  values[\"a\"] = 1\n"
+                + "  values[\"b\"] = 2\n"
+                + "  for key in values:\n"
+                + "    echo key\n", "map-not-iterable.moss");
+        try {
+            new SemanticChecker(program).run();
+            throw new AssertionError("Map must not be accepted as a for-loop iterable");
+        } catch (CompileError error) {
+            if (!"TYPE_MISMATCH".equals(error.getCode()) || error.getLine() != 5
+                    || !error.getMessage().contains("not statically iterable")) {
+                throw new AssertionError("Map iterability diagnostic was imprecise: " + error.getMessage(), error);
             }
         }
     }
