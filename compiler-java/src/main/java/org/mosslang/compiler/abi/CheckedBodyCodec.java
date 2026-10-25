@@ -16,6 +16,19 @@ import java.util.*;
 public class CheckedBodyCodec {
     public static final String HEADER = "moss-checked-body-v1\n";
     public static final String MOSSI_HEADER = "moss-module-interface-v3\n";
+    private static final int MAX_MOSSI_CHARS = 16 * 1024 * 1024;
+    private static final int MAX_MOSSI_RECORDS = 100_000;
+    private static final int MAX_MOSSI_RECORD_CHARS = 4 * 1024 * 1024;
+
+    private static int parseBoundedCount(String value, int maximum, String what) {
+        try {
+            int count = Integer.parseInt(value);
+            if (count < 0 || count > maximum) throw new NumberFormatException();
+            return count;
+        } catch (NumberFormatException ex) {
+            throw new CompileError(0, "ABI-v10 " + what + " is malformed or exceeds its limit", "SOURCE_FREE_CONTRACT_INVALID");
+        }
+    }
 
     public static void encodeField(StringBuilder out, String value) {
         String val = value != null ? value : "";
@@ -338,7 +351,7 @@ public class CheckedBodyCodec {
             throw new CompileError(0, "ABI-v10 section '" + sectionName + "' is missing or out of order, got: " + secHeader, "SOURCE_FREE_CONTRACT_INVALID");
         }
         String countStr = reader.field("count");
-        int count = Integer.parseInt(countStr);
+        int count = parseBoundedCount(countStr, MAX_MOSSI_RECORDS, sectionName + " count");
         List<MossiRecord> records = new ArrayList<>(count);
         String prevId = null;
         for (int i = 0; i < count; i++) {
@@ -347,8 +360,8 @@ public class CheckedBodyCodec {
             if (space == -1) {
                 throw new CompileError(0, "ABI-v10 record frame is malformed", "SOURCE_FREE_CONTRACT_INVALID");
             }
-            int idSize = Integer.parseInt(frame.substring(0, space));
-            int payloadSize = Integer.parseInt(frame.substring(space + 1));
+            int idSize = parseBoundedCount(frame.substring(0, space), MAX_MOSSI_RECORD_CHARS, "record ID size");
+            int payloadSize = parseBoundedCount(frame.substring(space + 1), MAX_MOSSI_RECORD_CHARS, "record payload size");
             String id = reader.bytes(idSize);
             String payload = reader.bytes(payloadSize);
             String trailing = reader.line();
@@ -367,6 +380,9 @@ public class CheckedBodyCodec {
     public static MossiInterface decodeMossi(String text) {
         if (text == null || !text.startsWith(MOSSI_HEADER)) {
             throw new CompileError(0, "source-free provider requires an ABI-v10 source rebuild", "SOURCE_FREE_ABI_REBUILD_REQUIRED");
+        }
+        if (text.length() > MAX_MOSSI_CHARS) {
+            throw new CompileError(0, "ABI-v10 interface exceeds its size limit", "SOURCE_FREE_CONTRACT_INVALID");
         }
         MossiTextReader reader = new MossiTextReader(text);
         String magic = reader.line();
@@ -402,7 +418,7 @@ public class CheckedBodyCodec {
         if (!"imports".equals(importsHeader)) {
             throw new CompileError(0, "ABI-v10 imports section is missing", "SOURCE_FREE_CONTRACT_INVALID");
         }
-        int importCount = Integer.parseInt(reader.field("count"));
+        int importCount = parseBoundedCount(reader.field("count"), MAX_MOSSI_RECORDS, "imports count");
         mossi.imports = new ArrayList<>(importCount);
         String prevImport = null;
         for (int i = 0; i < importCount; i++) {

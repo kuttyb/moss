@@ -17,6 +17,7 @@ public class CheckedBodyCodecTest {
         testSimpleReturnEncodeDecodeRoundTrip();
         testComplexStatementsRoundTrip();
         testMossiSerializationAndParsing();
+        testMossiRejectsUnboundedCounts();
         testSourceFreeVerificationSuccess();
         testSourceFreeVerificationTamperDetection();
         System.out.println("CheckedBodyCodecTest PASSED: All tests passed successfully.");
@@ -190,6 +191,26 @@ public class CheckedBodyCodecTest {
         MossiInterface loaded = CheckedBodyCodec.loadSourceFreeInterface(tmpFile);
         if (loaded == null || !loaded.moduleId.equals(mossi.moduleId)) {
             throw new AssertionError("loadSourceFreeInterface failed from disk");
+        }
+    }
+
+    private static void testMossiRejectsUnboundedCounts() {
+        String valid = CheckedBodyCodec.encodeMossi(
+                new MossiInterface("module-v1:bounds@1.0.0::provider"));
+        String oversized = valid.replaceFirst("imports\\ncount 0\\n", "imports\\ncount 2147483647\\n");
+        try {
+            CheckedBodyCodec.decodeMossi(oversized);
+            throw new AssertionError("ABI-v10 decoder accepted an unbounded imports count");
+        } catch (CompileError error) {
+            if (!"SOURCE_FREE_CONTRACT_INVALID".equals(error.getCode())) throw error;
+        }
+
+        String negative = valid.replaceFirst("binary_contract\\ncount 0\\n", "binary_contract\\ncount -1\\n");
+        try {
+            CheckedBodyCodec.decodeMossi(negative);
+            throw new AssertionError("ABI-v10 decoder accepted a negative record count");
+        } catch (CompileError error) {
+            if (!"SOURCE_FREE_CONTRACT_INVALID".equals(error.getCode())) throw error;
         }
     }
 

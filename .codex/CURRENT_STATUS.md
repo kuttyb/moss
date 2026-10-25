@@ -12731,6 +12731,19 @@ Validation: `./scripts/java/build.sh && ./scripts/java/test.sh` passes all ten
 Java unit-test classes. `git diff --check` passes. No Rust compilation, native
 execution, or SDK gate was run.
 
+### Phase 25.3 continuation — bound ABI-v10 decoder allocations
+
+The ABI-v10 decoder previously trusted import/section record counts and record
+lengths before allocating lists or slicing text. It now rejects interface text
+over 16 Mi characters, counts above 100,000, and individual record IDs/payloads
+above 4 Mi characters with `SOURCE_FREE_CONTRACT_INVALID`; negative and malformed
+numeric values use the same structured error. Regression cases cover an
+`Integer.MAX_VALUE` import count and a negative section count.
+
+Validation: Java build and focused `CheckedBodyCodecTest` pass; complete Java
+unit suite follows this checkpoint. These are defensive parser bounds only; they
+do not complete the missing canonical ABI-v10 logical records or native binding.
+
 ### Phase 25.3 continuation — optional JDT daemon lifecycle
 
 The developer build helper no longer assumes an Eclipse install at a fixed
