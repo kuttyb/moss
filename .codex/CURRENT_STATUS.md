@@ -12789,3 +12789,9 @@ passes.
 
 Validation: Java build and all ten unit-test classes pass; `git diff --check`
 passes. This is interface-text compatibility evidence only.
+
+The standalone packaging path was smoke-checked at the same candidate: `./scripts/java/package.sh`
+produced the fat JAR, `compiler-java/dist/moss --version` reported
+`Moss Java Compiler 0.1.0-java (moss-0.1)`, and the packaged launcher accepted
+`examples/hi.moss` under `--check`. This confirms packaging and basic CLI startup,
+not the full standalone feature surface.
