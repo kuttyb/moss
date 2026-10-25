@@ -538,6 +538,7 @@ public class SemanticChecker {
     private void validateFailureArmCaptures(Domain domain, Handler handler, FailureArm arm,
                                             OwnershipEnv finalEnv, TypeSolver solver,
                                             List<RaiseSnapshot> raiseEnvironments) {
+        arm.checkedCaptures.clear();
         if (raiseEnvironments.isEmpty()) return;
         List<OwnershipEnv> selectedEdges = new ArrayList<>();
         for (RaiseSnapshot snapshot : raiseEnvironments) {
@@ -623,6 +624,7 @@ public class SemanticChecker {
                         + "' changes type after an explicit raise",
                         "ON_FAIL_CAPTURE_TYPE_MISMATCH");
             }
+            if (expected != null) arm.checkedCaptures.put(name, expected.toCanonicalString());
         }
     }
 

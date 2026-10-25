@@ -48,6 +48,7 @@ public final class ProjectBuilderMetadataTest {
         testV10Utf8InterfaceValidation();
         testV10RecordFramingUsesUtf8Bytes();
         testCanonicalNominalTemplateWirePayload();
+        testCheckedOnFailCaptureAbiRows();
         testExplicitModuleBuildChecksSemantics();
         testV9FunctionParameterAccessSerialization();
         testExportedObjectFieldSerialization();
@@ -56,6 +57,34 @@ public final class ProjectBuilderMetadataTest {
             testV10ProjectProducerRoundTrip();
         }
         System.out.println("ProjectBuilderMetadataTest PASSED.");
+    }
+
+    private static void testCheckedOnFailCaptureAbiRows() {
+        Program program = Parser.parseSource(""
+                + "module provider\n"
+                + "enum Failure:\n"
+                + "  Bad\n"
+                + "domain Worker:\n"
+                + "  fn Work() -> Int:\n"
+                + "    var attempt = 3\n"
+                + "    raise Failure.Bad\n"
+                + "  on_fail Failure.Bad:\n"
+                + "    reply attempt\n", "capture-abi.moss");
+        program.domains.get(0).exported = true;
+        new org.mosslang.compiler.semantics.CheckedProgram(program).run();
+        ProjectManifest manifest = new ProjectManifest(Path.of("tmp"), Path.of("tmp", "moss.toml"),
+                "sample", "1.0.0", Path.of("src"));
+        BackendToolchain toolchain = new BackendToolchain("rustc", "rustc 1.80.0 (test)\n",
+                "dev", java.util.List.of(), "capture-abi-test");
+        byte[] generated = ProjectBuilder.generateMossiInterface(manifest, "provider",
+                program, toolchain, java.util.List.of(), Path.of("tmp"), java.util.Map.of());
+        String text = new String(generated, java.nio.charset.StandardCharsets.UTF_8);
+        if (!text.contains("handler_owned_type_shapes \"Work\" 1\n")
+                || !text.contains("handler_owned_type_shape \"Work\" \"int\" \"0:3:int:0:\"\n")
+                || !text.contains("handler_failure_arm \"Work\" 0 \"Failure.Bad\" ")
+                || !text.contains("handler_failure_capture \"Work\" 0 \"attempt\" \"int\" \"attempt\" 1 1 \"0:3:int:0:\"\n")) {
+            throw new AssertionError("project producer did not serialize checker-proved on_fail captures: " + text);
+        }
     }
 
     private static void testExplicitModuleBuildChecksSemantics() throws Exception {

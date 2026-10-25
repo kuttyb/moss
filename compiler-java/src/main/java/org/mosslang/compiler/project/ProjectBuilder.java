@@ -1594,6 +1594,124 @@ public class ProjectBuilder {
         out.append(" 0"); // no state consumes are inferred by this writer yet
     }
 
+    private static final class AbiOwnedTypeShape {
+        final String canonicalType;
+        final int kind;
+        final List<AbiOwnedTypeShape> children;
+
+        AbiOwnedTypeShape(String canonicalType, int kind, List<AbiOwnedTypeShape> children) {
+            this.canonicalType = canonicalType;
+            this.kind = kind;
+            this.children = children;
+        }
+
+        String fingerprint() {
+            StringBuilder out = new StringBuilder().append(kind).append(':')
+                    .append(canonicalType.length()).append(':').append(canonicalType)
+                    .append(':').append(children.size()).append(':');
+            for (AbiOwnedTypeShape child : children) out.append(child.fingerprint());
+            return out.toString();
+        }
+    }
+
+    private static AbiOwnedTypeShape abiOwnedTypeShape(String spelling, Program program,
+                                                       Set<String> resolving) {
+        if (spelling == null || spelling.isBlank()) return null;
+        String canonical = spelling.trim();
+        String lower = canonical.toLowerCase(Locale.ROOT);
+        if (canonical.startsWith("&")) return new AbiOwnedTypeShape(canonical, 5, List.of());
+        if (Set.of("fileio", "range", "rangebatch", "mossguard", "protectedread", "protectedwrite", "executor")
+                .contains(lower) || lower.startsWith("domainhandle[")) {
+            return new AbiOwnedTypeShape(canonical, 4, List.of());
+        }
+        if (Set.of("int", "float", "bool", "unit").contains(lower)) {
+            return new AbiOwnedTypeShape(canonical, 0, List.of());
+        }
+        if (lower.equals("string") || lower.startsWith("vector[")
+                || lower.startsWith("map[") || lower.startsWith("queue[")) {
+            List<AbiOwnedTypeShape> children = new ArrayList<>();
+            int open = canonical.indexOf('[');
+            if (open >= 0 && canonical.endsWith("]")) {
+                for (String argument : splitCanonicalTypeArguments(
+                        canonical.substring(open + 1, canonical.length() - 1))) {
+                    children.add(abiOwnedTypeShape(normalizeOwnedChild(argument), program, resolving));
+                }
+            }
+            if (children.stream().anyMatch(java.util.Objects::isNull)) return null;
+            return new AbiOwnedTypeShape(canonical, 3, children);
+        }
+        if ((lower.startsWith("option[") || lower.startsWith("result[")) && canonical.endsWith("]")) {
+            List<AbiOwnedTypeShape> children = new ArrayList<>();
+            int open = canonical.indexOf('[');
+            for (String argument : splitCanonicalTypeArguments(
+                    canonical.substring(open + 1, canonical.length() - 1))) {
+                children.add(abiOwnedTypeShape(normalizeOwnedChild(argument), program, resolving));
+            }
+            if (children.stream().anyMatch(java.util.Objects::isNull)) return null;
+            return new AbiOwnedTypeShape(canonical, 1, children);
+        }
+        String key = canonical.replace('.', '_');
+        if (!resolving.add(key)) return new AbiOwnedTypeShape(canonical, 6, List.of());
+        try {
+            for (EnumType enumeration : program.enums) {
+                if (!sameNominalName(canonical, enumeration.name)) continue;
+                List<AbiOwnedTypeShape> children = new ArrayList<>();
+                for (EnumCase enumCase : enumeration.cases) {
+                    for (Field field : enumCase.fields) {
+                        children.add(abiOwnedTypeShape(field.type, program, resolving));
+                    }
+                }
+                if (children.stream().anyMatch(java.util.Objects::isNull)) return null;
+                return new AbiOwnedTypeShape(canonical, 1, children);
+            }
+            for (ObjectType object : program.objects) {
+                if (!sameNominalName(canonical, object.name)) continue;
+                List<AbiOwnedTypeShape> children = new ArrayList<>();
+                for (Field field : object.fields) children.add(abiOwnedTypeShape(field.type, program, resolving));
+                if (children.stream().anyMatch(java.util.Objects::isNull)) return null;
+                return new AbiOwnedTypeShape(canonical, 2, children);
+            }
+            for (Domain domain : program.domains) {
+                if (sameNominalName(canonical, domain.name)) return new AbiOwnedTypeShape(canonical, 4, List.of());
+            }
+            return null;
+        } finally {
+            resolving.remove(key);
+        }
+    }
+
+    private static String normalizeOwnedChild(String spelling) {
+        String trimmed = spelling.trim();
+        String lower = trimmed.toLowerCase(Locale.ROOT);
+        if (Set.of("int", "float", "bool", "unit", "string", "fileio", "range", "rangebatch")
+                .contains(lower)) return lower;
+        return trimmed;
+    }
+
+    private static boolean sameNominalName(String sourceName, String declarationName) {
+        if (sourceName.equals(declarationName) || sourceName.endsWith("__" + declarationName)) return true;
+        int dot = sourceName.lastIndexOf('.');
+        return dot >= 0 && (sourceName.substring(dot + 1).equals(declarationName)
+                || sourceName.substring(dot + 1).endsWith("__" + declarationName));
+    }
+
+    private static void collectAbiOwnedShapes(AbiOwnedTypeShape shape,
+                                              Map<String, AbiOwnedTypeShape> shapes) {
+        AbiOwnedTypeShape previous = shapes.putIfAbsent(shape.canonicalType, shape);
+        if (previous != null && !previous.fingerprint().equals(shape.fingerprint())) {
+            throw new IllegalStateException("inconsistent ABI owned type shape for " + shape.canonicalType);
+        }
+        for (AbiOwnedTypeShape child : shape.children) collectAbiOwnedShapes(child, shapes);
+    }
+
+    private static boolean abiOwnedTypeShapeSafe(AbiOwnedTypeShape shape) {
+        if (shape == null || shape.kind == 4 || shape.kind == 5 || shape.kind == 6) return false;
+        for (AbiOwnedTypeShape child : shape.children) {
+            if (!abiOwnedTypeShapeSafe(child)) return false;
+        }
+        return true;
+    }
+
     private static void emitHandlerMossi(StringBuilder buf, Handler h, Domain d, String module, String domainName, Program prog, boolean isSemantic, ProjectManifest manifest) {
         String replyType = (h.replyType != null && !h.replyType.isEmpty()) ? h.replyType.toLowerCase() : "unit";
         boolean isOneWay = replyType.equals("unit");
@@ -1687,7 +1805,29 @@ public class ProjectBuilder {
         buf.append("  handler_outcome_contract \"").append(h.name).append("\" \"__MossBodyOutcome_").append(module).append("__").append(domainName).append("_").append(h.name).append("\" \"").append(replyType).append("\"\n");
         buf.append("  handler_wrapper_contract \"").append(h.name).append("\" nested=propagate root=join,close_fileio,release_guards,acquire_failure_locks,execute_arm,fulfill_reply\n");
         buf.append("  handler_reply_contract \"").append(h.name).append("\" \"").append(replyType).append("\" ").append(isOneWay ? "1" : "0").append(" 1\n");
-        buf.append("  handler_owned_type_shapes \"").append(h.name).append("\" 0\n");
+        List<Map<String, AbiOwnedTypeShape>> captureShapesByArm = new ArrayList<>();
+        Map<String, AbiOwnedTypeShape> ownedShapes = new java.util.TreeMap<>();
+        if (h.failureArms != null) {
+            for (FailureArm arm : h.failureArms) {
+                Map<String, AbiOwnedTypeShape> armShapes = new LinkedHashMap<>();
+                for (Map.Entry<String, String> capture : arm.checkedCaptures.entrySet()) {
+                    AbiOwnedTypeShape shape = abiOwnedTypeShape(capture.getValue(), prog, new HashSet<>());
+                    if (!abiOwnedTypeShapeSafe(shape)) {
+                        throw new IllegalStateException("on_fail capture '" + capture.getKey()
+                                + "' has no owned source-free ABI type shape");
+                    }
+                    armShapes.put(capture.getKey(), shape);
+                    collectAbiOwnedShapes(shape, ownedShapes);
+                }
+                captureShapesByArm.add(armShapes);
+            }
+        }
+        buf.append("  handler_owned_type_shapes \"").append(h.name).append("\" ")
+                .append(ownedShapes.size()).append('\n');
+        for (AbiOwnedTypeShape shape : ownedShapes.values()) {
+            buf.append("  handler_owned_type_shape \"").append(h.name).append("\" \"")
+                    .append(shape.canonicalType).append("\" \"").append(shape.fingerprint()).append("\"\n");
+        }
 
         if (raiseCount > 0) {
             buf.append("  handler_raise_tags \"").append(h.name).append("\" 1\n");
@@ -1710,25 +1850,17 @@ public class ProjectBuilder {
                 FailureArm arm = h.failureArms.get(aIdx);
                 String armPat = arm.patterns.isEmpty() ? (raiseIdent != null ? raiseIdent : "") : arm.patterns.get(0);
                 FailureArmStateEffects stateEffects = failureArmStateEffects(arm, d);
-                int capCount = 0;
-                if (h.name.equals("Run") && domainName.contains("Worker")) {
-                    for (Stmt s : arm.body) {
-                        if (s.text != null && s.text.contains("attempt")) capCount = 1;
-                    }
-                } else if (h.name.equals("Join") && domainName.contains("Worker")) {
-                    for (Stmt s : arm.body) {
-                        if (s.text != null && s.text.contains("joined")) capCount = 1;
-                    }
-                }
-                buf.append("  handler_failure_arm \"").append(h.name).append("\" ").append(aIdx).append(" \"").append(armPat).append("\" \"__moss_on_fail_").append(module).append("__").append(domainName).append("_").append(h.name).append("_").append(aIdx).append("\" ").append(capCount).append(" 1");
+                Map<String, AbiOwnedTypeShape> armCaptureShapes = aIdx < captureShapesByArm.size()
+                        ? captureShapesByArm.get(aIdx) : Collections.emptyMap();
+                buf.append("  handler_failure_arm \"").append(h.name).append("\" ").append(aIdx).append(" \"").append(armPat).append("\" \"__moss_on_fail_").append(module).append("__").append(domainName).append("_").append(h.name).append("_").append(aIdx).append("\" ").append(armCaptureShapes.size()).append(" 1");
                 appendFailureArmStateEffects(buf, stateEffects);
                 buf.append('\n');
-                if (capCount > 0) {
-                    if (h.name.equals("Run")) {
-                        buf.append("  handler_failure_capture \"Run\" 0 \"attempt\" \"string\"\n");
-                    } else if (h.name.equals("Join")) {
-                        buf.append("  handler_failure_capture \"Join\" 0 \"joined\" \"string\"\n");
-                    }
+                for (Map.Entry<String, AbiOwnedTypeShape> capture : armCaptureShapes.entrySet()) {
+                    String mossType = arm.checkedCaptures.get(capture.getKey());
+                    buf.append("  handler_failure_capture \"").append(h.name).append("\" ")
+                            .append(aIdx).append(" \"").append(capture.getKey()).append("\" \"")
+                            .append(mossType).append("\" \"").append(capture.getKey())
+                            .append("\" 1 1 \"").append(capture.getValue().fingerprint()).append("\"\n");
                 }
             }
         }

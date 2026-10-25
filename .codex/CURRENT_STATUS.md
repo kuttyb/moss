@@ -13083,3 +13083,22 @@ in both default ABI-v9 and staged ABI-v10 modes, and feedback validation passes.
 The invalid local provider/consumer ProjectBuilder case still rejects before
 rustc. The full external-provider Margo build/link path remains unverified; no
 Rust/native or SDK gate ran.
+
+### Phase 25.3 continuation — derive source-free capture ABI rows
+
+The ProjectBuilder writer no longer special-cases handler names `Run`/`Join` or
+locals `attempt`/`joined`. The checker records capture name/type facts only for
+locals proven initialized, unmoved, and type-consistent on matching explicit
+raise edges. The producer emits canonical ABI-v9 capture rows, per-arm counts,
+and recursively collected owned-type fingerprints. Unsupported or capability
+shapes fail generation instead of being represented as owned captures.
+
+A focused producer regression checks the canonical `Int` capture row and its
+scalar shape. Remaining gaps: the checker proof covers direct raises only;
+source-free Java loading does not yet reconstruct failure-arm captures;
+call-propagated and native provider-consumer capture behavior remain unverified.
+
+Validation update for the capture-row checkpoint: `ProjectBuilderMetadataTest`
+passes after a clean Java build in default ABI-v9 and staged ABI-v10 modes;
+`tests/tooling/check_agent_feedback.py` passes. No native or Rust compilation
+was run.
