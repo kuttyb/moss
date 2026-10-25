@@ -63,6 +63,31 @@ public final class SourceFreeObjectMetadataTest {
                         .checkedCaptures.get("attempt"))) {
             throw new AssertionError("ABI-v9 failure-arm capture metadata was not restored");
         }
+        String withoutFailureArm = content.replace(
+                "  handler_failure_arms \"Work\" 1\n"
+                        + "  handler_failure_arm \"Work\" 0 \"Fault.Bad\" \"__moss_on_fail_provider__Worker_Work_0\" 1 1 0 0 0\n"
+                        + "  handler_failure_capture \"Work\" 0 \"attempt\" \"int\" \"attempt\" 1 1 \"0:3:int:0:\"\n",
+                "  handler_failure_arms \"Work\" 0\n");
+        if (withoutFailureArm.equals(content)) {
+            throw new AssertionError("source-free raise fixture failed to remove the imported on_fail arm");
+        }
+        Path raisingInterface = scratch.resolve("provider-raising-no-failure.mossi");
+        Files.writeString(raisingInterface, withoutFailureArm);
+        Program unhandledImportedHandler = Parser.parseSource(""
+                + "import provider\n"
+                + "fn main():\n"
+                + "  worker = provider.Worker()\n"
+                + "  message worker.Work()\n", "source-free-handler-root-raise.moss");
+        Main.loadMossiFunctions(raisingInterface, "provider", unhandledImportedHandler);
+        try {
+            new SemanticChecker(unhandledImportedHandler).run();
+            throw new AssertionError("source-free raising domain handler must require on_fail at root ingress");
+        } catch (CompileError error) {
+            if (!"ROOT_UNHANDLED_RAISE".equals(error.getCode())) {
+                throw new AssertionError("expected ROOT_UNHANDLED_RAISE for source-free handler, got "
+                        + error.getCode(), error);
+            }
+        }
         ObjectType imported = program.objects.stream()
                 .filter(object -> object.name.equals("provider__Point"))
                 .findFirst().orElseThrow(() -> new AssertionError(
@@ -408,6 +433,7 @@ public final class SourceFreeObjectMetadataTest {
                     + domainRust);
         }
         Files.deleteIfExists(interfaceFile);
+        Files.deleteIfExists(raisingInterface);
         Files.deleteIfExists(v10File);
         Files.deleteIfExists(scratch);
         System.out.println("SourceFreeObjectMetadataTest PASSED.");
