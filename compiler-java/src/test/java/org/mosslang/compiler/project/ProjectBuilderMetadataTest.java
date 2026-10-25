@@ -1109,24 +1109,27 @@ public final class ProjectBuilderMetadataTest {
         try {
             identityMossi = Files.createTempFile(Path.of("tmp"), "identity-provider-", ".mossi");
             List<MossiRecord> answerRows = identityInterface.semanticContract.stream()
-                    .filter(record -> record.id.contains("answer") || record.payload.contains("fn answer"))
+                    .filter(record -> record.id.contains("answer") || record.payload.contains("fn answer")
+                            || record.id.contains("increment") || record.payload.contains("fn increment"))
                     .toList();
             if (answerRows.isEmpty()) {
-                throw new AssertionError("could not isolate the legacy answer declaration for ABI-v10-only import");
+                throw new AssertionError("could not isolate legacy callable declarations for ABI-v10-only import");
             }
             identityInterface.semanticContract.removeAll(answerRows);
             Files.write(identityMossi, CheckedBodyCodec.encodeMossiBytes(identityInterface));
             Program answerConsumer = Parser.parseSource(""
                     + "fn main():\n"
-                    + "  echo provider__answer()\n", "answer-consumer.moss");
+                    + "  echo provider__answer()\n"
+                    + "  echo provider__increment(41)\n", "answer-consumer.moss");
             org.mosslang.compiler.cli.Main.loadMossiFunctions(identityMossi, "provider", answerConsumer);
             new org.mosslang.compiler.semantics.SemanticChecker(answerConsumer).run();
             java.io.ByteArrayOutputStream answerOutput = new java.io.ByteArrayOutputStream();
             new org.mosslang.compiler.interpreter.FastInterpreter(answerConsumer, false,
                     new java.io.PrintStream(answerOutput),
                     new java.io.PrintStream(new java.io.ByteArrayOutputStream())).run();
-            if (!"42\n".equals(answerOutput.toString(java.nio.charset.StandardCharsets.UTF_8))) {
-                throw new AssertionError("ABI-v10 closed summary/body did not import without its v9 declaration: "
+            if (!"42\n42\n".equals(answerOutput.toString(java.nio.charset.StandardCharsets.UTF_8))) {
+                throw new AssertionError("ABI-v10 closed zero/one-parameter summary bodies did not import without "
+                        + "their v9 declarations: "
                         + answerOutput);
             }
             identityInterface.semanticContract.addAll(answerRows);

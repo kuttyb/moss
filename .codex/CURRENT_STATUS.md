@@ -14600,10 +14600,11 @@ full logical ABI-v10 compatibility and native/SDK linkage are open.
 The Java source-free loader now seeds a closed monomorphic callable declaration
 from a checked ABI-v10 summary when the legacy semantic declaration row is
 absent. Seeding runs after legacy rows are parsed so existing declarations keep
-their source parameter names. The new regression removes the `answer` legacy
-declaration, retains its ABI-v10 summary and checked body, imports the provider,
-and executes `provider__answer()` as `42`. Both staged ABI-v10 and default
-ABI-v9 Java suites pass all eleven classes; feedback validation and
+their source parameter names. The new regression removes the `answer` and `increment` legacy declarations,
+retains their ABI-v10 summaries and checked bodies, and imports the provider,
+and executes `provider__answer()` and `provider__increment(41)` as `42`, covering
+zero and one closed parameter. Both staged ABI-v10 and default ABI-v9 Java suites
+pass all eleven classes; feedback validation and
 `git diff --check` pass. Coverage is limited to closed, monomorphic function
 summaries with supported checked bodies. Generic functions, nominal methods,
 effects, dependencies, full ABI-v10 contract completeness, and native/SDK
