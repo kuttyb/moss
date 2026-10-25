@@ -431,6 +431,8 @@ public final class ProjectBuilderMetadataTest {
                 + "    return value\n"
                 + "  fn identity_collection(values: Vector[Int]) -> Vector[Int]:\n"
                 + "    return values\n"
+                + "  fn select_right(left: Int, middle: Bool, right: String) -> String:\n"
+                + "    return right\n"
                 + "enum Outcome:\n"
                 + "  Ready(code: Int)\n"
                 + "  Done\n"
@@ -462,7 +464,7 @@ public final class ProjectBuilderMetadataTest {
         AbiV10Records.NominalTemplate pointTemplate = decoded.binaryContract.stream()
                 .filter(record -> record.id.startsWith("nominal-template-v1:"))
                 .map(AbiV10Records.NominalTemplate::decode).findFirst().orElseThrow();
-        if (pointTemplate.methodTemplateIds.size() != 7) {
+        if (pointTemplate.methodTemplateIds.size() != 8) {
             throw new AssertionError("ABI-v10 nominal template omitted its method reference");
         }
         AbiV10Records.MethodTemplate methodTemplate = decoded.binaryContract.stream()
@@ -507,6 +509,20 @@ public final class ProjectBuilderMetadataTest {
                     + " -> " + consumingIdentityTemplate.result.canonicalName() + " / "
                     + consumingIdentityTemplate.parameterAccess);
         }
+        AbiV10Records.MethodTemplate selectRightTemplate = decoded.binaryContract.stream()
+                .filter(record -> pointTemplate.methodTemplateIds.contains(record.id))
+                .map(AbiV10Records.MethodTemplate::decode)
+                .filter(method -> "select_right".equals(method.methodName)).findFirst().orElseThrow();
+        if (selectRightTemplate.parameters.size() != 3
+                || !"int".equalsIgnoreCase(selectRightTemplate.parameters.get(0).canonicalName())
+                || !"bool".equalsIgnoreCase(selectRightTemplate.parameters.get(1).canonicalName())
+                || !"string".equalsIgnoreCase(selectRightTemplate.parameters.get(2).canonicalName())
+                || !"string".equalsIgnoreCase(selectRightTemplate.result.canonicalName())
+                || !selectRightTemplate.parameterAccess.equals(List.of(
+                        AccessMode.Read.ordinal() + 1, AccessMode.Read.ordinal() + 1,
+                        AccessMode.Consume.ordinal() + 1))) {
+            throw new AssertionError("ABI-v10 method template lost its selected parameter ownership relation");
+        }
         MossiInterface methodTemplateOnly = CheckedBodyCodec.verifySourceFree(generated);
         methodTemplateOnly.semanticContract.clear();
         methodTemplateOnly.binaryContract.removeIf(record ->
@@ -529,6 +545,8 @@ public final class ProjectBuilderMetadataTest {
                     + "  return point.identity(value)\n"
                     + "fn identity_collection(point: provider__Point, values: Vector[Int]) -> Vector[Int]:\n"
                     + "  return point.identity_collection(values)\n"
+                    + "fn select_right(point: provider__Point, left: Int, middle: Bool, right: String) -> String:\n"
+                    + "  return point.select_right(left, middle, right)\n"
                     + "fn main():\n"
                     + "  pass\n", "method-template-consumer.moss");
             org.mosslang.compiler.cli.Main.loadMossiFunctions(
@@ -559,7 +577,12 @@ public final class ProjectBuilderMetadataTest {
                             && object.methods.stream().anyMatch(method -> method.name.equals("identity_collection")
                                     && method.params.size() == 1
                                     && "vector[int]".equalsIgnoreCase(method.params.get(0).type)
-                                    && "vector[int]".equalsIgnoreCase(method.returnType)))) {
+                                    && "vector[int]".equalsIgnoreCase(method.returnType)))
+                    || methodConsumer.objects.stream().noneMatch(object -> object.name.equals("provider__Point")
+                            && object.methods.stream().anyMatch(method -> method.name.equals("select_right")
+                                    && method.params.size() == 3
+                                    && "string".equalsIgnoreCase(method.params.get(2).type)
+                                    && "string".equalsIgnoreCase(method.returnType)))) {
                 throw new AssertionError("ABI-v10 method template did not supply source-free method typing");
             }
             Program consumingMethodConsumer = Parser.parseSource(""
@@ -576,6 +599,23 @@ public final class ProjectBuilderMetadataTest {
             } catch (CompileError error) {
                 if (!"OWNERSHIP_USE_AFTER_CONSUME".equals(error.getCode())) {
                     throw new AssertionError("expected source-free method consume diagnostic, got "
+                            + error.getCode(), error);
+                }
+            }
+            Program consumingStringConsumer = Parser.parseSource(""
+                    + "fn invalid(point: provider__Point, left: Int, middle: Bool, right: String) -> String:\n"
+                    + "  result = point.select_right(left, middle, right)\n"
+                    + "  return right\n"
+                    + "fn main():\n"
+                    + "  pass\n", "method-template-select-consume-consumer.moss");
+            org.mosslang.compiler.cli.Main.loadMossiFunctions(
+                    methodTemplateOnlyFile, "provider", consumingStringConsumer);
+            try {
+                new org.mosslang.compiler.semantics.SemanticChecker(consumingStringConsumer).run();
+                throw new AssertionError("source-free selected method must consume its returned String argument");
+            } catch (CompileError error) {
+                if (!"OWNERSHIP_USE_AFTER_CONSUME".equals(error.getCode())) {
+                    throw new AssertionError("expected source-free selected-parameter consume diagnostic, got "
                             + error.getCode(), error);
                 }
             }

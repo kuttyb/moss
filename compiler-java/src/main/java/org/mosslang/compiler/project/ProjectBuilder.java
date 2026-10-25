@@ -1230,14 +1230,19 @@ public class ProjectBuilder {
             if (method.resultExpression != null && !method.resultExpression.isEmpty()) return null;
             boolean noOpBody = method.body.stream().allMatch(statement ->
                     statement.kind == org.mosslang.compiler.ast.Stmt.Kind.Pass);
-            boolean returnsParameter = v10PureParameterReturnMethod(method);
+            int returnedParameter = v10PureReturnedParameterIndex(method);
+            boolean returnsParameter = returnedParameter >= 0;
             boolean sourceFreePureBody = returnsParameter || v10PurePrimitiveMethod(method);
             if (!noOpBody && !sourceFreePureBody) return null;
             if (method.returnType != null && !method.returnType.isEmpty()
                     && !"unit".equalsIgnoreCase(method.returnType) && !sourceFreePureBody) return null;
             if (method.receiverAccessMode != org.mosslang.compiler.types.AccessMode.Read) return null;
-            if (method.parameterAccessModes.stream().anyMatch(mode -> mode != org.mosslang.compiler.types.AccessMode.Read
-                    && !(returnsParameter && mode == org.mosslang.compiler.types.AccessMode.Consume))) return null;
+            for (int index = 0; index < method.parameterAccessModes.size(); index++) {
+                org.mosslang.compiler.types.AccessMode mode = method.parameterAccessModes.get(index);
+                if (mode != org.mosslang.compiler.types.AccessMode.Read
+                        && !(returnsParameter && index == returnedParameter
+                                && mode == org.mosslang.compiler.types.AccessMode.Consume)) return null;
+            }
             List<AbiV10Records.WireType> parameters = new ArrayList<>();
             List<Integer> parameterAccess = new ArrayList<>();
             for (int index = 0; index < method.params.size(); index++) {
@@ -1273,18 +1278,22 @@ public class ProjectBuilder {
         return template;
     }
 
-    private static boolean v10PureParameterReturnMethod(Method method) {
-        if (method.params.size() != 1 || method.body.size() != 1
+    private static int v10PureReturnedParameterIndex(Method method) {
+        if (method.body.size() != 1
                 || method.body.get(0).kind != org.mosslang.compiler.ast.Stmt.Kind.Return
-                || method.returnType == null || method.params.get(0).type == null
-                || !method.returnType.equalsIgnoreCase(method.params.get(0).type)) return false;
+                || method.returnType == null) return -1;
         org.mosslang.compiler.ast.Stmt statement = method.body.get(0);
         String expression = statement.a != null ? statement.a.trim() : "";
         if (expression.isEmpty() && statement.text != null
                 && statement.text.trim().startsWith("return ")) {
             expression = statement.text.trim().substring(7).trim();
         }
-        return expression.equals(method.params.get(0).name);
+        for (int index = 0; index < method.params.size(); index++) {
+            Param parameter = method.params.get(index);
+            if (expression.equals(parameter.name) && parameter.type != null
+                    && method.returnType.equalsIgnoreCase(parameter.type)) return index;
+        }
+        return -1;
     }
 
     private static boolean v10PurePrimitiveMethod(Method method) {

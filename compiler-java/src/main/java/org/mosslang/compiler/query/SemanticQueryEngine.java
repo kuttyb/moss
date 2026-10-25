@@ -1951,12 +1951,16 @@ public class SemanticQueryEngine {
                             .append("      {\"name\": \"self\", \"type\": \"")
                             .append(object.name.toLowerCase(Locale.ROOT)).append("\", \"effect\": \"")
                             .append(receiverWrite ? "WRITE" : "READ").append("\"}");
-                    for (Param parameter : method.params) {
+                    for (int index = 0; index < method.params.size(); index++) {
+                        Param parameter = method.params.get(index);
+                        String parameterEffect = index < method.parameterAccessModes.size()
+                                ? method.parameterAccessModes.get(index).name().toUpperCase(Locale.ROOT)
+                                : "READ";
                         sb.append(",\n      {\"name\": \"").append(parameter.name)
                                 .append("\", \"type\": \"")
                                 .append(parameter.type != null && !parameter.type.isEmpty()
                                         ? parameter.type.toLowerCase(Locale.ROOT) : "int")
-                                .append("\", \"effect\": \"READ\"}");
+                                .append("\", \"effect\": \"").append(parameterEffect).append("\"}");
                     }
                     return sb.append("\n    ]").toString();
                 }

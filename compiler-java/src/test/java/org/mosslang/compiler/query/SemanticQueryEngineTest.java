@@ -15,6 +15,7 @@ public final class SemanticQueryEngineTest {
         effectsQueryCollectsDirectRaisesForArbitraryNames();
         effectsQueryFollowsNestedFunctionEffects();
         effectsQueryFollowsLocalMethodEffects();
+        effectsQueryReportsMethodParameterAccessModes();
         effectsQueryFollowsHandlerHelperEffects();
         effectsQueryFollowsOrdinaryFunctionRaises();
         effectsQueryFollowsLocalObjectMethodRaises();
@@ -160,6 +161,24 @@ public final class SemanticQueryEngineTest {
         new SemanticChecker(program).run();
         String result = queryEffects(program, "calculate");
         assertContains(result, "\"external_io\": true");
+    }
+
+    private static void effectsQueryReportsMethodParameterAccessModes() {
+        String source = ""
+                + "type Box:\n"
+                + "  fn identity(values: Vector[Int]) -> Vector[Int]:\n"
+                + "    return values\n"
+                + "fn main():\n"
+                + "  pass\n";
+        Program program = Parser.parseSource(source, "effects-query-method-ownership.moss");
+        new SemanticChecker(program).run();
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        try (PrintStream stream = new PrintStream(output, true, StandardCharsets.UTF_8)) {
+            SemanticQueryEngine.executeQuery("effects", "method:Box.identity", program,
+                    "effects-query-method-ownership.moss", true, null, null, stream);
+        }
+        assertContains(output.toString(StandardCharsets.UTF_8),
+                "\"name\": \"values\", \"type\": \"vector[int]\", \"effect\": \"CONSUME\"");
     }
 
     private static void effectsQueryExcludesRecoveredDirectRaises() {
