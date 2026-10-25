@@ -1002,6 +1002,7 @@ public class ExpressionTyper {
             }
             String callback = functions.containsKey(inner) ? inner : currentCallableBindings.get(inner);
             if (callback != null || inner.contains(".")) {
+                if (callback == null) requireConcretePipelineMethodCallback(inner, line, env);
                 String argument = "__moss_pipeline_arg";
                 while (env.containsKey(argument)) {
                     argument += "_";
@@ -1141,6 +1142,7 @@ public class ExpressionTyper {
         }
         String callback = functions.containsKey(inner) ? inner : currentCallableBindings.get(inner);
         if (callback != null || inner.contains(".")) {
+            if (callback == null) requireConcretePipelineMethodCallback(inner, line, env);
             String argument = "__moss_pipeline_arg";
             while (env.containsKey(argument)) argument += "_";
             TypeEnv callbackEnv = env.copy();
@@ -1151,6 +1153,18 @@ public class ExpressionTyper {
         if (isOpenCallbackBinding(inner, env)) return null;
         throw new CompileError(line, "unresolved functional callable '" + inner + "'",
                 "FUNCTIONAL_SEMANTIC_ERROR");
+    }
+
+    private void requireConcretePipelineMethodCallback(String callback, int line, TypeEnv env) {
+        int dot = callback.lastIndexOf('.');
+        if (dot <= 0) return;
+        String receiver = callback.substring(0, dot).trim();
+        TypeRef receiverType = solver.resolve(infer(receiver, line, env));
+        if (receiverType == null || receiverType.kind() == TypeKind.InferenceVar) {
+            throw new CompileError(line, "field access '" + callback
+                    + "' requires a concrete receiver type; annotate the parameter or expose the behavior through a method/trait",
+                    "UNTYPED_FIELD_ACCESS");
+        }
     }
 
     private boolean isOpenCallbackBinding(String name, TypeEnv env) {

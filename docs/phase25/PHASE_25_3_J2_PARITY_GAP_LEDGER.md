@@ -822,3 +822,17 @@ cross-module callback methods remain open.
 Validation refresh after bound-method callback handling: all 12 Java test
 classes pass under ABI-v9 and staged ABI-v10; the added direct-main positive
 and negative controls pass in `SemanticCheckerTest`.
+
+
+### Follow-up — require concrete receiver type for method callback references
+
+A generic helper used `map(box.risky)` with an untyped `box`. C++ rejects this
+callback because the receiver type is unresolved; Java had accepted it and
+emitted a generic macro body. Java now fails closed for an unresolved bound
+method callback receiver while retaining the concrete `Box` control. Both
+checkers reject the untyped form and accept the concrete source. A same-named
+global function and method also exposed raise-set overcounting: dotted method
+callbacks were matching global function suffixes. Function callback matching
+now requires a bare or `::`-qualified function name, and method callback tests
+verify only the selected method's raise set. All 12 Java test classes pass under
+ABI-v9 and staged ABI-v10.

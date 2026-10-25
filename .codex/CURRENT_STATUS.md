@@ -16707,3 +16707,16 @@ agree for both. The full 12-class Java suite passed under ABI-v9 and staged
 ABI-v10 after the implementation change; after adding direct-main controls,
 `SemanticCheckerTest` passes again. Generic and cross-module method callbacks
 remain open; no native Rust validation was performed.
+
+
+### Phase 25.3 continuation — fail-closed generic method callback receiver
+
+A callback `map(box.risky)` in a helper with untyped `box` was rejected by C++
+with `UNTYPED_FIELD_ACCESS`, but accepted by Java. Java's pipeline callback
+typer now requires a concrete receiver for bound-method references; a typed
+`Box` control remains accepted. Minimized probes agree on both outcomes. A
+same-named global callback function and object method also showed the raise
+collector overcounted a dotted method callback as the global function. The
+shared callback utility now matches global functions only by their bare or
+`::`-qualified name; semantic-query tests preserve only the method's own raise
+set. All 12 Java unit test classes pass in ABI-v9 and staged ABI-v10.

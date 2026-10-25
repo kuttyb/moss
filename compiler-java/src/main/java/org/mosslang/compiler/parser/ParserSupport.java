@@ -4,8 +4,8 @@ import org.eclipse.collections.api.list.MutableList;
 import org.eclipse.collections.impl.list.mutable.FastList;
 import org.mosslang.compiler.ast.Line;
 
-import java.util.Collection;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -71,8 +71,7 @@ public final class ParserSupport {
     public static boolean usesPipelineFunctionCallback(String expression, String functionName) {
         if (functionName == null) return false;
         for (String callback : pipelineCallbacks(expression)) {
-            if (callback.equals(functionName) || callback.endsWith("." + functionName)
-                    || callback.endsWith("::" + functionName)) return true;
+            if (callback.equals(functionName) || callback.endsWith("::" + functionName)) return true;
         }
         return false;
     }

@@ -58,6 +58,7 @@ public class SemanticCheckerTest {
         testRecursionThroughFunctionalCallbacksIsRejected();
         testFilterRequiresBooleanPredicate();
         testReduceCallbackResultMatchesAccumulator();
+        testPipelineMethodCallbackRequiresConcreteReceiver();
         testEnumValuesAreRejectedAsMapKeys();
         testOverlappingConsumeArgumentsAreRejected();
         testFunctionalCallbacksRejectMutableCaptures();
@@ -1520,6 +1521,26 @@ public class SemanticCheckerTest {
         new SemanticChecker(valid).run();
     }
 
+    private static void testPipelineMethodCallbackRequiresConcreteReceiver() {
+        String declarations = ""
+                + "type Box:\n"
+                + "  fn apply(value: Int) -> Int:\n"
+                + "    return value\n";
+        assertCompileError(declarations
+                + "fn mapped(box, values: Vector[Int]) -> Vector[Int]:\n"
+                + "  return values |> map(box.apply)\n"
+                + "fn main():\n"
+                + "  box = Box()\n"
+                + "  mapped(box, [1])\n", "UNTYPED_FIELD_ACCESS");
+        Program concreteReceiver = Parser.parseSource(declarations
+                + "fn mapped(box: Box, values: Vector[Int]) -> Vector[Int]:\n"
+                + "  return values |> map(box.apply)\n"
+                + "fn main():\n"
+                + "  box = Box()\n"
+                + "  mapped(box, [1])\n", "pipeline-method-callback-concrete-receiver.moss");
+        new SemanticChecker(concreteReceiver).run();
+    }
+
     private static void testEnumValuesAreRejectedAsMapKeys() {
         Program invalid = Parser.parseSource(""
                 + "enum Color:\n"
@@ -2291,6 +2312,10 @@ public class SemanticCheckerTest {
         new SemanticChecker(callbackHandled).run();
 
         String methodCallbackPrefix = prefix
+                + "enum CallbackFault:\n"
+                + "  Other\n"
+                + "fn risky(value: Int) -> Int:\n"
+                + "  raise CallbackFault.Other\n"
                 + "type Box:\n"
                 + "  fn risky(value: Int) -> Int:\n"
                 + "    raise Trouble.Bad\n"
