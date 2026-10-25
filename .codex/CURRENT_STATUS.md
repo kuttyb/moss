@@ -16425,3 +16425,9 @@ including nested collection type arguments. The historical negative fixture
 Focused `SemanticCheckerTest` coverage was added. The 51–100 sample was not
 rerun after this change; the prior count was 15 Java-only accepts and 0 C++
 accepts. Native and release gates remain unrun.
+
+Post-change refresh of the same sorted 51–100 negative slice now shows 13
+Java-only accepts and 0 C++ accepts. All 13 are Executor/FileIO lifecycle,
+placement, type, or capability cases; the earlier historical-handle,
+same-domain reply, and callable-result cases now reject in Java. This screen
+does not establish parity beyond these 50 fixtures.

@@ -61,6 +61,7 @@ public class SemanticCheckerTest {
         testFunctionalPipelinesMustBeMaterializedAtDomainBoundary();
         testCollectionTypeArgumentsRequireExactArity();
         testUnknownFunctionalCallbackIsRejected();
+        testMapRejectsTraitConstraintAsCallbackResult();
         testForLoopRequiresIteratorProtocol();
         testDirectVectorSumTypeAndLowering();
         testValueHandlerRepliesOnEveryNormalPath();
@@ -1507,6 +1508,20 @@ public class SemanticCheckerTest {
             expectCompileError(invalid, "FUNCTIONAL_SEMANTIC_ERROR",
                     "functional stages require a statically known callback: " + stage);
         }
+    }
+
+    private static void testMapRejectsTraitConstraintAsCallbackResult() {
+        Program invalid = Parser.parseSource(""
+                + "trait ValueSource:\n"
+                + "  fn Value() -> Int\n"
+                + "fn missing_result(value: Int) -> ValueSource:\n"
+                + "  echo value\n"
+                + "fn main():\n"
+                + "  values = [1, 2]\n"
+                + "  result = values |> map(missing_result)\n"
+                + "  echo result |> count\n", "trait-valued-map-result.moss");
+        expectCompileError(invalid, "TYPE_INFERENCE_FAILED",
+                "map callbacks cannot return a compile-time trait constraint as a value");
     }
 
     private static void testForLoopRequiresIteratorProtocol() {

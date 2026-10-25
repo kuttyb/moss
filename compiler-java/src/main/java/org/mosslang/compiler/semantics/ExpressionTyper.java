@@ -997,6 +997,7 @@ public class ExpressionTyper {
                 TypeEnv callbackEnv = env.copy();
                 callbackEnv.put(placeholder, elemType);
                 TypeRef result = infer(substituted, line, callbackEnv);
+                rejectTraitValueResult(result, inner, line);
                 return TypeRef.builtin("vector", List.of(result));
             }
             String callback = functions.containsKey(inner) ? inner : currentCallableBindings.get(inner);
@@ -1008,6 +1009,7 @@ public class ExpressionTyper {
                 TypeEnv callbackEnv = env.copy();
                 callbackEnv.put(argument, elemType);
                 TypeRef ret = infer((callback != null ? callback : inner) + "(" + argument + ")", line, callbackEnv);
+                rejectTraitValueResult(ret, inner, line);
                 return TypeRef.builtin("vector", List.of(ret));
             }
             if (isOpenCallbackBinding(inner, env))
@@ -1069,6 +1071,16 @@ public class ExpressionTyper {
         }
 
         return TypeRef.builtin("vector", List.of(elemType));
+    }
+
+    private void rejectTraitValueResult(TypeRef result, String callable, int line) {
+        TypeRef resolved = solver.resolve(result);
+        if (resolved != null && resolved.kind() == TypeKind.TraitConstraint) {
+            throw new CompileError(line,
+                    "cannot determine the result type of functional callable '" + callable
+                            + "' used by map; traits are compile-time constraints, not value types",
+                    "TYPE_INFERENCE_FAILED");
+        }
     }
 
     private TypeRef inferSpecializedIteratorElement(String source, int line, TypeEnv env) {
