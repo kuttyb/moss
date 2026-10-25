@@ -335,7 +335,9 @@ public final class ProjectBuilderMetadataTest {
                 + "export fn enabled() -> Bool:\n"
                 + "  return true\n"
                 + "export fn ratio() -> Float:\n"
-                + "  return 1.5\n", "identity-provider.moss");
+                + "  return 1.5\n"
+                + "export fn increment(value: Int) -> Int:\n"
+                + "  return value + 1\n", "identity-provider.moss");
         new org.mosslang.compiler.semantics.CheckedProgram(identityProgram).run();
         identityProgram.functions.forEach(function -> {
             String name = function.name;
@@ -480,6 +482,35 @@ public final class ProjectBuilderMetadataTest {
                 || !ratioSummary.bodySemanticHash.equals(ratioBody.semanticHash)) {
             throw new AssertionError("ABI-v10 float constant summary/body is incomplete");
         }
+        AbiV10Records.Summary incrementSummary = identityInterface.binaryContract.stream()
+                .filter(record -> record.payloadBytes().length > 0
+                        && (record.payloadBytes()[0] == 3 || record.payloadBytes()[0] == 4))
+                .map(AbiV10Records.Summary::decode)
+                .filter(summary -> summary.callableId.endsWith(":fn:increment"))
+                .findFirst().orElseThrow(() ->
+                        new AssertionError("ABI-v10 producer omitted the integer-add summary"));
+        AbiV10Records.CheckedBodyRecord incrementBody = identityInterface.privateSemanticDependencies.stream()
+                .filter(record -> record.id.startsWith("checked-body-v1:"))
+                .map(AbiV10Records.CheckedBodyRecord::decode)
+                .filter(body -> body.callableId.endsWith(":fn:increment"))
+                .findFirst().orElseThrow(() ->
+                        new AssertionError("ABI-v10 producer omitted the integer-add body"));
+        java.util.List<org.mosslang.compiler.abi.CheckedStmt> incrementStatements =
+                CheckedBodyCodec.decodeCheckedBody(incrementBody.checkedIrBytes);
+        if (incrementSummary.parameters.size() != 1
+                || incrementSummary.parameters.get(0).kind != AbiV10Records.WireTypeKind.Primitive
+                || !"int".equals(incrementSummary.parameters.get(0).identity)
+                || incrementSummary.result.kind != AbiV10Records.WireTypeKind.Primitive
+                || !"int".equals(incrementSummary.result.identity)
+                || incrementStatements.size() != 1
+                || incrementStatements.get(0).expr.kind != org.mosslang.compiler.abi.CheckedExprKind.Binary
+                || incrementStatements.get(0).expr.binaryOp != org.mosslang.compiler.abi.CheckedBinaryOp.Add
+                || incrementStatements.get(0).expr.operands.get(0).kind
+                        != org.mosslang.compiler.abi.CheckedExprKind.Parameter
+                || !"1".equals(incrementStatements.get(0).expr.operands.get(1).literalValue)
+                || !incrementSummary.bodySemanticHash.equals(incrementBody.semanticHash)) {
+            throw new AssertionError("ABI-v10 integer-add summary/body is incomplete");
+        }
         Path identityMossi = null;
         try {
             identityMossi = Files.createTempFile(Path.of("tmp"), "identity-provider-", ".mossi");
@@ -509,6 +540,8 @@ public final class ProjectBuilderMetadataTest {
                     + "  return provider__enabled()\n"
                     + "fn use_ratio() -> Float:\n"
                     + "  return provider__ratio()\n"
+                    + "fn use_increment() -> Int:\n"
+                    + "  return provider__increment(41)\n"
                     + "fn main():\n"
                     + "  pass\n", "identity-consumer.moss");
             org.mosslang.compiler.cli.Main.loadMossiFunctions(identityMossi, "provider", consumer);

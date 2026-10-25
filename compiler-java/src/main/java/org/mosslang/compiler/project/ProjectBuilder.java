@@ -1466,6 +1466,7 @@ public class ProjectBuilder {
                     AbiV10Records.Summary summary = v10DirectReturnSummary(
                             fn, modId, provenanceRecords);
                     CheckedExpr constantReturn = null;
+                    CheckedExpr arithmeticReturn = null;
                     if (summary == null) {
                         constantReturn = v10ZeroArgLiteralReturn(fn);
                         if (constantReturn != null) {
@@ -1473,11 +1474,20 @@ public class ProjectBuilder {
                                     fn, constantReturn, modId, provenanceRecords);
                         }
                     }
+                    if (summary == null) {
+                        arithmeticReturn = v10SingleIntAddReturn(fn);
+                        if (arithmeticReturn != null) {
+                            summary = v10SingleExpressionSummary(
+                                    fn, arithmeticReturn, modId, provenanceRecords);
+                        }
+                    }
                     if (summary != null) {
                         callableSummaryRecords.add(summary.record());
                         AbiV10Records.CheckedBodyRecord body = constantReturn != null
-                                ? v10ZeroArgLiteralBody(fn, summary, constantReturn)
-                                : v10DirectReturnBody(fn, summary);
+                                ? v10SimpleExpressionBody(summary, constantReturn)
+                                : arithmeticReturn != null
+                                        ? v10SimpleExpressionBody(summary, arithmeticReturn)
+                                        : v10DirectReturnBody(fn, summary);
                         checkedBodyRecords.add(body.record());
                     }
                 }
@@ -1669,10 +1679,59 @@ public class ProjectBuilder {
         return summary;
     }
 
-    private static AbiV10Records.CheckedBodyRecord v10ZeroArgLiteralBody(
-            Function function, AbiV10Records.Summary summary, CheckedExpr expression) {
-        List<CheckedStmt> checkedStatements = List.of(CheckedStmt.returnStmt(
-                expression));
+    private static CheckedExpr v10SingleIntAddReturn(Function function) {
+        if (function.params.size() != 1 || function.returnTypeRef == null
+                || function.returnTypeRef.kind() != org.mosslang.compiler.types.TypeKind.Primitive
+                || !"int".equalsIgnoreCase(function.returnTypeRef.name())
+                || !function.returnTypeRef.equals(function.params.get(0).checkedTypeRef)
+                || function.body.size() != 1 || function.body.get(0).kind != Stmt.Kind.Return) return null;
+        String expression = function.body.get(0).a != null ? function.body.get(0).a.trim() : "";
+        org.mosslang.compiler.semantics.ExpressionTyper.BinarySplit split =
+                org.mosslang.compiler.semantics.ExpressionTyper.splitBinary(expression, List.of("+"));
+        if (split == null || !function.params.get(0).name.equals(split.left().trim())
+                || !split.right().trim().matches("[0-9](?:_?[0-9])*")) return null;
+        long literal;
+        try { literal = Long.parseLong(split.right().trim().replace("_", "")); }
+        catch (NumberFormatException ignored) { return null; }
+        TypeRef intType = canonicalV10SummaryType(function.returnTypeRef, Map.of());
+        return CheckedExpr.binary(org.mosslang.compiler.abi.CheckedBinaryOp.Add,
+                CheckedExpr.parameter(0, intType), CheckedExpr.integerLiteral(literal, intType), intType);
+    }
+
+    private static AbiV10Records.Summary v10SingleExpressionSummary(
+            Function function, CheckedExpr expression, String moduleId,
+            List<AbiV10Records.SourceProvenance> provenanceRecords) {
+        TypeRef parameterType = function.params.get(0).checkedTypeRef;
+        TypeRef resultType = function.returnTypeRef;
+        if (!isV10SummaryTypeRepresentable(parameterType)
+                || !isV10SummaryTypeRepresentable(resultType)) return null;
+        Map<org.mosslang.compiler.types.TypeVarId, Integer> ordinals = new LinkedHashMap<>();
+        collectV10SummaryVariables(parameterType, ordinals);
+        collectV10SummaryVariables(resultType, ordinals);
+        AbiV10Records.Summary summary = new AbiV10Records.Summary();
+        summary.callableId = function.semanticCallableId;
+        summary.variableCount = ordinals.size();
+        summary.parameters.add(AbiV10Records.fromTypeRef(parameterType, ordinals));
+        org.mosslang.compiler.types.AccessMode access = function.parameterAccessModes.isEmpty()
+                ? org.mosslang.compiler.types.AccessMode.Read : function.parameterAccessModes.get(0);
+        summary.parameterAccess.add(switch (access) {
+            case Read -> AbiV10Records.Access.Read;
+            case Write -> AbiV10Records.Access.Write;
+            case Consume -> AbiV10Records.Access.Consume;
+        });
+        summary.result = AbiV10Records.fromTypeRef(resultType, ordinals);
+        String bodyBytes = CheckedBodyCodec.encodeCheckedBodyV1(List.of(CheckedStmt.returnStmt(expression)));
+        summary.bodySemanticHash = "body-semantic-v1:sha256:" + CheckedBodyCodec.sha256Hex(bodyBytes);
+        AbiV10Records.SourceProvenance provenance = AbiV10Records.SourceProvenance.create(
+                moduleId, summary.callableId, function.sourceFile, function.line);
+        summary.provenanceId = provenance.provenanceId();
+        provenanceRecords.add(provenance);
+        return summary;
+    }
+
+    private static AbiV10Records.CheckedBodyRecord v10SimpleExpressionBody(
+            AbiV10Records.Summary summary, CheckedExpr expression) {
+        List<CheckedStmt> checkedStatements = List.of(CheckedStmt.returnStmt(expression));
         AbiV10Records.CheckedBodyRecord body = new AbiV10Records.CheckedBodyRecord();
         body.callableId = summary.callableId;
         body.checkedIrBytes = CheckedBodyCodec.encodeCheckedBodyV1(checkedStatements);
