@@ -16001,3 +16001,23 @@ comparison schedule differs. This is a trace-level implementation difference,
 not an output or ordering mismatch. Exact sort-comparator trace parity remains
 unresolved; no attempt was made to emulate a platform-specific comparison
 schedule. Other Phase 25.3 release gates remain open.
+
+### Phase 25.3 follow-up — preserve user-defined `sort` calls in Rust lowering
+
+The existing adversarial sort review identified that a user function named
+`sort` is allowed to win in checking and Fast Debug, but Rust expression
+lowering intercepted every `sort(...)` as the builtin. A minimal
+`fn sort(values: Vector[Int]) -> Int` probe generated `.sort_by(...)` in Java
+Rust. The backend now lowers the builtin only when there is no user-defined
+`sort`; a codegen regression verifies the function declaration and call remain
+and that builtin sorting is absent. The same regression checks that an untyped
+String sort key receives cloned owned values at both comparator operands.
+
+Validation: all twelve Java test classes pass under ABI-v9 and staged ABI-v10.
+The user-defined sort probe produces `7` then `3` in both C++ and Java Fast
+Debug, and Java-generated Rust now contains the ordinary `sort(values.clone())`
+call with no `.sort_by`. The untyped-key generated Rust uses
+`__moss_fn_loose!((*__moss_a).clone())` and the corresponding `b` operand.
+Generated Rust was inspected only; native compilation remains deferred to the
+frozen-candidate acceptance gate. The broader backend and full release gates
+remain open.

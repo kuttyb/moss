@@ -3,6 +3,7 @@ package org.mosslang.compiler.backend;
 import org.mosslang.compiler.ast.Program;
 import org.mosslang.compiler.cli.Main;
 import org.mosslang.compiler.parser.Parser;
+import org.mosslang.compiler.semantics.CheckedProgram;
 
 import java.io.File;
 import java.nio.file.Files;
@@ -16,6 +17,7 @@ public class DebugMapGeneratorTest {
 
         testStableHashAndToolingSymbols();
         testDebugMapGeneration();
+        testUserSortFunctionShadowsBuiltinLowering();
         testCliFlagsDebugMap();
 
         System.out.println("DebugMapGeneratorTest PASSED: All tests passed successfully.");
@@ -150,6 +152,38 @@ public class DebugMapGeneratorTest {
         assertTrue(json.contains("\"construct_kind\": \"function\""), "JSON contains function entry");
         assertTrue(json.contains("\"native_symbol\": \"moss__function__normalize__1c7da4aaa4b6bb71\""),
                 "JSON contains correct native symbol for normalize");
+    }
+
+    private static void testUserSortFunctionShadowsBuiltinLowering() {
+        String source = """
+                fn sort(values: Vector[Int]) -> Int:
+                  return 7
+                fn main():
+                  var values = [3, 1, 2]
+                  echo sort(values)
+                  echo values[0]
+                """;
+        Program program = Parser.parseSource(source, "user-sort-function.moss");
+        new CheckedProgram(program).run();
+        String rust = NativeGenerator.generate(program, false, false);
+        assertTrue(rust.contains("fn sort("), "user-defined sort function is emitted");
+        assertTrue(!rust.contains(".sort_by("), "user-defined sort call must not become builtin sorting");
+        assertTrue(rust.contains("sort(values"), "main must call the user-defined sort function");
+
+        String genericKeySource = """
+                fn loose(value) -> String:
+                  return value
+                fn main():
+                  var words = ["b", "c", "a"]
+                  sort(words, by: loose)
+                """;
+        Program genericKeyProgram = Parser.parseSource(genericKeySource, "generic-sort-key.moss");
+        new CheckedProgram(genericKeyProgram).run();
+        String genericKeyRust = NativeGenerator.generate(genericKeyProgram, false, false);
+        assertTrue(genericKeyRust.contains("__moss_fn_loose!((*__moss_a).clone())"),
+                "untyped String sort key receives its specialized owned value");
+        assertTrue(genericKeyRust.contains("__moss_fn_loose!((*__moss_b).clone())"),
+                "both untyped sort-key operands receive owned values");
     }
 
     private static void testCliFlagsDebugMap() throws Exception {

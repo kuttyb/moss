@@ -3307,7 +3307,9 @@ public class NativeGenerator {
                 return "__moss_fn_" + callee + "!(" + String.join(", ", macroArgs) + ")";
             }
 
-            if ("sort".equals(callee)) {
+            Program current = currentProgram.get();
+            if ("sort".equals(callee) && (current == null
+                    || current.functions.stream().noneMatch(function -> function.name.equals("sort")))) {
                 List<String> sortArgs = splitTopLevel(
                         expr.substring(openParen + 1, expr.length() - 1).trim(), ',');
                 return lowerSortCall(sortArgs, stateFields, domains, objects);
