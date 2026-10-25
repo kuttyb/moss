@@ -2030,6 +2030,29 @@ public class SemanticChecker {
 
     private void requireAvailable(int line, String expression, OwnershipEnv env) {
         if (expression == null || expression.isEmpty()) return;
+        java.util.regex.Matcher methodCall = java.util.regex.Pattern
+                .compile("(?<![A-Za-z0-9_])([A-Za-z_][A-Za-z0-9_]*(?:\\s*\\.\\s*[A-Za-z_][A-Za-z0-9_]*)*)"
+                        + "\\s*\\.\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*\\(")
+                .matcher(expression);
+        while (methodCall.find()) {
+            String receiverPath = methodCall.group(1).replaceAll("\\s", "");
+            String root = receiverPath.contains(".")
+                    ? receiverPath.substring(0, receiverPath.indexOf('.')) : receiverPath;
+            if (!env.immutables.contains(root)) continue;
+            TypeRef rootType = env.get(root);
+            TypeRef receiverType = resolveReceiverPathType(rootType, receiverPath, root);
+            ObjectType receiverObject = receiverType != null
+                    ? findObjectType(receiverType.name()) : null;
+            if (receiverObject == null) continue;
+            boolean writesReceiver = receiverObject.methods.stream().anyMatch(method ->
+                    method.name.equals(methodCall.group(2))
+                            && method.receiverAccessMode == AccessMode.Write);
+            if (writesReceiver) {
+                throw new CompileError(line, "cannot mutate immutable local '" + root
+                        + "'; declare it with `var` if mutation is intended",
+                        "IMMUTABLE_LOCAL_MUTATION");
+            }
+        }
         java.util.regex.Matcher mutatingStringCall = java.util.regex.Pattern
                 .compile("([A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)*)\\.(append|reserve)\\(")
                 .matcher(expression);
@@ -2694,7 +2717,18 @@ public class SemanticChecker {
                             : i < method.parameterAccessModes.size()
                                     && method.parameterAccessModes.get(i) == AccessMode.Write;
                     if (writesArgument) {
-                        String mutatedVar = args.get(i).trim();
+                        String mutatedVar = callArgumentValue(args.get(i)).trim();
+                        int placeSeparator = mutatedVar.length();
+                        int fieldSeparator = mutatedVar.indexOf('.');
+                        int indexSeparator = mutatedVar.indexOf('[');
+                        if (fieldSeparator >= 0) placeSeparator = Math.min(placeSeparator, fieldSeparator);
+                        if (indexSeparator >= 0) placeSeparator = Math.min(placeSeparator, indexSeparator);
+                        String mutatedRoot = mutatedVar.substring(0, placeSeparator).trim();
+                        if (env.immutables.contains(mutatedRoot)) {
+                            throw new CompileError(line, "cannot mutate immutable local '" + mutatedRoot
+                                    + "'; declare it with `var` if mutation is intended",
+                                    "IMMUTABLE_LOCAL_MUTATION");
+                        }
                         if (mutatedVar.matches("^[A-Za-z_][A-Za-z0-9_]*$")) {
                             for (int j = 0; j < args.size(); j++) {
                                 if (i != j && expressionUses(args.get(j), mutatedVar)

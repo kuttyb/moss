@@ -15904,3 +15904,9 @@ ABI-v10; the standalone JAR was rebuilt and packaged bootstrap reports
 `make check` was run. Full language/backend coverage, source-free native
 compatibility, real project acceptance, daemon readiness, and frozen candidate
 review remain open.
+
+### Phase 25.3 continuation — reject writes through immutable receivers
+
+C++/Java minimal probes found that Java accepted `let cell = Cell(...); cell.update()` and also accepted a `let` object passed to a helper whose inferred parameter mode is WRITE. C++ rejected both with `IMMUTABLE_LOCAL_MUTATION`. Java now resolves direct object-method receiver paths during availability checks and rejects immutable WRITE arguments to inferred or imported helpers. Read-only method calls on a `let` object remain accepted.
+
+Validation: both compilers now reject the two reproductions with matching diagnostic code and message. All twelve Java test classes pass under ABI-v9 and staged ABI-v10; the standalone JAR rebuilds. Broader alias, generic receiver, and branch-sensitive ownership inference remain open. No native/Margo/SDK or full `make check` gate was run.

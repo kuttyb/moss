@@ -29,6 +29,7 @@ public class SemanticCheckerTest {
         testGenericNumericOperationRetainsOpenTypeUntilSpecialization();
         testMixedIntFloatComparisons();
         testObjectMethodAccessModesAreRetained();
+        testImmutableLocalRejectsDirectAndForwardedWriteMethods();
         testNestedFieldReadInBranchConditionKeepsReceiverReadOnly();
         testMovingObjectFieldConsumesMethodReceiver();
         testSiblingMutatorReceiverModeAndUnitCodegen();
@@ -917,6 +918,32 @@ public class SemanticCheckerTest {
                 || method.parameterAccessModes.get(0) != AccessMode.Consume) {
             throw new AssertionError("object method receiver/parameter access modes were not retained");
         }
+    }
+
+    private static void testImmutableLocalRejectsDirectAndForwardedWriteMethods() {
+        String object = ""
+                + "type Cell:\n"
+                + "  value: Int\n"
+                + "  fn update():\n"
+                + "    value = value + 1\n"
+                + "  fn read() -> Int:\n"
+                + "    return value\n";
+        assertCompileError(object
+                + "fn main():\n"
+                + "  let cell = Cell(value: 1)\n"
+                + "  cell.update()\n", "IMMUTABLE_LOCAL_MUTATION");
+        assertCompileError(object
+                + "fn update_cell(cell: Cell):\n"
+                + "  cell.update()\n"
+                + "fn main():\n"
+                + "  let cell = Cell(value: 1)\n"
+                + "  update_cell(cell)\n", "IMMUTABLE_LOCAL_MUTATION");
+
+        Program readOnly = Parser.parseSource(object
+                + "fn main():\n"
+                + "  let cell = Cell(value: 1)\n"
+                + "  echo cell.read()\n", "immutable-read-method.moss");
+        new SemanticChecker(readOnly).run();
     }
 
     private static void testNestedFieldReadInBranchConditionKeepsReceiverReadOnly() {
