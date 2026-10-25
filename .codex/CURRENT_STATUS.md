@@ -15057,3 +15057,16 @@ and `java -jar compiler-java/dist/moss.jar --version` report
 `0.1.0-java (moss-0.1)`; launcher bootstrap reports
 `language_version: moss-0.1`. This is a packaging smoke check, not a release
 acceptance gate.
+
+
+### Phase 25.3 continuation — propagate writes through nested receiver fields
+
+Receiver effect closure now resolves method calls rooted in `self` across
+multiple declared object fields. `Box.relay` calling
+`self.inner.sink.bump()`, where `Sink.bump` writes its own field, reports
+`self: WRITE` in both compilers.
+
+Validation: both compilers accept the focused source and their method effects
+queries agree; all eleven Java unit-test classes pass in ABI-v9 and staged
+ABI-v10. Method-local aliasing, generic substitutions, and cross-module effect
+closure remain open.

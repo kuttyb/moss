@@ -1102,6 +1102,17 @@ public class SemanticChecker {
                         changed = true;
                         break;
                     }
+                    if (method.receiverAccessMode == AccessMode.Write) continue;
+                    for (ObjectType fieldObject : program.objects) {
+                        for (Method candidate : fieldObject.methods) {
+                            if (candidate.receiverAccessMode != AccessMode.Write
+                                    || !callsMutatingFieldMethod(method, candidate)) continue;
+                            method.receiverAccessMode = AccessMode.Write;
+                            changed = true;
+                            break;
+                        }
+                        if (method.receiverAccessMode == AccessMode.Write) break;
+                    }
                 }
             }
         } while (changed);
@@ -1127,6 +1138,27 @@ public class SemanticChecker {
         String result = caller.resultExpression;
         return result != null && (explicitSelfCall.matcher(result).find()
                 || implicitSelfCall.matcher(result).find());
+    }
+
+    private boolean callsMutatingFieldMethod(Method caller, Method callee) {
+        java.util.regex.Pattern call = java.util.regex.Pattern.compile(
+                "\\b(self(?:\\s*\\.\\s*[A-Za-z_][A-Za-z0-9_]*)+)\\s*\\.\\s*"
+                        + java.util.regex.Pattern.quote(callee.name) + "\\s*\\(");
+        for (Stmt statement : caller.body) {
+            java.util.regex.Matcher matcher = call.matcher(statementExpressionText(statement));
+            while (matcher.find()) {
+                String receiverType = resolveMethodReceiverType(matcher.group(1), caller, Map.of());
+                if (matchesObjectTypeName(receiverType, callee.owner)) return true;
+            }
+        }
+        if (caller.resultExpression != null) {
+            java.util.regex.Matcher matcher = call.matcher(caller.resultExpression);
+            while (matcher.find()) {
+                String receiverType = resolveMethodReceiverType(matcher.group(1), caller, Map.of());
+                if (matchesObjectTypeName(receiverType, callee.owner)) return true;
+            }
+        }
+        return false;
     }
 
     private boolean isBuiltinMutatingMethod(TypeRef type, String method) {

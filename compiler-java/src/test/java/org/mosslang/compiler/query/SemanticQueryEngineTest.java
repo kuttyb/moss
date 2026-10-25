@@ -18,6 +18,7 @@ public final class SemanticQueryEngineTest {
         effectsQueryFollowsFieldChainMethodEffects();
         effectsQueryReportsMethodParameterAccessModes();
         effectsQueryReportsSiblingMethodReceiverWrite();
+        effectsQueryReportsNestedFieldReceiverWrite();
         effectsQueryFollowsHandlerHelperEffects();
         effectsQueryFollowsOrdinaryFunctionRaises();
         effectsQueryFollowsLocalObjectMethodRaises();
@@ -223,6 +224,27 @@ public final class SemanticQueryEngineTest {
                 "\"name\": \"self\", \"type\": \"box\", \"effect\": \"WRITE\"");
         assertContains(queryEffects(program, "apply"),
                 "\"name\": \"box\", \"type\": \"box\", \"effect\": \"WRITE\"");
+    }
+
+    private static void effectsQueryReportsNestedFieldReceiverWrite() {
+        String source = ""
+                + "type Sink:\n"
+                + "  value: Int\n"
+                + "  fn bump():\n"
+                + "    self.value = self.value + 1\n"
+                + "type Inner:\n"
+                + "  sink: Sink\n"
+                + "type Box:\n"
+                + "  inner: Inner\n"
+                + "  fn relay():\n"
+                + "    self.inner.sink.bump()\n"
+                + "fn main():\n"
+                + "  box = Box(inner=Inner(sink=Sink(value=0)))\n"
+                + "  box.relay()\n";
+        Program program = Parser.parseSource(source, "effects-query-nested-field-receiver-write.moss");
+        new SemanticChecker(program).run();
+        assertContains(queryEffects(program, "method:Box.relay"),
+                "\"name\": \"self\", \"type\": \"box\", \"effect\": \"WRITE\"");
     }
 
     private static void effectsQueryExcludesRecoveredDirectRaises() {

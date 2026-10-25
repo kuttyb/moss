@@ -404,3 +404,14 @@ Java unit classes pass under ABI-v9 and staged ABI-v10; feedback validation and
 `git diff --check` pass. Generated Rust was inspected but not compiled. This
 closes only the shown receiver/write and unit-return profile, not general
 method effect or native backend parity.
+
+
+### Follow-up — nested field receiver write closure
+
+The sibling-method receiver-write slice also covers calls through nested
+object fields. `Box.relay → self.inner.sink.bump()` is accepted by both
+compilers and reports `self: WRITE` in the method effects query. The Java
+checker resolves the statically declared self-field path to the mutating method
+and closes receiver writes through it. All eleven Java unit classes pass under
+ABI-v9 and staged ABI-v10. Alias, generic substitution, and cross-module
+closures remain open.
