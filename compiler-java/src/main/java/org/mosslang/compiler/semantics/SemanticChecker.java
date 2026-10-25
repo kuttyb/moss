@@ -1134,6 +1134,7 @@ public class SemanticChecker {
         }
         for (DomainRoute r : domain.routes) {
             env.put(r.name, TypeRef.domain(r.type));
+            env.immutables.add(r.name);
         }
         for (Param p : handler.params) {
             TypeRef t = p.typeRef != null ? p.typeRef :

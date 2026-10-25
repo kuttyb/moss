@@ -16365,3 +16365,16 @@ the packaged compiler checks pass. This does not validate the full iterator
 surface or native generated-code behavior. The previous second 50-negative
 slice recorded 21 Java-only accepts before these iterator changes; that slice
 has not yet been refreshed. Native and release acceptance gates remain unrun.
+
+### Phase 25.3 continuation — domain routes are immutable in handlers
+
+Java handler environments now mark declared domain routes immutable. The
+negative fixture `phase106b_route_reassign.moss` previously passed Java while
+C++ rejected route rebinding; both now reject it. Java reports
+`IMMUTABLE_LOCAL_MUTATION`, while C++ reports its domain-route-specific
+`MOSS_COMPILE_ERROR`. A focused `SemanticCheckerTest` covers this rule.
+
+The 50-file slice has not been fully rerun. Targeted comparison still shows
+Java-only acceptance for Executor capability arguments, missing domain
+handlers called through ordinary expression paths, and transitive message
+payload writes. No native or release acceptance gates have run.

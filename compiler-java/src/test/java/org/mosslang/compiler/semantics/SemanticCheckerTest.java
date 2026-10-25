@@ -48,6 +48,7 @@ public class SemanticCheckerTest {
         testPerInstanceDomainLayoutSpecialization();
         testConflictingDomainInstanceTypesAreRejected();
         testDomainHandlersRequireMessageSyntax();
+        testDomainRoutesCannotBeReassigned();
         testRecursionThroughFunctionalCallbacksIsRejected();
         testFilterRequiresBooleanPredicate();
         testReduceCallbackResultMatchesAccumulator();
@@ -1157,6 +1158,23 @@ public class SemanticCheckerTest {
                 + "  pass\n", "same-domain-handler-message.moss");
         expectCompileError(sameDomain, "MOSS_COMPILE_ERROR",
                 "same-domain handlers must use ordinary helper calls");
+    }
+
+    private static void testDomainRoutesCannotBeReassigned() {
+        Program invalid = Parser.parseSource(""
+                + "domain Worker:\n"
+                + "  fn Run():\n"
+                + "    pass\n"
+                + "domain Router:\n"
+                + "  domainroutes(worker: Worker)\n"
+                + "  fn Reset():\n"
+                + "    worker = worker\n"
+                + "fn main():\n"
+                + "  worker = Worker()\n"
+                + "  router = Router(worker: worker)\n"
+                + "  message router.Reset()\n", "domain-route-reassignment.moss");
+        expectCompileError(invalid, "IMMUTABLE_LOCAL_MUTATION",
+                "a statically bound domain route cannot be reassigned");
     }
 
     private static void testRecursionThroughFunctionalCallbacksIsRejected() {
