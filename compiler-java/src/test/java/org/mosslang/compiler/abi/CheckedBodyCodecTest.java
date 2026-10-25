@@ -23,6 +23,7 @@ public class CheckedBodyCodecTest {
         testNominalRecordsRequireValidProvenanceReferences();
         testMethodTemplateNominalReferences();
         testCanonicalOpenSummaryRecord();
+        testOpenTypeRefSummaryOrdinalMapping();
         testCanonicalCheckedBodyRecord();
         testCheckedBodyNominalDependencyClosure();
         testPrivateEnumBodyDependency();
@@ -477,6 +478,28 @@ public class CheckedBodyCodecTest {
         wrongOwnerHash.provenance.addAll(iface.provenance);
         wrongOwnerHash.privateSemanticDependencies.add(record);
         expectSummaryInvalid(wrongOwnerHash, "accepted checked body with a mismatched summary hash");
+    }
+
+    private static void testOpenTypeRefSummaryOrdinalMapping() {
+        org.mosslang.compiler.types.TypeVarId variableId =
+                new org.mosslang.compiler.types.TypeVarId(17, 3, 9);
+        TypeRef variable = TypeRef.var(variableId);
+        TypeRef vector = TypeRef.builtin("vector", List.of(variable));
+        AbiV10Records.WireType wire = AbiV10Records.fromTypeRef(vector,
+                java.util.Map.of(variableId, 0));
+        if (!"Vector[_0]".equals(wire.canonicalName())
+                || wire.arguments.size() != 1
+                || wire.arguments.get(0).kind != AbiV10Records.WireTypeKind.BoundVar
+                || wire.arguments.get(0).ordinal != 0) {
+            throw new AssertionError("open checker types did not map to summary ordinals: "
+                    + wire.canonicalName());
+        }
+        try {
+            AbiV10Records.fromTypeRef(variable);
+            throw new AssertionError("open type without a callable ordinal was encoded");
+        } catch (CompileError error) {
+            if (!"SOURCE_FREE_TYPE_IDENTITY_MISMATCH".equals(error.getCode())) throw error;
+        }
     }
 
     private static void testCheckedBodyNominalDependencyClosure() {

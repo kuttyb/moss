@@ -13233,3 +13233,16 @@ Follow-up generic identity validation: the same function is called once with
 `Int` and once with `String`; both C++ and Java accept the program, and Java's
 specialization facts retain both concrete parameter types. All ten Java test
 classes pass in staged ABI-v10 after this expanded regression.
+
+### Phase 25.3 continuation — project checker variables into ABI-v10 types
+
+`AbiV10Records.fromTypeRef` now has an overload that maps checker-owned
+`TypeVarId`s to ABI-v10 callable summary ordinals, including nested built-in
+type arguments. Open variables without an explicit summary ordinal fail closed.
+A focused test covers `Vector[TypeVar] -> Vector[_0]` and missing-ordinal
+rejection. This supplies a conversion primitive only; callable summary/body
+production and source-free checker projection remain open.
+
+Validation: all ten Java unit-test classes pass after clean builds in default
+ABI-v9 and staged ABI-v10 modes; feedback validation and `git diff --check`
+pass.

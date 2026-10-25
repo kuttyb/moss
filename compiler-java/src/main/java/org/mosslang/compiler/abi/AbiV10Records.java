@@ -789,13 +789,26 @@ public final class AbiV10Records {
     }
 
     public static WireType fromTypeRef(TypeRef type) {
+        return fromTypeRef(type, java.util.Map.of());
+    }
+
+    /** Convert checker types while mapping open solver variables into summary ordinals. */
+    public static WireType fromTypeRef(TypeRef type,
+                                       java.util.Map<org.mosslang.compiler.types.TypeVarId, Integer> variables) {
         if (type == null) throw invalid("ABI-v10 field has no resolved type");
+        if (type.kind() == TypeKind.InferenceVar) {
+            Integer ordinal = variables.get(type.varId());
+            if (ordinal == null || ordinal < 0) {
+                throw invalid("ABI-v10 open type has no callable summary ordinal");
+            }
+            return WireType.bound(ordinal);
+        }
         return switch (type.kind()) {
             case Primitive -> WireType.scalar(WireTypeKind.Primitive, type.name());
             case Unit -> WireType.unit();
             case Builtin -> {
                 WireType result = WireType.scalar(WireTypeKind.Builtin, type.name());
-                for (TypeRef arg : type.typeArgs()) result.arguments.add(fromTypeRef(arg));
+                for (TypeRef arg : type.typeArgs()) result.arguments.add(fromTypeRef(arg, variables));
                 yield result;
             }
             case Enum -> WireType.scalar(WireTypeKind.Enum, type.declaration().getId());
@@ -804,7 +817,7 @@ public final class AbiV10Records {
                 if (type.declaration() == null) throw invalid("ABI-v10 nominal field type has no declaration");
                 WireType result = WireType.scalar(WireTypeKind.Nominal, type.declaration().getId());
                 for (TypeRef.FieldSub sub : type.fieldSubstitutions())
-                    result.arguments.add(fromTypeRef(sub.type()));
+                    result.arguments.add(fromTypeRef(sub.type(), variables));
                 yield result;
             }
             default -> throw invalid("ABI-v10 nominal field type is not closed");
