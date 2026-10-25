@@ -49,6 +49,30 @@ public class SourceFreeAbi {
         }
     }
 
+    private static String sha256Utf8(String input) {
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            byte[] digest = md.digest(input.getBytes(StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder();
+            for (byte b : digest) sb.append(String.format("%02x", b));
+            return sb.toString();
+        } catch (NoSuchAlgorithmException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    static String readInterfaceText(Path path) throws IOException {
+        byte[] bytes = Files.readAllBytes(path);
+        String v10Prefix = "moss-module-interface-v3\n";
+        if (new String(bytes, 0, Math.min(bytes.length, v10Prefix.length()), StandardCharsets.US_ASCII)
+                .equals(v10Prefix)) {
+            return new String(bytes, StandardCharsets.UTF_8);
+        }
+        // ABI-v9 contract digests are defined over the original bytes, represented
+        // one-to-one as ISO-8859-1 for the legacy text validator.
+        return new String(bytes, StandardCharsets.ISO_8859_1);
+    }
+
     public static Path selectedProviderRlib(Path interfaceFile) throws CompileError {
         Path rlib = interfaceFile.resolveSibling(interfaceFile.getFileName().toString().replaceAll("\\.mossi$", ".rlib"));
         if (Files.isRegularFile(rlib)) return rlib;
@@ -120,7 +144,7 @@ public class SourceFreeAbi {
     public static void validateMossiInterface(Path interfaceFile) throws CompileError {
         String text;
         try {
-            text = Files.readString(interfaceFile, StandardCharsets.ISO_8859_1);
+            text = readInterfaceText(interfaceFile);
         } catch (IOException e) {
             throw new CompileError("MOSS_INTERFACE_ERROR",
                     "cannot read Moss module interface '" + interfaceFile + "'", interfaceFile.toString(), 1);
@@ -163,7 +187,7 @@ public class SourceFreeAbi {
                         interfaceFile.toString(), 1);
             }
             String material = "moss-module-interface-v3\n" + text.substring(lineEnd + 1);
-            String calculatedDigest = sha256(material);
+            String calculatedDigest = sha256Utf8(material);
             if (!calculatedDigest.equalsIgnoreCase(declaredDigest)) {
                 throw new CompileError("SOURCE_FREE_CONTRACT_INVALID",
                         "ABI-v10 provider metadata does not match its declared contract digest",

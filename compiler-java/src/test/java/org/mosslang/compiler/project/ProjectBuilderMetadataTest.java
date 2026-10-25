@@ -10,9 +10,10 @@ import org.mosslang.compiler.diagnostics.CompileError;
 import org.mosslang.compiler.types.AccessMode;
 
 import java.nio.file.Path;
+import java.nio.file.Files;
 
 public final class ProjectBuilderMetadataTest {
-    public static void main(String[] args) {
+    public static void main(String[] args) throws Exception {
         EnumCase payload = new EnumCase("Rgb", 1, "metadata.moss");
         payload.fields.add(new Field("red", "Int", "", "", 1, "metadata.moss", false, true));
         payload.fields.add(new Field("green", "Float", "", "", 1, "metadata.moss", false, true));
@@ -28,6 +29,7 @@ public final class ProjectBuilderMetadataTest {
                 semantic.toString());
         testV10ImportRecordRequiresModuleBoundHashes();
         testV10SectionHashValidation();
+        testV10Utf8InterfaceValidation();
         testV9FunctionParameterAccessSerialization();
         testExportedObjectFieldSerialization();
         testExportedObjectMethodSerialization();
@@ -123,6 +125,27 @@ public final class ProjectBuilderMetadataTest {
             if (!"SOURCE_FREE_CONTRACT_INVALID".equals(error.getCode())) {
                 throw new AssertionError("expected SOURCE_FREE_CONTRACT_INVALID, got " + error.getCode(), error);
             }
+        }
+    }
+
+    private static void testV10Utf8InterfaceValidation() throws Exception {
+        Path dir = Path.of("tmp", "java-v10-utf8-validation");
+        Files.createDirectories(dir);
+        Path interfaceFile = dir.resolve("provider.mossi");
+        Path rlib = dir.resolve("provider.rlib");
+        MossiInterface iface = new MossiInterface("module-v1:sample@1.0.0::provider");
+        iface.compiler = "moss-java-é";
+        String encoded = CheckedBodyCodec.encodeMossi(iface);
+        Files.writeString(interfaceFile, encoded, java.nio.charset.StandardCharsets.UTF_8);
+        assertEquals(encoded, SourceFreeAbi.readInterfaceText(interfaceFile));
+        Files.writeString(rlib, "MOSS_ABI_V10_CONTRACT::provider::" + iface.digest + "::END",
+                java.nio.charset.StandardCharsets.US_ASCII);
+        try {
+            SourceFreeAbi.validateMossiText(interfaceFile, encoded, true);
+        } finally {
+            Files.deleteIfExists(rlib);
+            Files.deleteIfExists(interfaceFile);
+            Files.deleteIfExists(dir);
         }
     }
 

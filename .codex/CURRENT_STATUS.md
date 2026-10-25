@@ -12770,3 +12770,14 @@ provides the supported classpath.
 Validation: Java build and all ten Java unit-test classes pass. No native,
 Rust-compilation, SDK, or full regression gate was run. ABI-v9 compatibility
 after the encoding correction remains covered only by existing Java tests.
+
+The package-level ABI validator had the same text-decoding problem. Its v10
+validation path now reads v10 bytes as UTF-8 and hashes the canonical text as
+UTF-8, while retaining the existing one-to-one ISO-8859-1 representation for
+ABI-v9 text/digest processing. A project-metadata regression writes a sealed
+non-ASCII ABI-v10 interface, confirms file decoding, validates its provider
+digest, canonical structure, and matching artifact marker.
+
+Validation: Java build and all ten unit-test classes pass. ABI-v9 behavior has
+not received a new dedicated non-ASCII test; native source-free linkage remains
+unverified.
