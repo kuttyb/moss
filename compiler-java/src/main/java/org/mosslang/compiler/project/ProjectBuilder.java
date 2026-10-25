@@ -1228,10 +1228,12 @@ public class ProjectBuilder {
             // The Java AST does not yet carry authoritative observable-effect summaries.
             // Emit the canonical record only when the body proves the zero-effect row.
             if (method.resultExpression != null && !method.resultExpression.isEmpty()) return null;
-            if (method.body.stream().anyMatch(statement ->
-                    statement.kind != org.mosslang.compiler.ast.Stmt.Kind.Pass)) return null;
+            boolean noOpBody = method.body.stream().allMatch(statement ->
+                    statement.kind == org.mosslang.compiler.ast.Stmt.Kind.Pass);
+            boolean literalReturnBody = v10PureIntegerLiteralMethod(method);
+            if (!noOpBody && !literalReturnBody) return null;
             if (method.returnType != null && !method.returnType.isEmpty()
-                    && !"unit".equalsIgnoreCase(method.returnType)) return null;
+                    && !"unit".equalsIgnoreCase(method.returnType) && !literalReturnBody) return null;
             if (method.receiverAccessMode != org.mosslang.compiler.types.AccessMode.Read
                     || method.parameterAccessModes.stream().anyMatch(mode ->
                             mode != org.mosslang.compiler.types.AccessMode.Read)) return null;
@@ -1268,6 +1270,26 @@ public class ProjectBuilder {
         provenanceRecords.add(provenance);
         methodTemplateRecords.addAll(pendingMethods);
         return template;
+    }
+
+    private static boolean v10PureIntegerLiteralMethod(Method method) {
+        if (!method.params.isEmpty() || method.body.size() != 1
+                || method.body.get(0).kind != org.mosslang.compiler.ast.Stmt.Kind.Return
+                || method.returnType == null
+                || !"int".equalsIgnoreCase(method.returnType)) return false;
+        org.mosslang.compiler.ast.Stmt statement = method.body.get(0);
+        String expression = statement.a != null ? statement.a.trim() : "";
+        if (expression.isEmpty() && statement.text != null
+                && statement.text.trim().startsWith("return ")) {
+            expression = statement.text.trim().substring(7).trim();
+        }
+        if (!expression.matches("-?[0-9](?:_?[0-9])*")) return false;
+        try {
+            Long.parseLong(expression.replace("_", ""));
+            return true;
+        } catch (NumberFormatException ignored) {
+            return false;
+        }
     }
 
     static byte[] generateMossiInterface(ProjectManifest manifest, String module, Program prog, BackendToolchain toolchain, List<String> deps, Path buildDir, Map<String, List<Path>> externalCandidateProviders) {

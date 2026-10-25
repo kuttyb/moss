@@ -417,6 +417,8 @@ public final class ProjectBuilderMetadataTest {
                 + "type Point:\n"
                 + "  x: Float\n"
                 + "  y: Int\n"
+                + "  fn ready() -> Int:\n"
+                + "    return 7\n"
                 + "enum Outcome:\n"
                 + "  Ready(code: Int)\n"
                 + "  Done\n"
@@ -434,10 +436,6 @@ public final class ProjectBuilderMetadataTest {
                 + "    retries = retries + 1\n"
                 + "    reply retries\n", "provider.moss");
         program.objects.get(0).exported = true;
-        org.mosslang.compiler.ast.Method shift = new org.mosslang.compiler.ast.Method(
-                "Point", "ready", 4, "provider.moss");
-        shift.setReturnType("unit");
-        program.objects.get(0).methods.add(shift);
         program.enums.get(0).exported = true;
         program.domains.get(0).exported = true;
         program.domains.get(1).exported = true;
@@ -460,8 +458,36 @@ public final class ProjectBuilderMetadataTest {
         if (!"ready".equals(methodTemplate.methodName)
                 || methodTemplate.receiverAccess != AccessMode.Read.ordinal() + 1
                 || !methodTemplate.parameterAccess.isEmpty()
-                || !"unit".equals(methodTemplate.result.canonicalName())) {
-            throw new AssertionError("ABI-v10 method template omitted its representable no-op signature");
+                || !"int".equals(methodTemplate.result.canonicalName())) {
+            throw new AssertionError("ABI-v10 method template omitted its pure literal-return signature");
+        }
+        MossiInterface methodTemplateOnly = CheckedBodyCodec.verifySourceFree(generated);
+        methodTemplateOnly.semanticContract.clear();
+        methodTemplateOnly.binaryContract.removeIf(record ->
+                record.id.startsWith("enum:") || record.id.startsWith("domain:"));
+        Path methodTemplateOnlyFile = Path.of("tmp", "java-method-template-only.mossi");
+        try {
+            Files.write(methodTemplateOnlyFile, CheckedBodyCodec.encodeMossiBytes(methodTemplateOnly));
+            Program methodConsumer = Parser.parseSource(""
+                    + "fn call(point: provider__Point) -> Int:\n"
+                    + "  return point.ready()\n"
+                    + "fn main():\n"
+                    + "  pass\n", "method-template-consumer.moss");
+            org.mosslang.compiler.cli.Main.loadMossiFunctions(
+                    methodTemplateOnlyFile, "provider", methodConsumer);
+            new org.mosslang.compiler.semantics.SemanticChecker(methodConsumer).run();
+            if (methodConsumer.objects.stream().noneMatch(object -> object.name.equals("provider__Point")
+                    && object.methods.stream().anyMatch(method -> method.name.equals("ready")
+                            && "int".equalsIgnoreCase(method.returnType)))) {
+                throw new AssertionError("ABI-v10 method template did not supply source-free method typing");
+            }
+        } catch (java.io.IOException error) {
+            throw new AssertionError("could not create method-template-only source-free interface", error);
+        } finally {
+            try { Files.deleteIfExists(methodTemplateOnlyFile); }
+            catch (java.io.IOException error) {
+                throw new AssertionError("could not clean up method-template-only interface", error);
+            }
         }
         if (decoded.binaryContract.stream().noneMatch(record ->
                     record.id.startsWith("nominal-template-v1:") && record.payloadBytes().length > 0)
