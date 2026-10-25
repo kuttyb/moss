@@ -136,11 +136,11 @@ public final class SourceFreeFunctionMetadataTest {
                     .findFirst().orElseThrow(() -> new AssertionError("ABI-v10 concrete function missing"));
             assertEquals("Vector[Int]", make.returnType, "ABI-v10 concrete collection return type");
             Program consumer = Parser.parseSource(""
-                    + "fn use_provider() -> Vector[Int]:\n"
-                    + "  return service__make()\n"
+                    + "fn forward(value: String):\n"
+                    + "  service.consume(value)\n"
                     + "fn main():\n"
                     + "  value = \"moved\"\n"
-                    + "  service.consume(value)\n"
+                    + "  forward(value)\n"
                     + "  echo value\n", "source-free-return-consumer.moss");
             MossiInterface makeOnly = new MossiInterface("module-v1:provider@1.0.0::service");
             makeOnly.semanticContract.add(new MossiRecord("fn:make", ""
