@@ -548,3 +548,16 @@ with receiver `CONSUME`, checks that mode survives loading, and verifies a
 consumer cannot use the receiver after the call. The focused
 `SourceFreeObjectMetadataTest` passes. This covers metadata and semantic call
 handling only; native source-free linkage remains a final acceptance gate.
+
+
+### Follow-up — propagate function WRITE summaries through helper calls
+
+For `relay(values) -> push_one(values)`, C++ reported `values: WRITE` while
+Java reported READ. The Java access-mode closure now propagates WRITE through
+ordinary function arguments, including when the forwarding function is
+declared before the mutating callee.
+
+The focused Java regression checks the resulting parameter mode, and the
+C++/Java effects queries agree. All eleven Java test classes pass under
+ABI-v9 and staged ABI-v10. Imported helper and nested field write summaries
+remain open.

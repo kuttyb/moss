@@ -15210,3 +15210,16 @@ receiver `CONSUME`, verify the imported method retains that mode, and reject a
 caller that uses its receiver after the imported method call. The focused
 source-free object metadata test passes. This is codec/importer and semantic
 call-site evidence, not native source-free linkage acceptance.
+
+
+### Phase 25.3 continuation — close function write summaries transitively
+
+For `relay(values) -> push_one(values)`, C++ reported `values: WRITE` while
+Java reported READ. Java now propagates `WRITE` through ordinary function
+arguments in the same bounded access-mode closure, including when the
+forwarding function precedes its mutating callee. The focused effects queries
+now agree.
+
+The reverse-declaration-order regression checks the retained parameter mode.
+All eleven Java test classes pass under ABI-v9 and staged ABI-v10; imported
+helper and nested field write summaries remain open.

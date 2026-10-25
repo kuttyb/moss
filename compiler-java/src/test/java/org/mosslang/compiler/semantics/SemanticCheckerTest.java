@@ -17,6 +17,7 @@ public class SemanticCheckerTest {
         testInferredMethodReturnSatisfiesStructuralTrait();
         testInferredMethodReturnMustMatchStructuralTrait();
         testFunctionParameterAccessModesAreRetained();
+        testFunctionWriteSummaryPropagatesThroughHelperCalls();
         testFunctionConsumeSummaryIncludesObjectConstructors();
         testFunctionRetainsResolvedOpenParameterTypes();
         testGenericNumericOperationRetainsOpenTypeUntilSpecialization();
@@ -652,6 +653,21 @@ public class SemanticCheckerTest {
                 + "  value = Payload(value=\"x\")\n"
                 + "  box = wrap(value)\n"
                 + "  echo value.value\n", "OWNERSHIP_USE_AFTER_CONSUME");
+    }
+
+    private static void testFunctionWriteSummaryPropagatesThroughHelperCalls() {
+        Program program = Parser.parseSource(""
+                + "fn relay(values: Vector[Int]):\n"
+                + "  push_one(values)\n"
+                + "fn push_one(values: Vector[Int]):\n"
+                + "  values.push(1)\n"
+                + "fn main():\n"
+                + "  var values = Vector[Int]()\n"
+                + "  relay(values)\n", "function-write-summary.moss");
+        new SemanticChecker(program).run();
+        Function relay = program.functions.stream().filter(function -> function.name.equals("relay"))
+                .findFirst().orElseThrow();
+        assertEquals(AccessMode.Write, relay.parameterAccessModes.get(0));
     }
 
     private static void testObjectMethodAccessModesAreRetained() {

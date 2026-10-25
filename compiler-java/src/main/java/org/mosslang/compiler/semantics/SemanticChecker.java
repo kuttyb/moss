@@ -144,11 +144,11 @@ public class SemanticChecker {
             // bodies check concrete values against structural trait contracts.
             checkObjectMethods();
             checkFunctions();
-            closeFunctionConsumeModes();
+            closeFunctionAccessModes();
             // Recheck with function summaries available for methods that call
             // ordinary functions in their bodies.
             checkObjectMethods();
-            closeFunctionConsumeModes();
+            closeFunctionAccessModes();
             checkRecursiveFunctions();
             checkMain();
             checkTests();
@@ -2226,7 +2226,7 @@ public class SemanticChecker {
         return argument;
     }
 
-    private void closeFunctionConsumeModes() {
+    private void closeFunctionAccessModes() {
         int maxPasses = functions.values().stream().mapToInt(function -> function.params.size()).sum() + 1;
         for (int pass = 0; pass < maxPasses; pass++) {
             boolean changed = false;
@@ -2239,9 +2239,14 @@ public class SemanticChecker {
                             : (function.params.get(index).type != null
                                     && !function.params.get(index).type.isEmpty()
                                             ? TypeParser.parseCanonical(function.params.get(index).type) : null);
+                    AccessMode current = function.parameterAccessModes.get(index);
                     if (type != null && transferType(type) && doesFunctionConsumeParam(function, index)
-                            && function.parameterAccessModes.get(index) != AccessMode.Consume) {
+                            && current != AccessMode.Consume) {
                         function.parameterAccessModes.set(index, AccessMode.Consume);
+                        changed = true;
+                    } else if (current == AccessMode.Read
+                            && doesFunctionMutateParam(function, index)) {
+                        function.parameterAccessModes.set(index, AccessMode.Write);
                         changed = true;
                     }
                 }
@@ -2257,6 +2262,7 @@ public class SemanticChecker {
                 ? fn.params.get(paramIdx).typeRef
                 : (fn.params.get(paramIdx).type != null
                         ? TypeParser.parseCanonical(fn.params.get(paramIdx).type) : null);
+        if (functionCallWritesParam(fn, pName, parameterType)) return true;
         ObjectType parameterObject = parameterType != null
                 && parameterType.kind() == TypeKind.NominalInstance
                         ? objects.get(parameterType.name()) : null;
@@ -2300,6 +2306,53 @@ public class SemanticChecker {
                     || t.startsWith(pName + ".append(") || t.startsWith(pName + ".reserve(")
                     || t.startsWith(pName + " =") || t.startsWith(pName + "=") || t.startsWith(pName + "[")) {
                 return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean functionCallWritesParam(Function caller, String paramName, TypeRef parameterType) {
+        List<String> expressions = new ArrayList<>();
+        Deque<Map.Entry<Integer, Set<String>>> caseScopes = new ArrayDeque<>();
+        for (Stmt statement : caller.body) {
+            while (!caseScopes.isEmpty() && statement.indent <= caseScopes.peek().getKey())
+                caseScopes.pop();
+            if (statement.kind == Stmt.Kind.Case) {
+                caseScopes.push(Map.entry(statement.indent, new HashSet<>(statement.args)));
+                continue;
+            }
+            if (caseScopes.stream().anyMatch(scope -> scope.getValue().contains(paramName))) continue;
+            expressions.add(statementExpressionText(statement));
+        }
+        if (caller.resultExpression != null) expressions.add(caller.resultExpression);
+        for (Function callee : functions.values()) {
+            if (callee == caller) continue;
+            java.util.regex.Pattern callPattern = java.util.regex.Pattern.compile(
+                    "(?<![A-Za-z0-9_.])" + java.util.regex.Pattern.quote(callee.name)
+                            + "\\s*\\(");
+            for (String expression : expressions) {
+                java.util.regex.Matcher call = callPattern.matcher(expression);
+                while (call.find()) {
+                    int open = expression.indexOf('(', call.start());
+                    int close = -1;
+                    for (int cursor = open + 1; cursor < expression.length(); cursor++) {
+                        if (expression.charAt(cursor) == ')'
+                                && ExpressionTyper.findMatchingOpenParen(expression, cursor) == open) {
+                            close = cursor;
+                            break;
+                        }
+                    }
+                    if (close < 0) continue;
+                    List<String> args = ExpressionTyper.parseArguments(
+                            expression.substring(open + 1, close));
+                    for (int index = 0; index < args.size()
+                            && index < callee.parameterAccessModes.size(); index++) {
+                        if (callee.parameterAccessModes.get(index) != AccessMode.Write) continue;
+                        String argument = callArgumentValue(args.get(index));
+                        if (argument.equals(paramName)) return true;
+                        if (resolveReceiverPathType(parameterType, argument, paramName) != null) return true;
+                    }
+                }
             }
         }
         return false;
