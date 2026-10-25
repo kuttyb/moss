@@ -187,6 +187,14 @@ public class FastInterpreter {
     private final PrintStream stdout;
     private final PrintStream stderr;
     private int eventId = 0;
+    private String traceFunction = "main";
+    private String traceSourceFile = "";
+    private int traceLine = 1;
+    private int traceDepth = 0;
+
+    private String traceIdentity() {
+        return "main".equals(traceFunction) ? "main@1" : traceFunction;
+    }
 
     public FastInterpreter(Program program, boolean trace) {
         this(program, trace, System.out, System.err);
@@ -203,6 +211,48 @@ public class FastInterpreter {
         if (trace) {
             stderr.println(json);
         }
+    }
+
+    private static String jsonEscape(String value) {
+        StringBuilder escaped = new StringBuilder();
+        for (int index = 0; index < value.length(); index++) {
+            char c = value.charAt(index);
+            switch (c) {
+                case '"' -> escaped.append("\\\"");
+                case '\\' -> escaped.append("\\\\");
+                case '\b' -> escaped.append("\\b");
+                case '\f' -> escaped.append("\\f");
+                case '\n' -> escaped.append("\\n");
+                case '\r' -> escaped.append("\\r");
+                case '\t' -> escaped.append("\\t");
+                default -> {
+                    if (c < 0x20) escaped.append(String.format("\\u%04x", (int) c));
+                    else escaped.append(c);
+                }
+            }
+        }
+        return escaped.toString();
+    }
+
+    private void traceLocalWrite(Stmt statement, String name, Value value,
+                                 String function, int depth) {
+        if (!trace) return;
+        eventId++;
+        traceEvent("{\"event_id\":" + eventId + ",\"event\":\"LocalWrite\",\"function\":\""
+                + jsonEscape(function) + "\",\"source_file\":\"" + jsonEscape(statement.sourceFile)
+                + "\",\"semantic_identity\":\"" + jsonEscape(traceIdentity()) + "\",\"line\":"
+                + statement.line + ",\"depth\":" + depth + ",\"detail\":\""
+                + jsonEscape(name) + "\",\"after\":\"" + jsonEscape(value.toString()) + "\"}");
+    }
+
+    private void traceLocalRead(String name) {
+        if (!trace) return;
+        eventId++;
+        traceEvent("{\"event_id\":" + eventId + ",\"event\":\"LocalRead\",\"function\":\""
+                + jsonEscape(traceFunction) + "\",\"source_file\":\"" + jsonEscape(traceSourceFile)
+                + "\",\"semantic_identity\":\"" + jsonEscape(traceIdentity()) + "\",\"line\":"
+                + traceLine + ",\"depth\":" + traceDepth + ",\"detail\":\""
+                + jsonEscape(name) + "\"}");
     }
 
     private Value currentRaisedValue = null;
@@ -247,6 +297,10 @@ public class FastInterpreter {
                 i++;
                 continue;
             }
+            traceFunction = funcName;
+            traceSourceFile = s.sourceFile == null ? "" : s.sourceFile;
+            traceLine = s.line;
+            traceDepth = depth;
             if (s.kind == Stmt.Kind.If) {
                 int baseInd = s.indent;
                 int thenEnd = i + 1;
@@ -553,6 +607,7 @@ public class FastInterpreter {
                             ",\"depth\":" + depth + ",\"path\":\"" + varName + "\",\"before\":\"" + before + "\",\"after\":\"" + val + "\"}");
                 } else {
                     locals.put(varName, val);
+                    traceLocalWrite(s, varName, val, funcName, depth);
                 }
                 return Value.ofUnit();
             }
@@ -703,6 +758,26 @@ public class FastInterpreter {
             }
         }
         return depth == 0;
+    }
+
+    private static String unescapeStringLiteral(String literal) {
+        String body = literal.substring(1, literal.length() - 1);
+        StringBuilder decoded = new StringBuilder(body.length());
+        for (int index = 0; index < body.length();) {
+            if (body.charAt(index) == '\\') {
+                int[] codePoint = new int[1];
+                int next = org.mosslang.compiler.parser.ParserSupport
+                        .parseRustEscape(body, index, codePoint);
+                if (next < 0) throw new IllegalArgumentException("invalid checked string escape");
+                decoded.appendCodePoint(codePoint[0]);
+                index = next;
+            } else {
+                int codePoint = body.codePointAt(index);
+                decoded.appendCodePoint(codePoint);
+                index += Character.charCount(codePoint);
+            }
+        }
+        return decoded.toString();
     }
 
     private static String[] splitOperator(String input, String... operators) {
@@ -1052,7 +1127,7 @@ public class FastInterpreter {
         }
 
         if (expr.startsWith("\"") && expr.endsWith("\"") && expr.length() >= 2) {
-            return Value.ofString(expr.substring(1, expr.length() - 1));
+            return Value.ofString(unescapeStringLiteral(expr));
         }
         if (expr.startsWith("'") && expr.endsWith("'") && expr.length() >= 3) {
             String content = expr.substring(1, expr.length() - 1);
@@ -1562,8 +1637,7 @@ public class FastInterpreter {
 
         // Local variable read
         if (locals.containsKey(expr)) {
-            eventId++;
-            traceEvent("{\"event_id\":" + eventId + ",\"event\":\"LocalRead\",\"detail\":\"" + expr + "\"}");
+            traceLocalRead(expr);
             return locals.get(expr);
         }
 

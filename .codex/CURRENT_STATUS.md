@@ -13634,3 +13634,18 @@ The optional JDT daemon client lifecycle unit tests also pass (5/5 mocked tests)
 this does not claim a live daemon startup or shutdown test.
 
 No native/project acceptance was run. Phase 25.3 remains in progress.
+
+### Phase 25.3 continuation — restore Fast Debug local trace events
+
+A trace comparison found that Java omitted `LocalWrite` events and emitted
+`LocalRead` events without C++'s function/source/identity/line/depth fields.
+Java now emits local read/write records with escaped JSON string fields and
+source locations. The same probe exposed that Java string literals retained
+escape spellings; interpreter string evaluation now decodes the escapes
+accepted by Moss. This closes only the exercised local event shape; broader
+trace nesting, control, message, and state-event parity remains open.
+
+Validation: clean Java build and all eleven Java unit-test classes pass in
+ABI-v9 and staged ABI-v10 modes. Focused C++/Java local trace fields and stdout
+match, including a quoted string. Native/Margo/SDK and full acceptance gates
+remain deferred.

@@ -127,3 +127,14 @@ condition. The interpreter now executes the checked body repeatedly under the
 condition. A checked counter-loop emits `0`, `1`, `2` and matches the C++
 interpreter. Clean build and all eleven Java unit-test classes pass in ABI-v9;
 staged ABI-v10, native, Margo, and SDK gates remain open.
+
+## Phase 25.3 continuation — Fast Debug local tracing and string escapes
+
+The C++/Java trace probe exposed missing Java `LocalWrite` events and incomplete
+`LocalRead` event fields. It also showed that escaped quotes remained escaped
+in Java runtime strings. Java now emits local read/write trace events with
+source location and JSON escaping, and decodes the Moss string escapes accepted
+by the parser. The focused probe's local events and stdout match C++. Clean
+build and all eleven Java unit-test classes pass in ABI-v9 and staged ABI-v10.
+General control/event-stack, state/message trace parity, and acceptance gates
+remain open.

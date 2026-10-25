@@ -12,6 +12,7 @@ public final class FastInterpreterTest {
         testFractionalAndMixedNumericComparisons();
         testIeeeAndMixedNumericEquality();
         testWhileLoopRepeatsCheckedBody();
+        testLocalWriteTraceIsStructuredAndEscaped();
         System.out.println("FastInterpreterTest PASSED.");
     }
 
@@ -83,6 +84,30 @@ public final class FastInterpreterTest {
         String expected = "0\n1\n2\n";
         if (!expected.equals(actual)) {
             throw new AssertionError("while loop did not reevaluate its checked body: " + actual);
+        }
+    }
+
+    private static void testLocalWriteTraceIsStructuredAndEscaped() {
+        var program = Parser.parseSource(""
+                + "fn main():\n"
+                + "  text = \"say \\\"hello\\\"\"\n"
+                + "  echo text\n", "fast-interpreter-trace.moss");
+        new CheckedProgram(program).run();
+
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+        ByteArrayOutputStream trace = new ByteArrayOutputStream();
+        new FastInterpreter(program, true,
+                new PrintStream(stdout, true, StandardCharsets.UTF_8),
+                new PrintStream(trace, true, StandardCharsets.UTF_8)).run();
+        String event = trace.toString(StandardCharsets.UTF_8);
+        if (!event.contains("\"event\":\"LocalWrite\"")
+                || !event.contains("\"semantic_identity\":\"main@1\"")
+                || !event.contains("\"detail\":\"text\"")
+                || !event.contains("\"after\":\"say \\\"hello\\\"\"")
+                || !event.contains("\"event\":\"LocalRead\"")
+                || !event.contains("\"line\":3")
+                || !"say \"hello\"\n".equals(stdout.toString(StandardCharsets.UTF_8))) {
+            throw new AssertionError("Fast Debug trace omitted or malformed the local write: " + event);
         }
     }
 }
