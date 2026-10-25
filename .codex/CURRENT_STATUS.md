@@ -15048,3 +15048,12 @@ The receiver-write regression also covers propagation into an ordinary function
 parameter: `apply(box: Box)` calling `box.run()` reports `box: WRITE` in both
 compilers. This confirms the method access mode is available before function
 parameter effects are finalized.
+
+### Phase 25.3 continuation — refresh standalone artifacts after backend correction
+
+Rebuilt the standalone Java fat JAR and launcher after the method receiver and
+unit-return code generation correction. Both `compiler-java/dist/moss --version`
+and `java -jar compiler-java/dist/moss.jar --version` report
+`0.1.0-java (moss-0.1)`; launcher bootstrap reports
+`language_version: moss-0.1`. This is a packaging smoke check, not a release
+acceptance gate.
