@@ -12947,3 +12947,15 @@ A dotted module-qualified route such as `provider.Recorder` now resolves through
 the imported domain alias to `moss_provider::RecorderRef`; the focused consumer
 uses this form. The default ABI-v9 and staged ABI-v10 Java builds and all ten
 test classes pass after the alias change.
+
+### Phase 25.3 continuation — retain concrete source-free collection results
+
+The source-free function loader no longer drops every bare `vector`, `map`, or
+`queue` return token. It retains closed returns such as `Vector[Int]` and only
+leaves an inferred `_` result or generic bare-builtin marker open. A focused v10
+consumer calls an imported function returning `Vector[Int]` and checks against
+the same concrete result type.
+
+Validation: default ABI-v9 and staged ABI-v10 Java builds and all ten unit
+test classes pass; feedback validation and `git diff --check` pass. Generic
+open-result summaries and native source-free linking remain unverified.

@@ -7,6 +7,8 @@ import org.mosslang.compiler.abi.CheckedBodyCodec;
 import org.mosslang.compiler.abi.MossiInterface;
 import org.mosslang.compiler.abi.MossiRecord;
 import org.mosslang.compiler.types.AccessMode;
+import org.mosslang.compiler.parser.Parser;
+import org.mosslang.compiler.semantics.SemanticChecker;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -78,6 +80,8 @@ public final class SourceFreeFunctionMetadataTest {
         MossiInterface iface = new MossiInterface("module-v1:provider@1.0.0::service");
         iface.binaryContract.add(new MossiRecord("fn:map", contract));
         iface.semanticContract.add(new MossiRecord("fn:map", semantic));
+        iface.semanticContract.add(new MossiRecord("fn:make", ""
+                + "export fn make return=Vector[Int] " + effects + "\n"));
         Path interfaceFile = Files.createTempFile(scratch, "java-source-free-v10-function-", ".mossi");
         try {
             Files.writeString(interfaceFile, CheckedBodyCodec.encodeMossi(iface));
@@ -91,6 +95,26 @@ public final class SourceFreeFunctionMetadataTest {
             assertEquals(AccessMode.Write, imported.parameterAccessModes.get(0), "ABI-v10 access mode");
             assertEquals(2, imported.body.get(0).args.size(), "ABI-v10 generic call arguments");
             assertEquals("values", imported.resultExpression, "ABI-v10 generic result expression");
+            Function make = program.functions.stream()
+                    .filter(function -> function.name.equals("service.make"))
+                    .findFirst().orElseThrow(() -> new AssertionError("ABI-v10 concrete function missing"));
+            assertEquals("Vector[Int]", make.returnType, "ABI-v10 concrete collection return type");
+            Program consumer = Parser.parseSource(""
+                    + "fn use_provider() -> Vector[Int]:\n"
+                    + "  return service__make()\n"
+                    + "fn main():\n"
+                    + "  pass\n", "source-free-return-consumer.moss");
+            MossiInterface makeOnly = new MossiInterface("module-v1:provider@1.0.0::service");
+            makeOnly.semanticContract.add(new MossiRecord("fn:make", ""
+                    + "export fn make return=Vector[Int] " + effects + "\n"));
+            Path makeOnlyFile = Files.createTempFile(scratch, "java-source-free-v10-return-", ".mossi");
+            try {
+                Files.write(makeOnlyFile, CheckedBodyCodec.encodeMossiBytes(makeOnly));
+                Main.loadMossiFunctions(makeOnlyFile, "service", consumer);
+                new SemanticChecker(consumer).run();
+            } finally {
+                Files.deleteIfExists(makeOnlyFile);
+            }
         } finally {
             Files.deleteIfExists(interfaceFile);
         }

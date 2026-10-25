@@ -1216,6 +1216,11 @@ public class Main {
                             isGeneric = true;
                         }
                     }
+                    boolean openBuiltinResult = isGeneric
+                            && java.util.Set.of("vector", "map", "queue")
+                                    .contains(retType.toLowerCase(java.util.Locale.ROOT));
+                    boolean retainReturnType = !retType.isEmpty()
+                            && !retType.startsWith("_") && !openBuiltinResult;
                     String qualifiedName = modName + "." + fnName;
                     org.mosslang.compiler.ast.Function existing = null;
                     for (org.mosslang.compiler.ast.Function fn : program.functions) {
@@ -1230,6 +1235,7 @@ public class Main {
                             currentFn.generic = true;
                             currentFn.staticDispatch = true;
                         }
+                        if (retainReturnType) currentFn.returnType = retType;
                     } else {
                         currentFn = new org.mosslang.compiler.ast.Function(qualifiedName, "fn " + fnName + "()", 1, cand.toString(), true);
                         currentFn.definingModule = modName;
@@ -1237,9 +1243,7 @@ public class Main {
                         currentFn.exported = true;
                         currentFn.generic = isGeneric;
                         currentFn.staticDispatch = isGeneric;
-                        if (!retType.isEmpty() && !retType.startsWith("_") && !retType.equals("vector") && !retType.equals("map") && !retType.equals("queue")) {
-                            currentFn.returnType = retType;
-                        }
+                        if (retainReturnType) currentFn.returnType = retType;
                         program.functions.add(currentFn);
                         // Also add alias for Native lowering
                         org.mosslang.compiler.ast.Function alias = new org.mosslang.compiler.ast.Function(modName + "__" + fnName, "fn " + fnName + "()", 1, cand.toString(), true);
