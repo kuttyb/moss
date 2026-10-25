@@ -14148,3 +14148,17 @@ raise reached from a synchronous root message. ABI-v9 and staged ABI-v10 Java
 suites pass all 11 classes. The refreshed 91-file acceptance screen now has 8
 C++-only accepts, 2 Java-only accepts, 53 accepted by both, and 28 rejected by
 both. Overall Phase 25.3 remains incomplete.
+
+### Phase 25.3 audit note — vector literal exceptional-edge ordering remains open
+
+The remaining Java-only `phase21_vector_consume_before_raise.moss` case reads a
+local in `recover` after a vector literal moves that local before a later
+expression raises. A trial that walked vector elements left-to-right caught
+that case but incorrectly rejected the paired
+`phase21_vector_raise_before_consume.moss`, where the raising first element
+runs before the local is moved. The trial source and test were fully reverted;
+no vector-literal change is included in the candidate. The pair shows that
+this correction needs checked `try/recover` exceptional-edge state selection,
+not just normal-path literal ownership tracking. On the rebuilt source, both
+ABI Java suites pass and the 91-file screen remains 8 C++-only, 2 Java-only,
+53 both accepted, and 28 both rejected. Treat both fixtures as open evidence.
