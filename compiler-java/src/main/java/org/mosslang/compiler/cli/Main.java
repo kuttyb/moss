@@ -783,9 +783,20 @@ public class Main {
         };
     }
 
+    static String readMossiText(Path path) throws IOException {
+        byte[] bytes = Files.readAllBytes(path);
+        String v10Prefix = "moss-module-interface-v3\n";
+        if (new String(bytes, 0, Math.min(bytes.length, v10Prefix.length()), StandardCharsets.US_ASCII)
+                .equals(v10Prefix)) {
+            return new String(bytes, StandardCharsets.UTF_8);
+        }
+        // Preserve ABI-v9's established one-to-one byte-to-character mapping.
+        return new String(bytes, StandardCharsets.ISO_8859_1);
+    }
+
     static void loadMossiFunctions(Path cand, String modName, Program program) throws CompileError {
         try {
-            String text = Files.readString(cand, StandardCharsets.UTF_8);
+            String text = readMossiText(cand);
             if (text.startsWith("moss-module-interface-v3\n")) {
                 org.mosslang.compiler.abi.MossiInterface v10 =
                         org.mosslang.compiler.abi.CheckedBodyCodec.verifySourceFree(text);

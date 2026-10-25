@@ -12781,3 +12781,11 @@ digest, canonical structure, and matching artifact marker.
 Validation: Java build and all ten unit-test classes pass. ABI-v9 behavior has
 not received a new dedicated non-ASCII test; native source-free linkage remains
 unverified.
+
+The CLI `.mossi` loader now selects decoding by container header as well: ABI-v10
+is UTF-8, while ABI-v9 retains the prior ISO-8859-1 byte mapping. Tests assert
+both behaviors using non-ASCII text and confirm the v10 loader round trip still
+passes.
+
+Validation: Java build and all ten unit-test classes pass; `git diff --check`
+passes. This is interface-text compatibility evidence only.

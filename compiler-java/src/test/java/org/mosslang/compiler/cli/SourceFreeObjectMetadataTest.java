@@ -25,7 +25,7 @@ public final class SourceFreeObjectMetadataTest {
 
         String content = "moss-module-interface-v2\n"
                 + "provider_contract_digest sha256:" + "0".repeat(64) + "\n"
-                + "module_id sample::provider\ncontract\nobject Point\n"
+                + "module_id sample::provider\ncontract\nobject Point\ncomment Café\n"
                 + "semantic_exports\nexport type Point\n" + exportedFields
                 + "  object_method shift return=float receiver=WRITE "
                 + "effects=local_capture_read=0;local_mutation=0;domain_read=0;domain_write=0;message=0;external_io=0;fileio=0;fileio_unknown=0;may_panic=0;raise_set=-;may_diverge=0;unresolved=0 "
@@ -34,6 +34,9 @@ public final class SourceFreeObjectMetadataTest {
                 + "effects=local_capture_read=0;local_mutation=0;domain_read=0;domain_write=0;message=0;external_io=0;fileio=0;fileio_unknown=0;may_panic=0;raise_set=-;may_diverge=0;unresolved=0 "
                 + "params=1 \"next\" \"Vector[Int]\" CONSUME\n";
         Files.writeString(interfaceFile, content);
+        if (!Main.readMossiText(interfaceFile).contains("comment CafÃ©")) {
+            throw new AssertionError("ABI-v9 interface decoding no longer preserves its legacy byte mapping");
+        }
         Program program = new Program();
         Main.loadMossiFunctions(interfaceFile, "provider", program);
         ObjectType imported = program.objects.stream()
@@ -136,7 +139,11 @@ public final class SourceFreeObjectMetadataTest {
                 + "effects=local_capture_read=0;local_mutation=0;domain_read=0;domain_write=0;message=0;external_io=0;fileio=0;fileio_unknown=0;may_panic=0;raise_set=-;may_diverge=0;unresolved=0 "
                 + "params=1 \"next\" \"Vector[Int]\" CONSUME\n"));
         Path v10File = scratch.resolve("provider-v10.mossi");
-        Files.writeString(v10File, CheckedBodyCodec.encodeMossi(v10));
+        String encodedV10 = CheckedBodyCodec.encodeMossi(v10);
+        Files.writeString(v10File, encodedV10, java.nio.charset.StandardCharsets.UTF_8);
+        if (!encodedV10.equals(Main.readMossiText(v10File))) {
+            throw new AssertionError("ABI-v10 interface was not decoded as UTF-8");
+        }
         Program v10Consumer = new Program();
         Main.loadMossiFunctions(v10File, "provider", v10Consumer);
         ObjectType v10Point = v10Consumer.objects.stream()
