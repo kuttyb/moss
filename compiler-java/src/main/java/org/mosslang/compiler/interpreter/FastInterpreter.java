@@ -1047,10 +1047,11 @@ public class FastInterpreter {
                                 String normalized = pattern.replace("__", ".");
                                 int payloadStart = normalized.indexOf('(');
                                 if (payloadStart >= 0) normalized = normalized.substring(0, payloadStart).trim();
-                                String variant = rex.variantName;
-                                String shortName = normalized.substring(normalized.lastIndexOf('.') + 1);
-                                if (variant.equals(normalized) || variant.endsWith("." + normalized)
-                                        || normalized.endsWith("." + variant) || variant.endsWith("." + shortName)) {
+                                String variant = rex.raisedValue != null
+                                        && rex.raisedValue.raw instanceof EnumValue enumValue
+                                        ? enumValue.enumName + "." + enumValue.variant : rex.variantName;
+                                String normalizedVariant = variant.replace("__", ".");
+                                if (variant.equals(normalized) || normalizedVariant.equals(normalized)) {
                                     arm = candidate;
                                     break;
                                 }

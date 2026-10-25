@@ -31,6 +31,7 @@ public final class FastInterpreterTest {
         testFunctionTraceIncludesSelectedSpecialization();
         testNestedDomainFailurePropagatesToCallerRecovery();
         testCatchAllRecoveryBindsRaisedEnum();
+        testOnFailDispatchUsesQualifiedErrorType();
         System.out.println("FastInterpreterTest PASSED.");
     }
 
@@ -614,6 +615,36 @@ public final class FastInterpreterTest {
                 new PrintStream(new ByteArrayOutputStream())).run();
         if (!"caught\n".equals(stdout.toString(StandardCharsets.UTF_8))) {
             throw new AssertionError("catch-all recover did not bind the raised enum: " + stdout);
+        }
+    }
+
+    private static void testOnFailDispatchUsesQualifiedErrorType() {
+        var program = Parser.parseSource(""
+                + "enum FirstError:\n"
+                + "  Bad\n"
+                + "enum SecondError:\n"
+                + "  Bad\n"
+                + "domain Worker:\n"
+                + "  fn Run(first: Bool):\n"
+                + "    if first:\n"
+                + "      raise FirstError.Bad\n"
+                + "    else:\n"
+                + "      raise SecondError.Bad\n"
+                + "  on_fail FirstError.Bad:\n"
+                + "    echo \"first\"\n"
+                + "  on_fail SecondError.Bad:\n"
+                + "    echo \"second\"\n"
+                + "fn main():\n"
+                + "  worker = Worker()\n"
+                + "  message worker.Run(true)\n"
+                + "  message worker.Run(false)\n", "fast-interpreter-qualified-on-fail.moss");
+        new CheckedProgram(program).run();
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+        new FastInterpreter(program, false,
+                new PrintStream(stdout, true, StandardCharsets.UTF_8),
+                new PrintStream(new ByteArrayOutputStream())).run();
+        if (!"first\nsecond\n".equals(stdout.toString(StandardCharsets.UTF_8))) {
+            throw new AssertionError("on_fail dispatch used only the short variant name: " + stdout);
         }
     }
 }

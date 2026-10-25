@@ -14027,3 +14027,10 @@ through exhaustive match. All seven on_fail/recovery checker fixtures now
 match C++ acceptance and diagnostic codes; Java ABI-v9/v10 suites pass.
 Indirect/mixed-enum recover bindings remain unsupported by this bounded type
 inference.
+
+A two-enum/same-variant probe (`FirstError.Bad` and `SecondError.Bad`) exposed
+Java matching `on_fail` by the short variant suffix. It printed `first` for both
+raises while C++ printed `first`, then `second`. Java now matches the complete
+qualified raised enum identity (including normalized module separators). The
+focused output matches C++; FastInterpreterTest covers the collision, and both
+ABI Java suites pass.
