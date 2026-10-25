@@ -14237,3 +14237,11 @@ and `phase21_peer_speculation.moss` (loop-variable shadow scope currently
 leaks its type after the loop). The last two are clear follow-up candidates;
 no parity claim is made. The checker screen is in disposable
 `tmp/phase253_phase21_acceptance_current.json`.
+
+The attempted general `For` body scoping rewrite for
+`phase21_peer_speculation.moss` was reverted: it caused
+`SemanticCheckerTest.testForLoopValuesCanFlowToObjectMethodArguments` to lose
+the loop binder while checking a valid method call. After rebuilding the
+reverted source, both ABI Java suites pass again. Keep the loop-shadow mismatch
+open until scope restoration can be added without changing existing body
+binding behavior.
