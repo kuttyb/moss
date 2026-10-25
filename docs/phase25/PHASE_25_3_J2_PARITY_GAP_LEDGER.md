@@ -291,3 +291,15 @@ All eleven Java unit-test classes pass under ABI-v9. This verifies direct typed
 raises only; transitive, recovered, callback, and complete other effects remain
 open. The full C++ and Java JSON response objects still differ in shape and
 availability of retained facts.
+
+## Phase 25.3 continuation — subtract caught direct raises
+
+Follow-up validation of source-derived direct raise effects added the matching
+try/recover rule: a directly raised variant is omitted from the escaping set
+when an immediately attached recover arm catches that variant or catches all.
+The new `handled()` query test reports an empty raise set; the unhandled direct
+raise test retains `enum:Trouble:Bad`.
+
+All eleven Java unit-test classes pass in default ABI-v9 and staged ABI-v10.
+Bare reraises, indirect/transitive calls, and complete checker-owned effect
+summaries remain open.

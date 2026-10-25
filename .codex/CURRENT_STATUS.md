@@ -14726,3 +14726,15 @@ callable; other effect fields still differ in representation/completeness.
 Validation: all eleven Java unit-test classes pass under ABI-v9, and the focused
 C++/Java query confirms the same direct raise fact. Transitive, recovered, and
 callback raises still need a complete checker-owned effect model.
+
+### Phase 25.3 continuation — exclude handled direct raises from effects queries
+
+The new source-derived direct-raise query path now checks lexically enclosing
+`try/recover` arms before reporting a variant as escaping. A query regression
+confirms an explicit `Trouble.Bad` raise caught by the matching recover arm
+produces an empty `raise_set`; the unhandled arbitrary-name direct-raise case
+continues to report its variant.
+
+Validation: all eleven Java test classes pass in default ABI-v9 and staged
+ABI-v10. This handles direct raises under explicit matching/catch-all recovery
+only; bare reraises and indirect/transitive summaries remain incomplete.

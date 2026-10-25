@@ -1271,7 +1271,8 @@ public class SemanticQueryEngine {
                 : method != null ? method.body
                 : handler != null ? handler.body : List.of();
         Set<String> variants = new java.util.TreeSet<>();
-        for (Stmt statement : body) {
+        for (int index = 0; index < body.size(); index++) {
+            Stmt statement = body.get(index);
             if (statement == null || statement.kind != Stmt.Kind.Raise) continue;
             String expression = statement.a == null ? "" : statement.a.trim();
             if (expression.isEmpty() && statement.text != null
@@ -1293,9 +1294,45 @@ public class SemanticQueryEngine {
                     }
                 }
             }
-            variants.add("enum:" + enumName + ":" + caseName);
+            String canonical = "enum:" + enumName + ":" + caseName;
+            if (!isRaisedVariantRecovered(body, index, canonical)) variants.add(canonical);
         }
         return variants;
+    }
+
+    private static boolean isRaisedVariantRecovered(List<Stmt> body, int raiseIndex,
+                                                    String canonicalVariant) {
+        Stmt raised = body.get(raiseIndex);
+        for (int tryIndex = raiseIndex - 1; tryIndex >= 0; tryIndex--) {
+            Stmt tryStatement = body.get(tryIndex);
+            if (tryStatement == null || tryStatement.kind != Stmt.Kind.Try
+                    || tryStatement.indent >= raised.indent) continue;
+            int tryBodyEnd = tryIndex + 1;
+            while (tryBodyEnd < body.size()
+                    && body.get(tryBodyEnd).indent > tryStatement.indent) tryBodyEnd++;
+            if (raiseIndex >= tryBodyEnd) continue;
+            int recoverIndex = tryBodyEnd;
+            while (recoverIndex < body.size()) {
+                Stmt recover = body.get(recoverIndex);
+                if (recover.indent != tryStatement.indent || recover.kind != Stmt.Kind.Recover) break;
+                String pattern = recover.a == null ? "" : recover.a.trim();
+                if (pattern.isEmpty()) return true;
+                int payload = pattern.indexOf('(');
+                if (payload >= 0) pattern = pattern.substring(0, payload).trim();
+                int dot = pattern.lastIndexOf('.');
+                if (dot <= 0) continue;
+                String recovered = "enum:" + pattern.substring(0, dot).replace('.', '_')
+                        + ":" + pattern.substring(dot + 1).trim();
+                if (recovered.equals(canonicalVariant)
+                        || recovered.endsWith("__" + canonicalVariant.substring("enum:".length()))) {
+                    return true;
+                }
+                recoverIndex++;
+                while (recoverIndex < body.size()
+                        && body.get(recoverIndex).indent > tryStatement.indent) recoverIndex++;
+            }
+        }
+        return false;
     }
 
     private static String jsonStringArray(Set<String> values) {
