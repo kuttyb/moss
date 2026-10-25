@@ -15459,3 +15459,16 @@ function.
 All twelve Java unit classes pass under ABI-v9 defaults and staged ABI-v10.
 This covers direct raises in a simple branch fixture; checked/caught raise
 projection and native source-free execution remain open.
+
+
+### Phase 25.3 continuation — ignore method-like text in string literals
+
+The raise-string reducer also covered method syntax: a typed `Point` parameter
+with `echo "point.signal()"` was being mistaken for an imported raising method
+call by semantic and generated-code closure scans. Those method-call scans now
+mask quoted literals before matching, and the regression verifies the helper
+remains non-raising after semantic checking and Rust generation.
+
+All twelve Java unit-test classes pass under ABI-v9 defaults and staged
+ABI-v10; `git diff --check` passes. No native Rust compilation or execution was
+run.

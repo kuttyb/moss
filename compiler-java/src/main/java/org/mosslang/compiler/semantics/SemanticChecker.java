@@ -1623,7 +1623,8 @@ public class SemanticChecker {
                 for (Method method : object.methods) {
                     String pattern = "(?<![A-Za-z0-9_])((?:[A-Za-z_][A-Za-z0-9_]*)(?:\\s*\\.\\s*[A-Za-z_][A-Za-z0-9_]*)*)\\s*\\.\\s*"
                             + java.util.regex.Pattern.quote(method.name) + "\\s*\\(";
-                    java.util.regex.Matcher matcher = java.util.regex.Pattern.compile(pattern).matcher(expression);
+                    java.util.regex.Matcher matcher = java.util.regex.Pattern.compile(pattern)
+                            .matcher(maskStringLiterals(expression));
                     while (matcher.find()) {
                         String receiverType = resolveMainReceiverType(matcher.group(1), env, solver);
                         if (!matchesObjectTypeName(receiverType, object.name)) continue;
@@ -1698,7 +1699,8 @@ public class SemanticChecker {
             for (Method method : object.methods) {
                 String pattern = "(?<![A-Za-z0-9_])([A-Za-z_][A-Za-z0-9_]*(?:\\s*\\.\\s*[A-Za-z_][A-Za-z0-9_]*)*)\\s*\\.\\s*"
                         + java.util.regex.Pattern.quote(method.name) + "\\s*\\(";
-                java.util.regex.Matcher matcher = java.util.regex.Pattern.compile(pattern).matcher(expression);
+                java.util.regex.Matcher matcher = java.util.regex.Pattern.compile(pattern)
+                        .matcher(maskStringLiterals(expression));
                 while (matcher.find()) {
                     String receiverType = resolveFunctionReceiverType(matcher.group(1), bindings);
                     if (!matchesObjectTypeName(receiverType, object.name)) continue;
@@ -1741,26 +1743,31 @@ public class SemanticChecker {
 
     private boolean containsFunctionCall(String expression, String functionName) {
         if (expression == null || functionName == null) return false;
+        return java.util.regex.Pattern.compile("(?<![A-Za-z0-9_])"
+                + java.util.regex.Pattern.quote(functionName) + "\\s*\\(")
+                .matcher(maskStringLiterals(expression)).find();
+    }
+
+    private static String maskStringLiterals(String expression) {
         StringBuilder code = new StringBuilder(expression.length());
-        boolean inString = false;
+        char quote = 0;
         boolean escaped = false;
         for (int index = 0; index < expression.length(); index++) {
             char value = expression.charAt(index);
-            if (inString) {
+            if (quote != 0) {
                 code.append(' ');
                 if (escaped) escaped = false;
                 else if (value == '\\') escaped = true;
-                else if (value == '"') inString = false;
-            } else if (value == '"') {
-                inString = true;
+                else if (value == quote) quote = 0;
+            } else if (value == '"' || value == '\'') {
+                quote = value;
+                escaped = false;
                 code.append(' ');
             } else {
                 code.append(value);
             }
         }
-        return java.util.regex.Pattern.compile("(?<![A-Za-z0-9_])"
-                + java.util.regex.Pattern.quote(functionName) + "\\s*\\(")
-                .matcher(code).find();
+        return code.toString();
     }
 
     private Set<String> collectMethodRaiseVariants(Method method, Set<String> visited) {
@@ -1801,7 +1808,8 @@ public class SemanticChecker {
             for (Method candidate : object.methods) {
                 String pattern = "(?<![A-Za-z0-9_])((?:self|[A-Za-z_][A-Za-z0-9_]*)(?:\\s*\\.\\s*[A-Za-z_][A-Za-z0-9_]*)*)\\s*\\.\\s*"
                         + java.util.regex.Pattern.quote(candidate.name) + "\\s*\\(";
-                java.util.regex.Matcher matcher = java.util.regex.Pattern.compile(pattern).matcher(expression);
+                java.util.regex.Matcher matcher = java.util.regex.Pattern.compile(pattern)
+                        .matcher(maskStringLiterals(expression));
                 while (matcher.find()) {
                     String receiverType = resolveMethodReceiverType(matcher.group(1), ownerMethod, localTypes);
                     if (!matchesObjectTypeName(receiverType, object.name)) continue;

@@ -2231,7 +2231,8 @@ public class NativeGenerator {
         if (expression == null || expression.isBlank()) return false;
         java.util.regex.Matcher calls = java.util.regex.Pattern.compile(
                 "(?<![A-Za-z0-9_])([A-Za-z_][A-Za-z0-9_]*(?:\\s*\\.\\s*[A-Za-z_][A-Za-z0-9_]*)*)"
-                        + "\\s*\\.\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*\\(").matcher(expression);
+                        + "\\s*\\.\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*\\(")
+                .matcher(maskStringLiterals(expression));
         while (calls.find()) {
             String receiver = calls.group(1).replaceAll("\\s", "");
             String methodName = calls.group(2);
@@ -2242,6 +2243,28 @@ public class NativeGenerator {
             if (methodMayRaise(resolveObjectMethod(receiver, methodName, arguments, context))) return true;
         }
         return false;
+    }
+
+    private static String maskStringLiterals(String expression) {
+        StringBuilder masked = new StringBuilder(expression.length());
+        char quote = 0;
+        boolean escaped = false;
+        for (int index = 0; index < expression.length(); index++) {
+            char value = expression.charAt(index);
+            if (quote != 0) {
+                masked.append(' ');
+                if (escaped) escaped = false;
+                else if (value == '\\') escaped = true;
+                else if (value == quote) quote = 0;
+            } else if (value == '"' || value == '\'') {
+                quote = value;
+                escaped = false;
+                masked.append(' ');
+            } else {
+                masked.append(value);
+            }
+        }
+        return masked.toString();
     }
 
     private static int matchingCloseParen(String text, int openIndex) {

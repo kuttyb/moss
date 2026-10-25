@@ -195,6 +195,26 @@ public final class SourceFreeObjectMetadataTest {
                 || !helperMethodRust.contains("point.signal().map_err(|e| __moss_raise(format!(\"{:?}\", e)))?")) {
             throw new AssertionError("helper did not propagate source-free method error: " + helperMethodRust);
         }
+        Program methodLikeText = Parser.parseSource(""
+                + "import provider\n"
+                + "enum Fault:\n"
+                + "  Bad\n"
+                + "fn note(point: provider__Point):\n"
+                + "  echo \"point.signal()\"\n"
+                + "fn main():\n"
+                + "  point = provider__Point(x=0.0, label=\"x\")\n"
+                + "  note(point)\n", "source-free-method-name-in-string.moss");
+        Main.loadMossiFunctions(interfaceFile, "provider", methodLikeText);
+        new SemanticChecker(methodLikeText).run();
+        String methodLikeTextRust = NativeGenerator.generate(methodLikeText, false);
+        int noteDeclaration = methodLikeTextRust.indexOf("fn note(");
+        int noteDeclarationEnd = noteDeclaration < 0 ? -1 : methodLikeTextRust.indexOf('\n', noteDeclaration);
+        String noteSignature = noteDeclarationEnd < 0 ? ""
+                : methodLikeTextRust.substring(noteDeclaration, noteDeclarationEnd);
+        if (noteSignature.isEmpty() || noteSignature.contains("Result<")) {
+            throw new AssertionError("raise-like method text made note a raising function: "
+                    + methodLikeTextRust);
+        }
         Program importedMethodSummary = Parser.parseSource(""
                 + "fn relay(point: provider__Point, values: Vector[Int]):\n"
                 + "  point.replace(values)\n"
