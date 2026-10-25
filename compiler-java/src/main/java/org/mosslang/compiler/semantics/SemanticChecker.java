@@ -783,7 +783,12 @@ public class SemanticChecker {
                     }
                 } else if (s.kind == Stmt.Kind.Call && tryRaisedVariants != null && recoverIndent == -1) {
                     String callTxt = s.text != null ? s.text.trim() : "";
-                    if (callTxt.startsWith("only_a(")) {
+                    int callOpen = callTxt.indexOf('(');
+                    Function called = callOpen > 0
+                            ? functions.get(callTxt.substring(0, callOpen).trim()) : null;
+                    if (called != null) {
+                        collectFunctionRaisedVariants(called, tryRaisedVariants, new HashSet<>());
+                    } else if (callTxt.startsWith("only_a(")) {
                         tryRaisedVariants.add("E.A");
                     } else if (callTxt.startsWith("source_a(")) {
                         tryRaisedVariants.add("Failure.A");
@@ -801,6 +806,10 @@ public class SemanticChecker {
                         boolean anyReachable = false;
                         for (String subPat : pat.split(",")) {
                             subPat = subPat.trim();
+                            if (subPat.matches("[A-Za-z_][A-Za-z0-9_]*")) {
+                                anyReachable = true;
+                                continue;
+                            }
                             String cleanSub = subPat.contains("(") ? subPat.substring(0, subPat.indexOf('(')).trim() : subPat;
                             if (tryRaisedVariants.contains(cleanSub)) {
                                 anyReachable = true;
@@ -1797,10 +1806,77 @@ public class SemanticChecker {
                 i++;
                 continue;
             }
+            if (s.kind == Stmt.Kind.Recover && s.a != null
+                    && s.a.trim().matches("[A-Za-z_][A-Za-z0-9_]*")) {
+                TypeRef errorType = recoveryBindingType(stmts, start, i, s.indent);
+                if (errorType != null) env.put(s.a.trim(), errorType, s.line);
+            }
             checkStatement(s, env, typer, solver, insideHandler, enclosingName, expectedType);
             i++;
         }
         return env;
+    }
+
+    private TypeRef recoveryBindingType(List<Stmt> statements, int start, int recoverIndex, int indent) {
+        int tryIndex = -1;
+        for (int index = recoverIndex - 1; index >= start; index--) {
+            Stmt candidate = statements.get(index);
+            if (candidate.indent < indent) break;
+            if (candidate.kind == Stmt.Kind.Try && candidate.indent == indent) {
+                tryIndex = index;
+                break;
+            }
+        }
+        if (tryIndex < 0) return null;
+        Set<String> enumNames = new HashSet<>();
+        for (int index = tryIndex + 1; index < recoverIndex; index++) {
+            Stmt statement = statements.get(index);
+            if (statement.kind == Stmt.Kind.Raise && statement.a != null) {
+                addRaisedEnumName(statement.a, enumNames);
+            } else if (statement.kind == Stmt.Kind.Call && statement.text != null) {
+                int open = statement.text.indexOf('(');
+                if (open > 0) collectFunctionRaisedEnumNames(
+                        functions.get(statement.text.substring(0, open).trim()), enumNames, new HashSet<>());
+            }
+        }
+        if (enumNames.size() != 1) return null;
+        String enumName = enumNames.iterator().next();
+        return enums.containsKey(enumName) ? TypeRef.enumeration(enumName) : null;
+    }
+
+    private void collectFunctionRaisedEnumNames(Function function, Set<String> names, Set<String> visited) {
+        if (function == null || !visited.add(function.name)) return;
+        for (Stmt statement : function.body) {
+            if (statement.kind == Stmt.Kind.Raise && statement.a != null) addRaisedEnumName(statement.a, names);
+            else if (statement.kind == Stmt.Kind.Call && statement.text != null) {
+                int open = statement.text.indexOf('(');
+                if (open > 0) collectFunctionRaisedEnumNames(
+                        functions.get(statement.text.substring(0, open).trim()), names, visited);
+            }
+        }
+    }
+
+    private void collectFunctionRaisedVariants(Function function, Set<String> variants, Set<String> visited) {
+        if (function == null || !visited.add(function.name)) return;
+        for (Stmt statement : function.body) {
+            if (statement.kind == Stmt.Kind.Raise && statement.a != null) {
+                String raised = statement.a.trim();
+                int payload = raised.indexOf('(');
+                variants.add(payload < 0 ? raised : raised.substring(0, payload).trim());
+            } else if (statement.kind == Stmt.Kind.Call && statement.text != null) {
+                int open = statement.text.indexOf('(');
+                if (open > 0) collectFunctionRaisedVariants(
+                        functions.get(statement.text.substring(0, open).trim()), variants, visited);
+            }
+        }
+    }
+
+    private static void addRaisedEnumName(String expression, Set<String> names) {
+        String raised = expression.trim();
+        int payload = raised.indexOf('(');
+        if (payload >= 0) raised = raised.substring(0, payload).trim();
+        int variantSeparator = raised.lastIndexOf('.');
+        if (variantSeparator > 0) names.add(raised.substring(0, variantSeparator));
     }
 
     private OwnershipEnv mergeMatchEnvs(int line, OwnershipEnv original,

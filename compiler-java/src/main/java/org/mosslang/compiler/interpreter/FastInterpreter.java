@@ -625,7 +625,8 @@ public class FastInterpreter {
                             recEnd++;
                         }
                         String pat = recStmt.a != null ? recStmt.a.trim() : "";
-                        boolean armMatches = pat.isEmpty();
+                        boolean errorBinding = pat.matches("[A-Za-z_][A-Za-z0-9_]*");
+                        boolean armMatches = pat.isEmpty() || errorBinding;
                         for (String subPat : pat.split(",")) {
                             subPat = subPat.trim();
                             String cleanSub = subPat.contains("(") ? subPat.substring(0, subPat.indexOf('(')).trim() : subPat;
@@ -646,7 +647,12 @@ public class FastInterpreter {
                             boolean hadRecoveryBinding = false;
                             Value previousRecoveryBinding = null;
                             try {
-                                if (pat.contains("(") && pat.endsWith(")")) {
+                                if (errorBinding && rex.raisedValue != null) {
+                                    recoveryBinding = pat;
+                                    hadRecoveryBinding = locals.containsKey(recoveryBinding);
+                                    previousRecoveryBinding = locals.get(recoveryBinding);
+                                    locals.put(recoveryBinding, rex.raisedValue);
+                                } else if (pat.contains("(") && pat.endsWith(")")) {
                                     recoveryBinding = pat.substring(pat.indexOf('(') + 1,
                                             pat.lastIndexOf(')')).trim();
                                     if (!recoveryBinding.isEmpty() && rex.raisedValue != null) {

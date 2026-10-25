@@ -30,6 +30,7 @@ public final class FastInterpreterTest {
         testPipelineStageUsesFunctionCallTrace();
         testFunctionTraceIncludesSelectedSpecialization();
         testNestedDomainFailurePropagatesToCallerRecovery();
+        testCatchAllRecoveryBindsRaisedEnum();
         System.out.println("FastInterpreterTest PASSED.");
     }
 
@@ -590,6 +591,29 @@ public final class FastInterpreterTest {
                 || !events.contains("\"detail\":\"9\"")) {
             throw new AssertionError("nested domain failure did not reach caller recovery: "
                     + events + " stdout=" + stdout);
+        }
+    }
+
+    private static void testCatchAllRecoveryBindsRaisedEnum() {
+        var program = Parser.parseSource(""
+                + "enum Failure:\n"
+                + "  Bad\n"
+                + "fn fail():\n"
+                + "  raise Failure.Bad\n"
+                + "fn main():\n"
+                + "  try:\n"
+                + "    fail()\n"
+                + "  recover err:\n"
+                + "    match err:\n"
+                + "      case Bad:\n"
+                + "        echo \"caught\"\n", "fast-interpreter-catchall-recover.moss");
+        new CheckedProgram(program).run();
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+        new FastInterpreter(program, false,
+                new PrintStream(stdout, true, StandardCharsets.UTF_8),
+                new PrintStream(new ByteArrayOutputStream())).run();
+        if (!"caught\n".equals(stdout.toString(StandardCharsets.UTF_8))) {
+            throw new AssertionError("catch-all recover did not bind the raised enum: " + stdout);
         }
     }
 }

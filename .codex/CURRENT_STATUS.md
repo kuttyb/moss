@@ -14015,3 +14015,15 @@ analysis is still incomplete. Seven of the eight targeted fixtures now match
 C++ acceptance and diagnostic codes. `phase21_recovery_semantics.moss` remains
 Java-rejected because a plain `recover err` binding is not typed for subsequent
 match. ABI-v9 and staged ABI-v10 Java suites pass.
+
+The plain `recover err` gap is fixed for recoveries whose directly visible
+raises and helper-call raises resolve to one enum type. Java now types the
+binding as that enum, binds the raised enum value at runtime, and recognizes a
+plain identifier recover pattern as catch-all. The
+`phase21_recovery_semantics.moss` fixture now executes with output and
+`RECOVER_UNREACHABLE_VARIANT` diagnostics matching C++ (only the unreachable
+`WorkError.Unused` arm warns). FastInterpreterTest covers catch-all binding
+through exhaustive match. All seven on_fail/recovery checker fixtures now
+match C++ acceptance and diagnostic codes; Java ABI-v9/v10 suites pass.
+Indirect/mixed-enum recover bindings remain unsupported by this bounded type
+inference.
