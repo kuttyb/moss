@@ -14621,3 +14621,12 @@ in every case. This supersedes the earlier trace-context note that listed
 those were resolved by later branch, call, capture, and unwind trace changes.
 This is a focused failure-capture sample only, not complete Fast Debug trace
 parity. No native compilation or execution was performed.
+
+### Phase 25.3 continuation — rebuild standalone Java package
+
+Rebuilt `compiler-java/dist/moss.jar` from the current source tree with
+`scripts/java/package.sh`. From `tmp/`, the repository launcher selected the
+packaged artifact, reported `0.1.0-java`, and returned a successful
+`agent bootstrap --json` with `result.language_version` equal to `moss-0.1`.
+This verifies the current JAR/launcher bootstrap only; the live optional JDT
+daemon and native/project acceptance gates remain open.
