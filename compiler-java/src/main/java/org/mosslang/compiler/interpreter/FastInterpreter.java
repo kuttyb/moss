@@ -263,6 +263,12 @@ public class FastInterpreter {
         };
     }
 
+    private static String raisedTraceIdentity(Value value, String fallback) {
+        if (value != null && value.raw instanceof EnumValue enumValue)
+            return "enum:" + enumValue.enumName + ":" + enumValue.variant;
+        return fallback == null ? "" : fallback;
+    }
+
     private void traceLocalWrite(Stmt statement, String name, Value value, Value before,
                                  String function, int depth) {
         if (!trace) return;
@@ -370,6 +376,7 @@ public class FastInterpreter {
 
     public void run() {
         if (program.main == null) return;
+        traceSemanticIdentity = "main@" + program.main.line;
         Map<String, Value> locals = new HashMap<>();
 
         try {
@@ -543,6 +550,8 @@ public class FastInterpreter {
                         }
                         if (!recovered && armMatches) {
                             recovered = true;
+                            traceSimpleEvent(recStmt, funcName, "recover",
+                                    raisedTraceIdentity(rex.raisedValue, rex.variantName), depth);
                             Value prevRaised = currentRaisedValue;
                             currentRaisedValue = rex.raisedValue;
                             String prevVariant = currentRaisedVariant;
@@ -636,10 +645,13 @@ public class FastInterpreter {
             } else if (s.kind == Stmt.Kind.Raise) {
                 String rExpr = s.a != null ? s.a.trim() : "";
                 if (rExpr.isEmpty() || rExpr.equals("raise")) {
-                    throw new RaisedException(currentRaisedValue != null ? currentRaisedValue : Value.ofString(currentRaisedVariant), currentRaisedVariant);
+                    Value raised = currentRaisedValue != null ? currentRaisedValue : Value.ofString(currentRaisedVariant);
+                    traceSimpleEvent(s, funcName, "raise", raisedTraceIdentity(raised, currentRaisedVariant), depth);
+                    throw new RaisedException(raised, currentRaisedVariant);
                 }
                 String vName = rExpr.contains("(") ? rExpr.substring(0, rExpr.indexOf('(')).trim() : rExpr;
                 Value rVal = evalExpr(rExpr, locals, currentDomain);
+                traceSimpleEvent(s, funcName, "raise", raisedTraceIdentity(rVal, vName), depth);
                 throw new RaisedException(rVal, vName);
             } else if (s.kind == Stmt.Kind.Reply || s.kind == Stmt.Kind.Return) {
                 Value rVal = (s.a != null && !s.a.isEmpty()) ? evalExpr(s.a, locals, currentDomain) : Value.ofUnit();

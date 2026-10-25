@@ -13740,3 +13740,14 @@ Validation: clean Java build and all eleven unit-test classes pass in ABI-v9
 and staged ABI-v10; the Vector probe traces and output compare byte-for-byte.
 Native, project, SDK, and full acceptance gates remain deferred; Phase 25.3
 remains in progress.
+
+### Phase 25.3 continuation — typed raise/recover trace events
+
+Java Fast Debug now emits `raise` and selected `recover` trace events with the
+canonical enum identity. Main's semantic trace identity uses the actual main
+declaration line rather than assuming line one. A typed `Failure.Bad(code: 2)`
+probe matches C++ trace JSON and stdout exactly.
+
+Validation: all eleven Java unit-test classes pass in ABI-v9 and staged
+ABI-v10; feedback validation and `git diff --check` pass. Nested recovery and
+other error variants remain unverified. Phase 25.3 remains in progress.

@@ -20,6 +20,7 @@ public final class FastInterpreterTest {
         testBranchTraceCarriesControlContext();
         testFunctionCallTraceCarriesCallContext();
         testCollectionTraceUsesCompactSummary();
+        testRaiseRecoverTraceCarriesErrorIdentity();
         System.out.println("FastInterpreterTest PASSED.");
     }
 
@@ -284,6 +285,33 @@ public final class FastInterpreterTest {
                 + "\"line\":2,\"depth\":0,\"detail\":\"xs\",\"after\":\"Vector(size=2)\"}\n";
         if (!expected.equals(trace.toString(StandardCharsets.UTF_8))) {
             throw new AssertionError("collection trace summary differed: " + trace);
+        }
+    }
+
+    private static void testRaiseRecoverTraceCarriesErrorIdentity() {
+        var program = Parser.parseSource(""
+                + "enum Failure:\n"
+                + "  Bad(code: Int)\n"
+                + "fn main():\n"
+                + "  try:\n"
+                + "    raise Failure.Bad(code: 2)\n"
+                + "  recover Failure.Bad(code):\n"
+                + "    echo code\n",
+                "fast-interpreter-recover-trace.moss");
+        new CheckedProgram(program).run();
+
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+        ByteArrayOutputStream trace = new ByteArrayOutputStream();
+        new FastInterpreter(program, true,
+                new PrintStream(stdout, true, StandardCharsets.UTF_8),
+                new PrintStream(trace, true, StandardCharsets.UTF_8)).run();
+        String events = trace.toString(StandardCharsets.UTF_8);
+        String expected = ""
+                + "{\"event_id\":1,\"event\":\"raise\",\"function\":\"main\",\"source_file\":\"fast-interpreter-recover-trace.moss\",\"semantic_identity\":\"main@3\",\"line\":5,\"depth\":0,\"detail\":\"enum:Failure:Bad\"}\n"
+                + "{\"event_id\":2,\"event\":\"recover\",\"function\":\"main\",\"source_file\":\"fast-interpreter-recover-trace.moss\",\"semantic_identity\":\"main@3\",\"line\":6,\"depth\":0,\"detail\":\"enum:Failure:Bad\"}\n"
+                + "{\"event_id\":3,\"event\":\"LocalRead\",\"function\":\"main\",\"source_file\":\"fast-interpreter-recover-trace.moss\",\"semantic_identity\":\"main@3\",\"line\":7,\"depth\":0,\"detail\":\"code\"}\n";
+        if (!expected.equals(events) || !"2\n".equals(stdout.toString(StandardCharsets.UTF_8))) {
+            throw new AssertionError("raise/recover trace omitted error identity: " + events);
         }
     }
 }
