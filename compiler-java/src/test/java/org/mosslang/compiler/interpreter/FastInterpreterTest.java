@@ -24,6 +24,7 @@ public final class FastInterpreterTest {
         testObjectMethodTraceCarriesCallContext();
         testObjectMethodUpdatesScalarField();
         testObjectMethodFieldShadowsSameNamedParameter();
+        testSpacedGenericCollectionConstructors();
         testMapGetInsideObjectMethodReturnsStoredOrFallbackValue();
         testMapSizeAndMembershipMethods();
         testMapIndexedWritesTraceReceiverReads();
@@ -433,6 +434,26 @@ public final class FastInterpreterTest {
         String actual = stdout.toString(StandardCharsets.UTF_8);
         if (!"11\n".equals(actual)) {
             throw new AssertionError("object field binding did not win over a same-named parameter: " + actual);
+        }
+    }
+
+    private static void testSpacedGenericCollectionConstructors() {
+        var program = Parser.parseSource(""
+                + "fn main():\n"
+                + "  values = Vector [Int]()\n"
+                + "  values.push(7)\n"
+                + "  echo values[0]\n"
+                + "  values [0] = 9\n"
+                + "  echo values[0]\n", "fast-interpreter-spaced-vector-constructor.moss");
+        new CheckedProgram(program).run();
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+        try (PrintStream captured = new PrintStream(stdout, true, StandardCharsets.UTF_8)) {
+            new FastInterpreter(program, false, captured,
+                    new PrintStream(new ByteArrayOutputStream())).run();
+        }
+        String actual = stdout.toString(StandardCharsets.UTF_8);
+        if (!"7\n9\n".equals(actual)) {
+            throw new AssertionError("spaced generic Vector constructor did not create a Vector: " + actual);
         }
     }
 

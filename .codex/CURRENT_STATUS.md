@@ -14521,3 +14521,15 @@ The object-field regression also pins Moss's same-named field/parameter rule:
 inside the tested object method, the object field resolves before the parameter
 for both reads and writes. A C++/Java Fast Debug probe now prints `11` in both
 compilers for that case.
+
+### Phase 25.3 continuation — accept spaced generic collection constructors
+
+The Python HashMap project exposed that Fast Debug recognized `Vector[Int]()`
+constructors but not the documented spaced form `Vector [Int]()`. The
+interpreter now normalizes whitespace for generic Vector, Map, and Queue
+constructor dispatch. A unit regression exercises `Vector [Int]()`, push, and
+indexed replacement. The packaged Java Margo interpreter now passes all 13
+HashMap project tests. All eleven Java unit-test classes pass under ABI-v9 and
+staged ABI-v10. C++ Fast Debug still rejects this specific spaced constructor
+as unresolved; C++ and Java static check both accept the source, so this fix
+follows Moss source acceptance rather than the C++ interpreter limitation.

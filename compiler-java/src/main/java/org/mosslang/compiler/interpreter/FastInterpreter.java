@@ -1776,13 +1776,14 @@ public class FastInterpreter {
             Value enumConstructor = makeEnumValue(callee, argList, evaluatedArgs);
             if (enumConstructor != null) return enumConstructor;
 
-            if (callee.equals("Vector") || callee.startsWith("Vector[")) {
+            String compactBuiltinCallee = callee.replaceAll("\\s+", "");
+            if (compactBuiltinCallee.equals("Vector") || compactBuiltinCallee.startsWith("Vector[")) {
                 return new Value(Value.Kind.VECTOR, new ArrayList<Value>());
             }
-            if (callee.equals("Map") || callee.startsWith("Map[")) {
+            if (compactBuiltinCallee.equals("Map") || compactBuiltinCallee.startsWith("Map[")) {
                 return new Value(Value.Kind.MAP, new LinkedHashMap<Object, Value>());
             }
-            if (callee.equals("Queue") || callee.startsWith("Queue[")) {
+            if (compactBuiltinCallee.equals("Queue") || compactBuiltinCallee.startsWith("Queue[")) {
                 return new Value(Value.Kind.QUEUE, new ArrayDeque<Value>());
             }
 
