@@ -14776,3 +14776,16 @@ Validation: all eleven Java unit-test classes pass under ABI-v9, and focused
 C++/Java effects queries match for both the source helper and bare reraiser.
 Catch-all reraises, multiple recovered variants, and complete effect closure
 remain unverified.
+
+### Phase 25.3 continuation — propagate catch-all bare reraises
+
+When a bare `raise` appears inside catch-all `recover:`, the Java effects query
+now traces explicit raises and ordinary helper calls in the paired `try` body,
+then reports those variants as escaping unless an outer recovery catches them.
+The minimized catch-all `reraiser()` case matches C++ on
+`enum:Trouble:Bad`.
+
+Validation: all eleven Java unit-test classes pass under ABI-v9; focused C++
+and Java effects queries agree for the catch-all reraiser. This covers explicit
+variants derivable from direct raises/helper calls; generic effects and broader
+failure-arm inference remain open.

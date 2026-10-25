@@ -1290,10 +1290,8 @@ public class SemanticQueryEngine {
                 expression = statement.text.trim().substring(6).trim();
             }
             if (expression.isEmpty()) {
-                String recoveredPattern = enclosingRecoverPattern(body, index);
-                String canonical = canonicalRaisedVariant(recoveredPattern, program);
-                if (canonical != null && !isRaisedVariantRecovered(body, index, canonical)) {
-                    variants.add(canonical);
+                for (String canonical : reraisedVariants(body, index, program, visited)) {
+                    if (!isRaisedVariantRecovered(body, index, canonical)) variants.add(canonical);
                 }
                 continue;
             }
@@ -1370,7 +1368,69 @@ public class SemanticQueryEngine {
         return variants;
     }
 
-    private static String enclosingRecoverPattern(List<Stmt> body, int raiseIndex) {
+    private static Set<String> reraisedVariants(List<Stmt> body, int raiseIndex,
+                                                Program program, Set<String> visited) {
+        int recoverIndex = enclosingRecoverIndex(body, raiseIndex);
+        if (recoverIndex < 0) return Set.of();
+        Stmt recover = body.get(recoverIndex);
+        String pattern = recover.a == null ? "" : recover.a.trim();
+        String canonical = canonicalRaisedVariant(pattern, program);
+        if (canonical != null) return Set.of(canonical);
+
+        Stmt raised = body.get(recoverIndex);
+        int tryIndex = -1;
+        for (int index = recoverIndex - 1; index >= 0; index--) {
+            Stmt candidate = body.get(index);
+            if (candidate == null || candidate.kind != Stmt.Kind.Try
+                    || candidate.indent != raised.indent) continue;
+            int tryBodyEnd = index + 1;
+            while (tryBodyEnd < body.size()
+                    && body.get(tryBodyEnd).indent > candidate.indent) tryBodyEnd++;
+            if (tryBodyEnd == recoverIndex) {
+                tryIndex = index;
+                break;
+            }
+        }
+        if (tryIndex < 0) return Set.of();
+        int tryBodyEnd = recoverIndex;
+        Set<String> variants = new java.util.TreeSet<>();
+        for (int index = tryIndex + 1; index < tryBodyEnd; index++) {
+            Stmt statement = body.get(index);
+            if (statement == null) continue;
+            if (statement.kind == Stmt.Kind.Raise) {
+                String expression = statement.a == null ? "" : statement.a.trim();
+                if (expression.isEmpty() && statement.text != null
+                        && statement.text.trim().startsWith("raise ")) {
+                    expression = statement.text.trim().substring(6).trim();
+                }
+                String raisedVariant = canonicalRaisedVariant(expression, program);
+                if (raisedVariant != null
+                        && !isRaisedVariantRecovered(body, index, raisedVariant, tryIndex)) {
+                    variants.add(raisedVariant);
+                }
+            }
+            StringBuilder expressions = new StringBuilder();
+            if (statement.text != null) expressions.append(statement.text).append(' ');
+            if (statement.a != null) expressions.append(statement.a).append(' ');
+            if (statement.b != null) expressions.append(statement.b).append(' ');
+            if (statement.args != null) {
+                for (String argument : statement.args) expressions.append(argument).append(' ');
+            }
+            if (program.functions != null) {
+                for (Function candidate : program.functions) {
+                    if (!containsFunctionCall(expressions.toString(), candidate.name)) continue;
+                    for (String calledVariant : collectRaisedVariants(candidate, null, null,
+                            program, visited)) {
+                        if (!isRaisedVariantRecovered(body, index, calledVariant, tryIndex))
+                            variants.add(calledVariant);
+                    }
+                }
+            }
+        }
+        return variants;
+    }
+
+    private static int enclosingRecoverIndex(List<Stmt> body, int raiseIndex) {
         Stmt raised = body.get(raiseIndex);
         for (int recoverIndex = raiseIndex - 1; recoverIndex >= 0; recoverIndex--) {
             Stmt recover = body.get(recoverIndex);
@@ -1379,9 +1439,9 @@ public class SemanticQueryEngine {
             int recoverEnd = recoverIndex + 1;
             while (recoverEnd < body.size()
                     && body.get(recoverEnd).indent > recover.indent) recoverEnd++;
-            if (raiseIndex < recoverEnd) return recover.a == null ? "" : recover.a.trim();
+            if (raiseIndex < recoverEnd) return recoverIndex;
         }
-        return "";
+        return -1;
     }
 
     private static String canonicalRaisedVariant(String expression, Program program) {
@@ -1414,8 +1474,14 @@ public class SemanticQueryEngine {
 
     private static boolean isRaisedVariantRecovered(List<Stmt> body, int raiseIndex,
                                                     String canonicalVariant) {
+        return isRaisedVariantRecovered(body, raiseIndex, canonicalVariant, -1);
+    }
+
+    private static boolean isRaisedVariantRecovered(List<Stmt> body, int raiseIndex,
+                                                    String canonicalVariant, int excludedTryIndex) {
         Stmt raised = body.get(raiseIndex);
         for (int tryIndex = raiseIndex - 1; tryIndex >= 0; tryIndex--) {
+            if (tryIndex == excludedTryIndex) continue;
             Stmt tryStatement = body.get(tryIndex);
             if (tryStatement == null || tryStatement.kind != Stmt.Kind.Try
                     || tryStatement.indent >= raised.indent) continue;

@@ -17,6 +17,7 @@ public final class SemanticQueryEngineTest {
         effectsQueryFollowsSameObjectMethodRaises();
         effectsQueryExcludesRecoveredDirectRaises();
         effectsQueryIncludesExplicitBareReraises();
+        effectsQueryIncludesCatchAllBareReraises();
         typeQueryPreservesOpenGenericResultFacts();
         System.out.println("SemanticQueryEngineTest PASSED.");
     }
@@ -141,6 +142,25 @@ public final class SemanticQueryEngineTest {
                 + "fn main():\n"
                 + "  pass\n";
         Program program = Parser.parseSource(source, "effects-query-bare-reraise.moss");
+        new SemanticChecker(program).run();
+        String result = queryEffects(program, "reraiser");
+        assertContains(result, "\"raise_set\": [\"enum:Trouble:Bad\"]");
+    }
+
+    private static void effectsQueryIncludesCatchAllBareReraises() {
+        String source = ""
+                + "enum Trouble:\n"
+                + "  Bad\n"
+                + "fn source_fault():\n"
+                + "  raise Trouble.Bad\n"
+                + "fn reraiser():\n"
+                + "  try:\n"
+                + "    source_fault()\n"
+                + "  recover:\n"
+                + "    raise\n"
+                + "fn main():\n"
+                + "  pass\n";
+        Program program = Parser.parseSource(source, "effects-query-catchall-reraise.moss");
         new SemanticChecker(program).run();
         String result = queryEffects(program, "reraiser");
         assertContains(result, "\"raise_set\": [\"enum:Trouble:Bad\"]");

@@ -333,3 +333,14 @@ matching recovery. The minimized `reraiser()` query matches C++ on
 
 All eleven Java unit tests pass in ABI-v9. Catch-all reraises and generalized
 multiple-variant/cross-module effect closure remain open.
+
+## Phase 25.3 continuation — catch-all bare-reraise effects
+
+Bare reraises under `recover:` now recover explicit variants from the paired
+`try` body, including variants propagated by ordinary helper calls, and report
+them as escaping unless an outer arm handles them. The minimized catch-all
+`reraiser()` reports `enum:Trouble:Bad`, matching C++.
+
+All eleven Java unit classes pass in ABI-v9. This remains bounded to explicit
+raised variants and ordinary helper calls; generic effects and broader failure
+arm reasoning remain incomplete.
