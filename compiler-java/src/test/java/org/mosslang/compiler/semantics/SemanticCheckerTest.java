@@ -21,6 +21,7 @@ public class SemanticCheckerTest {
         testGenericNumericOperationRetainsOpenTypeUntilSpecialization();
         testMixedIntFloatComparisons();
         testObjectMethodAccessModesAreRetained();
+        testSiblingMutatorReceiverModeAndUnitCodegen();
         testForLoopValuesCanFlowToObjectMethodArguments();
         testForLoopBindingDoesNotEscapeItsLoop();
         testCustomIteratorNamedCounterWithoutRaisesIsAccepted();
@@ -651,6 +652,28 @@ public class SemanticCheckerTest {
                 || method.parameterAccessModes.size() != 1
                 || method.parameterAccessModes.get(0) != AccessMode.Consume) {
             throw new AssertionError("object method receiver/parameter access modes were not retained");
+        }
+    }
+
+    private static void testSiblingMutatorReceiverModeAndUnitCodegen() {
+        Program program = Parser.parseSource(""
+                + "type Box:\n"
+                + "  value: Int\n"
+                + "  fn bump():\n"
+                + "    self.value = self.value + 1\n"
+                + "  fn run():\n"
+                + "    self.bump()\n"
+                + "fn main():\n"
+                + "  box = Box(value=0)\n"
+                + "  box.run()\n", "sibling-mutator-receiver-mode.moss");
+        new SemanticChecker(program).run();
+        org.mosslang.compiler.ast.Method run = program.objects.get(0).methods.stream()
+                .filter(method -> method.name.equals("run")).findFirst().orElseThrow();
+        assertEquals(AccessMode.Write, run.receiverAccessMode);
+        String rust = NativeGenerator.generate(program, false);
+        if (!rust.contains("pub fn run(&mut self) -> ()")
+                || rust.contains("pub fn run(&mut self) -> i64")) {
+            throw new AssertionError("unit sibling-mutator method must retain WRITE receiver and unit result: " + rust);
         }
     }
 

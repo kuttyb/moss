@@ -1052,8 +1052,7 @@ public class SemanticChecker {
                                     ? objects.get(fieldType.name()) : null;
                     for (Stmt statement : method.body) {
                         String target = statement.a != null ? statement.a.trim() : "";
-                        if (target.equals(field.name) || target.startsWith(field.name + ".")
-                                || target.startsWith(field.name + "[")) {
+                        if (isReceiverFieldWriteTarget(target, field.name)) {
                             method.receiverAccessMode = AccessMode.Write;
                             break;
                         }
@@ -1090,6 +1089,44 @@ public class SemanticChecker {
                 }
             }
         }
+        boolean changed;
+        do {
+            changed = false;
+            for (ObjectType object : program.objects) {
+                for (Method method : object.methods) {
+                    if (method.sourceFree || method.receiverAccessMode == AccessMode.Write) continue;
+                    for (Method candidate : object.methods) {
+                        if (candidate == method || candidate.receiverAccessMode != AccessMode.Write
+                                || !callsSiblingMethod(method, candidate.name)) continue;
+                        method.receiverAccessMode = AccessMode.Write;
+                        changed = true;
+                        break;
+                    }
+                }
+            }
+        } while (changed);
+    }
+
+    private boolean isReceiverFieldWriteTarget(String target, String fieldName) {
+        return target.equals(fieldName) || target.startsWith(fieldName + ".")
+                || target.startsWith(fieldName + "[")
+                || target.equals("self." + fieldName) || target.startsWith("self." + fieldName + ".")
+                || target.startsWith("self." + fieldName + "[");
+    }
+
+    private boolean callsSiblingMethod(Method caller, String calleeName) {
+        java.util.regex.Pattern explicitSelfCall = java.util.regex.Pattern.compile(
+                "\\bself\\s*\\.\\s*" + java.util.regex.Pattern.quote(calleeName) + "\\s*\\(");
+        java.util.regex.Pattern implicitSelfCall = java.util.regex.Pattern.compile(
+                "(?<![A-Za-z0-9_.])" + java.util.regex.Pattern.quote(calleeName) + "\\s*\\(");
+        for (Stmt statement : caller.body) {
+            String expression = statementExpressionText(statement);
+            if (explicitSelfCall.matcher(expression).find() || implicitSelfCall.matcher(expression).find())
+                return true;
+        }
+        String result = caller.resultExpression;
+        return result != null && (explicitSelfCall.matcher(result).find()
+                || implicitSelfCall.matcher(result).find());
     }
 
     private boolean isBuiltinMutatingMethod(TypeRef type, String method) {

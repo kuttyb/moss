@@ -2003,10 +2003,7 @@ public class SemanticQueryEngine {
             for (ObjectType object : program.objects) {
                 for (Method method : object.methods) {
                     if (!(method.name.equals(baseName) || (object.name + "." + method.name).equals(baseName))) continue;
-                    boolean receiverWrite = method.body.stream().anyMatch(statement ->
-                            statement.kind == Stmt.Kind.Assign && object.fields.stream()
-                                    .anyMatch(field -> statement.a.equals(field.name)
-                                            || statement.a.startsWith(field.name + ".")));
+                    boolean receiverWrite = method.receiverAccessMode == AccessMode.Write;
                     StringBuilder sb = new StringBuilder("[\n")
                             .append("      {\"name\": \"self\", \"type\": \"")
                             .append(object.name.toLowerCase(Locale.ROOT)).append("\", \"effect\": \"")

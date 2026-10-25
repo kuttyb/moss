@@ -551,10 +551,12 @@ public class NativeGenerator {
                     }
                 }
                 String inferredRet = null;
-                if (m.returnTypeRef != null && m.returnTypeRef.kind() != TypeKind.Unit) {
-                    inferredRet = rustType(m.returnTypeRef.toCanonicalString());
-                } else if (m.returnType != null && !m.returnType.isEmpty() && !m.returnType.equals("unit")) {
-                    inferredRet = rustType(m.returnType);
+                if (m.returnTypeRef != null) {
+                    inferredRet = m.returnTypeRef.kind() == TypeKind.Unit
+                            ? "()" : rustType(m.returnTypeRef.toCanonicalString());
+                } else if (m.returnType != null && !m.returnType.isEmpty()) {
+                    inferredRet = m.returnType.equalsIgnoreCase("unit")
+                            ? "()" : rustType(m.returnType);
                 } else {
                     for (Stmt s : m.body) {
                         if (s.kind == Stmt.Kind.Return && s.a != null && !s.a.trim().isEmpty() && !s.a.trim().equals("return")) {

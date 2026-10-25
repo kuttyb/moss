@@ -15026,3 +15026,19 @@ Validation: both compilers reject the uncaught helper path with
 `MOSS_COMPILE_ERROR`; all eleven Java unit-test classes pass in ABI-v9 and
 staged ABI-v10. Generic/imported effect summaries and complete call-graph
 closure remain open.
+
+
+### Phase 25.3 continuation — propagate sibling method receiver writes
+
+The Java checker now recognizes assignments through `self.field` and
+propagates a receiver `WRITE` mode through same-owner sibling-method calls to
+a fixpoint. Effects queries report that checked mode. Rust method generation
+now honors a checked unit return type when the body ends in a unit-valued call,
+fixing the prior `run(&self) -> i64` output for a method that called a sibling
+mutator.
+
+Validation: C++ and Java both accept the minimal `Box.run → Box.bump` source;
+both effects queries report `self: WRITE`, and generated method signatures use
+`&mut self -> ()`. All eleven Java unit-test classes pass in ABI-v9 and staged
+ABI-v10. Generated Rust was inspected but not compiled; broader receiver effect
+closure remains open.

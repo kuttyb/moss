@@ -17,6 +17,7 @@ public final class SemanticQueryEngineTest {
         effectsQueryFollowsLocalMethodEffects();
         effectsQueryFollowsFieldChainMethodEffects();
         effectsQueryReportsMethodParameterAccessModes();
+        effectsQueryReportsSiblingMethodReceiverWrite();
         effectsQueryFollowsHandlerHelperEffects();
         effectsQueryFollowsOrdinaryFunctionRaises();
         effectsQueryFollowsLocalObjectMethodRaises();
@@ -201,6 +202,23 @@ public final class SemanticQueryEngineTest {
         }
         assertContains(output.toString(StandardCharsets.UTF_8),
                 "\"name\": \"values\", \"type\": \"vector[int]\", \"effect\": \"CONSUME\"");
+    }
+
+    private static void effectsQueryReportsSiblingMethodReceiverWrite() {
+        String source = ""
+                + "type Box:\n"
+                + "  value: Int\n"
+                + "  fn bump():\n"
+                + "    self.value = self.value + 1\n"
+                + "  fn run():\n"
+                + "    self.bump()\n"
+                + "fn main():\n"
+                + "  box = Box(value=0)\n"
+                + "  box.run()\n";
+        Program program = Parser.parseSource(source, "effects-query-sibling-receiver-write.moss");
+        new SemanticChecker(program).run();
+        assertContains(queryEffects(program, "method:Box.run"),
+                "\"name\": \"self\", \"type\": \"box\", \"effect\": \"WRITE\"");
     }
 
     private static void effectsQueryExcludesRecoveredDirectRaises() {

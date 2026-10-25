@@ -387,3 +387,20 @@ generic substitutions, imported/source-free raise summaries, and complete
 checker-owned effect closure remain open. Commits `cc8aad57` through `8416f932`
 are pushed to `phase25-3-java-j2`; no native, SDK, multi-crate, or full release
 gate ran.
+
+
+## Phase 25.3 continuation — propagate sibling method receiver writes and preserve unit codegen
+
+A valid `Box.run` method calling `self.bump`, where `bump` writes
+`self.value`, exposed a concrete Java/C++ difference: C++ reported `self` as
+WRITE and generated `run(&mut self) -> ()`; Java reported READ and emitted
+`run(&self) -> i64` even though its checked query type was unit. Java now counts
+`self.field` assignments as receiver writes, propagates WRITE through
+same-owner sibling calls, uses the checked receiver mode in effects queries,
+and honors the checked unit result in native generation.
+
+The focused query and generated-signature comparison now agree. All eleven
+Java unit classes pass under ABI-v9 and staged ABI-v10; feedback validation and
+`git diff --check` pass. Generated Rust was inspected but not compiled. This
+closes only the shown receiver/write and unit-return profile, not general
+method effect or native backend parity.
