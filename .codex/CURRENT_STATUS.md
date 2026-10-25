@@ -15597,3 +15597,16 @@ consumer `relay()` that calls `provider.assert_failure()`, and verifies the
 consumer record retains `may_panic=1`. Default and staged ABI test suites both
 pass. This is metadata propagation evidence; no Rust provider/consumer build or
 native execution was run.
+
+
+### Phase 25.3 continuation — consume imported method panic facts at typed call sites
+
+The provider/consumer regression now also checks `method_relay(box:
+provider__Box)` after loading the provider interface and running the consumer
+semantic checker. The consumer's exported function metadata inherits
+`may_panic=1` from the imported source-free `Box.crash_forward()` method. This
+proves typed receiver resolution and effect propagation at the ABI metadata
+layer; provider/consumer Rust compilation and execution remain unverified.
+
+All twelve Java unit-test classes pass in default ABI-v9 and staged ABI-v10;
+feedback and diff checks are pending for the checkpoint.

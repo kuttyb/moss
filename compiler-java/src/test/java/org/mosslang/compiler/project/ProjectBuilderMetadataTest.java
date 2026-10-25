@@ -244,10 +244,13 @@ public final class ProjectBuilderMetadataTest {
                     + "module consumer\n"
                     + "export fn relay():\n"
                     + "  provider.assert_failure()\n"
+                    + "export fn method_relay(box: provider__Box):\n"
+                    + "  box.crash_forward()\n"
                     + "fn main():\n"
                     + "  pass\n", "consumer-panic-effect.moss");
             org.mosslang.compiler.cli.Main.loadMossiFunctions(
                     interfaceFile, "provider", consumerModule);
+            new org.mosslang.compiler.semantics.CheckedProgram(consumerModule).run();
             String consumerText = new String(ProjectBuilder.generateMossiInterface(manifest, "consumer",
                     consumerModule, toolchain, java.util.List.of(), Path.of("tmp"), java.util.Map.of()),
                     java.nio.charset.StandardCharsets.UTF_8);
@@ -256,6 +259,12 @@ public final class ProjectBuilderMetadataTest {
                     .findFirst().orElse("");
             if (!relay.contains("may_panic=1")) {
                 throw new AssertionError("consumer panic effect did not inherit imported helper: " + relay);
+            }
+            String methodRelay = consumerText.lines().filter(line -> line.contains("method_relay ")
+                            && line.contains("may_panic="))
+                    .findFirst().orElse("");
+            if (!methodRelay.contains("may_panic=1")) {
+                throw new AssertionError("consumer panic effect did not inherit imported method: " + methodRelay);
             }
         } catch (java.io.IOException | CompileError error) {
             throw new AssertionError("could not verify source-free panic effect loading", error);
