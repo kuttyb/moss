@@ -232,7 +232,7 @@ public final class SourceFreeObjectMetadataTest {
         }
         Program domainConsumer = Parser.parseSource(""
                 + "domain Client:\n"
-                + "  domainroutes(recorder: provider__Recorder)\n"
+                + "  domainroutes(recorder: provider.Recorder)\n"
                 + "  fn Read() -> Int:\n"
                 + "    reply message recorder.Count(1)\n"
                 + "fn main():\n"

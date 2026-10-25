@@ -1612,10 +1612,15 @@ public class NativeGenerator {
     private static String routeRustType(String type, Map<String, Domain> domains) {
         if (type == null) return "";
         String t = type.trim();
-        if (t.contains(".")) return t.replace(".", "__");
         if (domains.containsKey(t)) {
             Domain domain = domains.get(t);
             return domain.sourceFree ? sourceFreeRustName(t, currentProgram.get()) : t;
+        }
+        String canonical = t.replace(".", "__");
+        if (domains.containsKey(canonical)) {
+            Domain domain = domains.get(canonical);
+            return domain.sourceFree
+                    ? sourceFreeRustName(canonical, currentProgram.get()) : canonical;
         }
         for (String k : domains.keySet()) {
             if (k.endsWith("__" + t)) {
@@ -1624,7 +1629,7 @@ public class NativeGenerator {
                         ? sourceFreeRustName(k, currentProgram.get()) : k;
             }
         }
-        return t;
+        return t.contains(".") ? canonical : t;
     }
 
     private static String lowerEnumExpr(String expr, Set<String> stateFields, Map<String, Domain> domains,

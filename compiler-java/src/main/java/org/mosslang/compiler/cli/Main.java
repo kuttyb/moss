@@ -921,6 +921,19 @@ public class Main {
                         currentDomain.sourceFree = true;
                         program.domains.add(currentDomain);
                     }
+                    String aliasName = modName + "." + domainName;
+                    if (program.domains.stream().noneMatch(domain -> domain.name.equals(aliasName))) {
+                        org.mosslang.compiler.ast.Domain alias = new org.mosslang.compiler.ast.Domain(
+                                aliasName, currentDomain.header, currentDomain.line,
+                                currentDomain.sourceFile, true);
+                        alias.definingModule = modName;
+                        alias.declarationName = domainName;
+                        alias.sourceFree = true;
+                        alias.state = currentDomain.state;
+                        alias.routes = currentDomain.routes;
+                        alias.handlers = currentDomain.handlers;
+                        program.domains.add(alias);
+                    }
                     currentFn = null;
                     currentObject = null;
                     currentEnum = null;

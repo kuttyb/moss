@@ -12942,3 +12942,8 @@ runtime definition. The project-level v10 producer round trip emits the domain
 record; foreign domain identities are rejected. Rust compilation, project
 provider/consumer linking, complete domain effects/routes, and native execution
 remain unverified.
+
+A dotted module-qualified route such as `provider.Recorder` now resolves through
+the imported domain alias to `moss_provider::RecorderRef`; the focused consumer
+uses this form. The default ABI-v9 and staged ABI-v10 Java builds and all ten
+test classes pass after the alias change.
