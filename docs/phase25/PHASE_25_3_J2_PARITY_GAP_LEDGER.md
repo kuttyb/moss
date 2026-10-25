@@ -512,3 +512,5 @@ agree, and all eleven Java test classes pass under ABI-v9 and staged ABI-v10.
 Generic/imported function summaries and branch-sensitive aliases remain open.
 The summary scan respects lexical `case` binders so a shadowed local does not
 count as a consume of a same-named parameter.
+The regression declares the forwarding helper before its consuming callee to
+verify the fixed-point result is independent of function declaration order.

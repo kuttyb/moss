@@ -15171,3 +15171,5 @@ classes pass under ABI-v9 and staged ABI-v10; calls through generic/imported
 functions and branch-sensitive argument aliases remain open.
 The summary scan also respects lexical `case` binders so a shadowed local does
 not count as a consume of a same-named parameter.
+The regression also declares the forwarding helper before the consuming helper
+to ensure closure does not depend on declaration order.
