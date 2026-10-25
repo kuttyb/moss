@@ -13885,3 +13885,19 @@ trace and stdout now match C++ byte-for-byte.
 Validation: all eleven Java unit-test classes pass in ABI-v9 and staged
 ABI-v10; feedback validation and `git diff --check` pass. Broader acceptance
 remains open.
+
+### Phase 25.3 continuation — typed `on_fail` dispatch and captures
+
+The `phase21_capture_try_join.moss` Fast Debug probe showed a semantic defect:
+Java executed the handler failure arm without selecting its error pattern or
+restoring checker-approved locals, returning `()` twice where C++ returned
+`no` and `yes`. Java now dispatches matching `on_fail` arms, keeps names joined
+across completed try/recover branches, carries exceptional-edge local snapshots,
+and executes the failure body with its `$fail` trace identity. The focused probe
+now produces `no\nyes\n`; its full trace still differs from C++ in unrelated
+branch context/event behavior, so trace parity is not claimed.
+
+Validation: Java build passes, and all eleven unit-test classes pass in ABI-v9
+and staged ABI-v10. Focused stdout and failure-arm event values match C++; full
+trace comparison identifies remaining unrelated event differences. Phase 25.3
+remains in progress.

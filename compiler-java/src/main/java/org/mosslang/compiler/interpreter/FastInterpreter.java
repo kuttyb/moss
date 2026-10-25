@@ -419,10 +419,15 @@ public class FastInterpreter {
     public static class RaisedException extends RuntimeException {
         public final Value raisedValue;
         public final String variantName;
+        public final Map<String, Value> edgeLocals;
         public RaisedException(Value raisedValue, String variantName) {
+            this(raisedValue, variantName, Map.of());
+        }
+        public RaisedException(Value raisedValue, String variantName, Map<String, Value> edgeLocals) {
             super(variantName != null && !variantName.isEmpty() ? variantName : (raisedValue != null ? raisedValue.toString() : "raised"));
             this.raisedValue = raisedValue;
             this.variantName = variantName != null ? variantName : "";
+            this.edgeLocals = new HashMap<>(edgeLocals);
         }
         public RaisedException(Value raisedValue) {
             this(raisedValue, raisedValue != null ? raisedValue.toString() : "");
@@ -582,9 +587,24 @@ public class FastInterpreter {
                 while (tryEnd < endIdx && stmts.get(tryEnd).indent > baseInd) {
                     tryEnd++;
                 }
+                Set<String> joinedNames = new HashSet<>(blockDeclarations(stmts, i + 1, tryEnd));
+                // A branch-local declaration that shadows an existing binding
+                // remains local, as it does in the native interpreter.
+                joinedNames.removeAll(locals.keySet());
+                int recoverScan = tryEnd;
+                boolean sawRecover = false;
+                while (recoverScan < endIdx && stmts.get(recoverScan).kind == Stmt.Kind.Recover && stmts.get(recoverScan).indent == baseInd) {
+                    int armStart = recoverScan + 1;
+                    int armEnd = armStart;
+                    while (armEnd < endIdx && stmts.get(armEnd).indent > baseInd) armEnd++;
+                    joinedNames.retainAll(blockDeclarations(stmts, armStart, armEnd));
+                    sawRecover = true;
+                    recoverScan = armEnd;
+                }
+                if (!sawRecover) joinedNames.clear();
                 try {
-                    lastVal = evalScopedBlock(stmts, i + 1, tryEnd, locals,
-                            currentDomain, funcName, depth, Set.of());
+                    lastVal = evalJoinedScopedBlock(stmts, i + 1, tryEnd, locals,
+                            currentDomain, funcName, depth, joinedNames);
                     i = tryEnd;
                     while (i < endIdx && stmts.get(i).kind == Stmt.Kind.Recover && stmts.get(i).indent == baseInd) {
                         i++;
@@ -642,8 +662,8 @@ public class FastInterpreter {
                                         recoveryBinding = null;
                                     }
                                 }
-                                lastVal = evalScopedBlock(stmts, recStart, recEnd, locals,
-                                        currentDomain, funcName, depth, Set.of());
+                                lastVal = evalJoinedScopedBlock(stmts, recStart, recEnd, locals,
+                                        currentDomain, funcName, depth, joinedNames);
                             } finally {
                                 if (recoveryBinding != null) {
                                     if (hadRecoveryBinding) locals.put(recoveryBinding, previousRecoveryBinding);
@@ -709,12 +729,12 @@ public class FastInterpreter {
                 if (rExpr.isEmpty() || rExpr.equals("raise")) {
                     Value raised = currentRaisedValue != null ? currentRaisedValue : Value.ofString(currentRaisedVariant);
                     traceSimpleEvent(s, funcName, "raise", raisedTraceIdentity(raised, currentRaisedVariant), depth);
-                    throw new RaisedException(raised, currentRaisedVariant);
+                    throw new RaisedException(raised, currentRaisedVariant, locals);
                 }
                 String vName = rExpr.contains("(") ? rExpr.substring(0, rExpr.indexOf('(')).trim() : rExpr;
                 Value rVal = evalExpr(rExpr, locals, currentDomain);
                 traceSimpleEvent(s, funcName, "raise", raisedTraceIdentity(rVal, vName), depth);
-                throw new RaisedException(rVal, vName);
+                throw new RaisedException(rVal, vName, locals);
             } else if (s.kind == Stmt.Kind.Reply || s.kind == Stmt.Kind.Return) {
                 Value rVal = (s.a != null && !s.a.isEmpty()) ? evalExpr(s.a, locals, currentDomain) : Value.ofUnit();
                 traceSimpleEvent(s, funcName, s.kind == Stmt.Kind.Reply ? "reply" : "Return",
@@ -735,6 +755,28 @@ public class FastInterpreter {
                 currentDomain, function, depth, additionalShadows, null, null);
     }
 
+    private Value evalJoinedScopedBlock(List<Stmt> statements, int start, int end,
+                                        Map<String, Value> parentLocals,
+                                        DomainInstance currentDomain, String function,
+                                        int depth, Set<String> joinedNames) {
+        Map<String, Value> scopedLocals = new HashMap<>(parentLocals);
+        Set<String> declarations = blockDeclarations(statements, start, end);
+        try {
+            Value result = evalBlock(statements, start, end, scopedLocals, currentDomain, function, depth);
+            for (String name : joinedNames) {
+                if (declarations.contains(name) && scopedLocals.containsKey(name)) parentLocals.put(name, scopedLocals.get(name));
+            }
+            return result;
+        } finally {
+            for (String name : new ArrayList<>(parentLocals.keySet())) {
+                if (!declarations.contains(name)) {
+                    if (scopedLocals.containsKey(name)) parentLocals.put(name, scopedLocals.get(name));
+                    else parentLocals.remove(name);
+                }
+            }
+        }
+    }
+
     private Value evalScopedBlock(List<Stmt> statements, int start, int end,
                                   Map<String, Value> parentLocals,
                                   DomainInstance currentDomain, String function,
@@ -750,6 +792,12 @@ public class FastInterpreter {
         try {
             return evalBlock(statements, start, end, scopedLocals,
                     currentDomain, function, depth);
+        } catch (RaisedException raised) {
+            for (String name : blockDeclarations(statements, start, end)) {
+                Value value = scopedLocals.get(name);
+                if (value != null) raised.edgeLocals.putIfAbsent(name, value);
+            }
+            throw raised;
         } finally {
             for (String name : new ArrayList<>(parentLocals.keySet())) {
                 if (shadowed.contains(name)) continue;
@@ -963,11 +1011,44 @@ public class FastInterpreter {
                     retVal = rs.returnValue;
                 } catch (RaisedException rex) {
                     if (handler.failureArms != null && !handler.failureArms.isEmpty()) {
-                        FailureArm arm = handler.failureArms.get(0);
+                        FailureArm arm = null;
+                        for (FailureArm candidate : handler.failureArms) {
+                            if (candidate.patterns.isEmpty()) { arm = candidate; break; }
+                            for (String pattern : candidate.patterns) {
+                                String normalized = pattern.replace("__", ".");
+                                String variant = rex.variantName;
+                                String shortName = normalized.substring(normalized.lastIndexOf('.') + 1);
+                                if (variant.equals(normalized) || variant.endsWith("." + normalized)
+                                        || normalized.endsWith("." + variant) || variant.endsWith("." + shortName)) {
+                                    arm = candidate;
+                                    break;
+                                }
+                            }
+                            if (arm != null) break;
+                        }
+                        if (arm == null) throw rex;
+                        for (String capture : arm.checkedCaptures.keySet()) {
+                            Value captured = rex.edgeLocals.get(capture);
+                            if (captured != null) handlerLocals.put(capture, captured);
+                        }
+                        String failFunction = targetDomain.domain.name + "." + handlerName + "$fail";
+                        if (trace) {
+                            eventId++;
+                            traceEvent("{\"event_id\":" + eventId + ",\"event\":\"on_fail\",\"function\":\""
+                                    + jsonEscape(failFunction) + "\",\"source_file\":\"" + jsonEscape(arm.sourceFile)
+                                    + "\",\"semantic_identity\":\"" + jsonEscape(handlerIdentity)
+                                    + "\",\"line\":" + arm.line + traceContextFields() + ",\"depth\":" + (depth + 2)
+                                    + ",\"detail\":\"" + jsonEscape(raisedTraceIdentity(rex.raisedValue, rex.variantName))
+                                    + "\"" + traceDomainFields() + "}");
+                        }
+                        String priorFunction = traceFunction;
+                        traceFunction = failFunction;
                         try {
-                            retVal = evalBlock(arm.body, 0, arm.body.size(), handlerLocals, targetDomain, targetDomain.domain.name + "." + handlerName, depth + 2);
+                            retVal = evalBlock(arm.body, 0, arm.body.size(), handlerLocals, targetDomain, failFunction, depth + 2);
                         } catch (ReturnSignal rs) {
                             retVal = rs.returnValue;
+                        } finally {
+                            traceFunction = priorFunction;
                         }
                     } else {
                         throw rex;
