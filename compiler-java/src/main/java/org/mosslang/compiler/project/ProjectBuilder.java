@@ -1830,14 +1830,49 @@ public class ProjectBuilder {
                 && statement.text.trim().startsWith("return ")) {
             expression = statement.text.trim().substring(7).trim();
         }
-        org.mosslang.compiler.semantics.ExpressionTyper.BinarySplit split =
+        return v10LowerIntPredicateExpression(expression, function, 0);
+    }
+
+    private static CheckedExpr v10LowerIntPredicateExpression(
+            String source, Function function, int depth) {
+        if (source == null || depth > 128) return null;
+        String expression = source.trim();
+        while (v10ExpressionHasWrappingParens(expression)) {
+            expression = expression.substring(1, expression.length() - 1).trim();
+        }
+        TypeRef boolType = TypeRef.primitive("bool");
+        if ("true".equals(expression) || "false".equals(expression)) {
+            return CheckedExpr.boolLiteral("true".equals(expression), boolType);
+        }
+        if (expression.startsWith("not ")) {
+            CheckedExpr operand = v10LowerIntPredicateExpression(
+                    expression.substring(4), function, depth + 1);
+            return operand == null ? null : CheckedExpr.unary(
+                    org.mosslang.compiler.abi.CheckedUnaryOp.Not, operand, boolType);
+        }
+        org.mosslang.compiler.semantics.ExpressionTyper.BinarySplit logical =
+                org.mosslang.compiler.semantics.ExpressionTyper.splitBinary(expression,
+                        List.of(" or ", " and ", " xor "));
+        if (logical != null) {
+            CheckedExpr left = v10LowerIntPredicateExpression(logical.left(), function, depth + 1);
+            CheckedExpr right = v10LowerIntPredicateExpression(logical.right(), function, depth + 1);
+            if (left == null || right == null) return null;
+            org.mosslang.compiler.abi.CheckedBinaryOp operation = switch (logical.op().trim()) {
+                case "and" -> org.mosslang.compiler.abi.CheckedBinaryOp.And;
+                case "or" -> org.mosslang.compiler.abi.CheckedBinaryOp.Or;
+                case "xor" -> org.mosslang.compiler.abi.CheckedBinaryOp.Xor;
+                default -> null;
+            };
+            return operation == null ? null : CheckedExpr.binary(operation, left, right, boolType);
+        }
+        org.mosslang.compiler.semantics.ExpressionTyper.BinarySplit comparison =
                 org.mosslang.compiler.semantics.ExpressionTyper.splitBinary(expression,
                         List.of("==", "!=", "<=", ">=", "<", ">"));
-        if (split == null) return null;
-        CheckedExpr left = v10LowerClosedIntExpression(split.left(), function, 0);
-        CheckedExpr right = v10LowerClosedIntExpression(split.right(), function, 0);
+        if (comparison == null) return null;
+        CheckedExpr left = v10LowerClosedIntExpression(comparison.left(), function, depth + 1);
+        CheckedExpr right = v10LowerClosedIntExpression(comparison.right(), function, depth + 1);
         if (left == null || right == null) return null;
-        org.mosslang.compiler.abi.CheckedBinaryOp operation = switch (split.op()) {
+        org.mosslang.compiler.abi.CheckedBinaryOp operation = switch (comparison.op()) {
             case "==" -> org.mosslang.compiler.abi.CheckedBinaryOp.Equal;
             case "!=" -> org.mosslang.compiler.abi.CheckedBinaryOp.NotEqual;
             case "<" -> org.mosslang.compiler.abi.CheckedBinaryOp.Less;
@@ -1846,8 +1881,7 @@ public class ProjectBuilder {
             case ">=" -> org.mosslang.compiler.abi.CheckedBinaryOp.GreaterEqual;
             default -> null;
         };
-        return operation == null ? null : CheckedExpr.binary(
-                operation, left, right, TypeRef.primitive("bool"));
+        return operation == null ? null : CheckedExpr.binary(operation, left, right, boolType);
     }
 
     private static AbiV10Records.Summary v10IntComparisonSummary(

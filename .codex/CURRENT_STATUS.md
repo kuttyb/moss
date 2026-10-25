@@ -13412,3 +13412,19 @@ ABI-v10 modes. C++ and Java both accept the focused comparison probe. Agent
 feedback validation and `git diff --check` pass. No native Rust compilation or
 execution, Margo provider-consumer build, SDK gate, or full `make check` ran.
 Phase 25.3 remains incomplete.
+
+### Phase 25.3 continuation — preserve checked Boolean predicate trees
+
+The ABI-v10 source-free predicate path now handles Boolean literals, `not`, and
+`and`/`or`/`xor` compositions over checked Int comparisons (with closed-Int
+arithmetic operands). The loader reconstructs these forms only from supported
+checked-body tags and verifies each operand tree against the Int parameter
+summary. The producer-consumer test strips legacy generic body rows and checks
+an `and` of comparisons and a negated comparison. General Bool expressions and
+arbitrary callable bodies remain open.
+
+Validation: all ten Java unit-test classes pass in default ABI-v9 and staged
+ABI-v10 modes. C++ and Java both accept the focused predicate probe. Feedback
+validation and `git diff --check` pass. No native Rust compile/run, Margo
+provider-consumer build, SDK gate, or full `make check` ran; Phase 25.3 remains
+in progress.

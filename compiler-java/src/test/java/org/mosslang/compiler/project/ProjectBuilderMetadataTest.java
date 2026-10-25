@@ -361,6 +361,10 @@ public final class ProjectBuilderMetadataTest {
                 + "  return -value + .5\n"
                 + "export fn is_positive(value: Int) -> Bool:\n"
                 + "  return value > 0\n"
+                + "export fn is_in_range(value: Int) -> Bool:\n"
+                + "  return value >= 0 and value < 10\n"
+                + "export fn is_nonnegative(value: Int) -> Bool:\n"
+                + "  return not (value < 0)\n"
                 + "export fn greeting() -> String:\n"
                 + "  return \"hello\"\n", "identity-provider.moss");
         new org.mosslang.compiler.semantics.CheckedProgram(identityProgram).run();
@@ -665,6 +669,25 @@ public final class ProjectBuilderMetadataTest {
                 || !predicateSummary.bodySemanticHash.equals(predicateBody.semanticHash)) {
             throw new AssertionError("ABI-v10 checked predicate summary/body is incomplete");
         }
+        for (String callable : List.of("is_in_range", "is_nonnegative")) {
+            AbiV10Records.CheckedBodyRecord body = identityInterface.privateSemanticDependencies.stream()
+                    .filter(record -> record.id.startsWith("checked-body-v1:"))
+                    .map(AbiV10Records.CheckedBodyRecord::decode)
+                    .filter(record -> record.callableId.endsWith(":fn:" + callable))
+                    .findFirst().orElseThrow(() -> new AssertionError(
+                            "ABI-v10 producer omitted the Boolean expression body for " + callable));
+            List<org.mosslang.compiler.abi.CheckedStmt> statements =
+                    CheckedBodyCodec.decodeCheckedBody(body.checkedIrBytes);
+            org.mosslang.compiler.abi.CheckedExpr expr = statements.get(0).expr;
+            boolean expected = callable.equals("is_in_range")
+                    ? expr.kind == org.mosslang.compiler.abi.CheckedExprKind.Binary
+                            && expr.binaryOp == org.mosslang.compiler.abi.CheckedBinaryOp.And
+                    : expr.kind == org.mosslang.compiler.abi.CheckedExprKind.Unary
+                            && expr.unaryOp == org.mosslang.compiler.abi.CheckedUnaryOp.Not;
+            if (statements.size() != 1 || !expected) {
+                throw new AssertionError("ABI-v10 Boolean expression tree is incomplete for " + callable);
+            }
+        }
         AbiV10Records.Summary combineSummary = identityInterface.binaryContract.stream()
                 .filter(record -> record.payloadBytes().length > 0
                         && (record.payloadBytes()[0] == 3 || record.payloadBytes()[0] == 4))
@@ -749,6 +772,10 @@ public final class ProjectBuilderMetadataTest {
                     + "  return provider__adjust_ratio(3.0)\n"
                     + "fn use_is_positive() -> Bool:\n"
                     + "  return provider__is_positive(7)\n"
+                    + "fn use_is_in_range() -> Bool:\n"
+                    + "  return provider__is_in_range(7)\n"
+                    + "fn use_is_nonnegative() -> Bool:\n"
+                    + "  return provider__is_nonnegative(7)\n"
                     + "fn use_increment() -> Int:\n"
                     + "  return provider__increment(41)\n"
                     + "fn use_scale() -> Int:\n"

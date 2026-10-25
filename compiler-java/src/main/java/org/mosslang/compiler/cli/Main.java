@@ -1474,7 +1474,7 @@ public class Main {
                     && parameterTypes.stream().allMatch(type -> type.kind()
                             == org.mosslang.compiler.types.TypeKind.Primitive
                             && "int".equalsIgnoreCase(type.name()))) {
-                intComparisonExpression = sourceFreeIntComparisonExpression(statement.expr, parameterTypes, 0);
+                intComparisonExpression = sourceFreeBoolExpression(statement.expr, parameterTypes, 0);
                 if (intComparisonExpression == null) continue;
             } else if (statement.expr.kind == org.mosslang.compiler.abi.CheckedExprKind.FloatLiteral
                     && parameterTypes.isEmpty() && resultType.kind() == org.mosslang.compiler.types.TypeKind.Primitive
@@ -1644,35 +1644,64 @@ public class Main {
                 && literal.canonical.equals(value);
     }
 
-    private static String sourceFreeIntComparisonExpression(
+    private static String sourceFreeBoolExpression(
             org.mosslang.compiler.abi.CheckedExpr expression,
             List<org.mosslang.compiler.types.TypeRef> parameterTypes, int depth) {
         if (expression == null || depth > 128 || expression.type == null
                 || expression.type.kind() != org.mosslang.compiler.types.TypeKind.Primitive
-                || !"bool".equalsIgnoreCase(expression.type.name())
-                || expression.kind != org.mosslang.compiler.abi.CheckedExprKind.Binary
-                || expression.operands.size() != 2
-                || !java.util.Set.of(org.mosslang.compiler.abi.CheckedBinaryOp.Equal,
+                || !"bool".equalsIgnoreCase(expression.type.name())) {
+            return null;
+        }
+        return switch (expression.kind) {
+            case BoolLiteral -> "true".equals(expression.literalValue) ? "true"
+                    : "false".equals(expression.literalValue) ? "false" : null;
+            case Unary -> {
+                if (expression.unaryOp != org.mosslang.compiler.abi.CheckedUnaryOp.Not
+                        || expression.operands.size() != 1) yield null;
+                String operand = sourceFreeBoolExpression(expression.operands.get(0), parameterTypes, depth + 1);
+                yield operand == null ? null : "not (" + operand + ")";
+            }
+            case Binary -> {
+                if (expression.operands.size() != 2) yield null;
+                if (java.util.Set.of(org.mosslang.compiler.abi.CheckedBinaryOp.And,
+                        org.mosslang.compiler.abi.CheckedBinaryOp.Or,
+                        org.mosslang.compiler.abi.CheckedBinaryOp.Xor).contains(expression.binaryOp)) {
+                    String left = sourceFreeBoolExpression(expression.operands.get(0), parameterTypes, depth + 1);
+                    String right = sourceFreeBoolExpression(expression.operands.get(1), parameterTypes, depth + 1);
+                    if (left == null || right == null) yield null;
+                    String logicalOperator = switch (expression.binaryOp) {
+                        case And -> "and";
+                        case Or -> "or";
+                        case Xor -> "xor";
+                        default -> null;
+                    };
+                    yield logicalOperator == null ? null : "(" + left + " " + logicalOperator + " " + right + ")";
+                }
+                if (!java.util.Set.of(org.mosslang.compiler.abi.CheckedBinaryOp.Equal,
                         org.mosslang.compiler.abi.CheckedBinaryOp.NotEqual,
                         org.mosslang.compiler.abi.CheckedBinaryOp.Less,
                         org.mosslang.compiler.abi.CheckedBinaryOp.LessEqual,
                         org.mosslang.compiler.abi.CheckedBinaryOp.Greater,
                         org.mosslang.compiler.abi.CheckedBinaryOp.GreaterEqual).contains(expression.binaryOp)) {
-            return null;
-        }
-        String left = sourceFreeClosedIntExpression(expression.operands.get(0), parameterTypes, depth + 1);
-        String right = sourceFreeClosedIntExpression(expression.operands.get(1), parameterTypes, depth + 1);
-        if (left == null || right == null) return null;
-        String operator = switch (expression.binaryOp) {
-            case Equal -> "==";
-            case NotEqual -> "!=";
-            case Less -> "<";
-            case LessEqual -> "<=";
-            case Greater -> ">";
-            case GreaterEqual -> ">=";
+                    yield null;
+                }
+                String left = sourceFreeClosedIntExpression(expression.operands.get(0), parameterTypes, depth + 1);
+                String right = sourceFreeClosedIntExpression(expression.operands.get(1), parameterTypes, depth + 1);
+                if (left == null || right == null) yield null;
+                String comparisonOperator = switch (expression.binaryOp) {
+                    case Equal -> "==";
+                    case NotEqual -> "!=";
+                    case Less -> "<";
+                    case LessEqual -> "<=";
+                    case Greater -> ">";
+                    case GreaterEqual -> ">=";
+                    default -> null;
+                };
+                yield comparisonOperator == null ? null
+                        : "(" + left + " " + comparisonOperator + " " + right + ")";
+            }
             default -> null;
         };
-        return operator == null ? null : "(" + left + " " + operator + " " + right + ")";
     }
 
     private static org.mosslang.compiler.types.TypeRef v10SimpleWireType(
