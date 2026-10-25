@@ -13872,3 +13872,16 @@ including repeated message state changes and handler-local result writes.
 Validation: all eleven Java unit-test classes pass in ABI-v9 and staged
 ABI-v10; feedback validation and `git diff --check` pass. Full acceptance
 remains open.
+
+### Phase 25.3 continuation — generic call specialization trace identity
+
+The `examples/domain_typing.moss` trace exposed a missing selected
+specialization identity on Java helper events. Java now matches checked generic
+function specializations from runtime argument types and emits the resulting
+identity through function entry, body, return, and exit events. Explicitly
+typed nongeneric functions retain no specialization field. The complete sample
+trace and stdout now match C++ byte-for-byte.
+
+Validation: all eleven Java unit-test classes pass in ABI-v9 and staged
+ABI-v10; feedback validation and `git diff --check` pass. Broader acceptance
+remains open.

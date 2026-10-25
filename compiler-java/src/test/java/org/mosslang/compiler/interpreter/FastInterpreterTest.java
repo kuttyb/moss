@@ -28,6 +28,7 @@ public final class FastInterpreterTest {
         testLocalArgumentTraceOccursInsideCallee();
         testNamedDomainStateAndNestedRoutes();
         testPipelineStageUsesFunctionCallTrace();
+        testFunctionTraceIncludesSelectedSpecialization();
         System.out.println("FastInterpreterTest PASSED.");
     }
 
@@ -530,6 +531,27 @@ public final class FastInterpreterTest {
                 || !events.contains("\"semantic_identity\":\"fn:twice@1\"")
                 || !events.contains("\"event\":\"FunctionExit\",\"function\":\"twice\"")) {
             throw new AssertionError("pipeline callback bypassed normal call tracing: " + events);
+        }
+    }
+
+    private static void testFunctionTraceIncludesSelectedSpecialization() {
+        var program = Parser.parseSource(""
+                + "fn twice(value):\n"
+                + "  return value * 2\n"
+                + "fn main():\n"
+                + "  echo twice(3)\n",
+                "fast-interpreter-specialization-trace.moss");
+        new CheckedProgram(program).run();
+
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+        ByteArrayOutputStream trace = new ByteArrayOutputStream();
+        new FastInterpreter(program, true,
+                new PrintStream(stdout, true, StandardCharsets.UTF_8),
+                new PrintStream(trace, true, StandardCharsets.UTF_8)).run();
+        String events = trace.toString(StandardCharsets.UTF_8);
+        if (!"6\n".equals(stdout.toString(StandardCharsets.UTF_8))
+                || !events.contains("\"specialization\":\"fn:twice<int>@1\"")) {
+            throw new AssertionError("selected function specialization was absent from trace: " + events);
         }
     }
 }

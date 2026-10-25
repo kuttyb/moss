@@ -199,6 +199,7 @@ public class FastInterpreter {
     private String traceInstance = "";
     private String traceSpecialization = "";
     private String traceHandler = "";
+    private String traceCallableSpecialization = "";
     private String traceSemanticIdentity = "main@1";
 
     private String traceIdentity() {
@@ -223,9 +224,39 @@ public class FastInterpreter {
     }
 
     private String traceDomainFields() {
-        if (traceInstance.isEmpty()) return "";
+        if (traceInstance.isEmpty()) {
+            return traceCallableSpecialization.isEmpty() ? ""
+                    : ",\"specialization\":\"" + jsonEscape(traceCallableSpecialization) + "\"";
+        }
         return ",\"instance\":\"" + jsonEscape(traceInstance) + "\",\"specialization\":\""
                 + jsonEscape(traceSpecialization) + "\",\"handler\":\"" + jsonEscape(traceHandler) + "\"";
+    }
+
+    private static String specializationForCall(Function function, List<Value> args) {
+        if (!function.generic) return "";
+        List<String> argumentTypes = new ArrayList<>();
+        for (Value value : args) {
+            argumentTypes.add(switch (value.kind) {
+                case INT -> "int";
+                case FLOAT -> "float";
+                case BOOL -> "bool";
+                case STRING -> "string";
+                case CHAR -> "char";
+                case VECTOR -> "vector";
+                case MAP -> "map";
+                case QUEUE -> "queue";
+                case OBJECT -> value.typeName == null ? "" : value.typeName;
+                case ENUM -> value.typeName == null ? "" : value.typeName;
+                case DOMAIN -> "domain";
+                case UNIT -> "unit";
+            });
+        }
+        for (FunctionSpecialization specialization : function.specializations) {
+            if (specialization.parameterTypes.equals(argumentTypes)) {
+                return "fn:" + function.name + "<" + String.join(",", argumentTypes) + ">@" + function.line;
+            }
+        }
+        return "";
     }
 
     public FastInterpreter(Program program, boolean trace) {
@@ -1782,6 +1813,7 @@ public class FastInterpreter {
                                 String oldFunction = traceFunction;
                                 String oldSource = traceSourceFile;
                                 String oldIdentity = traceSemanticIdentity;
+                                String oldCallableSpecialization = traceCallableSpecialization;
                                 int oldLine = traceLine;
                                 int oldDepth = traceDepth;
                                 String methodFunction = m.owner + "." + m.name;
@@ -1793,6 +1825,7 @@ public class FastInterpreter {
                                 traceFunction = methodFunction;
                                 traceSourceFile = m.sourceFile == null ? "" : m.sourceFile;
                                 traceSemanticIdentity = "method:" + methodFunction + "@" + m.line;
+                                traceCallableSpecialization = "";
                                 boolean explicitReturn = false;
                                 boolean completed = false;
                                 try {
@@ -1820,6 +1853,7 @@ public class FastInterpreter {
                                     traceFunction = oldFunction;
                                     traceSourceFile = oldSource;
                                     traceSemanticIdentity = oldIdentity;
+                                    traceCallableSpecialization = oldCallableSpecialization;
                                     traceLine = oldLine;
                                     traceDepth = oldDepth;
                                     for (int i = 0; i < m.params.size() && i < argList.size(); i++) {
@@ -1899,8 +1933,10 @@ public class FastInterpreter {
                     String oldFunction = traceFunction;
                     String oldSource = traceSourceFile;
                     String oldIdentity = traceSemanticIdentity;
+                    String oldCallableSpecialization = traceCallableSpecialization;
                     int oldLine = traceLine;
                     int oldDepth = traceDepth;
+                    traceCallableSpecialization = specializationForCall(f, evaluatedArgs);
                     int enterId = traceFunctionEvent(f, "FunctionEnter", f.line);
                     if (trace && enterId != 0) {
                         traceParentStack.push(enterId);
@@ -1936,6 +1972,7 @@ public class FastInterpreter {
                         traceFunction = oldFunction;
                         traceSourceFile = oldSource;
                         traceSemanticIdentity = oldIdentity;
+                        traceCallableSpecialization = oldCallableSpecialization;
                         traceLine = oldLine;
                         traceDepth = oldDepth;
                         for (int i = 0; i < f.params.size() && i < argList.size(); i++) {
