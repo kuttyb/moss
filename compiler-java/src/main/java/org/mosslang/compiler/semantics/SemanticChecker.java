@@ -2199,10 +2199,23 @@ public class SemanticChecker {
         if (function == null || !visited.add(function.name)) return;
         for (Stmt statement : function.body) {
             if (statement.kind == Stmt.Kind.Raise && statement.a != null) addRaisedEnumName(statement.a, names);
-            else if (statement.kind == Stmt.Kind.Call && statement.text != null) {
-                int open = statement.text.indexOf('(');
-                if (open > 0) collectFunctionRaisedEnumNames(
-                        functions.get(statement.text.substring(0, open).trim()), names, visited);
+            List<String> expressions = new ArrayList<>();
+            expressions.add(statement.text);
+            expressions.add(statement.a);
+            expressions.add(statement.b);
+            expressions.addAll(statement.args);
+            for (String expression : expressions) {
+                if (expression == null) continue;
+                for (Function called : functions.values()) {
+                    if (expression.contains(called.name + "("))
+                        collectFunctionRaisedEnumNames(called, names, visited);
+                }
+            }
+        }
+        if (function.resultExpression != null) {
+            for (Function called : functions.values()) {
+                if (function.resultExpression.contains(called.name + "("))
+                    collectFunctionRaisedEnumNames(called, names, visited);
             }
         }
     }
@@ -2212,12 +2225,28 @@ public class SemanticChecker {
         for (Stmt statement : function.body) {
             if (statement.kind == Stmt.Kind.Raise && statement.a != null) {
                 String raised = statement.a.trim();
-                int payload = raised.indexOf('(');
-                variants.add(payload < 0 ? raised : raised.substring(0, payload).trim());
-            } else if (statement.kind == Stmt.Kind.Call && statement.text != null) {
-                int open = statement.text.indexOf('(');
-                if (open > 0) collectFunctionRaisedVariants(
-                        functions.get(statement.text.substring(0, open).trim()), variants, visited);
+                int open = raised.indexOf('(');
+                String callee = open > 0 ? raised.substring(0, open).trim() : "";
+                if (open < 0 || !functions.containsKey(callee))
+                    variants.add(open < 0 ? raised : raised.substring(0, open).trim());
+            }
+            List<String> expressions = new ArrayList<>();
+            expressions.add(statement.text);
+            expressions.add(statement.a);
+            expressions.add(statement.b);
+            expressions.addAll(statement.args);
+            for (String expression : expressions) {
+                if (expression == null) continue;
+                for (Function called : functions.values()) {
+                    if (expression.contains(called.name + "("))
+                        collectFunctionRaisedVariants(called, variants, visited);
+                }
+            }
+        }
+        if (function.resultExpression != null) {
+            for (Function called : functions.values()) {
+                if (function.resultExpression.contains(called.name + "("))
+                    collectFunctionRaisedVariants(called, variants, visited);
             }
         }
     }

@@ -48,6 +48,7 @@ public class SemanticCheckerTest {
         testRecoverUsesCallArgumentRaiseOrder();
         testRecoverUsesVectorElementRaiseOrder();
         testRecoverUsesPipelineStageRaiseOrder();
+        testRecoverBindingInfersRaisesThroughScalarCalls();
         System.out.println("SemanticCheckerTest PASSED.");
     }
 
@@ -949,6 +950,34 @@ public class SemanticCheckerTest {
         new SemanticChecker(sourceRaisesFirst).run();
         assertCompileError(prefix + "  raise Failure.Bad\n" + suffix,
                 "OWNERSHIP_USE_AFTER_CONSUME");
+    }
+
+    private static void testRecoverBindingInfersRaisesThroughScalarCalls() {
+        Program program = Parser.parseSource(""
+                + "enum Failure:\n"
+                + "  Bad\n"
+                + "fn number(fail: Bool) -> Int:\n"
+                + "  if fail:\n"
+                + "    raise Failure.Bad\n"
+                + "  return 7\n"
+                + "fn forward(fail: Bool):\n"
+                + "  raise number(fail)\n"
+                + "fn route(fail: Bool):\n"
+                + "  try:\n"
+                + "    forward(fail)\n"
+                + "  recover Failure.Bad:\n"
+                + "    echo \"bad\"\n"
+                + "  recover err:\n"
+                + "    echo err\n"
+                + "fn main():\n"
+                + "  route(true)\n"
+                + "  route(false)\n", "recover-scalar-call-raise.moss");
+        SemanticChecker checker = new SemanticChecker(program);
+        checker.run();
+        if (checker.getWarnings().stream().anyMatch(warning ->
+                "RECOVER_UNREACHABLE_VARIANT".equals(warning.code()))) {
+            throw new AssertionError("raised enum from scalar call was omitted from recovery reachability");
+        }
     }
 
     private static void assertCompileError(String source, String code) {

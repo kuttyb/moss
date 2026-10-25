@@ -14202,3 +14202,17 @@ function-level recover ownership and indirect/inter-domain raise summaries
 remain outside this bounded implementation. The earlier pipeline/vector open
 notes above are historical and are resolved for the paired fixtures listed
 here.
+
+### Phase 25.3 continuation — infer catch-all recovery type through scalar call raises
+
+`phase21_peer_raise_scalar_call.moss` was a remaining Java-only rejection:
+`forward` raises the scalar result of `number(fail)`, while `number` may raise
+`Failure.Bad`. Java previously treated `number(fail)` as if it were an enum
+variant name, then failed to type `recover err` and warned that the explicit
+Failure arm was unreachable. Raised-enum summary now follows statically named
+function calls in raise expressions, ordinary statement expressions, and
+function result expressions. The fixture is accepted with no diagnostics,
+matching C++'s acceptance and warning set. A SemanticCheckerTest regression
+covers the same path. Both ABI Java suites pass all 11 classes; the refreshed
+91-file checker screen reports 6 C++-only, 0 Java-only, 55 both accepted, and
+30 both rejected. Phase 25.3 remains incomplete.
