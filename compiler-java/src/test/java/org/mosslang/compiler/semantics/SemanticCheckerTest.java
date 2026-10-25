@@ -47,6 +47,7 @@ public class SemanticCheckerTest {
         testBorrowedMatchPayloadCannotBeOnFailCapture();
         testIncomingMessageObjectPayloadCannotBeMovedIntoState();
         testConsumedCaseBinderCanShadowIncomingMessagePayload();
+        testBorrowedCaseBinderCannotShadowIncomingMessagePayloadToMove();
         testSameCrateRaisingCallPreservesErrorCarrier();
         testOnFailCaptureUsesArgumentEvaluationRaiseEdge();
         testOnFailCannotConsumeDomainState();
@@ -402,6 +403,25 @@ public class SemanticCheckerTest {
                 + "  message worker.Store(Payload(value: 1))\n",
                 "message-payload-shadowed-by-consumed-case.moss");
         new SemanticChecker(program).run();
+    }
+
+    private static void testBorrowedCaseBinderCannotShadowIncomingMessagePayloadToMove() {
+        assertCompileError(""
+                + "type Payload:\n"
+                + "  value: Int\n"
+                + "enum Wrapped:\n"
+                + "  Ok(incoming: Payload)\n"
+                + "domain Worker:\n"
+                + "  saved: Payload\n"
+                + "  fn Store(incoming: Payload):\n"
+                + "    wrapped = Wrapped.Ok(incoming: Payload(value: 2))\n"
+                + "    match wrapped:\n"
+                + "      case Ok(incoming):\n"
+                + "        saved = incoming\n"
+                + "fn main():\n"
+                + "  worker = Worker(saved: Payload(value: 0))\n"
+                + "  message worker.Store(Payload(value: 1))\n",
+                "BORROWED_ENUM_PAYLOAD_CONSUME");
     }
 
     private static void testOnFailRejectsDistinctBranchBindings() {

@@ -15806,3 +15806,21 @@ matching C++/Java acceptance. The standalone JAR was rebuilt; its version,
 bootstrap (`moss-0.1`), and the shadowing program pass. These remain focused
 checks; native correctness, broad source-free execution, Margo/SDK acceptance,
 and final review are open.
+
+
+### Phase 25.3 continuation — distinguish borrowed enum binders from incoming payloads
+
+The shadowing follow-up showed that a read-only enum case binder must remain
+borrowed even when it shares a name with a handler payload. Java now tracks the
+source enum for read-match payload bindings and rejects their transfer with
+`BORROWED_ENUM_PAYLOAD_CONSUME`; consumed-match binders are owned and remain
+movable. Both compilers now accept the consumed shadowing probe, reject the
+borrowed shadowing probe with the same code and message, and reject direct
+incoming-payload storage with the same message.
+
+Validation: all twelve Java test classes pass under ABI-v9 and staged ABI-v10.
+The 16-file accepted-example sample and seven expected-negative examples agree
+on C++/Java acceptance and diagnostic codes. The packaged launcher was built
+before this latest refinement and needs refresh after the next checkpoint.
+Native execution, source-free native compatibility, real Margo/SDK acceptance,
+and independent release review remain open.

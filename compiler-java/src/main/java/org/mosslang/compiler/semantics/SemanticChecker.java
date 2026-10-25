@@ -18,6 +18,7 @@ public class SemanticChecker {
     private final TypeContext typeContext = new TypeContext();
     private String currentSemanticIdentity = null;
     private Set<String> currentMessagePayloads = Collections.emptySet();
+    private Map<String, String> currentBorrowedEnumPayloadSources = new HashMap<>();
     private List<RaiseSnapshot> currentHandlerRaises = new ArrayList<>();
     private Set<String> currentHandlerStateFields = Collections.emptySet();
     private int sessionCounter = 1;
@@ -511,6 +512,8 @@ public class SemanticChecker {
         currentHandlerRaises = raiseEnvironments;
         Set<String> previousPayloads = currentMessagePayloads;
         Set<String> payloads = new HashSet<>();
+        Map<String, String> previousBorrowedEnumPayloadSources = currentBorrowedEnumPayloadSources;
+        currentBorrowedEnumPayloadSources = new HashMap<>();
 
         for (Field f : domain.state) {
             TypeRef t = (f.type != null && !f.type.isEmpty()) ? TypeParser.parseCanonical(f.type) : null;
@@ -667,6 +670,7 @@ public class SemanticChecker {
         }
         handler.replyTypeRef = resolvedReply;
         currentMessagePayloads = previousPayloads;
+        currentBorrowedEnumPayloadSources = previousBorrowedEnumPayloadSources;
     }
 
     private void validateFailureArmCaptures(Domain domain, Handler handler, FailureArm arm,
@@ -2051,6 +2055,13 @@ public class SemanticChecker {
     private void consumeBinding(int line, String name, OwnershipEnv env, String destination) {
         TypeRef type = env.get(name);
         if (type == null || !transferType(type)) return;
+        String borrowedSource = currentBorrowedEnumPayloadSources.get(name);
+        if (borrowedSource != null) {
+            throw new CompileError(line,
+                    "payload '" + name + "' is borrowed from '" + borrowedSource
+                            + "'; use 'match consume " + borrowedSource + ":' to transfer it",
+                    "BORROWED_ENUM_PAYLOAD_CONSUME");
+        }
         if (currentMessagePayloads.contains(name)) {
             throw new CompileError(line,
                     "cannot CONSUME incoming message payload '" + name + "'; message payloads may only be read or forwarded",
@@ -2979,17 +2990,25 @@ public class SemanticChecker {
                         caseEnd++;
                     }
                     Set<String> shadowedMessagePayloads = new HashSet<>();
+                    Map<String, String> shadowedBorrowedPayloadSources = new HashMap<>();
                     for (String binder : caseStmt.args) {
                         if (currentMessagePayloads.contains(binder)) {
                             currentMessagePayloads.remove(binder);
                             shadowedMessagePayloads.add(binder);
                         }
+                        String shadowedSource = currentBorrowedEnumPayloadSources.remove(binder);
+                        if (shadowedSource != null)
+                            shadowedBorrowedPayloadSources.put(binder, shadowedSource);
+                        if (!"consume".equals(s.b))
+                            currentBorrowedEnumPayloadSources.put(binder, scrutinee);
                     }
                     try {
                         caseEnvs.add(checkBlock(stmts, caseIndex + 1, caseEnd, caseEnv, typer, solver,
                                 insideHandler, enclosingName, expectedType));
                     } finally {
                         currentMessagePayloads.addAll(shadowedMessagePayloads);
+                        for (String binder : caseStmt.args) currentBorrowedEnumPayloadSources.remove(binder);
+                        currentBorrowedEnumPayloadSources.putAll(shadowedBorrowedPayloadSources);
                     }
                     caseIndex = caseEnd;
                 }
