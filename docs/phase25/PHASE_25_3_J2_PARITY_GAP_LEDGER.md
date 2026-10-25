@@ -168,3 +168,11 @@ restores the loop header context before reevaluating the condition. A small
 while trace compares equal to C++ event-for-event and stdout-for-stdout. All
 eleven Java test classes pass in ABI-v9 and staged ABI-v10. Other branch/for/
 message/state trace paths remain open.
+
+### Range-for tracing follow-up
+
+Java range-for loops now emit numbered LoopIteration events and trace nested
+body reads/writes with matching depth and control-event links. A full `range(0,
+2)` trace and stdout compare equal to C++. All eleven Java unit-test classes
+pass in ABI-v9 and staged ABI-v10. Vector/Map iteration traces and the remaining
+trace constructs are not yet covered.

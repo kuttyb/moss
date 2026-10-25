@@ -428,9 +428,15 @@ public class FastInterpreter {
                         }
                     }
                 }
+                int iterations = 0;
                 for (Value itm : items) {
-                    lastVal = evalScopedBlock(stmts, i + 1, forEnd, locals,
-                            currentDomain, funcName, depth, Set.of(loopVar), loopVar, itm);
+                    traceLoopIteration(s, funcName, ++iterations, depth);
+                    try {
+                        lastVal = evalScopedBlock(stmts, i + 1, forEnd, locals,
+                                currentDomain, funcName, depth + 1, Set.of(loopVar), loopVar, itm);
+                    } finally {
+                        endTraceLoopIteration();
+                    }
                 }
                 i = forEnd;
                 continue;

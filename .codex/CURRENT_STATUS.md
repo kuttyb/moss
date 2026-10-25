@@ -13692,3 +13692,15 @@ stdout) matches C++ exactly.
 Validation: all eleven Java unit-test classes pass in default ABI-v9 and staged
 ABI-v10 modes; focused C++/Java while trace JSON objects compare equal.
 Broader branch/for/message/state trace parity and release gates remain open.
+
+### Phase 25.3 continuation — trace range-for iteration events
+
+Applied the loop trace context to Moss range-for loops. Java now emits numbered
+`LoopIteration` events, nests body locals under the control event, and keeps
+iteration body depth and reassignment before/after values aligned. A complete
+range-for trace and stdout match C++ exactly; iteration over Vector/Map and its
+loop-variable trace event still need separate comparison.
+
+Validation: clean Java build and all eleven Java unit-test classes pass in
+ABI-v9 and staged ABI-v10 modes. Broader interpreter tracing and final
+acceptance remain open.

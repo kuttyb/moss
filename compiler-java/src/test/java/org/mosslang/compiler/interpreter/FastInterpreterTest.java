@@ -16,6 +16,7 @@ public final class FastInterpreterTest {
         testMossStringEscapeDecoding();
         testLexicalBlocksRestoreShadowedLocals();
         testRecoveryPayloadBindingIsScoped();
+        testForLoopTraceMatchesIterationStructure();
         System.out.println("FastInterpreterTest PASSED.");
     }
 
@@ -188,6 +189,27 @@ public final class FastInterpreterTest {
         String actual = stdout.toString(StandardCharsets.UTF_8);
         if (!"2\n1\n".equals(actual)) {
             throw new AssertionError("recovery payload binding escaped its scope: " + actual);
+        }
+    }
+
+    private static void testForLoopTraceMatchesIterationStructure() {
+        var program = Parser.parseSource(""
+                + "fn main():\n"
+                + "  total = 0\n"
+                + "  for value in range(0, 2):\n"
+                + "    echo value\n"
+                + "    total = total + value\n", "fast-interpreter-for-trace.moss");
+        new CheckedProgram(program).run();
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+        ByteArrayOutputStream trace = new ByteArrayOutputStream();
+        new FastInterpreter(program, true,
+                new PrintStream(stdout, true, StandardCharsets.UTF_8),
+                new PrintStream(trace, true, StandardCharsets.UTF_8)).run();
+        String events = trace.toString(StandardCharsets.UTF_8);
+        if (events.split("\\\"event\\\":\\\"LoopIteration\\\"", -1).length != 3
+                || !events.contains("\"line\":4,\"parent_event_id\":2,\"control_event_id\":2,\"depth\":1")
+                || !"0\n1\n".equals(stdout.toString(StandardCharsets.UTF_8))) {
+            throw new AssertionError("for-loop trace omitted iteration context: " + events);
         }
     }
 }
