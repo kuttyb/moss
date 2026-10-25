@@ -12213,3 +12213,33 @@ for that source and handled/unhandled generic-raise fixtures passes 3/3. It
 also exposed and closed a separate diagnostic location mismatch: a typed error
 escaping from `main` now reports the `main` declaration line, matching C++.
 These latest changes are not yet committed or pushed.
+
+### Phase 25.3 continuation — generic handler captures and Margo effects
+
+Generated Rust for `phase21_capture_try_join.moss` exposed a real lowering
+failure: a string local declared inside `try` and read from an `on_fail` arm was
+not declared in the outer handler scope. The generator now detects such locals
+from the handler AST, predeclares them, retains their values at a raise site,
+and reconstructs only referenced string locals in the failure arm. The
+generated fixture now contains an outer `item`, captures it at the raise, and
+reconstructs it for `reply item`. The unconditional `attempt`/`joined`/`data`
+fallback bindings were removed. Other capture types and complete ABI capture
+metadata remain unverified.
+
+The Java Margo interface writer no longer assigns state effects from the
+`Bump`/`count` names, marks functions as panicking based on a `panic` substring,
+or assigns all raises to a hardcoded `Fault.Bad`/function-name case. State
+effects are derived from handler references and assignments; raise identities
+are derived from explicit enum raise syntax; panic flags use a limited
+expression scan. The native message lowering no longer assumes a handler named
+`Run` raises.
+
+Validation on this working tree: `scripts/java/build.sh`, all six test classes
+in `scripts/java/test.sh`, generated-Rust inspection of the try/on_fail capture
+fixture, `python3 tests/tooling/check_agent_feedback.py`, and `git diff --check`
+pass. No Rust compilation/native execution was run. Source-free ABI-v9/v10,
+SDK, full root-package, and final frozen-candidate acceptance gates remain
+open. `ProjectBuilder` still has a Run/Join-specific failure-capture metadata
+path; remove or replace it with checked capture facts before claiming Margo
+source-free compatibility. The candidate has not been frozen or architect
+reviewed.

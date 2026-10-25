@@ -701,19 +701,8 @@ public class NativeGenerator {
                     declared.add(p.name);
                 }
                 o.append(") -> ").append(internalRet).append(" {\n");
-                Set<String> assignedInBody = new HashSet<>();
-                for (Stmt s : h.body) {
-                    if (s.a != null && (s.kind == Stmt.Kind.Assign || s.kind == Stmt.Kind.Let || s.kind == Stmt.Kind.Var)) {
-                        String varName = s.a.trim();
-                        if (varName.contains(":")) varName = varName.split(":", 2)[0].trim();
-                        String rhs = s.b != null ? s.b.trim() : "";
-                        if (!varName.isEmpty() && !stateFields.contains(varName) && rhs.startsWith("\"")) {
-                            assignedInBody.add(varName);
-                        }
-                    }
-                }
-                for (String varName : assignedInBody) {
-                    if (varName.equals("joined") || varName.equals("attempt") || varName.equals("data")) {
+                for (String varName : stringLocalsUsedByRecovery(h)) {
+                    if (!stateFields.contains(varName)) {
                         o.append("    let mut ").append(varName).append(" = MossStr::from(\"\");\n");
                         declared.add(varName);
                     }
@@ -754,11 +743,14 @@ public class NativeGenerator {
                             String varName = pat.substring(pat.indexOf('(') + 1, pat.indexOf(')')).trim();
                             o.append("    let ").append(varName).append(" = __moss_error.get_code();\n");
                         }
-                        o.append("    let attempt_cap = __moss_error.get_capture(\"attempt\");\n");
-                        o.append("    let attempt = MossStr::from(if attempt_cap.contains(\"::\") || attempt_cap.contains(\".\") { \"hello\" } else { &attempt_cap });\n");
-                        o.append("    let joined = MossStr::from(&__moss_error.get_capture(\"joined\"));\n");
-                        o.append("    let data_cap = __moss_error.get_capture(\"data\");\n");
-                        o.append("    let data = MossStr::from(if data_cap.is_empty() || data_cap.contains(\"::\") || data_cap.contains(\".\") { \"abc\" } else { &data_cap });\n");
+                        Set<String> stringCaptures = stringLocalsUsedByFailureArms(h, declared);
+                        for (String capture : failureArmLocalUses(arm, declared)) {
+                            if (stringCaptures.contains(capture)) {
+                                o.append("    let ").append(capture)
+                                 .append(" = MossStr::from(&__moss_error.get_capture(\"")
+                                 .append(capture).append("\"));\n");
+                            }
+                        }
                         o.append("    let mut __moss_failure_reply: Option<").append(replyType).append("> = None;\n");
                         o.append("    'handler: {\n");
                         Set<String> armDeclared = new HashSet<>(declared);
@@ -1030,7 +1022,7 @@ public class NativeGenerator {
                 Param p = fn.params.get(i);
                 String pType = (p.type != null && !p.type.isEmpty())
                         ? rustType(p.type)
-                        : (p.typeRef != null ? rustType(p.typeRef.toCanonicalString()) : (objects.containsKey("Box") && fn.name.contains("generic") ? "Box" : "i64"));
+                        : (p.typeRef != null ? rustType(p.typeRef.toCanonicalString()) : "i64");
                 boolean paramMutated = currentWriteParamIndices.get()
                         .getOrDefault(fn.name, Collections.emptySet()).contains(i);
                 for (Stmt s : fn.body) {
@@ -1516,8 +1508,6 @@ public class NativeGenerator {
                         }
                     }
                 }
-                if (handler.equals("Run")) targetRaises = true;
-
                 StringBuilder call = new StringBuilder();
                 if (inTry && targetRaises) {
                     call.append(target).append(".").append(handler).append("_shared().map_err(|e| __moss_raise(format!(\"{:?}\", e)))?.unwrap_or_default()");
@@ -1921,6 +1911,176 @@ public class NativeGenerator {
             result.add(cur.toString().trim());
         }
         return result;
+    }
+
+    private static boolean isKnownFunction(String name, String simpleName) {
+        Program program = currentProgram.get();
+        if (program == null) return false;
+        for (Function function : program.functions) {
+            if (function.name.equals(name) || function.name.equals(simpleName)
+                    || function.declarationName.equals(name)
+                    || function.declarationName.equals(simpleName)) return true;
+        }
+        return false;
+    }
+
+    private static boolean isStandardErrorWriteParam(Function function, int index) {
+        if (function == null || index < 0 || index >= function.params.size()) return false;
+        String type = function.params.get(index).type;
+        return type != null && type.replace('.', '_').contains("ParseError");
+    }
+
+    private static String bindingTypeName(String name) {
+        Program program = currentProgram.get();
+        if (program == null || program.localBindingTypes == null) return "";
+        String identity = currentEnclosingIdentity.get();
+        String context = "";
+        if (identity != null) {
+            if (identity.startsWith("main@")) context = "main";
+            else if (identity.startsWith("fn:")) {
+                String target = identity.substring(3);
+                int at = target.lastIndexOf('@');
+                context = at > 0 ? target.substring(0, at) : target;
+            }
+        }
+        Map<String, org.mosslang.compiler.types.TypeRef> bindings = program.localBindingTypes.get(context);
+        org.mosslang.compiler.types.TypeRef type = bindings != null ? bindings.get(name) : null;
+        if (type == null) {
+            for (Map<String, org.mosslang.compiler.types.TypeRef> candidates : program.localBindingTypes.values()) {
+                type = candidates.get(name);
+                if (type != null) break;
+            }
+        }
+        return type != null ? type.toCanonicalString() : "";
+    }
+
+    private static Method standardErrorWriteMethod(String receiver, String methodName, int argCount) {
+        if (!currentWriteMethods.get().contains(methodName)) return null;
+        Program program = currentProgram.get();
+        if (program == null) return null;
+        String receiverType = bindingTypeName(receiver);
+        for (ObjectType object : program.objects) {
+            if (!receiverType.isEmpty() && !object.name.equals(receiverType)
+                    && !object.name.endsWith("__" + receiverType)) continue;
+            for (Method method : object.methods) {
+                if (!method.name.equals(methodName) || method.params.size() != argCount || argCount == 0) continue;
+                String type = method.params.get(argCount - 1).type;
+                if (type != null && type.replace('.', '_').contains("ParseError")) return method;
+            }
+        }
+        return null;
+    }
+
+    private static boolean methodMayRaise(Method method) {
+        boolean inTry = false;
+        for (Stmt statement : method.body) {
+            if (statement.kind == Stmt.Kind.Try) inTry = true;
+            if (statement.kind == Stmt.Kind.Raise) return true;
+            if (!inTry && statement.text != null && statement.text.trim().startsWith("raise ")) return true;
+        }
+        return false;
+    }
+
+    private static Set<String> stringLocalsUsedByRecovery(Handler handler) {
+        Set<String> candidates = new LinkedHashSet<>();
+        List<Stmt> body = handler.body;
+        int tryIndex = -1;
+        int recoverIndex = -1;
+        for (int i = 0; i < body.size(); i++) {
+            if (body.get(i).kind == Stmt.Kind.Try) tryIndex = i;
+            else if (tryIndex >= 0 && body.get(i).kind == Stmt.Kind.Recover) {
+                recoverIndex = i;
+                break;
+            }
+        }
+        if (tryIndex < 0 || recoverIndex < 0) return candidates;
+        for (int i = tryIndex + 1; i < recoverIndex; i++) {
+            Stmt statement = body.get(i);
+            if (statement.kind != Stmt.Kind.Assign && statement.kind != Stmt.Kind.Let
+                    && statement.kind != Stmt.Kind.Var) continue;
+            String name = statement.a != null ? statement.a.trim() : "";
+            int colon = name.indexOf(':');
+            if (colon >= 0) name = name.substring(0, colon).trim();
+            String value = statement.b != null ? statement.b.trim() : "";
+            boolean stringValue = value.startsWith("\"") || (statement.semanticType != null
+                    && (statement.semanticType.equalsIgnoreCase("string")
+                    || statement.semanticType.equalsIgnoreCase("MossStr")));
+            if (!name.isEmpty() && stringValue) candidates.add(name);
+        }
+        if (candidates.isEmpty()) return candidates;
+        Set<String> captured = new LinkedHashSet<>();
+        for (String name : candidates) {
+            for (int i = recoverIndex + 1; i < body.size(); i++) {
+                Stmt statement = body.get(i);
+                boolean writesName = (statement.kind == Stmt.Kind.Assign || statement.kind == Stmt.Kind.Let
+                        || statement.kind == Stmt.Kind.Var) && name.equals(statement.a != null ? statement.a.trim() : "");
+                boolean used = !writesName
+                        && (SemanticChecker.expressionUses(statement.text, name)
+                        || SemanticChecker.expressionUses(statement.a, name)
+                        || SemanticChecker.expressionUses(statement.b, name));
+                if (statement.args != null) {
+                    for (String arg : statement.args) used |= SemanticChecker.expressionUses(arg, name);
+                }
+                if (used) {
+                    captured.add(name);
+                    break;
+                }
+            }
+            for (FailureArm arm : handler.failureArms) {
+                if (captured.contains(name)) break;
+                for (Stmt statement : arm.body) {
+                    boolean writesName = (statement.kind == Stmt.Kind.Assign || statement.kind == Stmt.Kind.Let
+                            || statement.kind == Stmt.Kind.Var) && name.equals(statement.a != null ? statement.a.trim() : "");
+                    boolean used = !writesName
+                            && (SemanticChecker.expressionUses(statement.text, name)
+                            || SemanticChecker.expressionUses(statement.a, name)
+                            || SemanticChecker.expressionUses(statement.b, name));
+                    if (statement.args != null) {
+                        for (String arg : statement.args) used |= SemanticChecker.expressionUses(arg, name);
+                    }
+                    if (used) {
+                        captured.add(name);
+                        break;
+                    }
+                }
+            }
+        }
+        return captured;
+    }
+
+    private static Set<String> stringLocalsUsedByFailureArms(Handler handler, Set<String> declared) {
+        Set<String> strings = new LinkedHashSet<>();
+        for (Stmt statement : handler.body) {
+            if (statement.kind != Stmt.Kind.Assign && statement.kind != Stmt.Kind.Let
+                    && statement.kind != Stmt.Kind.Var) continue;
+            String name = statement.a != null ? statement.a.trim() : "";
+            String value = statement.b != null ? statement.b.trim() : "";
+            if (declared.contains(name) && (value.startsWith("\"") || "string".equalsIgnoreCase(statement.semanticType)
+                    || "MossStr".equalsIgnoreCase(statement.semanticType))) strings.add(name);
+        }
+        return strings;
+    }
+
+    private static Set<String> failureArmLocalUses(FailureArm arm, Set<String> declared) {
+        Set<String> used = new LinkedHashSet<>();
+        for (String name : declared) {
+            for (Stmt statement : arm.body) {
+                boolean writesName = (statement.kind == Stmt.Kind.Assign || statement.kind == Stmt.Kind.Let
+                        || statement.kind == Stmt.Kind.Var) && name.equals(statement.a != null ? statement.a.trim() : "");
+                if (writesName) continue;
+                boolean referenced = SemanticChecker.expressionUses(statement.text, name)
+                        || SemanticChecker.expressionUses(statement.a, name)
+                        || SemanticChecker.expressionUses(statement.b, name);
+                if (statement.args != null) {
+                    for (String arg : statement.args) referenced |= SemanticChecker.expressionUses(arg, name);
+                }
+                if (referenced) {
+                    used.add(name);
+                    break;
+                }
+            }
+        }
+        return used;
     }
 
     private static String lowerExpr(String expr, Set<String> stateFields, Set<String> objFields,
@@ -2408,7 +2568,9 @@ public class NativeGenerator {
                     }
                 }
             }
-            if (Character.isUpperCase(simpleName.charAt(0)) && (hasNamedArgs || simpleName.equals("Carrier") || callee.endsWith("__Carrier") || simpleName.equals("Gauge") || callee.endsWith("__Gauge") || objects.containsKey(callee) || objects.containsKey(simpleName))) {
+            boolean qualifiedExternalType = callee.contains(".") || callee.contains("__");
+            if (Character.isUpperCase(simpleName.charAt(0)) && (hasNamedArgs || qualifiedExternalType
+                    || objects.containsKey(callee) || objects.containsKey(simpleName))) {
                 List<String> fieldAssignments = new ArrayList<>();
                 if (!argsInside.isEmpty()) {
                     for (String part : splitTopLevel(argsInside, ',')) {
@@ -2427,7 +2589,9 @@ public class NativeGenerator {
             if (callee.equals("Executor")) {
                 return "__MossExecutor";
             }
-            if (!objects.containsKey(callee) && !simpleName.equals("FlipFn") && !simpleName.isEmpty() && Character.isUpperCase(simpleName.charAt(0)) && (!callee.contains(".") || callee.contains("__"))) {
+            if (!objects.containsKey(callee) && !isKnownFunction(callee, simpleName)
+                    && !simpleName.isEmpty() && Character.isUpperCase(simpleName.charAt(0))
+                    && (!callee.contains(".") || callee.contains("__"))) {
                 String args = expr.substring(openParen + 1, expr.length() - 1).trim();
                 List<String> argList = new ArrayList<>();
                 if (!args.isEmpty()) {
@@ -2458,16 +2622,19 @@ public class NativeGenerator {
                 return cName + "(" + String.join(", ", argList) + ")";
             }
 
-            // Member method call e.g. carrier.Reset(error) or carrier.Flip(set_overflow(error), error)
+            // Mutable standard-error arguments need a bridge when the method is
+            // supplied by another crate, so evaluation and ownership stay ordered.
             if (callee.contains(".") && !callee.contains("__")) {
                 int dot = callee.lastIndexOf('.');
                 String recv = callee.substring(0, dot).trim();
                 String methodName = callee.substring(dot + 1).trim();
                 String args = expr.substring(openParen + 1, expr.length() - 1).trim();
                 List<String> rawArgs = args.isEmpty() ? Collections.emptyList() : splitTopLevel(args, ',');
-                if ((methodName.equals("Reset") || methodName.equals("Flip")) && !rawArgs.isEmpty()) {
+                Method writeErrorMethod = standardErrorWriteMethod(recv, methodName, rawArgs.size());
+                if (writeErrorMethod != null && !rawArgs.isEmpty()) {
                     String writeArg = rawArgs.get(rawArgs.size() - 1).trim();
-                    boolean isLocalCarrier = objects.containsKey("Carrier");
+                    String owner = writeErrorMethod.owner;
+                    String providerModule = owner.contains("__") ? owner.substring(0, owner.indexOf("__")) : "";
                     StringBuilder bridge = new StringBuilder();
                     bridge.append("{ ");
                     List<String> callArgs = new ArrayList<>();
@@ -2477,16 +2644,20 @@ public class NativeGenerator {
                               .append(lowerExpr(rawArgs.get(ai).trim(), stateFields, domains, objects)).append("; ");
                         callArgs.add(tmp);
                     }
-                    if (isLocalCarrier) {
+                    if (providerModule.isEmpty()) {
                         bridge.append("let mut __moss_provider_val = ").append(writeArg).append(".clone(); ");
                     } else {
-                        bridge.append("let mut __moss_provider_val = moss_provider::std__ParseError::__moss_from_any(&").append(writeArg).append("); ");
+                        bridge.append("let mut __moss_provider_val = moss_").append(providerModule)
+                              .append("::std__ParseError::__moss_from_any(&").append(writeArg).append("); ");
                     }
                     callArgs.add("&mut __moss_provider_val");
                     String callStr = recv + "." + methodName + "(" + String.join(", ", callArgs) + ")";
-                    if (methodName.equals("Reset")) {
+                    if (methodMayRaise(writeErrorMethod)) {
                         bridge.append("let __moss_res = ").append(callStr).append("; ");
-                        bridge.append(writeArg).append(" = std__ParseError::__moss_from_any(&__moss_provider_val); ");
+                        bridge.append(writeArg).append(" = ");
+                        if (!providerModule.isEmpty()) bridge.append("std__ParseError::__moss_from_any(&__moss_provider_val)");
+                        else bridge.append("__moss_provider_val");
+                        bridge.append("; ");
                         if (currentInTry.get()) {
                             bridge.append("__moss_res.map_err(|e| __moss_raise(format!(\"{:?}\", e)))? }");
                         } else {
@@ -2494,7 +2665,10 @@ public class NativeGenerator {
                         }
                     } else {
                         bridge.append("let __moss_res = ").append(callStr).append("; ");
-                        bridge.append(writeArg).append(" = std__ParseError::__moss_from_any(&__moss_provider_val); ");
+                        bridge.append(writeArg).append(" = ");
+                        if (!providerModule.isEmpty()) bridge.append("std__ParseError::__moss_from_any(&__moss_provider_val)");
+                        else bridge.append("__moss_provider_val");
+                        bridge.append("; ");
                         bridge.append("__moss_res }");
                     }
                     return bridge.toString();
@@ -2603,7 +2777,8 @@ public class NativeGenerator {
             }
 
             // Normal function call e.g. inspect(record) or add(a, b) or FlipFn(...)
-            if (Character.isLowerCase(callee.charAt(0)) || callee.contains("__") || simpleName.equals("FlipFn")) {
+            if (Character.isLowerCase(callee.charAt(0)) || callee.contains("__")
+                    || isKnownFunction(callee, simpleName)) {
                 String args = expr.substring(openParen + 1, expr.length() - 1).trim();
                 List<String> argList = new ArrayList<>();
                 Set<Integer> writeArgs = currentWriteParamIndices.get().getOrDefault(callee,
@@ -2674,7 +2849,7 @@ public class NativeGenerator {
                                 }
                                 if (isNominalVar) {
                                     loweredPart = "&" + loweredPart;
-                                } else if (part.matches("^[A-Za-z_][A-Za-z0-9_]*$") && !part.equals("true") && !part.equals("false") && !simpleName.startsWith("set_overflow")) {
+                                } else if (part.matches("^[A-Za-z_][A-Za-z0-9_]*$") && !part.equals("true") && !part.equals("false")) {
                                     loweredPart = loweredPart + ".clone()";
                                 }
                             }
@@ -2685,7 +2860,13 @@ public class NativeGenerator {
                 if (callee.equals("sqrt") && argList.size() == 1) {
                     return "((" + argList.get(0) + ") as f64).sqrt()";
                 }
-                    if (simpleName.equals("FlipFn") && !argList.isEmpty()) {
+                    Function calleeFunction = currentProgram.get() == null ? null
+                            : currentProgram.get().functions.stream()
+                                    .filter(function -> function.name.equals(callee) || function.name.equals(simpleName))
+                                    .findFirst().orElse(null);
+                    int finalArgIndex = argList.size() - 1;
+                    if (!argList.isEmpty() && writeArgs.contains(finalArgIndex)
+                            && isStandardErrorWriteParam(calleeFunction, finalArgIndex)) {
                         List<String> rawArgs = splitTopLevel(args, ',');
                         String writeArg = rawArgs.get(rawArgs.size() - 1).trim();
                         StringBuilder bridge = new StringBuilder();
@@ -2710,10 +2891,6 @@ public class NativeGenerator {
                         bridge.append("__moss_res }");
                         return bridge.toString();
                     }
-                    if (simpleName.startsWith("set_overflow") && !argList.isEmpty()) {
-                        int lastIdx = argList.size() - 1;
-                        argList.set(lastIdx, "&mut " + argList.get(lastIdx));
-                    }
                     if (callee.equals("assert")) {
                     return "assert!(" + String.join(", ", argList) + ")";
                 }
@@ -2721,7 +2898,7 @@ public class NativeGenerator {
                     return "assert_eq!(" + String.join(", ", argList) + ")";
                 }
                 boolean calleeRaises = currentRaisingFunctions.get().contains(callee)
-                        || simpleName.equals("fail") || simpleName.equals("generic");
+                        || simpleName.equals("fail");
                 String callStr = callee + "(" + String.join(", ", argList) + ")";
                 if (calleeRaises) {
                     if (currentInTry.get()) {

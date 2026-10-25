@@ -6,6 +6,7 @@ import org.mosslang.compiler.diagnostics.CompileError;
 import org.mosslang.compiler.diagnostics.DiagnosticFormatter;
 import org.mosslang.compiler.parser.Parser;
 import org.mosslang.compiler.semantics.CheckedProgram;
+import org.mosslang.compiler.semantics.SemanticChecker;
 import org.mosslang.compiler.interpreter.FastInterpreter;
 
 import java.io.BufferedReader;
@@ -918,33 +919,21 @@ public class ProjectBuilder {
             }
             contractBuf.append("object ").append(objName).append("\n");
             for (Method m : obj.methods) {
-                boolean raises = false;
-                String raiseIdent = "-";
-                for (Stmt s : m.body) {
-                    if (s.kind == Stmt.Kind.Raise || (s.text != null && s.text.trim().startsWith("raise "))) {
-                        raises = true;
-                        raiseIdent = "enum:" + module + "__Fault:Bad";
-                    }
-                }
+                String raiseIdent = raisedErrorIdentity(module, m.body);
+                boolean raises = !raiseIdent.equals("-");
                 contractBuf.append("  object_method ").append(m.name)
                            .append(" effects=local_capture_read=0;local_mutation=0;domain_read=0;domain_write=0;message=0;external_io=0;fileio=0;fileio_unknown=0;may_panic=")
-                           .append(m.name.contains("panic") ? "1" : "0")
+                           .append(mayPanic(m.body) ? "1" : "0")
                            .append(";raise_set=").append(raises ? raiseIdent : "-")
                            .append(";may_diverge=0;unresolved=0\n");
             }
             semanticBuf.append("export type ").append(objName).append("\n");
             for (Method m : obj.methods) {
-                boolean raises = false;
-                String raiseIdent = "-";
-                for (Stmt s : m.body) {
-                    if (s.kind == Stmt.Kind.Raise || (s.text != null && s.text.trim().startsWith("raise "))) {
-                        raises = true;
-                        raiseIdent = "enum:" + module + "__Fault:Bad";
-                    }
-                }
+                String raiseIdent = raisedErrorIdentity(module, m.body);
+                boolean raises = !raiseIdent.equals("-");
                 semanticBuf.append("  object_method ").append(m.name)
                            .append(" effects=local_capture_read=0;local_mutation=0;domain_read=0;domain_write=0;message=0;external_io=0;fileio=0;fileio_unknown=0;may_panic=")
-                           .append(m.name.contains("panic") ? "1" : "0")
+                           .append(mayPanic(m.body) ? "1" : "0")
                            .append(";raise_set=").append(raises ? raiseIdent : "-")
                            .append(";may_diverge=0;unresolved=0\n");
             }
@@ -955,16 +944,10 @@ public class ProjectBuilder {
             if (fnName.startsWith(module + "__")) {
                 fnName = fnName.substring(module.length() + 2);
             }
-            boolean raises = false;
-            String raiseIdent = "-";
-            for (Stmt s : fn.body) {
-                if (s.kind == Stmt.Kind.Raise || (s.text != null && s.text.trim().startsWith("raise "))) {
-                    raises = true;
-                    raiseIdent = fnName.equals("generic") ? ("enum:" + module + "__Fault:Other") : ("enum:" + module + "__Fault:Bad");
-                }
-            }
+            String raiseIdent = raisedErrorIdentity(module, fn.body);
+            boolean raises = !raiseIdent.equals("-");
             String eff = "effects=local_capture_read=0;local_mutation=0;domain_read=0;domain_write=0;message=0;external_io=0;fileio=0;fileio_unknown=0;may_panic="
-                    + (fnName.contains("panic") ? "1" : "0")
+                    + (mayPanic(fn.body) ? "1" : "0")
                     + ";raise_set=" + (raises ? raiseIdent : "-")
                     + ";may_diverge=0;unresolved=0";
             contractBuf.append("export fn ").append(fnName).append(" ").append(eff).append("\n");
@@ -1043,7 +1026,7 @@ public class ProjectBuilder {
                 String fnName = fn.name;
                 if (fnName.startsWith(module + "__")) fnName = fnName.substring(module.length() + 2);
                 boolean isGeneric = fn.generic ||
-                        fn.params.stream().anyMatch(p -> p.type == null || p.type.isEmpty() || p.type.equals("Box")) ||
+                        fn.params.stream().anyMatch(p -> p.type == null || p.type.isEmpty()) ||
                         (fn.returnType == null || fn.returnType.isEmpty()) && (fn.resultExpression == null || fn.resultExpression.contains("[]") || fn.resultExpression.contains("fresh"));
                 String eff = "effects=local_capture_read=0;local_mutation=0;domain_read=0;domain_write=0;message=0;external_io=0;fileio=0;fileio_unknown=0;may_panic=0;raise_set=-;may_diverge=0;unresolved=0";
                 String fnBody = fn.resultExpression != null ? fn.resultExpression : (fn.body != null ? fn.body.toString() : "");
@@ -1113,6 +1096,50 @@ public class ProjectBuilder {
         return material.substring(0, firstLine + 1) + "provider_contract_digest sha256:" + digest + "\n" + material.substring(firstLine + 1);
     }
 
+    private static String raisedErrorIdentity(String module, List<Stmt> body) {
+        for (Stmt statement : body) {
+            if (statement.kind != Stmt.Kind.Raise
+                    && (statement.text == null || !statement.text.trim().startsWith("raise "))) continue;
+            String value = statement.a != null ? statement.a.trim() : "";
+            if (value.isEmpty() && statement.text != null && statement.text.trim().startsWith("raise ")) {
+                value = statement.text.trim().substring(6).trim();
+            }
+            int paren = value.indexOf('(');
+            if (paren >= 0) value = value.substring(0, paren).trim();
+            int dot = value.lastIndexOf('.');
+            if (dot > 0 && dot + 1 < value.length()) {
+                String type = value.substring(0, dot).replace('.', '_');
+                String variant = value.substring(dot + 1).trim();
+                if (!type.contains("__")) type = module + "__" + type;
+                return "enum:" + type + ":" + variant;
+            }
+            return "enum:" + module + "__Fault:" + value;
+        }
+        return "-";
+    }
+
+    private static boolean mayPanic(List<Stmt> body) {
+        for (Stmt statement : body) {
+            String text = (statement.text == null ? "" : statement.text) + " "
+                    + (statement.a == null ? "" : statement.a) + " "
+                    + (statement.b == null ? "" : statement.b);
+            if (text.matches("(?s).*\\b(assert|panic|unwrap)\\s*\\(.*")
+                    || text.matches("(?s).*\\[[^]]+\\].*")) return true;
+            if (statement.kind == Stmt.Kind.Assign && statement.b != null
+                    && (statement.b.contains("/") || statement.b.contains("%"))) return true;
+        }
+        return false;
+    }
+
+    private static void appendStateEffects(StringBuilder out, String handler,
+                                           Set<String> reads, Set<String> writes) {
+        out.append("  handler_state_effects \"").append(handler).append("\" ").append(reads.size());
+        for (String field : reads) out.append(" \"").append(field).append("\"");
+        out.append(" ").append(writes.size());
+        for (String field : writes) out.append(" \"").append(field).append("\"");
+        out.append(" 0\n");
+    }
+
     private static void emitHandlerMossi(StringBuilder buf, Handler h, Domain d, String module, String domainName, Program prog, boolean isSemantic, ProjectManifest manifest) {
         String replyType = (h.replyType != null && !h.replyType.isEmpty()) ? h.replyType.toLowerCase() : "unit";
         boolean isOneWay = replyType.equals("unit");
@@ -1165,38 +1192,38 @@ public class ProjectBuilder {
             }
         }
 
-        boolean readsCount = false;
-        boolean writesCount = false;
-        for (Field f : d.state) {
-            if (f.name.equals("count")) {
-                for (Stmt s : h.body) {
-                    String txt = s.text != null ? s.text : (s.a != null ? s.a : "");
-                    if (txt.contains("count")) {
-                        readsCount = true;
-                        if (txt.contains("count =") || txt.contains("count=")) writesCount = true;
-                    }
+        Set<String> stateReads = new LinkedHashSet<>();
+        Set<String> stateWrites = new LinkedHashSet<>();
+        for (Field field : d.state) {
+            for (Stmt statement : h.body) {
+                boolean assignment = statement.kind == Stmt.Kind.Assign;
+                String lhs = statement.a != null ? statement.a.trim() : "";
+                if (assignment && lhs.equals(field.name)) stateWrites.add(field.name);
+                boolean read = SemanticChecker.expressionUses(statement.b, field.name)
+                        || (!assignment && SemanticChecker.expressionUses(statement.a, field.name));
+                if (statement.args != null) {
+                    for (String arg : statement.args) read |= SemanticChecker.expressionUses(arg, field.name);
                 }
+                if (!read && statement.kind != Stmt.Kind.Assign && statement.kind != Stmt.Kind.Let
+                        && statement.kind != Stmt.Kind.Var) {
+                    read = SemanticChecker.expressionUses(statement.text, field.name);
+                }
+                if (read) stateReads.add(field.name);
             }
         }
+        boolean readsState = !stateReads.isEmpty();
+        boolean writesState = !stateWrites.isEmpty();
 
         if (isSemantic) {
             buf.append("  handler ").append(h.name).append(" reply=").append(replyType)
-               .append(" effects=local_capture_read=0;local_mutation=0;domain_read=1;domain_write=")
-               .append(writesCount ? "1" : (h.name.equals("Bump") ? "1" : "0"))
+               .append(" effects=local_capture_read=0;local_mutation=0;domain_read=").append(readsState ? "1" : "0").append(";domain_write=")
+               .append(writesState ? "1" : "0")
                .append(";message=0;external_io=0;fileio=0;fileio_unknown=0;may_panic=0;raise_set=")
                .append(raiseIdent != null ? raiseIdent : "-")
                .append(";may_diverge=0;unresolved=0\n");
         }
 
-        if (readsCount || writesCount) {
-            buf.append("  handler_state_effects \"").append(h.name).append("\" 1 \"count\" ").append(writesCount ? "1" : "0").append(" \"count\" 0\n");
-        } else if (d.state.isEmpty()) {
-            buf.append("  handler_state_effects \"").append(h.name).append("\" 0 0 0\n");
-        } else if (h.failureArms != null && !h.failureArms.isEmpty()) {
-            buf.append("  handler_state_effects \"").append(h.name).append("\" 0 0 0\n");
-        } else {
-            buf.append("  handler_state_effects \"").append(h.name).append("\" 1 \"value\" ").append(h.name.equals("Bump") ? "1" : "0").append(" \"value\" 0\n");
-        }
+        appendStateEffects(buf, h.name, stateReads, stateWrites);
 
         for (Param p : h.params) {
             buf.append("  handler_param \"").append(h.name).append("\" \"").append(p.name).append("\" \"").append(p.type != null ? p.type.toLowerCase() : "int").append("\"\n");
