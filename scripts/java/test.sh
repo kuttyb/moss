@@ -10,10 +10,8 @@ LIB_DIR="${COMPILER_JAVA}/lib"
 
 CP="${BIN_DIR}:${LIB_DIR}/eclipse-collections-13.0.0.jar:${LIB_DIR}/eclipse-collections-api-13.0.0.jar"
 
-# First ensure compiler classes are built
-if [ ! -d "${BIN_DIR}/org/mosslang/compiler" ]; then
-    "${SCRIPT_DIR}/build.sh"
-fi
+# Always rebuild compiler classes so tests exercise the current Java sources.
+"${SCRIPT_DIR}/build.sh"
 
 TEST_SOURCES=$(find "${TEST_SRC}" -name "*Test.java" 2>/dev/null || true)
 if [ -z "${TEST_SOURCES}" ]; then

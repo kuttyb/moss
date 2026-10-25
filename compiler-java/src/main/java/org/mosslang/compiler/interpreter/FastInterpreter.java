@@ -954,6 +954,17 @@ public class FastInterpreter {
                             + ",\"path\":\"" + jsonEscape(varName) + "\",\"before\":\""
                             + jsonEscape(traceValueSummary(before)) + "\",\"after\":\""
                             + jsonEscape(traceValueSummary(val)) + "\"}");
+                } else if (currentDomain == null
+                        && locals.get("self") instanceof Value selfValue
+                        && selfValue.kind == Value.Kind.OBJECT
+                        && selfValue.raw instanceof Map<?, ?> fields
+                        && fields.containsKey(varName)) {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Value> objectFields = (Map<String, Value>) fields;
+                    Value before = objectFields.get(varName);
+                    objectFields.put(varName, val);
+                    locals.put(varName, val);
+                    traceLocalWrite(s, varName, val, before, funcName, depth);
                 } else {
                     Value before = s.kind == Stmt.Kind.Assign ? locals.get(varName) : null;
                     locals.put(varName, val);

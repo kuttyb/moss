@@ -14499,3 +14499,20 @@ disagreement, not evidence that Java should change. No native compilation or
 execution ran. The Java semantic regression for repeated trait calls now uses
 the reduced two-argument signature. All eleven Java unit-test classes pass
 under ABI-v9 and staged ABI-v10 with that regression.
+
+### Phase 25.3 continuation — persist scalar object-method field writes
+
+Julia DisjointSets exposed that Java Fast Debug copied object fields into the
+method-local map, then treated assignments to bare scalar fields as local-only
+writes. Object methods now write such assignments back into the shared object
+and emit the corresponding LocalWrite trace event. The reduced Counter method
+probe prints the updated value and its full Java Fast Debug stdout/trace match
+C++ exactly. The packaged Java Margo interpreter passes all seven DisjointSets
+project tests; Julia FenwickTree also passes all eight project tests.
+
+The first regression run used stale compiler classes because
+`scripts/java/test.sh` only built when `bin/` was absent. The script now always
+runs the compiler build before compiling/running unit tests. All eleven Java
+unit-test classes pass under ABI-v9 and staged ABI-v10 after this change. This
+is focused Fast Debug and unit-test evidence; native execution and final release
+gates remain outstanding.

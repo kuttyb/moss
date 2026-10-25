@@ -22,6 +22,7 @@ public final class FastInterpreterTest {
         testCollectionTraceUsesCompactSummary();
         testRaiseRecoverTraceCarriesErrorIdentity();
         testObjectMethodTraceCarriesCallContext();
+        testObjectMethodUpdatesScalarField();
         testMapGetInsideObjectMethodReturnsStoredOrFallbackValue();
         testMapSizeAndMembershipMethods();
         testMapIndexedWritesTraceReceiverReads();
@@ -380,6 +381,33 @@ public final class FastInterpreterTest {
                 || !lines[1].contains("\"detail\":\"text\"")
                 || !"3\n".equals(stdout.toString(StandardCharsets.UTF_8))) {
             throw new AssertionError("builtin method receiver read was not traced: " + events);
+        }
+    }
+
+    private static void testObjectMethodUpdatesScalarField() {
+        var program = Parser.parseSource(""
+                + "type Counter:\n"
+                + "  count: Int\n"
+                + "  fn increment():\n"
+                + "    count = count + 1\n"
+                + "  fn value() -> Int:\n"
+                + "    return count\n"
+                + "fn main():\n"
+                + "  counter = Counter(count: 4)\n"
+                + "  counter.increment()\n"
+                + "  echo counter.value()\n", "fast-interpreter-object-scalar-field-write.moss");
+        new CheckedProgram(program).run();
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+        ByteArrayOutputStream trace = new ByteArrayOutputStream();
+        try (PrintStream captured = new PrintStream(stdout, true, StandardCharsets.UTF_8)) {
+            new FastInterpreter(program, true, captured,
+                    new PrintStream(trace, true, StandardCharsets.UTF_8)).run();
+        }
+        String actual = stdout.toString(StandardCharsets.UTF_8);
+        String events = trace.toString(StandardCharsets.UTF_8);
+        if (!"5\n".equals(actual) || !events.contains("\"event\":\"LocalWrite\"")
+                || !events.contains("\"detail\":\"count\",\"before\":\"4\",\"after\":\"5\"")) {
+            throw new AssertionError("object method scalar field write was lost: " + actual);
         }
     }
 
