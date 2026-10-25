@@ -13182,3 +13182,16 @@ still does not produce these records from checked Java function facts; loader
 projection and nominal-dependency closure remain open. Public/private summary
 and requirement provenance references are now validated against the provenance
 section.
+
+### Phase 25.3 continuation — validate checked-body nominal template links
+
+ABI-v10 checked-body verification now resolves nominal dependencies that name
+known nominal templates and checks the recorded representation hash against the
+canonical template record. The regression accepts a correct template link and
+rejects a forged hash. Private enum dependency records are not yet decoded by
+this Java path, so enum dependency closure remains open; this does not establish
+general source-free callable body production or checker projection.
+
+Validation: all ten Java unit-test classes pass after clean builds in default
+ABI-v9 and staged ABI-v10 modes; developer-experience feedback validation and
+`git diff --check` pass. No native or SDK gate ran.

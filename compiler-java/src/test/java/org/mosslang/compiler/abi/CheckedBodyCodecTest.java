@@ -24,6 +24,7 @@ public class CheckedBodyCodecTest {
         testMethodTemplateNominalReferences();
         testCanonicalOpenSummaryRecord();
         testCanonicalCheckedBodyRecord();
+        testCheckedBodyNominalDependencyClosure();
         testExportedEnumIdentityValidation();
         testMossiRejectsUnboundedCounts();
         testCheckedBodyReaderBoundsAndTrailingData();
@@ -475,6 +476,52 @@ public class CheckedBodyCodecTest {
         wrongOwnerHash.provenance.addAll(iface.provenance);
         wrongOwnerHash.privateSemanticDependencies.add(record);
         expectSummaryInvalid(wrongOwnerHash, "accepted checked body with a mismatched summary hash");
+    }
+
+    private static void testCheckedBodyNominalDependencyClosure() {
+        String module = "module-v1:body-deps@1.0.0::provider";
+        String callable = module + "::make";
+        String templateId = "nominal-template-v1:" + module + ":type:Box";
+        AbiV10Records.SourceProvenance provenance = AbiV10Records.SourceProvenance.create(
+                module, templateId, "provider.moss", 1);
+        AbiV10Records.NominalTemplate template = AbiV10Records.NominalTemplate.create(
+                module, "Box", List.of(), provenance.provenanceId());
+        String ir = CheckedBodyCodec.encodeCheckedBodyV1(List.of());
+        String bodyHash = "body-semantic-v1:sha256:" + CheckedBodyCodec.sha256Hex(ir);
+        AbiV10Records.CheckedBodyRecord body = new AbiV10Records.CheckedBodyRecord();
+        body.callableId = callable;
+        body.checkedIrBytes = ir;
+        body.semanticHash = bodyHash;
+        body.dependencies.add(new AbiV10Records.CheckedBodyRecord.Dependency(
+                AbiV10Records.CheckedBodyRecord.DependencyKind.NominalType,
+                templateId, template.representationHash));
+        AbiV10Records.Summary summary = new AbiV10Records.Summary();
+        summary.callableId = callable;
+        summary.result = AbiV10Records.WireType.unit();
+        summary.bodySemanticHash = bodyHash;
+
+        MossiInterface valid = new MossiInterface(module);
+        summary.provenanceId = provenance.provenanceId();
+        valid.provenance.add(provenance.record());
+        valid.binaryContract.add(template.record());
+        valid.binaryContract.add(summary.record());
+        valid.privateSemanticDependencies.add(body.record());
+        CheckedBodyCodec.verifySourceFree(CheckedBodyCodec.encodeMossiBytes(valid));
+
+        body.dependencies.set(0, new AbiV10Records.CheckedBodyRecord.Dependency(
+                AbiV10Records.CheckedBodyRecord.DependencyKind.NominalType,
+                templateId, "sha256:" + "f".repeat(64)));
+        MossiInterface forged = new MossiInterface(module);
+        forged.provenance.add(provenance.record());
+        forged.binaryContract.add(template.record());
+        forged.binaryContract.add(summary.record());
+        forged.privateSemanticDependencies.add(body.record());
+        try {
+            CheckedBodyCodec.verifySourceFree(CheckedBodyCodec.encodeMossiBytes(forged));
+            throw new AssertionError("ABI-v10 verifier accepted a mismatched nominal body dependency hash");
+        } catch (CompileError error) {
+            if (!"SOURCE_FREE_TYPE_IDENTITY_MISMATCH".equals(error.getCode())) throw error;
+        }
     }
 
     private static void expectSummaryInvalid(MossiInterface iface, String failureMessage) {

@@ -646,10 +646,12 @@ public class CheckedBodyCodec {
             }
         }
         Set<String> nominalTemplateIds = new HashSet<>();
+        Map<String, String> nominalRepresentationHashes = new HashMap<>();
         for (MossiRecord record : mossi.binaryContract) {
             if (record.id.startsWith("nominal-template-v1:")) {
                 AbiV10Records.NominalTemplate template = AbiV10Records.NominalTemplate.decode(record);
                 nominalTemplateIds.add(template.templateId);
+                nominalRepresentationHashes.put(template.templateId, template.representationHash);
             }
         }
         for (AbiV10Records.MethodTemplate method : methodTemplates.values()) {
@@ -767,7 +769,18 @@ public class CheckedBodyCodec {
                         "SOURCE_FREE_SUMMARY_INVALID");
             }
             for (AbiV10Records.CheckedBodyRecord.Dependency dependency : body.dependencies) {
-                if (dependency.kind() != AbiV10Records.CheckedBodyRecord.DependencyKind.Callable) continue;
+                if (dependency.kind() == AbiV10Records.CheckedBodyRecord.DependencyKind.NominalType) {
+                    String representationHash = nominalRepresentationHashes.get(dependency.targetId());
+                    // Private enum dependency records are decoded by a separate
+                    // ABI-v10 extension; until that projection is available,
+                    // validate the nominal-template dependencies we can identify.
+                    if (representationHash == null) continue;
+                    if (!representationHash.equals(dependency.expectedHash())) {
+                        throw new CompileError(0, "Checked body nominal representation hash mismatch",
+                                "SOURCE_FREE_TYPE_IDENTITY_MISMATCH");
+                    }
+                    continue;
+                }
                 String targetHash = callableBodyHashes.get(dependency.targetId());
                 if (targetHash == null || !checkedBodies.containsKey(dependency.targetId())) {
                     throw new CompileError(0, "Checked body references a missing callable dependency",
