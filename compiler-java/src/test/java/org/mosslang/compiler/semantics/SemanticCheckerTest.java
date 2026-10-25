@@ -41,6 +41,7 @@ public class SemanticCheckerTest {
         testConsumedObjectParameterLowersByValue();
         testObjectMethodWriteParameterLowersMutably();
         testNestedObjectFieldWriteLowersMutableReceiver();
+        testValueHandlerRepliesOnEveryNormalPath();
         testUnsupportedCollectionsAreRejectedAsForIterablesAtLoopSite();
         testRangeForRequiresPositiveNonzeroLiteralStep();
         testSortSemanticContractAndWriteEffects();
@@ -972,6 +973,31 @@ public class SemanticCheckerTest {
                 + "  let cell = Cell(value: 1)\n"
                 + "  echo cell.read()\n", "immutable-read-method.moss");
         new SemanticChecker(readOnly).run();
+    }
+
+    private static void testValueHandlerRepliesOnEveryNormalPath() {
+        Program missingReply = Parser.parseSource(""
+                + "domain Worker:\n"
+                + "  fn Maybe(should_reply: Bool) -> Bool:\n"
+                + "    if should_reply:\n"
+                + "      reply true\n"
+                + "    echo \"falling through\"\n"
+                + "fn main():\n"
+                + "  worker = Worker()\n"
+                + "  echo message worker.Maybe(false)\n", "handler-fallthrough.moss");
+        expectCompileError(missingReply, "MOSS_COMPILE_ERROR",
+                "value-returning handler must reply on every normal path");
+
+        Program complete = Parser.parseSource(""
+                + "enum Failure:\n"
+                + "  Bad\n"
+                + "domain Worker:\n"
+                + "  fn Maybe(should_reply: Bool) -> Bool:\n"
+                + "    if should_reply:\n"
+                + "      reply true\n"
+                + "    else:\n"
+                + "      raise Failure.Bad\n", "handler-reply-or-raise.moss");
+        new SemanticChecker(complete).run();
     }
 
     private static void testNestedFieldReadInBranchConditionKeepsReceiverReadOnly() {

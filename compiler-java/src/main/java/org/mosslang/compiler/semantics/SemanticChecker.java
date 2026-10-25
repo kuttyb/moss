@@ -668,6 +668,15 @@ public class SemanticChecker {
             solver.unify(expectedReply, TypeRef.unit());
             resolvedReply = TypeRef.unit();
         }
+        if (!domain.sourceFree && resolvedReply.kind() != TypeKind.Unit
+                && !blockAlwaysReplies(handler.body, 0, handler.body.size())) {
+            CompileError error = new CompileError(handler.line,
+                    "reply handler '" + domain.name + "." + handler.name
+                            + "' must reply on every normal control-flow path",
+                    "MOSS_COMPILE_ERROR");
+            error.setSemanticIdentity(currentSemanticIdentity);
+            throw error;
+        }
         handler.replyTypeRef = resolvedReply;
         currentMessagePayloads = previousPayloads;
         currentBorrowedEnumPayloadSources = previousBorrowedEnumPayloadSources;
@@ -821,7 +830,30 @@ public class SemanticChecker {
         int index = start;
         while (index < end) {
             Stmt statement = statements.get(index);
-            if (statement.kind == Stmt.Kind.Reply || statement.kind == Stmt.Kind.Return) return true;
+            if (statement.kind == Stmt.Kind.Reply || statement.kind == Stmt.Kind.Raise) return true;
+            if (statement.kind == Stmt.Kind.Return) return true;
+            if (statement.kind == Stmt.Kind.Try) {
+                int bodyStart = index + 1;
+                int bodyEnd = bodyStart;
+                while (bodyEnd < end && statements.get(bodyEnd).indent > statement.indent) bodyEnd++;
+                boolean normalReplies = blockAlwaysReplies(statements, bodyStart, bodyEnd);
+                int recoverIndex = bodyEnd;
+                boolean anyRecover = false;
+                boolean allRecoverReply = true;
+                while (recoverIndex < end && statements.get(recoverIndex).kind == Stmt.Kind.Recover
+                        && statements.get(recoverIndex).indent == statement.indent) {
+                    anyRecover = true;
+                    int recoverStart = recoverIndex + 1;
+                    int recoverEnd = recoverStart;
+                    while (recoverEnd < end && statements.get(recoverEnd).indent > statement.indent)
+                        recoverEnd++;
+                    allRecoverReply &= blockAlwaysReplies(statements, recoverStart, recoverEnd);
+                    recoverIndex = recoverEnd;
+                }
+                if (normalReplies && anyRecover && allRecoverReply) return true;
+                index = recoverIndex;
+                continue;
+            }
             if (statement.kind == Stmt.Kind.If) {
                 int thenStart = index + 1;
                 int thenEnd = thenStart;
@@ -838,6 +870,35 @@ public class SemanticChecker {
                     continue;
                 }
                 index = thenEnd;
+                continue;
+            }
+            if (statement.kind == Stmt.Kind.Match) {
+                int matchEnd = index + 1;
+                while (matchEnd < end && statements.get(matchEnd).indent > statement.indent) matchEnd++;
+                boolean anyCase = false;
+                boolean allCasesReply = true;
+                int caseIndex = index + 1;
+                while (caseIndex < matchEnd) {
+                    Stmt caseStatement = statements.get(caseIndex);
+                    if (caseStatement.kind != Stmt.Kind.Case) {
+                        caseIndex++;
+                        continue;
+                    }
+                    anyCase = true;
+                    int caseStart = caseIndex + 1;
+                    int caseEnd = caseStart;
+                    while (caseEnd < matchEnd && statements.get(caseEnd).indent > caseStatement.indent)
+                        caseEnd++;
+                    allCasesReply &= blockAlwaysReplies(statements, caseStart, caseEnd);
+                    caseIndex = caseEnd;
+                }
+                if (anyCase && allCasesReply) return true;
+                index = matchEnd;
+                continue;
+            }
+            if (statement.kind == Stmt.Kind.While || statement.kind == Stmt.Kind.For) {
+                index++;
+                while (index < end && statements.get(index).indent > statement.indent) index++;
                 continue;
             }
             index++;

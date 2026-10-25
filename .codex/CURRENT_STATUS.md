@@ -16070,3 +16070,23 @@ bootstrap language version `moss-0.1`. Native compilation and source-free
 native execution remain unverified. The profile still supports only its
 explicitly recognized expression shapes; broader source-free callable and
 effect coverage remain open.
+
+### Phase 25.3 continuation — restore value-handler fallthrough checking
+
+A bounded check-only scan of the first 50 sorted top-level `tests/*.moss`
+fixtures found seven C++/Java acceptance mismatches (C++ accepted 49, Java 44).
+One Java-only acceptance was a value-returning domain handler that replied in
+one branch and fell through in another. Java now checks that every normal path
+replies or terminates exceptionally, including `if`/`else`, `match`, `try`/
+`recover`, `raise`, and zero-or-more loops. Imported source-free handlers are
+excluded because their bodies are unavailable. The six remaining mismatches
+are one branch-confined open-vector inference case and five untyped handler
+payload/domain-specialization cases that Java rejects as consuming an incoming
+payload before it has a concrete type.
+
+Validation: all twelve Java unit-test classes pass under ABI-v9 and staged
+ABI-v10. A modern minimal missing-reply reproducer is rejected by both C++ and
+Java with the same diagnostic text; the historical `tests/fallthrough.moss`
+fixture is also now rejected by Java. The test run exposed and fixed the
+source-free-handler false positive. Native execution and release gates remain
+open.
