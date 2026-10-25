@@ -14482,3 +14482,14 @@ mutation, message/state, and full Fast Debug trace parity remain open.
 The same exact-trace regression now continues through `Map.values()` as well.
 The combined Map construction, key snapshot loop, and value snapshot loop match
 C++ output and trace for the selected two-entry case.
+
+### Phase 25.3 continuation — Julia RungeKutta checker disagreement
+
+The Java checker accepts the `examples/swarm/Julia/RungeKutta` project, and the
+packaged Java Fast Debug runner passes all four project tests (4 passed, 0
+failed). C++ still rejects the project at the concrete specialization inside
+`IntegratorService.SimulateDecay` with `TYPE_AMBIGUOUS_OPEN_RESULT` (“member
+summary did not close at concrete specialization”). The runtime results support
+the Java implementation on this project path but do not independently prove
+checker parity; treat the C++/Java disagreement as unresolved until the
+specialization diagnostic is reduced. No native compilation or execution ran.
