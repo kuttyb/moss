@@ -26,6 +26,7 @@ public class SemanticCheckerTest {
         testFunctionWriteModePropagatesThroughNestedMethodReceiver();
         testInferredFunctionReceiverRetainsWriteMode();
         testInferredFunctionReceiverRetainsConsumeMode();
+        testInferredReceiverMethodArgumentOwnershipAtCallsite();
         testFunctionWriteModePropagatesThroughMethodArguments();
         testFunctionConsumeSummaryIncludesObjectConstructors();
         testFunctionRetainsResolvedOpenParameterTypes();
@@ -947,6 +948,35 @@ public class SemanticCheckerTest {
                 + "  item = Mover(payload=\"move\")\n"
                 + "  relay(item)\n"
                 + "  echo item.payload\n", "OWNERSHIP_USE_AFTER_CONSUME");
+    }
+
+    private static void testInferredReceiverMethodArgumentOwnershipAtCallsite() {
+        String declarations = ""
+                + "type Payload:\n"
+                + "  value: String\n"
+                + "type Mover:\n"
+                + "  fn accept(value: Payload) -> Payload:\n"
+                + "    return value\n"
+                + "type Reader:\n"
+                + "  fn accept(value: Payload):\n"
+                + "    echo value.value\n"
+                + "fn relay(value, item):\n"
+                + "  item.accept(value)\n";
+        assertCompileError(declarations
+                + "fn main():\n"
+                + "  payload = Payload(value=\"move\")\n"
+                + "  relay(payload, Mover())\n"
+                + "  echo payload.value\n", "OWNERSHIP_USE_AFTER_CONSUME");
+
+        Program readOnly = Parser.parseSource(declarations
+                + "fn main():\n"
+                + "  payload = Payload(value=\"keep\")\n"
+                + "  relay(payload, Reader())\n"
+                + "  echo payload.value\n", "inferred-receiver-read-only-argument.moss");
+        new SemanticChecker(readOnly).run();
+        Function relay = readOnly.functions.stream().filter(function -> function.name.equals("relay"))
+                .findFirst().orElseThrow();
+        assertEquals(AccessMode.Read, relay.parameterAccessModes.get(0));
     }
 
     private static void testFunctionWriteModePropagatesThroughMethodArguments() {

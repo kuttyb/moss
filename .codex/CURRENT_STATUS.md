@@ -16550,3 +16550,27 @@ ABI-v10 environment. The complete Java suites under both ABI modes were last
 run immediately before this test-only addition. The parity ledger now records
 this evidence; generic receiver substitutions and native source-free linkage
 remain open. No Rust or SDK gates were run.
+
+### Phase 25.3 continuation — specialize inferred receiver method arguments
+
+A generic helper calling `item.accept(value)` falsely allowed caller reuse when
+`item` was a concrete Mover whose method consumes `value`; a same-name Reader
+method is READ-only and must keep reuse valid. Java now resolves the helper's
+receiver argument at the caller and applies the selected method parameter mode
+there. Regression coverage checks both the consuming and read-only receiver
+specializations. An additional source-free ABI-v9/v10 regression now leaves the
+imported receiver parameter inferred while checking that method argument
+consumption reaches the caller.
+
+Validation: all 12 Java test classes pass under ABI-v9 and staged ABI-v10. The
+minimized C++ and Java checkers agree for both local receiver fixtures, and the
+rebuilt packaged Java launcher also rejects the Mover reuse while accepting the
+Reader reuse. Feedback validation and `git diff --check` pass. This targeted
+change does not validate native Rust, source-free native linkage, SDK
+compatibility, or the final release gates; no candidate SHA is frozen.
+
+The generic receiver correction was followed by fresh full Java suite runs:
+all 12 test classes pass under ABI-v9 and staged ABI-v10. `scripts/java/package.sh`
+rebuilt the JAR; the packaged compiler rejects the Mover constructor callsite
+and accepts the Reader constructor callsite. `git diff --check` and agent-feedback
+validation pass on this tree.

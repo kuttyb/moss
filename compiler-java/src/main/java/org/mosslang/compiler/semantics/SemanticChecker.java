@@ -3314,6 +3314,41 @@ public class SemanticChecker {
             }
         }
         for (ObjectType object : program.objects) {
+            for (Method method : object.methods) {
+                java.util.regex.Pattern callPattern = java.util.regex.Pattern.compile(
+                        "(?<![A-Za-z_])([A-Za-z_][A-Za-z0-9_]*(?:\\s*\\.\\s*[A-Za-z_][A-Za-z0-9_]*)*)"
+                                + "\\s*\\.\\s*" + java.util.regex.Pattern.quote(method.name)
+                                + "\\s*\\(");
+                for (String expression : expressions) {
+                    java.util.regex.Matcher call = callPattern.matcher(expression);
+                    while (call.find()) {
+                        String receiverType = resolveFunctionReceiverType(call.group(1), bindings);
+                        if (findObjectType(receiverType) != null) continue;
+                        int open = expression.indexOf('(', call.start());
+                        int close = -1;
+                        for (int cursor = open + 1; cursor < expression.length(); cursor++) {
+                            if (expression.charAt(cursor) == ')'
+                                    && ExpressionTyper.findMatchingOpenParen(expression, cursor) == open) {
+                                close = cursor;
+                                break;
+                            }
+                        }
+                        if (close < 0) continue;
+                        List<String> args = ExpressionTyper.parseArguments(
+                                expression.substring(open + 1, close));
+                        for (int argumentIndex = 0; argumentIndex < args.size(); argumentIndex++) {
+                            if (!allMethodsConsumeArgument(method.name, argumentIndex)) continue;
+                            String argument = callArgumentValue(args.get(argumentIndex));
+                            if (argument.equals(paramName) && parameterType != null
+                                    && transferType(parameterType)) return true;
+                            if (transferType(resolveReceiverPathType(parameterType, argument, paramName)))
+                                return true;
+                        }
+                    }
+                }
+            }
+        }
+        for (ObjectType object : program.objects) {
             java.util.regex.Pattern constructor = java.util.regex.Pattern.compile(
                     "(?<![A-Za-z0-9_.])" + java.util.regex.Pattern.quote(object.name)
                             + "\\s*\\(");
@@ -3343,6 +3378,20 @@ public class SemanticChecker {
             }
         }
         return false;
+    }
+
+    private boolean allMethodsConsumeArgument(String methodName, int argumentIndex) {
+        boolean found = false;
+        for (ObjectType object : program.objects) {
+            for (Method method : object.methods) {
+                if (!method.name.equals(methodName)) continue;
+                found = true;
+                if (argumentIndex >= method.parameterAccessModes.size()
+                        || method.parameterAccessModes.get(argumentIndex) != AccessMode.Consume)
+                    return false;
+            }
+        }
+        return found;
     }
 
     private String callArgumentValue(String rawArgument) {
@@ -3805,12 +3854,12 @@ public class SemanticChecker {
                     String leftRoot = ownershipRoot(leftValue);
                     TypeRef leftType = env.get(leftRoot);
                     if (leftRoot.isEmpty() || leftType == null || !transferType(leftType)) continue;
-                    AccessMode leftMode = callArgumentAccessMode(fn, method, i, leftType);
+                    AccessMode leftMode = callArgumentAccessMode(fn, method, i, leftType, args, env);
                     for (int j = i + 1; j < args.size(); j++) {
                         String rightValue = callArgumentValue(args.get(j)).trim();
                         String rightRoot = ownershipRoot(rightValue);
                         if (!leftRoot.equals(rightRoot)) continue;
-                        AccessMode rightMode = callArgumentAccessMode(fn, method, j, leftType);
+                        AccessMode rightMode = callArgumentAccessMode(fn, method, j, leftType, args, env);
                         if (leftMode == AccessMode.Read && rightMode == AccessMode.Read) continue;
                         throw new CompileError(line, "conflicting access to '" + leftRoot
                                 + "' in call to '" + callee + "': " + leftMode.name().toUpperCase()
@@ -3864,7 +3913,8 @@ public class SemanticChecker {
                     boolean consumesArgument = fn != null
                             ? (isSourceFreeFunction(fn)
                                     ? functionParameterMode(fn, i) == AccessMode.Consume
-                                    : doesFunctionConsumeParam(fn, i, env.get(a)))
+                                    : functionConsumesArgumentAtCallsite(fn, i, args, env,
+                                            callArgumentType(a, env)))
                             : method != null && i < method.parameterAccessModes.size()
                                     && method.parameterAccessModes.get(i) == AccessMode.Consume;
                     if (currentMessagePayloads.contains(a) && consumesArgument) {
@@ -4050,16 +4100,95 @@ public class SemanticChecker {
     }
 
     private AccessMode callArgumentAccessMode(Function function, Method method,
-                                               int index, TypeRef argumentType) {
+                                               int index, TypeRef argumentType,
+                                               List<String> callArguments, OwnershipEnv env) {
         if (function != null) {
             if (isSourceFreeFunction(function)) return functionParameterMode(function, index);
-            if (doesFunctionConsumeParam(function, index, argumentType)) return AccessMode.Consume;
+            TypeRef checkedArgumentType = index < callArguments.size()
+                    ? callArgumentType(callArguments.get(index), env) : argumentType;
+            if (functionConsumesArgumentAtCallsite(function, index, callArguments, env, checkedArgumentType))
+                return AccessMode.Consume;
             if (doesFunctionMutateParam(function, index)) return AccessMode.Write;
             return AccessMode.Read;
         }
         if (method != null && index < method.parameterAccessModes.size())
             return method.parameterAccessModes.get(index);
         return AccessMode.Read;
+    }
+
+    private TypeRef callArgumentType(String rawArgument, OwnershipEnv env) {
+        String argument = callArgumentValue(rawArgument).trim();
+        String root = ownershipRoot(argument);
+        TypeRef rootType = env.get(root);
+        if (rootType != null) {
+            TypeRef projected = resolveReceiverPathType(rootType, argument, root);
+            if (projected != null) return projected;
+            return rootType;
+        }
+        int open = argument.indexOf('(');
+        if (open > 0 && argument.endsWith(")")) {
+            ObjectType constructed = findObjectType(argument.substring(0, open).trim());
+            if (constructed != null) return TypeRef.nominal(constructed.name, List.of());
+        }
+        return null;
+    }
+
+    private boolean functionConsumesArgumentAtCallsite(Function function, int parameterIndex,
+                                                       List<String> callArguments, OwnershipEnv callerEnv,
+                                                       TypeRef actualArgumentType) {
+        if (doesFunctionConsumeParam(function, parameterIndex, actualArgumentType)) return true;
+        if (function == null || parameterIndex < 0 || parameterIndex >= function.params.size()) return false;
+        String parameterName = function.params.get(parameterIndex).name;
+        if (parameterName == null || callArguments == null) return false;
+        List<String> expressions = new ArrayList<>();
+        for (Stmt statement : function.body) expressions.add(statementExpressionText(statement));
+        if (function.resultExpression != null) expressions.add(function.resultExpression);
+        java.util.regex.Pattern methodCall = java.util.regex.Pattern.compile(
+                "(?<![A-Za-z0-9_])([A-Za-z_][A-Za-z0-9_]*(?:\\s*\\.\\s*[A-Za-z_][A-Za-z0-9_]*)*)"
+                        + "\\s*\\.\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*\\(");
+        for (String expression : expressions) {
+            java.util.regex.Matcher call = methodCall.matcher(maskStringLiterals(expression));
+            while (call.find()) {
+                String receiverPath = call.group(1).replaceAll("\\s", "");
+                String receiverRoot = ownershipRoot(receiverPath);
+                int receiverParameterIndex = -1;
+                for (int index = 0; index < function.params.size(); index++) {
+                    if (function.params.get(index).name.equals(receiverRoot)) {
+                        receiverParameterIndex = index;
+                        break;
+                    }
+                }
+                if (receiverParameterIndex < 0 || receiverParameterIndex >= callArguments.size()) continue;
+                TypeRef actualReceiverType = callArgumentType(
+                        callArguments.get(receiverParameterIndex), callerEnv);
+                ObjectType receiverObject = actualReceiverType != null
+                        ? findObjectType(actualReceiverType.name()) : null;
+                if (receiverObject == null) continue;
+                Method selectedMethod = receiverObject.methods.stream()
+                        .filter(candidate -> candidate.name.equals(call.group(2)))
+                        .findFirst().orElse(null);
+                if (selectedMethod == null) continue;
+                int open = expression.indexOf('(', call.start());
+                int close = matchingCloseParen(expression, open);
+                if (close < 0) continue;
+                List<String> methodArguments = ExpressionTyper.parseArguments(
+                        expression.substring(open + 1, close));
+                for (int index = 0; index < methodArguments.size()
+                        && index < selectedMethod.parameterAccessModes.size(); index++) {
+                    if (selectedMethod.parameterAccessModes.get(index) != AccessMode.Consume) continue;
+                    String passed = callArgumentValue(methodArguments.get(index));
+                    if (!ownershipRoot(passed).equals(parameterName)) continue;
+                    if (passed.equals(parameterName) && actualArgumentType != null
+                            && transferType(actualArgumentType)) return true;
+                    TypeRef declaredParameterType = functionParameterType(
+                            function.params.get(parameterIndex));
+                    if (transferType(resolveReceiverPathType(
+                            declaredParameterType, passed, parameterName))) return true;
+                    if (actualArgumentType != null && transferType(actualArgumentType)) return true;
+                }
+            }
+        }
+        return false;
     }
 
     private void recordDirectCallRaises(String expression, OwnershipEnv env) {

@@ -207,7 +207,7 @@ public final class SourceFreeObjectMetadataTest {
                     + checkedRust);
         }
         Program forwardedImportedConsume = Parser.parseSource(""
-                + "fn relay(values, point: provider__Point):\n"
+                + "fn relay(values, point):\n"
                 + "  point.replace(values)\n"
                 + "fn main():\n"
                 + "  point = provider__Point(x=0.0, label=\"x\")\n"
@@ -217,7 +217,11 @@ public final class SourceFreeObjectMetadataTest {
         Main.loadMossiFunctions(interfaceFile, "provider", forwardedImportedConsume);
         try {
             new SemanticChecker(forwardedImportedConsume).run();
-            throw new AssertionError("imported CONSUME method mode was not propagated through relay");
+            Function relay = forwardedImportedConsume.functions.stream()
+                    .filter(function -> function.name.equals("relay")).findFirst().orElseThrow();
+            throw new AssertionError("imported CONSUME method mode was not propagated through relay: "
+                    + relay.parameterAccessModes + " checked=" + relay.params.stream()
+                            .map(parameter -> parameter.name + ":" + parameter.checkedTypeRef).toList());
         } catch (CompileError error) {
             if (!"OWNERSHIP_USE_AFTER_CONSUME".equals(error.getCode())) throw error;
         }
@@ -441,7 +445,7 @@ public final class SourceFreeObjectMetadataTest {
             }
         }
         Program v10ForwardedMethodConsume = Parser.parseSource(""
-                + "fn relay(values, point: provider__Point):\n"
+                + "fn relay(values, point):\n"
                 + "  point.replace(values)\n"
                 + "fn main():\n"
                 + "  point = provider__Point(x=0.0)\n"

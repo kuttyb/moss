@@ -685,3 +685,20 @@ source-free linkage remain open.
 The focused `SourceFreeObjectMetadataTest` passes under the staged ABI-v10
 environment. Full Java test suites under both ABI modes were last run before
 this test-only addition.
+
+
+### Follow-up — specialize method argument ownership at generic callsites
+
+A generic helper `relay(value, item) -> item.accept(value)` exposed a false
+acceptance: Java accepted caller reuse for a concrete `Mover.accept` that
+consumes its argument, while C++ rejected it. Java now resolves the generic
+helper's method receiver against the actual receiver argument at each callsite
+before applying the selected method's argument access modes. A same-name
+read-only `Reader.accept` specialization remains reusable, so the fix does not
+widen the helper's summary to CONSUME when candidates disagree.
+
+The regressions cover both receiver specializations. The minimized C++/Java
+checker pair agrees, all 12 Java test classes pass under ABI-v9 and staged
+ABI-v10, and the rebuilt standalone JAR reproduces both outcomes. Generic
+receiver substitution beyond this bounded callsite path and native acceptance
+remain open.
