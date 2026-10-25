@@ -71,6 +71,20 @@ public final class SourceFreeObjectMetadataTest {
         if (withoutFailureArm.equals(content)) {
             throw new AssertionError("source-free raise fixture failed to remove the imported on_fail arm");
         }
+        Program handledImportedHandler = Parser.parseSource(""
+                + "import provider\n"
+                + "fn main():\n"
+                + "  worker = provider.Worker()\n"
+                + "  executor = Executor().threads(1).start()\n"
+                + "  executor.invoke(worker.Work())\n"
+                + "  executor.join()\n", "source-free-handler-root-handled.moss");
+        Main.loadMossiFunctions(interfaceFile, "provider", handledImportedHandler);
+        new SemanticChecker(handledImportedHandler).run();
+        String handledImportedRust = NativeGenerator.generate(handledImportedHandler, false);
+        if (!handledImportedRust.contains("__moss_executor_domain_")
+                || !handledImportedRust.contains(".Work_root()))")) {
+            throw new AssertionError("source-free handled Executor root did not use the provider root wrapper");
+        }
         Path raisingInterface = scratch.resolve("provider-raising-no-failure.mossi");
         Files.writeString(raisingInterface, withoutFailureArm);
         Program unhandledImportedHandler = Parser.parseSource(""
