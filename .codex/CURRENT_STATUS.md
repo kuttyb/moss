@@ -13763,3 +13763,8 @@ exits remain unverified.
 Validation: all eleven Java unit-test classes pass in ABI-v9 and staged
 ABI-v10; feedback validation and `git diff --check` pass. Phase 25.3 remains
 in progress.
+
+A follow-up exceptional-call regression now covers a helper raising into a
+`main` recovery arm. The trace retains the nested raise event, restores main's
+identity/depth for recovery, and emits no spurious function exit. All eleven
+Java unit-test classes pass in ABI-v9 and staged ABI-v10 after adding the test.

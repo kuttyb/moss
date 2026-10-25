@@ -22,6 +22,7 @@ public final class FastInterpreterTest {
         testCollectionTraceUsesCompactSummary();
         testRaiseRecoverTraceCarriesErrorIdentity();
         testObjectMethodTraceCarriesCallContext();
+        testExceptionalFunctionTraceUnwindsCallContext();
         System.out.println("FastInterpreterTest PASSED.");
     }
 
@@ -343,6 +344,36 @@ public final class FastInterpreterTest {
                 + "{\"event_id\":6,\"event\":\"MethodExit\",\"function\":\"Box.get\",\"source_file\":\"fast-interpreter-method-trace.moss\",\"semantic_identity\":\"method:Box.get@3\",\"line\":3,\"parent_event_id\":3,\"call_event_id\":3,\"depth\":1}\n";
         if (!expected.equals(events) || !"7\n".equals(stdout.toString(StandardCharsets.UTF_8))) {
             throw new AssertionError("method trace omitted call context: " + events);
+        }
+    }
+
+    private static void testExceptionalFunctionTraceUnwindsCallContext() {
+        var program = Parser.parseSource(""
+                + "enum Failure:\n"
+                + "  Bad(code: Int)\n"
+                + "fn fail():\n"
+                + "  raise Failure.Bad(code: 2)\n"
+                + "fn main():\n"
+                + "  try:\n"
+                + "    fail()\n"
+                + "  recover Failure.Bad(code):\n"
+                + "    echo code\n",
+                "fast-interpreter-exception-call-trace.moss");
+        new CheckedProgram(program).run();
+
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+        ByteArrayOutputStream trace = new ByteArrayOutputStream();
+        new FastInterpreter(program, true,
+                new PrintStream(stdout, true, StandardCharsets.UTF_8),
+                new PrintStream(trace, true, StandardCharsets.UTF_8)).run();
+        String expected = ""
+                + "{\"event_id\":1,\"event\":\"FunctionEnter\",\"function\":\"fail\",\"source_file\":\"fast-interpreter-exception-call-trace.moss\",\"semantic_identity\":\"fn:fail@3\",\"line\":3,\"depth\":0}\n"
+                + "{\"event_id\":2,\"event\":\"raise\",\"function\":\"fail\",\"source_file\":\"fast-interpreter-exception-call-trace.moss\",\"semantic_identity\":\"fn:fail@3\",\"line\":4,\"parent_event_id\":1,\"call_event_id\":1,\"depth\":1,\"detail\":\"enum:Failure:Bad\"}\n"
+                + "{\"event_id\":3,\"event\":\"recover\",\"function\":\"main\",\"source_file\":\"fast-interpreter-exception-call-trace.moss\",\"semantic_identity\":\"main@5\",\"line\":8,\"depth\":0,\"detail\":\"enum:Failure:Bad\"}\n"
+                + "{\"event_id\":4,\"event\":\"LocalRead\",\"function\":\"main\",\"source_file\":\"fast-interpreter-exception-call-trace.moss\",\"semantic_identity\":\"main@5\",\"line\":9,\"depth\":0,\"detail\":\"code\"}\n";
+        if (!expected.equals(trace.toString(StandardCharsets.UTF_8))
+                || !"2\n".equals(stdout.toString(StandardCharsets.UTF_8))) {
+            throw new AssertionError("exceptional function trace did not unwind call context: " + trace);
         }
     }
 }
