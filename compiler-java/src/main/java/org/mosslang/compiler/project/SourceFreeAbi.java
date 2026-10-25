@@ -129,7 +129,10 @@ public class SourceFreeAbi {
     }
 
     public static void validateMossiText(Path interfaceFile, String text) throws CompileError {
-        boolean isV10 = "v10".equals(System.getenv("MOSS_STAGED_ABI"));
+        validateMossiText(interfaceFile, text, "v10".equals(System.getenv("MOSS_STAGED_ABI")));
+    }
+
+    static void validateMossiText(Path interfaceFile, String text, boolean isV10) throws CompileError {
         if (isV10) {
             if (text.startsWith("moss-module-interface-v2\n")) {
                 throw new CompileError("SOURCE_FREE_ABI_REBUILD_REQUIRED",
@@ -166,6 +169,8 @@ public class SourceFreeAbi {
                         "ABI-v10 provider metadata does not match its declared contract digest",
                         interfaceFile.toString(), 1);
             }
+
+            org.mosslang.compiler.abi.CheckedBodyCodec.verifySourceFree(text);
 
             // Check module_id
             String stem = interfaceFile.getFileName().toString().replaceAll("\\.mossi$", "");

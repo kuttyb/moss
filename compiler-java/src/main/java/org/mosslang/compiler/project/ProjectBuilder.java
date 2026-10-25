@@ -980,9 +980,11 @@ public class ProjectBuilder {
         boolean isV10 = "v10".equals(System.getenv("MOSS_STAGED_ABI"));
         if (isV10) {
             String modId = "module-v1:" + manifest.getName() + "@" + manifest.getVersion() + "::" + module;
+            List<String> sortedDeps = new ArrayList<>(deps);
+            Collections.sort(sortedDeps);
             StringBuilder importsBuf = new StringBuilder();
-            importsBuf.append("imports\ncount ").append(deps.size()).append("\n");
-            for (String dep : deps) {
+            importsBuf.append("imports\ncount ").append(sortedDeps.size()).append("\n");
+            for (String dep : sortedDeps) {
                 Path depMossi = buildDir != null ? buildDir.resolve(dep + ".mossi") : null;
                 if ((depMossi == null || !Files.exists(depMossi)) && externalCandidateProviders != null) {
                     List<Path> ext = externalCandidateProviders.get(dep);
@@ -1045,6 +1047,9 @@ public class ProjectBuilder {
                 binRecords.add(new String[]{"fn:" + fnName, "fn " + fnName + " kind=" + (isGeneric ? "generic" : "static") + " " + eff + "\n"});
                 semRecords.add(new String[]{"fn:" + fnName, "export fn " + fnName + " kind=" + (isGeneric ? "generic" : "static") + " semantic_hash=" + semHash + " " + eff + "\n"});
             }
+
+            binRecords.sort(Comparator.comparing(record -> record[0]));
+            semRecords.sort(Comparator.comparing(record -> record[0]));
 
             StringBuilder binaryFramed = new StringBuilder("binary_contract\ncount ").append(binRecords.size()).append("\n");
             for (String[] r : binRecords) {

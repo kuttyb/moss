@@ -12399,3 +12399,19 @@ larger source-free ABI gaps identified by the Architect remain open.
 
 Validation: Java build; all eight Java test classes; feedback validation; and
 `git diff --check` passed. No native or source-free project build was run.
+
+### Phase 25.3 continuation — validate ABI-v10 sections before provider selection
+
+`SourceFreeAbi` previously checked only the outer v10 digest, module stem, and
+`.rlib` marker. It now also invokes `CheckedBodyCodec.verifySourceFree`, which
+checks section framing, record/import ordering, section hashes, canonical
+re-encoding, and checked-body hashes before accepting the selected provider.
+The Java v10 writer sorts import names and both record sections so emitted
+containers use the codec's canonical order. Added a regression that recomputes
+the outer digest after corrupting a section hash and confirms the validator
+rejects it.
+
+Validation: Java build and all eight Java test classes passed. The writer still
+emits incomplete logical record payloads and dependency names that are not full
+v10 module IDs; full source-free v10 semantics remain unverified and incomplete.
+No native or SDK acceptance was run.
