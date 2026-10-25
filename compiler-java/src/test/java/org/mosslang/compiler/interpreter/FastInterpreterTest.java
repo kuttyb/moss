@@ -610,11 +610,14 @@ public final class FastInterpreterTest {
                 + "        echo \"caught\"\n", "fast-interpreter-catchall-recover.moss");
         new CheckedProgram(program).run();
         ByteArrayOutputStream stdout = new ByteArrayOutputStream();
-        new FastInterpreter(program, false,
+        ByteArrayOutputStream trace = new ByteArrayOutputStream();
+        new FastInterpreter(program, true,
                 new PrintStream(stdout, true, StandardCharsets.UTF_8),
-                new PrintStream(new ByteArrayOutputStream())).run();
-        if (!"caught\n".equals(stdout.toString(StandardCharsets.UTF_8))) {
-            throw new AssertionError("catch-all recover did not bind the raised enum: " + stdout);
+                new PrintStream(trace, true, StandardCharsets.UTF_8)).run();
+        if (!"caught\n".equals(stdout.toString(StandardCharsets.UTF_8))
+                || !trace.toString(StandardCharsets.UTF_8).contains("\"event\":\"BranchTaken\"")) {
+            throw new AssertionError("catch-all recover or its match trace was incorrect: "
+                    + stdout + " trace=" + trace);
         }
     }
 

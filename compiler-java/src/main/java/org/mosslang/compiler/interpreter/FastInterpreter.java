@@ -710,6 +710,7 @@ public class FastInterpreter {
                         String pat = cs.a != null ? cs.a.trim() : "";
                         if (!matched && enumValue != null && enumValue.variant.equals(pat)) {
                             matched = true;
+                            traceControlEvent(cs, funcName, "BranchTaken", pat, depth);
                             Map<String, Value> branchLocals = new HashMap<>(locals);
                             for (String binder : cs.args) {
                                 Value field = enumValue.fields.get(binder);
@@ -719,8 +720,12 @@ public class FastInterpreter {
                                 }
                                 branchLocals.put(binder, field);
                             }
-                            lastVal = evalScopedBlock(stmts, caseBodyStart, caseBodyEnd, branchLocals,
-                                    currentDomain, funcName, depth, Set.copyOf(cs.args));
+                            try {
+                                lastVal = evalScopedBlock(stmts, caseBodyStart, caseBodyEnd, branchLocals,
+                                        currentDomain, funcName, depth, Set.copyOf(cs.args));
+                            } finally {
+                                endTraceLoopIteration();
+                            }
                             for (Map.Entry<String, Value> entry : branchLocals.entrySet()) {
                                 if (locals.containsKey(entry.getKey())) {
                                     locals.put(entry.getKey(), entry.getValue());

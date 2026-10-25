@@ -14041,3 +14041,10 @@ rejected when no nested `try` exists to handle it. Two focused semantic tests
 cover missing replies on one branch and an escaping raise inside a branch; both
 match C++ diagnostic codes. Both ABI Java suites pass. Failure-arm flow analysis
 through nested try remains deliberately limited.
+
+Recovery trace parity was also checked: Java emitted no `BranchTaken` for enum
+match cases in `phase21_recovery_semantics.moss`. It now emits the event at the
+selected case source line and scopes its control event through the case body.
+The complete stdout and trace for this recovery/reraise fixture compare
+byte-for-byte with C++. The catch-all recovery unit test asserts the match
+branch trace. Both Java ABI suites pass.
