@@ -12,6 +12,11 @@ public class FastInterpreter {
         public final Kind kind;
         public final Object raw;
         public String typeName = null;
+        // Trace-only provenance for object values borrowed from domain state.
+        // The runtime value still shares the same payload; this path only lets
+        // Fast Debug report later reads at the point where the borrowed value
+        // is actually used.
+        public String traceStatePath = null;
 
         public Value(Kind kind, Object raw) {
             this.kind = kind;
@@ -366,6 +371,31 @@ public class FastInterpreter {
                 + "\",\"semantic_identity\":\"" + jsonEscape(traceIdentity()) + "\",\"line\":"
                 + traceLine + traceContextFields() + ",\"depth\":" + traceDepth + ",\"detail\":\""
                 + jsonEscape(name) + "\"" + traceDomainFields() + "}");
+    }
+
+    private void traceStateRead(String path) {
+        if (!trace) return;
+        eventId++;
+        traceEvent("{\"event_id\":" + eventId + ",\"event\":\"state_read\",\"function\":\""
+                + jsonEscape(traceFunction) + "\",\"source_file\":\"" + jsonEscape(traceSourceFile)
+                + "\",\"semantic_identity\":\"" + jsonEscape(traceIdentity()) + "\",\"line\":"
+                + traceLine + traceContextFields() + ",\"depth\":" + traceDepth + traceDomainFields()
+                + ",\"path\":\"" + jsonEscape(path) + "\"}");
+    }
+
+    private void traceValueRead(String name, Value value, String member) {
+        if (value != null && value.traceStatePath != null) {
+            traceStateRead(value.traceStatePath + (member == null ? "" : "." + member));
+        } else {
+            traceLocalRead(member == null ? name : name + "." + member);
+        }
+    }
+
+    private static Value withTraceStatePath(Value value, String path) {
+        if (value == null || value.kind != Value.Kind.OBJECT) return value;
+        Value borrowed = new Value(value.kind, value.raw, value.typeName);
+        borrowed.traceStatePath = path;
+        return borrowed;
     }
 
     private void traceLoopIteration(Stmt statement, String function, int iteration, int depth) {
@@ -980,7 +1010,18 @@ public class FastInterpreter {
                     if (objVal != null && objVal.raw instanceof Map<?, ?> mp) {
                         @SuppressWarnings("unchecked")
                         Map<String, Value> m = (Map<String, Value>) mp;
+                        Value before = m.get(fieldName);
                         m.put(fieldName, val);
+                        if (objVal.traceStatePath != null) {
+                            eventId++;
+                            traceEvent("{\"event_id\":" + eventId + ",\"event\":\"state_write\",\"function\":\""
+                                    + jsonEscape(funcName) + "\",\"source_file\":\"" + jsonEscape(s.sourceFile)
+                                    + "\",\"semantic_identity\":\"" + jsonEscape(traceIdentity()) + "\",\"line\":"
+                                    + s.line + traceContextFields() + ",\"depth\":" + depth + traceDomainFields()
+                                    + ",\"path\":\"" + jsonEscape(objVal.traceStatePath + "." + fieldName)
+                                    + "\",\"before\":\"" + jsonEscape(traceValueSummary(before))
+                                    + "\",\"after\":\"" + jsonEscape(traceValueSummary(val)) + "\"}");
+                        }
                     }
                     return Value.ofUnit();
                 }
@@ -1810,7 +1851,8 @@ public class FastInterpreter {
             if (!expr.startsWith("message ") && callee.contains(".")) {
                 int receiverDot = callee.lastIndexOf('.');
                 String receiverName = callee.substring(0, receiverDot).trim();
-                if (locals.containsKey(receiverName)) traceLocalRead(receiverName);
+                if (locals.containsKey(receiverName))
+                    traceValueRead(receiverName, locals.get(receiverName), null);
             }
             List<Value> evaluatedArgs = new ArrayList<>();
             for (String a : argList) {
@@ -1838,7 +1880,7 @@ public class FastInterpreter {
                     if ((sourceCallable || domainConstructor)
                             && a.matches("[A-Za-z_][A-Za-z0-9_]*") && locals.containsKey(a)) {
                         if (sourceCallable && tracesArgumentRead(callee, evaluatedArgs.size(), locals, currentDomain))
-                            traceLocalRead(a);
+                            traceValueRead(a, locals.get(a), null);
                         evaluatedArgs.add(locals.get(a));
                     } else
                         evaluatedArgs.add(evalExpr(a, locals, currentDomain));
@@ -2306,14 +2348,17 @@ public class FastInterpreter {
                 Value recvVal;
                 if (locals.containsKey(recvExpr)) {
                     recvVal = locals.get(recvExpr);
-                    traceLocalRead(expr);
+                    traceValueRead(recvExpr, recvVal, fieldOrVariant);
                 } else {
                     recvVal = evalExpr(recvExpr, locals, currentDomain);
+                    if (recvVal != null && recvVal.traceStatePath != null)
+                        traceStateRead(recvVal.traceStatePath + "." + fieldOrVariant);
                 }
                 if (recvVal != null && recvVal.kind == Value.Kind.OBJECT && recvVal.raw instanceof Map<?, ?> fm) {
                     Object fVal = fm.get(fieldOrVariant);
                     if (fVal instanceof Value v) {
-                        return v;
+                        return recvVal.traceStatePath == null ? v
+                                : withTraceStatePath(v, recvVal.traceStatePath + "." + fieldOrVariant);
                     }
                 }
             }
@@ -2321,28 +2366,34 @@ public class FastInterpreter {
 
         // Domain state read e.g. value
         if (currentDomain != null && currentDomain.state.containsKey(expr)) {
-            eventId++;
-            traceEvent("{\"event_id\":" + eventId + ",\"event\":\"state_read\",\"function\":\""
-                    + jsonEscape(traceFunction) + "\",\"source_file\":\"" + jsonEscape(traceSourceFile)
-                    + "\",\"semantic_identity\":\"" + jsonEscape(traceIdentity()) + "\",\"line\":"
-                    + traceLine + traceContextFields() + ",\"depth\":" + traceDepth
-                    + traceDomainFields() + ",\"path\":\""
-                    + jsonEscape(expr) + "\"}");
-            return currentDomain.state.get(expr);
+            Value stateValue = currentDomain.state.get(expr);
+            if (stateValue != null && stateValue.kind == Value.Kind.OBJECT)
+                return withTraceStatePath(stateValue, expr);
+            traceStateRead(expr);
+            return stateValue;
         }
 
         Value selfValue = locals.get("self");
         if (selfValue != null && selfValue.kind == Value.Kind.OBJECT
                 && selfValue.raw instanceof Map<?, ?> fields
                 && fields.get(expr) instanceof Value fieldValue) {
-            traceLocalRead(expr);
-            return fieldValue;
+            if (selfValue.traceStatePath == null) traceLocalRead(expr);
+            else traceValueRead("self", selfValue, expr);
+            return selfValue.traceStatePath == null ? fieldValue
+                    : withTraceStatePath(fieldValue, selfValue.traceStatePath + "." + expr);
         }
 
         // Local variable read
         if (locals.containsKey(expr)) {
-            traceLocalRead(expr);
-            return locals.get(expr);
+            Value localValue = locals.get(expr);
+            Value receiver = locals.get("self");
+            if (receiver != null && receiver.traceStatePath != null
+                    && receiver.raw instanceof Map<?, ?> fields && fields.containsKey(expr)) {
+                traceValueRead("self", receiver, expr);
+                return withTraceStatePath(localValue, receiver.traceStatePath + "." + expr);
+            }
+            traceValueRead(expr, localValue, null);
+            return localValue;
         }
 
         // Function reference

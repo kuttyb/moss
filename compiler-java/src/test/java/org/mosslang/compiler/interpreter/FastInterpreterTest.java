@@ -24,6 +24,7 @@ public final class FastInterpreterTest {
         testCollectionTraceUsesCompactSummary();
         testRaiseRecoverTraceCarriesErrorIdentity();
         testObjectMethodTraceCarriesCallContext();
+        testBorrowedDomainObjectTraceKeepsStatePath();
         testObjectMethodUpdatesScalarField();
         testObjectMethodFieldShadowsSameNamedParameter();
         testSpacedGenericCollectionConstructors();
@@ -404,6 +405,42 @@ public final class FastInterpreterTest {
                 + "{\"event_id\":6,\"event\":\"MethodExit\",\"function\":\"Box.get\",\"source_file\":\"fast-interpreter-method-trace.moss\",\"semantic_identity\":\"method:Box.get@3\",\"line\":3,\"parent_event_id\":3,\"call_event_id\":3,\"depth\":1}\n";
         if (!expected.equals(events) || !"7\n".equals(stdout.toString(StandardCharsets.UTF_8))) {
             throw new AssertionError("method trace omitted call context: " + events);
+        }
+    }
+
+    private static void testBorrowedDomainObjectTraceKeepsStatePath() {
+        var program = Parser.parseSource(""
+                + "type Box:\n"
+                + "  title: String\n"
+                + "  fn get() -> String:\n"
+                + "    return title\n"
+                + "fn inspect(value: Box) -> String:\n"
+                + "  return value.get()\n"
+                + "domain Store:\n"
+                + "  value: Box\n"
+                + "  fn Read() -> String:\n"
+                + "    reply inspect(value)\n"
+                + "fn main():\n"
+                + "  store = Store(value: Box(title: \"borrowed\"))\n"
+                + "  echo message store.Read()\n",
+                "fast-interpreter-borrowed-domain-object-trace.moss");
+        new CheckedProgram(program).run();
+
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+        ByteArrayOutputStream trace = new ByteArrayOutputStream();
+        new FastInterpreter(program, true,
+                new PrintStream(stdout, true, StandardCharsets.UTF_8),
+                new PrintStream(trace, true, StandardCharsets.UTF_8)).run();
+        String events = trace.toString(StandardCharsets.UTF_8);
+        int functionEnter = events.indexOf("\"event\":\"FunctionEnter\",\"function\":\"inspect\"");
+        int borrowedRead = events.indexOf("\"event\":\"state_read\",\"function\":\"inspect\"");
+        int methodFieldRead = events.indexOf("\"event\":\"state_read\",\"function\":\"Box.get\"");
+        if (functionEnter < 0 || borrowedRead <= functionEnter || methodFieldRead <= borrowedRead
+                || !events.substring(borrowedRead).contains("\"path\":\"value\"")
+                || !events.substring(methodFieldRead).contains("\"path\":\"value.title\"")
+                || events.substring(0, functionEnter).contains("\"path\":\"value\"")
+                || !"borrowed\n".equals(stdout.toString(StandardCharsets.UTF_8))) {
+            throw new AssertionError("borrowed domain object trace lost its state path: " + events);
         }
     }
 

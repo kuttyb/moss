@@ -15679,5 +15679,26 @@ state mutation.
 All twelve Java unit-test classes pass under ABI-v9 defaults and staged
 ABI-v10. The fixture's JSON trace still differs: Java reports object fields as
 local reads and some state reads occur in the caller, while C++ retains
-state-origin paths inside generic function/method calls. That trace-origin gap
-remains open and is the next focused Fast Debug task.
+state-origin paths inside generic function/method calls.
+The object-path portion of this gap is addressed in the following checkpoint;
+collection traces remain open.
+
+
+### Phase 25.3 continuation — preserve borrowed object paths in Fast Debug traces
+
+Borrowed object values now carry trace-only domain-state provenance. Fast Debug
+defers the object state read until the value is consumed in a generic function
+or method, then reports field reads and writes with the original domain path.
+A focused regression covers a domain object passed through a function into a
+method. On `tests/phase106d1_read_projection.moss`, Java now matches C++ for
+these object paths, and both produce identical stdout. The first remaining trace
+divergence is collection provenance: Java reports `strings` in the handler
+before `echo_text` instead of `strings[0]` inside the function, and Java omits
+the indexed state write for `value.values[0]`.
+
+All twelve Java unit-test classes pass under ABI-v9 defaults and staged ABI-v10.
+The Fast Debug fixture trace comparison is partial, not byte-identical (both
+traces contain 137 events; first divergence is event 36). Other collection
+index paths, native correctness, SDK integration, daemon lifecycle, and broad
+language/codegen acceptance remain open. The earlier textual generated-Rust
+parity initiative stays parked.
