@@ -14034,3 +14034,10 @@ raises while C++ printed `first`, then `second`. Java now matches the complete
 qualified raised enum identity (including normalized module separators). The
 focused output matches C++; FastInterpreterTest covers the collision, and both
 ABI Java suites pass.
+
+The `on_fail` contract checker now walks simple if/else control flow: a typed
+handler requires replies from all branches, and a branch-contained raise is
+rejected when no nested `try` exists to handle it. Two focused semantic tests
+cover missing replies on one branch and an escaping raise inside a branch; both
+match C++ diagnostic codes. Both ABI Java suites pass. Failure-arm flow analysis
+through nested try remains deliberately limited.

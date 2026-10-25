@@ -39,6 +39,8 @@ public class SemanticCheckerTest {
         testOnFailRejectsDistinctBranchBindings();
         testConstantFalseBranchDoesNotConsumeReachableLocal();
         testWhileZeroIterationDoesNotInitializeCapture();
+        testOnFailReplyMustCoverEveryBranch();
+        testOnFailRejectsBranchEscapingRaise();
         System.out.println("SemanticCheckerTest PASSED.");
     }
 
@@ -419,6 +421,55 @@ public class SemanticCheckerTest {
                 throw new AssertionError("expected ON_FAIL_CAPTURE_NOT_INITIALIZED, got "
                         + error.getCode(), error);
             }
+        }
+    }
+
+    private static void testOnFailReplyMustCoverEveryBranch() {
+        Program program = Parser.parseSource(""
+                + "enum Failure:\n"
+                + "  Bad\n"
+                + "domain Worker:\n"
+                + "  fn Run() -> Int:\n"
+                + "    raise Failure.Bad\n"
+                + "  on_fail Failure.Bad:\n"
+                + "    if true:\n"
+                + "      reply 1\n"
+                + "    else:\n"
+                + "      pass\n"
+                + "fn main():\n"
+                + "  worker = Worker()\n"
+                + "  echo message worker.Run()\n", "on-fail-branch-reply.moss");
+        expectCompileError(program, "ON_FAIL_REPLY_REQUIRED",
+                "on_fail must reply on every value-returning path");
+    }
+
+    private static void testOnFailRejectsBranchEscapingRaise() {
+        Program program = Parser.parseSource(""
+                + "enum Failure:\n"
+                + "  Bad\n"
+                + "  Other\n"
+                + "domain Worker:\n"
+                + "  fn Run(flag: Bool):\n"
+                + "    raise Failure.Bad\n"
+                + "  on_fail Failure.Bad:\n"
+                + "    if flag:\n"
+                + "      raise Failure.Other\n"
+                + "    else:\n"
+                + "      pass\n"
+                + "fn main():\n"
+                + "  worker = Worker()\n"
+                + "  message worker.Run(true)\n", "on-fail-branch-raise.moss");
+        expectCompileError(program, "ON_FAIL_MUST_HANDLE_ERRORS",
+                "on_fail must handle errors raised from all branches");
+    }
+
+    private static void expectCompileError(Program program, String code, String message) {
+        try {
+            new SemanticChecker(program).run();
+            throw new AssertionError(message);
+        } catch (CompileError error) {
+            if (!code.equals(error.getCode()))
+                throw new AssertionError("expected " + code + ", got " + error.getCode(), error);
         }
     }
 

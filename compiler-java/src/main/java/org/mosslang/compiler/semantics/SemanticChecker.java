@@ -563,16 +563,17 @@ public class SemanticChecker {
                 TypeRef replyType = solver.resolve(expectedReply);
                 if (replyType != null && replyType.kind() != TypeKind.Unit
                         && replyType.kind() != TypeKind.InferenceVar
-                        && !arm.body.stream().anyMatch(statement -> statement.kind == Stmt.Kind.Reply
-                                || statement.kind == Stmt.Kind.Return)) {
+                        && !blockAlwaysReplies(arm.body, 0, arm.body.size())) {
                     throw new CompileError(arm.line, "on_fail arm for value-returning handler must reply",
                             "ON_FAIL_REPLY_REQUIRED");
                 }
-                for (Stmt statement : arm.body) {
-                    if (statement.kind == Stmt.Kind.Raise && statement.indent == 0) {
-                        throw new CompileError(statement.line,
-                                "on_fail arm must handle errors raised by its body",
-                                "ON_FAIL_MUST_HANDLE_ERRORS");
+                if (arm.body.stream().noneMatch(statement -> statement.kind == Stmt.Kind.Try)) {
+                    for (Stmt statement : arm.body) {
+                        if (statement.kind == Stmt.Kind.Raise) {
+                            throw new CompileError(statement.line,
+                                    "on_fail arm must handle errors raised by its body",
+                                    "ON_FAIL_MUST_HANDLE_ERRORS");
+                        }
                     }
                 }
                 if (!handler.failureArms.isEmpty()
@@ -742,6 +743,34 @@ public class SemanticChecker {
             if (selected) selectedEdges.add(snapshot.env);
         }
         return selectedEdges;
+    }
+
+    private boolean blockAlwaysReplies(List<Stmt> statements, int start, int end) {
+        int index = start;
+        while (index < end) {
+            Stmt statement = statements.get(index);
+            if (statement.kind == Stmt.Kind.Reply || statement.kind == Stmt.Kind.Return) return true;
+            if (statement.kind == Stmt.Kind.If) {
+                int thenStart = index + 1;
+                int thenEnd = thenStart;
+                while (thenEnd < end && statements.get(thenEnd).indent > statement.indent) thenEnd++;
+                int elseIndex = thenEnd;
+                if (elseIndex < end && statements.get(elseIndex).kind == Stmt.Kind.Else
+                        && statements.get(elseIndex).indent == statement.indent) {
+                    int elseStart = elseIndex + 1;
+                    int elseEnd = elseStart;
+                    while (elseEnd < end && statements.get(elseEnd).indent > statement.indent) elseEnd++;
+                    if (blockAlwaysReplies(statements, thenStart, thenEnd)
+                            && blockAlwaysReplies(statements, elseStart, elseEnd)) return true;
+                    index = elseEnd;
+                    continue;
+                }
+                index = thenEnd;
+                continue;
+            }
+            index++;
+        }
+        return false;
     }
 
     private void checkFunctions() {
