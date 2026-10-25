@@ -566,7 +566,9 @@ public final class ProjectBuilderMetadataTest {
                 + "export fn flags() -> Vector[Bool]:\n"
                 + "  return [true, false, true]\n"
                 + "export fn ratios() -> Vector[Float]:\n"
-                + "  return [1.5, -2.0, 3.0 / 2.0]\n", "identity-provider.moss");
+                + "  return [1.5, -2.0, 3.0 / 2.0]\n"
+                + "export fn names() -> Vector[String]:\n"
+                + "  return [\"one\", \"two\", \"three\"]\n", "identity-provider.moss");
         new org.mosslang.compiler.semantics.CheckedProgram(identityProgram).run();
         identityProgram.functions.forEach(function -> {
             String name = function.name;
@@ -656,7 +658,7 @@ public final class ProjectBuilderMetadataTest {
                         != org.mosslang.compiler.abi.CheckedExprKind.Binary) {
             throw new AssertionError("ABI-v10 closed Int vector literal body is incomplete");
         }
-        for (String callable : List.of("flags", "ratios")) {
+        for (String callable : List.of("flags", "ratios", "names")) {
             AbiV10Records.CheckedBodyRecord vectorBody = identityInterface.privateSemanticDependencies.stream()
                     .filter(record -> record.id.startsWith("checked-body-v1:"))
                     .map(AbiV10Records.CheckedBodyRecord::decode)
@@ -1121,6 +1123,8 @@ public final class ProjectBuilderMetadataTest {
                     + "  return provider__flags()\n"
                     + "fn use_ratios() -> Vector[Float]:\n"
                     + "  return provider__ratios()\n"
+                    + "fn use_names() -> Vector[String]:\n"
+                    + "  return provider__names()\n"
                     + "fn use_weighted() -> Float:\n"
                     + "  return provider__weighted(2.0, 4.0)\n"
                     + "fn use_adjust_ratio() -> Float:\n"

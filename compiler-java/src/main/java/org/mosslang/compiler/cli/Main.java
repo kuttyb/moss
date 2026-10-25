@@ -1648,7 +1648,7 @@ public class Main {
                     && resultType.kind() == org.mosslang.compiler.types.TypeKind.Builtin
                     && "vector".equalsIgnoreCase(resultType.name())
                     && resultType.typeArgs().size() == 1
-                    && Set.of("int", "float", "bool").contains(
+                    && Set.of("int", "float", "bool", "string").contains(
                             resultType.typeArgs().get(0).name().toLowerCase(java.util.Locale.ROOT))) {
                 returnedLiteral = sourceFreeClosedIntVectorLiteral(statement.expr, parameterTypes,
                         resultType.typeArgs().get(0));
@@ -1900,6 +1900,8 @@ public class Main {
                 org.mosslang.compiler.types.TypeRef.primitive("float");
         org.mosslang.compiler.types.TypeRef boolType =
                 org.mosslang.compiler.types.TypeRef.primitive("bool");
+        org.mosslang.compiler.types.TypeRef stringType =
+                org.mosslang.compiler.types.TypeRef.primitive("string");
         for (org.mosslang.compiler.abi.CheckedExpr element : expression.operands) {
             if (!elementType.equals(element.type)) return null;
             String source;
@@ -1911,6 +1913,10 @@ public class Main {
                     && element.kind == org.mosslang.compiler.abi.CheckedExprKind.BoolLiteral
                     && ("true".equals(element.literalValue) || "false".equals(element.literalValue))) {
                 source = element.literalValue;
+            } else if (stringType.equals(elementType)
+                    && element.kind == org.mosslang.compiler.abi.CheckedExprKind.StringLiteral
+                    && element.literalValue.matches("[^\"\\\\\\r\\n]*")) {
+                source = "\"" + element.literalValue + "\"";
             } else {
                 return null;
             }

@@ -14452,3 +14452,16 @@ All eleven Java unit-test classes pass under ABI-v9 and staged ABI-v10;
 feedback validation and `git diff --check` pass. String vectors, nested or
 generic element shapes, native compilation, Margo provider-consumer linkage,
 SDK integration, and release gates remain open.
+
+### Phase 25.3 continuation — source-free plain String vector returns
+
+Extended the closed primitive-vector ABI-v10 path to include plain `String`
+literal elements without quotes, escapes, or line breaks. The producer emits
+StringLiteral checked nodes and the loader reconstructs quoted Moss literals
+only when each checked element has the summary's String type and its payload
+fits the supported plain-string subset. A provider-consumer regression removes
+legacy body rows and checks an imported `Vector[String]` result.
+
+All eleven Java unit-test classes pass under ABI-v9 and staged ABI-v10;
+feedback validation and `git diff --check` pass. Escaped strings, nested/generic
+vectors, native linkage, SDK integration, and final release gates remain open.

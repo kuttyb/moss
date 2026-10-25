@@ -1768,7 +1768,7 @@ public class ProjectBuilder {
                 || function.returnTypeRef.kind() != org.mosslang.compiler.types.TypeKind.Builtin
                 || !"vector".equalsIgnoreCase(function.returnTypeRef.name())
                 || function.returnTypeRef.typeArgs().size() != 1
-                || !Set.of("int", "float", "bool").contains(
+                || !Set.of("int", "float", "bool", "string").contains(
                         function.returnTypeRef.typeArgs().get(0).name().toLowerCase(Locale.ROOT))
                 || function.body.size() != 1 || function.body.get(0).kind != Stmt.Kind.Return) return null;
         Stmt statement = function.body.get(0);
@@ -1796,6 +1796,11 @@ public class ProjectBuilder {
             } else if (TypeRef.primitive("bool").equals(elementType)) {
                 child = "true".equals(element.trim()) ? CheckedExpr.boolLiteral(true, elementType)
                         : "false".equals(element.trim()) ? CheckedExpr.boolLiteral(false, elementType) : null;
+            } else if (TypeRef.primitive("string").equals(elementType)) {
+                String literal = element.trim();
+                child = literal.matches("\"[^\"\\\\\\r\\n]*\"")
+                        ? CheckedExpr.stringLiteral(literal.substring(1, literal.length() - 1), elementType)
+                        : null;
             } else {
                 child = null;
             }
