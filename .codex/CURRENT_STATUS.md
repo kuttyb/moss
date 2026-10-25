@@ -14245,3 +14245,19 @@ the loop binder while checking a valid method call. After rebuilding the
 reverted source, both ABI Java suites pass again. Keep the loop-shadow mismatch
 open until scope restoration can be added without changing existing body
 binding behavior.
+
+### Phase 25.3 continuation — remove custom iterator name heuristic
+
+The `For` checker rejected any custom iterable whose type name contained
+`Counter` (or whose expression was literally `counter`) before inspecting its
+methods. This fixture-specific rejection blocked the valid
+`phase21_iterator_next_panic.moss` case despite its `next()` body having no
+raise. The name heuristic is removed; the existing explicit scan for a
+`next()` body containing a typed raise remains. A SemanticCheckerTest covers a
+non-raising custom `Counter` iterator.
+
+The fixture and both ABI Java suites pass. The refreshed 91-file checker
+screen reports 3 C++-only, 0 Java-only, 58 accepted by both, and 30 rejected
+by both. Remaining C++-only fixtures are two FileIO/close-related cases and
+`phase21_peer_speculation.moss`'s loop-shadow type restoration gap. Results are
+in disposable `tmp/phase253_phase21_acceptance_current.json`.

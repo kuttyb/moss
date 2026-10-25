@@ -22,6 +22,7 @@ public class SemanticCheckerTest {
         testMixedIntFloatComparisons();
         testObjectMethodAccessModesAreRetained();
         testForLoopValuesCanFlowToObjectMethodArguments();
+        testCustomIteratorNamedCounterWithoutRaisesIsAccepted();
         testObjectMethodArityIsChecked();
         testObjectReceiverWriteEffectPropagatesToFunctionParameter();
         testConsumedObjectParameterLowersByValue();
@@ -664,6 +665,19 @@ public class SemanticCheckerTest {
                 + "      self.increment_by(key, 1)\n"
                 + "fn main():\n"
                 + "  pass\n", "method-loop-argument.moss");
+        new SemanticChecker(program).run();
+    }
+
+    private static void testCustomIteratorNamedCounterWithoutRaisesIsAccepted() {
+        Program program = Parser.parseSource(""
+                + "type Counter:\n"
+                + "  fn next() -> option[Int]:\n"
+                + "    return None\n"
+                + "fn consume(counter: Counter):\n"
+                + "  for value in counter:\n"
+                + "    pass\n"
+                + "fn main():\n"
+                + "  pass\n", "custom-counter-iterator.moss");
         new SemanticChecker(program).run();
     }
 

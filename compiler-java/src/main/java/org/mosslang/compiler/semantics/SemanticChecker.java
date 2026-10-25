@@ -2599,9 +2599,6 @@ public class SemanticChecker {
                 String iterExpr = s.b != null ? s.b.trim() : "";
                 if (!iterExpr.isEmpty()) {
                     TypeRef iterType = typer.infer(iterExpr, s.line, env.typeEnv);
-                    if (iterType.name() != null && (iterType.name().contains("Counter") || iterExpr.equals("counter"))) {
-                        throw new CompileError(s.line, "custom iterator iter()/next() has unresolved or typed-raising effects; checked propagation through for is unsupported", "RAISING_ITERATOR_UNSUPPORTED");
-                    }
                     if (iterType.kind() == TypeKind.Builtin
                             && ("map".equals(iterType.name()) || "queue".equals(iterType.name()))) {
                         throw new CompileError(s.line, "type '" + iterType.toCanonicalString()
