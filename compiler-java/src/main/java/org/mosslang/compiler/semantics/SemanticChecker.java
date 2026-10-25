@@ -2043,10 +2043,10 @@ public class SemanticChecker {
             TypeRef receiverType = resolveReceiverPathType(rootType, receiverPath, root);
             ObjectType receiverObject = receiverType != null
                     ? findObjectType(receiverType.name()) : null;
-            if (receiverObject == null) continue;
-            boolean writesReceiver = receiverObject.methods.stream().anyMatch(method ->
-                    method.name.equals(methodCall.group(2))
-                            && method.receiverAccessMode == AccessMode.Write);
+            boolean writesReceiver = isBuiltinMutatingMethod(receiverType, methodCall.group(2))
+                    || (receiverObject != null && receiverObject.methods.stream().anyMatch(method ->
+                            method.name.equals(methodCall.group(2))
+                                    && method.receiverAccessMode == AccessMode.Write));
             if (writesReceiver) {
                 throw new CompileError(line, "cannot mutate immutable local '" + root
                         + "'; declare it with `var` if mutation is intended",
@@ -3472,8 +3472,10 @@ public class SemanticChecker {
                             "cannot WRITE incoming message payload '" + targetRoot + "'; message payloads are immutable snapshots",
                             "MOSS_COMPILE_ERROR");
                 }
-                if (env.immutables.contains(varName)) {
-                    throw new CompileError(s.line, "cannot mutate immutable variable '" + varName + "' introduced with let (IMMUTABLE_LOCAL_MUTATION)", "IMMUTABLE_LOCAL_MUTATION");
+                if (env.immutables.contains(targetRoot)) {
+                    throw new CompileError(s.line, "cannot mutate immutable local '" + targetRoot
+                            + "'; declare it with `var` if mutation is intended",
+                            "IMMUTABLE_LOCAL_MUTATION");
                 }
                 requireAvailable(s.line, expr, env);
 

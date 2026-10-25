@@ -15910,3 +15910,17 @@ review remain open.
 C++/Java minimal probes found that Java accepted `let cell = Cell(...); cell.update()` and also accepted a `let` object passed to a helper whose inferred parameter mode is WRITE. C++ rejected both with `IMMUTABLE_LOCAL_MUTATION`. Java now resolves direct object-method receiver paths during availability checks and rejects immutable WRITE arguments to inferred or imported helpers. Read-only method calls on a `let` object remain accepted.
 
 Validation: both compilers now reject the two reproductions with matching diagnostic code and message. All twelve Java test classes pass under ABI-v9 and staged ABI-v10; the standalone JAR rebuilds. Broader alias, generic receiver, and branch-sensitive ownership inference remain open. No native/Margo/SDK or full `make check` gate was run.
+
+### Follow-up — apply immutable WRITE checks to built-in collections
+
+The immutable receiver regression also covered built-in Vector, Queue, and Map
+mutations plus indexed assignment. Java had accepted `let` collections passed
+through a move and then mutated with `push`, `pop`, `delete`, or indexed write.
+`requireAvailable` now uses the existing builtin mutation table for receiver
+calls, and assignment validation checks the root binding for indexed writes.
+Four corrected minimal probes now match C++ on both
+`IMMUTABLE_LOCAL_MUTATION` and its diagnostic message.
+
+All twelve Java unit-test classes pass under ABI-v9 and staged ABI-v10; the
+standalone JAR was rebuilt. This closes only the exercised direct builtin paths;
+branch alias, generic receiver, and source-free mutability coverage remain open.

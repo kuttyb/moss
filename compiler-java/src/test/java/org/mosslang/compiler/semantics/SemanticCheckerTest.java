@@ -939,6 +939,30 @@ public class SemanticCheckerTest {
                 + "  let cell = Cell(value: 1)\n"
                 + "  update_cell(cell)\n", "IMMUTABLE_LOCAL_MUTATION");
 
+        assertCompileError(""
+                + "fn main():\n"
+                + "  values = [1]\n"
+                + "  let frozen = values\n"
+                + "  frozen.push(2)\n", "IMMUTABLE_LOCAL_MUTATION");
+        assertCompileError(""
+                + "fn main():\n"
+                + "  values = [1]\n"
+                + "  let frozen = values\n"
+                + "  frozen[0] = 2\n", "IMMUTABLE_LOCAL_MUTATION");
+        assertCompileError(""
+                + "fn main():\n"
+                + "  values = Queue()\n"
+                + "  values.push(1)\n"
+                + "  let frozen = values\n"
+                + "  frozen.pop()\n", "IMMUTABLE_LOCAL_MUTATION");
+        assertCompileError(""
+                + "fn main():\n"
+                + "  values = Map()\n"
+                + "  values[\"x\"] = 1\n"
+                + "  let frozen = values\n"
+                + "  var found = false\n"
+                + "  frozen.delete(\"x\", 0, found)\n", "IMMUTABLE_LOCAL_MUTATION");
+
         Program readOnly = Parser.parseSource(object
                 + "fn main():\n"
                 + "  let cell = Cell(value: 1)\n"
