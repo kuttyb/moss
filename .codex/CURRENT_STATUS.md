@@ -16782,6 +16782,19 @@ both reject the unhandled alias chain and accept its matching `on_fail` control.
 Branch-dependent aliases and native execution remain unverified.
 
 
+### Phase 25.3 continuation — unresolved generic method effects queries
+
+An `effects invoke` query for an untyped `box` parameter calling
+`box.risky(1)` showed Java reporting a fabricated `Int` parameter type and a
+resolved empty effect set; C++ reports an unknown parameter type and marks the
+effect summary conservative/unresolved. Java queries now return `type: null`
+for unannotated parameters and mark unresolved object-method receiver effects
+conservatively. `SemanticQueryEngineTest` passes, and minimized C++/Java outputs
+agree on the parameter type, unresolved flag, and certainty. Other missing
+effect dimensions, complete query schema parity, and native behavior remain
+open.
+
+
 ### Phase 25.3 continuation — same-type branch aliases through helper chains
 
 A branch alias repro assigned `alias = box` in both arms before passing it to

@@ -24,6 +24,7 @@ public final class SemanticQueryEngineTest {
         effectsQueryFollowsLocalObjectMethodRaises();
         effectsQueryFollowsFieldChainMethodRaises();
         effectsQueryFollowsSameObjectMethodRaises();
+        effectsQueryMarksUnresolvedGenericMethodReceivers();
         effectsQueryTracksMultipleRaiseVariantsAcrossRecovery();
         effectsQueryIncludesNamedPipelineCallbackRaises();
         effectsQueryExcludesRecoveredDirectRaises();
@@ -414,6 +415,25 @@ public final class SemanticQueryEngineTest {
         new SemanticChecker(program).run();
         String result = queryEffects(program, "method:Box.calculate");
         assertContains(result, "\"raise_set\": [\"enum:Trouble:Bad\"]");
+    }
+
+    private static void effectsQueryMarksUnresolvedGenericMethodReceivers() {
+        String source = ""
+                + "enum Failure:\n"
+                + "  Bad\n"
+                + "type Box:\n"
+                + "  fn risky(value: Int) -> Int:\n"
+                + "    raise Failure.Bad\n"
+                + "fn invoke(box):\n"
+                + "  result = box.risky(1)\n"
+                + "fn main():\n"
+                + "  pass\n";
+        Program program = Parser.parseSource(source, "effects-query-unresolved-method-receiver.moss");
+        new SemanticChecker(program).run();
+        String json = queryEffects(program, "invoke");
+        assertContains(json, "\"name\": \"box\", \"type\": null, \"effect\": \"READ\"");
+        assertContains(json, "\"unresolved\": true");
+        assertContains(json, "\"certainty\": \"conservative_unresolved\"");
     }
 
     private static void effectsQueryTracksMultipleRaiseVariantsAcrossRecovery() {

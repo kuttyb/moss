@@ -212,6 +212,8 @@ public class SemanticQueryEngine {
             boolean localCaptureRead = false;
             boolean domainRead = false;
             boolean domainWrite = false;
+            boolean unresolvedEffects = queriedFunction != null
+                    && hasUnresolvedObjectMethodReceiver(queriedFunction, program);
             if (queriedDomain != null && queriedHandler != null) {
                 for (Field state : queriedDomain.state) {
                     String identifier = "\\b" + java.util.regex.Pattern.quote(state.name) + "\\b";
@@ -336,7 +338,7 @@ public class SemanticQueryEngine {
                 directEffectsJson = "{\"local_capture_read\":" + localCaptureRead + ",\"local_mutation\":false,"
                         + "\"domain_read\":false,\"domain_write\":false,\"message\":false,"
                         + "\"external_io\":" + externalIo + ",\"may_panic\":" + mayPanic + ",\"raise_set\":"
-                        + raiseJson + ",\"may_diverge\":false,\"unresolved\":false}";
+                        + raiseJson + ",\"may_diverge\":false,\"unresolved\":" + unresolvedEffects + "}";
             } else if (expressionTarget.matches() && program.main != null) {
                 int expressionLine = Integer.parseInt(expressionTarget.group(1));
                 String expression = "";
@@ -393,14 +395,15 @@ public class SemanticQueryEngine {
       "may_panic": %s,
       "raise_set": %s,
       "may_diverge": false,
-      "unresolved": false
+      "unresolved": %s
     },
-    "effect_summary": {"status": "available", "direct": %s, "direct_status": "%s", "transitive": {"local_capture_read": false, "local_mutation": false, "domain_read": %s, "domain_write": %s, "message": %s, "external_io": %s, "may_panic": %s, "raise_set": %s, "may_diverge": false, "unresolved": false}, "transitive_scope": "target", "certainty": "resolved"}%s
+    "effect_summary": {"status": "available", "direct": %s, "direct_status": "%s", "transitive": {"local_capture_read": false, "local_mutation": false, "domain_read": %s, "domain_write": %s, "message": %s, "external_io": %s, "may_panic": %s, "raise_set": %s, "may_diverge": false, "unresolved": %s}, "transitive_scope": "target", "certainty": "%s"}%s
   }
 }""".formatted(command, queriedId, queriedKind, queriedSemanticId, queriedName, queriedEnclosingJson, queriedSourceFile,
                     queriedLine, queriedType, ownershipJson, ownershipJson, valueBoundaryJson, domainRead, domainWrite,
-                    externalIo, mayPanic, raiseJson, directEffectsJson, directEffectStatus, domainRead, domainWrite,
-                    isHandler, externalIo, mayPanic, raiseJson, syncPlanExtra).trim());
+                    externalIo, mayPanic, raiseJson, unresolvedEffects, directEffectsJson, directEffectStatus,
+                    domainRead, domainWrite, isHandler, externalIo, mayPanic, raiseJson, unresolvedEffects,
+                    unresolvedEffects ? "conservative_unresolved" : "resolved", syncPlanExtra).trim());
             return true;
         }
         if ("effects".equals(command) && "main".equals(target)) {
@@ -1342,6 +1345,42 @@ public class SemanticQueryEngine {
         return typeName;
     }
 
+    private static boolean hasUnresolvedObjectMethodReceiver(Function function, Program program) {
+        if (function == null || program == null || program.objects == null) return false;
+        Map<String, TypeRef> bindings = program.localBindingTypes != null
+                ? program.localBindingTypes.getOrDefault(function.name, Map.of()) : Map.of();
+        for (Stmt statement : function.body) {
+            if (statement == null) continue;
+            String expression = (statement.text == null ? "" : statement.text) + " "
+                    + (statement.a == null ? "" : statement.a) + " "
+                    + (statement.b == null ? "" : statement.b);
+            for (ObjectType object : program.objects) {
+                for (Method method : object.methods) {
+                    java.util.regex.Matcher calls = java.util.regex.Pattern.compile(
+                            "(?<![A-Za-z0-9_])((?:self|[A-Za-z_][A-Za-z0-9_]*)(?:\\s*\\.\\s*[A-Za-z_][A-Za-z0-9_]*)*)\\s*\\.\\s*"
+                                    + java.util.regex.Pattern.quote(method.name) + "\\s*\\(")
+                            .matcher(expression);
+                    while (calls.find()) {
+                        String receiverType = resolveObjectMethodReceiverTypeName(
+                                calls.group(1), program, bindings, null);
+                        if (receiverType == null || findObjectType(program, receiverType) == null)
+                            return true;
+                    }
+                    for (String callback : org.mosslang.compiler.parser.ParserSupport
+                            .pipelineCallbacks(expression)) {
+                        int dot = callback.lastIndexOf('.');
+                        if (dot <= 0 || !method.name.equals(callback.substring(dot + 1))) continue;
+                        String receiverType = resolveObjectMethodReceiverTypeName(
+                                callback.substring(0, dot), program, bindings, null);
+                        if (receiverType == null || findObjectType(program, receiverType) == null)
+                            return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
     private static ObjectType findObjectType(Program program, String typeName) {
         if (program == null || program.objects == null || typeName == null) return null;
         for (ObjectType object : program.objects) {
@@ -1989,8 +2028,10 @@ public class SemanticQueryEngine {
                     for (int i = 0; i < fn.params.size(); i++) {
                         if (i > 0) sb.append(",\n");
                         Param p = fn.params.get(i);
-                        String pType = (i < specTypes.size()) ? canonicalQueryType(specTypes.get(i), program)
-                                : canonicalQueryType(p.type != null && !p.type.isEmpty() ? p.type : "Int", program);
+                        String pType = (i < specTypes.size())
+                                ? canonicalQueryType(specTypes.get(i), program)
+                                : (p.type != null && !p.type.isBlank()
+                                        ? canonicalQueryType(p.type, program) : null);
                         String effect = "READ";
                         if (i < fn.parameterAccessModes.size()) {
                             effect = fn.parameterAccessModes.get(i).name().toUpperCase(Locale.ROOT);
@@ -2015,7 +2056,9 @@ public class SemanticQueryEngine {
                                 effect = "CONSUME";
                             }
                         }
-                        sb.append("      {\"name\": \"").append(p.name).append("\", \"type\": \"").append(pType).append("\", \"effect\": \"").append(effect).append("\"}");
+                        sb.append("      {\"name\": \"").append(p.name).append("\", \"type\": ")
+                                .append(pType == null ? "null" : "\"" + jsonString(pType) + "\"")
+                                .append(", \"effect\": \"").append(effect).append("\"}");
                     }
                     sb.append("\n    ]");
                     return sb.toString();

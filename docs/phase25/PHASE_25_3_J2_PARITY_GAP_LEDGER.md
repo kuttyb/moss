@@ -930,3 +930,15 @@ returned exit 1 with one failing assertion and one passing test. This confirms
 actual interpreter-backed project test and benchmark execution rather than
 placeholder success for these small projects. Native project builds,
 multi-crate integration, and SDK validation remain deferred.
+
+
+### Correction — unresolved generic method receiver effects queries
+
+For `fn invoke(box): result = box.risky(1)`, C++ effects output reports the
+unannotated parameter type as unknown and marks the summary
+`conservative_unresolved`; Java had fabricated `Int` and reported certainty
+`resolved`. Java ownership query serialization now preserves unknown parameter
+types as `null`, and effect-query traversal marks an object-method receiver
+unresolved when its nominal type cannot be established. `SemanticQueryEngineTest`
+passes, and minimized C++/Java queries agree on these fields. This is not full
+effects-query schema or dimension parity.
