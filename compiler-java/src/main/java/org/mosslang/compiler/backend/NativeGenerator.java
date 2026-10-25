@@ -355,6 +355,7 @@ public class NativeGenerator {
 
         // Enums
         for (EnumType e : program.enums) {
+            if (e.sourceFree) continue;
             String enumIdentity = "enum:" + e.name + "@" + e.line;
             o.append("// Moss tooling begin|enum|").append(enumIdentity).append("|").append(e.name).append("|\n");
             o.append("// Moss line ").append(e.line).append(": enum ").append(e.name).append(":\n");
@@ -1310,6 +1311,14 @@ public class NativeGenerator {
             }
             return "moss_" + object.definingModule + "::" + object.declarationName;
         }
+        for (EnumType enumeration : program.enums) {
+            if (!enumeration.sourceFree || !enumeration.name.equals(mossType)) continue;
+            if (enumeration.definingModule == null || enumeration.definingModule.isEmpty()
+                    || enumeration.declarationName == null || enumeration.declarationName.isEmpty()) {
+                return mossType;
+            }
+            return "moss_" + enumeration.definingModule + "::" + enumeration.declarationName;
+        }
         return mossType;
     }
 
@@ -1393,7 +1402,8 @@ public class NativeGenerator {
                 blockIsMatch.push(true);
             } else if (s.kind == Stmt.Kind.Case) {
                 String caseName = s.a != null ? s.a.trim() : "";
-                String rustEnum = s.semanticType != null ? s.semanticType.replace(".", "__") : "";
+                String rustEnum = s.semanticType != null
+                        ? sourceFreeRustName(s.semanticType.replace(".", "__"), currentProgram.get()) : "";
                 o.append(indent).append("    ").append(rustEnum).append("::").append(caseName);
                 if (s.args != null && !s.args.isEmpty()) {
                     o.append(" { ");
@@ -1621,7 +1631,7 @@ public class NativeGenerator {
             }
             if (!caseName.isEmpty() && Character.isUpperCase(caseName.charAt(0))
                     && !simpleEnum.isEmpty() && Character.isUpperCase(simpleEnum.charAt(0))) {
-                String rustEnum = enumName.replace(".", "__");
+                String rustEnum = sourceFreeRustName(enumName.replace(".", "__"), currentProgram.get());
                 StringBuilder res = new StringBuilder();
                 res.append(rustEnum).append("::").append(caseName);
                 if (args != null && !args.isEmpty()) {

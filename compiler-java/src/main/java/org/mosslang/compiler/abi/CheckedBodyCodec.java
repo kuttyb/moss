@@ -627,6 +627,33 @@ public class CheckedBodyCodec {
             }
         }
 
+        // Validate the C++-shared textual shape used for exported enum records.
+        Set<String> exportedEnumIds = new HashSet<>();
+        for (MossiRecord record : mossi.semanticContract) {
+            if (!record.payload.startsWith("export enum ")) continue;
+            String[] lines = record.payload.split("\\R");
+            String[] header = lines[0].trim().split("\\s+");
+            if (header.length != 3 || !record.id.matches("[0-9]{8} export .+")) {
+                throw new CompileError(0, "ABI-v10 exported enum record identity is malformed",
+                        "SOURCE_FREE_TYPE_IDENTITY_MISMATCH");
+            }
+            String declarationId = "";
+            for (String line : lines) {
+                if (!line.startsWith("  declaration_id ")) continue;
+                if (!declarationId.isEmpty()) {
+                    throw new CompileError(0, "ABI-v10 exported enum has duplicate declaration identities",
+                            "SOURCE_FREE_TYPE_IDENTITY_MISMATCH");
+                }
+                declarationId = line.substring("  declaration_id ".length()).trim();
+            }
+            String expected = "nominal-enum-v1:" + mossi.moduleId + ":enum:" + header[2];
+            if (!record.id.endsWith(" export " + header[2]) || !declarationId.equals(expected)
+                    || !exportedEnumIds.add(declarationId)) {
+                throw new CompileError(0, "ABI-v10 exported enum identity is malformed or foreign",
+                        "SOURCE_FREE_TYPE_IDENTITY_MISMATCH");
+            }
+        }
+
         // Verify checked bodies in semantic contract
         for (MossiRecord r : mossi.semanticContract) {
             if (r.id.startsWith("checked-body-v1:")) {

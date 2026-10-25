@@ -21,6 +21,7 @@ public class CheckedBodyCodecTest {
         testMossiBinaryPayloadRoundTrip();
         testMossiEncoderRejectsDuplicateIds();
         testNominalRecordsRequireValidProvenanceReferences();
+        testExportedEnumIdentityValidation();
         testMossiRejectsUnboundedCounts();
         testCheckedBodyReaderBoundsAndTrailingData();
         testSourceFreeVerificationSuccess();
@@ -299,6 +300,28 @@ public class CheckedBodyCodecTest {
         try {
             CheckedBodyCodec.verifySourceFree(CheckedBodyCodec.encodeMossiBytes(missingProvenance));
             throw new AssertionError("ABI-v10 verifier accepted a nominal template with missing provenance");
+        } catch (CompileError error) {
+            if (!"SOURCE_FREE_TYPE_IDENTITY_MISMATCH".equals(error.getCode())) throw error;
+        }
+    }
+
+    private static void testExportedEnumIdentityValidation() {
+        String module = "module-v1:enum-pkg@1.0.0::provider";
+        MossiInterface valid = new MossiInterface(module);
+        valid.semanticContract.add(new MossiRecord("00000000 export Result", ""
+                + "export enum Result\n"
+                + "  declaration_id nominal-enum-v1:" + module + ":enum:Result\n"
+                + "  enum_case \"Ok\" 0\n"));
+        CheckedBodyCodec.verifySourceFree(CheckedBodyCodec.encodeMossiBytes(valid));
+
+        MossiInterface foreignIdentity = new MossiInterface(module);
+        foreignIdentity.semanticContract.add(new MossiRecord("00000000 export Result", ""
+                + "export enum Result\n"
+                + "  declaration_id nominal-enum-v1:module-v1:other@1.0.0::provider:enum:Result\n"
+                + "  enum_case \"Ok\" 0\n"));
+        try {
+            CheckedBodyCodec.verifySourceFree(CheckedBodyCodec.encodeMossiBytes(foreignIdentity));
+            throw new AssertionError("ABI-v10 verifier accepted a foreign enum declaration identity");
         } catch (CompileError error) {
             if (!"SOURCE_FREE_TYPE_IDENTITY_MISMATCH".equals(error.getCode())) throw error;
         }

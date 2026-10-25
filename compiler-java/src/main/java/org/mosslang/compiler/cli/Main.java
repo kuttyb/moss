@@ -870,6 +870,7 @@ public class Main {
             boolean inSemanticExports = false;
             org.mosslang.compiler.ast.Function currentFn = null;
             org.mosslang.compiler.ast.ObjectType currentObject = null;
+            org.mosslang.compiler.ast.EnumType currentEnum = null;
             for (String line : text.split("\\R")) {
                 line = line.trim();
                 if (line.equals("contract")) {
@@ -877,6 +878,7 @@ public class Main {
                     inSemanticExports = false;
                     currentFn = null;
                     currentObject = null;
+                    currentEnum = null;
                     continue;
                 }
                 if (line.equals("semantic_exports")) {
@@ -884,6 +886,7 @@ public class Main {
                     inSemanticExports = true;
                     currentFn = null;
                     currentObject = null;
+                    currentEnum = null;
                     continue;
                 }
                 if (line.equals("private_semantic_dependencies") || line.equals("provenance")) {
@@ -891,10 +894,87 @@ public class Main {
                     inSemanticExports = false;
                     currentFn = null;
                     currentObject = null;
+                    currentEnum = null;
+                    continue;
+                }
+
+                if (inSemanticExports && line.startsWith("export enum ")) {
+                    String[] parts = line.split("\\s+");
+                    if (parts.length != 3) {
+                        throw new CompileError("SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+                                "ABI-v10 exported enum header is malformed", cand.toString(), 1);
+                    }
+                    String enumName = parts[2];
+                    currentEnum = program.enums.stream()
+                            .filter(enumeration -> enumeration.name.equals(modName + "__" + enumName))
+                            .findFirst().orElse(null);
+                    if (currentEnum == null) {
+                        currentEnum = new org.mosslang.compiler.ast.EnumType(
+                                modName + "__" + enumName, "enum " + enumName,
+                                1, cand.toString(), true);
+                        currentEnum.definingModule = modName;
+                        currentEnum.declarationName = enumName;
+                        currentEnum.sourceFree = true;
+                        program.enums.add(currentEnum);
+                    }
+                    String aliasName = modName + "." + enumName;
+                    if (program.enums.stream().noneMatch(enumeration -> enumeration.name.equals(aliasName))) {
+                        org.mosslang.compiler.ast.EnumType alias = new org.mosslang.compiler.ast.EnumType(
+                                aliasName, currentEnum.header, currentEnum.line,
+                                currentEnum.sourceFile, true);
+                        alias.definingModule = modName;
+                        alias.declarationName = enumName;
+                        alias.sourceFree = true;
+                        alias.cases = currentEnum.cases;
+                        program.enums.add(alias);
+                    }
+                    currentFn = null;
+                    currentObject = null;
+                    continue;
+                }
+                if (inSemanticExports && line.startsWith("  declaration_id ") && currentEnum != null) {
+                    String declaredId = line.substring("  declaration_id ".length()).trim();
+                    String expectedId = "nominal-enum-v1:" + moduleId + ":enum:" + currentEnum.declarationName;
+                    if (!expectedId.equals(declaredId)) {
+                        throw new CompileError("SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+                                "ABI-v10 exported enum identity is malformed or foreign", cand.toString(), 1);
+                    }
+                    continue;
+                }
+                if (inSemanticExports && currentEnum != null && line.startsWith("enum_case ")) {
+                    String[] words = line.replaceAll("\"[^\"]*\"", " QUOTED ")
+                            .trim().split("\\s+");
+                    List<String> quoted = parseMossiQuotedFields(line);
+                    if (words.length < 3 || quoted.isEmpty()) {
+                        throw new CompileError("SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+                                "ABI-v10 enum case is malformed", cand.toString(), 1);
+                    }
+                    int fieldCount;
+                    try { fieldCount = Integer.parseInt(words[2]); }
+                    catch (NumberFormatException ex) {
+                        throw new CompileError("SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+                                "ABI-v10 enum case field count is malformed", cand.toString(), 1);
+                    }
+                    if (fieldCount < 0 || quoted.size() != 1 + fieldCount * 2) {
+                        throw new CompileError("SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+                                "ABI-v10 enum case payload is incomplete", cand.toString(), 1);
+                    }
+                    String caseName = quoted.get(0);
+                    if (currentEnum.cases.stream().anyMatch(item -> item.name.equals(caseName))) continue;
+                    org.mosslang.compiler.ast.EnumCase enumCase = new org.mosslang.compiler.ast.EnumCase(
+                            caseName, 1, cand.toString());
+                    for (int index = 0; index < fieldCount; index++) {
+                        String fieldName = quoted.get(1 + index * 2);
+                        String fieldType = quoted.get(2 + index * 2);
+                        enumCase.fields.add(new org.mosslang.compiler.ast.Field(
+                                fieldName, fieldType, "", "", 1, cand.toString(), false, false));
+                    }
+                    currentEnum.cases.add(enumCase);
                     continue;
                 }
 
                 if (inSemanticExports && line.startsWith("export type ")) {
+                    currentEnum = null;
                     String[] parts = line.split("\\s+");
                     if (parts.length >= 3) {
                         String typeName = parts[2];

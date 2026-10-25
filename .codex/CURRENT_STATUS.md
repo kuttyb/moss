@@ -12882,3 +12882,19 @@ a template with missing provenance.
 Validation: Java build, all ten Java unit-test classes, and `git diff --check`
 pass. This check covers nominal records only; typed method/summary validation
 and end-to-end native source-free linkage remain open.
+
+### Phase 25.3 continuation — source-free exported enum records
+
+The Java ABI-v10 producer now emits the established semantic `export enum`
+record for exported local enums, including declaration identity and all case
+payload fields. The shared verifier checks the record ID/name and module-bound
+enum identity. The CLI source-free loader restores canonical and qualified
+aliases with case payloads, and native Rust projection uses the provider crate
+type path without redefining the imported enum. The focused consumer test
+constructs and returns a payload enum variant.
+
+Validation: Java build, all ten Java unit-test classes, and `git diff --check`
+pass. The verifier rejects a correctly sealed enum record with a foreign
+identity. Native Rust compilation and end-to-end Margo provider/consumer
+linkage remain unverified; broader ABI-v10 summaries/method templates remain
+open.

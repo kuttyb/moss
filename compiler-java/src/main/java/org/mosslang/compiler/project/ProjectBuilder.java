@@ -895,6 +895,18 @@ public class ProjectBuilder {
         out.append("\n");
     }
 
+    static MossiRecord v10ExportedEnumRecord(EnumType enumeration, String module,
+                                             String moduleId, int ordinal) {
+        String enumName = localTypeName(enumeration.name, module);
+        StringBuilder payload = new StringBuilder()
+                .append("export enum ").append(enumName).append("\n")
+                .append("  declaration_id nominal-enum-v1:")
+                .append(moduleId).append(":enum:").append(enumName).append("\n");
+        for (EnumCase enumCase : enumeration.cases) appendEnumCaseSemantic(payload, enumCase);
+        String id = String.format(Locale.ROOT, "%08d export %s", ordinal, enumName);
+        return new MossiRecord(id, payload.toString());
+    }
+
     static String v10ImportRecord(String dependencyName, SourceFreeAbi.MossiInfo dependency,
                                   Path dependencyArtifact) throws CompileError {
         if (dependency == null || dependency.moduleId == null
@@ -1230,6 +1242,7 @@ public class ProjectBuilder {
             List<String[]> semRecords = new ArrayList<>();
             List<MossiRecord> nominalRecords = new ArrayList<>();
             List<AbiV10Records.SourceProvenance> provenanceRecords = new ArrayList<>();
+            int exportedEnumOrdinal = 0;
 
             for (EnumType e : prog.enums) {
                 StringBuilder b = new StringBuilder();
@@ -1238,6 +1251,13 @@ public class ProjectBuilder {
                     appendEnumCaseContract(b, c);
                 }
                 binRecords.add(new String[]{"enum:" + e.name, b.toString()});
+                if (e.exported && !e.sourceFree
+                        && (e.definingModule == null || e.definingModule.isEmpty()
+                            || e.definingModule.equals(module))) {
+                    MossiRecord record = v10ExportedEnumRecord(e, module, modId,
+                            exportedEnumOrdinal++);
+                    semRecords.add(new String[]{record.id, record.payload});
+                }
             }
 
             for (Domain d : prog.domains) {

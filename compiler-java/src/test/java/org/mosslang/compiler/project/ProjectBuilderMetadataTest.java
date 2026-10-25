@@ -1,6 +1,7 @@
 package org.mosslang.compiler.project;
 
 import org.mosslang.compiler.ast.EnumCase;
+import org.mosslang.compiler.ast.EnumType;
 import org.mosslang.compiler.ast.Field;
 import org.mosslang.compiler.ast.Function;
 import org.mosslang.compiler.ast.Param;
@@ -29,6 +30,17 @@ public final class ProjectBuilderMetadataTest {
         ProjectBuilder.appendEnumCaseSemantic(semantic, payload);
         assertEquals("  enum_case \"Rgb\" 3 \"red\" \"int\" \"green\" \"float\" \"blue\" \"string\"\n",
                 semantic.toString());
+        EnumType exportedEnum = new EnumType("provider__Color", "enum Color", 1,
+                "metadata.moss", true);
+        exportedEnum.cases.add(payload);
+        MossiRecord enumRecord = ProjectBuilder.v10ExportedEnumRecord(exportedEnum,
+                "provider", "module-v1:sample@1.0.0::provider", 0);
+        assertEquals("00000000 export Color", enumRecord.id);
+        if (!enumRecord.payload.contains("nominal-enum-v1:module-v1:sample@1.0.0::provider:enum:Color")
+                || !enumRecord.payload.contains("enum_case \"Rgb\" 3")) {
+            throw new AssertionError("ABI-v10 exported enum semantic record is incomplete: "
+                    + enumRecord.payload);
+        }
         testV10ImportRecordRequiresModuleBoundHashes();
         testV10SectionHashValidation();
         testV10Utf8InterfaceValidation();

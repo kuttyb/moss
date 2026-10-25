@@ -1,6 +1,7 @@
 package org.mosslang.compiler.cli;
 
 import org.mosslang.compiler.ast.ObjectType;
+import org.mosslang.compiler.ast.EnumType;
 import org.mosslang.compiler.ast.Program;
 import org.mosslang.compiler.ast.Function;
 import org.mosslang.compiler.ast.Param;
@@ -148,6 +149,11 @@ public final class SourceFreeObjectMetadataTest {
                 + "  object_method replace return=unit receiver=WRITE "
                 + "effects=local_capture_read=0;local_mutation=0;domain_read=0;domain_write=0;message=0;external_io=0;fileio=0;fileio_unknown=0;may_panic=0;raise_set=-;may_diverge=0;unresolved=0 "
                 + "params=1 \"next\" \"Vector[Int]\" CONSUME\n"));
+        v10.semanticContract.add(new MossiRecord("00000000 export Outcome", ""
+                + "export enum Outcome\n"
+                + "  declaration_id nominal-enum-v1:module-v1:sample@0.1.0::provider:enum:Outcome\n"
+                + "  enum_case \"Ready\" 1 \"code\" \"int\"\n"
+                + "  enum_case \"Done\" 0\n"));
         Path v10File = scratch.resolve("provider-v10.mossi");
         String encodedV10 = CheckedBodyCodec.encodeMossi(v10);
         Files.writeString(v10File, encodedV10, java.nio.charset.StandardCharsets.UTF_8);
@@ -170,6 +176,28 @@ public final class SourceFreeObjectMetadataTest {
                 || v10Point.methods.get(0).parameterAccessModes.get(0)
                         != org.mosslang.compiler.types.AccessMode.Consume) {
             throw new AssertionError("ABI-v10 source-free object method facts were not restored");
+        }
+        EnumType v10Outcome = v10Consumer.enums.stream()
+                .filter(enumeration -> enumeration.name.equals("provider__Outcome"))
+                .findFirst().orElseThrow(() -> new AssertionError(
+                        "ABI-v10 source-free enum was not imported"));
+        if (!v10Outcome.sourceFree || v10Outcome.cases.size() != 2
+                || !"Ready".equals(v10Outcome.cases.get(0).name)
+                || v10Outcome.cases.get(0).fields.size() != 1
+                || !"code".equals(v10Outcome.cases.get(0).fields.get(0).name)) {
+            throw new AssertionError("ABI-v10 source-free enum payload was not restored");
+        }
+        Program enumConsumer = Parser.parseSource(""
+                + "fn choose() -> provider__Outcome:\n"
+                + "  return provider__Outcome.Ready(code=1)\n"
+                + "fn main():\n"
+                + "  pass\n", "enum-consumer.moss");
+        Main.loadMossiFunctions(v10File, "provider", enumConsumer);
+        new SemanticChecker(enumConsumer).run();
+        String enumRust = NativeGenerator.generate(enumConsumer, false);
+        if (!enumRust.contains("moss_provider::Outcome::Ready")
+                || enumRust.contains("pub enum provider__Outcome")) {
+            throw new AssertionError("source-free enum did not lower to its provider crate: " + enumRust);
         }
         Files.deleteIfExists(interfaceFile);
         Files.deleteIfExists(v10File);
