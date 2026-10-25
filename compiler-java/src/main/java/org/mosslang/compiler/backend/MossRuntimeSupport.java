@@ -108,13 +108,23 @@ impl __MossFile {
     pub fn close(&self) {}
 }
 #[allow(dead_code, non_camel_case_types)]
-#[derive(Clone, Debug, Default)]
-pub struct __MossExecutor;
+pub struct __MossExecutor {
+    pending: std::vec::Vec<Box<dyn FnOnce() + Send + 'static>>,
+}
 impl __MossExecutor {
+    pub fn new() -> Self { Self { pending: std::vec::Vec::new() } }
     pub fn threads(self, _n: i64) -> Self { self }
+    pub fn max_threads(self, _n: i64) -> Self { self }
+    pub fn affinity(self, _cores: std::vec::Vec<i64>) -> Self { self }
+    pub fn priority(self, _level: i64) -> Self { self }
     pub fn start(self) -> Self { self }
-    pub fn invoke<T>(&self, _val: T) {}
-    pub fn join(&self) {}
+    pub fn enqueue<F>(&mut self, work: F)
+    where F: FnOnce() + Send + 'static {
+        self.pending.push(Box::new(work));
+    }
+    pub fn join(&mut self) {
+        for work in std::mem::take(&mut self.pending) { work(); }
+    }
 }
 // ─── End Phase 20 Executor Runtime ───────────────────────────────────────
 """;

@@ -4,6 +4,7 @@ import org.mosslang.compiler.ast.*;
 import org.mosslang.compiler.semantics.ExpressionTyper;
 import org.mosslang.compiler.semantics.SemanticChecker;
 import org.mosslang.compiler.types.TypeKind;
+import org.mosslang.compiler.types.TypeRef;
 import java.util.*;
 
 public class NativeGenerator {
@@ -1984,6 +1985,45 @@ public class NativeGenerator {
                             .append(lowerExpr(expr, stateFields, domains, objects)).append(";\n");
                 }
             }
+            case Call -> {
+                Program program = currentProgram.get();
+                TypeRef executorType = program == null || s.a == null ? null
+                        : program.localBindingTypes.getOrDefault("main", Map.of()).get(s.a.trim());
+                if ("invoke".equals(s.b) && executorType != null
+                        && executorType.kind() == TypeKind.Primitive
+                        && "Executor".equals(executorType.name())) {
+                    if (s.args.size() != 1)
+                        throw new IllegalStateException("checked Executor.invoke must have one handler call");
+                    String invocation = s.args.get(0).trim();
+                    int open = invocation.indexOf('(');
+                    int close = invocation.endsWith(")") ? invocation.length() - 1 : -1;
+                    int dot = open > 0 ? invocation.lastIndexOf('.', open) : -1;
+                    if (dot <= 0 || close < open)
+                        throw new IllegalStateException("checked Executor.invoke target is malformed: " + invocation);
+                    String receiver = invocation.substring(0, dot).trim();
+                    String handler = invocation.substring(dot + 1, open).trim();
+                    String rawArgs = invocation.substring(open + 1, close).trim();
+                    List<String> arguments = rawArgs.isEmpty() ? List.of() : splitTopLevel(rawArgs, ',');
+                    String domainTemp = "__moss_executor_domain_" + s.line;
+                    o.append(indent).append("{ let ").append(domainTemp).append(" = ")
+                            .append(lowerExpr(receiver, stateFields, domains, objects)).append(".clone();\n");
+                    List<String> argumentTemps = new ArrayList<>();
+                    for (int index = 0; index < arguments.size(); index++) {
+                        String temp = "__moss_executor_arg_" + s.line + "_" + index;
+                        String argument = arguments.get(index).trim();
+                        o.append(indent).append("    let ").append(temp).append(" = ")
+                                .append(lowerExpr(argument, stateFields, domains, objects)).append(".clone();\n");
+                        argumentTemps.add(temp);
+                    }
+                    o.append(indent).append("    ").append(s.a.trim())
+                            .append(".enqueue(Box::new(move || ").append(domainTemp).append(".")
+                            .append(handler).append("_shared(").append(String.join(", ", argumentTemps))
+                            .append(")));\n").append(indent).append("}\n");
+                } else {
+                    String text = s.text != null ? s.text.trim() : "";
+                    if (!text.isEmpty()) o.append(indent).append(lowerExpr(text, stateFields, domains, objects)).append(";\n");
+                }
+            }
             case Message -> {
                 String receiver = s.a != null ? s.a.trim() : "";
                 String handler = s.b != null ? s.b.trim() : "";
@@ -2783,6 +2823,8 @@ public class NativeGenerator {
                                     Map<String, ObjectType> objects) {
         if (expr == null) return "";
         expr = expr.trim();
+        String executorChain = lowerExecutorChain(expr, stateFields, domains, objects);
+        if (executorChain != null) return executorChain;
         while (hasOuterParens(expr)) {
             expr = expr.substring(1, expr.length() - 1).trim();
         }
@@ -3648,5 +3690,41 @@ public class NativeGenerator {
         }
 
         return expr;
+    }
+
+    private static String lowerExecutorChain(String expression, Set<String> stateFields,
+                                             Map<String, Domain> domains,
+                                             Map<String, ObjectType> objects) {
+        String prefix = "Executor()";
+        if (!expression.startsWith(prefix)) return null;
+        StringBuilder lowered = new StringBuilder("__MossExecutor::new()");
+        int cursor = prefix.length();
+        while (cursor < expression.length()) {
+            if (expression.charAt(cursor) != '.') return null;
+            int nameStart = ++cursor;
+            while (cursor < expression.length()
+                    && (Character.isLetterOrDigit(expression.charAt(cursor))
+                            || expression.charAt(cursor) == '_')) cursor++;
+            if (nameStart == cursor || cursor >= expression.length() || expression.charAt(cursor) != '(')
+                return null;
+            int close = -1;
+            for (int candidate = expression.length() - 1; candidate >= cursor; candidate--) {
+                if (expression.charAt(candidate) == ')'
+                        && ExpressionTyper.findMatchingOpenParen(expression, candidate) == cursor) {
+                    close = candidate;
+                    break;
+                }
+            }
+            if (close < 0) return null;
+            String method = expression.substring(nameStart, cursor);
+            String rawArgs = expression.substring(cursor + 1, close).trim();
+            List<String> args = rawArgs.isEmpty() ? List.of() : splitTopLevel(rawArgs, ',');
+            List<String> loweredArgs = new ArrayList<>();
+            for (String argument : args)
+                loweredArgs.add(lowerExpr(argument.trim(), stateFields, domains, objects));
+            lowered.append('.').append(method).append('(').append(String.join(", ", loweredArgs)).append(')');
+            cursor = close + 1;
+        }
+        return lowered.toString();
     }
 }

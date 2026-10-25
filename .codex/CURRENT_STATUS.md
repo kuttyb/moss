@@ -16450,7 +16450,22 @@ methods now validate arity, integer and vector types, literal thread bounds,
 max-thread ordering, and unknown methods.
 
 The 13 Executor/FileIO negatives from the 51–100 sample all reject in Java,
-and `tests/phase20_executor_basic.moss` remains accepted. These are checker
-screens; the Java executor runtime is still a stub and native execution or
-Rust compilation has not been run. Full ABI-v9/v10 Java tests and feedback
-validation are the next local checks. Native and release gates remain unrun.
+and `tests/phase20_executor_basic.moss` remains accepted. Java Rust lowering
+now snapshots the target and arguments, queues a one-way handler closure, and
+drains queued roots at `join()` using a deterministic sequential runtime.
+Generated Rust was inspected, not compiled. This runtime does not implement
+parallel worker scheduling, so production concurrency behavior remains open.
+All 12 Java test classes pass under ABI-v9 and staged ABI-v10. The standalone
+JAR packages successfully, and the packaged launcher generated the expected
+queue and handler-call Rust for the positive Executor fixture. Feedback
+validation and `git diff --check` pass. Rust compilation/native execution have
+not been run. Native and release gates remain unrun.
+
+This is a bounded Executor lowering step, not a feature-complete runtime: the
+current queue drains sequentially and ignores worker configuration. Remaining
+Phase 25.3 scope includes broader semantic and codegen coverage, actual
+Executor concurrency/configuration semantics, source-free ABI-v9/v10
+compatibility evidence, Fast Debug/tracing parity, real Margo builds/tests and
+benchmarks, standalone launcher/daemon readiness, SDK compatibility, then the
+frozen-candidate native and SDK acceptance gates and independent Architect
+review. No release-candidate SHA is frozen.

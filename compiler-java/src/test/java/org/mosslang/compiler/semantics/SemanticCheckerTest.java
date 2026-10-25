@@ -1282,14 +1282,24 @@ public class SemanticCheckerTest {
 
         Program valid = Parser.parseSource(""
                 + "domain Worker:\n"
-                + "  fn Process():\n"
+                + "  fn Process(amount: Int):\n"
                 + "    pass\n"
                 + "fn main():\n"
                 + "  worker = Worker()\n"
                 + "  executor = Executor().threads(1).start()\n"
-                + "  executor.invoke(worker.Process())\n"
+                + "  executor.invoke(worker.Process(1))\n"
                 + "  executor.join()\n", "executor-valid-lifecycle.moss");
         new SemanticChecker(valid).run();
+        String rust = NativeGenerator.generate(valid, false);
+        if (!rust.contains("__MossExecutor::new().threads(1_i64).start()")
+                || !rust.contains("pub fn enqueue<F>(&mut self, work: F)")
+                || !rust.contains("for work in std::mem::take(&mut self.pending)")
+                || !rust.contains("executor.enqueue(Box::new(move ||")
+                || !rust.contains("worker.clone()")
+                || !rust.contains("Process_shared(__moss_executor_arg_")
+                || !rust.contains("1_i64.clone()")) {
+            throw new AssertionError("Executor lowering must defer an owned one-way handler call until join");
+        }
     }
 
     private static void testRecursionThroughFunctionalCallbacksIsRejected() {
