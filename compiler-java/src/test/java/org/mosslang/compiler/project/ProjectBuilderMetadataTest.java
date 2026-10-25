@@ -989,6 +989,10 @@ public final class ProjectBuilderMetadataTest {
                 + "  return -value + .5\n"
                 + "export fn is_positive(value: Int) -> Bool:\n"
                 + "  return value > 0\n"
+                + "export fn is_less_method(left: Int, right: Int) -> Bool:\n"
+                + "  return left.less(right)\n"
+                + "export fn is_equal_method(left: Int, right: Int) -> Bool:\n"
+                + "  return left.isequal(right)\n"
                 + "export fn is_in_range(value: Int) -> Bool:\n"
                 + "  return value >= 0 and value < 10\n"
                 + "export fn is_nonnegative(value: Int) -> Bool:\n"
@@ -1578,7 +1582,9 @@ public final class ProjectBuilderMetadataTest {
                             || record.id.contains("combine") || record.payload.contains("fn combine")
                             || record.id.contains("negative") || record.payload.contains("fn negative")
                             || record.id.contains("weighted") || record.payload.contains("fn weighted")
-                            || record.id.contains("is_in_range") || record.payload.contains("fn is_in_range"))
+                            || record.id.contains("is_in_range") || record.payload.contains("fn is_in_range")
+                            || record.id.contains("is_less_method") || record.payload.contains("fn is_less_method")
+                            || record.id.contains("is_equal_method") || record.payload.contains("fn is_equal_method"))
                     .toList();
             if (answerRows.isEmpty()) {
                 throw new AssertionError("could not isolate legacy callable declarations for ABI-v10-only import");
@@ -1598,9 +1604,11 @@ public final class ProjectBuilderMetadataTest {
                             || record.id.equals("fn:combine") || record.id.startsWith("fn:combine::")
                             || record.id.equals("fn:negative") || record.id.startsWith("fn:negative::")
                             || record.id.equals("fn:weighted") || record.id.startsWith("fn:weighted::")
-                            || record.id.equals("fn:is_in_range") || record.id.startsWith("fn:is_in_range::"))
+                            || record.id.equals("fn:is_in_range") || record.id.startsWith("fn:is_in_range::")
+                            || record.id.equals("fn:is_less_method") || record.id.startsWith("fn:is_less_method::")
+                            || record.id.equals("fn:is_equal_method") || record.id.startsWith("fn:is_equal_method::"))
                     .toList();
-            for (String functionName : List.of("answer", "increment", "enabled", "names", "identity", "second", "fresh", "matrix", "escaped_names", "ratio", "greeting", "combine", "negative", "weighted", "is_in_range")) {
+            for (String functionName : List.of("answer", "increment", "enabled", "names", "identity", "second", "fresh", "matrix", "escaped_names", "ratio", "greeting", "combine", "negative", "weighted", "is_in_range", "is_less_method", "is_equal_method")) {
                 String legacyPrefix = "fn:" + functionName;
                 if (answerRows.stream().noneMatch(record -> record.id.equals(legacyPrefix)
                                 || record.id.startsWith(legacyPrefix + "::"))
@@ -1613,7 +1621,7 @@ public final class ProjectBuilderMetadataTest {
             identityInterface.binaryContract.removeAll(binaryLegacyRows);
             for (String functionName : List.of("answer", "increment", "enabled", "names", "identity",
                     "second", "fresh", "matrix", "escaped_names", "ratio", "greeting", "combine", "negative",
-                    "weighted", "is_in_range")) {
+                    "weighted", "is_in_range", "is_less_method", "is_equal_method")) {
                 String legacyPrefix = "fn:" + functionName;
                 if (identityInterface.semanticContract.stream().anyMatch(record ->
                                 record.id.equals(legacyPrefix) || record.id.startsWith(legacyPrefix + "::"))
@@ -1645,6 +1653,8 @@ public final class ProjectBuilderMetadataTest {
                     + "  echo provider__combine(20, 8)\n"
                     + "  echo provider__negative()\n"
                     + "  echo provider__weighted(2.0, 4.0)\n"
+                    + "  echo provider__is_less_method(2, 3)\n"
+                    + "  echo provider__is_equal_method(2, 2)\n"
                     + "  echo provider__is_in_range(7)\n"
                     + "  echo use_fresh_int().len()\n"
                     + "  echo use_fresh_bool().len()\n", "answer-consumer.moss");
@@ -1665,7 +1675,7 @@ public final class ProjectBuilderMetadataTest {
             new org.mosslang.compiler.interpreter.FastInterpreter(answerConsumer, false,
                     new java.io.PrintStream(answerOutput),
                     new java.io.PrintStream(new java.io.ByteArrayOutputStream())).run();
-            if (!"42\n42\ntrue\ntwo\n7\nseven\nseven\n3\n10\n14\n1.5\nhello\n64\n-42\n7.0\ntrue\n0\n0\n".equals(
+            if (!"42\n42\ntrue\ntwo\n7\nseven\nseven\n3\n10\n14\n1.5\nhello\n64\n-42\n7.0\ntrue\ntrue\ntrue\n0\n0\n".equals(
                     answerOutput.toString(java.nio.charset.StandardCharsets.UTF_8))) {
                 throw new AssertionError("ABI-v10 summary bodies did not import without their v9 declarations: "
                         + answerOutput);

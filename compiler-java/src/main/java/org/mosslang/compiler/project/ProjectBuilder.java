@@ -2124,6 +2124,30 @@ public class ProjectBuilder {
             expression = expression.substring(1, expression.length() - 1).trim();
         }
         TypeRef boolType = TypeRef.primitive("bool");
+        if (!floatOperands) {
+            java.util.regex.Matcher scalarMethod = java.util.regex.Pattern.compile(
+                    "^([A-Za-z_][A-Za-z0-9_]*)\\.(less|isequal)\\(([A-Za-z_][A-Za-z0-9_]*)\\)$")
+                    .matcher(expression);
+            if (scalarMethod.matches()) {
+                int leftIndex = -1;
+                int rightIndex = -1;
+                for (int index = 0; index < function.params.size(); index++) {
+                    String parameter = function.params.get(index).name;
+                    if (parameter.equals(scalarMethod.group(1))) leftIndex = index;
+                    if (parameter.equals(scalarMethod.group(3))) rightIndex = index;
+                }
+                if (leftIndex >= 0 && rightIndex >= 0) {
+                    TypeRef intType = TypeRef.primitive("int");
+                    CheckedExpr left = CheckedExpr.parameter(leftIndex, intType);
+                    CheckedExpr right = CheckedExpr.parameter(rightIndex, intType);
+                    org.mosslang.compiler.abi.CheckedBinaryOp operation =
+                            "less".equals(scalarMethod.group(2))
+                                    ? org.mosslang.compiler.abi.CheckedBinaryOp.Less
+                                    : org.mosslang.compiler.abi.CheckedBinaryOp.Equal;
+                    return CheckedExpr.binary(operation, left, right, boolType);
+                }
+            }
+        }
         if ("true".equals(expression) || "false".equals(expression)) {
             return CheckedExpr.boolLiteral("true".equals(expression), boolType);
         }

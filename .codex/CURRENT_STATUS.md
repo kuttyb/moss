@@ -16054,3 +16054,19 @@ and String `to_string`, so those are Java semantic tests rather than differentia
 runtime claims. Generated Rust was inspected by focused assertions but not
 compiled. Standalone packaging and `moss-0.1` bootstrap pass; native and wider
 release gates remain open.
+
+### Phase 25.3 continuation — source-free ABI-v10 Int scalar predicates
+
+Extended the bounded source-free callable-body profile to encode `Int.less`
+and `Int.isequal` calls as canonical checked `Less` and `Equal` expressions.
+The conversion is limited to Int parameters: Float `isequal` has NaN and
+signed-zero semantics that ordinary checked equality would not preserve. The
+ABI-v10 provider/consumer regression removes both legacy declarations and body
+records, then imports and executes each callable from its source-free summary.
+
+Validation: all twelve Java test classes pass under ABI-v9 and staged ABI-v10;
+the standalone package rebuilds and its launcher reports version 0.1.0 with
+bootstrap language version `moss-0.1`. Native compilation and source-free
+native execution remain unverified. The profile still supports only its
+explicitly recognized expression shapes; broader source-free callable and
+effect coverage remain open.
