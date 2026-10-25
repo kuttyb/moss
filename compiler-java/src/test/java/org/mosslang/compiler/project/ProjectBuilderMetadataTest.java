@@ -339,7 +339,13 @@ public final class ProjectBuilderMetadataTest {
                 + "export fn increment(value: Int) -> Int:\n"
                 + "  return value + 1\n"
                 + "export fn scale(value: Int) -> Int:\n"
-                + "  return value * 2\n", "identity-provider.moss");
+                + "  return value * 2\n"
+                + "export fn subtract(value: Int) -> Int:\n"
+                + "  return value - 2\n"
+                + "export fn divide(value: Int) -> Int:\n"
+                + "  return value / 2\n"
+                + "export fn modulo(value: Int) -> Int:\n"
+                + "  return value % 2\n", "identity-provider.moss");
         new org.mosslang.compiler.semantics.CheckedProgram(identityProgram).run();
         identityProgram.functions.forEach(function -> {
             String name = function.name;
@@ -527,6 +533,26 @@ public final class ProjectBuilderMetadataTest {
                 || !"2".equals(scaleStatements.get(0).expr.operands.get(1).literalValue)) {
             throw new AssertionError("ABI-v10 integer-multiply checked body is incomplete");
         }
+        java.util.Map<String, org.mosslang.compiler.abi.CheckedBinaryOp> integerOperations =
+                java.util.Map.of("subtract", org.mosslang.compiler.abi.CheckedBinaryOp.Sub,
+                        "divide", org.mosslang.compiler.abi.CheckedBinaryOp.Div,
+                        "modulo", org.mosslang.compiler.abi.CheckedBinaryOp.Mod);
+        for (java.util.Map.Entry<String, org.mosslang.compiler.abi.CheckedBinaryOp> operation
+                : integerOperations.entrySet()) {
+            AbiV10Records.CheckedBodyRecord operationBody = identityInterface.privateSemanticDependencies.stream()
+                    .filter(record -> record.id.startsWith("checked-body-v1:"))
+                    .map(AbiV10Records.CheckedBodyRecord::decode)
+                    .filter(body -> body.callableId.endsWith(":fn:" + operation.getKey()))
+                    .findFirst().orElseThrow(() -> new AssertionError(
+                            "ABI-v10 producer omitted integer-" + operation.getKey() + " body"));
+            java.util.List<org.mosslang.compiler.abi.CheckedStmt> operationStatements =
+                    CheckedBodyCodec.decodeCheckedBody(operationBody.checkedIrBytes);
+            if (operationStatements.size() != 1
+                    || operationStatements.get(0).expr.kind != org.mosslang.compiler.abi.CheckedExprKind.Binary
+                    || operationStatements.get(0).expr.binaryOp != operation.getValue()) {
+                throw new AssertionError("ABI-v10 integer-" + operation.getKey() + " checked body is incomplete");
+            }
+        }
         Path identityMossi = null;
         try {
             identityMossi = Files.createTempFile(Path.of("tmp"), "identity-provider-", ".mossi");
@@ -560,6 +586,12 @@ public final class ProjectBuilderMetadataTest {
                     + "  return provider__increment(41)\n"
                     + "fn use_scale() -> Int:\n"
                     + "  return provider__scale(21)\n"
+                    + "fn use_subtract() -> Int:\n"
+                    + "  return provider__subtract(43)\n"
+                    + "fn use_divide() -> Int:\n"
+                    + "  return provider__divide(42)\n"
+                    + "fn use_modulo() -> Int:\n"
+                    + "  return provider__modulo(43)\n"
                     + "fn main():\n"
                     + "  pass\n", "identity-consumer.moss");
             org.mosslang.compiler.cli.Main.loadMossiFunctions(identityMossi, "provider", consumer);

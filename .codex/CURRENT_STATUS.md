@@ -13316,8 +13316,9 @@ end-to-end Java test removes legacy generic body rows from the provider
 interface, then checks imported Int and String specializations, including a
 two-parameter callable that returns its second argument, zero-argument integer,
 boolean, and positive float constant functions, a concrete `Vector[Int]`
-direct-return callable, and checked `Int + Int` / `Int * Int` return calls. The
-collection signature retains its nested element type during source-free semantic checking.
+direct-return callable, and checked `Int` calls covering addition, subtraction,
+multiplication, division, and modulo by a nonnegative literal. The collection
+signature retains its nested element type during source-free semantic checking.
 General body projection, nominal type resolution, generic operator
 requirements, effect projection, and native source-free provider-consumer
 validation remain open.
