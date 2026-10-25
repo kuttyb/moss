@@ -2978,8 +2978,19 @@ public class SemanticChecker {
                     while (caseEnd < matchEnd && stmts.get(caseEnd).indent > caseStmt.indent) {
                         caseEnd++;
                     }
-                    caseEnvs.add(checkBlock(stmts, caseIndex + 1, caseEnd, caseEnv, typer, solver,
-                            insideHandler, enclosingName, expectedType));
+                    Set<String> shadowedMessagePayloads = new HashSet<>();
+                    for (String binder : caseStmt.args) {
+                        if (currentMessagePayloads.contains(binder)) {
+                            currentMessagePayloads.remove(binder);
+                            shadowedMessagePayloads.add(binder);
+                        }
+                    }
+                    try {
+                        caseEnvs.add(checkBlock(stmts, caseIndex + 1, caseEnd, caseEnv, typer, solver,
+                                insideHandler, enclosingName, expectedType));
+                    } finally {
+                        currentMessagePayloads.addAll(shadowedMessagePayloads);
+                    }
                     caseIndex = caseEnd;
                 }
                 if (seenCases.size() != variants.size()) {

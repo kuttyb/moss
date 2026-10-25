@@ -15787,3 +15787,22 @@ produce the same `MOSS_COMPILE_ERROR` and message on the minimal reproducer.
 All twelve Java test classes pass under ABI-v9 and staged ABI-v10. This closes
 the exercised direct move case; broader ownership and cross-module effects
 remain open.
+
+
+### Phase 25.3 continuation — preserve case-binder shadowing of message payloads
+
+The direct move guard for incoming message payloads initially keyed only by
+identifier text. A valid `match consume` case binder with the same name as a
+handler payload was therefore misclassified as the incoming payload. Java now
+suspends that restriction for the case binder's lexical scope and restores it
+when the case ends. C++ and Java both accept the reduced shadowing program, and
+the direct assignment of the incoming payload into handler state remains
+rejected with matching `MOSS_COMPILE_ERROR` diagnostics.
+
+Validation: all twelve Java unit-test classes pass under ABI-v9 and staged
+ABI-v10. A sixteen-file standalone acceptance sample spanning syntax,
+collections, domains, pipelines, effects, and immutable message payloads had
+matching C++/Java acceptance. The standalone JAR was rebuilt; its version,
+bootstrap (`moss-0.1`), and the shadowing program pass. These remain focused
+checks; native correctness, broad source-free execution, Margo/SDK acceptance,
+and final review are open.
