@@ -41,6 +41,7 @@ public class SemanticCheckerTest {
         testWhileZeroIterationDoesNotInitializeCapture();
         testOnFailReplyMustCoverEveryBranch();
         testOnFailRejectsBranchEscapingRaise();
+        testUnreachableRecoverDoesNotConsumeReachableOwnership();
         System.out.println("SemanticCheckerTest PASSED.");
     }
 
@@ -758,6 +759,27 @@ public class SemanticCheckerTest {
         if (!rust.contains("pub fn update(&mut self, next: i64)")) {
             throw new AssertionError("nested object field write must lower with mutable self");
         }
+    }
+
+    private static void testUnreachableRecoverDoesNotConsumeReachableOwnership() {
+        Program program = Parser.parseSource(""
+                + "enum Failure:\n"
+                + "  A\n"
+                + "  B\n"
+                + "fn take(value: String) -> String:\n"
+                + "  return value\n"
+                + "fn only_a():\n"
+                + "  data = \"ok\"\n"
+                + "  try:\n"
+                + "    raise Failure.A\n"
+                + "  recover Failure.B:\n"
+                + "    ignored = take(data)\n"
+                + "  recover Failure.A:\n"
+                + "    pass\n"
+                + "  echo data\n"
+                + "fn main():\n"
+                + "  only_a()\n", "unreachable-recover-ownership.moss");
+        new SemanticChecker(program).run();
     }
 
     private static void assertCompileError(String source, String code) {

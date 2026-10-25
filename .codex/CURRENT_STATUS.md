@@ -14087,3 +14087,25 @@ trace differences remain in `loop_reinit`, `method_early_raise`, and
 `owned_payload`. ABI-v9 and staged ABI-v10 Java suites pass all 11 classes.
 This remains a bounded trace correction, not full Fast Debug or Phase 25.3
 completion.
+
+### Phase 25.3 continuation — ignore ownership effects from a directly unreachable recover arm
+
+A sequential acceptance screen over 91 standalone `phase21_*.moss` fixtures
+found 18 Java/C++ accept/reject mismatches: nine Java-only accepts and nine
+C++-only accepts. The `phase21_addendum_unreachable_arm_consumes.moss` case was
+a Java-only rejection: its try body directly raises `Failure.A`, the
+`Failure.B` recover arm consumes `data`, and the reachable `Failure.A` arm
+returns to code that reads `data`. The Java checker had let the unreachable
+arm's move contaminate the reachable path.
+
+Java now proves unreachability only for a recover pattern without payloads
+whose matching try body consists entirely of direct raises. It checks that
+recover body in an isolated environment for internal type errors and discards
+its ownership effects. Calls, nested try/recover, and payload patterns remain
+outside this proof and are handled conservatively. The fixture is accepted by
+both compilers and both emit `RECOVER_UNREACHABLE_VARIANT`; the fixture's
+SemanticCheckerTest regression passes. A repeat of the 91-file acceptance
+screen reduced the mismatches to 17 (8 C++-only accepts, 9 Java-only accepts).
+All 11 Java test classes pass in ABI-v9 and staged ABI-v10. This addresses one
+bounded checker false rejection; the remaining mismatches and broader Phase
+25.3 acceptance are still open.

@@ -1831,6 +1831,14 @@ public class SemanticChecker {
                 i = matchEnd;
                 continue;
             }
+            if (s.kind == Stmt.Kind.Recover && isDirectlyUnreachableRecover(stmts, start, i)) {
+                int recoverEnd = i + 1;
+                while (recoverEnd < end && stmts.get(recoverEnd).indent > s.indent) recoverEnd++;
+                checkBlock(stmts, i + 1, recoverEnd, env.copy(), typer, solver,
+                        insideHandler, enclosingName, expectedType);
+                i = recoverEnd;
+                continue;
+            }
             if (s.kind == Stmt.Kind.Else) {
                 i++;
                 continue;
@@ -1844,6 +1852,50 @@ public class SemanticChecker {
             i++;
         }
         return env;
+    }
+
+    private boolean isDirectlyUnreachableRecover(List<Stmt> stmts, int blockStart,
+                                                 int recoverIndex) {
+        Stmt recover = stmts.get(recoverIndex);
+        String pattern = recover.a == null ? "" : recover.a.trim();
+        if (pattern.isEmpty() || pattern.contains("(")) return false;
+        int tryIndex = -1;
+        for (int index = recoverIndex - 1; index >= blockStart; index--) {
+            Stmt candidate = stmts.get(index);
+            if (candidate.indent < recover.indent) break;
+            if (candidate.kind == Stmt.Kind.Try && candidate.indent == recover.indent) {
+                tryIndex = index;
+                break;
+            }
+        }
+        if (tryIndex < 0) return false;
+        Set<String> raised = new HashSet<>();
+        for (int index = tryIndex + 1; index < recoverIndex; index++) {
+            Stmt candidate = stmts.get(index);
+            if (candidate.indent <= recover.indent) break;
+            if (candidate.kind == Stmt.Kind.Raise && candidate.a != null) {
+                String raisedVariant = candidate.a.trim();
+                int payload = raisedVariant.indexOf('(');
+                if (payload >= 0) raisedVariant = raisedVariant.substring(0, payload).trim();
+                raised.add(raisedVariant);
+            } else {
+                // Only a body consisting of direct raises is sufficient to prove unreachability.
+                return false;
+            }
+        }
+        if (raised.isEmpty()) return false;
+        for (String alternative : pattern.split(",")) {
+            String variant = alternative.trim();
+            int payload = variant.indexOf('(');
+            if (payload >= 0) variant = variant.substring(0, payload).trim();
+            if (variant.matches("[A-Za-z_][A-Za-z0-9_]*")) return false;
+            for (String raisedVariant : raised) {
+                if (raisedVariant.equals(variant)
+                        || raisedVariant.endsWith("." + variant)
+                        || variant.endsWith("." + raisedVariant)) return false;
+            }
+        }
+        return true;
     }
 
     private TypeRef recoveryBindingType(List<Stmt> statements, int start, int recoverIndex, int indent) {
