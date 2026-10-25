@@ -12680,3 +12680,14 @@ the same reproducer emits `box: &mut Box`.
 Validation: Java build and all ten Java test classes pass. The source-generated
 Rust signature was inspected directly; Rust compilation/native execution was
 not run. Other effect-dependent backend paths remain open.
+
+### Phase 25.3 continuation — lower consumed object parameters by value
+
+Non-exported functions previously borrowed object parameters even when the
+checker classified them as `CONSUME`. `NativeGenerator` now suppresses the
+implicit object borrow for a checker-consumed parameter; a focused assertion
+checks `fn take(box: Box) -> Box` is emitted by value.
+
+Validation: Java build and all ten Java test classes pass. Generated Rust was
+inspected through the unit assertion; no Rust compilation/native execution was
+run. ABI-v9/v10 source-free and broad ownership lowering remain open.

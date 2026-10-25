@@ -21,6 +21,7 @@ public class SemanticCheckerTest {
         testForLoopValuesCanFlowToObjectMethodArguments();
         testObjectMethodArityIsChecked();
         testObjectReceiverWriteEffectPropagatesToFunctionParameter();
+        testConsumedObjectParameterLowersByValue();
         System.out.println("SemanticCheckerTest PASSED.");
     }
 
@@ -244,6 +245,25 @@ public class SemanticCheckerTest {
         String rust = NativeGenerator.generate(program, false);
         if (!rust.contains("fn update(box: &mut Box)")) {
             throw new AssertionError("object receiver WRITE must lower to a mutable Rust parameter");
+        }
+    }
+
+    private static void testConsumedObjectParameterLowersByValue() {
+        Program program = Parser.parseSource(""
+                + "type Box:\n"
+                + "  value: Int\n"
+                + "fn take(box: Box) -> Box:\n"
+                + "  return box\n"
+                + "fn main():\n"
+                + "  pass\n", "method-consume-lowering.moss");
+        new SemanticChecker(program).run();
+        Function take = program.functions.stream()
+                .filter(function -> function.name.equals("take"))
+                .findFirst().orElseThrow();
+        assertEquals(AccessMode.Consume, take.parameterAccessModes.get(0));
+        String rust = NativeGenerator.generate(program, false);
+        if (!rust.contains("fn take(box: Box) -> Box")) {
+            throw new AssertionError("consumed object parameter must lower by value");
         }
     }
 

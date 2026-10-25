@@ -1027,6 +1027,9 @@ public class NativeGenerator {
                 String pType = (p.type != null && !p.type.isEmpty())
                         ? rustType(p.type)
                         : (p.typeRef != null ? rustType(p.typeRef.toCanonicalString()) : "i64");
+                boolean checkerConsumesParameter = i < fn.parameterAccessModes.size()
+                        && fn.parameterAccessModes.get(i)
+                                == org.mosslang.compiler.types.AccessMode.Consume;
                 boolean paramMutated = currentWriteParamIndices.get()
                         .getOrDefault(fn.name, Collections.emptySet()).contains(i);
                 for (Stmt s : fn.body) {
@@ -1042,11 +1045,14 @@ public class NativeGenerator {
                 if (paramMutated) {
                     writeParams.add(p.name);
                     pType = "&mut " + pType;
-                } else if (!fn.exported && p.type != null && p.type.equalsIgnoreCase("vector")) {
+                } else if (!checkerConsumesParameter && !fn.exported
+                        && p.type != null && p.type.equalsIgnoreCase("vector")) {
                     pType = "&std::vec::Vec<i64>";
-                } else if (!fn.exported && p.type != null && objects.containsKey(p.type)) {
+                } else if (!checkerConsumesParameter && !fn.exported
+                        && p.type != null && objects.containsKey(p.type)) {
                     pType = "&" + pType;
-                } else if (!fn.exported && (objects.containsKey(p.type) || objects.containsKey(rustType(p.type))
+                } else if (!checkerConsumesParameter && !fn.exported
+                        && (objects.containsKey(p.type) || objects.containsKey(rustType(p.type))
                         || objects.keySet().stream().anyMatch(k -> k.endsWith("__" + p.type) || k.equals(p.type)))) {
                     pType = "&" + pType;
                 }
