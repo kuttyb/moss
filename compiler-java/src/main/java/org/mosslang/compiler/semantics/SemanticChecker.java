@@ -535,7 +535,17 @@ public class SemanticChecker {
                 }
             }
             for (FailureArm arm : handler.failureArms) {
+                List<OwnershipEnv> armEdges = selectedFailureEdges(arm, raiseEnvironments);
                 if (arm.binding != null && !arm.binding.isEmpty()) {
+                    Set<String> errorTypes = new HashSet<>();
+                    for (RaiseSnapshot snapshot : raiseEnvironments) {
+                        if (snapshot.variant != null && snapshot.variant.contains("."))
+                            errorTypes.add(snapshot.variant.substring(0, snapshot.variant.lastIndexOf('.')));
+                    }
+                    if (errorTypes.size() > 1) {
+                        throw new CompileError(arm.line, "on_fail binding '" + arm.binding
+                                + "' is ambiguous across multiple error types", "AMBIGUOUS_RECOVERY_BINDING");
+                    }
                     env.put(arm.binding, TypeRef.primitive("int"));
                 }
                 if (arm.patterns != null) {
@@ -550,8 +560,43 @@ public class SemanticChecker {
                         }
                     }
                 }
+                TypeRef replyType = solver.resolve(expectedReply);
+                if (replyType != null && replyType.kind() != TypeKind.Unit
+                        && replyType.kind() != TypeKind.InferenceVar
+                        && !arm.body.stream().anyMatch(statement -> statement.kind == Stmt.Kind.Reply
+                                || statement.kind == Stmt.Kind.Return)) {
+                    throw new CompileError(arm.line, "on_fail arm for value-returning handler must reply",
+                            "ON_FAIL_REPLY_REQUIRED");
+                }
+                for (Stmt statement : arm.body) {
+                    if (statement.kind == Stmt.Kind.Raise && statement.indent == 0) {
+                        throw new CompileError(statement.line,
+                                "on_fail arm must handle errors raised by its body",
+                                "ON_FAIL_MUST_HANDLE_ERRORS");
+                    }
+                }
+                if (!handler.failureArms.isEmpty()
+                        && handler.body.stream().noneMatch(statement -> statement.kind == Stmt.Kind.Try)) {
+                    Set<String> raisedVariants = new HashSet<>();
+                    for (RaiseSnapshot snapshot : raiseEnvironments)
+                        if (snapshot.variant != null && !snapshot.variant.isEmpty()) raisedVariants.add(snapshot.variant);
+                    if (!raisedVariants.isEmpty() && (arm.binding == null || arm.binding.isEmpty())) {
+                        Set<String> covered = new HashSet<>();
+                        for (FailureArm candidate : handler.failureArms)
+                            for (String pattern : candidate.patterns) {
+                                int open = pattern.indexOf('(');
+                                covered.add(open < 0 ? pattern.trim() : pattern.substring(0, open).trim());
+                            }
+                        if (!covered.containsAll(raisedVariants)) {
+                            Set<String> missing = new HashSet<>(raisedVariants);
+                            missing.removeAll(covered);
+                            throw new CompileError(arm.line, "on_fail arms do not cover raised variants: "
+                                    + String.join(", ", missing), "NONEXHAUSTIVE_ON_FAIL");
+                        }
+                    }
+                }
                 OwnershipEnv armEnv = env.copy();
-                List<OwnershipEnv> availableFailureEdges = selectedFailureEdges(arm, raiseEnvironments);
+                List<OwnershipEnv> availableFailureEdges = armEdges;
                 for (String name : new HashSet<>(armEnv.moved.keySet())) {
                     boolean readByArm = false;
                     for (Stmt bodyStatement : arm.body) {

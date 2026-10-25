@@ -14003,3 +14003,15 @@ drops raise snapshots from `while false`. The fixture now rejects with
 `ON_FAIL_CAPTURE_NOT_INITIALIZED`, matching C++; loop-reinit and loop-consumed
 controls also match. The focused capture sweep has one additional false accept
 resolved, and both Java ABI unit suites pass.
+
+The `phase21_on_fail_*` / `phase21_recovery_*` checker sample set exposed four
+simple false accepts. Java now rejects ambiguous untyped error bindings across
+multiple raised enum types (`AMBIGUOUS_RECOVERY_BINDING`), incomplete direct
+variant coverage (`NONEXHAUSTIVE_ON_FAIL`), direct unhandled raises from
+failure arms (`ON_FAIL_MUST_HANDLE_ERRORS`), and missing replies for typed
+handler results (`ON_FAIL_REPLY_REQUIRED`). These checks intentionally skip
+exhaustiveness claims when the handler body contains `try`; escaping-error
+analysis is still incomplete. Seven of the eight targeted fixtures now match
+C++ acceptance and diagnostic codes. `phase21_recovery_semantics.moss` remains
+Java-rejected because a plain `recover err` binding is not typed for subsequent
+match. ABI-v9 and staged ABI-v10 Java suites pass.
