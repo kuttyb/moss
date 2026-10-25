@@ -927,6 +927,20 @@ public class SemanticCheckerTest {
                 + "  recover Trouble.Bad:\n"
                 + "    pass\n", "main-handles-nested-method-raised-variant.moss");
         new SemanticChecker(nestedMethodHandled).run();
+        String functionMethodPrefix = methodPrefix
+                + "fn invoke_method():\n"
+                + "  box = Box(sink=Sink())\n"
+                + "  box.relay()\n";
+        assertCompileError(functionMethodPrefix
+                + "fn main():\n"
+                + "  invoke_method()\n", "MOSS_COMPILE_ERROR");
+        Program functionMethodHandled = Parser.parseSource(functionMethodPrefix
+                + "fn main():\n"
+                + "  try:\n"
+                + "    invoke_method()\n"
+                + "  recover Trouble.Bad:\n"
+                + "    pass\n", "main-handles-function-method-raise.moss");
+        new SemanticChecker(functionMethodHandled).run();
 
         String functionPrefix = prefix
                 + "fn fail():\n"

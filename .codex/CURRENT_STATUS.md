@@ -14971,3 +14971,16 @@ Validation: both compilers reject the uncaught chain with `MOSS_COMPILE_ERROR`;
 all eleven Java unit-test classes pass, including scalar-return error carrier
 and multi-arm recovery reachability coverage. Interprocedural method calls from
 ordinary functions, generic summaries, and imported raise closure remain open.
+
+
+### Phase 25.3 continuation — propagate function raises through object methods
+
+Main-root raise closure now follows object method calls inside ordinary
+functions, starting from checked local binding types and resolving declared
+field paths. It combines with nested self-field method traversal, so
+`main → invoke_method → Box.relay → Sink.fail` reports `Trouble.Bad` at the
+root unless a matching recover handles it.
+
+Validation: uncaught and recovered chain cases agree with C++; all eleven Java
+unit-test classes pass. Generic field substitutions, method-local aliases,
+imported method summaries, and complete effect closure remain open.

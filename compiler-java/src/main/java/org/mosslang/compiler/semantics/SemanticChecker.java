@@ -1519,13 +1519,56 @@ public class SemanticChecker {
                     if (!isMainRaiseHandled(function.body, index, variant)) variants.add(variant);
                 }
             }
-            collectNestedFunctionRaiseVariants(statementExpressionText(statement), function.body, index,
-                    visited, variants);
+            String expression = statementExpressionText(statement);
+            collectNestedFunctionRaiseVariants(expression, function.body, index, visited, variants);
+            collectFunctionMethodRaiseVariants(expression, function, index, visited, variants);
         }
-        if (function.resultExpression != null)
+        if (function.resultExpression != null) {
             collectNestedFunctionRaiseVariants(function.resultExpression, function.body,
                     function.body.size(), visited, variants);
+            collectFunctionMethodRaiseVariants(function.resultExpression, function,
+                    function.body.size(), visited, variants);
+        }
         return variants;
+    }
+
+    private void collectFunctionMethodRaiseVariants(String expression, Function caller,
+                                                    int callIndex, Set<String> visited,
+                                                    Set<String> variants) {
+        Map<String, TypeRef> bindings = program.localBindingTypes != null
+                ? program.localBindingTypes.getOrDefault(caller.name, Map.of()) : Map.of();
+        for (ObjectType object : program.objects) {
+            for (Method method : object.methods) {
+                String pattern = "(?<![A-Za-z0-9_])([A-Za-z_][A-Za-z0-9_]*(?:\\s*\\.\\s*[A-Za-z_][A-Za-z0-9_]*)*)\\s*\\.\\s*"
+                        + java.util.regex.Pattern.quote(method.name) + "\\s*\\(";
+                java.util.regex.Matcher matcher = java.util.regex.Pattern.compile(pattern).matcher(expression);
+                while (matcher.find()) {
+                    String receiverType = resolveFunctionReceiverType(matcher.group(1), bindings);
+                    if (!matchesObjectTypeName(receiverType, object.name)) continue;
+                    for (String raised : collectMethodRaiseVariants(method, visited)) {
+                        if (!isMainRaiseHandled(caller.body, callIndex, raised)) variants.add(raised);
+                    }
+                }
+            }
+        }
+    }
+
+    private String resolveFunctionReceiverType(String receiverPath, Map<String, TypeRef> bindings) {
+        String[] path = receiverPath.replaceAll("\\s", "").split("\\.");
+        if (path.length == 0) return null;
+        TypeRef receiver = bindings.get(path[0]);
+        String typeName = receiver != null ? receiver.name() : null;
+        for (int index = 1; typeName != null && index < path.length; index++) {
+            ObjectType owner = findObjectType(typeName);
+            if (owner == null) return null;
+            String fieldName = path[index];
+            Field field = owner.fields.stream().filter(candidate -> candidate.name.equals(fieldName))
+                    .findFirst().orElse(null);
+            if (field == null) return null;
+            TypeRef fieldType = field.typeRef != null ? field.typeRef : TypeParser.parseCanonical(field.type);
+            typeName = fieldType != null ? fieldType.name() : field.type;
+        }
+        return typeName;
     }
 
     private void collectNestedFunctionRaiseVariants(String expression, List<Stmt> callerBody,
