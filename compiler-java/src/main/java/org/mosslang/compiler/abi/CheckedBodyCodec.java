@@ -696,6 +696,11 @@ public class CheckedBodyCodec {
 
         // Verify checked bodies in semantic contract
         for (MossiRecord r : mossi.semanticContract) {
+            byte[] recordPayload = r.payloadBytes();
+            if (isHexHash(r.id) && recordPayload.length > 0
+                    && (recordPayload[0] == 2 || recordPayload[0] == 3 || recordPayload[0] == 4)) {
+                AbiV10Records.Summary.decode(r);
+            }
             if (r.id.startsWith("checked-body-v1:")) {
                 if (r.payload.contains("moss-checked-body-v1\n")) {
                     int irIdx = r.payload.indexOf("moss-checked-body-v1\n");
@@ -706,6 +711,14 @@ public class CheckedBodyCodec {
                         throw new CompileError(0, "ABI-v10 checked body semantic hash mismatch for: " + r.id, "SOURCE_FREE_CONTRACT_INVALID");
                     }
                 }
+            }
+        }
+
+        for (MossiRecord r : mossi.privateSemanticDependencies) {
+            byte[] recordPayload = r.payloadBytes();
+            if (isHexHash(r.id) && recordPayload.length > 0
+                    && (recordPayload[0] == 2 || recordPayload[0] == 3)) {
+                AbiV10Records.Summary.decode(r);
             }
         }
     }

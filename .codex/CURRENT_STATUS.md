@@ -13138,3 +13138,21 @@ body text via `appendV9FunctionRecord` in ABI-v10 semantic exports and adds no
 callable summary/checked-body records; `Main.loadMossiFunctions` only has
 canonical nominal/method-template decoding, while its source-free call guards
 name the two fixture callables. No additional gate was run for this audit.
+
+### Phase 25.3 continuation — canonical ABI-v10 callable summary codec
+
+`AbiV10Records` now has Java encoding/decoding for canonical ABI-v10 open
+callable summaries, including bounded requirement DAGs, dense type-variable
+ordinals, semantic dependencies, effect tags, and v4 static-Callable effect
+dependencies. `CheckedBodyCodec.verifySourceFree` validates public typed
+summary records and rejects forged record IDs. A fixed payload and ID produced
+by the C++ `summary_record` implementation match byte-for-byte in the Java
+regression.
+
+Validation: clean Java build and `CheckedBodyCodecTest` pass. This is codec and
+record-verification evidence only: ProjectBuilder does not yet derive/emit
+these summaries from checked functions, and the source-free loader does not yet
+project them into checker facts. Checked-body serialization/loading and the
+fixture-specific source-free call guards remain open. Follow-up validation:
+all ten Java unit-test classes pass in default ABI-v9 and staged ABI-v10 modes;
+feedback validation and `git diff --check` pass.

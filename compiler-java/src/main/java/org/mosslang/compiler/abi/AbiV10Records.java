@@ -88,6 +88,259 @@ public final class AbiV10Records {
     public record NominalField(String name, WireType type, boolean exported,
                                String provenanceId) {}
 
+    public enum Access { Read, Write, Consume }
+
+    public static final class Requirement {
+        public WireType receiver;
+        public String operation = "";
+        public Access access = Access.Read;
+        public int parent;
+        public String provenanceId = "";
+        public List<WireType> arguments = new ArrayList<>();
+        public WireType result;
+        public List<Access> argumentAccess = new ArrayList<>();
+        public List<Integer> dependencies = new ArrayList<>();
+    }
+
+    /** Canonical ABI-v10 open callable summary, mirrored from abi_v10_records.hpp. */
+    public static final class Summary {
+        public String callableId = "";
+        public int variableCount;
+        public List<WireType> parameters = new ArrayList<>();
+        public List<Access> parameterAccess = new ArrayList<>();
+        public WireType result = WireType.unit();
+        public List<Requirement> requirements = new ArrayList<>();
+        public List<Integer> effectDependencies = new ArrayList<>();
+        public List<String[]> dependencies = new ArrayList<>();
+        public int observableEffectBits;
+        public List<String> observableEffectTags = new ArrayList<>();
+        public String bodySemanticHash = "";
+        public String provenanceId = "";
+
+        public byte[] encode() {
+            return encodeVersion(effectDependencies.isEmpty() ? 3 : 4);
+        }
+
+        private byte[] encodeVersion(int version) {
+            require(!callableId.isEmpty() && variableCount >= 0 && variableCount <= 4096
+                            && parameters.size() <= 256 && parameters.size() == parameterAccess.size()
+                            && requirements.size() <= 4096 && effectDependencies.size() <= 4096
+                            && dependencies.size() <= 4096 && validBodyHash(bodySemanticHash)
+                            && !provenanceId.isEmpty() && denseOrdinals(this),
+                    "SOURCE_FREE_SUMMARY_INVALID", "ABI-v10 summary shape is invalid");
+            Writer writer = new Writer();
+            writer.byteValue(version);
+            writer.string(callableId);
+            writer.number(variableCount);
+            writer.number(parameters.size());
+            for (int i = 0; i < parameters.size(); i++) {
+                writeType(writer, parameters.get(i), variableCount, 0);
+                writer.byteValue(parametersAccess(i));
+            }
+            writeType(writer, result, variableCount, 0);
+            writer.number(requirements.size());
+            for (int i = 0; i < requirements.size(); i++) {
+                final int requirementIndex = i;
+                Requirement requirement = requirements.get(i);
+                List<Integer> deps = requirement.dependencies.isEmpty() && requirement.parent != 0
+                        ? List.of(requirement.parent) : requirement.dependencies;
+                require(requirement.parent >= 0 && requirement.parent <= i
+                                && deps.stream().allMatch(dep -> dep > 0 && dep <= requirementIndex)
+                                && deps.equals(deps.stream().distinct().sorted().toList())
+                                && ((deps.isEmpty() && requirement.parent == 0)
+                                    || (deps.size() == 1 && requirement.parent == deps.get(0))
+                                    || (deps.size() > 1 && requirement.parent == 0))
+                                && !requirement.operation.isEmpty() && !requirement.provenanceId.isEmpty()
+                                && requirement.arguments.size() <= 64
+                                && requirement.arguments.size() == requirement.argumentAccess.size(),
+                        "SOURCE_FREE_SUMMARY_INVALID", "ABI-v10 requirement DAG is invalid");
+                writeType(writer, requirement.receiver, variableCount, 0);
+                writer.string(requirement.operation);
+                writer.byteValue(access(requirement.access));
+                writer.number(requirement.parent);
+                writer.string(requirement.provenanceId);
+                writer.number(requirement.arguments.size());
+                for (WireType argument : requirement.arguments) writeType(writer, argument, variableCount, 0);
+                writer.byteValue(requirement.result == null ? 0 : 1);
+                if (requirement.result != null) writeType(writer, requirement.result, variableCount, 0);
+                writer.number(requirement.argumentAccess.size());
+                for (Access mode : requirement.argumentAccess) writer.byteValue(access(mode));
+                if (version >= 3) {
+                    writer.number(deps.size());
+                    for (int dep : deps) writer.number(dep);
+                } else {
+                    require(deps.size() <= 1 && (deps.isEmpty() || requirement.parent == deps.get(0)),
+                            "SOURCE_FREE_SUMMARY_INVALID",
+                            "legacy ABI-v10 summary cannot encode a multi-edge requirement");
+                }
+            }
+            if (version == 4) {
+                require(!effectDependencies.isEmpty(), "SOURCE_FREE_SUMMARY_INVALID",
+                        "ABI-v10 summary version 4 requires an effect dependency");
+                int previousEffect = 0;
+                for (int dependency : effectDependencies) {
+                    require(dependency > previousEffect && dependency <= requirements.size()
+                                    && "static callable".equals(requirements.get(dependency - 1).operation),
+                            "SOURCE_FREE_SUMMARY_INVALID",
+                            "ABI-v10 effect dependency does not name a canonical Callable requirement");
+                    previousEffect = dependency;
+                }
+                writer.number(effectDependencies.size());
+                for (int dependency : effectDependencies) writer.number(dependency);
+            }
+            writer.number(dependencies.size());
+            String previous = "";
+            for (String[] dependency : dependencies) {
+                require(dependency.length == 2 && !dependency[0].isEmpty()
+                                && previous.compareTo(dependency[0]) < 0 && validBodyHash(dependency[1]),
+                        "SOURCE_FREE_SUMMARY_INVALID", "ABI-v10 semantic dependencies are not canonical");
+                previous = dependency[0];
+                writer.string(dependency[0]);
+                writer.string(dependency[1]);
+            }
+            writer.number(observableEffectBits);
+            writeTags(writer, observableEffectTags);
+            writer.string(bodySemanticHash);
+            writer.string(provenanceId);
+            return writer.finish();
+        }
+
+        public MossiRecord record() {
+            byte[] payload = encode();
+            return MossiRecord.fromBytes(hash("moss-abi-v10-open-summary", payload), payload);
+        }
+
+        public static Summary decode(MossiRecord record) {
+            Reader reader = new Reader(record.payloadBytes());
+            int version = reader.byteValue();
+            require(version == 2 || version == 3 || version == 4,
+                    "SOURCE_FREE_SUMMARY_INVALID", "ABI-v10 summary record version is unsupported");
+            Summary value = new Summary();
+            value.callableId = reader.string();
+            value.variableCount = reader.number();
+            require(value.variableCount <= 4096, "SOURCE_FREE_SUMMARY_INVALID",
+                    "ABI-v10 summary has too many variables");
+            int count = reader.count(256, "summary parameter count");
+            for (int i = 0; i < count; i++) {
+                value.parameters.add(readType(reader, value.variableCount, 0));
+                value.parameterAccess.add(readAccess(reader));
+            }
+            value.result = readType(reader, value.variableCount, 0);
+            count = reader.count(4096, "summary requirement count");
+            for (int i = 0; i < count; i++) {
+                Requirement req = new Requirement();
+                req.receiver = readType(reader, value.variableCount, 0);
+                req.operation = reader.string();
+                req.access = readAccess(reader);
+                req.parent = reader.number();
+                req.provenanceId = reader.string();
+                int args = reader.count(64, "requirement argument count");
+                for (int a = 0; a < args; a++) req.arguments.add(readType(reader, value.variableCount, 0));
+                int hasResult = reader.byteValue();
+                require(hasResult <= 1, "SOURCE_FREE_SUMMARY_INVALID",
+                        "ABI-v10 requirement result presence tag is invalid");
+                if (hasResult == 1) req.result = readType(reader, value.variableCount, 0);
+                int accesses = reader.count(64, "requirement access count");
+                require(accesses == args, "SOURCE_FREE_SUMMARY_INVALID",
+                        "ABI-v10 requirement argument/access counts disagree");
+                for (int a = 0; a < accesses; a++) req.argumentAccess.add(readAccess(reader));
+                if (version >= 3) {
+                    int deps = reader.count(4096, "requirement dependency count");
+                    for (int d = 0; d < deps; d++) req.dependencies.add(reader.number());
+                } else if (req.parent != 0) req.dependencies.add(req.parent);
+                value.requirements.add(req);
+            }
+            if (version >= 4) {
+                count = reader.count(4096, "effect dependency count");
+                for (int i = 0; i < count; i++) value.effectDependencies.add(reader.number());
+            }
+            count = reader.count(4096, "semantic dependency count");
+            for (int i = 0; i < count; i++) value.dependencies.add(new String[]{reader.string(), reader.string()});
+            value.observableEffectBits = reader.number();
+            value.observableEffectTags = readTags(reader);
+            value.bodySemanticHash = reader.string();
+            value.provenanceId = reader.string();
+            byte[] canonicalPayload = value.encodeVersion(version);
+            require(reader.done() && Arrays.equals(canonicalPayload, record.payloadBytes())
+                            && hash("moss-abi-v10-open-summary", canonicalPayload).equals(record.id),
+                    "SOURCE_FREE_SUMMARY_INVALID", "ABI-v10 summary is noncanonical or forged");
+            return value;
+        }
+
+        private int parametersAccess(int index) { return access(parameterAccess.get(index)); }
+    }
+
+    private static int access(Access access) {
+        require(access != null, "SOURCE_FREE_SUMMARY_INVALID", "ABI-v10 access mode is missing");
+        return access.ordinal() + 1;
+    }
+
+    private static Access readAccess(Reader reader) {
+        int tag = reader.byteValue();
+        require(tag >= 1 && tag <= Access.values().length,
+                "SOURCE_FREE_SUMMARY_INVALID", "ABI-v10 access mode is invalid");
+        return Access.values()[tag - 1];
+    }
+
+    private static boolean denseOrdinals(Summary summary) {
+        boolean[] used = new boolean[summary.variableCount];
+        for (WireType type : summary.parameters) collectOrdinals(type, used, 0);
+        collectOrdinals(summary.result, used, 0);
+        for (Requirement requirement : summary.requirements) {
+            collectOrdinals(requirement.receiver, used, 0);
+            for (WireType argument : requirement.arguments) collectOrdinals(argument, used, 0);
+            if (requirement.result != null) collectOrdinals(requirement.result, used, 0);
+        }
+        for (boolean present : used) if (!present) return false;
+        return true;
+    }
+
+    private static void collectOrdinals(WireType type, boolean[] used, int depth) {
+        require(type != null && depth < 64 && type.arguments.size() <= 64,
+                "SOURCE_FREE_SUMMARY_INVALID", "ABI-v10 type expression is too deep");
+        if (type.kind == WireTypeKind.BoundVar) {
+            require(type.ordinal >= 0 && type.ordinal < used.length,
+                    "SOURCE_FREE_SUMMARY_INVALID", "ABI-v10 bound variable escapes its scope");
+            used[type.ordinal] = true;
+        }
+        for (WireType argument : type.arguments) collectOrdinals(argument, used, depth + 1);
+    }
+
+    private static void writeTags(Writer writer, List<String> tags) {
+        require(tags.size() <= 4096, "SOURCE_FREE_SUMMARY_INVALID",
+                "ABI-v10 effect set exceeds the limit");
+        writer.number(tags.size());
+        String previous = "";
+        for (String tag : tags) {
+            require(tag != null && !tag.isEmpty() && previous.compareTo(tag) < 0,
+                    "SOURCE_FREE_SUMMARY_INVALID", "ABI-v10 effect tags are not canonical");
+            writer.string(tag);
+            previous = tag;
+        }
+    }
+
+    private static List<String> readTags(Reader reader) {
+        int count = reader.count(4096, "effect tag count");
+        List<String> tags = new ArrayList<>(count);
+        for (int i = 0; i < count; i++) tags.add(reader.string());
+        return tags;
+    }
+
+    private static boolean validBodyHash(String value) {
+        String prefix = "body-semantic-v1:";
+        return value != null && value.startsWith(prefix)
+                && isHexHash(value.substring(prefix.length()));
+    }
+
+    private static boolean isHexHash(String value) {
+        if (value == null || value.length() != 71 || !value.startsWith("sha256:")) return false;
+        for (int i = 7; i < value.length(); i++) {
+            char ch = value.charAt(i);
+            if (!((ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f'))) return false;
+        }
+        return true;
+    }
+
     public static final class MethodTemplate {
         public String methodId;
         public String templateId;

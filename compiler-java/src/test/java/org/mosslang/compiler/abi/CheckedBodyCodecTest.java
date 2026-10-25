@@ -22,6 +22,7 @@ public class CheckedBodyCodecTest {
         testMossiEncoderRejectsDuplicateIds();
         testNominalRecordsRequireValidProvenanceReferences();
         testMethodTemplateNominalReferences();
+        testCanonicalOpenSummaryRecord();
         testExportedEnumIdentityValidation();
         testMossiRejectsUnboundedCounts();
         testCheckedBodyReaderBoundsAndTrailingData();
@@ -339,6 +340,76 @@ public class CheckedBodyCodecTest {
         } catch (CompileError error) {
             if (!"SOURCE_FREE_TYPE_IDENTITY_MISMATCH".equals(error.getCode())) throw error;
         }
+    }
+
+    private static void testCanonicalOpenSummaryRecord() {
+        AbiV10Records.Summary summary = new AbiV10Records.Summary();
+        summary.callableId = "module-v1:boxes@1.0.0::Boxes::fresh";
+        summary.variableCount = 1;
+        AbiV10Records.WireType variable = AbiV10Records.WireType.bound(0);
+        AbiV10Records.WireType vector = AbiV10Records.WireType.scalar(
+                AbiV10Records.WireTypeKind.Builtin, "Vector");
+        vector.arguments.add(variable);
+        summary.result = vector;
+        summary.bodySemanticHash = "body-semantic-v1:sha256:" + "e".repeat(64);
+        summary.provenanceId = "boxes:fn:3";
+        AbiV10Records.Requirement requirement = new AbiV10Records.Requirement();
+        requirement.receiver = variable;
+        requirement.operation = "to_string";
+        requirement.provenanceId = "boxes:fn:4";
+        summary.requirements.add(requirement);
+
+        MossiRecord record = summary.record();
+        String expectedPayloadHex = "03000000236d6f64756c652d76313a626f78657340312e302e303a3a426f7865733a3a667265736800000001000000000200000006566563746f7200000001060000000000000001060000000000000009746f5f737472696e6701000000000000000a626f7865733a666e3a340000000000000000000000000000000000000000000000000000000058626f64792d73656d616e7469632d76313a7368613235363a656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565650000000a626f7865733a666e3a33";
+        if (!expectedPayloadHex.equals(java.util.HexFormat.of().formatHex(record.payloadBytes()))
+                || !"sha256:048871e18e43f896c39ed73cbf0e63cef5a3eef0490f1041c153ee21c272e861"
+                        .equals(record.id)) {
+            throw new AssertionError("Java summary payload differs from canonical C++ ABI-v10 bytes");
+        }
+        AbiV10Records.Summary decoded = AbiV10Records.Summary.decode(record);
+        if (!decoded.callableId.equals(summary.callableId)
+                || decoded.variableCount != 1 || decoded.requirements.size() != 1
+                || !decoded.result.canonicalName().equals("Vector[_0]")) {
+            throw new AssertionError("canonical ABI-v10 summary did not round trip");
+        }
+        MossiInterface iface = new MossiInterface("module-v1:boxes@1.0.0::Boxes");
+        iface.semanticContract.add(record);
+        CheckedBodyCodec.verifySourceFree(CheckedBodyCodec.encodeMossiBytes(iface));
+
+        MossiInterface forged = new MossiInterface(iface.moduleId);
+        forged.semanticContract.add(MossiRecord.fromBytes("sha256:" + "0".repeat(64),
+                record.payloadBytes()));
+        try {
+            CheckedBodyCodec.verifySourceFree(CheckedBodyCodec.encodeMossiBytes(forged));
+            throw new AssertionError("source-free verifier accepted a forged summary identity");
+        } catch (CompileError error) {
+            if (!"SOURCE_FREE_SUMMARY_INVALID".equals(error.getCode())) throw error;
+        }
+
+        AbiV10Records.Summary effectful = new AbiV10Records.Summary();
+        effectful.callableId = summary.callableId;
+        effectful.variableCount = 1;
+        effectful.result = variable;
+        effectful.bodySemanticHash = summary.bodySemanticHash;
+        effectful.provenanceId = summary.provenanceId;
+        effectful.requirements.add(requirement);
+        AbiV10Records.Requirement callable = new AbiV10Records.Requirement();
+        callable.receiver = variable;
+        callable.operation = "static callable";
+        callable.provenanceId = "boxes:fn:5";
+        effectful.requirements.add(callable);
+        effectful.effectDependencies.add(2);
+        MossiRecord effectRecord = effectful.record();
+        AbiV10Records.Summary decodedEffect = AbiV10Records.Summary.decode(effectRecord);
+        if (!"sha256:ee950bd5e71b48062bdeef224a8f72d52b8531ead2d74dde5863b97790905e0e"
+                        .equals(effectRecord.id)
+                || decodedEffect.effectDependencies.size() != 1
+                || decodedEffect.effectDependencies.get(0) != 2) {
+            throw new AssertionError("ABI-v10 v4 summary differs from C++ Callable-effect record");
+        }
+        MossiInterface effectInterface = new MossiInterface(iface.moduleId);
+        effectInterface.semanticContract.add(effectRecord);
+        CheckedBodyCodec.verifySourceFree(CheckedBodyCodec.encodeMossiBytes(effectInterface));
     }
 
     private static void testExportedEnumIdentityValidation() {
