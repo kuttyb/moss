@@ -16579,3 +16579,19 @@ Follow-up validation after adding inline object construction to generic receiver
 resolution: all 12 Java test classes pass again under ABI-v9 and staged ABI-v10.
 The rebuilt JAR rejects the inline Mover callsite and accepts the Reader control.
 These results supersede the earlier focused-only run for that change.
+
+### Phase 25.3 continuation — trace generic receivers through local aliases
+
+Callsite ownership analysis now follows straight-line local aliases back to a
+generic helper's receiver parameter. A C++/Java probe showed Java had allowed
+caller reuse when the aliased receiver selected a consuming method. Regression
+coverage now checks both a consuming Mover alias and a READ-only Reader alias,
+including inline construction at the callsite.
+
+Validation after this change: `scripts/java/test.sh` and
+`MOSS_STAGED_ABI=v10 scripts/java/test.sh` each pass all 12 test classes. The
+rebuilt standalone JAR rejects the Mover alias reuse and accepts the Reader
+control. Feedback validation and `git diff --check` pass. Alias propagation is
+bounded to straight-line local assignments; branch-sensitive and nested-field
+alias flows, native/backend acceptance, Margo/SDK gates, and the frozen
+candidate review remain outstanding.

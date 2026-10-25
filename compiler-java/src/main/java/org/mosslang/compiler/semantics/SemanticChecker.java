@@ -4140,6 +4140,7 @@ public class SemanticChecker {
         if (function == null || parameterIndex < 0 || parameterIndex >= function.params.size()) return false;
         String parameterName = function.params.get(parameterIndex).name;
         if (parameterName == null || callArguments == null) return false;
+        Map<String, String> aliases = functionParameterAliases(function);
         List<String> expressions = new ArrayList<>();
         for (Stmt statement : function.body) expressions.add(statementExpressionText(statement));
         if (function.resultExpression != null) expressions.add(function.resultExpression);
@@ -4151,16 +4152,19 @@ public class SemanticChecker {
             while (call.find()) {
                 String receiverPath = call.group(1).replaceAll("\\s", "");
                 String receiverRoot = ownershipRoot(receiverPath);
+                String receiverParameter = aliases.getOrDefault(receiverRoot, receiverRoot);
                 int receiverParameterIndex = -1;
                 for (int index = 0; index < function.params.size(); index++) {
-                    if (function.params.get(index).name.equals(receiverRoot)) {
+                    if (function.params.get(index).name.equals(receiverParameter)) {
                         receiverParameterIndex = index;
                         break;
                     }
                 }
                 if (receiverParameterIndex < 0 || receiverParameterIndex >= callArguments.size()) continue;
-                TypeRef actualReceiverType = callArgumentType(
-                        callArguments.get(receiverParameterIndex), callerEnv);
+                String actualReceiver = callArgumentValue(callArguments.get(receiverParameterIndex));
+                String receiverSuffix = receiverPath.substring(receiverRoot.length());
+                if (!receiverSuffix.isEmpty()) actualReceiver += receiverSuffix;
+                TypeRef actualReceiverType = callArgumentType(actualReceiver, callerEnv);
                 ObjectType receiverObject = actualReceiverType != null
                         ? findObjectType(actualReceiverType.name()) : null;
                 if (receiverObject == null) continue;
@@ -4189,6 +4193,35 @@ public class SemanticChecker {
             }
         }
         return false;
+    }
+
+    private Map<String, String> functionParameterAliases(Function function) {
+        Map<String, String> aliases = new HashMap<>();
+        if (function == null || function.body.isEmpty()) return aliases;
+        int bodyIndent = function.body.stream().mapToInt(statement -> statement.indent).min().orElse(0);
+        Set<String> parameterNames = new HashSet<>();
+        for (Param parameter : function.params) parameterNames.add(parameter.name);
+        for (Stmt statement : function.body) {
+            if (statement.indent != bodyIndent
+                    || !(statement.kind == Stmt.Kind.Let || statement.kind == Stmt.Kind.Var
+                            || statement.kind == Stmt.Kind.Assign)
+                    || statement.a == null || statement.b == null) continue;
+            String target = statement.a.trim();
+            String source = statement.b.trim();
+            if (!target.matches("[A-Za-z_][A-Za-z0-9_]*")) continue;
+            if (parameterNames.contains(target)) {
+                aliases.remove(target);
+                continue;
+            }
+            String sourceRoot = ownershipRoot(source);
+            boolean direct = parameterNames.contains(source) || aliases.containsKey(sourceRoot);
+            if (direct && source.equals(sourceRoot)) {
+                aliases.put(target, parameterNames.contains(source) ? source : aliases.get(sourceRoot));
+            } else {
+                aliases.remove(target);
+            }
+        }
+        return aliases;
     }
 
     private void recordDirectCallRaises(String expression, OwnershipEnv env) {

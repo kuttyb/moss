@@ -967,6 +967,13 @@ public class SemanticCheckerTest {
                 + "  payload = Payload(value=\"move\")\n"
                 + "  relay(payload, Mover())\n"
                 + "  echo payload.value\n", "OWNERSHIP_USE_AFTER_CONSUME");
+        String aliasDeclarations = declarations.replace("  item.accept(value)\n",
+                "  alias = item\n  alias.accept(value)\n");
+        assertCompileError(aliasDeclarations
+                + "fn main():\n"
+                + "  payload = Payload(value=\"move\")\n"
+                + "  relay(payload, Mover())\n"
+                + "  echo payload.value\n", "OWNERSHIP_USE_AFTER_CONSUME");
 
         Program readOnly = Parser.parseSource(declarations
                 + "fn main():\n"
@@ -977,6 +984,13 @@ public class SemanticCheckerTest {
         Function relay = readOnly.functions.stream().filter(function -> function.name.equals("relay"))
                 .findFirst().orElseThrow();
         assertEquals(AccessMode.Read, relay.parameterAccessModes.get(0));
+
+        Program aliasReadOnly = Parser.parseSource(aliasDeclarations
+                + "fn main():\n"
+                + "  payload = Payload(value=\"keep\")\n"
+                + "  relay(payload, Reader())\n"
+                + "  echo payload.value\n", "inferred-receiver-alias-read-only-argument.moss");
+        new SemanticChecker(aliasReadOnly).run();
     }
 
     private static void testFunctionWriteModePropagatesThroughMethodArguments() {

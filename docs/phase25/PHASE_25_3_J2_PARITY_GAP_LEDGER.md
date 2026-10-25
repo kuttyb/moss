@@ -702,3 +702,19 @@ checker pair agrees, all 12 Java test classes pass under ABI-v9 and staged
 ABI-v10, and the rebuilt standalone JAR reproduces both outcomes. Generic
 receiver substitution beyond this bounded callsite path and native acceptance
 remain open.
+
+
+### Follow-up — carry inferred receiver identity through local aliases
+
+A helper-local alias (`alias = item; alias.accept(value)`) hid the receiver
+parameter from callsite ownership specialization. Java previously accepted a
+read after a concrete consuming Mover call, while C++ rejected it. The caller
+resolver now follows straight-line local bindings back to their helper
+parameter and applies the concrete receiver's method access mode. Matching
+Mover and Reader controls agree across C++ and Java; branch-dependent and
+nested-field alias flows remain open.
+
+All 12 Java test classes pass under ABI-v9 and staged ABI-v10. The rebuilt
+standalone compiler rejects the Mover alias callsite and accepts the Reader
+alias control. This is checker/package evidence only; native execution and
+broader ownership acceptance remain open.
