@@ -18,6 +18,7 @@ public final class SemanticQueryEngineTest {
         effectsQueryExcludesRecoveredDirectRaises();
         effectsQueryIncludesExplicitBareReraises();
         effectsQueryIncludesCatchAllBareReraises();
+        effectsQueryNarrowsGroupedBareReraises();
         typeQueryPreservesOpenGenericResultFacts();
         System.out.println("SemanticQueryEngineTest PASSED.");
     }
@@ -164,6 +165,28 @@ public final class SemanticQueryEngineTest {
         new SemanticChecker(program).run();
         String result = queryEffects(program, "reraiser");
         assertContains(result, "\"raise_set\": [\"enum:Trouble:Bad\"]");
+    }
+
+    private static void effectsQueryNarrowsGroupedBareReraises() {
+        String source = ""
+                + "enum Trouble:\n"
+                + "  Bad\n"
+                + "  Other\n"
+                + "fn source_fault():\n"
+                + "  raise Trouble.Bad\n"
+                + "fn reraiser():\n"
+                + "  try:\n"
+                + "    source_fault()\n"
+                + "  recover Trouble.Bad, Trouble.Other:\n"
+                + "    raise\n"
+                + "fn main():\n"
+                + "  pass\n";
+        Program program = Parser.parseSource(source, "effects-query-grouped-reraise.moss");
+        new SemanticChecker(program).run();
+        String result = queryEffects(program, "reraiser");
+        assertContains(result, "\"raise_set\": [\"enum:Trouble:Bad\"]");
+        if (result.contains("enum:Trouble:Other"))
+            throw new AssertionError("unreachable grouped recover variant leaked into query: " + result);
     }
 
     private static void effectsQueryFollowsOrdinaryFunctionRaises() {

@@ -344,3 +344,12 @@ them as escaping unless an outer arm handles them. The minimized catch-all
 All eleven Java unit classes pass in ABI-v9. This remains bounded to explicit
 raised variants and ordinary helper calls; generic effects and broader failure
 arm reasoning remain incomplete.
+
+## Phase 25.3 continuation — grouped recovery effect precision
+
+Bare reraises from a grouped recover arm are now intersected with variants
+actually derived from the paired try body. The C++/Java query for
+`regroup_a` in `phase21_addendum_grouped_a.moss` reports only
+`enum:Failure:A`, despite the arm also listing `Failure.B`. All eleven Java
+unit tests pass in ABI-v9. Other indirect/callback and foreign effect sources
+remain open.

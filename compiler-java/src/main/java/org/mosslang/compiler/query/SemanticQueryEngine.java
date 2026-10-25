@@ -1374,8 +1374,14 @@ public class SemanticQueryEngine {
         if (recoverIndex < 0) return Set.of();
         Stmt recover = body.get(recoverIndex);
         String pattern = recover.a == null ? "" : recover.a.trim();
-        String canonical = canonicalRaisedVariant(pattern, program);
-        if (canonical != null) return Set.of(canonical);
+        Set<String> selectedPatterns = new HashSet<>();
+        if (!pattern.isEmpty()) {
+            for (String part : org.mosslang.compiler.parser.ParserSupport.splitTopLevel(pattern, ',')) {
+                String canonical = canonicalRaisedVariant(part, program);
+                if (canonical != null) selectedPatterns.add(canonical);
+            }
+            if (selectedPatterns.isEmpty()) return Set.of();
+        }
 
         Stmt raised = body.get(recoverIndex);
         int tryIndex = -1;
@@ -1427,6 +1433,7 @@ public class SemanticQueryEngine {
                 }
             }
         }
+        if (!selectedPatterns.isEmpty()) variants.retainAll(selectedPatterns);
         return variants;
     }
 

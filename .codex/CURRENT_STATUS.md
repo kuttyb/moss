@@ -14789,3 +14789,15 @@ Validation: all eleven Java unit-test classes pass under ABI-v9; focused C++
 and Java effects queries agree for the catch-all reraiser. This covers explicit
 variants derivable from direct raises/helper calls; generic effects and broader
 failure-arm inference remain open.
+
+### Phase 25.3 continuation — narrow grouped bare reraises to reachable variants
+
+A grouped recover arm can list multiple variants even when the paired try body
+can only raise one. Bare-reraise analysis now intersects the recover patterns
+with variants derived from that try body before applying outer recovery. The
+existing `phase21_addendum_grouped_a.moss` query for `regroup_a` now reports
+only `enum:Failure:A`, matching C++ and avoiding a false `Failure.B` effect.
+
+Validation: all eleven Java unit tests pass under ABI-v9; a focused C++/Java
+query on the repository fixture agrees. Callbacks, indirect module effects,
+and other non-source explicit raises remain outside this bounded walk.
