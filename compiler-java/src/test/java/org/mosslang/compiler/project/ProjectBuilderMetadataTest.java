@@ -174,6 +174,11 @@ public final class ProjectBuilderMetadataTest {
                 + "  assert(false)\n"
                 + "export fn delegated_failure():\n"
                 + "  assert_failure()\n"
+                + "type Box:\n"
+                + "  fn crash():\n"
+                + "    assert(false)\n"
+                + "  fn crash_forward():\n"
+                + "    self.crash()\n"
                 + "fn main():\n"
                 + "  pass\n", "panic-text-effect.moss");
         new org.mosslang.compiler.semantics.CheckedProgram(program).run();
@@ -199,6 +204,12 @@ public final class ProjectBuilderMetadataTest {
         }
         if (!delegated.contains("may_panic=1")) {
             throw new AssertionError("exported panic effect omitted an asserting helper: " + delegated);
+        }
+        String methodForward = text.lines().filter(line -> line.contains("object_method crash_forward "))
+                .findFirst().orElse("");
+        if (!methodForward.contains("may_panic=1")) {
+            throw new AssertionError("exported method panic effect omitted a nested asserting method: "
+                    + methodForward);
         }
     }
 

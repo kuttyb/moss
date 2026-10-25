@@ -15545,3 +15545,16 @@ All twelve Java unit-test classes pass under ABI-v9 defaults and staged
 ABI-v10. Feedback and diff checks are pending for this checkpoint. This is a
 bounded syntactic panic scan for local function closure; imported panic effects,
 method closure, and complete panic inference remain open.
+
+
+### Phase 25.3 continuation — include method panic results and self-call closure
+
+Object-method ABI metadata now scans method `resultExpression` for panic-like
+operations and follows same-owner `self.method()` calls. A producer fixture
+checks an asserting `Box.crash()` and its `Box.crash_forward()` wrapper both
+export `may_panic=1`. This complements local function panic closure; calls via
+other typed receivers, imported provider panic effects, and full panic analysis
+remain open.
+
+All twelve Java unit-test classes pass in default ABI-v9 and staged ABI-v10;
+feedback and diff checks are pending for the checkpoint.

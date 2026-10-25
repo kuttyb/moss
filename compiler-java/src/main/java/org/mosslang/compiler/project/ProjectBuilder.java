@@ -1002,7 +1002,7 @@ public class ProjectBuilder {
                 .append(" return=").append(returnType)
                 .append(" receiver=").append(method.receiverAccessMode.name().toUpperCase(Locale.ROOT))
                 .append(" effects=local_capture_read=0;local_mutation=0;domain_read=0;domain_write=0;message=0;external_io=0;fileio=0;fileio_unknown=0;may_panic=")
-                .append(mayPanic(method.body) ? "1" : "0")
+                .append(mayPanic(method, program, module, new HashSet<>()) ? "1" : "0")
                 .append(";raise_set=").append(raiseIdent)
                 .append(";may_diverge=0;unresolved=0 params=")
                 .append(method.params.size());
@@ -2574,6 +2574,55 @@ public class ProjectBuilder {
             }
         }
         return false;
+    }
+
+    private static boolean mayPanic(Method method, Program program, String module,
+                                    Set<String> callPath) {
+        if (method == null || program == null || !callPath.add(method.owner + "." + method.name)) return false;
+        if (mayPanic(method.body) || mayPanicExpression(method.resultExpression)) return true;
+        List<String> expressions = new ArrayList<>();
+        for (Stmt statement : method.body) {
+            if (statement == null) continue;
+            expressions.add(statement.text);
+            expressions.add(statement.a);
+            expressions.add(statement.b);
+            if (statement.args != null) expressions.addAll(statement.args);
+        }
+        expressions.add(method.resultExpression);
+        for (String expression : expressions) {
+            if (expression == null || expression.isBlank()) continue;
+            for (Function called : program.functions) {
+                if (called.definingModule != null && !called.definingModule.isEmpty()
+                        && !called.definingModule.equals(module)) continue;
+                if (callsFunction(expression, called) && mayPanic(called, program, module, new HashSet<>())) {
+                    return true;
+                }
+            }
+            for (Method called : program.objects.stream()
+                    .filter(object -> object.name.equals(method.owner)
+                            || object.name.endsWith("__" + method.owner))
+                    .flatMap(object -> object.methods.stream()).toList()) {
+                String selfCall = "(?s).*\\bself\\s*\\.\\s*"
+                        + java.util.regex.Pattern.quote(called.name) + "\\s*\\(.*";
+                if (org.mosslang.compiler.semantics.SemanticChecker
+                        .containsFunctionCall(expression, "self." + called.name)
+                        || org.mosslang.compiler.project.ProjectBuilder.maskStringLiterals(expression)
+                        .matches(selfCall)) {
+                    if (mayPanic(called, program, module, new HashSet<>(callPath))) return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static boolean callsFunction(String expression, Function function) {
+        String shortName = function.name;
+        int separator = shortName.lastIndexOf("__");
+        if (separator >= 0) shortName = shortName.substring(separator + 2);
+        return org.mosslang.compiler.semantics.SemanticChecker.containsFunctionCall(expression, function.name)
+                || org.mosslang.compiler.semantics.SemanticChecker.containsFunctionCall(
+                        expression, function.declarationName)
+                || org.mosslang.compiler.semantics.SemanticChecker.containsFunctionCall(expression, shortName);
     }
 
     private static boolean mayPanicExpression(String expression) {
