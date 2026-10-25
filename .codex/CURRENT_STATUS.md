@@ -12795,3 +12795,13 @@ produced the fat JAR, `compiler-java/dist/moss --version` reported
 `Moss Java Compiler 0.1.0-java (moss-0.1)`, and the packaged launcher accepted
 `examples/hi.moss` under `--check`. This confirms packaging and basic CLI startup,
 not the full standalone feature surface.
+
+The ABI-v10 frame decoder also used byte lengths from the writer as Java
+character counts. It now parses the interface as UTF-8 bytes, decodes each
+bounded frame strictly, and measures the total interface limit in bytes. A
+round-trip regression includes non-ASCII record ID and payload content and
+verifies the resulting source-free contract.
+
+Validation: Java build, focused `CheckedBodyCodecTest`, and all ten Java unit
+test classes pass. Malformed raw UTF-8 read-file behavior, native source-free
+linkage, and canonical logical ABI completion remain open.

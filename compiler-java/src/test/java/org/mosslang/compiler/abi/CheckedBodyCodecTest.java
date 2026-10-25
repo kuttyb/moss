@@ -17,6 +17,7 @@ public class CheckedBodyCodecTest {
         testSimpleReturnEncodeDecodeRoundTrip();
         testComplexStatementsRoundTrip();
         testMossiSerializationAndParsing();
+        testMossiUtf8ByteFraming();
         testMossiRejectsUnboundedCounts();
         testSourceFreeVerificationSuccess();
         testSourceFreeVerificationTamperDetection();
@@ -212,6 +213,18 @@ public class CheckedBodyCodecTest {
         } catch (CompileError error) {
             if (!"SOURCE_FREE_CONTRACT_INVALID".equals(error.getCode())) throw error;
         }
+    }
+
+    private static void testMossiUtf8ByteFraming() {
+        MossiInterface original = new MossiInterface("module-v1:utf8@1.0.0::provider");
+        original.semanticContract.add(new MossiRecord("unicode:é", "display café 😀\n"));
+        String encoded = CheckedBodyCodec.encodeMossi(original);
+        MossiInterface decoded = CheckedBodyCodec.decodeMossi(encoded);
+        if (decoded.semanticContract.size() != 1
+                || !original.semanticContract.get(0).equals(decoded.semanticContract.get(0))) {
+            throw new AssertionError("ABI-v10 UTF-8 byte-framed record did not round-trip");
+        }
+        CheckedBodyCodec.verifySourceFree(decoded, encoded);
     }
 
     private static void testSourceFreeVerificationTamperDetection() {

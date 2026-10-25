@@ -6,7 +6,10 @@ import org.mosslang.compiler.types.TypeKind;
 import org.mosslang.compiler.types.TypeRef;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.charset.CharacterCodingException;
 import java.nio.charset.StandardCharsets;
+import java.nio.charset.CodingErrorAction;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
@@ -16,7 +19,7 @@ import java.util.*;
 public class CheckedBodyCodec {
     public static final String HEADER = "moss-checked-body-v1\n";
     public static final String MOSSI_HEADER = "moss-module-interface-v3\n";
-    private static final int MAX_MOSSI_CHARS = 16 * 1024 * 1024;
+    private static final int MAX_MOSSI_BYTES = 16 * 1024 * 1024;
     private static final int MAX_MOSSI_RECORDS = 100_000;
     private static final int MAX_MOSSI_RECORD_CHARS = 4 * 1024 * 1024;
 
@@ -305,28 +308,29 @@ public class CheckedBodyCodec {
     }
 
     private static class MossiTextReader {
-        final String input;
+        final byte[] input;
         int pos = 0;
 
-        MossiTextReader(String input) {
+        MossiTextReader(byte[] input) {
             this.input = input;
         }
 
         String line() {
-            int end = input.indexOf('\n', pos);
-            if (end == -1) {
+            int end = pos;
+            while (end < input.length && input[end] != '\n') end++;
+            if (end == input.length) {
                 throw new CompileError(0, "ABI-v10 record line is truncated", "SOURCE_FREE_CONTRACT_INVALID");
             }
-            String res = input.substring(pos, end);
+            String res = decodeUtf8(input, pos, end - pos);
             pos = end + 1;
             return res;
         }
 
         String bytes(int count) {
-            if (pos + count > input.length()) {
+            if (count < 0 || pos + count > input.length) {
                 throw new CompileError(0, "ABI-v10 framed record is truncated", "SOURCE_FREE_CONTRACT_INVALID");
             }
-            String res = input.substring(pos, pos + count);
+            String res = decodeUtf8(input, pos, count);
             pos += count;
             return res;
         }
@@ -341,7 +345,18 @@ public class CheckedBodyCodec {
         }
 
         boolean isDone() {
-            return pos == input.length();
+            return pos == input.length;
+        }
+    }
+
+    private static String decodeUtf8(byte[] input, int offset, int length) {
+        try {
+            return StandardCharsets.UTF_8.newDecoder()
+                    .onMalformedInput(CodingErrorAction.REPORT)
+                    .onUnmappableCharacter(CodingErrorAction.REPORT)
+                    .decode(ByteBuffer.wrap(input, offset, length)).toString();
+        } catch (CharacterCodingException ex) {
+            throw new CompileError(0, "ABI-v10 text is not valid UTF-8", "SOURCE_FREE_CONTRACT_INVALID");
         }
     }
 
@@ -381,10 +396,11 @@ public class CheckedBodyCodec {
         if (text == null || !text.startsWith(MOSSI_HEADER)) {
             throw new CompileError(0, "source-free provider requires an ABI-v10 source rebuild", "SOURCE_FREE_ABI_REBUILD_REQUIRED");
         }
-        if (text.length() > MAX_MOSSI_CHARS) {
+        byte[] encodedText = text.getBytes(StandardCharsets.UTF_8);
+        if (encodedText.length > MAX_MOSSI_BYTES) {
             throw new CompileError(0, "ABI-v10 interface exceeds its size limit", "SOURCE_FREE_CONTRACT_INVALID");
         }
-        MossiTextReader reader = new MossiTextReader(text);
+        MossiTextReader reader = new MossiTextReader(encodedText);
         String magic = reader.line();
         if (!magic.equals("moss-module-interface-v3")) {
             throw new CompileError(0, "ABI-v10 magic is malformed", "SOURCE_FREE_CONTRACT_INVALID");
