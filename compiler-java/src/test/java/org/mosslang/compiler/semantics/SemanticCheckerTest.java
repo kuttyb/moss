@@ -3,6 +3,7 @@ package org.mosslang.compiler.semantics;
 import org.mosslang.compiler.ast.Program;
 import org.mosslang.compiler.diagnostics.CompileError;
 import org.mosslang.compiler.parser.Parser;
+import org.mosslang.compiler.types.AccessMode;
 
 public class SemanticCheckerTest {
     public static void main(String[] args) {
@@ -11,6 +12,7 @@ public class SemanticCheckerTest {
         testStructuralMethodSignatureIsChecked();
         testInferredMethodReturnSatisfiesStructuralTrait();
         testInferredMethodReturnMustMatchStructuralTrait();
+        testFunctionParameterAccessModesAreRetained();
         System.out.println("SemanticCheckerTest PASSED.");
     }
 
@@ -109,6 +111,28 @@ public class SemanticCheckerTest {
             if (!"TYPE_MISMATCH".equals(error.getCode())) {
                 throw new AssertionError("expected TYPE_MISMATCH, got " + error.getCode(), error);
             }
+        }
+    }
+
+    private static void testFunctionParameterAccessModesAreRetained() {
+        Program program = Parser.parseSource(""
+                + "fn read(value: Int) -> Int:\n"
+                + "  return value\n"
+                + "fn write(values: Vector[Int]):\n"
+                + "  values.push(1)\n"
+                + "fn transfer(values: Vector[Int]) -> Vector[Int]:\n"
+                + "  return values\n"
+                + "fn main():\n"
+                + "  pass\n", "parameter-access.moss");
+        new SemanticChecker(program).run();
+        assertEquals(AccessMode.Read, program.functions.get(0).parameterAccessModes.get(0));
+        assertEquals(AccessMode.Write, program.functions.get(1).parameterAccessModes.get(0));
+        assertEquals(AccessMode.Consume, program.functions.get(2).parameterAccessModes.get(0));
+    }
+
+    private static void assertEquals(Object expected, Object actual) {
+        if (!expected.equals(actual)) {
+            throw new AssertionError("expected " + expected + ", got " + actual);
         }
     }
 }

@@ -2,9 +2,12 @@ package org.mosslang.compiler.project;
 
 import org.mosslang.compiler.ast.EnumCase;
 import org.mosslang.compiler.ast.Field;
+import org.mosslang.compiler.ast.Function;
+import org.mosslang.compiler.ast.Param;
 import org.mosslang.compiler.abi.CheckedBodyCodec;
 import org.mosslang.compiler.abi.MossiInterface;
 import org.mosslang.compiler.diagnostics.CompileError;
+import org.mosslang.compiler.types.AccessMode;
 
 import java.nio.file.Path;
 
@@ -25,7 +28,24 @@ public final class ProjectBuilderMetadataTest {
                 semantic.toString());
         testV10ImportRecordRequiresModuleBoundHashes();
         testV10SectionHashValidation();
+        testV9FunctionParameterAccessSerialization();
         System.out.println("ProjectBuilderMetadataTest PASSED.");
+    }
+
+    private static void testV9FunctionParameterAccessSerialization() {
+        Function function = new Function("provider__f", "fn f(a: Int, b: Vector[Int], c: Vector[Int])", 3,
+                "provider.moss", true);
+        function.params.add(new Param("a", "Int"));
+        function.params.add(new Param("b", "Vector[Int]"));
+        function.params.add(new Param("c", "Vector[Int]"));
+        function.parameterAccessModes.add(AccessMode.Read);
+        function.parameterAccessModes.add(AccessMode.Write);
+        function.parameterAccessModes.add(AccessMode.Consume);
+        StringBuilder record = new StringBuilder();
+        ProjectBuilder.appendV9FunctionRecord(record, function, "f", "effects=may_panic=0", false);
+        assertContains(record.toString(), "param 0 Int mode=READ name=\"a\"");
+        assertContains(record.toString(), "param 1 Vector[Int] mode=WRITE name=\"b\"");
+        assertContains(record.toString(), "param 2 Vector[Int] mode=CONSUME name=\"c\"");
     }
 
     private static void testV10ImportRecordRequiresModuleBoundHashes() {
@@ -72,5 +92,9 @@ public final class ProjectBuilderMetadataTest {
         if (!expected.equals(actual)) {
             throw new AssertionError("expected <" + expected + "> but got <" + actual + ">");
         }
+    }
+
+    private static void assertContains(String value, String expected) {
+        if (!value.contains(expected)) throw new AssertionError("missing <" + expected + "> from <" + value + ">");
     }
 }

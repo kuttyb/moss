@@ -865,9 +865,21 @@ public class Main {
                     String[] pParts = line.split("\\s+");
                     String pType = pParts.length > 2 && !pParts[2].startsWith("mode=")
                             ? pParts[2] : "";
+                    int parameterIndex = pParts.length > 1 ? Integer.parseInt(pParts[1]) : currentFn.params.size();
                     if (currentFn.params.stream().noneMatch(p -> p.name.equals(pName))) {
                         currentFn.params.add(new org.mosslang.compiler.ast.Param(pName, pType));
                     }
+                    String mode = "READ";
+                    for (String part : pParts) if (part.startsWith("mode=")) mode = part.substring(5);
+                    org.mosslang.compiler.types.AccessMode access = switch (mode) {
+                        case "WRITE" -> org.mosslang.compiler.types.AccessMode.Write;
+                        case "CONSUME" -> org.mosslang.compiler.types.AccessMode.Consume;
+                        default -> org.mosslang.compiler.types.AccessMode.Read;
+                    };
+                    while (currentFn.parameterAccessModes.size() <= parameterIndex) {
+                        currentFn.parameterAccessModes.add(org.mosslang.compiler.types.AccessMode.Read);
+                    }
+                    currentFn.parameterAccessModes.set(parameterIndex, access);
                 } else if (currentFn != null && line.startsWith("generic_source ")) {
                     java.util.regex.Matcher m = java.util.regex.Pattern.compile("\"([^\"]*)\"").matcher(line);
                     if (m.find()) {
@@ -927,6 +939,7 @@ public class Main {
                             alias.staticDispatch = currentFn.staticDispatch;
                             alias.params = currentFn.params;
                             alias.body = currentFn.body;
+                            alias.parameterAccessModes = currentFn.parameterAccessModes;
                             alias.returnType = currentFn.returnType;
                             alias.resultExpression = currentFn.resultExpression;
                             alias.resultLine = currentFn.resultLine;

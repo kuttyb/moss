@@ -12445,3 +12445,20 @@ diff check passed. This path is still incomplete for correctness: it currently
 projects parameter access as READ and retains approximate zero-valued function
 and method effects. ABI-v9 effect inference and full native/source-free
 acceptance remain open; no native build was run.
+
+### Phase 25.3 continuation — preserve inferred v9 parameter access modes
+
+The Java semantic checker already classifies function parameters as READ,
+WRITE, or CONSUME for its ownership checks, but the ABI-v9 writer discarded
+those facts and serialized every imported parameter as READ. `Function` now
+retains the checker classifications, the v9 writer emits the mode, and the
+source-free reader restores it (including on the generic native alias).
+Focused tests cover checker classification, serialized rows, and a synthetic
+provider reload.
+
+Validation after this edit: `./scripts/java/build.sh && ./scripts/java/test.sh`
+passed; all nine Java test classes passed, including parsing all 33 real
+examples. The classifications use the existing syntax-based ownership helpers;
+this does not establish complete effect/access inference. Function and method
+effect metadata, v10 record decoding, native/source-free integration, SDK
+compatibility, and frozen-candidate acceptance remain open.

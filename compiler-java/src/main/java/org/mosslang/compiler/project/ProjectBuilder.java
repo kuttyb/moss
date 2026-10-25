@@ -925,9 +925,12 @@ public class ProjectBuilder {
         }
         for (int i = 0; i < function.params.size(); i++) {
             Param parameter = function.params.get(i);
+            org.mosslang.compiler.types.AccessMode access = i < function.parameterAccessModes.size()
+                    ? function.parameterAccessModes.get(i) : org.mosslang.compiler.types.AccessMode.Read;
             out.append("  param ").append(i).append(" ")
                     .append(parameter.type != null ? parameter.type : "")
-                    .append(" mode=READ name=\"").append(parameter.name).append("\"\n");
+                    .append(" mode=").append(access.name().toUpperCase(java.util.Locale.ROOT))
+                    .append(" name=\"").append(parameter.name).append("\"\n");
         }
         if (!semanticRecord || (!function.staticDispatch && !function.generic)) return;
         out.append("  open_parameters");

@@ -601,6 +601,22 @@ public class SemanticChecker {
             if (hasUnannotatedParam) {
                 f.generic = true;
             }
+            if (f.generic) f.staticDispatch = true;
+            f.parameterAccessModes.clear();
+            for (int parameterIndex = 0; parameterIndex < f.params.size(); parameterIndex++) {
+                Param parameter = f.params.get(parameterIndex);
+                TypeRef parameterType = parameter.typeRef != null ? parameter.typeRef
+                        : (parameter.type != null && !parameter.type.isEmpty()
+                                ? TypeParser.parseCanonical(parameter.type) : null);
+                if (doesFunctionConsumeParam(f, parameterIndex)
+                        && parameterType != null && transferType(parameterType)) {
+                    f.parameterAccessModes.add(AccessMode.Consume);
+                } else if (doesFunctionMutateParam(f, parameterIndex)) {
+                    f.parameterAccessModes.add(AccessMode.Write);
+                } else {
+                    f.parameterAccessModes.add(AccessMode.Read);
+                }
+            }
             if (resolvedReturn.isClosed()) {
                 f.bindReturnType(resolvedReturn);
             } else {

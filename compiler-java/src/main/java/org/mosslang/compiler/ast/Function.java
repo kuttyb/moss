@@ -4,6 +4,7 @@ import org.eclipse.collections.api.list.MutableList;
 import org.eclipse.collections.impl.list.mutable.FastList;
 import org.eclipse.collections.impl.list.mutable.primitive.IntArrayList;
 import org.mosslang.compiler.types.TypeContext;
+import org.mosslang.compiler.types.AccessMode;
 import org.mosslang.compiler.types.TypeParser;
 import org.mosslang.compiler.types.TypeRef;
 
@@ -23,6 +24,7 @@ public class Function {
     public IntArrayList resultContinuationLines = new IntArrayList();
     public boolean generic = false;
     public boolean staticDispatch = false;
+    public java.util.List<AccessMode> parameterAccessModes = new java.util.ArrayList<>();
     public java.util.List<FunctionSpecialization> specializations = new java.util.ArrayList<>();
     public int line = 0;
     public boolean exported = false;
