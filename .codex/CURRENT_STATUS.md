@@ -15610,3 +15610,15 @@ layer; provider/consumer Rust compilation and execution remain unverified.
 
 All twelve Java unit-test classes pass in default ABI-v9 and staged ABI-v10;
 feedback and diff checks are pending for the checkpoint.
+
+
+### Phase 25.3 continuation — include division in return panic effects
+
+The source-free panic scanner now checks all expression-bearing statements for
+assert/panic/unwrap, indexing, division, and remainder, with strings masked.
+An exported `divide(value: Int) -> Int` fixture returning `10 / value` now
+exports `may_panic=1`; the quoted panic-like text control remains `0`.
+
+All twelve Java unit-test classes pass under default ABI-v9 and staged
+ABI-v10; feedback and diff checks are pending for the checkpoint. This remains
+conservative syntactic effect inference, not complete panic analysis.

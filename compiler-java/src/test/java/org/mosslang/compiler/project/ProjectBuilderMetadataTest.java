@@ -174,6 +174,8 @@ public final class ProjectBuilderMetadataTest {
                 + "  assert(false)\n"
                 + "export fn delegated_failure():\n"
                 + "  assert_failure()\n"
+                + "export fn divide(value: Int) -> Int:\n"
+                + "  return 10 / value\n"
                 + "type Box:\n"
                 + "  fn crash():\n"
                 + "    assert(false)\n"
@@ -203,6 +205,12 @@ public final class ProjectBuilderMetadataTest {
                 .findFirst().orElse("");
         if (!direct.contains("may_panic=1")) {
             throw new AssertionError("exported panic effect omitted a direct result-expression panic: " + direct);
+        }
+        String divide = text.lines().filter(line -> line.contains("divide ")
+                        && line.contains("may_panic="))
+                .findFirst().orElse("");
+        if (!divide.contains("may_panic=1")) {
+            throw new AssertionError("exported panic effect omitted return division: " + divide);
         }
         if (!delegated.contains("may_panic=1")) {
             throw new AssertionError("exported panic effect omitted an asserting helper: " + delegated);

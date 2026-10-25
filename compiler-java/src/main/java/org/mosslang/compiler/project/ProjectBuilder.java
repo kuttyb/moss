@@ -2534,6 +2534,7 @@ public class ProjectBuilder {
                     + (statement.a == null ? "" : statement.a) + " "
                     + (statement.b == null ? "" : statement.b));
             String rightHandSide = maskStringLiterals(statement.b == null ? "" : statement.b);
+            if (mayPanicExpression(text)) return true;
             if (text.matches("(?s).*\\b(assert|panic|unwrap)\\s*\\(.*")
                     || text.matches("(?s).*\\[[^]]+\\].*")) return true;
             if (statement.kind == Stmt.Kind.Assign
@@ -2683,7 +2684,8 @@ public class ProjectBuilder {
         if (expression == null || expression.isBlank()) return false;
         String code = maskStringLiterals(expression);
         return code.matches("(?s).*\\b(assert|panic|unwrap)\\s*\\(.*")
-                || code.matches("(?s).*\\[[^]]+\\].*");
+                || code.matches("(?s).*\\[[^]]+\\].*")
+                || code.contains("/") || code.contains("%");
     }
 
     private static String maskStringLiterals(String expression) {
