@@ -14162,3 +14162,17 @@ this correction needs checked `try/recover` exceptional-edge state selection,
 not just normal-path literal ownership tracking. On the rebuilt source, both
 ABI Java suites pass and the 91-file screen remains 8 C++-only, 2 Java-only,
 53 both accepted, and 28 both rejected. Treat both fixtures as open evidence.
+
+### Phase 25.3 audit note — pipeline stage raise edges remain open
+
+`phase21_pipeline_shared_variant_edges.moss` remains the Java-only acceptance in
+the current 91-file screen. The companion `phase21_pipeline_source_before_consume.moss`
+is a required positive control. Their shared rule is evaluation-stage order:
+`source(flag)` can raise before the `reduce` initializer transfers `data`,
+while the `fold` callback can raise after that transfer; both variants select
+the same recover arm, which must be valid on every incoming ownership edge.
+The C++ ownership checker records callback raises at the stage boundary.
+Java currently misses this pipeline exceptional-edge flow. The previously
+referenced tooling script also runs Rust compilation/native execution, so that
+expensive gate was not run here. No partial pipeline change was retained; the
+91-file checker sample remains at 8 C++-only and 2 Java-only divergences.
