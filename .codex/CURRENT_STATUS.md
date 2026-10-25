@@ -14365,3 +14365,12 @@ rather than relying on the checkout's classpath. The JDT client lifecycle unit
 suite passes all five tests; its failure-path message about unavailable JDT
 is expected in the test's mocked startup-failure case. No running JDT daemon
 was left behind.
+
+### Phase 25.3 continuation — standalone examples semantic screen
+
+A sequential checker comparison over the 33 top-level `examples/*.moss` files
+found no C++/Java acceptance mismatches and no warning/error-code mismatches.
+The machine-readable rows are in disposable
+`tmp/phase253_examples_semantic_screen.json`. This covers the repository's
+standalone language examples only; it does not cover the 776-file recursive
+examples tree, project builds, generated Rust compilation, or runtime behavior.
