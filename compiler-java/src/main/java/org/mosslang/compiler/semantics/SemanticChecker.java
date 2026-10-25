@@ -2253,6 +2253,7 @@ public class SemanticChecker {
         if (fn == null || paramIdx < 0 || paramIdx >= fn.params.size()) return false;
         String pName = fn.params.get(paramIdx).name;
         TypeRef parameterType = functionParameterType(fn.params.get(paramIdx));
+        if (functionCallsPassingParamToWritingMethod(fn, pName, parameterType)) return true;
         if (functionCallsWritingNestedReceiver(fn, pName, parameterType)) return true;
         if (functionCallWritesParam(fn, pName, parameterType)) return true;
         ObjectType parameterObject = parameterType != null
@@ -2351,6 +2352,67 @@ public class SemanticChecker {
                         String receiver = matchedCall.substring(0, matchedCall.lastIndexOf('.')).trim();
                         String receiverType = resolveFunctionReceiverType(receiver, bindings);
                         if (matchesObjectTypeName(receiverType, object.name)) return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    private boolean functionCallsPassingParamToWritingMethod(Function caller, String paramName,
+                                                              TypeRef parameterType) {
+        Map<String, TypeRef> bindings = new HashMap<>();
+        if (program.localBindingTypes != null)
+            bindings.putAll(program.localBindingTypes.getOrDefault(caller.name, Map.of()));
+        for (Param parameter : caller.params) {
+            TypeRef type = functionParameterType(parameter);
+            if (type != null) bindings.putIfAbsent(parameter.name, type);
+        }
+        List<String> expressions = new ArrayList<>();
+        Deque<Map.Entry<Integer, Set<String>>> caseScopes = new ArrayDeque<>();
+        for (Stmt statement : caller.body) {
+            while (!caseScopes.isEmpty() && statement.indent <= caseScopes.peek().getKey())
+                caseScopes.pop();
+            if (statement.kind == Stmt.Kind.Case) {
+                caseScopes.push(Map.entry(statement.indent, new HashSet<>(statement.args)));
+                continue;
+            }
+            if (caseScopes.stream().anyMatch(scope -> scope.getValue().contains(paramName))) continue;
+            expressions.add(statementExpressionText(statement));
+        }
+        if (caller.resultExpression != null) expressions.add(caller.resultExpression);
+        for (ObjectType object : program.objects) {
+            for (Method method : object.methods) {
+                if (method.parameterAccessModes.stream().noneMatch(mode -> mode == AccessMode.Write)) continue;
+                java.util.regex.Pattern callPattern = java.util.regex.Pattern.compile(
+                        "(?<![A-Za-z0-9_])([A-Za-z_][A-Za-z0-9_]*(?:\\s*\\.\\s*[A-Za-z_][A-Za-z0-9_]*)*)"
+                                + "\\s*\\.\\s*" + java.util.regex.Pattern.quote(method.name)
+                                + "\\s*\\(");
+                for (String expression : expressions) {
+                    java.util.regex.Matcher call = callPattern.matcher(expression);
+                    while (call.find()) {
+                        String receiverType = resolveFunctionReceiverType(call.group(1), bindings);
+                        if (!matchesObjectTypeName(receiverType, object.name)) continue;
+                        int open = expression.indexOf('(', call.start());
+                        int close = -1;
+                        for (int cursor = open + 1; cursor < expression.length(); cursor++) {
+                            if (expression.charAt(cursor) == ')'
+                                    && ExpressionTyper.findMatchingOpenParen(expression, cursor) == open) {
+                                close = cursor;
+                                break;
+                            }
+                        }
+                        if (close < 0) continue;
+                        List<String> args = ExpressionTyper.parseArguments(
+                                expression.substring(open + 1, close));
+                        for (int index = 0; index < args.size()
+                                && index < method.parameterAccessModes.size(); index++) {
+                            if (method.parameterAccessModes.get(index) != AccessMode.Write) continue;
+                            String argument = callArgumentValue(args.get(index));
+                            if (argument.equals(paramName)) return true;
+                            if (resolveReceiverPathType(parameterType, argument, paramName) != null)
+                                return true;
+                        }
                     }
                 }
             }

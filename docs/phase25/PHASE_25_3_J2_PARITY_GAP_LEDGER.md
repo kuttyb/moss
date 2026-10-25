@@ -587,3 +587,16 @@ The semantic test covers owned `Payload` rejection and confirms an inferred
 generic identity with an `Int` remains reusable. All eleven Java test classes
 pass under ABI-v9 and staged ABI-v10. Generic cross-module summaries remain
 open.
+
+
+### Follow-up — summarize method WRITE arguments
+
+For `relay(values, box) -> box.append_to(values)`, C++ reported
+`values: WRITE` while Java reported READ, even though the method mutates the
+parameter. Java function summaries now resolve the static method receiver and
+inspect its checked argument access modes, propagating WRITE to the forwarded
+parameter.
+
+The semantic test covers the call and the focused C++/Java effects queries
+agree. All eleven Java test classes pass under ABI-v9 and staged ABI-v10.
+Imported and generic method argument summaries remain open.

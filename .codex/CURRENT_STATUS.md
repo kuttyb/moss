@@ -15249,3 +15249,16 @@ reproducer now matches C++.
 Regression coverage also confirms an inferred generic identity called with an
 `Int` remains reusable. All eleven Java test classes pass under ABI-v9 and
 staged ABI-v10; generic cross-module summaries remain open.
+
+
+### Phase 25.3 continuation — summarize method WRITE arguments
+
+For `relay(values, box) -> box.append_to(values)`, C++ reported
+`values: WRITE` while Java reported READ, even though the method mutates its
+parameter. Function parameter inference now resolves the called method's
+receiver and checked argument modes, then propagates WRITE to the forwarded
+function parameter. Focused C++/Java effects queries agree.
+
+The semantic regression covers this method argument path. All eleven Java
+test classes pass under ABI-v9 and staged ABI-v10; imported and generic method
+argument summaries remain open.

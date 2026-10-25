@@ -20,6 +20,7 @@ public class SemanticCheckerTest {
         testInferredGenericConsumeSummaryUsesCheckedParameterType();
         testFunctionWriteSummaryPropagatesThroughHelperCalls();
         testFunctionWriteModePropagatesThroughNestedMethodReceiver();
+        testFunctionWriteModePropagatesThroughMethodArguments();
         testFunctionConsumeSummaryIncludesObjectConstructors();
         testFunctionRetainsResolvedOpenParameterTypes();
         testGenericNumericOperationRetainsOpenTypeUntilSpecialization();
@@ -708,6 +709,23 @@ public class SemanticCheckerTest {
                 + "  box = Box(sink=Sink(value=0))\n"
                 + "  relay(box)\n"
                 + "  echo box.sink.value\n", "function-write-nested-receiver.moss");
+        new SemanticChecker(program).run();
+        Function relay = program.functions.stream().filter(function -> function.name.equals("relay"))
+                .findFirst().orElseThrow();
+        assertEquals(AccessMode.Write, relay.parameterAccessModes.get(0));
+    }
+
+    private static void testFunctionWriteModePropagatesThroughMethodArguments() {
+        Program program = Parser.parseSource(""
+                + "type Box:\n"
+                + "  fn append_to(values: Vector[Int]):\n"
+                + "    values.push(1)\n"
+                + "fn relay(values: Vector[Int], box: Box):\n"
+                + "  box.append_to(values)\n"
+                + "fn main():\n"
+                + "  var values = Vector[Int]()\n"
+                + "  box = Box()\n"
+                + "  relay(values, box)\n", "function-write-method-argument.moss");
         new SemanticChecker(program).run();
         Function relay = program.functions.stream().filter(function -> function.name.equals("relay"))
                 .findFirst().orElseThrow();
