@@ -14559,3 +14559,11 @@ writing, for both indexed assignment and `replace`. A focused object-field Map
 regression passes. The packaged Java Margo interpreter passes all 13 ChainMap
 tests, matching the C++ Fast Debug result; all eleven Java unit-test classes
 pass under ABI-v9 and staged ABI-v10.
+
+### Phase 25.3 continuation — recheck project tests and measured benchmarks
+
+After the Fast Debug changes, packaged Java Margo re-ran the phase7 demo's two
+project tests successfully. Its benchmark command evaluated four declared
+bodies from the source and bench files, reporting 31 samples after five warmups
+and 100 iterations per sample. This confirms the current test and benchmark
+paths still execute real Moss bodies; no native project build or SDK gate ran.
