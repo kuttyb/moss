@@ -14533,3 +14533,19 @@ HashMap project tests. All eleven Java unit-test classes pass under ABI-v9 and
 staged ABI-v10. C++ Fast Debug still rejects this specific spaced constructor
 as unresolved; C++ and Java static check both accept the source, so this fix
 follows Moss source acceptance rather than the C++ interpreter limitation.
+
+### Phase 25.3 continuation — Moss structural assertions and nested collection replacement
+
+The Python deque project exposed two more Fast Debug defects. `assertEqual`
+compared collection backing objects with Java identity instead of Moss value
+equality, so equal vectors failed. After correcting that, deque growth tests
+showed that an outer method used a stale local collection reference after a
+nested method replaced the object field. Assertions now call the interpreter's
+recursive Moss value equality, and indexed assignments resolve a current object
+field before the method-local snapshot. Unit regressions cover equal vector
+assertions and indexed writes after nested field replacement.
+
+The packaged Java Margo interpreter passes all 22 Python deque tests. All eleven
+Java unit-test classes pass under ABI-v9 and staged ABI-v10. This is Fast Debug
+project evidence; native execution and frozen-candidate release gates remain
+outstanding.

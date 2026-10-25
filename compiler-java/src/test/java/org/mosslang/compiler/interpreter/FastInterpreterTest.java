@@ -10,6 +10,7 @@ import java.nio.charset.StandardCharsets;
 public final class FastInterpreterTest {
     public static void main(String[] args) {
         testFractionalAndMixedNumericComparisons();
+        testAssertEqualUsesMossVectorEquality();
         testIeeeAndMixedNumericEquality();
         testWhileLoopRepeatsCheckedBody();
         testLocalWriteTraceIsStructuredAndEscaped();
@@ -25,6 +26,7 @@ public final class FastInterpreterTest {
         testObjectMethodUpdatesScalarField();
         testObjectMethodFieldShadowsSameNamedParameter();
         testSpacedGenericCollectionConstructors();
+        testNestedMethodFieldReplacementPrecedesStaleLocalSnapshot();
         testMapGetInsideObjectMethodReturnsStoredOrFallbackValue();
         testMapSizeAndMembershipMethods();
         testMapIndexedWritesTraceReceiverReads();
@@ -63,6 +65,16 @@ public final class FastInterpreterTest {
         if (!expected.equals(actual)) {
             throw new AssertionError("fractional/mixed numeric comparisons were incorrect: " + actual);
         }
+    }
+
+    private static void testAssertEqualUsesMossVectorEquality() {
+        var program = Parser.parseSource(""
+                + "fn main():\n"
+                + "  assertEqual([1, 2, 3], [1, 2, 3])\n", "fast-interpreter-vector-assert-equal.moss");
+        new CheckedProgram(program).run();
+        new FastInterpreter(program, false,
+                new PrintStream(new ByteArrayOutputStream()),
+                new PrintStream(new ByteArrayOutputStream())).run();
     }
 
     private static void testIeeeAndMixedNumericEquality() {
@@ -454,6 +466,38 @@ public final class FastInterpreterTest {
         String actual = stdout.toString(StandardCharsets.UTF_8);
         if (!"7\n9\n".equals(actual)) {
             throw new AssertionError("spaced generic Vector constructor did not create a Vector: " + actual);
+        }
+    }
+
+    private static void testNestedMethodFieldReplacementPrecedesStaleLocalSnapshot() {
+        var program = Parser.parseSource(""
+                + "type Buffer:\n"
+                + "  data: Vector[Int]\n"
+                + "  size: Int\n"
+                + "  cap: Int\n"
+                + "  fn grow():\n"
+                + "    data = [1, 2, 3, 4, 5, 6, 7, 8]\n"
+                + "    cap = 8\n"
+                + "  fn append(value: Int):\n"
+                + "    if size == cap:\n"
+                + "      grow()\n"
+                + "    data[size] = value\n"
+                + "    size = size + 1\n"
+                + "  fn at(index: Int) -> Int:\n"
+                + "    return data[index]\n"
+                + "fn main():\n"
+                + "  buffer = Buffer(data: [1, 2, 3, 4], size: 4, cap: 4)\n"
+                + "  buffer.append(5)\n"
+                + "  echo buffer.at(4)\n", "fast-interpreter-nested-object-vector-replacement.moss");
+        new CheckedProgram(program).run();
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+        try (PrintStream captured = new PrintStream(stdout, true, StandardCharsets.UTF_8)) {
+            new FastInterpreter(program, false, captured,
+                    new PrintStream(new ByteArrayOutputStream())).run();
+        }
+        String actual = stdout.toString(StandardCharsets.UTF_8);
+        if (!"5\n".equals(actual)) {
+            throw new AssertionError("indexed write used a stale object field after nested method replacement: " + actual);
         }
     }
 
