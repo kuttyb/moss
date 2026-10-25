@@ -23,8 +23,29 @@ public final class ProjectBuilderMetadataTest {
         ProjectBuilder.appendEnumCaseSemantic(semantic, payload);
         assertEquals("  enum_case \"Rgb\" 3 \"red\" \"int\" \"green\" \"float\" \"blue\" \"string\"\n",
                 semantic.toString());
+        testV10ImportRecordRequiresModuleBoundHashes();
         testV10SectionHashValidation();
         System.out.println("ProjectBuilderMetadataTest PASSED.");
+    }
+
+    private static void testV10ImportRecordRequiresModuleBoundHashes() {
+        SourceFreeAbi.MossiInfo dependency = new SourceFreeAbi.MossiInfo();
+        dependency.moduleId = "module-v1:provider@1.0.0::service";
+        dependency.binaryHash = "sha256:" + "1".repeat(64);
+        dependency.semanticHash = "sha256:" + "2".repeat(64);
+        assertEquals(dependency.moduleId + " " + dependency.binaryHash + " "
+                        + dependency.semanticHash + "\n",
+                ProjectBuilder.v10ImportRecord("service", dependency, Path.of("service.mossi")));
+
+        dependency.binaryHash = null;
+        try {
+            ProjectBuilder.v10ImportRecord("service", dependency, Path.of("service.mossi"));
+            throw new AssertionError("ABI-v10 imports require both provider contract hashes");
+        } catch (CompileError error) {
+            if (!"SOURCE_FREE_ABI_REBUILD_REQUIRED".equals(error.getCode())) {
+                throw new AssertionError("expected SOURCE_FREE_ABI_REBUILD_REQUIRED, got " + error.getCode(), error);
+            }
+        }
     }
 
     private static void testV10SectionHashValidation() {

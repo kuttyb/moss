@@ -12415,3 +12415,17 @@ Validation: Java build and all eight Java test classes passed. The writer still
 emits incomplete logical record payloads and dependency names that are not full
 v10 module IDs; full source-free v10 semantics remain unverified and incomplete.
 No native or SDK acceptance was run.
+
+### Phase 25.3 continuation — bind ABI-v10 imports to provider contracts
+
+The v10 writer previously recorded each dependency by short module name and
+reused its outer provider digest as both binary and semantic contract hashes.
+It now reads the selected provider's full module ID and distinct binary and
+semantic hashes. A dependency lacking a v10 module identity or either contract
+hash fails with `SOURCE_FREE_ABI_REBUILD_REQUIRED` instead of emitting a
+noncanonical import row. Added positive and negative unit coverage for import
+record construction. This does not add the missing v10 type/callable record
+schemas or decoder integration.
+
+Validation: Java build, all eight Java test classes, and `git diff --check`
+passed. Native and source-free project acceptance remains open.

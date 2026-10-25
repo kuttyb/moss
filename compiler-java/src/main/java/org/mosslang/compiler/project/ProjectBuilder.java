@@ -888,6 +888,19 @@ public class ProjectBuilder {
         out.append("\n");
     }
 
+    static String v10ImportRecord(String dependencyName, SourceFreeAbi.MossiInfo dependency,
+                                  Path dependencyArtifact) throws CompileError {
+        if (dependency == null || dependency.moduleId == null
+                || !dependency.moduleId.startsWith("module-v1:")
+                || dependency.binaryHash == null || !dependency.binaryHash.startsWith("sha256:")
+                || dependency.semanticHash == null || !dependency.semanticHash.startsWith("sha256:")) {
+            throw new CompileError("SOURCE_FREE_ABI_REBUILD_REQUIRED",
+                    "ABI-v10 provider dependency '" + dependencyName + "' is missing a complete v10 module identity or contract hash; rebuild it with MOSS_STAGED_ABI=v10",
+                    dependencyArtifact != null ? dependencyArtifact.toString() : "", 1);
+        }
+        return dependency.moduleId + " " + dependency.binaryHash + " " + dependency.semanticHash + "\n";
+    }
+
     private static String generateMossiInterface(ProjectManifest manifest, String module, Program prog, BackendToolchain toolchain, List<String> deps, Path buildDir, Map<String, List<Path>> externalCandidateProviders) {
         StringBuilder contractBuf = new StringBuilder();
         StringBuilder semanticBuf = new StringBuilder();
@@ -990,8 +1003,9 @@ public class ProjectBuilder {
                     List<Path> ext = externalCandidateProviders.get(dep);
                     if (ext != null && !ext.isEmpty()) depMossi = ext.get(0);
                 }
-                String d = (depMossi != null && Files.exists(depMossi)) ? SourceFreeAbi.extractContractDigest(depMossi) : "0000000000000000000000000000000000000000000000000000000000000000";
-                importsBuf.append(dep).append(" sha256:").append(d).append(" sha256:").append(d).append("\n");
+                SourceFreeAbi.MossiInfo dependency = depMossi != null && Files.exists(depMossi)
+                        ? SourceFreeAbi.parseMossiInfo(depMossi) : null;
+                importsBuf.append(v10ImportRecord(dep, dependency, depMossi));
             }
             String importsStr = importsBuf.toString();
 
