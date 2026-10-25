@@ -901,6 +901,81 @@ public class ProjectBuilder {
         return dependency.moduleId + " " + dependency.binaryHash + " " + dependency.semanticHash + "\n";
     }
 
+    static void appendV9FunctionRecord(StringBuilder out, Function function, String publicName,
+                                       String effects, boolean semanticRecord) {
+        String kind = function.generic ? "generic"
+                : function.staticDispatch ? "static" : "concrete";
+        String semanticBody = function.header + "\n";
+        for (Stmt statement : function.body) semanticBody += statement.text + "\n";
+        if (function.resultExpression != null) semanticBody += function.resultExpression + "\n";
+        String semanticHash = fnv1a64Hex(semanticBody);
+        String returnType = function.returnType != null && !function.returnType.isEmpty()
+                ? function.returnType : "unit";
+        if (semanticRecord) {
+            out.append("export fn ").append(publicName).append(" kind=").append(kind)
+                    .append(" semantic_hash=").append(semanticHash)
+                    .append(" return=").append(returnType).append(" ").append(effects)
+                    .append("\n");
+        } else {
+            String symbol = org.mosslang.compiler.backend.DebugMapGenerator.toolingNativeSymbol(
+                    "function", function.name, "fn:" + function.name + "@" + function.line);
+            out.append("fn ").append(publicName).append(" kind=").append(kind)
+                    .append(" return=").append(returnType).append(" ").append(effects)
+                    .append(" symbol=").append(symbol).append("\n");
+        }
+        for (int i = 0; i < function.params.size(); i++) {
+            Param parameter = function.params.get(i);
+            out.append("  param ").append(i).append(" ")
+                    .append(parameter.type != null ? parameter.type : "")
+                    .append(" mode=READ name=\"").append(parameter.name).append("\"\n");
+        }
+        if (!semanticRecord || (!function.staticDispatch && !function.generic)) return;
+        out.append("  open_parameters");
+        for (int i = 0; i < function.params.size(); i++) {
+            Param parameter = function.params.get(i);
+            if (parameter.type == null || parameter.type.isEmpty()) out.append(" ").append(i);
+        }
+        out.append("\n  requirements\n  specialization_dependencies\n")
+                .append("  semantic_ir_body_hash=").append(semanticHash)
+                .append("\n  generic_ir_version 1\n  generic_entity_id \"")
+                .append("fn:").append(function.name).append("@").append(function.line)
+                .append("\"\n  generic_source \"")
+                .append(function.sourceFile != null && !function.sourceFile.isEmpty()
+                        ? Path.of(function.sourceFile).getFileName() : "")
+                .append("\"\n");
+        for (int i = 0; i < function.params.size(); i++) {
+            Param parameter = function.params.get(i);
+            out.append("  generic_param ").append(i).append(" \"").append(parameter.name)
+                    .append("\" \"").append(parameter.type != null ? parameter.type : "")
+                    .append("\"\n");
+        }
+        for (Stmt statement : function.body) {
+            out.append("  generic_stmt ").append(statement.kind.ordinal()).append(" ")
+                    .append(statement.line).append(" ").append(statement.indent).append(" \"")
+                    .append(escapeMossiString(statement.text)).append("\" \"")
+                    .append(escapeMossiString(statement.a)).append("\" \"")
+                    .append(escapeMossiString(statement.b)).append("\" \"")
+                    .append(escapeMossiString(statement.semanticType)).append("\" ")
+                    .append(statement.args != null ? statement.args.size() : 0);
+            if (statement.args != null) {
+                for (String argument : statement.args) {
+                    out.append(" \"").append(escapeMossiString(argument)).append("\"");
+                }
+            }
+            out.append("\n");
+        }
+        if (function.resultExpression != null && !function.resultExpression.isEmpty()) {
+            out.append("  generic_result ").append(function.resultLine).append(" \"")
+                    .append(escapeMossiString(function.resultExpression)).append("\"\n");
+        }
+        out.append("  generic_ir_end\n");
+    }
+
+    private static String escapeMossiString(String value) {
+        if (value == null) return "";
+        return value.replace("\\", "\\\\").replace("\"", "\\\"");
+    }
+
     private static String generateMossiInterface(ProjectManifest manifest, String module, Program prog, BackendToolchain toolchain, List<String> deps, Path buildDir, Map<String, List<Path>> externalCandidateProviders) {
         StringBuilder contractBuf = new StringBuilder();
         StringBuilder semanticBuf = new StringBuilder();
@@ -969,6 +1044,7 @@ public class ProjectBuilder {
         }
 
         for (Function fn : prog.functions) {
+            if (!fn.exported) continue;
             String fnName = fn.name;
             if (fnName.startsWith(module + "__")) {
                 fnName = fnName.substring(module.length() + 2);
@@ -979,8 +1055,8 @@ public class ProjectBuilder {
                     + (mayPanic(fn.body) ? "1" : "0")
                     + ";raise_set=" + (raises ? raiseIdent : "-")
                     + ";may_diverge=0;unresolved=0";
-            contractBuf.append("export fn ").append(fnName).append(" ").append(eff).append("\n");
-            semanticBuf.append("export fn ").append(fnName).append(" ").append(eff).append("\n");
+            appendV9FunctionRecord(contractBuf, fn, fnName, eff, false);
+            appendV9FunctionRecord(semanticBuf, fn, fnName, eff, true);
         }
 
         String contractStr = contractBuf.toString();

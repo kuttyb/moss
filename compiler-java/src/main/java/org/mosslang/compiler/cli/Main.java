@@ -762,7 +762,7 @@ public class Main {
         }
     }
 
-    private static void loadMossiFunctions(Path cand, String modName, Program program) {
+    static void loadMossiFunctions(Path cand, String modName, Program program) throws CompileError {
         try {
             String text = Files.readString(cand, StandardCharsets.ISO_8859_1);
             String declared = "";
@@ -832,13 +832,17 @@ public class Main {
                     }
                     if (existing != null) {
                         currentFn = existing;
-                        if (isGeneric) currentFn.generic = true;
+                        if (isGeneric) {
+                            currentFn.generic = true;
+                            currentFn.staticDispatch = true;
+                        }
                     } else {
                         currentFn = new org.mosslang.compiler.ast.Function(qualifiedName, "fn " + fnName + "()", 1, cand.toString(), true);
                         currentFn.definingModule = modName;
                         currentFn.semanticCallableId = "callable-v1:" + moduleId + ":fn:" + fnName;
                         currentFn.exported = true;
                         currentFn.generic = isGeneric;
+                        currentFn.staticDispatch = isGeneric;
                         if (!retType.isEmpty() && !retType.startsWith("_") && !retType.equals("vector") && !retType.equals("map") && !retType.equals("queue")) {
                             currentFn.returnType = retType;
                         }
@@ -849,6 +853,7 @@ public class Main {
                         alias.semanticCallableId = currentFn.semanticCallableId;
                         alias.exported = true;
                         alias.generic = currentFn.generic;
+                        alias.staticDispatch = currentFn.staticDispatch;
                         alias.params = currentFn.params;
                         alias.body = currentFn.body;
                         alias.returnType = currentFn.returnType;
@@ -858,7 +863,8 @@ public class Main {
                     java.util.regex.Matcher m = java.util.regex.Pattern.compile("name=\"([^\"]*)\"").matcher(line);
                     String pName = m.find() ? m.group(1) : ("arg" + currentFn.params.size());
                     String[] pParts = line.split("\\s+");
-                    String pType = pParts.length > 2 ? pParts[2] : "";
+                    String pType = pParts.length > 2 && !pParts[2].startsWith("mode=")
+                            ? pParts[2] : "";
                     if (currentFn.params.stream().noneMatch(p -> p.name.equals(pName))) {
                         currentFn.params.add(new org.mosslang.compiler.ast.Param(pName, pType));
                     }
@@ -876,37 +882,105 @@ public class Main {
                         }
                     }
                 } else if (currentFn != null && line.startsWith("generic_stmt ")) {
-                    java.util.regex.Matcher m = java.util.regex.Pattern.compile("\"([^\"]*)\"").matcher(line);
-                    List<String> strs = new ArrayList<>();
-                    while (m.find()) {
-                        strs.add(m.group(1));
-                    }
-                    String[] headTokens = line.split("\"")[0].trim().split("\\s+");
+                    List<String> strs = parseMossiQuotedFields(line);
+                    int firstQuote = line.indexOf('"');
+                    String[] headTokens = line.substring(0, firstQuote).trim().split("\\s+");
                     int kindOrd = headTokens.length > 1 ? Integer.parseInt(headTokens[1]) : 0;
                     int sLine = headTokens.length > 2 ? Integer.parseInt(headTokens[2]) : 1;
                     int sIndent = headTokens.length > 3 ? Integer.parseInt(headTokens[3]) : 0;
-                    String sText = strs.size() > 0 ? strs.get(0) : "";
-                    String sA = strs.size() > 1 ? strs.get(1) : "";
-                    String sB = strs.size() > 2 ? strs.get(2) : "";
-                    String sC = strs.size() > 3 ? strs.get(3) : "";
-                    int lastQuote = line.lastIndexOf('"');
-                    int intVal = 0;
-                    if (lastQuote >= 0 && lastQuote < line.length() - 1) {
-                        try {
-                            intVal = Integer.parseInt(line.substring(lastQuote + 1).trim());
-                        } catch (Exception ignored) {}
+                    if (strs.size() < 4) {
+                        throw new IllegalArgumentException("generic_stmt requires four fixed string fields");
                     }
+                    int cursor = line.indexOf('"');
+                    for (int field = 0; field < 4; field++) {
+                        while (cursor < line.length() && Character.isWhitespace(line.charAt(cursor))) cursor++;
+                        cursor = quotedFieldEnd(line, cursor) + 1;
+                    }
+                    int nextQuote = line.indexOf('"', cursor);
+                    String countText = (nextQuote >= 0 ? line.substring(cursor, nextQuote)
+                            : line.substring(cursor)).trim();
+                    int argCount = Integer.parseInt(countText.split("\\s+")[0]);
+                    if (argCount != strs.size() - 4) {
+                        throw new IllegalArgumentException("generic_stmt argument count does not match its fields");
+                    }
+                    String sText = strs.get(0);
+                    String sA = strs.get(1);
+                    String sB = strs.get(2);
                     org.mosslang.compiler.ast.Stmt.Kind kind = org.mosslang.compiler.ast.Stmt.Kind.values()[kindOrd];
                     org.mosslang.compiler.ast.Stmt stmt = new org.mosslang.compiler.ast.Stmt(kind, sLine, sIndent, sText, sA, sB);
+                    for (int arg = 0; arg < argCount; arg++) stmt.args.add(strs.get(arg + 4));
                     currentFn.body.add(stmt);
                     if (kind == org.mosslang.compiler.ast.Stmt.Kind.Return) {
                         currentFn.resultExpression = sA;
                     }
+                } else if (currentFn != null && line.startsWith("generic_result ")) {
+                    String[] fields = line.substring("generic_result ".length()).trim().split("\\s+", 2);
+                    currentFn.resultLine = Integer.parseInt(fields[0]);
+                    List<String> quoted = parseMossiQuotedFields(line);
+                    if (quoted.size() != 1) throw new IllegalArgumentException("generic_result expression is malformed");
+                    currentFn.resultExpression = quoted.get(0);
                 } else if (line.equals("generic_ir_end")) {
+                    String aliasName = modName + "__" + currentFn.name.substring(modName.length() + 1);
+                    for (org.mosslang.compiler.ast.Function alias : program.functions) {
+                        if (alias.name.equals(aliasName)) {
+                            alias.generic = currentFn.generic;
+                            alias.staticDispatch = currentFn.staticDispatch;
+                            alias.params = currentFn.params;
+                            alias.body = currentFn.body;
+                            alias.returnType = currentFn.returnType;
+                            alias.resultExpression = currentFn.resultExpression;
+                            alias.resultLine = currentFn.resultLine;
+                            break;
+                        }
+                    }
                     currentFn = null;
                 }
             }
-        } catch (Exception ignored) {}
+        } catch (CompileError error) {
+            throw error;
+        } catch (Exception error) {
+            throw new CompileError("SOURCE_FREE_CONTRACT_INVALID",
+                    "cannot parse source-free function metadata from '" + cand + "': " + error.getMessage(),
+                    cand.toString(), 1);
+        }
+    }
+
+    private static List<String> parseMossiQuotedFields(String line) {
+        List<String> fields = new ArrayList<>();
+        for (int cursor = 0; cursor < line.length();) {
+            int quote = line.indexOf('"', cursor);
+            if (quote < 0) break;
+            StringBuilder value = new StringBuilder();
+            int i = quote + 1;
+            boolean closed = false;
+            while (i < line.length()) {
+                char ch = line.charAt(i++);
+                if (ch == '"') {
+                    closed = true;
+                    break;
+                }
+                if (ch == '\\' && i < line.length()) ch = line.charAt(i++);
+                value.append(ch);
+            }
+            if (!closed) throw new IllegalArgumentException("unterminated quoted Mossi field");
+            fields.add(value.toString());
+            cursor = i;
+        }
+        return fields;
+    }
+
+    private static int quotedFieldEnd(String line, int quoteStart) {
+        if (quoteStart < 0 || line.charAt(quoteStart) != '"') {
+            throw new IllegalArgumentException("expected quoted Mossi field");
+        }
+        for (int i = quoteStart + 1; i < line.length(); i++) {
+            if (line.charAt(i) == '\\') {
+                i++;
+            } else if (line.charAt(i) == '"') {
+                return i;
+            }
+        }
+        throw new IllegalArgumentException("unterminated quoted Mossi field");
     }
 
     public static void usage() {

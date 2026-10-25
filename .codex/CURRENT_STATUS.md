@@ -12429,3 +12429,19 @@ schemas or decoder integration.
 
 Validation: Java build, all eight Java test classes, and `git diff --check`
 passed. Native and source-free project acceptance remains open.
+
+### Phase 25.3 continuation — ABI-v9 exported function records
+
+The ABI-v9 writer now limits function records to exported functions and emits
+contract-level return/parameter records, generated native symbols, semantic
+hashes, and generic body records. The source-free reader now preserves generic
+statement arguments and result expressions, synchronizes those facts to its
+native function alias, and reports malformed metadata instead of silently
+swallowing parse failures. A focused synthetic provider test exercises typed
+parameters, generic dispatch, generic call arguments, and result projection.
+
+Validation: Java build, all nine Java test classes, feedback validation, and
+diff check passed. This path is still incomplete for correctness: it currently
+projects parameter access as READ and retains approximate zero-valued function
+and method effects. ABI-v9 effect inference and full native/source-free
+acceptance remain open; no native build was run.
