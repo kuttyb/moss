@@ -1142,6 +1142,37 @@ public class SemanticChecker {
     private boolean doesFunctionMutateParam(Function fn, int paramIdx) {
         if (fn == null || paramIdx < 0 || paramIdx >= fn.params.size()) return false;
         String pName = fn.params.get(paramIdx).name;
+        TypeRef parameterType = fn.params.get(paramIdx).typeRef != null
+                ? fn.params.get(paramIdx).typeRef
+                : (fn.params.get(paramIdx).type != null
+                        ? TypeParser.parseCanonical(fn.params.get(paramIdx).type) : null);
+        ObjectType parameterObject = parameterType != null
+                && parameterType.kind() == TypeKind.NominalInstance
+                        ? objects.get(parameterType.name()) : null;
+        if (parameterObject != null) {
+            java.util.regex.Pattern methodCall = java.util.regex.Pattern.compile(
+                    "\\b" + java.util.regex.Pattern.quote(pName)
+                            + "\\.([A-Za-z_][A-Za-z0-9_]*)\\s*\\(");
+            List<String> expressions = new ArrayList<>();
+            for (Stmt statement : fn.body) {
+                if (statement.text != null) expressions.add(statement.text);
+                if (statement.a != null) expressions.add(statement.a);
+                if (statement.b != null) expressions.add(statement.b);
+            }
+            if (fn.resultExpression != null) expressions.add(fn.resultExpression);
+            for (String expression : expressions) {
+                java.util.regex.Matcher call = methodCall.matcher(expression);
+                while (call.find()) {
+                    String methodName = call.group(1);
+                    for (Method method : parameterObject.methods) {
+                        if (method.name.equals(methodName)
+                                && method.receiverAccessMode == AccessMode.Write) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
         if (fn.resultExpression != null) {
             String r = fn.resultExpression.trim();
             if (r.startsWith(pName + ".push(") || r.startsWith(pName + ".pop(") || r.startsWith(pName + ".delete(")

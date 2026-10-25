@@ -1,6 +1,8 @@
 package org.mosslang.compiler.semantics;
 
 import org.mosslang.compiler.ast.Program;
+import org.mosslang.compiler.ast.Function;
+import org.mosslang.compiler.backend.NativeGenerator;
 import org.mosslang.compiler.diagnostics.CompileError;
 import org.mosslang.compiler.parser.Parser;
 import org.mosslang.compiler.types.AccessMode;
@@ -18,6 +20,7 @@ public class SemanticCheckerTest {
         testObjectMethodAccessModesAreRetained();
         testForLoopValuesCanFlowToObjectMethodArguments();
         testObjectMethodArityIsChecked();
+        testObjectReceiverWriteEffectPropagatesToFunctionParameter();
         System.out.println("SemanticCheckerTest PASSED.");
     }
 
@@ -221,6 +224,27 @@ public class SemanticCheckerTest {
                 + "  return box.get(1, 2)\n"
                 + "fn main():\n"
                 + "  pass\n", "MOSS_COMPILE_ERROR");
+    }
+
+    private static void testObjectReceiverWriteEffectPropagatesToFunctionParameter() {
+        Program program = Parser.parseSource(""
+                + "type Box:\n"
+                + "  value: Int\n"
+                + "  fn set(next: Int):\n"
+                + "    value = next\n"
+                + "fn update(box: Box):\n"
+                + "  box.set(1)\n"
+                + "fn main():\n"
+                + "  pass\n", "method-receiver-write.moss");
+        new SemanticChecker(program).run();
+        Function update = program.functions.stream()
+                .filter(function -> function.name.equals("update"))
+                .findFirst().orElseThrow();
+        assertEquals(AccessMode.Write, update.parameterAccessModes.get(0));
+        String rust = NativeGenerator.generate(program, false);
+        if (!rust.contains("fn update(box: &mut Box)")) {
+            throw new AssertionError("object receiver WRITE must lower to a mutable Rust parameter");
+        }
     }
 
     private static void assertCompileError(String source, String code) {

@@ -248,7 +248,10 @@ public class NativeGenerator {
             Set<Integer> indices = new HashSet<>();
             for (int pi = 0; pi < fn.params.size(); pi++) {
                 String name = fn.params.get(pi).name;
-                if (fnMutatesParameter(fn, name)) indices.add(pi);
+                boolean checkerWritesParameter = pi < fn.parameterAccessModes.size()
+                        && fn.parameterAccessModes.get(pi)
+                                == org.mosslang.compiler.types.AccessMode.Write;
+                if (checkerWritesParameter || fnMutatesParameter(fn, name)) indices.add(pi);
             }
             if (!indices.isEmpty()) writeParamIndices.put(fn.name, indices);
         }

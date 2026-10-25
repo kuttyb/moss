@@ -12668,3 +12668,15 @@ unit tests cover both cases; direct Java/C++ checks reject both with
 Validation: Java build and all ten Java unit-test classes pass. The two focused
 C++ controls and Java controls agree. No native or full integration gate was
 run.
+
+### Phase 25.3 continuation — lower checker-derived object WRITE parameters
+
+A focused generated-Rust inspection showed that Java inferred a function
+parameter as `WRITE` when an object method writes through its receiver, but the
+backend still emitted a shared `&Box` parameter. `NativeGenerator` now uses the
+checker-derived `WRITE` mode when constructing function parameter signatures;
+the same reproducer emits `box: &mut Box`.
+
+Validation: Java build and all ten Java test classes pass. The source-generated
+Rust signature was inspected directly; Rust compilation/native execution was
+not run. Other effect-dependent backend paths remain open.
