@@ -18,6 +18,7 @@ public class SemanticChecker {
     private final TypeContext typeContext = new TypeContext();
     private String currentSemanticIdentity = null;
     private Set<String> currentMessagePayloads = Collections.emptySet();
+    private List<RaiseSnapshot> currentHandlerRaises;
     private int sessionCounter = 1;
 
     public static class MoveInfo {
@@ -73,6 +74,15 @@ public class SemanticChecker {
             c.immutables.addAll(this.immutables);
             c.bindingLines.putAll(this.bindingLines);
             return c;
+        }
+    }
+
+    private static final class RaiseSnapshot {
+        final OwnershipEnv env;
+        final String variant;
+        RaiseSnapshot(OwnershipEnv env, String variant) {
+            this.env = env;
+            this.variant = variant;
         }
     }
 
@@ -454,6 +464,9 @@ public class SemanticChecker {
         ExpressionTyper typer = new ExpressionTyper(program, typeContext, solver, functions, domains, objects, enums, traits);
         typer.currentCallingModule = domain.definingModule != null && !domain.definingModule.isEmpty() ? domain.definingModule : program.moduleName;
         OwnershipEnv env = new OwnershipEnv();
+        List<RaiseSnapshot> previousRaises = currentHandlerRaises;
+        List<RaiseSnapshot> raiseEnvironments = new ArrayList<>();
+        currentHandlerRaises = raiseEnvironments;
         Set<String> previousPayloads = currentMessagePayloads;
         Set<String> payloads = new HashSet<>();
 
@@ -509,8 +522,10 @@ public class SemanticChecker {
                 for (Stmt s : arm.body) {
                     checkStatement(s, env, typer, solver, true, handler.name, expectedReply);
                 }
+                validateFailureArmCaptures(domain, handler, arm, env, solver, raiseEnvironments);
             }
         }
+        currentHandlerRaises = previousRaises;
         TypeRef resolvedReply = solver.resolve(expectedReply);
         if (resolvedReply.kind() == TypeKind.InferenceVar) {
             solver.unify(expectedReply, TypeRef.unit());
@@ -518,6 +533,97 @@ public class SemanticChecker {
         }
         handler.replyTypeRef = resolvedReply;
         currentMessagePayloads = previousPayloads;
+    }
+
+    private void validateFailureArmCaptures(Domain domain, Handler handler, FailureArm arm,
+                                            OwnershipEnv finalEnv, TypeSolver solver,
+                                            List<RaiseSnapshot> raiseEnvironments) {
+        if (raiseEnvironments.isEmpty()) return;
+        List<OwnershipEnv> selectedEdges = new ArrayList<>();
+        for (RaiseSnapshot snapshot : raiseEnvironments) {
+            boolean selected = arm.patterns == null || arm.patterns.isEmpty()
+                    || snapshot.variant.isEmpty();
+            if (!selected) {
+                for (String pattern : arm.patterns) {
+                    String expected = pattern == null ? "" : pattern.trim();
+                    int open = expected.indexOf('(');
+                    if (open >= 0) expected = expected.substring(0, open).trim();
+                    if (snapshot.variant.equals(expected)) selected = true;
+                }
+            }
+            if (selected) selectedEdges.add(snapshot.env);
+        }
+        if (selectedEdges.isEmpty()) return;
+        Set<String> nonLocals = new HashSet<>();
+        for (Field field : domain.state) nonLocals.add(field.name);
+        for (DomainRoute route : domain.routes) nonLocals.add(route.name);
+        for (Param parameter : handler.params) nonLocals.add(parameter.name);
+        if (arm.binding != null && !arm.binding.isEmpty()) nonLocals.add(arm.binding);
+        if (arm.patterns != null) {
+            for (String pattern : arm.patterns) {
+                if (pattern == null) continue;
+                int open = pattern.indexOf('('), close = pattern.lastIndexOf(')');
+                if (open < 0 || close <= open) continue;
+                for (String part : pattern.substring(open + 1, close).split(",")) {
+                    String binder = part.trim();
+                    if (binder.contains(":")) binder = binder.substring(binder.indexOf(':') + 1).trim();
+                    if (!binder.isEmpty()) nonLocals.add(binder);
+                }
+            }
+        }
+        Set<String> localCandidates = new LinkedHashSet<>();
+        for (Stmt statement : handler.body) {
+            if (statement.kind == Stmt.Kind.Let || statement.kind == Stmt.Kind.Var
+                    || statement.kind == Stmt.Kind.Assign) {
+                String name = statement.a != null ? statement.a.trim() : "";
+                if (!name.isEmpty() && !nonLocals.contains(name)) localCandidates.add(name);
+            } else if (statement.kind == Stmt.Kind.Message && statement.messageResult != null
+                    && !statement.messageResult.isEmpty() && !nonLocals.contains(statement.messageResult)) {
+                localCandidates.add(statement.messageResult);
+            }
+        }
+        for (String name : localCandidates) {
+            boolean read = false;
+            for (Stmt statement : arm.body) {
+                if (statement.kind == Stmt.Kind.Let || statement.kind == Stmt.Kind.Var
+                        || statement.kind == Stmt.Kind.Assign) {
+                    String target = statement.a != null ? statement.a.trim() : "";
+                    if (name.equals(target)) continue;
+                }
+                read |= expressionUses(statement.text, name) || expressionUses(statement.a, name)
+                        || expressionUses(statement.b, name);
+                if (statement.args != null) for (String arg : statement.args) read |= expressionUses(arg, name);
+            }
+            if (!read) continue;
+            TypeRef expected = null;
+            for (OwnershipEnv edge : selectedEdges) {
+                TypeRef actual = edge.get(name);
+                if (actual == null) {
+                    throw new CompileError(arm.line, "on_fail capture '" + name
+                            + "' is not initialized on every explicit raise path",
+                            "ON_FAIL_CAPTURE_NOT_INITIALIZED");
+                }
+                if (edge.moved.containsKey(name)) {
+                    throw new CompileError(arm.line, "on_fail capture '" + name
+                            + "' was consumed before an explicit raise",
+                            "ON_FAIL_CAPTURE_CONSUMED");
+                }
+                TypeRef resolved = solver.resolve(actual);
+                if (expected != null && !expected.toCanonicalString().equals(resolved.toCanonicalString())) {
+                    throw new CompileError(arm.line, "on_fail capture '" + name
+                            + "' has different types on explicit raise paths",
+                            "ON_FAIL_CAPTURE_TYPE_MISMATCH");
+                }
+                expected = resolved;
+            }
+            TypeRef finalType = finalEnv.get(name);
+            if (expected != null && finalType != null
+                    && !expected.toCanonicalString().equals(solver.resolve(finalType).toCanonicalString())) {
+                throw new CompileError(arm.line, "on_fail capture '" + name
+                        + "' changes type after an explicit raise",
+                        "ON_FAIL_CAPTURE_TYPE_MISMATCH");
+            }
+        }
     }
 
     private void checkFunctions() {
@@ -1909,6 +2015,17 @@ public class SemanticChecker {
                             env.put(part, TypeRef.primitive("int"));
                         }
                     }
+                }
+            }
+            case Raise -> {
+                String raised = s.a != null && !s.a.isEmpty() ? s.a.trim()
+                        : (text.startsWith("raise ") ? text.substring(6).trim() : "");
+                requireAvailable(s.line, raised, env);
+                if (currentHandlerRaises != null) {
+                    String variant = raised;
+                    int open = variant.indexOf('(');
+                    if (open >= 0) variant = variant.substring(0, open).trim();
+                    currentHandlerRaises.add(new RaiseSnapshot(env.copy(), variant));
                 }
             }
             default -> {

@@ -13010,3 +13010,20 @@ and all ten Java test classes pass; feedback validation and `git diff --check`
 pass. No Rust compilation or native execution ran. The Java checker still lacks
 a complete exceptional-edge definite-initialization and ownership proof, and
 the Margo source-free capture writer remains incomplete.
+
+### Phase 25.3 continuation — explicit raise-edge on_fail capture checks
+
+The Java handler checker now snapshots the ownership environment at explicit
+`raise` statements. For each `on_fail` arm it identifies referenced handler
+locals and validates initialization, unmoved state, and type consistency on
+matching explicit raised variants. A minimized case that initialized a local
+after the raise now rejects with `ON_FAIL_CAPTURE_NOT_INITIALIZED`; a two-error
+conditional confirms that an unrelated variant does not impose the capture
+requirement.
+
+Validation: `./scripts/java/build.sh`, focused
+`SemanticCheckerTest`, and `git diff --check` pass. The checker still does not
+model exceptional edges from raising calls, binding identities across branches,
+or complete exceptional control flow; generated Rust/native acceptance remains
+open. This is a bounded explicit-raise correction, not full Java ownership
+parity.

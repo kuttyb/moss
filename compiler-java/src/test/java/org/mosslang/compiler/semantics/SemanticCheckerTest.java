@@ -25,6 +25,8 @@ public class SemanticCheckerTest {
         testObjectMethodWriteParameterLowersMutably();
         testNestedObjectFieldWriteLowersMutableReceiver();
         testTypedOnFailLocalCaptureLowering();
+        testOnFailRejectsLocalInitializedAfterRaise();
+        testOnFailCaptureUsesMatchingRaisedVariant();
         System.out.println("SemanticCheckerTest PASSED.");
     }
 
@@ -59,6 +61,50 @@ public class SemanticCheckerTest {
         if (rust.contains("payload.to_string()")) {
             throw new AssertionError("on_fail local capture was serialized as display text");
         }
+    }
+
+    private static void testOnFailRejectsLocalInitializedAfterRaise() {
+        Program program = Parser.parseSource(""
+                + "enum Failure:\n"
+                + "  Bad\n"
+                + "domain Worker:\n"
+                + "  fn Run() -> String:\n"
+                + "    raise Failure.Bad\n"
+                + "    var payload = \"late\"\n"
+                + "  on_fail Failure.Bad:\n"
+                + "    reply payload\n"
+                + "fn main():\n"
+                + "  pass\n", "uninitialized-handler-capture.moss");
+        try {
+            new SemanticChecker(program).run();
+            throw new AssertionError("on_fail must reject a local initialized after the raise");
+        } catch (CompileError error) {
+            if (!"ON_FAIL_CAPTURE_NOT_INITIALIZED".equals(error.getCode())) {
+                throw new AssertionError("expected ON_FAIL_CAPTURE_NOT_INITIALIZED, got "
+                        + error.getCode(), error);
+            }
+        }
+    }
+
+    private static void testOnFailCaptureUsesMatchingRaisedVariant() {
+        Program program = Parser.parseSource(""
+                + "enum Failure:\n"
+                + "  Bad\n"
+                + "  Other\n"
+                + "domain Worker:\n"
+                + "  fn Run(flag: Bool) -> String:\n"
+                + "    if flag:\n"
+                + "      var payload = \"bad\"\n"
+                + "      raise Failure.Bad\n"
+                + "    else:\n"
+                + "      raise Failure.Other\n"
+                + "  on_fail Failure.Bad:\n"
+                + "    reply payload\n"
+                + "  on_fail Failure.Other:\n"
+                + "    reply \"other\"\n"
+                + "fn main():\n"
+                + "  pass\n", "variant-specific-handler-capture.moss");
+        new SemanticChecker(program).run();
     }
 
     private static void testSameTraitConstraintCanBeForwarded() {
