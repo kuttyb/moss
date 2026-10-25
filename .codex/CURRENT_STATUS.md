@@ -12363,3 +12363,27 @@ compilers. The larger RungeKutta swarm project is outside that 41-file set and
 still differs: C++ rejects it with `TYPE_AMBIGUOUS_OPEN_RESULT` at line 101,
 while Java accepts it. No generated Rust or native behavior has been used to
 classify that difference yet.
+
+### Early independent Architect audit — ABI/source-free architecture (not final RC review)
+
+The independent read-only Architect audit concluded **NO-GO** for the current
+implementation. It found a P1 architectural gap: Java's ABI-v10 writer emits
+framed `binary_contract`/`semantic_contract` sections, while the consumer loader
+still reads v9 `contract`/`semantic_exports` rows, so a selected v10 provider
+can validate without its functions entering the semantic program. The writer
+also omits required nominal fields, method templates, open summaries,
+specializations, private dependencies, and provenance; the v10 validator does
+not validate section hashes or record structure. ABI-v9 callable/method facts
+are incomplete, enum payloads are truncated, and handler capture rows remain
+fixture-specific and shorter than the C++ ABI schema.
+
+Audit evidence: `ProjectBuilder.java` v10 generation around lines 983–1050;
+`SourceFreeAbi.java` v10 validation around lines 131–206; `Main.java`
+`loadMossiFunctions` around lines 765–813; `ABI_V10_DESIGN.md` sections 1–3;
+`MOSS_SOURCE_FREE_ABI_V9.md` lines 76–100; and the C++ capture parser in
+`src/moss.cpp` around lines 14192–14224. The Architect assessed that this
+requires a structured checked-fact serializer plus a v10 decoder/validator,
+not a bounded metadata tweak. The audit ran no tests, native gates, SDK checks,
+or parity harness. This is an early architecture review, not the required
+frozen-candidate release review. Phase 25.3 remains active and is not release
+ready.
