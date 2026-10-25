@@ -372,6 +372,12 @@ public class CheckedBodyCodecTest {
                 || !decoded.result.canonicalName().equals("Vector[_0]")) {
             throw new AssertionError("canonical ABI-v10 summary did not round trip");
         }
+        String legacyV2Payload = "02000000236d6f64756c652d76313a626f78657340312e302e303a3a426f7865733a3a667265736800000001000000000200000006566563746f7200000001060000000000000001060000000000000009746f5f737472696e6701000000000000000a626f7865733a666e3a3400000000000000000000000000000000000000000000000058626f64792d73656d616e7469632d76313a7368613235363a656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565650000000a626f7865733a666e3a33";
+        AbiV10Records.Summary legacy = AbiV10Records.Summary.decode(MossiRecord.fromBytes(
+                record.id, java.util.HexFormat.of().parseHex(legacyV2Payload)));
+        if (!legacy.callableId.equals(summary.callableId)) {
+            throw new AssertionError("canonical ABI-v10 summary v2 compatibility failed");
+        }
         MossiInterface iface = new MossiInterface("module-v1:boxes@1.0.0::Boxes");
         iface.semanticContract.add(record);
         CheckedBodyCodec.verifySourceFree(CheckedBodyCodec.encodeMossiBytes(iface));

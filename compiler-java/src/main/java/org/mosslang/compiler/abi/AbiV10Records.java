@@ -262,7 +262,7 @@ public final class AbiV10Records {
             value.provenanceId = reader.string();
             byte[] canonicalPayload = value.encodeVersion(version);
             require(reader.done() && Arrays.equals(canonicalPayload, record.payloadBytes())
-                            && hash("moss-abi-v10-open-summary", canonicalPayload).equals(record.id),
+                            && value.record().id.equals(record.id),
                     "SOURCE_FREE_SUMMARY_INVALID", "ABI-v10 summary is noncanonical or forged");
             return value;
         }

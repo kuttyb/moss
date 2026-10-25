@@ -13156,3 +13156,9 @@ project them into checker facts. Checked-body serialization/loading and the
 fixture-specific source-free call guards remain open. Follow-up validation:
 all ten Java unit-test classes pass in default ABI-v9 and staged ABI-v10 modes;
 feedback validation and `git diff --check` pass.
+
+The summary decoder also accepts the C++ legacy v2 payload/ID pairing (v2
+payload with the canonical re-encoded summary ID); the regression fixture was
+validated by C++ `validate_summary` and passes the Java production decoder.
+After this compatibility addition, the focused Java build and
+`CheckedBodyCodecTest` pass.
