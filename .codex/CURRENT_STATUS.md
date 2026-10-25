@@ -15852,3 +15852,24 @@ produce byte-identical stdout and full JSON traces on
 `tests/phase5_tooling.moss` (57 events). The six JDT client lifecycle tests
 also pass; live Eclipse JDT startup remains unavailable in this environment.
 These samples do not establish complete trace parity or live daemon readiness.
+
+### Phase 25.3 continuation — focused Fast Debug trace follow-up
+
+At the current uncommitted continuation, the Fast Debug interpreter now keeps
+match case binders from escaping into shadowed locals and reports local
+collection element reads with indexed paths. Enum return/reply trace details
+include the selected variant. The string-map fixture
+`tests/phase15_15_string_map.moss` now has identical C++/Java stdout and all 35
+trace events. `tests/phase15_15_enum_message.moss` has matching stdout and 32
+events, though event details still differ; `tests/phase15_15_enum_positive.moss`
+has matching stdout but 70 C++ versus 71 Java events. The mutable string
+fixture `tests/phase24_string_concat.moss` has matching stdout but 59 C++ versus
+63 Java events. These trace deltas are still being investigated and are not
+semantic parity evidence.
+
+Validation after these changes: `./scripts/java/test.sh` passes all twelve
+Java test classes, and `./scripts/java/package.sh` rebuilds the standalone JAR.
+No native execution, Rust compilation, Margo/SDK matrix, or full `make check`
+was run. Broad generic/effect/ownership coverage, native/source-free
+compatibility, real project gates, live Eclipse JDT daemon, and frozen
+candidate review remain open.

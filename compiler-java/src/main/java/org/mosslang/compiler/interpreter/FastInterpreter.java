@@ -358,12 +358,19 @@ public class FastInterpreter {
             case QUEUE -> "Queue(size=" + ((Deque<?>) value.raw).size() + ")";
             case MAP -> "Map(size=" + ((Map<?, ?>) value.raw).size() + ")";
             case OBJECT -> value.typeName == null ? "<struct>" : value.typeName;
+            case ENUM -> value.typeName == null ? "<enum>" : value.typeName;
             default -> value.toString();
         };
     }
 
     private static String traceWriteValueSummary(Value value) {
         if (value.kind == Value.Kind.ENUM && value.typeName != null) return value.typeName;
+        return traceValueSummary(value);
+    }
+
+    private static String traceReturnValueSummary(Value value) {
+        if (value.kind == Value.Kind.ENUM && value.raw instanceof EnumValue enumValue)
+            return enumValue.enumName + "." + enumValue.variant;
         return traceValueSummary(value);
     }
 
@@ -384,6 +391,40 @@ public class FastInterpreter {
                 + jsonEscape(name) + "\"" + traceDomainFields()
                 + (before == null ? "" : ",\"before\":\"" + jsonEscape(traceWriteValueSummary(before)) + "\"")
                 + ",\"after\":\"" + jsonEscape(traceWriteValueSummary(value)) + "\"}");
+    }
+
+    private void traceLocalWriteCurrent(String name, Value value, Value before) {
+        if (!trace) return;
+        eventId++;
+        traceEvent("{\"event_id\":" + eventId + ",\"event\":\"LocalWrite\",\"function\":\""
+                + jsonEscape(traceFunction) + "\",\"source_file\":\"" + jsonEscape(traceSourceFile)
+                + "\",\"semantic_identity\":\"" + jsonEscape(traceIdentity()) + "\",\"line\":"
+                + traceLine + traceContextFields() + ",\"depth\":" + traceDepth + ",\"detail\":\""
+                + jsonEscape(name) + "\"" + traceDomainFields()
+                + (before == null ? "" : ",\"before\":\"" + jsonEscape(traceWriteValueSummary(before)) + "\"")
+                + ",\"after\":\"" + jsonEscape(traceWriteValueSummary(value)) + "\"}");
+    }
+
+    private void traceLocalMutation(String name) {
+        if (!trace) return;
+        eventId++;
+        traceEvent("{\"event_id\":" + eventId + ",\"event\":\"LocalWrite\",\"function\":\""
+                + jsonEscape(traceFunction) + "\",\"source_file\":\"" + jsonEscape(traceSourceFile)
+                + "\",\"semantic_identity\":\"" + jsonEscape(traceIdentity()) + "\",\"line\":"
+                + traceLine + traceContextFields() + ",\"depth\":" + traceDepth + ",\"detail\":\""
+                + jsonEscape(name) + "\"" + traceDomainFields() + "}");
+    }
+
+    private void traceStateMutation(String path, Value before, Value after) {
+        if (!trace) return;
+        eventId++;
+        traceEvent("{\"event_id\":" + eventId + ",\"event\":\"state_write\",\"function\":\""
+                + jsonEscape(traceFunction) + "\",\"source_file\":\"" + jsonEscape(traceSourceFile)
+                + "\",\"semantic_identity\":\"" + jsonEscape(traceIdentity()) + "\",\"line\":"
+                + traceLine + traceContextFields() + ",\"depth\":" + traceDepth + traceDomainFields()
+                + ",\"path\":\"" + jsonEscape(path) + "\",\"before\":\""
+                + jsonEscape(traceValueSummary(before)) + "\",\"after\":\""
+                + jsonEscape(traceValueSummary(after)) + "\"}");
     }
 
     private void traceLocalRead(String name) {
@@ -910,7 +951,7 @@ public class FastInterpreter {
                             lastVal = evalScopedBlock(stmts, caseBodyStart, caseBodyEnd, branchLocals,
                                     currentDomain, funcName, depth, Set.copyOf(cs.args));
                             for (Map.Entry<String, Value> entry : branchLocals.entrySet()) {
-                                if (locals.containsKey(entry.getKey())) {
+                                if (locals.containsKey(entry.getKey()) && !cs.args.contains(entry.getKey())) {
                                     locals.put(entry.getKey(), entry.getValue());
                                 }
                             }
@@ -936,7 +977,7 @@ public class FastInterpreter {
             } else if (s.kind == Stmt.Kind.Reply || s.kind == Stmt.Kind.Return) {
                 Value rVal = (s.a != null && !s.a.isEmpty()) ? evalExpr(s.a, locals, currentDomain) : Value.ofUnit();
                 traceSimpleEvent(s, funcName, s.kind == Stmt.Kind.Reply ? "reply" : "Return",
-                        traceValueSummary(rVal), depth);
+                        traceReturnValueSummary(rVal), depth);
                 throw new ReturnSignal(rVal);
             }
             lastVal = evalStmt(s, locals, currentDomain, funcName, depth);
@@ -1896,11 +1937,15 @@ public class FastInterpreter {
                 }
             }
             if (openB > 0) {
+                String baseExpr = expr.substring(0, openB).trim();
+                boolean localCollectionRead = baseExpr.matches("[A-Za-z_][A-Za-z0-9_]*")
+                        && locals.containsKey(baseExpr);
                 boolean wasDeferringStateTrace = deferDomainStateTrace;
                 deferDomainStateTrace = true;
                 Value baseVal;
                 try {
-                    baseVal = evalExpr(expr.substring(0, openB).trim(), locals, currentDomain);
+                    baseVal = localCollectionRead ? locals.get(baseExpr)
+                            : evalExpr(baseExpr, locals, currentDomain);
                 } finally {
                     deferDomainStateTrace = wasDeferringStateTrace;
                 }
@@ -1911,6 +1956,8 @@ public class FastInterpreter {
                     @SuppressWarnings("unchecked")
                     List<Value> l = (List<Value>) lst;
                     Value item = l.get((int) idxVal.asInt());
+                    if (localCollectionRead)
+                        traceValueRead(baseExpr + "[" + idxVal + "]", item, null);
                     if (indexedPath == null) return item;
                     if (wasDeferringStateTrace) return withTraceStatePath(item, indexedPath);
                     traceStateRead(indexedPath);
@@ -1920,6 +1967,8 @@ public class FastInterpreter {
                     @SuppressWarnings("unchecked")
                     Map<Object, Value> m = (Map<Object, Value>) mp;
                     Value item = m.getOrDefault(idxVal.raw, Value.ofUnit());
+                    if (localCollectionRead)
+                        traceValueRead(baseExpr + "[" + idxVal + "]", item, null);
                     if (indexedPath == null) return item;
                     if (wasDeferringStateTrace) return withTraceStatePath(item, indexedPath);
                     traceStateRead(indexedPath);
@@ -1984,13 +2033,27 @@ public class FastInterpreter {
             }
             String argsStr = expr.substring(p + 1, expr.length() - 1).trim();
             List<String> argList = splitArgs(argsStr);
+            boolean mapDeleteOutParameter = false;
             if (!expr.startsWith("message ") && callee.contains(".")) {
                 int receiverDot = callee.lastIndexOf('.');
                 String receiverName = callee.substring(0, receiverDot).trim();
-                if (locals.containsKey(receiverName))
-                    traceValueRead(receiverName, locals.get(receiverName), null);
-                else if (currentDomain != null && currentDomain.state.containsKey(receiverName))
-                    traceStateRead(receiverName);
+                String methodName = callee.substring(receiverDot + 1).trim();
+                Value receiverValue = locals.get(receiverName);
+                if (receiverValue == null && currentDomain != null)
+                    receiverValue = currentDomain.state.get(receiverName);
+                if ("delete".equals(methodName) && receiverValue != null
+                        && receiverValue.kind == Value.Kind.MAP && argList.size() >= 3) {
+                    mapDeleteOutParameter = true;
+                }
+                boolean mutatingStringMethod = receiverValue != null
+                        && receiverValue.kind == Value.Kind.STRING
+                        && ("append".equals(methodName) || "reserve".equals(methodName));
+                if (!mutatingStringMethod) {
+                    if (locals.containsKey(receiverName))
+                        traceValueRead(receiverName, locals.get(receiverName), null);
+                    else if (currentDomain != null && currentDomain.state.containsKey(receiverName))
+                        traceStateRead(receiverName);
+                }
             }
             List<Value> evaluatedArgs = new ArrayList<>();
             boolean wasDeferringStateTrace = deferDomainStateTrace;
@@ -2019,7 +2082,9 @@ public class FastInterpreter {
                     if (colIdx > 0) {
                         a = a.substring(colIdx + 1).trim();
                     }
-                    if ((sourceCallable || domainConstructor)
+                    if (mapDeleteOutParameter && argumentIndex == 2) {
+                        evaluatedArgs.add(Value.ofUnit());
+                    } else if ((sourceCallable || domainConstructor)
                             && a.matches("[A-Za-z_][A-Za-z0-9_]*") && locals.containsKey(a)) {
                         if (sourceCallable && tracesArgumentRead(callee, evaluatedArgs.size(), locals, currentDomain))
                             traceValueRead(a, locals.get(a), null);
@@ -2159,11 +2224,25 @@ public class FastInterpreter {
                         if (methodName.equals("ascii_upper")) return Value.ofString(asciiCase(recvVal.asString(), true));
                         if (methodName.equals("append") && !evaluatedArgs.isEmpty()) {
                             Value appended = Value.ofString(recvVal.asString() + evaluatedArgs.get(0).asString());
-                            if (locals.containsKey(recvName)) locals.put(recvName, appended);
-                            else if (currentDomain != null && currentDomain.state.containsKey(recvName)) currentDomain.state.put(recvName, appended);
+                            if (locals.containsKey(recvName)) {
+                                locals.put(recvName, appended);
+                                if (recvVal.traceStatePath != null)
+                                    traceStateMutation(recvVal.traceStatePath, recvVal, appended);
+                                else traceLocalMutation(recvName);
+                            } else if (currentDomain != null && currentDomain.state.containsKey(recvName)) {
+                                currentDomain.state.put(recvName, appended);
+                                traceStateMutation(recvName, recvVal, appended);
+                            }
                             return Value.ofUnit();
                         }
                         if (methodName.equals("reserve")) {
+                            if (locals.containsKey(recvName)) {
+                                if (recvVal.traceStatePath != null)
+                                    traceStateMutation(recvVal.traceStatePath, recvVal, recvVal);
+                                else traceLocalMutation(recvName);
+                            } else if (currentDomain != null && currentDomain.state.containsKey(recvName)) {
+                                traceStateMutation(recvName, recvVal, recvVal);
+                            }
                             return Value.ofUnit();
                         }
                         if (methodName.equals("split") && !evaluatedArgs.isEmpty()) {
@@ -2239,7 +2318,10 @@ public class FastInterpreter {
                             if (argList.size() >= 3) {
                                 String foundVar = argList.get(2).trim();
                                 if (locals.containsKey(foundVar)) {
-                                    locals.put(foundVar, Value.ofBool(present));
+                                    Value before = locals.get(foundVar);
+                                    Value foundValue = Value.ofBool(present);
+                                    locals.put(foundVar, foundValue);
+                                    traceLocalWriteCurrent(foundVar, foundValue, before);
                                 }
                             }
                             return removed;

@@ -27,6 +27,7 @@ public final class FastInterpreterTest {
         testBorrowedDomainObjectTraceKeepsStatePath();
         testNestedDomainStatePathTracesOnlyAtLeaf();
         testIndexedDomainStateTraceKeepsFullPath();
+        testMatchCaseBinderShadowDoesNotEscape();
         testDomainReplyCopiesNestedObjectValue();
         testObjectMethodUpdatesScalarField();
         testObjectMethodFieldShadowsSameNamedParameter();
@@ -512,6 +513,47 @@ public final class FastInterpreterTest {
                 || !events.substring(indexedWrite).contains("\"path\":\"values[0]\"")
                 || !"initial\ninitial\n".equals(stdout.toString(StandardCharsets.UTF_8))) {
             throw new AssertionError("indexed domain state trace lost its full path: " + events);
+        }
+    }
+
+    private static void testMatchCaseBinderShadowDoesNotEscape() {
+        var program = Parser.parseSource(""
+                + "enum Reply:\n"
+                + "  Empty\n"
+                + "  Pair(code: Int, value: String)\n"
+                + "domain Relay:\n"
+                + "  fn Bounce(value: Reply) -> Reply:\n"
+                + "    match value:\n"
+                + "      case Empty:\n"
+                + "        pass\n"
+                + "      case Pair(code, value):\n"
+                + "        echo code\n"
+                + "    reply value\n"
+                + "fn main():\n"
+                + "  relay = Relay()\n"
+                + "  input = Reply.Pair(code: 3, value: \"message\")\n"
+                + "  output = message relay.Bounce(input)\n"
+                + "  match consume output:\n"
+                + "    case Empty:\n"
+                + "      pass\n"
+                + "    case Pair(code, value):\n"
+                + "      echo value\n",
+                "fast-interpreter-match-binder-shadow.moss");
+        new CheckedProgram(program).run();
+
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+        ByteArrayOutputStream trace = new ByteArrayOutputStream();
+        new FastInterpreter(program, true,
+                new PrintStream(stdout, true, StandardCharsets.UTF_8),
+                new PrintStream(trace, true, StandardCharsets.UTF_8)).run();
+        String events = trace.toString(StandardCharsets.UTF_8);
+        if (!"3\nmessage\n".equals(stdout.toString(StandardCharsets.UTF_8))
+                || !events.contains("\"event\":\"reply\"")
+                || !events.contains("\"event\":\"message_return\"")
+                || !events.contains("\"detail\":\"Reply.Pair\"")
+                || events.contains("\"detail\":\"message\"")) {
+            throw new AssertionError("match case shadow escaped its lexical scope: stdout="
+                    + stdout.toString(StandardCharsets.UTF_8) + " trace=" + events);
         }
     }
 
