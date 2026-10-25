@@ -260,6 +260,13 @@ public class SemanticQueryEngine {
                     }
                 }
             }
+            if (queriedHandler != null) {
+                Set<String> visitedEffects = new HashSet<>();
+                externalIo |= callableHasEffect(queriedHandler.body, null, program,
+                        visitedEffects, EffectKind.EXTERNAL_IO);
+                mayPanic |= callableHasEffect(queriedHandler.body, null, program,
+                        new HashSet<>(), EffectKind.MAY_PANIC);
+            }
             String raiseJson = "[]";
             Set<String> directRaiseFacts = callableRaisedVariants(
                     queriedFunction, queriedMethod, queriedHandler, program);
@@ -1236,6 +1243,49 @@ public class SemanticQueryEngine {
         if (value == null) return "";
         return value.replace("\\", "\\\\").replace("\"", "\\\"")
                 .replace("\n", "\\n").replace("\r", "\\r");
+    }
+
+    private enum EffectKind { EXTERNAL_IO, MAY_PANIC }
+
+    private static boolean callableHasEffect(List<Stmt> body, String resultExpression, Program program,
+                                             Set<String> visited, EffectKind effect) {
+        if (body == null) return false;
+        for (Stmt statement : body) {
+            if (statement == null) continue;
+            StringBuilder source = new StringBuilder();
+            if (statement.text != null) source.append(statement.text).append(' ');
+            if (statement.a != null) source.append(statement.a).append(' ');
+            if (statement.b != null) source.append(statement.b).append(' ');
+            if (statement.args != null) {
+                for (String argument : statement.args) source.append(argument).append(' ');
+            }
+            if (hasEffect(source.toString(), statement, effect)) return true;
+            if (program != null && program.functions != null) {
+                for (Function callee : program.functions) {
+                    if (!containsFunctionCall(source.toString(), callee.name)
+                            || !visited.add(callee.name)) continue;
+                    if (callableHasEffect(callee.body, callee.resultExpression, program, visited, effect)) return true;
+                }
+            }
+        }
+        if (resultExpression == null) return false;
+        if (hasEffect(resultExpression, null, effect)) return true;
+        if (program != null && program.functions != null) {
+            for (Function callee : program.functions) {
+                if (!containsFunctionCall(resultExpression, callee.name)
+                        || !visited.add(callee.name)) continue;
+                if (callableHasEffect(callee.body, callee.resultExpression, program, visited, effect)) return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean hasEffect(String source, Stmt statement, EffectKind effect) {
+        if (effect == EffectKind.EXTERNAL_IO) {
+            return (statement != null && statement.kind == Stmt.Kind.Echo)
+                    || source.trim().startsWith("echo ");
+        }
+        return source.contains("assert(");
     }
 
     private static Set<String> callableRaisedVariants(Function function, Method method,

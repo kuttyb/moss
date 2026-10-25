@@ -14826,3 +14826,15 @@ and `only_a` match C++ exactly after this removal.
 Validation: all eleven Java unit-test classes pass in ABI-v9 and staged
 ABI-v10. This is a query correctness cleanup, not general effect-query parity;
 handler helper propagation and other unmodeled call shapes remain open.
+
+### Phase 25.3 continuation — follow handler helper effects
+
+Effects queries for domain handlers now follow ordinary function calls when
+collecting `external_io` and `may_panic`. The walker follows nested helper
+calls and callable tail expressions while guarding cycles by function name. A
+minimal accepted program whose `Worker.Run` handler calls an `emit` helper now
+reports `external_io: true`, matching C++.
+
+Validation: all eleven Java unit-test classes pass in ABI-v9 and staged
+ABI-v10. Handler helper effects through methods, fields, and source-free
+summaries remain unverified.

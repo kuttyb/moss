@@ -13,6 +13,7 @@ public final class SemanticQueryEngineTest {
         effectsQueryUsesResolvedFunctionFacts();
         effectsQueryDoesNotInferPanicFromNames();
         effectsQueryCollectsDirectRaisesForArbitraryNames();
+        effectsQueryFollowsHandlerHelperEffects();
         effectsQueryFollowsOrdinaryFunctionRaises();
         effectsQueryFollowsLocalObjectMethodRaises();
         effectsQueryFollowsSameObjectMethodRaises();
@@ -101,6 +102,26 @@ public final class SemanticQueryEngineTest {
         new SemanticChecker(program).run();
         String result = queryEffects(program, "calculate");
         assertContains(result, "\"raise_set\": [\"enum:Trouble:Bad\"]");
+    }
+
+    private static void effectsQueryFollowsHandlerHelperEffects() {
+        String source = ""
+                + "fn emit():\n"
+                + "  echo \"x\"\n"
+                + "domain Worker:\n"
+                + "  fn Run():\n"
+                + "    emit()\n"
+                + "fn main():\n"
+                + "  worker = Worker()\n"
+                + "  message worker.Run()\n";
+        Program program = Parser.parseSource(source, "effects-query-handler-helper.moss");
+        new SemanticChecker(program).run();
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        try (PrintStream stream = new PrintStream(output, true, StandardCharsets.UTF_8)) {
+            SemanticQueryEngine.executeQuery("effects", "handler:Worker.Run", program,
+                    "effects-query-handler-helper.moss", true, null, null, stream);
+        }
+        assertContains(output.toString(StandardCharsets.UTF_8), "\"external_io\": true");
     }
 
     private static void effectsQueryExcludesRecoveredDirectRaises() {
