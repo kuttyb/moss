@@ -14930,3 +14930,16 @@ Validation: the direct uncaught example is rejected by both compilers with
 the Java checker, while unrelated recovery followed by a raise is rejected.
 All eleven Java unit-test classes pass. Transitive typed-raise closure through
 function and object-method calls from main remains incomplete.
+
+
+### Phase 25.3 continuation — reject uncaught direct method raises from main
+
+The root checker now resolves direct method-call receiver paths through checked
+local types and declared fields, then inspects the resolved method's direct
+raise statements. An uncaught `box.sink.fail()` raising `Trouble.Bad` is
+rejected; the same call inside a matching `recover Trouble.Bad` is accepted,
+matching C++.
+
+Validation: both compilers agree on the uncaught and handled field-chain
+reproductions; all eleven Java unit-test classes pass. Nested method-to-method,
+generic, imported, and full transitive raise closure remain open.

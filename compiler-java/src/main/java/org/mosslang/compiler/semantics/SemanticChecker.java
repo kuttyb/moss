@@ -1323,6 +1323,7 @@ public class SemanticChecker {
             }
             env = checkBlock(program.main.body, 0, program.main.body.size(), env, typer, solver, false, "main", TypeRef.unit());
             validateDirectMainRaises(program.main.body);
+            validateMainMethodRaises(program.main.body, env, solver);
             validateRootIngressRaiseTotality(program.main.body, env, solver);
             checkConcreteDomainRouteCycles(program.main.body);
             for (Stmt s : program.main.body) {
@@ -1448,6 +1449,93 @@ public class SemanticChecker {
             }
         }
         return false;
+    }
+
+    private void validateMainMethodRaises(List<Stmt> statements, OwnershipEnv env, TypeSolver solver) {
+        for (int statementIndex = 0; statementIndex < statements.size(); statementIndex++) {
+            String expression = statementExpressionText(statements.get(statementIndex));
+            if (expression.isBlank()) continue;
+            for (ObjectType object : program.objects) {
+                for (Method method : object.methods) {
+                    String pattern = "(?<![A-Za-z0-9_])((?:[A-Za-z_][A-Za-z0-9_]*)(?:\\s*\\.\\s*[A-Za-z_][A-Za-z0-9_]*)*)\\s*\\.\\s*"
+                            + java.util.regex.Pattern.quote(method.name) + "\\s*\\(";
+                    java.util.regex.Matcher matcher = java.util.regex.Pattern.compile(pattern).matcher(expression);
+                    while (matcher.find()) {
+                        String receiverType = resolveMainReceiverType(matcher.group(1), env, solver);
+                        if (!matchesObjectTypeName(receiverType, object.name)) continue;
+                        for (String variant : collectDirectMethodRaiseVariants(method, new HashSet<>())) {
+                            if (!isMainRaiseHandled(statements, statementIndex, variant)) {
+                                throw new CompileError(program.main.line,
+                                        "main may not let typed errors escape; handle every raised variant with try/recover",
+                                        "MOSS_COMPILE_ERROR");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private Set<String> collectDirectMethodRaiseVariants(Method method, Set<String> visited) {
+        Set<String> variants = new LinkedHashSet<>();
+        if (method == null || !visited.add(method.owner + "." + method.name)) return variants;
+        for (int index = 0; index < method.body.size(); index++) {
+            Stmt statement = method.body.get(index);
+            if (statement == null || statement.kind != Stmt.Kind.Raise
+                    || statement.a == null || statement.a.isBlank()) continue;
+            String variant = statement.a.trim();
+            int payload = variant.indexOf('(');
+            if (payload >= 0) variant = variant.substring(0, payload).trim();
+            if (!isMainRaiseHandled(method.body, index, variant)) variants.add(variant);
+        }
+        return variants;
+    }
+
+    private String resolveMainReceiverType(String receiverPath, OwnershipEnv env, TypeSolver solver) {
+        String[] path = receiverPath.replaceAll("\\s", "").split("\\.");
+        if (path.length == 0) return null;
+        TypeRef receiver = env.get(path[0]);
+        if (receiver == null) return null;
+        TypeRef resolved = solver.resolve(receiver);
+        String typeName = resolved != null ? resolved.name() : null;
+        for (int index = 1; typeName != null && index < path.length; index++) {
+            ObjectType owner = findObjectType(typeName);
+            if (owner == null) return null;
+            String fieldName = path[index];
+            Field field = owner.fields.stream().filter(candidate -> candidate.name.equals(fieldName))
+                    .findFirst().orElse(null);
+            if (field == null) return null;
+            TypeRef fieldType = field.typeRef != null ? field.typeRef : TypeParser.parseCanonical(field.type);
+            TypeRef resolvedFieldType = fieldType != null ? solver.resolve(fieldType) : null;
+            typeName = resolvedFieldType != null ? resolvedFieldType.name() : field.type;
+        }
+        return typeName;
+    }
+
+    private ObjectType findObjectType(String typeName) {
+        if (typeName == null) return null;
+        for (ObjectType object : objects.values()) {
+            if (matchesObjectTypeName(typeName, object.name)) return object;
+        }
+        return null;
+    }
+
+    private boolean matchesObjectTypeName(String typeName, String objectName) {
+        return typeName != null && objectName != null
+                && (typeName.equals(objectName) || typeName.endsWith("__" + objectName)
+                        || typeName.endsWith("::" + objectName));
+    }
+
+    private String statementExpressionText(Stmt statement) {
+        if (statement == null) return "";
+        StringBuilder expression = new StringBuilder();
+        if (statement.text != null) expression.append(statement.text).append(' ');
+        if (statement.a != null) expression.append(statement.a).append(' ');
+        if (statement.b != null) expression.append(statement.b).append(' ');
+        if (statement.args != null) {
+            for (String argument : statement.args) expression.append(argument).append(' ');
+        }
+        return expression.toString();
     }
 
     private void checkTests() {

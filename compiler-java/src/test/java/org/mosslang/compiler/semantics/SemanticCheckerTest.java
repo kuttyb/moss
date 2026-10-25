@@ -894,6 +894,25 @@ public class SemanticCheckerTest {
                 + "  recover err:\n"
                 + "    pass\n", "main-catchall-handles-raised-variant.moss");
         new SemanticChecker(catchAll).run();
+
+        String methodPrefix = prefix
+                + "type Sink:\n"
+                + "  fn fail():\n"
+                + "    raise Trouble.Bad\n"
+                + "type Box:\n"
+                + "  sink: Sink\n";
+        assertCompileError(methodPrefix
+                + "fn main():\n"
+                + "  box = Box(sink=Sink())\n"
+                + "  box.sink.fail()\n", "MOSS_COMPILE_ERROR");
+        Program methodHandled = Parser.parseSource(methodPrefix
+                + "fn main():\n"
+                + "  box = Box(sink=Sink())\n"
+                + "  try:\n"
+                + "    box.sink.fail()\n"
+                + "  recover Trouble.Bad:\n"
+                + "    pass\n", "main-handles-method-raised-variant.moss");
+        new SemanticChecker(methodHandled).run();
     }
 
     private static void testExecutorRootRequiresRaiseHandling() {
