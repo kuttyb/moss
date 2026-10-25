@@ -363,3 +363,27 @@ arbitrary `calculate()` caller that constructs `Box` and invokes
 
 All eleven Java unit tests pass in ABI-v9 and staged ABI-v10. Field-chain
 receiver typing, generic method effects, and cross-module closure remain open.
+
+## Phase 25.3 continuation — root typed-raise closure across direct, function, and method calls
+
+A focused comparison found that Java accepted uncaught typed raises from
+`main` and missed some raise propagation through ordinary helpers and object
+methods. The root checker now rejects direct raises unless the exact enclosing
+recover arm (or catch-all) handles them; an unrelated try does not mask a later
+raise. It follows ordinary function call chains, checked local object receiver
+paths through declared fields, straight-line method aliases, nested self-field
+method calls, and ordinary helper calls made by methods. Recovery inside a
+function or method is applied at that call site before propagating the variant.
+
+Minimal C++/Java checks agree for direct main raises, direct field-chain method
+raises, `main → relay → fail`, `main → Box.relay → Sink.fail`,
+`main → invoke_method → Box.relay → Sink.fail`, straight-line aliases, and
+`main → Box.relay → fail_helper`. Variant-specific and catch-all recovery
+controls remain accepted. All eleven Java unit-test classes pass under ABI-v9
+and staged ABI-v10; `check_agent_feedback.py` and `git diff --check` pass.
+
+This remains bounded root-closure evidence. Branch-sensitive or loop aliases,
+generic substitutions, imported/source-free raise summaries, and complete
+checker-owned effect closure remain open. Commits `cc8aad57` through `8416f932`
+are pushed to `phase25-3-java-j2`; no native, SDK, multi-crate, or full release
+gate ran.
