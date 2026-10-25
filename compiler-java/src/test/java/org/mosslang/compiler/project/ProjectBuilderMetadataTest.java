@@ -385,6 +385,11 @@ public final class ProjectBuilderMetadataTest {
                 + "    return value\n"
                 + "  else:\n"
                 + "    return -value\n"
+                + "export fn abs_ratio(value: Float) -> Float:\n"
+                + "  if value >= 0.0:\n"
+                + "    return value\n"
+                + "  else:\n"
+                + "    return -value\n"
                 + "export fn is_warm(value: Float) -> Bool:\n"
                 + "  return value > 0.0 and value < 100.0\n"
                 + "export fn greeting() -> String:\n"
@@ -754,6 +759,19 @@ public final class ProjectBuilderMetadataTest {
                         != org.mosslang.compiler.abi.CheckedStmtKind.Return) {
             throw new AssertionError("ABI-v10 Int branch-return checked body is incomplete");
         }
+        AbiV10Records.CheckedBodyRecord floatBranchBody = identityInterface.privateSemanticDependencies.stream()
+                .filter(record -> record.id.startsWith("checked-body-v1:"))
+                .map(AbiV10Records.CheckedBodyRecord::decode)
+                .filter(body -> body.callableId.endsWith(":fn:abs_ratio"))
+                .findFirst().orElseThrow(() -> new AssertionError(
+                        "ABI-v10 producer omitted the Float branch-return body"));
+        List<org.mosslang.compiler.abi.CheckedStmt> floatBranchStatements =
+                CheckedBodyCodec.decodeCheckedBody(floatBranchBody.checkedIrBytes);
+        if (floatBranchStatements.size() != 1
+                || floatBranchStatements.get(0).kind != org.mosslang.compiler.abi.CheckedStmtKind.If
+                || !"float".equals(floatBranchStatements.get(0).expr.operands.get(0).type.name())) {
+            throw new AssertionError("ABI-v10 Float branch-return checked body is incomplete");
+        }
         AbiV10Records.Summary combineSummary = identityInterface.binaryContract.stream()
                 .filter(record -> record.payloadBytes().length > 0
                         && (record.payloadBytes()[0] == 3 || record.payloadBytes()[0] == 4))
@@ -844,6 +862,8 @@ public final class ProjectBuilderMetadataTest {
                     + "  return provider__is_nonnegative(7)\n"
                     + "fn use_abs_value() -> Int:\n"
                     + "  return provider__abs_value(-5)\n"
+                    + "fn use_abs_ratio() -> Float:\n"
+                    + "  return provider__abs_ratio(-5.0)\n"
                     + "fn use_is_warm() -> Bool:\n"
                     + "  return provider__is_warm(22.5)\n"
                     + "fn use_increment() -> Int:\n"
@@ -880,6 +900,15 @@ public final class ProjectBuilderMetadataTest {
                     || importedBranch.body.get(2).kind != org.mosslang.compiler.ast.Stmt.Kind.Else
                     || importedBranch.body.get(3).kind != org.mosslang.compiler.ast.Stmt.Kind.Return) {
                 throw new AssertionError("ABI-v10 Int branch-return facts were not projected into the source-free callable");
+            }
+            Function importedFloatBranch = consumer.functions.stream()
+                    .filter(function -> function.name.equals("provider.abs_ratio"))
+                    .findFirst().orElseThrow(() -> new AssertionError("source-free Float branch callable was not loaded"));
+            if (importedFloatBranch.body.size() != 4
+                    || importedFloatBranch.body.get(0).kind != org.mosslang.compiler.ast.Stmt.Kind.If
+                    || importedFloatBranch.body.get(3).a == null
+                    || !importedFloatBranch.body.get(3).a.contains("-")) {
+                throw new AssertionError("ABI-v10 Float branch-return facts were not projected into the source-free callable");
             }
             Function importedIdentity = consumer.functions.stream()
                     .filter(function -> function.name.equals("provider.identity"))

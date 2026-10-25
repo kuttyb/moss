@@ -1468,7 +1468,7 @@ public class ProjectBuilder {
                     CheckedExpr constantReturn = null;
                     CheckedExpr arithmeticReturn = null;
                     List<CheckedStmt> numericLocalBody = null;
-                    List<CheckedStmt> intBranchBody = null;
+                    List<CheckedStmt> numericBranchBody = null;
                     CheckedExpr floatArithmeticReturn = null;
                     CheckedExpr numericPredicateReturn = null;
                     if (summary == null) {
@@ -1493,10 +1493,10 @@ public class ProjectBuilder {
                         }
                     }
                     if (summary == null) {
-                        intBranchBody = v10ClosedIntBranchReturnBody(fn);
-                        if (intBranchBody != null) {
+                        numericBranchBody = v10ClosedNumericBranchReturnBody(fn);
+                        if (numericBranchBody != null) {
                             summary = v10ClosedNumericBodySummary(
-                                    fn, intBranchBody, modId, provenanceRecords);
+                                    fn, numericBranchBody, modId, provenanceRecords);
                         }
                     }
                     if (summary == null) {
@@ -1521,8 +1521,8 @@ public class ProjectBuilder {
                                         ? v10SimpleExpressionBody(summary, arithmeticReturn)
                                         : numericLocalBody != null
                                                 ? v10CheckedBodyRecord(summary, numericLocalBody)
-                                        : intBranchBody != null
-                                                ? v10CheckedBodyRecord(summary, intBranchBody)
+                                        : numericBranchBody != null
+                                                ? v10CheckedBodyRecord(summary, numericBranchBody)
                                         : floatArithmeticReturn != null
                                                 ? v10SimpleExpressionBody(summary, floatArithmeticReturn)
                                         : numericPredicateReturn != null
@@ -2107,9 +2107,11 @@ public class ProjectBuilder {
         return checked;
     }
 
-    private static List<CheckedStmt> v10ClosedIntBranchReturnBody(Function function) {
-        if (!isV10IntType(function.returnTypeRef) || function.body.size() != 4
-                || function.params.stream().anyMatch(parameter -> !isV10IntType(parameter.checkedTypeRef))) {
+    private static List<CheckedStmt> v10ClosedNumericBranchReturnBody(Function function) {
+        TypeRef valueType = function.returnTypeRef;
+        boolean floatValues = isV10FloatType(valueType);
+        if ((!isV10IntType(valueType) && !floatValues) || function.body.size() != 4
+                || function.params.stream().anyMatch(parameter -> !valueType.equals(parameter.checkedTypeRef))) {
             return null;
         }
         Stmt ifSource = function.body.get(0);
@@ -2121,11 +2123,13 @@ public class ProjectBuilder {
                 || thenSource.indent <= ifSource.indent || elseSource.indent != ifSource.indent
                 || elseReturnSource.indent <= elseSource.indent) return null;
         String condition = ifSource.a != null ? ifSource.a.trim() : "";
-        CheckedExpr predicate = v10LowerNumericPredicateExpression(condition, function, false, 0);
+        CheckedExpr predicate = v10LowerNumericPredicateExpression(condition, function, floatValues, 0);
         String thenExpression = thenSource.a != null ? thenSource.a.trim() : "";
         String elseExpression = elseReturnSource.a != null ? elseReturnSource.a.trim() : "";
-        CheckedExpr thenValue = v10LowerClosedIntExpression(thenExpression, function, 0);
-        CheckedExpr elseValue = v10LowerClosedIntExpression(elseExpression, function, 0);
+        CheckedExpr thenValue = v10LowerClosedNumericExpression(
+                thenExpression, function, Map.of(), valueType, 0);
+        CheckedExpr elseValue = v10LowerClosedNumericExpression(
+                elseExpression, function, Map.of(), valueType, 0);
         if (predicate == null || thenValue == null || elseValue == null) return null;
         CheckedStmt branch = new CheckedStmt();
         branch.kind = org.mosslang.compiler.abi.CheckedStmtKind.If;

@@ -13495,3 +13495,18 @@ Validation: clean Java build and all ten Java unit-test classes pass in default
 ABI-v9 and staged ABI-v10 modes. No native Rust compile/run, Margo
 provider-consumer build, SDK gate, or full `make check` ran. Phase 25.3 remains
 in progress.
+
+### Phase 25.3 continuation — generalize ABI-v10 branch returns to Float
+
+The checked-body producer and source-free loader now project the same bounded
+single-if/two-direct-return structure for homogeneous `Int` and `Float`
+callables. Branch values are lowered and reconstructed through the existing
+closed numeric expression validators, while the condition uses the matching
+numeric predicate path. Producer-consumer tests remove legacy generic rows,
+reconstruct both forms, and run semantic checking. Nested/control-flow joins,
+locals in branches, and other result types remain open.
+
+Validation: clean Java build and all ten Java unit-test classes pass in default
+ABI-v9 and staged ABI-v10 modes. C++ and Java both accept the focused Int/Float
+branch probe. No native Rust compile/run, Margo provider-consumer build, SDK
+gate, or full `make check` ran; Phase 25.3 remains in progress.

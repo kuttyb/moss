@@ -1444,9 +1444,9 @@ public class Main {
             } catch (CompileError invalidBody) {
                 continue;
             }
-            List<org.mosslang.compiler.ast.Stmt> projectedIntBranches =
-                    projectV10IntBranchReturnBody(statements, parameterTypes, resultType, interfaceFile);
-            if (projectedIntBranches != null) {
+            List<org.mosslang.compiler.ast.Stmt> projectedNumericBranches =
+                    projectV10NumericBranchReturnBody(statements, parameterTypes, resultType, interfaceFile);
+            if (projectedNumericBranches != null) {
                 List<org.mosslang.compiler.ast.Function> branchMatches = program.functions.stream()
                         .filter(function -> callableId.equals(function.semanticCallableId))
                         .toList();
@@ -1466,7 +1466,7 @@ public class Main {
                     }
                     function.bindReturnType(resultType);
                     function.body.clear();
-                    for (org.mosslang.compiler.ast.Stmt statement : projectedIntBranches) {
+                    for (org.mosslang.compiler.ast.Stmt statement : projectedNumericBranches) {
                         org.mosslang.compiler.ast.Stmt rebound = new org.mosslang.compiler.ast.Stmt(
                                 statement.kind, statement.line, statement.indent,
                                 replaceSourceFreeParameterOrdinals(statement.text, function),
@@ -1635,14 +1635,17 @@ public class Main {
         }
     }
 
-    private static List<org.mosslang.compiler.ast.Stmt> projectV10IntBranchReturnBody(
+    private static List<org.mosslang.compiler.ast.Stmt> projectV10NumericBranchReturnBody(
             List<org.mosslang.compiler.abi.CheckedStmt> statements,
             List<org.mosslang.compiler.types.TypeRef> parameterTypes,
             org.mosslang.compiler.types.TypeRef resultType, Path interfaceFile) {
         org.mosslang.compiler.types.TypeRef intType =
                 org.mosslang.compiler.types.TypeRef.primitive("int");
-        if (statements.size() != 1 || !intType.equals(resultType)
-                || parameterTypes.stream().anyMatch(type -> !intType.equals(type))) return null;
+        org.mosslang.compiler.types.TypeRef floatType =
+                org.mosslang.compiler.types.TypeRef.primitive("float");
+        boolean floatValues = floatType.equals(resultType);
+        if ((!intType.equals(resultType) && !floatValues) || statements.size() != 1
+                || parameterTypes.stream().anyMatch(type -> !resultType.equals(type))) return null;
         org.mosslang.compiler.abi.CheckedStmt branch = statements.get(0);
         if (branch.kind != org.mosslang.compiler.abi.CheckedStmtKind.If || branch.expr == null
                 || branch.thenBranch.size() != 1 || branch.elseBranch.size() != 1) return null;
@@ -1651,10 +1654,14 @@ public class Main {
         if (thenReturn.kind != org.mosslang.compiler.abi.CheckedStmtKind.Return
                 || elseReturn.kind != org.mosslang.compiler.abi.CheckedStmtKind.Return
                 || thenReturn.expr == null || elseReturn.expr == null
-                || !intType.equals(thenReturn.expr.type) || !intType.equals(elseReturn.expr.type)) return null;
+                || !resultType.equals(thenReturn.expr.type) || !resultType.equals(elseReturn.expr.type)) return null;
         String condition = sourceFreeBoolExpression(branch.expr, parameterTypes, 0);
-        String whenTrue = sourceFreeClosedIntExpression(thenReturn.expr, parameterTypes, 0);
-        String whenFalse = sourceFreeClosedIntExpression(elseReturn.expr, parameterTypes, 0);
+        String whenTrue = floatValues
+                ? sourceFreeClosedFloatExpression(thenReturn.expr, parameterTypes, 0)
+                : sourceFreeClosedIntExpression(thenReturn.expr, parameterTypes, 0);
+        String whenFalse = floatValues
+                ? sourceFreeClosedFloatExpression(elseReturn.expr, parameterTypes, 0)
+                : sourceFreeClosedIntExpression(elseReturn.expr, parameterTypes, 0);
         if (condition == null || whenTrue == null || whenFalse == null) return null;
         List<org.mosslang.compiler.ast.Stmt> projected = new ArrayList<>();
         org.mosslang.compiler.ast.Stmt ifStatement = new org.mosslang.compiler.ast.Stmt(
