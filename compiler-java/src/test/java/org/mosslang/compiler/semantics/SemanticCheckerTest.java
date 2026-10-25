@@ -22,6 +22,7 @@ public class SemanticCheckerTest {
         testMixedIntFloatComparisons();
         testObjectMethodAccessModesAreRetained();
         testForLoopValuesCanFlowToObjectMethodArguments();
+        testForLoopBindingDoesNotEscapeItsLoop();
         testCustomIteratorNamedCounterWithoutRaisesIsAccepted();
         testObjectMethodArityIsChecked();
         testObjectReceiverWriteEffectPropagatesToFunctionParameter();
@@ -686,6 +687,29 @@ public class SemanticCheckerTest {
                 + "      self.increment_by(key, true)\n"
                 + "fn main():\n"
                 + "  pass\n", "TYPE_MISMATCH");
+    }
+
+    private static void testForLoopBindingDoesNotEscapeItsLoop() {
+        assertCompileError(""
+                + "fn leak() -> Int:\n"
+                + "  for item in [1]:\n"
+                + "    pass\n"
+                + "  return item\n"
+                + "fn main():\n"
+                + "  pass\n", "UNKNOWN_SYMBOL_OR_TYPE");
+
+        Program program = Parser.parseSource(""
+                + "type Box:\n"
+                + "  fn get(key: String) -> Int:\n"
+                + "    return 1\n"
+                + "  fn keys() -> Vector[String]:\n"
+                + "    return [\"key\"]\n"
+                + "  fn visit(other: Box):\n"
+                + "    for key in other.keys():\n"
+                + "      self.get(key)\n"
+                + "fn main():\n"
+                + "  pass\n", "loop-binder-method-call.moss");
+        new SemanticChecker(program).run();
     }
 
     private static void testCustomIteratorNamedCounterWithoutRaisesIsAccepted() {

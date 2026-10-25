@@ -90,6 +90,7 @@ public class SemanticChecker {
 
     private static final class LoopShadowSnapshot {
         final String name;
+        final boolean existed;
         final TypeRef type;
         final MoveInfo moved;
         final boolean immutable;
@@ -97,6 +98,7 @@ public class SemanticChecker {
 
         LoopShadowSnapshot(String name, OwnershipEnv env) {
             this.name = name;
+            this.existed = env.containsKey(name);
             this.type = env.get(name);
             this.moved = env.moved.get(name);
             this.immutable = env.immutables.contains(name);
@@ -104,6 +106,13 @@ public class SemanticChecker {
         }
 
         void restore(OwnershipEnv env) {
+            if (!existed) {
+                env.typeEnv.remove(name);
+                env.moved.remove(name);
+                env.immutables.remove(name);
+                env.bindingLines.remove(name);
+                return;
+            }
             env.put(name, type, bindingLine == null ? 0 : bindingLine);
             if (moved != null) env.moved.put(name, moved);
             if (immutable) env.immutables.add(name);
@@ -2049,7 +2058,7 @@ public class SemanticChecker {
             if (s.kind == Stmt.Kind.For) {
                 while (loopBodyEnd < end && stmts.get(loopBodyEnd).indent > s.indent) loopBodyEnd++;
                 String loopName = s.a == null ? "" : s.a.trim();
-                if (!loopName.isEmpty() && env.containsKey(loopName))
+                if (!loopName.isEmpty())
                     loopShadow = new LoopShadowSnapshot(loopName, env);
             }
             checkStatement(s, env, typer, solver, insideHandler, enclosingName, expectedType);

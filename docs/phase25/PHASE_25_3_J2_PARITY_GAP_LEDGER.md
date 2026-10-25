@@ -215,3 +215,18 @@ of all eleven positive `phase21_capture_*` fixtures produced identical stdout
 and complete JSON traces under C++ and Java. This supersedes earlier localized
 trace differences for selected fixtures; it is a focused sample and not full
 Fast Debug trace parity. No native compilation or execution was run.
+
+## Phase 25.3 continuation — `for` binder scope exit
+
+A minimal source with `for item in [1]: pass` followed by `return item` was
+incorrectly accepted by Java. C++ rejected the post-loop read with
+`UNKNOWN_SYMBOL_OR_TYPE`. Java loop restoration handled only a pre-existing
+shadowed name, leaving fresh loop binders in the environment. The restoration
+snapshot now tracks binding presence and removes fresh loop names from type,
+ownership, immutability, and source-binding metadata after the loop. Existing
+bindings still restore after shadowing.
+
+`./scripts/java/test.sh` passes all eleven Java test classes, including the
+existing object-method loop argument regression and a new positive loop-body
+method-call check. The minimized post-loop probe now receives
+`UNKNOWN_SYMBOL_OR_TYPE` from both compilers. No native or project gate ran.

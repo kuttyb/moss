@@ -14647,3 +14647,17 @@ also seeds the zero-parameter empty `Vector[T]` profile. With both legacy
 declaration copies removed, `T -> T` and `(T, U) -> U` execute for Int/String
 arguments, while the empty vector specializes as Int and Bool. Generic relations
 that combine or transform parameters remain untested.
+
+### Phase 25.3 continuation — keep for-loop binders inside loop scope
+
+A minimized checker probe showed that Java accepted a local read after its
+`for` loop, while C++ rejected it with `UNKNOWN_SYMBOL_OR_TYPE`. Java already
+restored an outer binding when a loop binder shadowed it, but did not remove a
+newly introduced binder after the loop. The loop-scope snapshot now records
+whether the name existed before the loop and removes newly introduced names
+from type, ownership, immutability, and binding-line state at loop exit.
+
+Validation: all eleven Java unit-test classes pass. The focused post-loop
+reference probe now reports `UNKNOWN_SYMBOL_OR_TYPE` in both Java and C++.
+The existing valid loop-variable-to-object-method-argument regression passes,
+including a new focused case. No native or project acceptance gate was run.
