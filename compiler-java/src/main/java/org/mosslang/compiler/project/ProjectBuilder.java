@@ -1481,6 +1481,7 @@ public class ProjectBuilder {
                             fn, modId, provenanceRecords);
                     CheckedExpr constantReturn = null;
                     CheckedExpr emptyVectorReturn = null;
+                    CheckedExpr intVectorReturn = null;
                     CheckedExpr arithmeticReturn = null;
                     List<CheckedStmt> numericLocalBody = null;
                     List<CheckedStmt> branchReturnBody = null;
@@ -1498,6 +1499,13 @@ public class ProjectBuilder {
                         if (emptyVectorReturn != null) {
                             summary = v10EmptyVectorSummary(
                                     fn, emptyVectorReturn, modId, provenanceRecords);
+                        }
+                    }
+                    if (summary == null) {
+                        intVectorReturn = v10ClosedIntVectorReturn(fn);
+                        if (intVectorReturn != null) {
+                            summary = v10EmptyVectorSummary(
+                                    fn, intVectorReturn, modId, provenanceRecords);
                         }
                     }
                     if (summary == null) {
@@ -1541,6 +1549,8 @@ public class ProjectBuilder {
                                 ? v10SimpleExpressionBody(summary, constantReturn)
                                 : emptyVectorReturn != null
                                         ? v10SimpleExpressionBody(summary, emptyVectorReturn)
+                                : intVectorReturn != null
+                                        ? v10SimpleExpressionBody(summary, intVectorReturn)
                                 : arithmeticReturn != null
                                         ? v10SimpleExpressionBody(summary, arithmeticReturn)
                                         : numericLocalBody != null
@@ -1751,6 +1761,34 @@ public class ProjectBuilder {
         emptyVector.kind = org.mosslang.compiler.abi.CheckedExprKind.VectorLiteral;
         emptyVector.type = canonicalV10SummaryType(function.returnTypeRef, ordinals);
         return emptyVector;
+    }
+
+    private static CheckedExpr v10ClosedIntVectorReturn(Function function) {
+        if (!function.params.isEmpty() || function.returnTypeRef == null
+                || !TypeRef.builtin("vector", List.of(TypeRef.primitive("int")))
+                        .equals(function.returnTypeRef)
+                || function.body.size() != 1 || function.body.get(0).kind != Stmt.Kind.Return) return null;
+        Stmt statement = function.body.get(0);
+        String expression = statement.a != null && !statement.a.isBlank()
+                ? statement.a.trim() : "";
+        if (expression.isEmpty() && statement.text != null
+                && statement.text.trim().startsWith("return ")) {
+            expression = statement.text.trim().substring(7).trim();
+        }
+        if (expression.length() < 2 || expression.charAt(0) != '['
+                || expression.charAt(expression.length() - 1) != ']') return null;
+        List<String> elements = org.mosslang.compiler.parser.ParserSupport.splitTopLevel(
+                expression.substring(1, expression.length() - 1), ',');
+        if (elements.isEmpty() || elements.stream().anyMatch(String::isBlank)) return null;
+        CheckedExpr vector = new CheckedExpr();
+        vector.kind = org.mosslang.compiler.abi.CheckedExprKind.VectorLiteral;
+        vector.type = function.returnTypeRef;
+        for (String element : elements) {
+            CheckedExpr child = v10LowerClosedIntExpression(element, function, 0);
+            if (child == null) return null;
+            vector.operands.add(child);
+        }
+        return vector;
     }
 
     private static AbiV10Records.Summary v10EmptyVectorSummary(

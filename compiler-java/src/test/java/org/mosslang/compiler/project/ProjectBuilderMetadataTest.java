@@ -560,7 +560,9 @@ public final class ProjectBuilderMetadataTest {
                 + "export fn fresh():\n"
                 + "  return []\n"
                 + "export fn empty_int() -> Vector[Int]:\n"
-                + "  return []\n", "identity-provider.moss");
+                + "  return []\n"
+                + "export fn numbers() -> Vector[Int]:\n"
+                + "  return [1, 2, -3 + 5]\n", "identity-provider.moss");
         new org.mosslang.compiler.semantics.CheckedProgram(identityProgram).run();
         identityProgram.functions.forEach(function -> {
             String name = function.name;
@@ -634,6 +636,21 @@ public final class ProjectBuilderMetadataTest {
                 || emptyIntSummary.result.arguments.get(0).kind != AbiV10Records.WireTypeKind.Primitive
                 || !"int".equals(emptyIntSummary.result.arguments.get(0).identity)) {
             throw new AssertionError("ABI-v10 typed empty-vector summary lost its concrete element type");
+        }
+        AbiV10Records.CheckedBodyRecord numbersBody = identityInterface.privateSemanticDependencies.stream()
+                .filter(record -> record.id.startsWith("checked-body-v1:"))
+                .map(AbiV10Records.CheckedBodyRecord::decode)
+                .filter(body -> body.callableId.endsWith(":fn:numbers"))
+                .findFirst().orElseThrow(() -> new AssertionError(
+                        "ABI-v10 producer omitted the closed Int vector literal body"));
+        java.util.List<org.mosslang.compiler.abi.CheckedStmt> numbersStatements =
+                CheckedBodyCodec.decodeCheckedBody(numbersBody.checkedIrBytes);
+        if (numbersStatements.size() != 1
+                || numbersStatements.get(0).expr.kind != org.mosslang.compiler.abi.CheckedExprKind.VectorLiteral
+                || numbersStatements.get(0).expr.operands.size() != 3
+                || numbersStatements.get(0).expr.operands.get(2).kind
+                        != org.mosslang.compiler.abi.CheckedExprKind.Binary) {
+            throw new AssertionError("ABI-v10 closed Int vector literal body is incomplete");
         }
         AbiV10Records.Summary secondSummary = identityInterface.binaryContract.stream()
                 .filter(record -> record.payloadBytes().length > 0
@@ -1078,6 +1095,8 @@ public final class ProjectBuilderMetadataTest {
                     + "  return provider__fresh()\n"
                     + "fn use_empty_int() -> Vector[Int]:\n"
                     + "  return provider__empty_int()\n"
+                    + "fn use_numbers() -> Vector[Int]:\n"
+                    + "  return provider__numbers()\n"
                     + "fn use_weighted() -> Float:\n"
                     + "  return provider__weighted(2.0, 4.0)\n"
                     + "fn use_adjust_ratio() -> Float:\n"

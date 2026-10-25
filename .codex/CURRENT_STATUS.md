@@ -14424,3 +14424,17 @@ Map operations. Fast Debug now returns the collection size and checks key
 membership for those forms. A focused test covers all three size aliases,
 both membership names, and an absent key. The full Java unit-test suite passes
 under ABI-v9 and staged ABI-v10; no native build or project integration gate ran.
+
+### Phase 25.3 continuation — source-free ABI-v10 closed Int vector returns
+
+The ABI-v10 producer now serializes an exported zero-argument function that
+returns a closed `Vector[Int]` literal with Int literal/arithmetic elements as
+a canonical checked-body `VectorLiteral`. The source-free loader reconstructs
+that form only for a closed `Vector[Int]` result whose checked operands are
+closed Int expressions. A producer-to-consumer regression removes legacy
+generic body rows, loads the canonical provider artifact, and checks a
+consumer returning the imported vector.
+
+The focused `ProjectBuilderMetadataTest` passes under staged ABI-v10. Full Java
+ABI suites, native Rust compilation/execution, Margo provider-consumer linkage,
+SDK gates, and the full release acceptance gates remain outstanding.

@@ -1643,6 +1643,13 @@ public class Main {
                     && statement.expr.literalValue.matches("[^\"\\\\\\r\\n]*")) {
                 returnedLiteral = "\"" + statement.expr.literalValue + "\"";
             } else if (statement.expr.kind == org.mosslang.compiler.abi.CheckedExprKind.VectorLiteral
+                    && !statement.expr.operands.isEmpty() && parameterTypes.isEmpty()
+                    && summary.variableCount == 0
+                    && resultType.equals(org.mosslang.compiler.types.TypeRef.builtin("vector",
+                            List.of(org.mosslang.compiler.types.TypeRef.primitive("int"))))) {
+                returnedLiteral = sourceFreeClosedIntVectorLiteral(statement.expr, parameterTypes);
+                if (returnedLiteral == null) continue;
+            } else if (statement.expr.kind == org.mosslang.compiler.abi.CheckedExprKind.VectorLiteral
                     && statement.expr.operands.isEmpty() && parameterTypes.isEmpty()
                     && summary.variableCount <= 1
                     && resultType.kind() == org.mosslang.compiler.types.TypeKind.Builtin
@@ -1875,6 +1882,22 @@ public class Main {
             org.mosslang.compiler.abi.CheckedExpr expression,
             List<org.mosslang.compiler.types.TypeRef> parameterTypes, int depth) {
         return sourceFreeClosedIntExpression(expression, parameterTypes, Map.of(), depth);
+    }
+
+    private static String sourceFreeClosedIntVectorLiteral(
+            org.mosslang.compiler.abi.CheckedExpr expression,
+            List<org.mosslang.compiler.types.TypeRef> parameterTypes) {
+        if (expression.operands.isEmpty()) return null;
+        List<String> elements = new ArrayList<>();
+        org.mosslang.compiler.types.TypeRef intType =
+                org.mosslang.compiler.types.TypeRef.primitive("int");
+        for (org.mosslang.compiler.abi.CheckedExpr element : expression.operands) {
+            if (!intType.equals(element.type)) return null;
+            String source = sourceFreeClosedIntExpression(element, parameterTypes, 0);
+            if (source == null) return null;
+            elements.add(source);
+        }
+        return "[" + String.join(", ", elements) + "]";
     }
 
     private static String sourceFreeClosedIntExpression(
