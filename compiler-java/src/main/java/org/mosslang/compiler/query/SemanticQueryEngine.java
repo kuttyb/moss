@@ -234,16 +234,16 @@ public class SemanticQueryEngine {
                         : program.functions.stream().filter(fn -> fn.name.equals(itemName)).findFirst().orElse(null);
                 if (f != null) {
                     externalIo |= callableHasEffect(f.body, f.resultExpression, program,
-                            new HashSet<>(), EffectKind.EXTERNAL_IO);
+                            new HashSet<>(), EffectKind.EXTERNAL_IO, f, null);
                     mayPanic |= callableHasEffect(f.body, f.resultExpression, program,
-                            new HashSet<>(), EffectKind.MAY_PANIC);
+                            new HashSet<>(), EffectKind.MAY_PANIC, f, null);
                 }
             }
             if (queriedMethod != null) {
                 externalIo |= callableHasEffect(queriedMethod.body, queriedMethod.resultExpression, program,
-                        new HashSet<>(), EffectKind.EXTERNAL_IO);
+                        new HashSet<>(), EffectKind.EXTERNAL_IO, null, queriedMethod);
                 mayPanic |= callableHasEffect(queriedMethod.body, queriedMethod.resultExpression, program,
-                        new HashSet<>(), EffectKind.MAY_PANIC);
+                        new HashSet<>(), EffectKind.MAY_PANIC, null, queriedMethod);
             }
             if (queriedHandler != null) {
                 externalIo |= callableHasEffect(queriedHandler.body, null, program,
@@ -1233,6 +1233,12 @@ public class SemanticQueryEngine {
 
     private static boolean callableHasEffect(List<Stmt> body, String resultExpression, Program program,
                                              Set<String> visited, EffectKind effect) {
+        return callableHasEffect(body, resultExpression, program, visited, effect, null, null);
+    }
+
+    private static boolean callableHasEffect(List<Stmt> body, String resultExpression, Program program,
+                                             Set<String> visited, EffectKind effect,
+                                             Function callerFunction, Method ownerMethod) {
         if (body == null) return false;
         for (Stmt statement : body) {
             if (statement == null) continue;
@@ -1247,18 +1253,61 @@ public class SemanticQueryEngine {
             if (program != null && program.functions != null) {
                 for (Function callee : program.functions) {
                     if (!containsFunctionCall(source.toString(), callee.name)
-                            || !visited.add(callee.name)) continue;
-                    if (callableHasEffect(callee.body, callee.resultExpression, program, visited, effect)) return true;
+                            || !visited.add("fn:" + callee.name)) continue;
+                    if (callableHasEffect(callee.body, callee.resultExpression, program, visited, effect,
+                            callee, null)) return true;
                 }
             }
+            if (callableMethodHasEffect(source.toString(), program, visited, effect,
+                    callerFunction, ownerMethod)) return true;
         }
         if (resultExpression == null) return false;
         if (hasEffect(resultExpression, null, effect)) return true;
         if (program != null && program.functions != null) {
             for (Function callee : program.functions) {
                 if (!containsFunctionCall(resultExpression, callee.name)
-                        || !visited.add(callee.name)) continue;
-                if (callableHasEffect(callee.body, callee.resultExpression, program, visited, effect)) return true;
+                        || !visited.add("fn:" + callee.name)) continue;
+                if (callableHasEffect(callee.body, callee.resultExpression, program, visited, effect,
+                        callee, null)) return true;
+            }
+        }
+        return callableMethodHasEffect(resultExpression, program, visited, effect,
+                callerFunction, ownerMethod);
+    }
+
+    private static boolean callableMethodHasEffect(String expression, Program program, Set<String> visited,
+                                                   EffectKind effect, Function callerFunction,
+                                                   Method ownerMethod) {
+        if (program == null || program.objects == null) return false;
+        if (ownerMethod != null) {
+            for (ObjectType object : program.objects) {
+                if (!object.name.equals(ownerMethod.owner)) continue;
+                for (Method method : object.methods) {
+                    if (method == ownerMethod || !containsFunctionCall(expression, method.name)
+                            || !visited.add("method:" + method.owner + "." + method.name)) continue;
+                    if (callableHasEffect(method.body, method.resultExpression, program, visited, effect,
+                            null, method)) return true;
+                }
+            }
+        }
+        if (callerFunction == null || program.localBindingTypes == null) return false;
+        Map<String, TypeRef> bindings = program.localBindingTypes.getOrDefault(callerFunction.name, Map.of());
+        for (ObjectType object : program.objects) {
+            for (Method method : object.methods) {
+                java.util.regex.Matcher call = java.util.regex.Pattern.compile(
+                        "(?<![A-Za-z0-9_])([A-Za-z_][A-Za-z0-9_]*)\\s*\\.\\s*"
+                                + java.util.regex.Pattern.quote(method.name) + "\\s*\\(")
+                        .matcher(expression);
+                while (call.find()) {
+                    TypeRef receiverType = bindings.get(call.group(1));
+                    if (receiverType == null || receiverType.name() == null) continue;
+                    String typeName = receiverType.name();
+                    if (!(typeName.equals(object.name) || typeName.endsWith("__" + object.name))) continue;
+                    String identity = "method:" + method.owner + "." + method.name;
+                    if (!visited.add(identity)) continue;
+                    if (callableHasEffect(method.body, method.resultExpression, program, visited, effect,
+                            null, method)) return true;
+                }
             }
         }
         return false;

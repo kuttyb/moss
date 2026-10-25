@@ -14,6 +14,7 @@ public final class SemanticQueryEngineTest {
         effectsQueryDoesNotInferPanicFromNames();
         effectsQueryCollectsDirectRaisesForArbitraryNames();
         effectsQueryFollowsNestedFunctionEffects();
+        effectsQueryFollowsLocalMethodEffects();
         effectsQueryFollowsHandlerHelperEffects();
         effectsQueryFollowsOrdinaryFunctionRaises();
         effectsQueryFollowsLocalObjectMethodRaises();
@@ -143,6 +144,22 @@ public final class SemanticQueryEngineTest {
         String result = queryEffects(program, "calculate");
         assertContains(result, "\"external_io\": true");
         assertContains(result, "\"may_panic\": true");
+    }
+
+    private static void effectsQueryFollowsLocalMethodEffects() {
+        String source = ""
+                + "type Box:\n"
+                + "  fn emit():\n"
+                + "    echo \"x\"\n"
+                + "fn calculate():\n"
+                + "  box = Box()\n"
+                + "  box.emit()\n"
+                + "fn main():\n"
+                + "  calculate()\n";
+        Program program = Parser.parseSource(source, "effects-query-local-method-io.moss");
+        new SemanticChecker(program).run();
+        String result = queryEffects(program, "calculate");
+        assertContains(result, "\"external_io\": true");
     }
 
     private static void effectsQueryExcludesRecoveredDirectRaises() {

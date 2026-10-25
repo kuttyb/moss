@@ -14850,3 +14850,16 @@ reports `external_io: true`, matching C++.
 Validation: all eleven Java unit-test classes pass in ABI-v9 and staged
 ABI-v10. This remains a source walk; object-method call chains, module imports,
 and checker-retained complete effect summaries remain open.
+
+### Phase 25.3 continuation — resolve local object methods in observable effects
+
+The recursive effect walker now follows a method call through a local receiver
+when the checked binding type identifies the receiver's object type. Queried
+methods also follow same-owner method calls. A minimal `calculate()` that
+constructs `Box` and calls `box.emit()` now reports `external_io: true`,
+matching C++.
+
+Validation: all eleven Java unit-test classes pass in ABI-v9 and staged
+ABI-v10. Field-chain, generic, cross-module, and source-free method effects
+remain open; this is a bounded source traversal, not retained effect-summary
+parity.
