@@ -14354,3 +14354,14 @@ matches on all nine; `phase21_capture_state_borrow.moss` exits unsuccessfully
 in both interpreters. The complete `phase21_recovery_semantics.moss` trace also
 matches. Both ABI Java suites pass. This is evidence for these selected Fast
 Debug paths, not a full parity claim.
+
+### Phase 25.3 continuation — standalone Java package and launcher smoke
+
+`./scripts/java/package.sh` builds the standalone fat JAR and `compiler-java/dist/moss`
+launcher. Smoke checks run from `tmp/`, outside the repository root: the
+launcher reports `0.1.0-java`, and `moss agent bootstrap --json` returns
+`language_version: moss-0.1`. The JAR therefore runs with dependencies bundled
+rather than relying on the checkout's classpath. The JDT client lifecycle unit
+suite passes all five tests; its failure-path message about unavailable JDT
+is expected in the test's mocked startup-failure case. No running JDT daemon
+was left behind.
