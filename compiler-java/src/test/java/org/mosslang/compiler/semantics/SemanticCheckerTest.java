@@ -2488,6 +2488,22 @@ public class SemanticCheckerTest {
                 + "fn main():\n"
                 + "  worker = Worker()\n"
                 + "  message worker.Run()\n", "ROOT_UNHANDLED_RAISE");
+        String directHandler = ""
+                + "domain Worker:\n"
+                + "  fn Run():\n"
+                + "    box = Box()\n"
+                + "    value = box.risky(1)\n";
+        assertCompileError(prefix + directHandler
+                + "fn main():\n"
+                + "  worker = Worker()\n"
+                + "  message worker.Run()\n", "ROOT_UNHANDLED_RAISE");
+        Program directHandled = Parser.parseSource(prefix + directHandler
+                + "  on_fail Failure.Bad:\n"
+                + "    pass\n"
+                + "fn main():\n"
+                + "  worker = Worker()\n"
+                + "  message worker.Run()\n", "root-ingress-method-raise-handled.moss");
+        new SemanticChecker(directHandled).run();
         Program handled = Parser.parseSource(prefix + handler
                 + "  on_fail Failure.Bad:\n"
                 + "    pass\n"

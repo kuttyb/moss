@@ -849,3 +849,14 @@ accounts for supported callback/method paths and local recovery. Tests reject
 the unhandled method callback and accept an exhaustive `on_fail` arm. C++ and
 Java accept the handled minimized source. All 12 Java test classes pass under
 ABI-v9 and staged ABI-v10.
+
+
+### Follow-up — ordinary method raises at domain root ingress
+
+The same root validation gap also affected ordinary handler expressions such as
+`value = box.risky(1)`, independently of pipelines. A C++/Java probe showed C++
+rejecting the unhandled root while Java accepted it. Root ingress validation now
+scans direct object-method calls, resolves their receiver from checked handler
+bindings, and includes the selected method's escaping raises. The regression
+checks rejection without `on_fail` and acceptance with `Failure.Bad`. All 12
+Java test classes pass under ABI-v9 and staged ABI-v10.

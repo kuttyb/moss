@@ -16733,3 +16733,15 @@ Java tests cover rejection without `on_fail` and acceptance with exhaustive
 `on_fail`; a minimized C++/Java handled control passes. `scripts/java/test.sh`
 and `MOSS_STAGED_ABI=v10 scripts/java/test.sh` each pass all 12 test classes.
 No native Rust compilation/execution or SDK gate was run.
+
+
+### Phase 25.3 continuation — direct handler method root raises
+
+A direct `box.risky(1)` call inside a domain handler could escape through a
+synchronous root message: C++ rejected it, Java accepted it. Root ingress now
+scans checked handler expressions for direct object-method calls in addition to
+pipeline callbacks, resolves the receiver from state/routes/parameters/typed
+locals, and propagates the method's escaping variants. Regressions cover
+rejection without `on_fail` and acceptance with `Failure.Bad`. Both full 12-class
+Java suites pass under ABI-v9 and staged ABI-v10; minimized C++/Java probes
+agree. No native execution or SDK integration was run.

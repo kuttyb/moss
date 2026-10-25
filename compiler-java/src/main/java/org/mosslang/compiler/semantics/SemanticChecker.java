@@ -4735,22 +4735,7 @@ public class SemanticChecker {
                         raised.addAll(collectFunctionRaiseVariants(function, visitedFunctions));
                     }
                 }
-                for (String callback : org.mosslang.compiler.parser.ParserSupport
-                        .pipelineCallbacks(expression)) {
-                    int callbackDot = callback.lastIndexOf('.');
-                    if (callbackDot <= 0) continue;
-                    String methodName = callback.substring(callbackDot + 1);
-                    String callbackReceiverType = resolveHandlerReceiverType(
-                            callback.substring(0, callbackDot), domain, handler);
-                    for (ObjectType object : program.objects) {
-                        if (!matchesObjectTypeName(callbackReceiverType, object.name)) continue;
-                        for (Method method : object.methods) {
-                            if (method.name.equals(methodName)) {
-                                raised.addAll(collectMethodRaiseVariants(method, new HashSet<>()));
-                            }
-                        }
-                    }
-                }
+                collectHandlerMethodRaises(expression, domain, handler, raised);
             }
         }
         if (raised.isEmpty()) return;
@@ -4760,6 +4745,31 @@ public class SemanticChecker {
                 "ROOT_UNHANDLED_RAISE");
         error.setSemanticIdentity(currentSemanticIdentity);
         throw error;
+    }
+
+    private void collectHandlerMethodRaises(String expression, Domain domain, Handler handler,
+                                           Set<String> raised) {
+        String code = maskStringLiterals(expression);
+        for (ObjectType object : program.objects) {
+            for (Method method : object.methods) {
+                String callPattern = "(?<![A-Za-z0-9_])([A-Za-z_][A-Za-z0-9_]*(?:\\s*\\.\\s*[A-Za-z_][A-Za-z0-9_]*)*)\\s*\\.\\s*"
+                        + java.util.regex.Pattern.quote(method.name) + "\\s*\\(";
+                java.util.regex.Matcher calls = java.util.regex.Pattern.compile(callPattern).matcher(code);
+                while (calls.find()) {
+                    String receiverType = resolveHandlerReceiverType(calls.group(1), domain, handler);
+                    if (matchesObjectTypeName(receiverType, object.name))
+                        raised.addAll(collectMethodRaiseVariants(method, new HashSet<>()));
+                }
+                for (String callback : org.mosslang.compiler.parser.ParserSupport.pipelineCallbacks(code)) {
+                    int dot = callback.lastIndexOf('.');
+                    if (dot <= 0 || !method.name.equals(callback.substring(dot + 1))) continue;
+                    String receiverType = resolveHandlerReceiverType(
+                            callback.substring(0, dot), domain, handler);
+                    if (matchesObjectTypeName(receiverType, object.name))
+                        raised.addAll(collectMethodRaiseVariants(method, new HashSet<>()));
+                }
+            }
+        }
     }
 
     private String resolveHandlerReceiverType(String receiverPath, Domain domain, Handler handler) {
