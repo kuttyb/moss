@@ -874,16 +874,19 @@ public final class FastInterpreterTest {
         var namedProgram = Parser.parseSource(""
                 + "fn above_two(value: Int) -> Bool:\n"
                 + "  return value > 2\n"
+                + "fn add(a: Int, b: Int) -> Int:\n"
+                + "  return a + b\n"
                 + "fn main():\n"
-                + "  echo [1, 2, 3] |> filter(above_two) |> sum\n",
+                + "  let threshold = 1\n"
+                + "  echo [1, 2, 3] |> filter(_ > threshold) |> map(_ + threshold) |> reduce(0, add)\n",
                 "fast-interpreter-filter-named-callback.moss");
         new CheckedProgram(namedProgram).run();
         ByteArrayOutputStream namedOutput = new ByteArrayOutputStream();
         new FastInterpreter(namedProgram, false,
                 new PrintStream(namedOutput, true, StandardCharsets.UTF_8),
                 new PrintStream(new ByteArrayOutputStream())).run();
-        if (!"3\n".equals(namedOutput.toString(StandardCharsets.UTF_8))) {
-            throw new AssertionError("filter pipeline did not invoke its named predicate: " + namedOutput);
+        if (!"7\n".equals(namedOutput.toString(StandardCharsets.UTF_8))) {
+            throw new AssertionError("map/filter pipeline mishandled named or inline callbacks: " + namedOutput);
         }
     }
 

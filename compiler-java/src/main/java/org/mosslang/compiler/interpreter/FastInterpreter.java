@@ -1450,14 +1450,22 @@ public class FastInterpreter {
                 return Value.ofInt(sum);
             }
             if (stage.startsWith("map(") && stage.endsWith(")")) {
-                String fnName = stage.substring(4, stage.length() - 1).trim();
+                String callback = stage.substring(4, stage.length() - 1).trim();
+                boolean namedCallback = program.functions.stream().anyMatch(function ->
+                        (function.name.equals(callback) || function.name.endsWith("__" + callback)
+                                || callback.endsWith("." + function.name)) && function.params.size() == 1);
                 List<Value> outList = new ArrayList<>();
                 if (left.raw instanceof Collection<?> col) {
                     for (Object o : col) {
                         if (o instanceof Value v) {
                             Map<String, Value> tmpLocals = new HashMap<>(locals);
-                            tmpLocals.put("__pipe_item", v);
-                            outList.add(evalExpr(fnName + "(__pipe_item)", tmpLocals, currentDomain));
+                            if (namedCallback) {
+                                tmpLocals.put("__pipe_item", v);
+                                outList.add(evalExpr(callback + "(__pipe_item)", tmpLocals, currentDomain));
+                            } else {
+                                tmpLocals.put("_", v);
+                                outList.add(evalExpr(callback, tmpLocals, currentDomain));
+                            }
                         }
                     }
                 }

@@ -15665,3 +15665,19 @@ plus typed-vector trace specialization. All twelve Java unit-test classes pass
 under ABI-v9 defaults and staged ABI-v10; feedback and diff checks are pending
 for this checkpoint. Other pipeline stages, collection types, and broad trace
 parity remain open.
+
+
+### Phase 25.3 continuation — execute inline map callbacks in dataflow pipelines
+
+The `phase106d1_read_projection.moss` Fast Debug probe showed Java's
+placeholder `filter` stage was fixed but inline `map(_ + value.count)` still
+fell through to unit-like values. Java map pipelines now invoke either named
+unary functions or inline placeholder expressions. C++ and Java Fast Debug
+stdout now match exactly on this fixture, including values `5` and `17` after
+state mutation.
+
+All twelve Java unit-test classes pass under ABI-v9 defaults and staged
+ABI-v10. The fixture's JSON trace still differs: Java reports object fields as
+local reads and some state reads occur in the caller, while C++ retains
+state-origin paths inside generic function/method calls. That trace-origin gap
+remains open and is the next focused Fast Debug task.
