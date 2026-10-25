@@ -94,7 +94,12 @@ public class SemanticChecker {
             checkObjects();
             checkTraits();
             checkDomains();
+            // Resolve inferred object method signatures before generic function
+            // bodies check concrete values against structural trait contracts.
+            checkObjectMethods();
             checkFunctions();
+            // Recheck with function summaries available for methods that call
+            // ordinary functions in their bodies.
             checkObjectMethods();
             checkRecursiveFunctions();
             checkMain();

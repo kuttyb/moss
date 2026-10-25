@@ -12354,3 +12354,12 @@ pass. The new test accepts same-trait forwarding and rejects different-trait
 forwarding and a matching method name with the wrong parameter signature. The
 existing generic/native and source-free ABI gaps remain open; no Rust/native or
 SDK gate was run.
+
+After the structural-trait signature and inference-order changes, the bounded
+semantic comparison was rerun on exactly `examples/*.moss` plus
+`tests/differential/corpus/*.moss`: 41 passed, 0 diverged, 0 oracle failures.
+The selected Counter and self-method fixtures also check successfully in both
+compilers. The larger RungeKutta swarm project is outside that 41-file set and
+still differs: C++ rejects it with `TYPE_AMBIGUOUS_OPEN_RESULT` at line 101,
+while Java accepts it. No generated Rust or native behavior has been used to
+classify that difference yet.

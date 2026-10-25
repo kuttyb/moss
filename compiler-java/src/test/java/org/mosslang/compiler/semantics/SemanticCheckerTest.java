@@ -9,6 +9,8 @@ public class SemanticCheckerTest {
         testSameTraitConstraintCanBeForwarded();
         testDifferentTraitConstraintIsNotAssumed();
         testStructuralMethodSignatureIsChecked();
+        testInferredMethodReturnSatisfiesStructuralTrait();
+        testInferredMethodReturnMustMatchStructuralTrait();
         System.out.println("SemanticCheckerTest PASSED.");
     }
 
@@ -62,6 +64,47 @@ public class SemanticCheckerTest {
         try {
             new SemanticChecker(program).run();
             throw new AssertionError("a method name alone must not satisfy a structural trait");
+        } catch (CompileError error) {
+            if (!"TYPE_MISMATCH".equals(error.getCode())) {
+                throw new AssertionError("expected TYPE_MISMATCH, got " + error.getCode(), error);
+            }
+        }
+    }
+
+    private static void testInferredMethodReturnSatisfiesStructuralTrait() {
+        Program program = Parser.parseSource(""
+                + "trait Readable:\n"
+                + "  fn read() -> Int\n"
+                + "type Inferred:\n"
+                + "  fn read():\n"
+                + "    return 1\n"
+                + "fn accept(value: Readable):\n"
+                + "  pass\n"
+                + "fn relay(value: Inferred):\n"
+                + "  accept(value)\n"
+                + "fn main():\n"
+                + "  item = Inferred()\n"
+                + "  relay(item)\n", "trait-inferred-return.moss");
+        new SemanticChecker(program).run();
+    }
+
+    private static void testInferredMethodReturnMustMatchStructuralTrait() {
+        Program program = Parser.parseSource(""
+                + "trait Readable:\n"
+                + "  fn read() -> Int\n"
+                + "type Wrong:\n"
+                + "  fn read():\n"
+                + "    return \"not an int\"\n"
+                + "fn accept(value: Readable):\n"
+                + "  pass\n"
+                + "fn relay(value: Wrong):\n"
+                + "  accept(value)\n"
+                + "fn main():\n"
+                + "  item = Wrong()\n"
+                + "  relay(item)\n", "trait-inferred-return-mismatch.moss");
+        try {
+            new SemanticChecker(program).run();
+            throw new AssertionError("an inferred wrong return type must not satisfy a structural trait");
         } catch (CompileError error) {
             if (!"TYPE_MISMATCH".equals(error.getCode())) {
                 throw new AssertionError("expected TYPE_MISMATCH, got " + error.getCode(), error);
