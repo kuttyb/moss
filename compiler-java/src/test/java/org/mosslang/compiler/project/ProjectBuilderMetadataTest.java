@@ -558,6 +558,8 @@ public final class ProjectBuilderMetadataTest {
                 + "export fn greeting() -> String:\n"
                 + "  return \"hello\"\n"
                 + "export fn fresh():\n"
+                + "  return []\n"
+                + "export fn empty_int() -> Vector[Int]:\n"
                 + "  return []\n", "identity-provider.moss");
         new org.mosslang.compiler.semantics.CheckedProgram(identityProgram).run();
         identityProgram.functions.forEach(function -> {
@@ -617,6 +619,21 @@ public final class ProjectBuilderMetadataTest {
                 || freshStatements.get(0).expr.kind != org.mosslang.compiler.abi.CheckedExprKind.VectorLiteral
                 || !freshSummary.bodySemanticHash.equals(freshBody.semanticHash)) {
             throw new AssertionError("ABI-v10 inferred empty-vector summary/body is incomplete");
+        }
+        AbiV10Records.Summary emptyIntSummary = identityInterface.binaryContract.stream()
+                .filter(record -> record.payloadBytes().length > 0
+                        && (record.payloadBytes()[0] == 3 || record.payloadBytes()[0] == 4))
+                .map(AbiV10Records.Summary::decode)
+                .filter(summary -> summary.callableId.endsWith(":fn:empty_int"))
+                .findFirst().orElseThrow(() -> new AssertionError(
+                        "ABI-v10 producer omitted the typed empty-vector summary"));
+        if (emptyIntSummary.variableCount != 0 || !emptyIntSummary.parameters.isEmpty()
+                || emptyIntSummary.result.kind != AbiV10Records.WireTypeKind.Builtin
+                || !"vector".equals(emptyIntSummary.result.identity)
+                || emptyIntSummary.result.arguments.size() != 1
+                || emptyIntSummary.result.arguments.get(0).kind != AbiV10Records.WireTypeKind.Primitive
+                || !"int".equals(emptyIntSummary.result.arguments.get(0).identity)) {
+            throw new AssertionError("ABI-v10 typed empty-vector summary lost its concrete element type");
         }
         AbiV10Records.Summary secondSummary = identityInterface.binaryContract.stream()
                 .filter(record -> record.payloadBytes().length > 0
@@ -1059,6 +1076,8 @@ public final class ProjectBuilderMetadataTest {
                     + "  return provider__fresh()\n"
                     + "fn use_fresh_bool() -> Vector[Bool]:\n"
                     + "  return provider__fresh()\n"
+                    + "fn use_empty_int() -> Vector[Int]:\n"
+                    + "  return provider__empty_int()\n"
                     + "fn use_weighted() -> Float:\n"
                     + "  return provider__weighted(2.0, 4.0)\n"
                     + "fn use_adjust_ratio() -> Float:\n"

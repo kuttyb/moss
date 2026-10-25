@@ -13559,3 +13559,17 @@ Validation: clean Java build and all ten Java unit-test classes pass in default
 ABI-v9 and staged ABI-v10 modes. Feedback validation and `git diff --check`
 are pending. Native Rust compile/run, Margo provider-consumer build, SDK gate,
 and full `make check` remain deferred; Phase 25.3 remains in progress.
+
+### Phase 25.3 continuation — support closed typed empty-vector returns
+
+Extended the ABI-v10 empty-vector checked-body profile to accept a closed
+`Vector[T]` result as well as the one-variable inferred `Vector[T]` result.
+Source-free loading still requires a zero-argument function with an empty
+VectorLiteral, no effects or dependencies, and a result shape matching the
+summary. The producer-consumer semantic regression covers concrete
+`Vector[Int]` and inferred specialization to both `Vector[Int]` and
+`Vector[Bool]`.
+
+Validation: clean Java build and all ten Java unit-test classes pass in default
+ABI-v9 and staged ABI-v10 modes. Native Rust compile/run, Margo, SDK, and full
+acceptance gates remain deferred; Phase 25.3 remains in progress.

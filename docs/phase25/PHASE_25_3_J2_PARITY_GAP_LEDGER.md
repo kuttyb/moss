@@ -76,3 +76,13 @@ as both `Vector[Int]` and `Vector[Bool]`. This is a bounded source-free profile,
 not general collection-body or helper-call support. Clean Java build and all
 ten Java unit-test classes pass in ABI-v9 and staged ABI-v10 modes. Native,
 Margo, SDK, and full acceptance gates remain unrun.
+
+## Phase 25.3 continuation — closed typed empty-vector return
+
+The restricted source-free ABI-v10 empty-vector body profile now accepts both
+an inferred `Vector[T]` result with one bound type variable and a closed
+`Vector[T]` result with no bound variables. Loader validation still requires an
+empty checked VectorLiteral, zero parameters, and a summary with no unsupported
+requirements, dependencies, or effects. Java producer-consumer tests cover
+closed `Vector[Int]` plus inferred Int and Bool specializations. Native/Margo
+execution and broader collection body profiles remain open.

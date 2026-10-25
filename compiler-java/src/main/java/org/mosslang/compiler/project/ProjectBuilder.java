@@ -1494,9 +1494,9 @@ public class ProjectBuilder {
                         }
                     }
                     if (summary == null) {
-                        emptyVectorReturn = v10OpenEmptyVectorReturn(fn);
+                        emptyVectorReturn = v10EmptyVectorReturn(fn);
                         if (emptyVectorReturn != null) {
-                            summary = v10OpenEmptyVectorSummary(
+                            summary = v10EmptyVectorSummary(
                                     fn, emptyVectorReturn, modId, provenanceRecords);
                         }
                     }
@@ -1729,13 +1729,12 @@ public class ProjectBuilder {
         return null;
     }
 
-    private static CheckedExpr v10OpenEmptyVectorReturn(Function function) {
+    private static CheckedExpr v10EmptyVectorReturn(Function function) {
         if (!function.params.isEmpty() || function.returnTypeRef == null
                 || function.returnTypeRef.kind() != org.mosslang.compiler.types.TypeKind.Builtin
                 || !"vector".equalsIgnoreCase(function.returnTypeRef.name())
                 || function.returnTypeRef.typeArgs().size() != 1
-                || function.returnTypeRef.typeArgs().get(0).kind()
-                        != org.mosslang.compiler.types.TypeKind.InferenceVar
+                || !isV10SummaryTypeRepresentable(function.returnTypeRef)
                 || function.body.size() != 1 || function.body.get(0).kind != Stmt.Kind.Return) return null;
         Stmt statement = function.body.get(0);
         String expression = statement.a != null && !statement.a.isBlank()
@@ -1747,19 +1746,19 @@ public class ProjectBuilder {
         if (!"[]".equals(expression)) return null;
         Map<org.mosslang.compiler.types.TypeVarId, Integer> ordinals = new LinkedHashMap<>();
         collectV10SummaryVariables(function.returnTypeRef, ordinals);
-        if (ordinals.size() != 1) return null;
+        if (ordinals.size() > 1) return null;
         CheckedExpr emptyVector = new CheckedExpr();
         emptyVector.kind = org.mosslang.compiler.abi.CheckedExprKind.VectorLiteral;
         emptyVector.type = canonicalV10SummaryType(function.returnTypeRef, ordinals);
         return emptyVector;
     }
 
-    private static AbiV10Records.Summary v10OpenEmptyVectorSummary(
+    private static AbiV10Records.Summary v10EmptyVectorSummary(
             Function function, CheckedExpr expression, String moduleId,
             List<AbiV10Records.SourceProvenance> provenanceRecords) {
         Map<org.mosslang.compiler.types.TypeVarId, Integer> ordinals = new LinkedHashMap<>();
         collectV10SummaryVariables(function.returnTypeRef, ordinals);
-        if (ordinals.size() != 1 || !isV10SummaryTypeRepresentable(function.returnTypeRef)) return null;
+        if (ordinals.size() > 1 || !isV10SummaryTypeRepresentable(function.returnTypeRef)) return null;
         AbiV10Records.Summary summary = new AbiV10Records.Summary();
         summary.callableId = function.semanticCallableId;
         summary.variableCount = ordinals.size();
