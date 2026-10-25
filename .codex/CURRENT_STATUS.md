@@ -12497,3 +12497,20 @@ focused in-process check forced the executable to be absent, verified the
 full-javac fallback command selection without launching another build, and
 passed. Actual Eclipse daemon startup/shutdown remains environment-dependent
 and unverified here.
+
+### Phase 25.3 continuation — resolve function facts for `effects` queries
+
+A minimal valid function query showed the Java effects command returned
+`entity-v1:mutate`, semantic identity `mutate@5`, line 5, and type `int` for a
+function declared at line 1 with unit return. C++ returned
+`entity-v1:function:mutate`, `fn:mutate@1`, line 1, and type `unit`. The Java
+query now takes the function identity, declaration location, and return type
+from the resolved `Function`. Added a focused query regression. Both compilers
+reported the same WRITE ownership fact and observable effects for this probe.
+
+Validation after this edit: Java build and all ten Java unit-test classes
+passed, including the new semantic query test and parsing all 33 example
+files. Direct Java/C++ query output agrees on the identified target fields and
+ownership/effect values. `./scripts/java/package.sh` then rebuilt the JAR, and
+the packaged JAR and `scripts/java/moss` both passed `--version`. Native, SDK,
+and final release gates remain open.

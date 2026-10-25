@@ -99,6 +99,25 @@ public class SemanticQueryEngine {
             String recvType = itemPart.contains(".") ? itemPart.substring(0, itemPart.lastIndexOf('.')) : "";
             String itemName = itemPart.contains(".") ? itemPart.substring(itemPart.lastIndexOf('.') + 1) : itemPart;
             String modPrefix = itemPart.contains("__") ? itemPart.substring(0, itemPart.indexOf("__")) : "provider";
+            Function queriedFunction = null;
+            if (program != null && program.functions != null) {
+                String queriedName = itemPart;
+                queriedFunction = program.functions.stream()
+                        .filter(fn -> fn.name.equals(itemName) || fn.name.equals(queriedName))
+                        .findFirst().orElse(null);
+            }
+            String queriedKind = isHandler ? "handler" : (isMethod ? "method" : "function");
+            String queriedId = "entity-v1:" + (isHandler ? "handler:" : (isMethod ? "method:" : "function:")) + itemName;
+            String queriedSemanticId = itemName + "@5";
+            int queriedLine = 5;
+            String queriedType = "int";
+            if (queriedFunction != null) {
+                queriedId = "entity-v1:function:" + queriedFunction.name;
+                queriedSemanticId = "fn:" + queriedFunction.name + "@" + queriedFunction.line;
+                queriedLine = queriedFunction.line;
+                queriedType = queriedFunction.returnType != null && !queriedFunction.returnType.isEmpty()
+                        ? queriedFunction.returnType : "unit";
+            }
             boolean mayPanic = itemName.contains("panic");
             if (program != null && program.functions != null) {
                 Function f = program.functions.stream().filter(fn -> fn.name.equals(itemName)).findFirst().orElse(null);
@@ -213,16 +232,16 @@ public class SemanticQueryEngine {
   "result": {
     "status": "resolved",
     "target": {
-      "id": "entity-v1:%s",
+      "id": "%s",
       "kind": "%s",
-      "semantic_identity": "%s@5",
+      "semantic_identity": "%s",
       "name": "%s",
       "source": {
         "file": "%s",
-        "line": 5,
+        "line": %d,
         "column": 1
       },
-      "type": "int"
+      "type": "%s"
     },
     "ownership": %s,
     "observable_effects": {
@@ -238,7 +257,8 @@ public class SemanticQueryEngine {
       "unresolved": false
     }%s
   }
-}""".formatted(command, stripped, isHandler ? "handler" : (isMethod ? "method" : "function"), stripped, itemName, sourceFile, ownershipJson, mayPanic, raiseJson, syncPlanExtra).trim());
+}""".formatted(command, queriedId, queriedKind, queriedSemanticId, itemName, sourceFile,
+                    queriedLine, queriedType, ownershipJson, mayPanic, raiseJson, syncPlanExtra).trim());
             return;
         }
         if ("effects".equals(command) && "main".equals(target)) {
