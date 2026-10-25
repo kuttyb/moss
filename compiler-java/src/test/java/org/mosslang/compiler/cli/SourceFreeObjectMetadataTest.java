@@ -321,6 +321,10 @@ public final class SourceFreeObjectMetadataTest {
         MossiInterface v10 = new MossiInterface("module-v1:sample@0.1.0::provider");
         v10.compiler = "moss-java-é";
         v10.binaryContract.add(new MossiRecord("type:Point", "type Point nominal\n"));
+        v10.binaryContract.add(new MossiRecord("domain:Worker", ""
+                + "domain Worker opaque\n"
+                + "  handler_failure_arms \"Work\" 1\n"
+                + "  handler_failure_arm \"Work\" 0 \"Fault.Bad\" \"__moss_on_fail_provider__Worker_Work_0\" 0 1 0 0 0\n"));
         AbiV10Records.SourceProvenance pointProvenance = AbiV10Records.SourceProvenance.create(
                 v10.moduleId, "nominal-template-v1:" + v10.moduleId + ":type:Point",
                 "provider.moss", 1);
@@ -450,12 +454,20 @@ public final class SourceFreeObjectMetadataTest {
             throw new AssertionError("source-free domain did not use its provider crate type: "
                     + domainRust);
         }
+        MossiInterface v10WithoutFailure = new MossiInterface(v10.moduleId);
+        v10WithoutFailure.compiler = v10.compiler;
+        v10WithoutFailure.semanticContract.add(new MossiRecord("00000000 export Worker", ""
+                + "export domain Worker opaque\n"
+                + "  declaration_id nominal-domain-v1:module-v1:sample@0.1.0::provider:domain:Worker\n"
+                + "  handler Work reply=unit effects=local_capture_read=0;local_mutation=0;domain_read=0;domain_write=0;message=0;external_io=0;fileio=0;fileio_unknown=0;may_panic=0;raise_set=enum:provider__Fault:Bad;may_diverge=0;unresolved=0\n"));
+        Path v10NoFailureFile = scratch.resolve("provider-v10-no-failure.mossi");
+        Files.writeString(v10NoFailureFile, CheckedBodyCodec.encodeMossi(v10WithoutFailure));
         Program v10UnhandledHandler = Parser.parseSource(""
                 + "import provider\n"
                 + "fn main():\n"
                 + "  worker = provider.Worker()\n"
                 + "  message worker.Work()\n", "source-free-v10-handler-raise-root.moss");
-        Main.loadMossiFunctions(v10File, "provider", v10UnhandledHandler);
+        Main.loadMossiFunctions(v10NoFailureFile, "provider", v10UnhandledHandler);
         try {
             new SemanticChecker(v10UnhandledHandler).run();
             throw new AssertionError("ABI-v10 source-free raising handler must require on_fail at root ingress");
@@ -465,9 +477,29 @@ public final class SourceFreeObjectMetadataTest {
                         + error.getCode(), error);
             }
         }
+        Program v10HandledHandler = Parser.parseSource(""
+                + "import provider\n"
+                + "fn main():\n"
+                + "  worker = provider.Worker()\n"
+                + "  executor = Executor().threads(1).start()\n"
+                + "  executor.invoke(worker.Work())\n"
+                + "  executor.join()\n", "source-free-v10-handler-root-handled.moss");
+        Main.loadMossiFunctions(v10File, "provider", v10HandledHandler);
+        new SemanticChecker(v10HandledHandler).run();
+        org.mosslang.compiler.ast.Domain importedV10Worker = v10HandledHandler.domains.stream()
+                .filter(domain -> domain.name.equals("provider__Worker")).findFirst()
+                .orElseThrow(() -> new AssertionError("ABI-v10 source-free Worker was not imported"));
+        if (importedV10Worker.handlers.size() != 1 || importedV10Worker.handlers.get(0).failureArms.size() != 1) {
+            throw new AssertionError("ABI-v10 source-free failure-arm metadata was not restored");
+        }
+        String v10HandledRust = NativeGenerator.generate(v10HandledHandler, false);
+        if (!v10HandledRust.contains(".Work_root()))")) {
+            throw new AssertionError("ABI-v10 handled Executor root did not use Work_root");
+        }
         Files.deleteIfExists(interfaceFile);
         Files.deleteIfExists(raisingInterface);
         Files.deleteIfExists(v10File);
+        Files.deleteIfExists(v10NoFailureFile);
         Files.deleteIfExists(scratch);
         System.out.println("SourceFreeObjectMetadataTest PASSED.");
     }
