@@ -1322,6 +1322,7 @@ public class SemanticChecker {
                 }
             }
             env = checkBlock(program.main.body, 0, program.main.body.size(), env, typer, solver, false, "main", TypeRef.unit());
+            validateDirectMainRaises(program.main.body);
             validateRootIngressRaiseTotality(program.main.body, env, solver);
             checkConcreteDomainRouteCycles(program.main.body);
             for (Stmt s : program.main.body) {
@@ -1404,6 +1405,49 @@ public class SemanticChecker {
                 }
             }
         }
+    }
+
+    private void validateDirectMainRaises(List<Stmt> statements) {
+        for (int raiseIndex = 0; raiseIndex < statements.size(); raiseIndex++) {
+            Stmt statement = statements.get(raiseIndex);
+            if (statement == null || statement.kind != Stmt.Kind.Raise
+                    || statement.a == null || statement.a.isBlank()) continue;
+            String variant = statement.a.trim();
+            int payload = variant.indexOf('(');
+            if (payload >= 0) variant = variant.substring(0, payload).trim();
+            if (!isMainRaiseHandled(statements, raiseIndex, variant)) {
+                throw new CompileError(program.main.line,
+                        "main may not let typed errors escape; handle every raised variant with try/recover",
+                        "MOSS_COMPILE_ERROR");
+            }
+        }
+    }
+
+    private boolean isMainRaiseHandled(List<Stmt> statements, int raiseIndex, String variant) {
+        Stmt raised = statements.get(raiseIndex);
+        for (int tryIndex = 0; tryIndex < raiseIndex; tryIndex++) {
+            Stmt tryStatement = statements.get(tryIndex);
+            if (tryStatement == null || tryStatement.kind != Stmt.Kind.Try
+                    || tryStatement.indent >= raised.indent) continue;
+            int bodyEnd = tryIndex + 1;
+            while (bodyEnd < statements.size() && statements.get(bodyEnd).indent > tryStatement.indent) {
+                bodyEnd++;
+            }
+            if (raiseIndex >= bodyEnd || bodyEnd >= statements.size()) continue;
+            Stmt recover = statements.get(bodyEnd);
+            if (recover == null || recover.kind != Stmt.Kind.Recover
+                    || recover.indent != tryStatement.indent) continue;
+            String pattern = recover.a == null ? "" : recover.a.trim();
+            if (pattern.isEmpty()) return true;
+            for (String part : org.mosslang.compiler.parser.ParserSupport.splitTopLevel(pattern, ',')) {
+                String selected = part.trim();
+                if (!selected.contains(".")) return true;
+                int payload = selected.indexOf('(');
+                if (payload >= 0) selected = selected.substring(0, payload).trim();
+                if (variant.equals(selected)) return true;
+            }
+        }
+        return false;
     }
 
     private void checkTests() {

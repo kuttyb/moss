@@ -45,6 +45,7 @@ public class SemanticCheckerTest {
         testOnFailRejectsBranchEscapingRaise();
         testUnreachableRecoverDoesNotConsumeReachableOwnership();
         testBareRaiseOutsideRecoverIsRejected();
+        testMainRejectsUncaughtTypedRaise();
         testExecutorRootRequiresRaiseHandling();
         testSynchronousRootMessagePropagatesHelperRaises();
         testRecoverUsesCallArgumentRaiseOrder();
@@ -861,6 +862,38 @@ public class SemanticCheckerTest {
                 + "  recover Failure.Bad:\n"
                 + "    raise\n", "bare-raise-recover-scope.moss");
         new SemanticChecker(valid).run();
+    }
+
+    private static void testMainRejectsUncaughtTypedRaise() {
+        String prefix = ""
+                + "enum Trouble:\n"
+                + "  Bad\n";
+        assertCompileError(prefix
+                + "fn main():\n"
+                + "  raise Trouble.Bad\n", "MOSS_COMPILE_ERROR");
+        assertCompileError(prefix
+                + "fn main():\n"
+                + "  try:\n"
+                + "    pass\n"
+                + "  recover:\n"
+                + "    pass\n"
+                + "  raise Trouble.Bad\n", "MOSS_COMPILE_ERROR");
+
+        Program handled = Parser.parseSource(prefix
+                + "fn main():\n"
+                + "  try:\n"
+                + "    raise Trouble.Bad\n"
+                + "  recover Trouble.Bad:\n"
+                + "    pass\n", "main-handles-raised-variant.moss");
+        new SemanticChecker(handled).run();
+
+        Program catchAll = Parser.parseSource(prefix
+                + "fn main():\n"
+                + "  try:\n"
+                + "    raise Trouble.Bad\n"
+                + "  recover err:\n"
+                + "    pass\n", "main-catchall-handles-raised-variant.moss");
+        new SemanticChecker(catchAll).run();
     }
 
     private static void testExecutorRootRequiresRaiseHandling() {

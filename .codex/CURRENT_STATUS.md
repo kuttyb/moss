@@ -14915,3 +14915,18 @@ substitution, imported/source-free method raises, callbacks, and complete
 raise-effect closure remain open. During minimization, a separate Java
 acceptance mismatch for an uncaught typed raise from `main` was observed and is
 queued for the next focused semantic check.
+
+
+### Phase 25.3 continuation — reject direct uncaught typed raises in main
+
+The Java checker now rejects a typed `raise` that escapes directly from
+`main`. A raised variant counts as handled only when the raise lies inside the
+corresponding try body and its following recover arm names that variant or is
+catch-all. An unrelated try elsewhere in main no longer masks a later
+uncaught direct raise.
+
+Validation: the direct uncaught example is rejected by both compilers with
+`MOSS_COMPILE_ERROR`; matching variant recovery and catch-all recovery pass in
+the Java checker, while unrelated recovery followed by a raise is rejected.
+All eleven Java unit-test classes pass. Transitive typed-raise closure through
+function and object-method calls from main remains incomplete.
