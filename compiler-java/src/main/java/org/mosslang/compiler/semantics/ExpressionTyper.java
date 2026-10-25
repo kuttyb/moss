@@ -461,10 +461,9 @@ public class ExpressionTyper {
                                 if (!satisfiesTrait) {
                                     ObjectType obj = objects.get(resolvedActual.name());
                                     Trait tr = traits.get(param.type);
-                                    for (TraitMethod tm : tr.methods) {
-                                        if (obj.methods.stream().noneMatch(m -> m.name.equals(tm.name))) {
-                                            throw new CompileError(line, "concrete argument does not satisfy member summary trait '" + param.type + "': missing method " + tm.name, "TYPE_MISMATCH");
-                                        }
+                                    String mismatch = traitMismatch(obj, tr);
+                                    if (mismatch != null) {
+                                        throw new CompileError(line, "concrete argument does not satisfy member summary trait '" + param.type + "': " + mismatch, "TYPE_MISMATCH");
                                     }
                                 }
                             } else if (expected != null && !expected.isBareTemplate() && !solver.unify(actual, expected)) {
@@ -811,6 +810,40 @@ public class ExpressionTyper {
             throw new CompileError(line, "unknown identifier '" + e + "'", "UNKNOWN_SYMBOL_OR_TYPE");
         }
         throw new CompileError(line, "unknown symbol or unresolved expression '" + e + "'", "UNKNOWN_SYMBOL_OR_TYPE");
+    }
+
+    private String traitMismatch(ObjectType object, Trait trait) {
+        for (TraitMethod required : trait.methods) {
+            Method actual = object.methods.stream()
+                    .filter(method -> method.name.equals(required.name))
+                    .findFirst().orElse(null);
+            if (actual == null) return "missing method " + required.name;
+            if (actual.params.size() != required.params.size()) {
+                return "trait method '" + required.name + "' has an incompatible parameter count";
+            }
+            for (int i = 0; i < required.params.size(); i++) {
+                String expectedType = required.params.get(i).type;
+                String actualType = actual.params.get(i).type;
+                if (!expectedType.isEmpty() && !sameDeclaredType(expectedType, actualType)) {
+                    return "trait method '" + required.name + "' has an incompatible parameter signature";
+                }
+            }
+            if (required.returnType != null && !required.returnType.isEmpty()
+                    && !sameDeclaredType(required.returnType, actual.returnType)) {
+                return "trait method '" + required.name + "' has an incompatible return type";
+            }
+        }
+        return null;
+    }
+
+    private boolean sameDeclaredType(String left, String right) {
+        if (left == null || right == null || left.isEmpty() || right.isEmpty()) return false;
+        TypeRef leftType = TypeParser.parseCanonical(left);
+        TypeRef rightType = TypeParser.parseCanonical(right);
+        if (leftType != null && rightType != null) {
+            return leftType.toCanonicalString().equals(rightType.toCanonicalString());
+        }
+        return left.equals(right);
     }
 
     private TypeRef inferPipeline(String leftExpr, String stageExpr, int line, TypeEnv env) {

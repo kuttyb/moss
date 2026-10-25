@@ -12339,3 +12339,18 @@ Architect review remain open. The existing Margo source-free writer still has
 fixture-specific failure-capture metadata and incomplete capture/effect facts;
 the JDT daemon launcher remains tied to an external Eclipse installation and
 its lifecycle was not verified in this workspace.
+
+### Phase 25.3 continuation — structural trait method signatures
+
+A minimal probe showed Java accepted an object as `Readable` when its `read`
+method took `String` but the trait required `Int`; C++ rejected the value at the
+trait call site. Java now checks required method arity, declared parameter
+signatures, and declared return types for concrete structural trait
+satisfaction. Same-trait forwarding remains accepted, and forwarding one trait
+constraint as another remains rejected.
+
+Validation after this correction: Java build and all seven Java test classes
+pass. The new test accepts same-trait forwarding and rejects different-trait
+forwarding and a matching method name with the wrong parameter signature. The
+existing generic/native and source-free ABI gaps remain open; no Rust/native or
+SDK gate was run.
