@@ -1014,6 +1014,25 @@ public class FastInterpreter {
                 } catch (ReturnSignal rs) {
                     retVal = rs.returnValue;
                 } catch (RaisedException rex) {
+                    if (!oldHandler.isEmpty()) {
+                        // The nested handler propagates into its caller's
+                        // try/recover. Unwind its trace context without
+                        // inventing normal handler_exit/message_return events.
+                        traceCallStack.pop();
+                        traceParentStack.pop();
+                        traceFunction = oldFunction;
+                        traceSourceFile = oldSource;
+                        traceSemanticIdentity = oldIdentity;
+                        traceInstance = oldInstance;
+                        traceSpecialization = oldSpecialization;
+                        traceHandler = oldHandler;
+                        traceLine = oldLine;
+                        traceDepth = oldDepth;
+                        traceParentStack.pop();
+                        traceMessageStack.pop();
+                        traceHandlerStack.pop();
+                        throw rex;
+                    }
                     if (oldHandler.isEmpty() && handler.failureArms != null && !handler.failureArms.isEmpty()) {
                         FailureArm arm = null;
                         for (FailureArm candidate : handler.failureArms) {

@@ -13986,3 +13986,10 @@ The checker now selects the known literal branch after type-checking the
 alternatives. The fixture is accepted and Fast Debug returns `seven`, matching
 C++; a focused SemanticCheckerTest locks down the ownership case. ABI-v9 and
 staged ABI-v10 suites pass.
+
+The nested-failure trace follow-up now unwinds the inner message/handler event
+stacks when propagating without emitting normal exit/return events. This restores
+the caller semantic identity and event parents on recover. The complete output
+and trace for `phase21_on_fail_root_nested.moss` now compare byte-for-byte with
+C++; FastInterpreterTest checks the outer recovery identity. Both Java ABI test
+modes pass.

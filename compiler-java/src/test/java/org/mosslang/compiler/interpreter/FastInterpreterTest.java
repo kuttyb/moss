@@ -585,7 +585,8 @@ public final class FastInterpreterTest {
                 new PrintStream(trace, true, StandardCharsets.UTF_8)).run();
         String events = trace.toString(StandardCharsets.UTF_8);
         if (!"8\n9\n".equals(stdout.toString(StandardCharsets.UTF_8))
-                || !events.contains("\"event\":\"recover\"")
+                || !events.contains("\"event\":\"recover\",\"function\":\"Outer.Run\"")
+                || !events.contains("\"semantic_identity\":\"handler:Outer.Run@")
                 || !events.contains("\"detail\":\"9\"")) {
             throw new AssertionError("nested domain failure did not reach caller recovery: "
                     + events + " stdout=" + stdout);
