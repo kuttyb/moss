@@ -16830,3 +16830,15 @@ measured samples per benchmark. The `phase7_failing_test` project returned exit
 propagation and continued test execution. This demonstrates non-placeholder
 test and benchmark execution for these small projects; native project build,
 multi-crate integration, and SDK validation remain deferred.
+
+
+### Phase 25.3 continuation — packaged compiler refresh and daemon environment
+
+Rebuilt `compiler-java/dist/moss.jar` and its launcher from the current source
+after the semantic-query correction. The packaged launcher reports
+`language_version: moss-0.1` and agrees with C++ on the minimized unresolved
+generic-method effects query (`type: null`, unresolved, conservative certainty).
+The six JDT client lifecycle protocol tests pass, but a live daemon cannot be
+started in this environment: no Eclipse executable is on PATH or at the checked
+standard locations. Standalone JAR/launcher behavior is verified for this
+query; live JDT startup/build/stop and final packaging acceptance remain open.

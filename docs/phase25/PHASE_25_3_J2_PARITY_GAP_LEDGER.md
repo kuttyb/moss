@@ -942,3 +942,15 @@ types as `null`, and effect-query traversal marks an object-method receiver
 unresolved when its nominal type cannot be established. `SemanticQueryEngineTest`
 passes, and minimized C++/Java queries agree on these fields. This is not full
 effects-query schema or dimension parity.
+
+
+### Validation — packaged compiler and optional JDT daemon
+
+After the semantic-query correction, `scripts/java/package.sh` rebuilt the
+standalone JAR and launcher. The packaged compiler bootstrap reports
+`moss-0.1`, and its effects query agrees with C++ on the unresolved generic
+method receiver fields. All six `scripts/java/test_jdt_client.py` protocol
+lifecycle tests pass. A live JDT daemon could not be started because no Eclipse
+executable is installed at the checked standard paths or on PATH. This leaves
+live daemon startup/build/stop unverified; native and SDK acceptance remain
+deferred.
