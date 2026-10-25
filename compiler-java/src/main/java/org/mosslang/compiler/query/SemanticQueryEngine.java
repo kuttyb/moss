@@ -1298,40 +1298,9 @@ public class SemanticQueryEngine {
                         + java.util.regex.Pattern.quote(method.name) + "\\s*\\(";
                 java.util.regex.Matcher call = java.util.regex.Pattern.compile(pattern).matcher(expression);
                 while (call.find()) {
-                    String[] receiverPath = call.group(1).replaceAll("\\s", "").split("\\.");
-                    String typeName;
-                    if (receiverPath.length > 0 && "self".equals(receiverPath[0]) && ownerMethod != null) {
-                        typeName = ownerMethod.owner;
-                    } else {
-                        TypeRef receiverType = receiverPath.length > 0 ? bindings.get(receiverPath[0]) : null;
-                        typeName = receiverType != null ? receiverType.name() : null;
-                    }
+                    String typeName = resolveObjectMethodReceiverTypeName(
+                            call.group(1), program, bindings, ownerMethod);
                     if (typeName == null) continue;
-                    boolean resolved = true;
-                    for (int pathIndex = 1; pathIndex < receiverPath.length; pathIndex++) {
-                        ObjectType receiverObject = findObjectType(program, typeName);
-                        if (receiverObject == null) {
-                            resolved = false;
-                            break;
-                        }
-                        String fieldName = receiverPath[pathIndex];
-                        Field field = receiverObject.fields.stream()
-                                .filter(candidate -> candidate.name.equals(fieldName))
-                                .findFirst().orElse(null);
-                        if (field == null || field.type == null || field.type.isBlank()) {
-                            resolved = false;
-                            break;
-                        }
-                        TypeRef fieldType = field.typeRef != null
-                                ? field.typeRef : TypeParser.parseCanonical(field.type);
-                        String fieldTypeName = fieldType != null ? fieldType.name() : field.type;
-                        if (fieldTypeName == null || fieldTypeName.isBlank()) {
-                            resolved = false;
-                            break;
-                        }
-                        typeName = fieldTypeName;
-                    }
-                    if (!resolved) continue;
                     if (!matchesObjectTypeName(typeName, object.name)) continue;
                     String identity = "method:" + method.owner + "." + method.name;
                     if (!visited.add(identity)) continue;
@@ -1341,6 +1310,36 @@ public class SemanticQueryEngine {
             }
         }
         return false;
+    }
+
+    private static String resolveObjectMethodReceiverTypeName(String receiverPath, Program program,
+                                                              Map<String, TypeRef> bindings,
+                                                              Method ownerMethod) {
+        if (receiverPath == null || receiverPath.isBlank()) return null;
+        String[] path = receiverPath.replaceAll("\\s", "").split("\\.");
+        if (path.length == 0) return null;
+        String typeName;
+        if ("self".equals(path[0]) && ownerMethod != null) {
+            typeName = ownerMethod.owner;
+        } else {
+            TypeRef receiverType = bindings != null ? bindings.get(path[0]) : null;
+            typeName = receiverType != null ? receiverType.name() : null;
+        }
+        if (typeName == null) return null;
+        for (int pathIndex = 1; pathIndex < path.length; pathIndex++) {
+            ObjectType receiverObject = findObjectType(program, typeName);
+            if (receiverObject == null) return null;
+            String fieldName = path[pathIndex];
+            Field field = receiverObject.fields.stream()
+                    .filter(candidate -> candidate.name.equals(fieldName))
+                    .findFirst().orElse(null);
+            if (field == null || field.type == null || field.type.isBlank()) return null;
+            TypeRef fieldType = field.typeRef != null
+                    ? field.typeRef : TypeParser.parseCanonical(field.type);
+            typeName = fieldType != null ? fieldType.name() : field.type;
+            if (typeName == null || typeName.isBlank()) return null;
+        }
+        return typeName;
     }
 
     private static ObjectType findObjectType(Program program, String typeName) {
@@ -1428,7 +1427,7 @@ public class SemanticQueryEngine {
                         variants.addAll(collectRaisedVariants(candidate, null, null, program, visited));
                     }
                 }
-                collectLocalObjectMethodRaises(function.resultExpression, function, body,
+                collectLocalObjectMethodRaises(function.resultExpression, function, null, body,
                         body.size(), program, visited, variants);
             }
             if (program.objects != null) {
@@ -1441,12 +1440,29 @@ public class SemanticQueryEngine {
                     if (statement.args != null) {
                         for (String argument : statement.args) expression.append(argument).append(' ');
                     }
-                    collectLocalObjectMethodRaises(expression.toString(), function, body,
+                    collectLocalObjectMethodRaises(expression.toString(), function, null, body,
                             body.indexOf(statement), program, visited, variants);
                 }
             }
         }
         if (method != null && program != null && program.objects != null) {
+            for (int index = 0; index < body.size(); index++) {
+                Stmt statement = body.get(index);
+                if (statement == null) continue;
+                StringBuilder expression = new StringBuilder();
+                if (statement.text != null) expression.append(statement.text).append(' ');
+                if (statement.a != null) expression.append(statement.a).append(' ');
+                if (statement.b != null) expression.append(statement.b).append(' ');
+                if (statement.args != null) {
+                    for (String argument : statement.args) expression.append(argument).append(' ');
+                }
+                collectLocalObjectMethodRaises(expression.toString(), null, method, body,
+                        index, program, visited, variants);
+            }
+            if (method.resultExpression != null && !method.resultExpression.isBlank()) {
+                collectLocalObjectMethodRaises(method.resultExpression, null, method, body,
+                        body.size(), program, visited, variants);
+            }
             for (ObjectType object : program.objects) {
                 if (!object.name.equals(method.owner)) continue;
                 for (Method candidate : object.methods) {
@@ -1596,22 +1612,22 @@ public class SemanticQueryEngine {
     }
 
     private static void collectLocalObjectMethodRaises(String expression, Function function,
+                                                       Method ownerMethod,
                                                        List<Stmt> callerBody, int statementIndex,
                                                        Program program, Set<String> visited,
                                                        Set<String> result) {
-        Map<String, TypeRef> bindings = program.localBindingTypes.getOrDefault(function.name, Map.of());
+        Map<String, TypeRef> bindings = function != null && program.localBindingTypes != null
+                ? program.localBindingTypes.getOrDefault(function.name, Map.of()) : Map.of();
         for (ObjectType object : program.objects) {
             for (Method method : object.methods) {
                 java.util.regex.Pattern call = java.util.regex.Pattern.compile(
-                        "(?<![A-Za-z0-9_])([A-Za-z_][A-Za-z0-9_]*)\\s*\\.\\s*"
+                        "(?<![A-Za-z0-9_])((?:self|[A-Za-z_][A-Za-z0-9_]*)(?:\\s*\\.\\s*[A-Za-z_][A-Za-z0-9_]*)*)\\s*\\.\\s*"
                                 + java.util.regex.Pattern.quote(method.name) + "\\s*\\(");
                 java.util.regex.Matcher matcher = call.matcher(expression);
                 while (matcher.find()) {
-                    TypeRef receiverType = bindings.get(matcher.group(1));
-                    if (receiverType == null) continue;
-                    String typeName = receiverType.name();
-                    if (typeName == null || !(typeName.equals(object.name)
-                            || typeName.endsWith("__" + object.name))) continue;
+                    String typeName = resolveObjectMethodReceiverTypeName(
+                            matcher.group(1), program, bindings, ownerMethod);
+                    if (!matchesObjectTypeName(typeName, object.name)) continue;
                     Set<String> methodRaises = collectRaisedVariants(null, method, null, program, visited);
                     for (String raised : methodRaises) {
                         if (statementIndex >= callerBody.size()

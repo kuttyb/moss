@@ -14900,3 +14900,18 @@ Validation: both compilers accept the minimized source and report
 `external_io: true`; all eleven Java unit-test classes pass. Generic field
 substitution, cross-module calls, source-free method effects, and complete
 checker-retained effect summaries remain open.
+
+
+### Phase 25.3 continuation — follow raised variants through field chains
+
+Raise-set queries now resolve method calls through declared fields from a
+checked local receiver or the current method receiver. The minimized `Sink`
+method raising `Trouble.Bad` is reported for both `box.sink.fail()` and a
+`Box.relay()` method that calls `self.sink.fail()`, matching C++.
+
+Validation: both compilers accept the minimized source and report
+`enum:Trouble:Bad`; all eleven Java unit-test classes pass. Generic field
+substitution, imported/source-free method raises, callbacks, and complete
+raise-effect closure remain open. During minimization, a separate Java
+acceptance mismatch for an uncaught typed raise from `main` was observed and is
+queued for the next focused semantic check.

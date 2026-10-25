@@ -20,6 +20,7 @@ public final class SemanticQueryEngineTest {
         effectsQueryFollowsHandlerHelperEffects();
         effectsQueryFollowsOrdinaryFunctionRaises();
         effectsQueryFollowsLocalObjectMethodRaises();
+        effectsQueryFollowsFieldChainMethodRaises();
         effectsQueryFollowsSameObjectMethodRaises();
         effectsQueryExcludesRecoveredDirectRaises();
         effectsQueryIncludesExplicitBareReraises();
@@ -321,6 +322,35 @@ public final class SemanticQueryEngineTest {
         new SemanticChecker(program).run();
         String result = queryEffects(program, "calculate");
         assertContains(result, "\"raise_set\": [\"enum:Trouble:Bad\"]");
+    }
+
+    private static void effectsQueryFollowsFieldChainMethodRaises() {
+        String source = ""
+                + "enum Trouble:\n"
+                + "  Bad\n"
+                + "type Sink:\n"
+                + "  fn fail():\n"
+                + "    raise Trouble.Bad\n"
+                + "type Box:\n"
+                + "  sink: Sink\n"
+                + "  fn relay():\n"
+                + "    self.sink.fail()\n"
+                + "fn direct():\n"
+                + "  box = Box(sink=Sink())\n"
+                + "  box.sink.fail()\n"
+                + "fn via_method():\n"
+                + "  box = Box(sink=Sink())\n"
+                + "  box.relay()\n"
+                + "fn main():\n"
+                + "  try:\n"
+                + "    direct()\n"
+                + "    via_method()\n"
+                + "  recover Trouble.Bad:\n"
+                + "    pass\n";
+        Program program = Parser.parseSource(source, "effects-query-field-chain-method-raise.moss");
+        new SemanticChecker(program).run();
+        assertContains(queryEffects(program, "direct"), "\"raise_set\": [\"enum:Trouble:Bad\"]");
+        assertContains(queryEffects(program, "via_method"), "\"raise_set\": [\"enum:Trouble:Bad\"]");
     }
 
     private static void effectsQueryFollowsSameObjectMethodRaises() {
