@@ -14478,3 +14478,7 @@ regression asserts the full event sequence.
 All eleven Java unit-test classes pass under ABI-v9 and staged ABI-v10. This
 closes the selected indexed-write/Map-keys trace path only; other collection
 mutation, message/state, and full Fast Debug trace parity remain open.
+
+The same exact-trace regression now continues through `Map.values()` as well.
+The combined Map construction, key snapshot loop, and value snapshot loop match
+C++ output and trace for the selected two-entry case.
