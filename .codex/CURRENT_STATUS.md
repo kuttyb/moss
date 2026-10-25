@@ -16109,4 +16109,6 @@ both `if` arms and a later outer open-vector binding are accepted. All twelve
 Java unit-test classes pass under ABI-v9 and staged ABI-v10. The standalone
 package rebuilds and reports `moss-0.1` from bootstrap. The five remaining
 mismatches from the 50-file screen are untyped handler payload/domain-
-specialization cases. No native acceptance gate was run.
+specialization cases. C++ and Java Fast Debug also produce identical output on
+the branch-confined fixture (`1`, `outer`, `after`, `1`, `done`). No native
+acceptance gate was run.
