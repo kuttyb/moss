@@ -1287,6 +1287,19 @@ public class SemanticCheckerTest {
         expectCompileError(valueReturning, "EXECUTOR_INVOKE_VALUE_RETURNING",
                 "Executor.invoke cannot submit a reply-bearing handler");
 
+        Program importedRaise = Parser.parseSource(""
+                + "domain Worker:\n"
+                + "  fn Process():\n"
+                + "    pass\n"
+                + "fn main():\n"
+                + "  worker = Worker()\n"
+                + "  message worker.Process()\n", "source-free-handler-raise-root.moss");
+        Handler importedHandler = importedRaise.domains.get(0).handlers.get(0);
+        importedHandler.body.clear();
+        importedHandler.sourceFreeMayRaise = true;
+        expectCompileError(importedRaise, "ROOT_UNHANDLED_RAISE",
+                "source-free raising handler contracts must fail closed without on_fail");
+
         Program valid = Parser.parseSource(""
                 + "domain Worker:\n"
                 + "  fn Process(amount: Int):\n"

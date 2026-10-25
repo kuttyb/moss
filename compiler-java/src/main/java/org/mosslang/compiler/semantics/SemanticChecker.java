@@ -4477,6 +4477,14 @@ public class SemanticChecker {
         if (handler == null || !handler.failureArms.isEmpty()
                 || handler.body.stream().anyMatch(s -> s.kind == Stmt.Kind.Try
                         || s.kind == Stmt.Kind.Recover)) return;
+        if (handler.sourceFreeMayRaise) {
+            CompileError error = new CompileError(line, ingress + " of '" + domain.name + "."
+                    + handlerName + "' may raise according to its imported contract"
+                    + " and requires an exhaustive on_fail trailer",
+                    "ROOT_UNHANDLED_RAISE");
+            error.setSemanticIdentity(currentSemanticIdentity);
+            throw error;
+        }
         Set<String> raised = new LinkedHashSet<>();
         Set<String> visitedFunctions = new HashSet<>();
         for (Stmt bodyStatement : handler.body) {

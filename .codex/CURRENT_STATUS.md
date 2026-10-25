@@ -16459,6 +16459,10 @@ and OS affinity/priority hints remain unimplemented or unverified.
 Additionally, Java lowers a synchronous `message` from `main` directly to the
 handler `_root` call, while C++ routes that ingress through `runtime_invoke`;
 the observable effect with an active Executor remains to be tested.
+Root raise-totality checking now also fails closed when a source-free handler
+contract says it may raise but has no exhaustive `on_fail` arms. A focused
+metadata regression passes under ABI-v9 and staged ABI-v10; a real source-free
+provider/consumer native test remains pending.
 All 12 Java test classes pass under ABI-v9 and staged ABI-v10. The standalone
 JAR packages successfully, and the packaged launcher generated the expected
 queue and handler-call Rust for the positive Executor fixture. Feedback
