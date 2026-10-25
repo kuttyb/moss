@@ -849,6 +849,10 @@ public class FastInterpreter {
             Value left = evalExpr(op[0], locals, currentDomain);
             Value right = evalExpr(op[1], locals, currentDomain);
             String oper = op[2];
+            boolean floatingComparison = left.kind == Value.Kind.FLOAT
+                    || right.kind == Value.Kind.FLOAT;
+            double floatLeft = floatingComparison ? left.asFloat() : 0.0;
+            double floatRight = floatingComparison ? right.asFloat() : 0.0;
             switch (oper) {
                 case "==" -> {
                     return Value.ofBool(Objects.equals(left.raw, right.raw));
@@ -857,16 +861,20 @@ public class FastInterpreter {
                     return Value.ofBool(!Objects.equals(left.raw, right.raw));
                 }
                 case "<=" -> {
-                    return Value.ofBool(left.asInt() <= right.asInt());
+                    return Value.ofBool(floatingComparison
+                            ? floatLeft <= floatRight : left.asInt() <= right.asInt());
                 }
                 case ">=" -> {
-                    return Value.ofBool(left.asInt() >= right.asInt());
+                    return Value.ofBool(floatingComparison
+                            ? floatLeft >= floatRight : left.asInt() >= right.asInt());
                 }
                 case "<" -> {
-                    return Value.ofBool(left.asInt() < right.asInt());
+                    return Value.ofBool(floatingComparison
+                            ? floatLeft < floatRight : left.asInt() < right.asInt());
                 }
                 case ">" -> {
-                    return Value.ofBool(left.asInt() > right.asInt());
+                    return Value.ofBool(floatingComparison
+                            ? floatLeft > floatRight : left.asInt() > right.asInt());
                 }
             }
         }

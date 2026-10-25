@@ -86,3 +86,15 @@ empty checked VectorLiteral, zero parameters, and a summary with no unsupported
 requirements, dependencies, or effects. Java producer-consumer tests cover
 closed `Vector[Int]` plus inferred Int and Bool specializations. Native/Margo
 execution and broader collection body profiles remain open.
+
+## Phase 25.3 continuation — mixed numeric comparison semantics and Fast Debug
+
+A focused differential Fast Debug probe exposed Float relational comparisons
+being evaluated through integer conversion in Java; e.g. C++ returned `true`
+for `1.9 > 1.1` while Java returned `false`. Java Fast Debug now uses floating
+comparison when either operand is Float. `ExpressionTyper` also admits the
+language-defined Int/Float mixed comparison, while an incompatible Bool/Float
+pair remains a `TYPE_MISMATCH`. A focused producer test and direct C++/Java
+interpreter probe cover the corrected semantics. All eleven Java unit-test
+classes pass in ABI-v9 and staged ABI-v10. Broader interpreter parity and the
+native/Margo/SDK acceptance gates remain open.

@@ -13573,3 +13573,17 @@ summary. The producer-consumer semantic regression covers concrete
 Validation: clean Java build and all ten Java unit-test classes pass in default
 ABI-v9 and staged ABI-v10 modes. Native Rust compile/run, Margo, SDK, and full
 acceptance gates remain deferred; Phase 25.3 remains in progress.
+
+### Phase 25.3 continuation — correct Fast Debug Float comparisons
+
+A differential Fast Debug probe found Java truncating Float operands to Int for
+relational comparisons. C++ Fast Debug returned `true` for fractional cases
+such as `1.9 > 1.1`; Java returned `false`. The Java interpreter now compares
+Float operands as doubles (and retains exact Int ordering). The semantic
+checker also now accepts documented mixed Int/Float comparisons while still
+rejecting incompatible Bool/Float pairs.
+
+Validation: clean Java build; all eleven Java unit-test classes pass in default
+ABI-v9 and staged ABI-v10 modes. The Java interpreter's six fractional and
+mixed comparison outputs match the C++ Fast Debug probe. Native Rust, Margo,
+SDK, and full acceptance gates remain deferred; Phase 25.3 remains in progress.

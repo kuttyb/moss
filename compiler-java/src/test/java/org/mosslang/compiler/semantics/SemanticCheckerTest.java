@@ -19,6 +19,7 @@ public class SemanticCheckerTest {
         testFunctionParameterAccessModesAreRetained();
         testFunctionRetainsResolvedOpenParameterTypes();
         testGenericNumericOperationRetainsOpenTypeUntilSpecialization();
+        testMixedIntFloatComparisons();
         testObjectMethodAccessModesAreRetained();
         testForLoopValuesCanFlowToObjectMethodArguments();
         testObjectMethodArityIsChecked();
@@ -106,6 +107,25 @@ public class SemanticCheckerTest {
             throw new AssertionError("generic numeric operation accepted a String specialization");
         } catch (CompileError error) {
             if (!"TYPE_AMBIGUOUS_OPEN_RESULT".equals(error.getCode()) || error.getLine() != 4) throw error;
+        }
+    }
+
+    private static void testMixedIntFloatComparisons() {
+        Program program = Parser.parseSource(""
+                + "fn main():\n"
+                + "  greater = 2.0 > 1\n"
+                + "  less = 1 < 1.5\n"
+                + "  equal = 2 == 2.0\n", "mixed-numeric-comparisons.moss");
+        new SemanticChecker(program).run();
+
+        Program invalid = Parser.parseSource(""
+                + "fn main():\n"
+                + "  invalid = true < 1.0\n", "invalid-mixed-comparison.moss");
+        try {
+            new SemanticChecker(invalid).run();
+            throw new AssertionError("mixed Bool/Float comparison was accepted");
+        } catch (CompileError error) {
+            if (!"TYPE_MISMATCH".equals(error.getCode())) throw error;
         }
     }
 

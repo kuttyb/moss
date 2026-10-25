@@ -115,6 +115,14 @@ public class ExpressionTyper {
         if (comp != null) {
             TypeRef left = infer(comp.left, line, env);
             TypeRef right = infer(comp.right, line, env);
+            TypeRef intType = TypeRef.primitive("int");
+            TypeRef floatType = TypeRef.primitive("float");
+            boolean leftNumeric = left.sameHead(intType) || left.sameHead(floatType);
+            boolean rightNumeric = right.sameHead(intType) || right.sameHead(floatType);
+            if (leftNumeric && rightNumeric
+                    && (left.sameHead(floatType) || right.sameHead(floatType))) {
+                return TypeRef.primitive("bool");
+            }
             if (!solver.unify(left, right)) {
                 throw new CompileError(line, "comparison '" + comp.op + "' between incompatible types '" +
                         left.toCanonicalString() + "' and '" + right.toCanonicalString() + "'", "TYPE_MISMATCH");
