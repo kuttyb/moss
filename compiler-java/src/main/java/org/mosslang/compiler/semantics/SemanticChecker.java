@@ -962,23 +962,27 @@ public class SemanticChecker {
                 f.generic = true;
             }
             if (f.generic) f.staticDispatch = true;
-            f.parameterAccessModes.clear();
-            for (int parameterIndex = 0; parameterIndex < f.params.size(); parameterIndex++) {
-                Param parameter = f.params.get(parameterIndex);
+            for (Param parameter : f.params) {
                 TypeRef checkedParameterType = env.get(parameter.name);
                 parameter.checkedTypeRef = checkedParameterType != null
                         ? solver.resolve(checkedParameterType) : null;
-                TypeRef parameterType = parameter.typeRef != null ? parameter.typeRef
-                        : (parameter.type != null && !parameter.type.isEmpty()
-                                ? TypeParser.parseCanonical(parameter.type) : null);
-                if (parameterType == null) parameterType = parameter.checkedTypeRef;
-                if (doesFunctionConsumeParam(f, parameterIndex)
-                        && parameterType != null && transferType(parameterType)) {
-                    f.parameterAccessModes.add(AccessMode.Consume);
-                } else if (doesFunctionMutateParam(f, parameterIndex)) {
-                    f.parameterAccessModes.add(AccessMode.Write);
-                } else {
-                    f.parameterAccessModes.add(AccessMode.Read);
+            }
+            if (f.sourceFreeAbiVersion == 0) {
+                f.parameterAccessModes.clear();
+                for (int parameterIndex = 0; parameterIndex < f.params.size(); parameterIndex++) {
+                    Param parameter = f.params.get(parameterIndex);
+                    TypeRef parameterType = parameter.typeRef != null ? parameter.typeRef
+                            : (parameter.type != null && !parameter.type.isEmpty()
+                                    ? TypeParser.parseCanonical(parameter.type) : null);
+                    if (parameterType == null) parameterType = parameter.checkedTypeRef;
+                    if (doesFunctionConsumeParam(f, parameterIndex)
+                            && parameterType != null && transferType(parameterType)) {
+                        f.parameterAccessModes.add(AccessMode.Consume);
+                    } else if (doesFunctionMutateParam(f, parameterIndex)) {
+                        f.parameterAccessModes.add(AccessMode.Write);
+                    } else {
+                        f.parameterAccessModes.add(AccessMode.Read);
+                    }
                 }
             }
             if (resolvedReturn.isClosed()) {
@@ -2346,6 +2350,16 @@ public class SemanticChecker {
         return parameter.checkedTypeRef;
     }
 
+    private AccessMode functionParameterMode(Function function, int index) {
+        if (function == null || index < 0 || index >= function.parameterAccessModes.size())
+            return AccessMode.Read;
+        return function.parameterAccessModes.get(index);
+    }
+
+    private boolean isSourceFreeFunction(Function function) {
+        return function != null && function.sourceFreeAbiVersion > 0;
+    }
+
     private boolean functionCallsWritingNestedReceiver(Function caller, String paramName,
                                                        TypeRef parameterType) {
         if (parameterType == null) return false;
@@ -2635,7 +2649,10 @@ public class SemanticChecker {
             boolean isObjCtor = objects.containsKey(callee);
             if (fn != null || method != null) {
                 for (int i = 0; i < args.size(); i++) {
-                    boolean writesArgument = fn != null ? doesFunctionMutateParam(fn, i)
+                    boolean writesArgument = fn != null
+                            ? (isSourceFreeFunction(fn)
+                                    ? functionParameterMode(fn, i) == AccessMode.Write
+                                    : doesFunctionMutateParam(fn, i))
                             : i < method.parameterAccessModes.size()
                                     && method.parameterAccessModes.get(i) == AccessMode.Write;
                     if (writesArgument) {
@@ -2664,7 +2681,9 @@ public class SemanticChecker {
                 if (currentHandlerRaises != null) recordDirectCallRaises(a, env);
                 if (env.containsKey(a) && transferType(env.get(a))) {
                     boolean consumesArgument = fn != null
-                            ? doesFunctionConsumeParam(fn, i, env.get(a))
+                            ? (isSourceFreeFunction(fn)
+                                    ? functionParameterMode(fn, i) == AccessMode.Consume
+                                    : doesFunctionConsumeParam(fn, i, env.get(a)))
                             : method != null && i < method.parameterAccessModes.size()
                                     && method.parameterAccessModes.get(i) == AccessMode.Consume;
                     if (currentMessagePayloads.contains(a) && consumesArgument) {

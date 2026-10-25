@@ -29,6 +29,8 @@ public final class SourceFreeFunctionMetadataTest {
                     contract
                     fn map kind=generic return=vector effects=local_capture_read=0;local_mutation=0;domain_read=0;domain_write=0;message=0;external_io=0;fileio=0;fileio_unknown=0;may_panic=0;raise_set=-;may_diverge=0;unresolved=0 symbol=moss__function__service__map__abcd
                       param 0 vector mode=WRITE name="values"
+                    fn consume kind=concrete return=unit effects=local_capture_read=0;local_mutation=0;domain_read=0;domain_write=0;message=0;external_io=0;fileio=0;fileio_unknown=0;may_panic=0;raise_set=-;may_diverge=0;unresolved=0 symbol=moss__function__service__consume__abcd
+                      param 0 string mode=CONSUME name="value"
                     semantic_exports
                     export fn map kind=generic semantic_hash=0123456789abcdef return=vector effects=local_capture_read=0;local_mutation=0;domain_read=0;domain_write=0;message=0;external_io=0;fileio=0;fileio_unknown=0;may_panic=0;raise_set=-;may_diverge=0;unresolved=0
                       param 0 vector mode=WRITE name="values"
@@ -37,6 +39,8 @@ public final class SourceFreeFunctionMetadataTest {
                       generic_stmt 3 7 1 "echo 1, 2" "" "" "" 2 "1" "2"
                       generic_result 8 "values"
                       generic_ir_end
+                    export fn consume semantic_hash=0123456789abcdef return=unit effects=local_capture_read=0;local_mutation=0;domain_read=0;domain_write=0;message=0;external_io=0;fileio=0;fileio_unknown=0;may_panic=0;raise_set=-;may_diverge=0;unresolved=0
+                      param 0 string mode=CONSUME name="value"
                     """);
 
             Program program = new Program();
@@ -55,6 +59,11 @@ public final class SourceFreeFunctionMetadataTest {
             assertEquals(2, statement.args.size(), "call argument count");
             assertEquals("2", statement.args.get(1), "second call argument");
             assertEquals("values", imported.resultExpression, "generic result expression");
+            Function v9Consume = program.functions.stream()
+                    .filter(function -> function.name.equals("service.consume"))
+                    .findFirst().orElseThrow(() -> new AssertionError("ABI-v9 consuming function missing"));
+            assertEquals(AccessMode.Consume, v9Consume.parameterAccessModes.get(0),
+                    "ABI-v9 consuming function access mode");
             Function alias = program.functions.stream()
                     .filter(function -> function.name.equals("service__map"))
                     .findFirst().orElseThrow(() -> new AssertionError("native function alias missing"));
@@ -82,6 +91,9 @@ public final class SourceFreeFunctionMetadataTest {
         iface.semanticContract.add(new MossiRecord("fn:map", semantic));
         iface.semanticContract.add(new MossiRecord("fn:make", ""
                 + "export fn make return=Vector[Int] " + effects + "\n"));
+        iface.semanticContract.add(new MossiRecord("fn:consume", ""
+                + "export fn consume return=unit " + effects + "\n"
+                + "  param 0 string mode=CONSUME name=\"value\"\n"));
         Path interfaceFile = Files.createTempFile(scratch, "java-source-free-v10-function-", ".mossi");
         try {
             Files.writeString(interfaceFile, CheckedBodyCodec.encodeMossi(iface));
@@ -95,6 +107,11 @@ public final class SourceFreeFunctionMetadataTest {
             assertEquals(AccessMode.Write, imported.parameterAccessModes.get(0), "ABI-v10 access mode");
             assertEquals(2, imported.body.get(0).args.size(), "ABI-v10 generic call arguments");
             assertEquals("values", imported.resultExpression, "ABI-v10 generic result expression");
+            Function consume = program.functions.stream()
+                    .filter(function -> function.name.equals("service.consume"))
+                    .findFirst().orElseThrow(() -> new AssertionError("ABI-v10 consuming function missing"));
+            assertEquals(AccessMode.Consume, consume.parameterAccessModes.get(0),
+                    "ABI-v10 consuming function access mode");
             Function make = program.functions.stream()
                     .filter(function -> function.name.equals("service.make"))
                     .findFirst().orElseThrow(() -> new AssertionError("ABI-v10 concrete function missing"));
@@ -103,15 +120,33 @@ public final class SourceFreeFunctionMetadataTest {
                     + "fn use_provider() -> Vector[Int]:\n"
                     + "  return service__make()\n"
                     + "fn main():\n"
-                    + "  pass\n", "source-free-return-consumer.moss");
+                    + "  value = \"moved\"\n"
+                    + "  service.consume(value)\n"
+                    + "  echo value\n", "source-free-return-consumer.moss");
             MossiInterface makeOnly = new MossiInterface("module-v1:provider@1.0.0::service");
             makeOnly.semanticContract.add(new MossiRecord("fn:make", ""
                     + "export fn make return=Vector[Int] " + effects + "\n"));
+            makeOnly.semanticContract.add(new MossiRecord("fn:consume", ""
+                    + "export fn consume return=unit " + effects + "\n"
+                    + "  param 0 string mode=CONSUME name=\"value\"\n"));
             Path makeOnlyFile = Files.createTempFile(scratch, "java-source-free-v10-return-", ".mossi");
             try {
                 Files.write(makeOnlyFile, CheckedBodyCodec.encodeMossiBytes(makeOnly));
                 Main.loadMossiFunctions(makeOnlyFile, "service", consumer);
-                new SemanticChecker(consumer).run();
+                Function importedConsume = consumer.functions.stream()
+                        .filter(function -> function.name.equals("service.consume"))
+                        .findFirst().orElseThrow(() -> new AssertionError(
+                                "source-free consuming function was not imported"));
+                assertEquals(AccessMode.Consume, importedConsume.parameterAccessModes.get(0),
+                        "source-free consuming access mode");
+                assertTrue(importedConsume.sourceFreeAbiVersion > 0,
+                        "source-free ABI version was not retained");
+                try {
+                    new SemanticChecker(consumer).run();
+                    throw new AssertionError("source-free CONSUME mode did not consume its argument");
+                } catch (org.mosslang.compiler.diagnostics.CompileError error) {
+                    if (!"OWNERSHIP_USE_AFTER_CONSUME".equals(error.getCode())) throw error;
+                }
             } finally {
                 Files.deleteIfExists(makeOnlyFile);
             }
