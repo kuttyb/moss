@@ -483,3 +483,17 @@ path's transfer type.
 The semantic test covers the return form. C++/Java focused diagnostics agree,
 and all eleven Java test classes pass under ABI-v9 and staged ABI-v10. Generic
 substitutions and branch-sensitive moves remain open.
+
+
+### Follow-up — propagate receiver-field moves through consuming helpers
+
+For `return take(self.payload)`, where the helper returns its owned argument,
+C++ inferred receiver CONSUME and rejected a later use of the caller while
+Java previously accepted it. Java now checks ordinary function call arguments
+against the helper's inferred parameter access modes and the receiver field's
+transfer type.
+
+The semantic test covers the helper call. C++/Java focused diagnostics agree,
+and all eleven Java test classes pass under ABI-v9 and staged ABI-v10.
+Indirect helper closure, generic field substitutions, and branch-sensitive
+moves remain open.

@@ -1065,6 +1065,11 @@ public class SemanticChecker {
                                 method.receiverAccessMode = AccessMode.Write;
                             break;
                         }
+                        if (objectFieldCallConsumes(object, field.name,
+                                statementExpressionText(statement))) {
+                            method.receiverAccessMode = AccessMode.Consume;
+                            break;
+                        }
                         AccessMode fieldCallMode = objectFieldCallMode(field.name, fieldType,
                                 fieldObject, statementExpressionText(statement));
                         if (fieldCallMode == AccessMode.Consume
@@ -1078,11 +1083,15 @@ public class SemanticChecker {
                             method.resultExpression))) {
                         method.receiverAccessMode = AccessMode.Consume;
                     } else {
+                        if (objectFieldCallConsumes(object, field.name, method.resultExpression)) {
+                            method.receiverAccessMode = AccessMode.Consume;
+                        }
                         AccessMode resultCallMode = objectFieldCallMode(field.name, fieldType,
                                 fieldObject, method.resultExpression);
-                        if (resultCallMode == AccessMode.Consume
+                        if (method.receiverAccessMode != AccessMode.Consume
+                                && (resultCallMode == AccessMode.Consume
                                 || (resultCallMode == AccessMode.Write
-                                        && method.receiverAccessMode == AccessMode.Read)) {
+                                        && method.receiverAccessMode == AccessMode.Read))) {
                             method.receiverAccessMode = resultCallMode;
                         }
                     }
@@ -1252,6 +1261,36 @@ public class SemanticChecker {
             }
         }
         return AccessMode.Read;
+    }
+
+    private boolean objectFieldCallConsumes(ObjectType owner, String fieldName, String expression) {
+        if (expression == null || expression.isEmpty()) return false;
+        for (Function function : functions.values()) {
+            java.util.regex.Matcher call = java.util.regex.Pattern.compile(
+                    "(?<![A-Za-z0-9_.])" + java.util.regex.Pattern.quote(function.name)
+                            + "\\s*\\(").matcher(expression);
+            while (call.find()) {
+                int open = expression.indexOf('(', call.start());
+                int close = -1;
+                for (int cursor = open + 1; cursor < expression.length(); cursor++) {
+                    if (expression.charAt(cursor) == ')'
+                            && ExpressionTyper.findMatchingOpenParen(expression, cursor) == open) {
+                        close = cursor;
+                        break;
+                    }
+                }
+                if (close < 0) continue;
+                List<String> args = ExpressionTyper.parseArguments(expression.substring(open + 1, close));
+                for (int index = 0; index < args.size() && index < function.params.size(); index++) {
+                    if (!doesFunctionConsumeParam(function, index)) continue;
+                    String argument = args.get(index).trim();
+                    int colon = argument.indexOf(':');
+                    if (colon >= 0) argument = argument.substring(colon + 1).trim();
+                    if (transferType(receiverFieldValueType(owner, fieldName, argument))) return true;
+                }
+            }
+        }
+        return false;
     }
 
     private void checkRecursiveFunctions() {

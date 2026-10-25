@@ -15141,3 +15141,17 @@ the method returns the owned field.
 The explicit-return path is added to the semantic regression. All eleven Java
 test classes pass under ABI-v9 and staged ABI-v10; generic field substitutions
 and branch-sensitive moves remain open.
+
+
+### Phase 25.3 continuation — propagate helper consumption from receiver fields
+
+A method that returned `take(self.payload)`, where `take` consumes and returns
+its argument, remained READ in Java even though C++ treated the method as
+consuming `self`. Method receiver inference now checks ordinary function call
+arguments against the callee's inferred parameter access modes and the
+receiver field's transfer type. The minimal Java/C++ reproducers now reject
+the caller's later use consistently.
+
+The helper-call path is included in the semantic regression. All eleven Java
+test classes pass under ABI-v9 and staged ABI-v10; indirect multi-helper
+closure, generic field substitution, and branch-sensitive moves remain open.
