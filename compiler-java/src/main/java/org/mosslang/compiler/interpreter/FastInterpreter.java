@@ -2,6 +2,7 @@ package org.mosslang.compiler.interpreter;
 
 import org.mosslang.compiler.ast.*;
 import org.mosslang.compiler.semantics.ExpressionTyper;
+import org.mosslang.compiler.types.AccessMode;
 import java.io.PrintStream;
 import java.util.*;
 
@@ -1689,6 +1690,11 @@ public class FastInterpreter {
             }
             String argsStr = expr.substring(p + 1, expr.length() - 1).trim();
             List<String> argList = splitArgs(argsStr);
+            if (!expr.startsWith("message ") && callee.contains(".")) {
+                int receiverDot = callee.lastIndexOf('.');
+                String receiverName = callee.substring(0, receiverDot).trim();
+                if (locals.containsKey(receiverName)) traceLocalRead(receiverName);
+            }
             List<Value> evaluatedArgs = new ArrayList<>();
             for (String a : argList) {
                 if (!a.isEmpty()) {
@@ -1713,9 +1719,11 @@ public class FastInterpreter {
                         a = a.substring(colIdx + 1).trim();
                     }
                     if ((sourceCallable || domainConstructor)
-                            && a.matches("[A-Za-z_][A-Za-z0-9_]*") && locals.containsKey(a))
+                            && a.matches("[A-Za-z_][A-Za-z0-9_]*") && locals.containsKey(a)) {
+                        if (sourceCallable && tracesArgumentRead(callee, evaluatedArgs.size(), locals, currentDomain))
+                            traceLocalRead(a);
                         evaluatedArgs.add(locals.get(a));
-                    else
+                    } else
                         evaluatedArgs.add(evalExpr(a, locals, currentDomain));
                 }
             }
@@ -1935,7 +1943,6 @@ public class FastInterpreter {
                         }
                         for (Method m : obj.methods) {
                             if (m.name.equals(methodName)) {
-                                if (locals.containsKey(recvName)) traceLocalRead(recvName);
                                 Map<String, Value> mLocals = new HashMap<>();
                                 if (recvVal.raw instanceof Map<?, ?> fm) {
                                     for (Map.Entry<?, ?> entry : fm.entrySet()) {
@@ -1997,7 +2004,12 @@ public class FastInterpreter {
                                     for (int i = 0; i < m.params.size() && i < argList.size(); i++) {
                                         String rawArg = argList.get(i).trim();
                                         String pName = m.params.get(i).name;
-                                        if (locals.containsKey(rawArg) && mLocals.containsKey(pName)) {
+                                        AccessMode mode = i < m.parameterAccessModes.size()
+                                                ? m.parameterAccessModes.get(i) : AccessMode.Read;
+                                        if (locals.containsKey(rawArg) && mode == AccessMode.Consume) {
+                                            locals.put(rawArg, Value.ofUnit());
+                                        } else if (locals.containsKey(rawArg) && mode == AccessMode.Write
+                                                && mLocals.containsKey(pName)) {
                                             locals.put(rawArg, mLocals.get(pName));
                                         }
                                     }
@@ -2116,7 +2128,12 @@ public class FastInterpreter {
                         for (int i = 0; i < f.params.size() && i < argList.size(); i++) {
                             String rawArg = argList.get(i).trim();
                             String pName = f.params.get(i).name;
-                            if (locals.containsKey(rawArg) && fnLocals.containsKey(pName)) {
+                            AccessMode mode = i < f.parameterAccessModes.size()
+                                    ? f.parameterAccessModes.get(i) : AccessMode.Read;
+                            if (locals.containsKey(rawArg) && mode == AccessMode.Consume) {
+                                locals.put(rawArg, Value.ofUnit());
+                            } else if (locals.containsKey(rawArg) && mode == AccessMode.Write
+                                    && fnLocals.containsKey(pName)) {
                                 locals.put(rawArg, fnLocals.get(pName));
                             }
                         }
@@ -2198,5 +2215,35 @@ public class FastInterpreter {
         }
 
         return Value.ofUnit();
+    }
+
+    private boolean tracesArgumentRead(String callee, int argumentIndex,
+                                       Map<String, Value> locals,
+                                       DomainInstance currentDomain) {
+        for (Function function : program.functions) {
+            if (!(function.name.equals(callee) || function.name.endsWith("__" + callee)
+                    || callee.endsWith("." + function.name)
+                    || (callee.contains(".") && function.name.equals(callee.replace('.', '_')))
+                    || (callee.contains(".") && function.name.endsWith("__"
+                    + callee.substring(callee.lastIndexOf('.') + 1))))
+                    || argumentIndex >= function.parameterAccessModes.size()) continue;
+            return function.parameterAccessModes.get(argumentIndex) != AccessMode.Read;
+        }
+        int dot = callee.lastIndexOf('.');
+        if (dot <= 0) return false;
+        String receiverName = callee.substring(0, dot).trim();
+        String methodName = callee.substring(dot + 1).trim();
+        Value receiver = locals.get(receiverName);
+        if (receiver == null && currentDomain != null) receiver = currentDomain.state.get(receiverName);
+        if (receiver == null || receiver.kind != Value.Kind.OBJECT) return false;
+        for (ObjectType object : program.objects) {
+            if (receiver.typeName == null || !receiver.typeName.equals(object.name)) continue;
+            for (Method method : object.methods) {
+                if (!method.name.equals(methodName)
+                        || argumentIndex >= method.parameterAccessModes.size()) continue;
+                return method.parameterAccessModes.get(argumentIndex) != AccessMode.Read;
+            }
+        }
+        return false;
     }
 }

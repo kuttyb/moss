@@ -14323,3 +14323,20 @@ All 11 Java test classes pass under ABI-v9 and staged ABI-v10. The current
 91-fixture acceptance result remains 0 mismatches (61 both accepted, 30 both
 rejected). Native compilation and runtime behavior remain reserved for the
 frozen acceptance gate.
+
+### Phase 25.3 continuation — Fast Debug call receiver reads and consume state
+
+Fast Debug now traces local method receivers before dispatch, matching the
+`LocalRead` expected for expressions such as `data.length()`. Direct source
+call arguments are traced at the call site only for inferred `Consume` or
+`Write` parameters; read-only arguments remain traced when the callee reads
+its parameter. On return, consumed caller bindings become unit and written
+bindings receive the updated parameter value. This aligns both event ordering
+and moved-local trace values.
+
+Both Java ABI suites pass. Across the nine-fixture bounded capture trace
+screen, stdout matches on all nine and complete traces match on eight; the
+remaining trace-only difference is the enum summary (`Data` in C++ versus
+`Data.Have{value=hello}` in Java) on one `LocalWrite`. The state-borrow case
+fails in both interpreters and its traces match. This is bounded evidence, not
+complete Fast Debug parity.

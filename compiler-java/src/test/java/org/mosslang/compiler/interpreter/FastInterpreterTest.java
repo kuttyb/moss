@@ -22,6 +22,7 @@ public final class FastInterpreterTest {
         testCollectionTraceUsesCompactSummary();
         testRaiseRecoverTraceCarriesErrorIdentity();
         testObjectMethodTraceCarriesCallContext();
+        testBuiltinMethodReceiverReadIsTraced();
         testExceptionalFunctionTraceUnwindsCallContext();
         testDomainConstructionTraceIsStructured();
         testDomainMessageTraceCarriesHandlerContext();
@@ -358,6 +359,27 @@ public final class FastInterpreterTest {
         }
     }
 
+    private static void testBuiltinMethodReceiverReadIsTraced() {
+        var program = Parser.parseSource(""
+                + "fn main():\n"
+                + "  text = \"abc\"\n"
+                + "  echo text.length()\n", "fast-interpreter-builtin-method-read.moss");
+        new CheckedProgram(program).run();
+
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+        ByteArrayOutputStream trace = new ByteArrayOutputStream();
+        new FastInterpreter(program, true,
+                new PrintStream(stdout, true, StandardCharsets.UTF_8),
+                new PrintStream(trace, true, StandardCharsets.UTF_8)).run();
+        String events = trace.toString(StandardCharsets.UTF_8);
+        String[] lines = events.split("\\R");
+        if (lines.length != 2 || !lines[1].contains("\"event\":\"LocalRead\"")
+                || !lines[1].contains("\"detail\":\"text\"")
+                || !"3\n".equals(stdout.toString(StandardCharsets.UTF_8))) {
+            throw new AssertionError("builtin method receiver read was not traced: " + events);
+        }
+    }
+
     private static void testExceptionalFunctionTraceUnwindsCallContext() {
         var program = Parser.parseSource(""
                 + "enum Failure:\n"
@@ -476,7 +498,7 @@ public final class FastInterpreterTest {
                 + "{\"event_id\":5,\"event\":\"FunctionExit\",\"function\":\"identity\",\"source_file\":\"fast-interpreter-call-argument-trace.moss\",\"semantic_identity\":\"fn:identity@1\",\"line\":1,\"parent_event_id\":2,\"call_event_id\":2,\"depth\":1}\n";
         if (!expected.equals(trace.toString(StandardCharsets.UTF_8))
                 || !"3\n".equals(stdout.toString(StandardCharsets.UTF_8))) {
-            throw new AssertionError("direct call argument generated an extra trace read: " + trace);
+            throw new AssertionError("read-only direct call argument produced an extra trace read: " + trace);
         }
     }
 
