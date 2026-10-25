@@ -12815,3 +12815,12 @@ covers duplicate imports and semantic records with the structured
 Validation: Java build, focused codec test, all ten Java unit-test classes,
 feedback validation, and `git diff --check` pass. The v10 logical schema gap
 remains.
+
+The Margo ABI-v10 producer also framed generated binary and semantic records
+with character counts. Both sections now use UTF-8 byte lengths through a
+shared writer helper; the metadata test checks a non-ASCII ID and payload
+against exact expected frame lengths.
+
+Validation: Java build, all ten Java unit-test classes, and `git diff --check`
+pass. Full source-free Margo provider/consumer integration has not run; the
+canonical logical record schema remains incomplete.

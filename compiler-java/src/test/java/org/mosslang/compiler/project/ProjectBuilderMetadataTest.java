@@ -30,6 +30,7 @@ public final class ProjectBuilderMetadataTest {
         testV10ImportRecordRequiresModuleBoundHashes();
         testV10SectionHashValidation();
         testV10Utf8InterfaceValidation();
+        testV10RecordFramingUsesUtf8Bytes();
         testV9FunctionParameterAccessSerialization();
         testExportedObjectFieldSerialization();
         testExportedObjectMethodSerialization();
@@ -147,6 +148,12 @@ public final class ProjectBuilderMetadataTest {
             Files.deleteIfExists(interfaceFile);
             Files.deleteIfExists(dir);
         }
+    }
+
+    private static void testV10RecordFramingUsesUtf8Bytes() {
+        StringBuilder frame = new StringBuilder();
+        ProjectBuilder.appendV10FramedRecord(frame, "fn:é", "café\n");
+        assertEquals("record 5 6\nfn:écafé\n\n", frame.toString());
     }
 
     private static void assertEquals(String expected, String actual) {

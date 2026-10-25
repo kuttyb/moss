@@ -1015,6 +1015,13 @@ public class ProjectBuilder {
         return value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
+    static void appendV10FramedRecord(StringBuilder out, String id, String payload) {
+        byte[] idBytes = id.getBytes(StandardCharsets.UTF_8);
+        byte[] payloadBytes = payload.getBytes(StandardCharsets.UTF_8);
+        out.append("record ").append(idBytes.length).append(" ").append(payloadBytes.length).append("\n")
+                .append(id).append(payload).append("\n");
+    }
+
     private static String generateMossiInterface(ProjectManifest manifest, String module, Program prog, BackendToolchain toolchain, List<String> deps, Path buildDir, Map<String, List<Path>> externalCandidateProviders) {
         StringBuilder contractBuf = new StringBuilder();
         StringBuilder semanticBuf = new StringBuilder();
@@ -1179,13 +1186,11 @@ public class ProjectBuilder {
 
             StringBuilder binaryFramed = new StringBuilder("binary_contract\ncount ").append(binRecords.size()).append("\n");
             for (String[] r : binRecords) {
-                binaryFramed.append("record ").append(r[0].length()).append(" ").append(r[1].length()).append("\n");
-                binaryFramed.append(r[0]).append(r[1]).append("\n");
+                appendV10FramedRecord(binaryFramed, r[0], r[1]);
             }
             StringBuilder semanticFramed = new StringBuilder("semantic_contract\ncount ").append(semRecords.size()).append("\n");
             for (String[] r : semRecords) {
-                semanticFramed.append("record ").append(r[0].length()).append(" ").append(r[1].length()).append("\n");
-                semanticFramed.append(r[0]).append(r[1]).append("\n");
+                appendV10FramedRecord(semanticFramed, r[0], r[1]);
             }
 
             String privFramed = "private_semantic_dependencies\ncount 0\n";
