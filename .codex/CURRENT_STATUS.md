@@ -15876,3 +15876,31 @@ Seven selected fixtures now match C++ stdout and complete JSON traces:
 ABI-v9 and staged ABI-v10, and the standalone JAR was rebuilt. This evidence is
 limited to selected Fast Debug paths; broad interpreter, native/backend,
 source-free, Margo/SDK, and frozen-candidate acceptance remain open.
+
+### Phase 25.3 continuation — general Fast Debug pipeline callbacks
+
+A 32-file standalone Fast Debug sample exposed missing Java execution for
+predicate terminals, boolean `any`/`all`, function values passed through
+untyped helpers, bound-method map callbacks, and pipeline stages with explicit
+arguments. The Java interpreter now evaluates these callback forms, short
+circuits predicate terminals, and applies stage arguments after the pipeline
+value. `FastInterpreterTest` covers a function-value helper, a bound method,
+`any`/`all`, object-field projections, and a two-argument stage.
+
+Six existing examples now complete in Java Fast Debug with concrete values:
+`functional_semantic_optimization`, `functional_static_callables`,
+`functional_terminal_optimization`, `functional_objects`,
+`functional_reductions`, and `mini_application`. Across all 32 accepted
+standalone examples, C++ and Java have matching interpreter exit/stdout on
+28. The other four are C++-only Fast Debug rejections for checked pipeline
+stages (`square`, `any`, and `schedule_score`); Java produced outputs, so these
+cases do not establish C++/Java runtime parity. Separately, 39 acceptance
+checks across top-level examples and expected-negative fixtures match on
+acceptance and diagnostic code (32 accepted, 7 rejected).
+
+Validation: all twelve Java unit-test classes pass under ABI-v9 and staged
+ABI-v10; the standalone JAR was rebuilt and packaged bootstrap reports
+`moss-0.1`. No Rust compilation, native execution, Margo/SDK matrix, or full
+`make check` was run. Full language/backend coverage, source-free native
+compatibility, real project acceptance, daemon readiness, and frozen candidate
+review remain open.

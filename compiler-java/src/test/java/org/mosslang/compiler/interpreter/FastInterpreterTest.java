@@ -48,6 +48,7 @@ public final class FastInterpreterTest {
         testNamedDomainStateAndNestedRoutes();
         testPipelineStageUsesFunctionCallTrace();
         testFilterPipelineUsesPlaceholder();
+        testGeneralPipelineCallbacksAndTerminals();
         testTypedVectorFunctionTraceIncludesElementSpecialization();
         testFunctionTraceIncludesSelectedSpecialization();
         testNestedDomainFailurePropagatesToCallerRecovery();
@@ -1115,6 +1116,60 @@ public final class FastInterpreterTest {
                 new PrintStream(new ByteArrayOutputStream())).run();
         if (!"7\n".equals(namedOutput.toString(StandardCharsets.UTF_8))) {
             throw new AssertionError("map/filter pipeline mishandled named or inline callbacks: " + namedOutput);
+        }
+    }
+
+    private static void testGeneralPipelineCallbacksAndTerminals() {
+        var program = Parser.parseSource(""
+                + "type Scaler:\n"
+                + "  factor: Int\n"
+                + "  fn apply(value: Int) -> Int:\n"
+                + "    return value * factor\n"
+                + "type Reading:\n"
+                + "  sensor_id: Int\n"
+                + "type VisitCounter:\n"
+                + "  visited: Int\n"
+                + "  fn positive(value: Int) -> Bool:\n"
+                + "    visited = visited + 1\n"
+                + "    return value > 0\n"
+                + "fn double(value: Int) -> Int:\n"
+                + "  return value * 2\n"
+                + "fn add_bias(value: Int, bias: Int) -> Int:\n"
+                + "  return value + bias\n"
+                + "fn transform(values, operation):\n"
+                + "  return values |> map(operation)\n"
+                + "fn main():\n"
+                + "  values = [1, 2, 3]\n"
+                + "  doubled = transform(values, double)\n"
+                + "  scaler = Scaler(factor: 4)\n"
+                + "  scaled_total = values |> map(scaler.apply) |> sum\n"
+                + "  biased = 3 |> add_bias(2)\n"
+                + "  found = values |> any(_ == 2)\n"
+                + "  all_positive = values |> all(_ > 0)\n"
+                + "  counter = VisitCounter(visited: 0)\n"
+                + "  effectful_any = values |> any(counter.positive)\n"
+                + "  flags = [true, false, true]\n"
+                + "  any_flag = flags |> any\n"
+                + "  all_flags = flags |> all\n"
+                + "  readings = [Reading(sensor_id: 101), Reading(sensor_id: 103)]\n"
+                + "  sensor_ids = readings |> map(_.sensor_id)\n"
+                + "  echo doubled |> sum\n"
+                + "  echo scaled_total\n"
+                + "  echo biased\n"
+                + "  echo found\n"
+                + "  echo all_positive\n"
+                + "  echo effectful_any, counter.visited\n"
+                + "  echo any_flag\n"
+                + "  echo all_flags\n"
+                + "  echo sensor_ids[0], sensor_ids[1]\n", "fast-interpreter-general-pipeline.moss");
+        new CheckedProgram(program).run();
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+        new FastInterpreter(program, false,
+                new PrintStream(stdout, true, StandardCharsets.UTF_8),
+                new PrintStream(new ByteArrayOutputStream())).run();
+        String expected = "12\n24\n5\ntrue\ntrue\ntrue 3\ntrue\nfalse\n101 103\n";
+        if (!expected.equals(stdout.toString(StandardCharsets.UTF_8))) {
+            throw new AssertionError("general pipeline callback or terminal result was wrong: " + stdout);
         }
     }
 

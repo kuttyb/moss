@@ -381,6 +381,35 @@ public class FastInterpreter {
         return fallback == null ? "" : fallback;
     }
 
+    private Value evalPipelineCallback(String callback, Value item,
+                                       Map<String, Value> locals, DomainInstance currentDomain) {
+        Map<String, Value> callbackLocals = new HashMap<>(locals);
+        String pipelineParameter = "__moss_pipeline_value";
+        while (callbackLocals.containsKey(pipelineParameter)) pipelineParameter += "_";
+        callbackLocals.put(pipelineParameter, item);
+        callbackLocals.put("_", item);
+
+        String target = callback.trim();
+        if (target.matches("[A-Za-z_][A-Za-z0-9_]*")) {
+            Value callable = callbackLocals.get(target);
+            if (callable != null && callable.kind == Value.Kind.STRING
+                    && callable.asString().startsWith("function:")) {
+                target = callable.asString().substring("function:".length());
+                return evalExpr(target + "(" + pipelineParameter + ")", callbackLocals, currentDomain);
+            }
+            String functionName = target;
+            boolean namedFunction = program.functions.stream().anyMatch(function ->
+                    (function.name.equals(functionName) || function.name.endsWith("__" + functionName)
+                            || functionName.endsWith("." + function.name)) && function.params.size() == 1);
+            if (namedFunction)
+                return evalExpr(target + "(" + pipelineParameter + ")", callbackLocals, currentDomain);
+        }
+        if (!target.startsWith("_.")
+                && target.matches("[A-Za-z_][A-Za-z0-9_]*\\.[A-Za-z_][A-Za-z0-9_]*"))
+            return evalExpr(target + "(" + pipelineParameter + ")", callbackLocals, currentDomain);
+        return evalExpr(target, callbackLocals, currentDomain);
+    }
+
     private void traceLocalWrite(Stmt statement, String name, Value value, Value before,
                                  String function, int depth) {
         if (!trace) return;
@@ -1653,23 +1682,30 @@ public class FastInterpreter {
                 }
                 return Value.ofInt(sum);
             }
+            if (stage.equals("any") || stage.equals("all")
+                    || ((stage.startsWith("any(") || stage.startsWith("all(")) && stage.endsWith(")"))) {
+                boolean any = stage.startsWith("any");
+                boolean hasCallback = !stage.equals("any") && !stage.equals("all");
+                String callback = hasCallback ? stage.substring(4, stage.length() - 1).trim() : "";
+                boolean result = !any;
+                if (left.raw instanceof Collection<?> col) {
+                    for (Object o : col) {
+                        if (!(o instanceof Value value)) continue;
+                        boolean accepted = hasCallback
+                                ? evalPipelineCallback(callback, value, locals, currentDomain).asBool()
+                                : value.asBool();
+                        result = any ? result || accepted : result && accepted;
+                    }
+                }
+                return Value.ofBool(result);
+            }
             if (stage.startsWith("map(") && stage.endsWith(")")) {
                 String callback = stage.substring(4, stage.length() - 1).trim();
-                boolean namedCallback = program.functions.stream().anyMatch(function ->
-                        (function.name.equals(callback) || function.name.endsWith("__" + callback)
-                                || callback.endsWith("." + function.name)) && function.params.size() == 1);
                 List<Value> outList = new ArrayList<>();
                 if (left.raw instanceof Collection<?> col) {
                     for (Object o : col) {
                         if (o instanceof Value v) {
-                            Map<String, Value> tmpLocals = new HashMap<>(locals);
-                            if (namedCallback) {
-                                tmpLocals.put("__pipe_item", v);
-                                outList.add(evalExpr(callback + "(__pipe_item)", tmpLocals, currentDomain));
-                            } else {
-                                tmpLocals.put("_", v);
-                                outList.add(evalExpr(callback, tmpLocals, currentDomain));
-                            }
+                            outList.add(evalPipelineCallback(callback, v, locals, currentDomain));
                         }
                     }
                 }
@@ -1678,21 +1714,10 @@ public class FastInterpreter {
             if (stage.startsWith("filter(") && stage.endsWith(")")) {
                 String callback = stage.substring(7, stage.length() - 1).trim();
                 List<Value> outList = new ArrayList<>();
-                boolean namedCallback = program.functions.stream().anyMatch(function ->
-                        (function.name.equals(callback) || function.name.endsWith("__" + callback)
-                                || callback.endsWith("." + function.name)) && function.params.size() == 1);
                 if (left.raw instanceof Collection<?> col) {
                     for (Object o : col) {
                         if (!(o instanceof Value value)) continue;
-                        Map<String, Value> callbackLocals = new HashMap<>(locals);
-                        Value accepted;
-                        if (namedCallback) {
-                            callbackLocals.put("__pipe_item", value);
-                            accepted = evalExpr(callback + "(__pipe_item)", callbackLocals, currentDomain);
-                        } else {
-                            callbackLocals.put("_", value);
-                            accepted = evalExpr(callback, callbackLocals, currentDomain);
-                        }
+                        Value accepted = evalPipelineCallback(callback, value, locals, currentDomain);
                         if (accepted.asBool()) outList.add(value);
                     }
                 }
@@ -1714,14 +1739,30 @@ public class FastInterpreter {
                 }
                 return acc;
             }
+            String stageName = stage;
+            List<String> stageArguments = List.of();
+            if (stage.endsWith(")")) {
+                int stageOpen = stage.indexOf('(');
+                if (stageOpen > 0) {
+                    stageName = stage.substring(0, stageOpen).trim();
+                    String rawArguments = stage.substring(stageOpen + 1, stage.length() - 1).trim();
+                    stageArguments = rawArguments.isEmpty() ? List.of() : splitArgs(rawArguments);
+                }
+            }
             for (Function function : program.functions) {
-                if (!(function.name.equals(stage) || function.name.endsWith("__" + stage)
-                        || stage.endsWith("." + function.name)) || function.params.size() != 1) continue;
+                if (!(function.name.equals(stageName) || function.name.endsWith("__" + stageName)
+                        || stageName.endsWith("." + function.name))
+                        || function.params.size() != stageArguments.size() + 1) continue;
                 Map<String, Value> fnLocals = new HashMap<>();
                 String pipelineParameter = "__moss_pipeline_value";
                 while (locals.containsKey(pipelineParameter)) pipelineParameter += "_";
+                fnLocals.putAll(locals);
                 fnLocals.put(pipelineParameter, left);
-                return evalExpr(function.name + "(" + pipelineParameter + ")", fnLocals, currentDomain);
+                StringBuilder call = new StringBuilder(function.name)
+                        .append('(').append(pipelineParameter);
+                for (String argument : stageArguments) call.append(", ").append(argument);
+                call.append(')');
+                return evalExpr(call.toString(), fnLocals, currentDomain);
             }
         }
 
