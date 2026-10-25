@@ -1942,6 +1942,14 @@ public class FastInterpreter {
                     } else if (recvVal.kind == Value.Kind.MAP && recvVal.raw instanceof Map<?, ?> mp) {
                         @SuppressWarnings("unchecked")
                         Map<Object, Value> m = (Map<Object, Value>) mp;
+                        if ((methodName.equals("len") || methodName.equals("size") || methodName.equals("count"))
+                                && evaluatedArgs.isEmpty()) {
+                            return Value.ofInt(m.size());
+                        }
+                        if ((methodName.equals("contains") || methodName.equals("hasKey"))
+                                && evaluatedArgs.size() == 1) {
+                            return Value.ofBool(m.containsKey(evaluatedArgs.get(0).raw));
+                        }
                         if (methodName.equals("get") && evaluatedArgs.size() == 2) {
                             return m.getOrDefault(evaluatedArgs.get(0).raw, evaluatedArgs.get(1));
                         }

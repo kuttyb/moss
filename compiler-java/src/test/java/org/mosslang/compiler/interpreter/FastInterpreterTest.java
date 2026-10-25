@@ -23,6 +23,7 @@ public final class FastInterpreterTest {
         testRaiseRecoverTraceCarriesErrorIdentity();
         testObjectMethodTraceCarriesCallContext();
         testMapGetInsideObjectMethodReturnsStoredOrFallbackValue();
+        testMapSizeAndMembershipMethods();
         testBuiltinMethodReceiverReadIsTraced();
         testEnumLocalWriteUsesCompactTypeSummary();
         testExceptionalFunctionTraceUnwindsCallContext();
@@ -426,6 +427,30 @@ public final class FastInterpreterTest {
         String actual = stdout.toString(StandardCharsets.UTF_8);
         if (!"6\n6\n0\n8\n".equals(actual)) {
             throw new AssertionError("Map.get inside an object method returned incorrect values: " + actual);
+        }
+    }
+
+    private static void testMapSizeAndMembershipMethods() {
+        var program = Parser.parseSource(""
+                + "fn main():\n"
+                + "  values = Map()\n"
+                + "  values[\"present\"] = 9\n"
+                + "  echo values.len()\n"
+                + "  echo values.size()\n"
+                + "  echo values.count()\n"
+                + "  echo values.contains(\"present\")\n"
+                + "  echo values.hasKey(\"present\")\n"
+                + "  echo values.contains(\"missing\")\n",
+                "fast-interpreter-map-size-membership.moss");
+        new CheckedProgram(program).run();
+
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+        new FastInterpreter(program, false,
+                new PrintStream(stdout, true, StandardCharsets.UTF_8),
+                new PrintStream(new ByteArrayOutputStream())).run();
+        String actual = stdout.toString(StandardCharsets.UTF_8);
+        if (!"1\n1\n1\ntrue\ntrue\nfalse\n".equals(actual)) {
+            throw new AssertionError("Map size or membership methods returned incorrect results: " + actual);
         }
     }
 

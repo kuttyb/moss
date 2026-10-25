@@ -14415,3 +14415,12 @@ rebuilding the standalone package, `margo test --interp --json` in
 Fast Debug/project-test evidence; native Rust execution remains deferred. The
 C++ checker still rejects the project at the reduced loop-method call, so that
 checker disagreement remains open.
+
+### Phase 25.3 continuation — Fast Debug Map size and membership methods
+
+The Map interpreter surface was still missing `len`, `size`, `count`,
+`contains`, and `hasKey`, although the Java type checker recognizes these
+Map operations. Fast Debug now returns the collection size and checks key
+membership for those forms. A focused test covers all three size aliases,
+both membership names, and an absent key. The full Java unit-test suite passes
+under ABI-v9 and staged ABI-v10; no native build or project integration gate ran.
