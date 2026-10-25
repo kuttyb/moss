@@ -16,6 +16,7 @@ public class Handler {
     public MutableList<FailureArm> failureArms = new FastList<>();
     public int line = 0;
     public String sourceFile = "";
+    public boolean sourceFreeMayRaise = false;
 
     public Handler() {}
 

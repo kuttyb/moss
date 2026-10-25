@@ -629,12 +629,17 @@ public class CheckedBodyCodec {
 
         // Validate the C++-shared textual shape used for exported enum records.
         Set<String> exportedEnumIds = new HashSet<>();
+        Set<String> exportedDomainIds = new HashSet<>();
         for (MossiRecord record : mossi.semanticContract) {
-            if (!record.payload.startsWith("export enum ")) continue;
+            boolean isEnum = record.payload.startsWith("export enum ");
+            boolean isDomain = record.payload.startsWith("export domain ");
+            if (!isEnum && !isDomain) continue;
             String[] lines = record.payload.split("\\R");
             String[] header = lines[0].trim().split("\\s+");
-            if (header.length != 3 || !record.id.matches("[0-9]{8} export .+")) {
-                throw new CompileError(0, "ABI-v10 exported enum record identity is malformed",
+            if ((isEnum && header.length != 3)
+                    || (isDomain && (header.length != 4 || !"opaque".equals(header[3])))
+                    || !record.id.matches("[0-9]{8} export .+")) {
+                throw new CompileError(0, "ABI-v10 exported declaration record identity is malformed",
                         "SOURCE_FREE_TYPE_IDENTITY_MISMATCH");
             }
             String declarationId = "";
@@ -646,10 +651,13 @@ public class CheckedBodyCodec {
                 }
                 declarationId = line.substring("  declaration_id ".length()).trim();
             }
-            String expected = "nominal-enum-v1:" + mossi.moduleId + ":enum:" + header[2];
+            String expected = isEnum
+                    ? "nominal-enum-v1:" + mossi.moduleId + ":enum:" + header[2]
+                    : "nominal-domain-v1:" + mossi.moduleId + ":domain:" + header[2];
+            Set<String> seen = isEnum ? exportedEnumIds : exportedDomainIds;
             if (!record.id.endsWith(" export " + header[2]) || !declarationId.equals(expected)
-                    || !exportedEnumIds.add(declarationId)) {
-                throw new CompileError(0, "ABI-v10 exported enum identity is malformed or foreign",
+                    || !seen.add(declarationId)) {
+                throw new CompileError(0, "ABI-v10 exported declaration identity is malformed or foreign",
                         "SOURCE_FREE_TYPE_IDENTITY_MISMATCH");
             }
         }

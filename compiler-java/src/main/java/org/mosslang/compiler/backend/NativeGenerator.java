@@ -616,6 +616,7 @@ public class NativeGenerator {
 
         // Domains
         for (Domain d : program.domains) {
+            if (d.sourceFree) continue;
             Set<String> stateFields = new HashSet<>();
             for (Field f : d.state) {
                 stateFields.add(f.name);
@@ -1319,6 +1320,14 @@ public class NativeGenerator {
             }
             return "moss_" + enumeration.definingModule + "::" + enumeration.declarationName;
         }
+        for (Domain domain : program.domains) {
+            if (!domain.sourceFree || !domain.name.equals(mossType)) continue;
+            if (domain.definingModule == null || domain.definingModule.isEmpty()
+                    || domain.declarationName == null || domain.declarationName.isEmpty()) {
+                return mossType;
+            }
+            return "moss_" + domain.definingModule + "::" + domain.declarationName;
+        }
         return mossType;
     }
 
@@ -1537,6 +1546,7 @@ public class NativeGenerator {
                 for (Domain d : domains.values()) {
                     for (Handler h : d.handlers) {
                         if (h.name.equals(handler)) {
+                            targetRaises |= h.sourceFreeMayRaise;
                             for (Stmt bs : h.body) {
                                 if (bs.kind == Stmt.Kind.Raise || (bs.text != null && bs.text.trim().startsWith("raise "))) {
                                     targetRaises = true;
@@ -1603,9 +1613,16 @@ public class NativeGenerator {
         if (type == null) return "";
         String t = type.trim();
         if (t.contains(".")) return t.replace(".", "__");
-        if (domains.containsKey(t)) return t;
+        if (domains.containsKey(t)) {
+            Domain domain = domains.get(t);
+            return domain.sourceFree ? sourceFreeRustName(t, currentProgram.get()) : t;
+        }
         for (String k : domains.keySet()) {
-            if (k.endsWith("__" + t)) return k;
+            if (k.endsWith("__" + t)) {
+                Domain domain = domains.get(k);
+                return domain != null && domain.sourceFree
+                        ? sourceFreeRustName(k, currentProgram.get()) : k;
+            }
         }
         return t;
     }
@@ -2543,7 +2560,10 @@ public class NativeGenerator {
                         argList.add(val);
                     }
                 }
-                return "construct_" + callee + "(" + String.join(", ", argList) + ")";
+                String constructor = d.sourceFree
+                        ? "moss_" + d.definingModule + "::construct_" + d.declarationName
+                        : "construct_" + callee;
+                return constructor + "(" + String.join(", ", argList) + ")";
             }
 
             if (callee.equals("Vector") || callee.startsWith("Vector[")) {

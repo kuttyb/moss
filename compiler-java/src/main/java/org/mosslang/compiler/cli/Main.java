@@ -871,6 +871,7 @@ public class Main {
             org.mosslang.compiler.ast.Function currentFn = null;
             org.mosslang.compiler.ast.ObjectType currentObject = null;
             org.mosslang.compiler.ast.EnumType currentEnum = null;
+            org.mosslang.compiler.ast.Domain currentDomain = null;
             for (String line : text.split("\\R")) {
                 line = line.trim();
                 if (line.equals("contract")) {
@@ -879,6 +880,7 @@ public class Main {
                     currentFn = null;
                     currentObject = null;
                     currentEnum = null;
+                    currentDomain = null;
                     continue;
                 }
                 if (line.equals("semantic_exports")) {
@@ -887,6 +889,7 @@ public class Main {
                     currentFn = null;
                     currentObject = null;
                     currentEnum = null;
+                    currentDomain = null;
                     continue;
                 }
                 if (line.equals("private_semantic_dependencies") || line.equals("provenance")) {
@@ -895,10 +898,123 @@ public class Main {
                     currentFn = null;
                     currentObject = null;
                     currentEnum = null;
+                    currentDomain = null;
+                    continue;
+                }
+
+                if (inSemanticExports && line.startsWith("export domain ")) {
+                    String[] parts = line.split("\\s+");
+                    if (parts.length < 3 || parts.length > 4) {
+                        throw new CompileError("SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+                                "ABI-v10 exported domain header is malformed", cand.toString(), 1);
+                    }
+                    String domainName = parts[2];
+                    String canonicalName = modName + "__" + domainName;
+                    currentDomain = program.domains.stream()
+                            .filter(domain -> domain.name.equals(canonicalName))
+                            .findFirst().orElse(null);
+                    if (currentDomain == null) {
+                        currentDomain = new org.mosslang.compiler.ast.Domain(canonicalName,
+                                "domain " + domainName, 1, cand.toString(), true);
+                        currentDomain.definingModule = modName;
+                        currentDomain.declarationName = domainName;
+                        currentDomain.sourceFree = true;
+                        program.domains.add(currentDomain);
+                    }
+                    currentFn = null;
+                    currentObject = null;
+                    currentEnum = null;
+                    continue;
+                }
+                if (inSemanticExports && line.startsWith("declaration_id ") && currentDomain != null) {
+                    String declaredId = line.substring("declaration_id ".length()).trim();
+                    String expectedId = "nominal-domain-v1:" + moduleId + ":domain:"
+                            + currentDomain.declarationName;
+                    if (!expectedId.equals(declaredId)) {
+                        throw new CompileError("SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+                                "ABI-v10 exported domain identity is malformed or foreign", cand.toString(), 1);
+                    }
+                    continue;
+                }
+                if (inSemanticExports && currentDomain != null && line.startsWith("route ")) {
+                    String declaration = line.substring("route ".length()).trim();
+                    int colon = declaration.indexOf(':');
+                    if (colon <= 0) {
+                        throw new CompileError("SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+                                "ABI-v10 domain route declaration is malformed", cand.toString(), 1);
+                    }
+                    String routeName = declaration.substring(0, colon).trim();
+                    String routeType = declaration.substring(colon + 1).trim();
+                    if (currentDomain.routes.stream().noneMatch(route -> route.name.equals(routeName))) {
+                        currentDomain.routes.add(new org.mosslang.compiler.ast.DomainRoute(
+                                routeName, routeType, 1, cand.toString()));
+                    }
+                    continue;
+                }
+                if (inSemanticExports && currentDomain != null
+                        && line.startsWith("construction_state ")) {
+                    List<String> quoted = parseMossiQuotedFields(line);
+                    if (quoted.size() != 3) {
+                        throw new CompileError("SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+                                "ABI-v10 construction state is malformed", cand.toString(), 1);
+                    }
+                    String fieldName = quoted.get(0);
+                    if (currentDomain.state.stream().noneMatch(field -> field.name.equals(fieldName))) {
+                        currentDomain.state.add(new org.mosslang.compiler.ast.Field(
+                                fieldName, quoted.get(1), quoted.get(2), "", 1,
+                                cand.toString(), false, false));
+                    }
+                    continue;
+                }
+                if (inSemanticExports && currentDomain != null && line.startsWith("handler ")) {
+                    String[] parts = line.split("\\s+");
+                    if (parts.length < 3) {
+                        throw new CompileError("SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+                                "ABI-v10 handler declaration is malformed", cand.toString(), 1);
+                    }
+                    String handlerName = parts[1];
+                    org.mosslang.compiler.ast.Handler handler = currentDomain.handlers.stream()
+                            .filter(candidate -> candidate.name.equals(handlerName))
+                            .findFirst().orElse(null);
+                    if (handler == null) {
+                        handler = new org.mosslang.compiler.ast.Handler(
+                                handlerName, "fn " + handlerName, 1, cand.toString());
+                        currentDomain.handlers.add(handler);
+                    }
+                    for (String part : parts) {
+                        if (part.startsWith("reply=")) {
+                            handler.setReplyType(part.substring("reply=".length()));
+                        }
+                    }
+                    java.util.regex.Matcher raiseMatcher = java.util.regex.Pattern
+                            .compile("(?:^|[;\\s])raise_set=([^;\\s]+)").matcher(line);
+                    if (raiseMatcher.find() && !"-".equals(raiseMatcher.group(1))) {
+                        handler.sourceFreeMayRaise = true;
+                    }
+                    continue;
+                }
+                if (inSemanticExports && currentDomain != null
+                        && line.startsWith("handler_param ")) {
+                    List<String> quoted = parseMossiQuotedFields(line);
+                    if (quoted.size() != 3) {
+                        throw new CompileError("SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+                                "ABI-v10 handler parameter is malformed", cand.toString(), 1);
+                    }
+                    org.mosslang.compiler.ast.Handler handler = currentDomain.handlers.stream()
+                            .filter(candidate -> candidate.name.equals(quoted.get(0)))
+                            .findFirst().orElseThrow(() -> new CompileError(
+                                    "SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+                                    "ABI-v10 handler parameter precedes its handler declaration",
+                                    cand.toString(), 1));
+                    if (handler.params.stream().noneMatch(param -> param.name.equals(quoted.get(1)))) {
+                        handler.params.add(new org.mosslang.compiler.ast.Param(
+                                quoted.get(1), quoted.get(2)));
+                    }
                     continue;
                 }
 
                 if (inSemanticExports && line.startsWith("export enum ")) {
+                    currentDomain = null;
                     String[] parts = line.split("\\s+");
                     if (parts.length != 3) {
                         throw new CompileError("SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
@@ -932,8 +1048,8 @@ public class Main {
                     currentObject = null;
                     continue;
                 }
-                if (inSemanticExports && line.startsWith("  declaration_id ") && currentEnum != null) {
-                    String declaredId = line.substring("  declaration_id ".length()).trim();
+                if (inSemanticExports && line.startsWith("declaration_id ") && currentEnum != null) {
+                    String declaredId = line.substring("declaration_id ".length()).trim();
                     String expectedId = "nominal-enum-v1:" + moduleId + ":enum:" + currentEnum.declarationName;
                     if (!expectedId.equals(declaredId)) {
                         throw new CompileError("SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
@@ -974,6 +1090,7 @@ public class Main {
                 }
 
                 if (inSemanticExports && line.startsWith("export type ")) {
+                    currentDomain = null;
                     currentEnum = null;
                     String[] parts = line.split("\\s+");
                     if (parts.length >= 3) {

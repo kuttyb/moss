@@ -1187,13 +1187,20 @@ public class ProjectBuilder {
                 emitHandlerMossi(contractBuf, h, d, module, domainName, prog, false, manifest);
             }
 
-            semanticBuf.append("export domain ").append(domainName).append(" opaque\n");
-            semanticBuf.append("  declaration_id nominal-domain-v1:module-v1:").append(manifest.getName()).append("@").append(manifest.getVersion()).append("::").append(module).append(":domain:").append(domainName).append("\n");
-            for (Field f : d.state) {
-                semanticBuf.append("  construction_state \"").append(f.name).append("\" \"").append(f.type != null ? f.type.toLowerCase() : "int").append("\" \"").append(f.init != null ? f.init : "").append("\"\n");
-            }
-            for (Handler h : d.handlers) {
-                emitHandlerMossi(semanticBuf, h, d, module, domainName, prog, true, manifest);
+            if (d.exported && !d.sourceFree
+                    && (d.definingModule == null || d.definingModule.isEmpty()
+                        || d.definingModule.equals(module))) {
+                semanticBuf.append("export domain ").append(domainName).append(" opaque\n");
+                semanticBuf.append("  declaration_id nominal-domain-v1:module-v1:").append(manifest.getName()).append("@").append(manifest.getVersion()).append("::").append(module).append(":domain:").append(domainName).append("\n");
+                for (DomainRoute route : d.routes) {
+                    semanticBuf.append("  route ").append(route.name).append(": ").append(route.type).append("\n");
+                }
+                for (Field f : d.state) {
+                    semanticBuf.append("  construction_state \"").append(f.name).append("\" \"").append(f.type != null ? f.type.toLowerCase() : "int").append("\" \"").append(f.init != null ? f.init : "").append("\"\n");
+                }
+                for (Handler h : d.handlers) {
+                    emitHandlerMossi(semanticBuf, h, d, module, domainName, prog, true, manifest);
+                }
             }
         }
 
@@ -1245,7 +1252,7 @@ public class ProjectBuilder {
             List<String[]> semRecords = new ArrayList<>();
             List<MossiRecord> nominalRecords = new ArrayList<>();
             List<AbiV10Records.SourceProvenance> provenanceRecords = new ArrayList<>();
-            int exportedEnumOrdinal = 0;
+            int exportedDeclarationOrdinal = 0;
 
             for (EnumType e : prog.enums) {
                 String enumName = localTypeName(e.name, module);
@@ -1259,7 +1266,7 @@ public class ProjectBuilder {
                         && (e.definingModule == null || e.definingModule.isEmpty()
                             || e.definingModule.equals(module))) {
                     MossiRecord record = v10ExportedEnumRecord(e, module, modId,
-                            exportedEnumOrdinal++);
+                            exportedDeclarationOrdinal++);
                     semRecords.add(new String[]{record.id, record.payload});
                 }
             }
@@ -1276,6 +1283,32 @@ public class ProjectBuilder {
                     emitHandlerMossi(b, h, d, module, domainName, prog, false, manifest);
                 }
                 binRecords.add(new String[]{"domain:" + domainName, b.toString()});
+                if (d.exported && !d.sourceFree
+                        && (d.definingModule == null || d.definingModule.isEmpty()
+                            || d.definingModule.equals(module))) {
+                    StringBuilder semanticDomain = new StringBuilder()
+                            .append("export domain ").append(domainName).append(" opaque\n")
+                            .append("  declaration_id nominal-domain-v1:").append(modId)
+                            .append(":domain:").append(domainName).append("\n");
+                    for (DomainRoute route : d.routes) {
+                        semanticDomain.append("  route ").append(route.name).append(": ")
+                                .append(route.type).append("\n");
+                    }
+                    for (Field field : d.state) {
+                        semanticDomain.append("  construction_state \"").append(field.name)
+                                .append("\" \"").append(field.type != null
+                                        ? field.type.toLowerCase(Locale.ROOT) : "int")
+                                .append("\" \"").append(field.init != null ? field.init : "")
+                                .append("\"\n");
+                    }
+                    for (Handler handler : d.handlers) {
+                        emitHandlerMossi(semanticDomain, handler, d, module, domainName,
+                                prog, true, manifest);
+                    }
+                    String id = String.format(Locale.ROOT, "%08d export %s",
+                            exportedDeclarationOrdinal++, domainName);
+                    semRecords.add(new String[]{id, semanticDomain.toString()});
+                }
             }
 
             for (ObjectType obj : prog.objects) {

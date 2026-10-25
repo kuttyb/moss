@@ -14,6 +14,7 @@ public class Domain {
     public String sourceFile = "";
     public String definingModule = "";
     public String declarationName = "";
+    public boolean sourceFree = false;
 
     public Domain() {}
 

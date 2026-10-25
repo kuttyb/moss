@@ -201,9 +201,14 @@ public final class ProjectBuilderMetadataTest {
                 + "  y: Int\n"
                 + "enum Outcome:\n"
                 + "  Ready(code: Int)\n"
-                + "  Done\n", "provider.moss");
+                + "  Done\n"
+                + "domain Recorder:\n"
+                + "  count: Int\n"
+                + "  fn Count() -> Int:\n"
+                + "    reply count\n", "provider.moss");
         program.objects.get(0).exported = true;
         program.enums.get(0).exported = true;
+        program.domains.get(0).exported = true;
         ProjectManifest manifest = new ProjectManifest(Path.of("tmp"),
                 Path.of("tmp", "moss.toml"), "sample", "1.0.0", Path.of("src"));
         BackendToolchain toolchain = new BackendToolchain("rustc", "rustc 1.80.0 (test)\n",
@@ -217,6 +222,12 @@ public final class ProjectBuilderMetadataTest {
                     record.id.equals("00000000 export Outcome")
                     && record.payload.contains("enum_case \"Ready\" 1 \"code\" \"int\""))) {
             throw new AssertionError("Margo ABI-v10 producer omitted canonical nominal/enum facts");
+        }
+        if (decoded.semanticContract.stream().noneMatch(record ->
+                    record.id.equals("00000001 export Recorder")
+                    && record.payload.contains("export domain Recorder opaque")
+                    && record.payload.contains("handler Count reply=int"))) {
+            throw new AssertionError("Margo ABI-v10 producer omitted exported domain facts");
         }
     }
 

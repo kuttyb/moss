@@ -179,6 +179,12 @@ public final class SourceFreeObjectMetadataTest {
                 + "  declaration_id nominal-enum-v1:module-v1:sample@0.1.0::provider:enum:Outcome\n"
                 + "  enum_case \"Ready\" 1 \"code\" \"int\"\n"
                 + "  enum_case \"Done\" 0\n"));
+        v10.semanticContract.add(new MossiRecord("00000001 export Recorder", ""
+                + "export domain Recorder opaque\n"
+                + "  declaration_id nominal-domain-v1:module-v1:sample@0.1.0::provider:domain:Recorder\n"
+                + "  construction_state \"count\" \"int\" \"0\"\n"
+                + "  handler Count reply=int effects=local_capture_read=0;local_mutation=0;domain_read=1;domain_write=0;message=0;external_io=0;fileio=0;fileio_unknown=0;may_panic=0;raise_set=-;may_diverge=0;unresolved=0\n"
+                + "  handler_param \"Count\" \"offset\" \"int\"\n"));
         Path v10File = scratch.resolve("provider-v10.mossi");
         String encodedV10 = CheckedBodyCodec.encodeMossi(v10);
         Files.writeString(v10File, encodedV10, java.nio.charset.StandardCharsets.UTF_8);
@@ -223,6 +229,34 @@ public final class SourceFreeObjectMetadataTest {
         if (!enumRust.contains("moss_provider::Outcome::Ready")
                 || enumRust.contains("pub enum provider__Outcome")) {
             throw new AssertionError("source-free enum did not lower to its provider crate: " + enumRust);
+        }
+        Program domainConsumer = Parser.parseSource(""
+                + "domain Client:\n"
+                + "  domainroutes(recorder: provider__Recorder)\n"
+                + "  fn Read() -> Int:\n"
+                + "    reply message recorder.Count(1)\n"
+                + "fn main():\n"
+                + "  pass\n", "domain-consumer.moss");
+        Main.loadMossiFunctions(v10File, "provider", domainConsumer);
+        new SemanticChecker(domainConsumer).run();
+        org.mosslang.compiler.ast.Domain importedRecorder = domainConsumer.domains.stream()
+                .filter(domain -> domain.name.equals("provider__Recorder"))
+                .findFirst().orElseThrow(() -> new AssertionError(
+                        "ABI-v10 source-free domain was not imported"));
+        if (!importedRecorder.sourceFree || importedRecorder.handlers.size() != 1
+                || !"int".equals(importedRecorder.handlers.get(0).replyType)
+                || importedRecorder.handlers.get(0).params.size() != 1
+                || !"offset".equals(importedRecorder.handlers.get(0).params.get(0).name)
+                || importedRecorder.handlers.get(0).sourceFreeMayRaise
+                || importedRecorder.state.size() != 1
+                || !"count".equals(importedRecorder.state.get(0).name)) {
+            throw new AssertionError("ABI-v10 source-free handler signature was not restored");
+        }
+        String domainRust = NativeGenerator.generate(domainConsumer, false);
+        if (!domainRust.contains("moss_provider::RecorderRef")
+                || domainRust.contains("pub struct provider__RecorderRuntime")) {
+            throw new AssertionError("source-free domain did not use its provider crate type: "
+                    + domainRust);
         }
         Files.deleteIfExists(interfaceFile);
         Files.deleteIfExists(v10File);

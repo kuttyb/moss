@@ -12923,3 +12923,22 @@ Validation on this candidate tree: `MOSS_STAGED_ABI=v10
 ./scripts/java/build.sh` and `MOSS_STAGED_ABI=v10 ./scripts/java/test.sh` pass;
 all ten Java test classes pass. This avoids Rust compilation and does not cover
 multi-module dependencies, source-free native linkage, or final release gates.
+
+### Phase 25.3 continuation — source-free domain handler contracts
+
+ABI-v9 and v10 exported-domain semantic rows now include module-bound identity,
+route declarations, construction state, handler signatures, and parameter
+facts. The source-free loader reconstructs imported domain declarations and
+handler replies; an absent imported handler contract now fails with
+`SOURCE_FREE_TYPE_IDENTITY_MISMATCH` instead of fabricating an `Int` result.
+Rust generation skips provider-owned domain definitions and projects imported
+route handles through the provider crate path. Source-free raising metadata is
+retained for imported handlers.
+
+Validation: both default ABI-v9 and staged ABI-v10 Java builds and all ten test
+classes pass. The focused source-free consumer checks a routed `Count()` reply
+and confirms `moss_provider::RecorderRef` generation without a local imported
+runtime definition. The project-level v10 producer round trip emits the domain
+record; foreign domain identities are rejected. Rust compilation, project
+provider/consumer linking, complete domain effects/routes, and native execution
+remain unverified.

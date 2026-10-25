@@ -325,6 +325,22 @@ public class CheckedBodyCodecTest {
         } catch (CompileError error) {
             if (!"SOURCE_FREE_TYPE_IDENTITY_MISMATCH".equals(error.getCode())) throw error;
         }
+
+        MossiInterface validDomain = new MossiInterface(module);
+        validDomain.semanticContract.add(new MossiRecord("00000000 export Router", ""
+                + "export domain Router opaque\n"
+                + "  declaration_id nominal-domain-v1:" + module + ":domain:Router\n"));
+        CheckedBodyCodec.verifySourceFree(CheckedBodyCodec.encodeMossiBytes(validDomain));
+        MossiInterface foreignDomain = new MossiInterface(module);
+        foreignDomain.semanticContract.add(new MossiRecord("00000000 export Router", ""
+                + "export domain Router opaque\n"
+                + "  declaration_id nominal-domain-v1:module-v1:foreign@1.0.0::provider:domain:Router\n"));
+        try {
+            CheckedBodyCodec.verifySourceFree(CheckedBodyCodec.encodeMossiBytes(foreignDomain));
+            throw new AssertionError("ABI-v10 verifier accepted a foreign domain declaration identity");
+        } catch (CompileError error) {
+            if (!"SOURCE_FREE_TYPE_IDENTITY_MISMATCH".equals(error.getCode())) throw error;
+        }
     }
 
     private static void assertMossiEncodeRejects(MossiInterface mossi, String description) {

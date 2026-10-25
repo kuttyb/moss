@@ -970,8 +970,8 @@ public class ExpressionTyper {
         }
         Domain domain = domains.get(receiverType.name());
         if (domain == null) {
-            // Imported domain
-            return TypeRef.primitive("int");
+            throw new CompileError(line, "source-free domain '" + receiverType.name()
+                    + "' has no imported handler contract", "SOURCE_FREE_TYPE_IDENTITY_MISMATCH");
         }
         Handler target = null;
         for (Handler h : domain.handlers) {
