@@ -365,6 +365,8 @@ public final class ProjectBuilderMetadataTest {
                 + "  return value >= 0 and value < 10\n"
                 + "export fn is_nonnegative(value: Int) -> Bool:\n"
                 + "  return not (value < 0)\n"
+                + "export fn is_warm(value: Float) -> Bool:\n"
+                + "  return value > 0.0 and value < 100.0\n"
                 + "export fn greeting() -> String:\n"
                 + "  return \"hello\"\n", "identity-provider.moss");
         new org.mosslang.compiler.semantics.CheckedProgram(identityProgram).run();
@@ -669,7 +671,7 @@ public final class ProjectBuilderMetadataTest {
                 || !predicateSummary.bodySemanticHash.equals(predicateBody.semanticHash)) {
             throw new AssertionError("ABI-v10 checked predicate summary/body is incomplete");
         }
-        for (String callable : List.of("is_in_range", "is_nonnegative")) {
+        for (String callable : List.of("is_in_range", "is_nonnegative", "is_warm")) {
             AbiV10Records.CheckedBodyRecord body = identityInterface.privateSemanticDependencies.stream()
                     .filter(record -> record.id.startsWith("checked-body-v1:"))
                     .map(AbiV10Records.CheckedBodyRecord::decode)
@@ -679,7 +681,7 @@ public final class ProjectBuilderMetadataTest {
             List<org.mosslang.compiler.abi.CheckedStmt> statements =
                     CheckedBodyCodec.decodeCheckedBody(body.checkedIrBytes);
             org.mosslang.compiler.abi.CheckedExpr expr = statements.get(0).expr;
-            boolean expected = callable.equals("is_in_range")
+            boolean expected = callable.equals("is_in_range") || callable.equals("is_warm")
                     ? expr.kind == org.mosslang.compiler.abi.CheckedExprKind.Binary
                             && expr.binaryOp == org.mosslang.compiler.abi.CheckedBinaryOp.And
                     : expr.kind == org.mosslang.compiler.abi.CheckedExprKind.Unary
@@ -776,6 +778,8 @@ public final class ProjectBuilderMetadataTest {
                     + "  return provider__is_in_range(7)\n"
                     + "fn use_is_nonnegative() -> Bool:\n"
                     + "  return provider__is_nonnegative(7)\n"
+                    + "fn use_is_warm() -> Bool:\n"
+                    + "  return provider__is_warm(22.5)\n"
                     + "fn use_increment() -> Int:\n"
                     + "  return provider__increment(41)\n"
                     + "fn use_scale() -> Int:\n"

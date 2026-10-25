@@ -13428,3 +13428,18 @@ ABI-v10 modes. C++ and Java both accept the focused predicate probe. Feedback
 validation and `git diff --check` pass. No native Rust compile/run, Margo
 provider-consumer build, SDK gate, or full `make check` ran; Phase 25.3 remains
 in progress.
+
+### Phase 25.3 continuation — project Float predicate trees in ABI-v10
+
+The bounded source-free ABI-v10 predicate producer and loader now support
+homogeneous Float parameters as well as Int parameters. Float comparisons can
+use supported Float arithmetic operands and can combine through the same checked
+`and`/`or`/`xor`/`not` trees. Projection checks summary parameter types and checked
+IR tags before reconstructing the expression. The producer-consumer regression
+strips legacy generic body rows and checks a Float range predicate.
+
+Validation: all ten Java unit-test classes pass after a clean build in default
+ABI-v9 and staged ABI-v10 modes. C++ and Java both accept the focused Float
+predicate source probe. Feedback validation and `git diff --check` pass. No
+native Rust compile/run, Margo provider-consumer build, SDK gate, or full
+`make check` ran. General callable body projection and Phase 25.3 remain open.

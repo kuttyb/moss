@@ -1452,7 +1452,7 @@ public class Main {
             String returnedLiteral = null;
             String closedIntExpression = null;
             String closedFloatExpression = null;
-            String intComparisonExpression = null;
+            String numericPredicateExpression = null;
             if (statement.expr.kind == org.mosslang.compiler.abi.CheckedExprKind.Parameter) {
                 returnedParameter = statement.expr.ordinal;
                 if (returnedParameter < 0 || returnedParameter >= parameterTypes.size()
@@ -1471,11 +1471,11 @@ public class Main {
                 returnedLiteral = statement.expr.literalValue;
             } else if (resultType.kind() == org.mosslang.compiler.types.TypeKind.Primitive
                     && "bool".equalsIgnoreCase(resultType.name())
-                    && parameterTypes.stream().allMatch(type -> type.kind()
-                            == org.mosslang.compiler.types.TypeKind.Primitive
-                            && "int".equalsIgnoreCase(type.name()))) {
-                intComparisonExpression = sourceFreeBoolExpression(statement.expr, parameterTypes, 0);
-                if (intComparisonExpression == null) continue;
+                    && !parameterTypes.isEmpty()
+                    && (parameterTypes.stream().allMatch(Main::isSourceFreeIntType)
+                        || parameterTypes.stream().allMatch(Main::isSourceFreeFloatType))) {
+                numericPredicateExpression = sourceFreeBoolExpression(statement.expr, parameterTypes, 0);
+                if (numericPredicateExpression == null) continue;
             } else if (statement.expr.kind == org.mosslang.compiler.abi.CheckedExprKind.FloatLiteral
                     && parameterTypes.isEmpty() && resultType.kind() == org.mosslang.compiler.types.TypeKind.Primitive
                     && "float".equalsIgnoreCase(resultType.name())
@@ -1528,9 +1528,10 @@ public class Main {
                         ? function.params.get(returnedParameter).name
                         : closedIntExpression != null ? closedIntExpression
                                 : closedFloatExpression != null ? closedFloatExpression
-                                        : intComparisonExpression != null ? intComparisonExpression : returnedLiteral;
+                                        : numericPredicateExpression != null
+                                                ? numericPredicateExpression : returnedLiteral;
                 if (closedIntExpression != null || closedFloatExpression != null
-                        || intComparisonExpression != null) {
+                        || numericPredicateExpression != null) {
                     for (int index = 0; index < function.params.size(); index++) {
                         returnExpression = returnExpression.replace("\u0001" + index + "\u0002",
                                 function.params.get(index).name);
@@ -1685,8 +1686,8 @@ public class Main {
                         org.mosslang.compiler.abi.CheckedBinaryOp.GreaterEqual).contains(expression.binaryOp)) {
                     yield null;
                 }
-                String left = sourceFreeClosedIntExpression(expression.operands.get(0), parameterTypes, depth + 1);
-                String right = sourceFreeClosedIntExpression(expression.operands.get(1), parameterTypes, depth + 1);
+                String left = sourceFreeNumericExpression(expression.operands.get(0), parameterTypes, depth + 1);
+                String right = sourceFreeNumericExpression(expression.operands.get(1), parameterTypes, depth + 1);
                 if (left == null || right == null) yield null;
                 String comparisonOperator = switch (expression.binaryOp) {
                     case Equal -> "==";
@@ -1702,6 +1703,28 @@ public class Main {
             }
             default -> null;
         };
+    }
+
+    private static String sourceFreeNumericExpression(
+            org.mosslang.compiler.abi.CheckedExpr expression,
+            List<org.mosslang.compiler.types.TypeRef> parameterTypes, int depth) {
+        if (expression == null || expression.type == null) return null;
+        if (expression.type.kind() != org.mosslang.compiler.types.TypeKind.Primitive) return null;
+        if ("int".equalsIgnoreCase(expression.type.name()))
+            return sourceFreeClosedIntExpression(expression, parameterTypes, depth + 1);
+        if ("float".equalsIgnoreCase(expression.type.name()))
+            return sourceFreeClosedFloatExpression(expression, parameterTypes, depth + 1);
+        return null;
+    }
+
+    private static boolean isSourceFreeIntType(org.mosslang.compiler.types.TypeRef type) {
+        return type.kind() == org.mosslang.compiler.types.TypeKind.Primitive
+                && "int".equalsIgnoreCase(type.name());
+    }
+
+    private static boolean isSourceFreeFloatType(org.mosslang.compiler.types.TypeRef type) {
+        return type.kind() == org.mosslang.compiler.types.TypeKind.Primitive
+                && "float".equalsIgnoreCase(type.name());
     }
 
     private static org.mosslang.compiler.types.TypeRef v10SimpleWireType(

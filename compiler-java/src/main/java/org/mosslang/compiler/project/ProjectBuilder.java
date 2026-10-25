@@ -1468,7 +1468,7 @@ public class ProjectBuilder {
                     CheckedExpr constantReturn = null;
                     CheckedExpr arithmeticReturn = null;
                     CheckedExpr floatArithmeticReturn = null;
-                    CheckedExpr intComparisonReturn = null;
+                    CheckedExpr numericPredicateReturn = null;
                     if (summary == null) {
                         constantReturn = v10ZeroArgLiteralReturn(fn);
                         if (constantReturn != null) {
@@ -1491,10 +1491,10 @@ public class ProjectBuilder {
                         }
                     }
                     if (summary == null) {
-                        intComparisonReturn = v10IntComparisonReturn(fn);
-                        if (intComparisonReturn != null) {
-                            summary = v10IntComparisonSummary(
-                                    fn, intComparisonReturn, modId, provenanceRecords);
+                        numericPredicateReturn = v10NumericPredicateReturn(fn);
+                        if (numericPredicateReturn != null) {
+                            summary = v10NumericPredicateSummary(
+                                    fn, numericPredicateReturn, modId, provenanceRecords);
                         }
                     }
                     if (summary != null) {
@@ -1505,8 +1505,8 @@ public class ProjectBuilder {
                                         ? v10SimpleExpressionBody(summary, arithmeticReturn)
                                         : floatArithmeticReturn != null
                                                 ? v10SimpleExpressionBody(summary, floatArithmeticReturn)
-                                        : intComparisonReturn != null
-                                                ? v10SimpleExpressionBody(summary, intComparisonReturn)
+                                        : numericPredicateReturn != null
+                                                ? v10SimpleExpressionBody(summary, numericPredicateReturn)
                                                 : v10DirectReturnBody(fn, summary);
                         checkedBodyRecords.add(body.record());
                     }
@@ -1816,25 +1816,28 @@ public class ProjectBuilder {
         return summary;
     }
 
-    private static CheckedExpr v10IntComparisonReturn(Function function) {
+    private static CheckedExpr v10NumericPredicateReturn(Function function) {
         if (function.returnTypeRef == null
                 || function.returnTypeRef.kind() != org.mosslang.compiler.types.TypeKind.Primitive
                 || !"bool".equalsIgnoreCase(function.returnTypeRef.name())
-                || function.body.size() != 1 || function.body.get(0).kind != Stmt.Kind.Return) return null;
-        for (Param parameter : function.params) {
-            if (!isV10IntType(parameter.checkedTypeRef)) return null;
-        }
+                || function.body.size() != 1 || function.body.get(0).kind != Stmt.Kind.Return
+                || function.params.isEmpty()) return null;
+        boolean intOperands = function.params.stream()
+                .allMatch(parameter -> isV10IntType(parameter.checkedTypeRef));
+        boolean floatOperands = function.params.stream()
+                .allMatch(parameter -> isV10FloatType(parameter.checkedTypeRef));
+        if (!intOperands && !floatOperands) return null;
         Stmt statement = function.body.get(0);
         String expression = statement.a != null ? statement.a.trim() : "";
         if (expression.isEmpty() && statement.text != null
                 && statement.text.trim().startsWith("return ")) {
             expression = statement.text.trim().substring(7).trim();
         }
-        return v10LowerIntPredicateExpression(expression, function, 0);
+        return v10LowerNumericPredicateExpression(expression, function, floatOperands, 0);
     }
 
-    private static CheckedExpr v10LowerIntPredicateExpression(
-            String source, Function function, int depth) {
+    private static CheckedExpr v10LowerNumericPredicateExpression(
+            String source, Function function, boolean floatOperands, int depth) {
         if (source == null || depth > 128) return null;
         String expression = source.trim();
         while (v10ExpressionHasWrappingParens(expression)) {
@@ -1845,8 +1848,8 @@ public class ProjectBuilder {
             return CheckedExpr.boolLiteral("true".equals(expression), boolType);
         }
         if (expression.startsWith("not ")) {
-            CheckedExpr operand = v10LowerIntPredicateExpression(
-                    expression.substring(4), function, depth + 1);
+            CheckedExpr operand = v10LowerNumericPredicateExpression(
+                    expression.substring(4), function, floatOperands, depth + 1);
             return operand == null ? null : CheckedExpr.unary(
                     org.mosslang.compiler.abi.CheckedUnaryOp.Not, operand, boolType);
         }
@@ -1854,8 +1857,10 @@ public class ProjectBuilder {
                 org.mosslang.compiler.semantics.ExpressionTyper.splitBinary(expression,
                         List.of(" or ", " and ", " xor "));
         if (logical != null) {
-            CheckedExpr left = v10LowerIntPredicateExpression(logical.left(), function, depth + 1);
-            CheckedExpr right = v10LowerIntPredicateExpression(logical.right(), function, depth + 1);
+            CheckedExpr left = v10LowerNumericPredicateExpression(
+                    logical.left(), function, floatOperands, depth + 1);
+            CheckedExpr right = v10LowerNumericPredicateExpression(
+                    logical.right(), function, floatOperands, depth + 1);
             if (left == null || right == null) return null;
             org.mosslang.compiler.abi.CheckedBinaryOp operation = switch (logical.op().trim()) {
                 case "and" -> org.mosslang.compiler.abi.CheckedBinaryOp.And;
@@ -1869,8 +1874,12 @@ public class ProjectBuilder {
                 org.mosslang.compiler.semantics.ExpressionTyper.splitBinary(expression,
                         List.of("==", "!=", "<=", ">=", "<", ">"));
         if (comparison == null) return null;
-        CheckedExpr left = v10LowerClosedIntExpression(comparison.left(), function, depth + 1);
-        CheckedExpr right = v10LowerClosedIntExpression(comparison.right(), function, depth + 1);
+        CheckedExpr left = floatOperands
+                ? v10LowerClosedFloatExpression(comparison.left(), function, depth + 1)
+                : v10LowerClosedIntExpression(comparison.left(), function, depth + 1);
+        CheckedExpr right = floatOperands
+                ? v10LowerClosedFloatExpression(comparison.right(), function, depth + 1)
+                : v10LowerClosedIntExpression(comparison.right(), function, depth + 1);
         if (left == null || right == null) return null;
         org.mosslang.compiler.abi.CheckedBinaryOp operation = switch (comparison.op()) {
             case "==" -> org.mosslang.compiler.abi.CheckedBinaryOp.Equal;
@@ -1884,13 +1893,16 @@ public class ProjectBuilder {
         return operation == null ? null : CheckedExpr.binary(operation, left, right, boolType);
     }
 
-    private static AbiV10Records.Summary v10IntComparisonSummary(
+    private static AbiV10Records.Summary v10NumericPredicateSummary(
             Function function, CheckedExpr expression, String moduleId,
             List<AbiV10Records.SourceProvenance> provenanceRecords) {
         AbiV10Records.Summary summary = new AbiV10Records.Summary();
         summary.callableId = function.semanticCallableId;
+        TypeRef operandType = function.params.stream()
+                .allMatch(parameter -> isV10FloatType(parameter.checkedTypeRef))
+                        ? TypeRef.primitive("float") : TypeRef.primitive("int");
         for (int index = 0; index < function.params.size(); index++) {
-            summary.parameters.add(AbiV10Records.fromTypeRef(TypeRef.primitive("int"), Map.of()));
+            summary.parameters.add(AbiV10Records.fromTypeRef(operandType, Map.of()));
             org.mosslang.compiler.types.AccessMode access = function.parameterAccessModes.size() > index
                     ? function.parameterAccessModes.get(index)
                     : org.mosslang.compiler.types.AccessMode.Read;
