@@ -15721,3 +15721,15 @@ evidence rather than broad Fast Debug parity. All twelve Java test classes
 pass under ABI-v9 and staged ABI-v10. Native/backend and SDK acceptance,
 source-free integration, daemon readiness, and the broader semantic/codegen
 scope remain open.
+
+
+### Phase 25.3 continuation — refresh Java packaging and inspect daemon availability
+
+Rebuilt `compiler-java/dist/moss.jar` from the latest compiler sources. The
+packaged `scripts/java/moss --version` reports `0.1.0-java (moss-0.1)`, and
+`agent bootstrap --json` succeeds with `language_version: moss-0.1`. The JDT
+client unit suite passes all six tests, including its standalone `javac`
+fallback. In this current environment the explicit daemon start reports
+`Eclipse JDT is unavailable`, so persistent JDT startup/build/stop remains
+unverified; the supported fallback works. This packaging check does not cover
+native artifacts, Margo projects, or SDK integration.
