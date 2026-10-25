@@ -66,6 +66,60 @@ public final class ParserSupport {
         return out;
     }
 
+    /** Whether an expression uses a named function as a functional pipeline callback. */
+    public static boolean usesPipelineFunctionCallback(String expression, String functionName) {
+        if (expression == null || functionName == null || !expression.contains("|>")) return false;
+        for (String stage : splitPipeline(expression)) {
+            int open = stage.indexOf('(');
+            if (open <= 0 || !stage.endsWith(")")) continue;
+            String operation = trim(stage.substring(0, open));
+            int callbackIndex = switch (operation) {
+                case "map", "filter", "any", "all" -> 0;
+                case "reduce" -> 1;
+                default -> -1;
+            };
+            if (callbackIndex < 0) continue;
+            MutableList<String> arguments = splitTopLevel(
+                    stage.substring(open + 1, stage.length() - 1), ',');
+            if (callbackIndex >= arguments.size()) continue;
+            String callback = trim(arguments.get(callbackIndex));
+            if (callback.equals(functionName) || callback.endsWith("." + functionName)
+                    || callback.endsWith("::" + functionName)) return true;
+        }
+        return false;
+    }
+
+    private static List<String> splitPipeline(String expression) {
+        MutableList<String> stages = new FastList<>();
+        int depth = 0;
+        int start = 0;
+        char quote = 0;
+        boolean escaped = false;
+        for (int index = 0; index < expression.length(); index++) {
+            char current = expression.charAt(index);
+            if (quote != 0) {
+                if (escaped) escaped = false;
+                else if (current == '\\') escaped = true;
+                else if (current == quote) quote = 0;
+                continue;
+            }
+            if (current == '"' || current == '\'') {
+                quote = current;
+                continue;
+            }
+            if (current == '(' || current == '[' || current == '{') depth++;
+            else if (current == ')' || current == ']' || current == '}') depth--;
+            else if (depth == 0 && current == '|' && index + 1 < expression.length()
+                    && expression.charAt(index + 1) == '>') {
+                stages.add(trim(expression.substring(start, index)));
+                start = index + 2;
+                index++;
+            }
+        }
+        stages.add(trim(expression.substring(start)));
+        return stages;
+    }
+
     public static String canonicalTypeName(String type) {
         type = trim(type);
         if ("Int".equals(type)) return "int";

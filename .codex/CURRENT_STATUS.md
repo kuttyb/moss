@@ -16675,3 +16675,22 @@ a wrapper that recovers the callback raise. `scripts/java/build.sh` and focused
 all five forms, including recovered and unhandled cases. Bound methods, generic
 and cross-module callbacks, root raise-checking through callback invocation,
 and native execution remain open.
+
+
+### Phase 25.3 continuation — check root callback raises
+
+The unhandled `map(risky)` probe exposed a Java false acceptance: Java allowed a
+typed callback raise to escape `main`, while C++ rejected it. The root checker
+now follows named pipeline function callbacks, and it no longer skips raises
+from value-returning functions. Tests check unhandled callback rejection and
+matching recovery acceptance. A pre-existing error-carrier test was updated to
+recover its raised variant, consistent with C++: a separate probe showed both
+compilers reject its previously unhandled main call. `scripts/java/build.sh` and
+focused `SemanticCheckerTest` pass. Native compilation and execution were not
+run.
+
+Validation refresh after the root-raise correction and shared pipeline callback
+parser: `scripts/java/test.sh` and `MOSS_STAGED_ABI=v10 scripts/java/test.sh`
+each pass all 12 Java test classes. Agent-feedback validation and
+`git diff --check` pass. The test suite verifies Java compiler units only; no
+native Rust build, execution, SDK integration, or final acceptance gate was run.

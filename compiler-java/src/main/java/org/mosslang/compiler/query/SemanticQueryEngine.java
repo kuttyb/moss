@@ -1415,7 +1415,8 @@ public class SemanticQueryEngine {
                 for (Function candidate : program.functions) {
                     if (candidate == function
                             || (!containsFunctionCall(expression, candidate.name)
-                                    && !usesPipelineFunctionCallback(expression, candidate.name))) continue;
+                                    && !org.mosslang.compiler.parser.ParserSupport
+                                            .usesPipelineFunctionCallback(expression, candidate.name))) continue;
                     Set<String> calledRaises = collectRaisedVariants(candidate, null, null, program, visited);
                     for (String raised : calledRaises) {
                         if (!isRaisedVariantRecovered(body, index, raised)) variants.add(raised);
@@ -1426,7 +1427,8 @@ public class SemanticQueryEngine {
                 for (Function candidate : program.functions) {
                     if (candidate != function
                             && (containsFunctionCall(function.resultExpression, candidate.name)
-                                    || usesPipelineFunctionCallback(function.resultExpression, candidate.name))) {
+                                    || org.mosslang.compiler.parser.ParserSupport
+                                            .usesPipelineFunctionCallback(function.resultExpression, candidate.name))) {
                         variants.addAll(collectRaisedVariants(candidate, null, null, program, visited));
                     }
                 }
@@ -1501,59 +1503,6 @@ public class SemanticQueryEngine {
             }
         }
         return variants;
-    }
-
-    private static boolean usesPipelineFunctionCallback(String expression, String functionName) {
-        if (expression == null || functionName == null || !expression.contains("|>")) return false;
-        for (String stage : splitPipelineExpression(expression)) {
-            int open = stage.indexOf('(');
-            if (open <= 0 || !stage.endsWith(")")) continue;
-            String operation = stage.substring(0, open).trim();
-            int callbackIndex = switch (operation) {
-                case "map", "filter", "any", "all" -> 0;
-                case "reduce" -> 1;
-                default -> -1;
-            };
-            if (callbackIndex < 0) continue;
-            List<String> arguments = org.mosslang.compiler.parser.ParserSupport.splitTopLevel(
-                    stage.substring(open + 1, stage.length() - 1), ',');
-            if (callbackIndex >= arguments.size()) continue;
-            String callback = arguments.get(callbackIndex).trim();
-            if (callback.equals(functionName) || callback.endsWith("." + functionName)
-                    || callback.endsWith("::" + functionName)) return true;
-        }
-        return false;
-    }
-
-    private static List<String> splitPipelineExpression(String expression) {
-        List<String> stages = new ArrayList<>();
-        int depth = 0;
-        int start = 0;
-        char quote = 0;
-        boolean escaped = false;
-        for (int index = 0; index < expression.length(); index++) {
-            char current = expression.charAt(index);
-            if (quote != 0) {
-                if (escaped) escaped = false;
-                else if (current == '\\') escaped = true;
-                else if (current == quote) quote = 0;
-                continue;
-            }
-            if (current == '"' || current == '\'') {
-                quote = current;
-                continue;
-            }
-            if (current == '(' || current == '[' || current == '{') depth++;
-            else if (current == ')' || current == ']' || current == '}') depth--;
-            else if (depth == 0 && current == '|' && index + 1 < expression.length()
-                    && expression.charAt(index + 1) == '>') {
-                stages.add(expression.substring(start, index).trim());
-                start = index + 2;
-                index++;
-            }
-        }
-        stages.add(expression.substring(start).trim());
-        return stages;
     }
 
     private static Set<String> reraisedVariants(List<Stmt> body, int raiseIndex,

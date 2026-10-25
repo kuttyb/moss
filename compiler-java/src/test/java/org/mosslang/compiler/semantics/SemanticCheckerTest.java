@@ -343,7 +343,10 @@ public class SemanticCheckerTest {
                 + "fn literal() -> String:\n"
                 + "  return \"failer()\"\n"
                 + "fn main():\n"
-                + "  echo caller()\n", "raise-carrier-propagation.moss");
+                + "  try:\n"
+                + "    echo caller()\n"
+                + "  recover Failure.Bad:\n"
+                + "    pass\n", "raise-carrier-propagation.moss");
         new SemanticChecker(program).run();
         String rust = NativeGenerator.generate(program, false);
         if (!rust.contains("fn middle() -> Result<i64, __MossRaised>")
@@ -2270,6 +2273,22 @@ public class SemanticCheckerTest {
                 + "  recover:\n"
                 + "    pass\n"
                 + "  raise Trouble.Bad\n", "MOSS_COMPILE_ERROR");
+
+        String callbackPrefix = prefix
+                + "fn risky(value: Int) -> Int:\n"
+                + "  raise Trouble.Bad\n"
+                + "fn mapped(values: Vector[Int]) -> Vector[Int]:\n"
+                + "  return values |> map(risky)\n";
+        assertCompileError(callbackPrefix
+                + "fn main():\n"
+                + "  mapped([1])\n", "MOSS_COMPILE_ERROR");
+        Program callbackHandled = Parser.parseSource(callbackPrefix
+                + "fn main():\n"
+                + "  try:\n"
+                + "    mapped([1])\n"
+                + "  recover Trouble.Bad:\n"
+                + "    pass\n", "main-recovers-pipeline-callback-raise.moss");
+        new SemanticChecker(callbackHandled).run();
 
         Program handled = Parser.parseSource(prefix
                 + "fn main():\n"

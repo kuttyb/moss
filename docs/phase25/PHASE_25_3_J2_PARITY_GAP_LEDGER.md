@@ -787,3 +787,21 @@ C++/Java query probes agree. Bound-method callbacks, generic callback
 specialization, and cross-module callback effects remain open. This corrects
 query reporting only; native execution and root raise checking for callback
 invocation have not been validated here.
+
+
+### Correction — enforce root recovery for callback and value-returning raises
+
+A raising function referenced as `map(risky)` produced an effects-query delta,
+then exposed a checker defect: Java allowed the call from `main` to escape
+unhandled, while C++ rejected it. Root function-raise collection now follows
+named callbacks in all recognized pipeline stages. It also checks raises from
+value-returning functions; the previous return-type filter allowed such failures
+to escape. Focused semantic tests cover rejection without recovery and acceptance
+with a matching `recover`. An existing return-carrier test now recovers its
+raised variant, matching the C++ root contract. Focused Java semantic tests pass.
+Rust compilation and execution remain deferred.
+
+Validation refresh: after the root callback raise correction and shared pipeline
+callback parser, `scripts/java/test.sh` and
+`MOSS_STAGED_ABI=v10 scripts/java/test.sh` each pass all 12 Java test classes.
+No Rust compilation/native execution or SDK gate was run.

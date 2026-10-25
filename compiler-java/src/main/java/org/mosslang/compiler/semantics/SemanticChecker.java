@@ -2652,8 +2652,6 @@ public class SemanticChecker {
             String expression = statementExpressionText(statements.get(statementIndex));
             if (expression.isBlank()) continue;
             for (Function function : functions.values()) {
-                if (function.returnType != null && !function.returnType.isBlank()
-                        && !"unit".equalsIgnoreCase(function.returnType)) continue;
                 if (!containsFunctionCall(expression, function.name)) continue;
                 for (String variant : collectFunctionRaiseVariants(function, new HashSet<>())) {
                     if (!isRaiseHandled(statements, statementIndex, variant)) {
@@ -2748,7 +2746,9 @@ public class SemanticChecker {
                                                     int callIndex, Set<String> visited,
                                                     Set<String> variants) {
         for (Function candidate : functions.values()) {
-            if (!containsFunctionCall(expression, candidate.name)) continue;
+            if (!containsFunctionCall(expression, candidate.name)
+                    && !org.mosslang.compiler.parser.ParserSupport
+                            .usesPipelineFunctionCallback(expression, candidate.name)) continue;
             for (String raised : collectFunctionRaiseVariants(candidate, visited)) {
                 if (!isRaiseHandled(callerBody, callIndex, raised)) variants.add(raised);
             }
@@ -4738,14 +4738,18 @@ public class SemanticChecker {
             for (String expression : expressions) {
                 if (expression == null) continue;
                 for (Function called : functions.values()) {
-                    if (containsFunctionCall(expression, called.name))
+                    if (containsFunctionCall(expression, called.name)
+                            || org.mosslang.compiler.parser.ParserSupport
+                                    .usesPipelineFunctionCallback(expression, called.name))
                         collectRootVisibleFunctionRaises(called, raised, visited);
                 }
             }
         }
         if (function.resultExpression != null) {
             for (Function called : functions.values()) {
-                if (containsFunctionCall(function.resultExpression, called.name))
+                if (containsFunctionCall(function.resultExpression, called.name)
+                        || org.mosslang.compiler.parser.ParserSupport
+                                .usesPipelineFunctionCallback(function.resultExpression, called.name))
                     collectRootVisibleFunctionRaises(called, raised, visited);
             }
         }
