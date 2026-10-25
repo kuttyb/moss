@@ -1784,6 +1784,8 @@ public class SemanticCheckerTest {
                 "MOSS_COMPILE_ERROR");
         assertCompileError(prefix + "range(0, 3, 1, 2)" + suffix, "TYPE_MISMATCH");
         assertCompileError(prefix + "range(0, true)" + suffix, "MOSS_COMPILE_ERROR");
+        assertCompileError("fn main():\n  values = range(0, 3)\n",
+                "RANGE_OUTSIDE_FOR");
 
         Program valid = Parser.parseSource(""
                 + "fn main():\n"

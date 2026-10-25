@@ -15939,3 +15939,16 @@ The standalone JAR was rebuilt; its launcher rejects the zero-step reproducer
 with the matching diagnostic. The feedback validator passes. Broader semantic,
 backend, source-free, Margo/SDK, daemon, and frozen-candidate acceptance remain
 open; no expensive native or full-repository gates were run.
+
+### Phase 25.3 follow-up — reject range values outside for sources
+
+A second range probe found Java accepted `values = range(0, 3)`, which C++
+rejects with `RANGE_OUTSIDE_FOR`. Expression typing now permits `range` only
+when the complete expression is the current `for` loop's iteration source;
+ordinary or nested range values fail with the matching diagnostic. A semantic
+regression and paired CLI probe verify the rejection.
+
+The twelve Java unit-test classes pass under ABI-v9 and staged ABI-v10. The
+standalone JAR was rebuilt and also reports `RANGE_OUTSIDE_FOR` for the probe.
+Feedback validation and `git diff --check` pass. The Phase 25.3 native/backend,
+source-free, Margo/SDK, daemon, and frozen-candidate gates remain open.

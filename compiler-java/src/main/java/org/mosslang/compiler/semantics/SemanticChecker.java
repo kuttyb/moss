@@ -3739,7 +3739,7 @@ public class SemanticChecker {
                 String iterExpr = s.b != null ? s.b.trim() : "";
                 if (!iterExpr.isEmpty()) {
                     validateRangeForSource(s.line, iterExpr, typer, solver, env.typeEnv);
-                    TypeRef iterType = typer.infer(iterExpr, s.line, env.typeEnv);
+                    TypeRef iterType = typer.inferForLoopSource(iterExpr, s.line, env.typeEnv);
                     if (iterType.kind() == TypeKind.Builtin
                             && ("map".equals(iterType.name()) || "queue".equals(iterType.name()))) {
                         throw new CompileError(s.line, "type '" + iterType.toCanonicalString()

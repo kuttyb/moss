@@ -23,6 +23,7 @@ public class ExpressionTyper {
     public String currentCallerSpecializationKey = null;
     public TypeRef currentExpectedType = null;
     public boolean allowOpenGenericArithmetic = false;
+    private String allowedRangeForSource;
 
     public ExpressionTyper(Program program,
                            TypeContext typeContext,
@@ -43,6 +44,17 @@ public class ExpressionTyper {
     }
 
     public record BinarySplit(String left, String op, String right) {}
+
+    public TypeRef inferForLoopSource(String expression, int line, TypeEnv env) {
+        String previous = allowedRangeForSource;
+        allowedRangeForSource = stripRedundantParentheses(
+                expression == null ? "" : expression.trim());
+        try {
+            return infer(expression, line, env);
+        } finally {
+            allowedRangeForSource = previous;
+        }
+    }
 
     public TypeRef infer(String expression, int line, TypeEnv env) {
         if (expression == null) {
@@ -351,6 +363,11 @@ public class ExpressionTyper {
                     return TypeRef.unit();
                 }
                 if ("range".equals(callee)) {
+                    if (!e.equals(allowedRangeForSource)) {
+                        throw new CompileError(line,
+                                "range(start, end[, step]) is only valid as a for-loop source, not a value (P25-S-ARCH-017)",
+                                "RANGE_OUTSIDE_FOR");
+                    }
                     for (String arg : argExprs) {
                         TypeRef a = infer(arg, line, env);
                         solver.unify(a, TypeRef.primitive("int"));
