@@ -1255,6 +1255,7 @@ public class SemanticChecker {
                 }
             }
             env = checkBlock(program.main.body, 0, program.main.body.size(), env, typer, solver, false, "main", TypeRef.unit());
+            validateRootIngressRaiseTotality(program.main.body, env, solver);
             checkConcreteDomainRouteCycles(program.main.body);
             for (Stmt s : program.main.body) {
                 if ((s.kind == Stmt.Kind.Let || s.kind == Stmt.Kind.Var || s.kind == Stmt.Kind.Assign) && s.a != null) {
@@ -1908,6 +1909,118 @@ public class SemanticChecker {
             }
         }
         return true;
+    }
+
+    private void validateRootIngressRaiseTotality(List<Stmt> statements, OwnershipEnv mainEnv,
+                                                  TypeSolver solver) {
+        for (Stmt statement : statements) {
+            if (statement.kind == Stmt.Kind.Call && "invoke".equals(statement.b)
+                    && statement.args.size() == 1) {
+                TypeRef executorType = mainEnv.get(statement.a);
+                if (executorType != null && "Executor".equals(solver.resolve(executorType).name())) {
+                    validateRootIngress(statement.args.get(0), statement.line, "executor.invoke Root",
+                            mainEnv, solver);
+                }
+            }
+            if (statement.kind == Stmt.Kind.Message) {
+                validateRootIngress(statement.a + "." + statement.b + "()", statement.line,
+                        "synchronous Root message", mainEnv, solver);
+            }
+            List<String> sourceExpressions = new ArrayList<>();
+            sourceExpressions.add(statement.text);
+            sourceExpressions.add(statement.a);
+            sourceExpressions.add(statement.b);
+            sourceExpressions.addAll(statement.args);
+            for (String expression : sourceExpressions) {
+                if (expression == null || !expression.contains("message")) continue;
+                java.util.regex.Matcher matcher = java.util.regex.Pattern
+                        .compile("message\\s+([A-Za-z_][A-Za-z0-9_]*)\\.([A-Za-z_][A-Za-z0-9_]*)\\s*\\(")
+                        .matcher(expression);
+                while (matcher.find()) {
+                    validateRootIngress(matcher.group(1) + "." + matcher.group(2) + "()",
+                            statement.line, "synchronous Root message", mainEnv, solver);
+                }
+            }
+        }
+    }
+
+    private void validateRootIngress(String invocation, int line, String ingress,
+                                     OwnershipEnv mainEnv, TypeSolver solver) {
+        String target = invocation.trim();
+        int open = target.indexOf('(');
+        int dot = target.indexOf('.');
+        if (dot <= 0 || open <= dot || !target.endsWith(")")) return;
+        String receiver = target.substring(0, dot).trim();
+        String handlerName = target.substring(dot + 1, open).trim();
+        TypeRef receiverType = mainEnv.get(receiver);
+        Domain domain = receiverType == null ? null : domains.get(solver.resolve(receiverType).name());
+        if (domain == null) return;
+        Handler handler = domain.handlers.stream()
+                .filter(candidate -> handlerName.equals(candidate.name)).findFirst().orElse(null);
+        if (handler == null || !handler.failureArms.isEmpty()
+                || handler.body.stream().anyMatch(s -> s.kind == Stmt.Kind.Try
+                        || s.kind == Stmt.Kind.Recover)) return;
+        Set<String> raised = new LinkedHashSet<>();
+        Set<String> visitedFunctions = new HashSet<>();
+        for (Stmt bodyStatement : handler.body) {
+            if (bodyStatement.kind == Stmt.Kind.Raise && bodyStatement.a != null
+                    && !bodyStatement.a.isBlank()) {
+                String variant = bodyStatement.a.trim();
+                int payload = variant.indexOf('(');
+                raised.add(payload < 0 ? variant : variant.substring(0, payload).trim());
+            }
+            List<String> expressions = new ArrayList<>();
+            expressions.add(bodyStatement.text);
+            expressions.add(bodyStatement.a);
+            expressions.add(bodyStatement.b);
+            expressions.addAll(bodyStatement.args);
+            for (String expression : expressions) {
+                if (expression == null) continue;
+                for (Function function : functions.values()) {
+                    if (expression.contains(function.name + "("))
+                        collectRootVisibleFunctionRaises(function, raised, visitedFunctions);
+                }
+            }
+        }
+        if (raised.isEmpty()) return;
+        CompileError error = new CompileError(line, ingress + " of '" + domain.name + "."
+                + handlerName + "' may raise " + String.join(", ", raised)
+                + " without an exhaustive on_fail trailer; recover inside the handler or attach on_fail",
+                "ROOT_UNHANDLED_RAISE");
+        error.setSemanticIdentity(currentSemanticIdentity);
+        throw error;
+    }
+
+    private void collectRootVisibleFunctionRaises(Function function, Set<String> raised,
+                                                   Set<String> visited) {
+        if (function == null || !visited.add(function.name)
+                || function.body.stream().anyMatch(s -> s.kind == Stmt.Kind.Try
+                        || s.kind == Stmt.Kind.Recover)) return;
+        for (Stmt statement : function.body) {
+            if (statement.kind == Stmt.Kind.Raise && statement.a != null && !statement.a.isBlank()) {
+                String variant = statement.a.trim();
+                int payload = variant.indexOf('(');
+                raised.add(payload < 0 ? variant : variant.substring(0, payload).trim());
+            }
+            List<String> expressions = new ArrayList<>();
+            expressions.add(statement.text);
+            expressions.add(statement.a);
+            expressions.add(statement.b);
+            expressions.addAll(statement.args);
+            for (String expression : expressions) {
+                if (expression == null) continue;
+                for (Function called : functions.values()) {
+                    if (expression.contains(called.name + "("))
+                        collectRootVisibleFunctionRaises(called, raised, visited);
+                }
+            }
+        }
+        if (function.resultExpression != null) {
+            for (Function called : functions.values()) {
+                if (function.resultExpression.contains(called.name + "("))
+                    collectRootVisibleFunctionRaises(called, raised, visited);
+            }
+        }
     }
 
     private TypeRef recoveryBindingType(List<Stmt> statements, int start, int recoverIndex, int indent) {

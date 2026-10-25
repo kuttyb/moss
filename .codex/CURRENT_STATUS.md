@@ -14127,3 +14127,24 @@ and 22 rejected by both. Remaining divergences include error-edge ownership,
 FileIO/iterator support, and grouped/nested recovery handling; they remain
 unresolved and are not collapsed into a single parity claim. All 11 Java test
 classes pass in ABI-v9 and staged ABI-v10.
+
+### Phase 25.3 continuation — root ingress raise totality
+
+A follow-up to the executor root false accept found Java also allowed escaping
+raises at synchronous root messages, including a message nested inside a main
+expression and a handler whose raise came through a helper return expression.
+Java now resolves executor submissions and top-level synchronous root message
+sites to their statically named handler, follows Moss function calls while
+collecting direct raise variants (including return expressions), and rejects a
+nonempty escaping set when no `on_fail` arms exist. Handlers with local
+try/recover or failure arms remain conservative and are not reanalyzed by this
+bounded root path.
+
+`phase21_executor_unhandled_raise`, `phase21_root_nested_ingress_unhandled`,
+and `phase21_field_projection_root` now reject with `ROOT_UNHANDLED_RAISE` in
+Java, matching C++. `phase21_executor_root_total` remains accepted, and a
+focused SemanticCheckerTest covers both rejected unhandled roots and a helper
+raise reached from a synchronous root message. ABI-v9 and staged ABI-v10 Java
+suites pass all 11 classes. The refreshed 91-file acceptance screen now has 8
+C++-only accepts, 2 Java-only accepts, 53 accepted by both, and 28 rejected by
+both. Overall Phase 25.3 remains incomplete.

@@ -43,6 +43,8 @@ public class SemanticCheckerTest {
         testOnFailRejectsBranchEscapingRaise();
         testUnreachableRecoverDoesNotConsumeReachableOwnership();
         testBareRaiseOutsideRecoverIsRejected();
+        testExecutorRootRequiresRaiseHandling();
+        testSynchronousRootMessagePropagatesHelperRaises();
         System.out.println("SemanticCheckerTest PASSED.");
     }
 
@@ -796,6 +798,50 @@ public class SemanticCheckerTest {
                 + "  recover Failure.Bad:\n"
                 + "    raise\n", "bare-raise-recover-scope.moss");
         new SemanticChecker(valid).run();
+    }
+
+    private static void testExecutorRootRequiresRaiseHandling() {
+        assertCompileError(""
+                + "enum Failure:\n"
+                + "  Bad\n"
+                + "domain Worker:\n"
+                + "  fn Run():\n"
+                + "    raise Failure.Bad\n"
+                + "fn main():\n"
+                + "  worker = Worker()\n"
+                + "  executor = Executor().threads(1).start()\n"
+                + "  executor.invoke(worker.Run())\n"
+                + "  executor.join()\n", "ROOT_UNHANDLED_RAISE");
+        Program handled = Parser.parseSource(""
+                + "enum Failure:\n"
+                + "  Bad\n"
+                + "domain Worker:\n"
+                + "  fn Run():\n"
+                + "    raise Failure.Bad\n"
+                + "  on_fail Failure.Bad:\n"
+                + "    pass\n"
+                + "fn main():\n"
+                + "  worker = Worker()\n"
+                + "  executor = Executor().threads(1).start()\n"
+                + "  executor.invoke(worker.Run())\n"
+                + "  executor.join()\n", "executor-root-handled.moss");
+        new SemanticChecker(handled).run();
+    }
+
+    private static void testSynchronousRootMessagePropagatesHelperRaises() {
+        assertCompileError(""
+                + "enum Failure:\n"
+                + "  Bad\n"
+                + "fn fail() -> Int:\n"
+                + "  raise Failure.Bad\n"
+                + "fn projected() -> Int:\n"
+                + "  return fail() + 1\n"
+                + "domain Worker:\n"
+                + "  fn Run():\n"
+                + "    echo projected()\n"
+                + "fn main():\n"
+                + "  worker = Worker()\n"
+                + "  message worker.Run()\n", "ROOT_UNHANDLED_RAISE");
     }
 
     private static void assertCompileError(String source, String code) {
