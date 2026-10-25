@@ -1573,7 +1573,7 @@ public class SemanticChecker {
             String variant = statement.a.trim();
             int payload = variant.indexOf('(');
             if (payload >= 0) variant = variant.substring(0, payload).trim();
-            if (!isMainRaiseHandled(statements, raiseIndex, variant)) {
+            if (!isRaiseHandled(statements, raiseIndex, variant)) {
                 throw new CompileError(program.main.line,
                         "main may not let typed errors escape; handle every raised variant with try/recover",
                         "MOSS_COMPILE_ERROR");
@@ -1581,7 +1581,7 @@ public class SemanticChecker {
         }
     }
 
-    private boolean isMainRaiseHandled(List<Stmt> statements, int raiseIndex, String variant) {
+    public static boolean isRaiseHandled(List<Stmt> statements, int raiseIndex, String variant) {
         if (statements == null || raiseIndex < 0 || raiseIndex >= statements.size()) return false;
         Stmt raised = statements.get(raiseIndex);
         for (int tryIndex = 0; tryIndex < raiseIndex; tryIndex++) {
@@ -1629,7 +1629,7 @@ public class SemanticChecker {
                         String receiverType = resolveMainReceiverType(matcher.group(1), env, solver);
                         if (!matchesObjectTypeName(receiverType, object.name)) continue;
                         for (String variant : collectMethodRaiseVariants(method, new HashSet<>())) {
-                            if (!isMainRaiseHandled(statements, statementIndex, variant)) {
+                            if (!isRaiseHandled(statements, statementIndex, variant)) {
                                 throw new CompileError(program.main.line,
                                         "main may not let typed errors escape; handle every raised variant with try/recover",
                                         "MOSS_COMPILE_ERROR");
@@ -1650,7 +1650,7 @@ public class SemanticChecker {
                         && !"unit".equalsIgnoreCase(function.returnType)) continue;
                 if (!containsFunctionCall(expression, function.name)) continue;
                 for (String variant : collectFunctionRaiseVariants(function, new HashSet<>())) {
-                    if (!isMainRaiseHandled(statements, statementIndex, variant)) {
+                    if (!isRaiseHandled(statements, statementIndex, variant)) {
                         throw new CompileError(program.main.line,
                                 "main may not let typed errors escape; handle every raised variant with try/recover",
                                 "MOSS_COMPILE_ERROR");
@@ -1674,7 +1674,7 @@ public class SemanticChecker {
                 boolean raisesFromFunctionCall = payload > 0 && functions.containsKey(callee);
                 if (!raisesFromFunctionCall) {
                     if (payload >= 0) variant = variant.substring(0, payload).trim();
-                    if (!isMainRaiseHandled(function.body, index, variant)) variants.add(variant);
+                    if (!isRaiseHandled(function.body, index, variant)) variants.add(variant);
                 }
             }
             String expression = statementExpressionText(statement);
@@ -1705,7 +1705,7 @@ public class SemanticChecker {
                     String receiverType = resolveFunctionReceiverType(matcher.group(1), bindings);
                     if (!matchesObjectTypeName(receiverType, object.name)) continue;
                     for (String raised : collectMethodRaiseVariants(method, visited)) {
-                        if (!isMainRaiseHandled(caller.body, callIndex, raised)) variants.add(raised);
+                        if (!isRaiseHandled(caller.body, callIndex, raised)) variants.add(raised);
                     }
                 }
             }
@@ -1736,7 +1736,7 @@ public class SemanticChecker {
         for (Function candidate : functions.values()) {
             if (!containsFunctionCall(expression, candidate.name)) continue;
             for (String raised : collectFunctionRaiseVariants(candidate, visited)) {
-                if (!isMainRaiseHandled(callerBody, callIndex, raised)) variants.add(raised);
+                if (!isRaiseHandled(callerBody, callIndex, raised)) variants.add(raised);
             }
         }
     }
@@ -1782,7 +1782,7 @@ public class SemanticChecker {
                 String variant = statement.a.trim();
                 int payload = variant.indexOf('(');
                 if (payload >= 0) variant = variant.substring(0, payload).trim();
-                if (!isMainRaiseHandled(method.body, index, variant)) variants.add(variant);
+                if (!isRaiseHandled(method.body, index, variant)) variants.add(variant);
             }
             String expression = statementExpressionText(statement);
             collectNestedFunctionRaiseVariants(expression, method.body, index, visited, variants);

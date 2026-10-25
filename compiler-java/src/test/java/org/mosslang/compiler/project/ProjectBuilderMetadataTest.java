@@ -101,7 +101,12 @@ public final class ProjectBuilderMetadataTest {
                 + "enum Failure:\n"
                 + "  Bad\n"
                 + "  Other\n"
+                + "  Caught\n"
                 + "export fn signal(enabled: Bool):\n"
+                + "  try:\n"
+                + "    raise Failure.Caught\n"
+                + "  recover Failure.Caught:\n"
+                + "    pass\n"
                 + "  if enabled:\n"
                 + "    raise Failure.Bad\n"
                 + "  else:\n"
@@ -117,7 +122,7 @@ public final class ProjectBuilderMetadataTest {
                 program, toolchain, java.util.List.of(), Path.of("tmp"), java.util.Map.of());
         String text = new String(interfaceBytes, java.nio.charset.StandardCharsets.UTF_8);
         String raiseSet = "raise_set=enum:provider__Failure:Bad,enum:provider__Failure:Other";
-        if (!text.contains(raiseSet)) {
+        if (!text.contains(raiseSet) || text.contains("enum:provider__Failure:Caught")) {
             throw new AssertionError("source-free function metadata omitted a raised variant: " + text);
         }
         Path scratch = Path.of("tmp");
@@ -131,7 +136,8 @@ public final class ProjectBuilderMetadataTest {
                     .filter(function -> function.name.equals("provider.signal"))
                     .findFirst().orElseThrow(() -> new AssertionError("multi-raise function was not imported"));
             if (!imported.sourceFreeRaiseVariants.contains("provider__Failure.Bad")
-                    || !imported.sourceFreeRaiseVariants.contains("provider__Failure.Other")) {
+                    || !imported.sourceFreeRaiseVariants.contains("provider__Failure.Other")
+                    || imported.sourceFreeRaiseVariants.contains("provider__Failure.Caught")) {
                 throw new AssertionError("source-free loader did not restore every raise variant: "
                         + imported.sourceFreeRaiseVariants);
             }

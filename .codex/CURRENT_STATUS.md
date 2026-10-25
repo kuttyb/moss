@@ -15450,15 +15450,16 @@ incremental builds remain environment-dependent and unverified.
 
 `ProjectBuilder.raisedErrorIdentity` returned after the first direct `raise`,
 so exported function metadata could omit later enum variants. The writer now
-collects distinct direct raise identities in source order and serializes the
-comma-separated `raise_set`. A provider fixture raises `Failure.Bad` and
-`Failure.Other` from separate branches; its generated ABI metadata contains
-both variants, and the source-free loader restores both on the imported
-function.
+collects distinct uncaught direct raise identities in source order and
+serializes the comma-separated `raise_set`, using the semantic checker's
+recover-coverage rule to omit handled raises. A provider fixture catches
+`Failure.Caught` and raises `Failure.Bad` and `Failure.Other` from separate
+branches; the source-free loader restores only the two escaping variants.
 
 All twelve Java unit classes pass under ABI-v9 defaults and staged ABI-v10.
-This covers direct raises in a simple branch fixture; checked/caught raise
-projection and native source-free execution remain open.
+This covers direct raises and exact recover coverage in a branch fixture;
+transitive/method-raised effect projection and native source-free execution
+remain open.
 
 
 ### Phase 25.3 continuation — ignore method-like text in string literals

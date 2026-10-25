@@ -2505,13 +2505,16 @@ public class ProjectBuilder {
 
     private static String raisedErrorIdentity(String module, List<Stmt> body) {
         Set<String> variants = new java.util.LinkedHashSet<>();
-        for (Stmt statement : body) {
+        for (int statementIndex = 0; statementIndex < body.size(); statementIndex++) {
+            Stmt statement = body.get(statementIndex);
             if (statement.kind != Stmt.Kind.Raise
                     && (statement.text == null || !statement.text.trim().startsWith("raise "))) continue;
             String value = statement.a != null ? statement.a.trim() : "";
             if (value.isEmpty() && statement.text != null && statement.text.trim().startsWith("raise ")) {
                 value = statement.text.trim().substring(6).trim();
             }
+            if (org.mosslang.compiler.semantics.SemanticChecker.isRaiseHandled(
+                    body, statementIndex, value)) continue;
             int paren = value.indexOf('(');
             if (paren >= 0) value = value.substring(0, paren).trim();
             int dot = value.lastIndexOf('.');
