@@ -14876,9 +14876,13 @@ the return-parameter profile preserves the checked access mode. The source-free
 regression removes the object's legacy semantic rows, imports only its nominal
 and method-template records, and type-checks eight signatures, including a
 `Vector[Int]` identity and a three-parameter method that consumes only its
-returned String argument.
+returned String argument. The test also removes legacy `enum:`, `domain:`, and
+`type:Point` binary records, so the nominal and method-template records are the
+only source of the point declaration and signatures.
 
 Validation: all eleven Java unit-test classes pass in staged ABI-v10 and ABI-v9.
+The strengthened record-stripping regression was rerun under staged ABI-v10 on
+this tree and passed all eleven classes.
 This proves only signature projection for pure primitive-literal returns and
 unchanged typed parameter returns with checked access modes. General body
 summaries, method effects, generic methods, native linkage, and ABI-v10 contract

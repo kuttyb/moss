@@ -526,7 +526,8 @@ public final class ProjectBuilderMetadataTest {
         MossiInterface methodTemplateOnly = CheckedBodyCodec.verifySourceFree(generated);
         methodTemplateOnly.semanticContract.clear();
         methodTemplateOnly.binaryContract.removeIf(record ->
-                record.id.startsWith("enum:") || record.id.startsWith("domain:"));
+                record.id.startsWith("enum:") || record.id.startsWith("domain:")
+                        || record.id.startsWith("type:"));
         Path methodTemplateOnlyFile = Path.of("tmp", "java-method-template-only.mossi");
         try {
             Files.write(methodTemplateOnlyFile, CheckedBodyCodec.encodeMossiBytes(methodTemplateOnly));
