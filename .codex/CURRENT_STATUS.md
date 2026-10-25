@@ -13228,3 +13228,8 @@ ABI-v9 and staged ABI-v10 modes. The minimal generic identity source is accepted
 by both compiler `check --json` commands. Feedback validation and
 `git diff --check` pass. Broader generic inference and ABI summary production
 remain open.
+
+Follow-up generic identity validation: the same function is called once with
+`Int` and once with `String`; both C++ and Java accept the program, and Java's
+specialization facts retain both concrete parameter types. All ten Java test
+classes pass in staged ABI-v10 after this expanded regression.

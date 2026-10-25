@@ -37,7 +37,8 @@ public class SemanticCheckerTest {
                 + "fn identity(value):\n"
                 + "  return value\n"
                 + "fn main():\n"
-                + "  pass\n", "open-parameter-facts.moss");
+                + "  number = identity(1)\n"
+                + "  text = identity(\"x\")\n", "open-parameter-facts.moss");
         new SemanticChecker(program).run();
         Function identity = program.functions.stream()
                 .filter(function -> function.name.equals("identity"))
@@ -54,6 +55,11 @@ public class SemanticCheckerTest {
         if (identity.params.get(0).typeRef != null
                 || identity.params.get(0).type == null || !identity.params.get(0).type.isEmpty()) {
             throw new AssertionError("checker facts must not masquerade as a source annotation");
+        }
+        if (!identity.specializations.stream().anyMatch(s -> s.parameterTypes.contains("int"))
+                || !identity.specializations.stream().anyMatch(s -> s.parameterTypes.contains("string"))) {
+            throw new AssertionError("generic identity calls did not retain both concrete types: "
+                    + identity.specializations.stream().map(s -> s.parameterTypes.toString()).toList());
         }
     }
 
