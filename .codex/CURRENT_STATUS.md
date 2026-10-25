@@ -15370,6 +15370,11 @@ classes pass under ABI-v9 defaults and staged ABI-v10; `git diff --check`
 passes. Provider-crate Rust compilation and native linkage remain unverified
 and are still final-gate items.
 
+The staged ABI-v10 source-free function fixture also emits
+`moss_service::make()` and no dotted local stub. This confirms the same
+generated path shape for one supported ABI-v10 concrete function record; it
+does not validate provider-crate linkage.
+
 
 ### Phase 25.3 continuation — summarize imported method access through helpers
 

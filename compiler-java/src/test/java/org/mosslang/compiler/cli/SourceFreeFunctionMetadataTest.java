@@ -221,6 +221,23 @@ public final class SourceFreeFunctionMetadataTest {
             Path makeOnlyFile = Files.createTempFile(scratch, "java-source-free-v10-return-", ".mossi");
             try {
                 Files.write(makeOnlyFile, CheckedBodyCodec.encodeMossiBytes(makeOnly));
+                Program sourceFreeV10Call = Parser.parseSource(""
+                        + "import service\n"
+                        + "fn main():\n"
+                        + "  values = service.make()\n", "source-free-v10-function-call.moss");
+                Main.loadMossiFunctions(makeOnlyFile, "service", sourceFreeV10Call);
+                sourceFreeV10Call.functions.removeIf(function -> !function.name.equals("main")
+                        && !function.name.equals("service.make")
+                        && !function.name.equals("service__make"));
+                new SemanticChecker(sourceFreeV10Call).run();
+                String sourceFreeV10Rust = org.mosslang.compiler.backend.NativeGenerator.generate(
+                        sourceFreeV10Call, false);
+                if (!sourceFreeV10Rust.contains("moss_service::make()")
+                        || sourceFreeV10Rust.contains("pub fn service.make()")) {
+                    throw new AssertionError("ABI-v10 source-free function did not use its provider path: "
+                            + sourceFreeV10Rust);
+                }
+
                 Main.loadMossiFunctions(makeOnlyFile, "service", consumer);
                 Function importedConsume = consumer.functions.stream()
                         .filter(function -> function.name.equals("service.consume"))
