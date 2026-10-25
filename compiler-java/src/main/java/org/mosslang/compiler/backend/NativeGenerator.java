@@ -2190,6 +2190,77 @@ public class NativeGenerator {
         return type;
     }
 
+    private static String scalarExpressionType(String expression) {
+        String value = expression == null ? "" : expression.trim();
+        org.mosslang.compiler.types.TypeRef binding = scalarExpressionTypeRef(value, 0);
+        if (binding != null && Set.of("int", "float", "bool", "char", "string")
+                .contains(binding.name())) return binding.name();
+        if (value.equals("true") || value.equals("false")) return "bool";
+        if (value.length() >= 2 && value.startsWith("\"") && value.endsWith("\"")) return "string";
+        if (value.length() >= 3 && value.startsWith("'") && value.endsWith("'")) return "char";
+        if (value.matches("[+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)(?:[eE][+-]?[0-9]+)?"))
+            return value.contains(".") || value.contains("e") || value.contains("E") ? "float" : "int";
+        return "";
+    }
+
+    private static org.mosslang.compiler.types.TypeRef scalarExpressionTypeRef(String expression, int depth) {
+        if (expression == null || expression.isBlank() || depth > 12) return null;
+        String value = expression.trim();
+        org.mosslang.compiler.types.TypeRef binding = bindingTypeRef(value);
+        if (binding != null) return binding;
+        if (value.endsWith("]")) {
+            int open = ExpressionTyper.findMatchingOpenBracket(value, value.length() - 1);
+            if (open > 0) {
+                org.mosslang.compiler.types.TypeRef base = scalarExpressionTypeRef(
+                        value.substring(0, open), depth + 1);
+                if (base != null && !base.typeArgs().isEmpty()) return base.typeArgs().get(0);
+            }
+        }
+        int dot = value.lastIndexOf('.');
+        if (dot > 0 && dot < value.length() - 1) {
+            org.mosslang.compiler.types.TypeRef base = scalarExpressionTypeRef(
+                    value.substring(0, dot), depth + 1);
+            Program program = currentProgram.get();
+            if (base != null && program != null) {
+                for (ObjectType object : program.objects) {
+                    if (!object.name.equals(base.name()) && !object.name.endsWith("__" + base.name())) continue;
+                    for (Field field : object.fields) {
+                        if (!field.name.equals(value.substring(dot + 1).trim())) continue;
+                        if (field.typeRef != null) return field.typeRef;
+                        if (field.type != null && !field.type.isBlank())
+                            return org.mosslang.compiler.types.TypeParser.parseCanonical(field.type);
+                    }
+                }
+                for (Domain domain : program.domains) {
+                    if (!domain.name.equals(base.name()) && !domain.name.endsWith("__" + base.name())) continue;
+                    for (Field field : domain.state) {
+                        if (!field.name.equals(value.substring(dot + 1).trim())) continue;
+                        if (field.typeRef != null) return field.typeRef;
+                        if (field.type != null && !field.type.isBlank())
+                            return org.mosslang.compiler.types.TypeParser.parseCanonical(field.type);
+                    }
+                }
+            }
+        }
+        int open = value.indexOf('(');
+        if (open > 0 && value.endsWith(")")) {
+            String name = value.substring(0, open).trim();
+            Program program = currentProgram.get();
+            if (program != null) {
+                Function function = program.functions.stream().filter(candidate ->
+                        candidate.name.equals(name) || candidate.declarationName.equals(name)
+                                || candidate.name.equals(name.replace('.', '_'))
+                                || candidate.name.equals(name.replace(".", "__"))).findFirst().orElse(null);
+                if (function != null) {
+                    if (function.returnTypeRef != null) return function.returnTypeRef;
+                    if (function.returnType != null && !function.returnType.isBlank())
+                        return org.mosslang.compiler.types.TypeParser.parseCanonical(function.returnType);
+                }
+            }
+        }
+        return null;
+    }
+
     private static String bindingTypeName(String name, String context) {
         Program program = currentProgram.get();
         if (program == null) return "";
@@ -3216,6 +3287,33 @@ public class NativeGenerator {
                     return callStr + ".unwrap_or_default()";
                 }
                 String loweredRecv = lowerExpr(recv, stateFields, domains, objects);
+                String scalarType = scalarExpressionType(recv);
+                if (Set.of("int", "float", "char", "string", "bool").contains(scalarType)) {
+                    if ((methodName.equals("less") || methodName.equals("isequal"))
+                            && rawArgs.size() == 1) {
+                        String left = loweredRecv;
+                        String right = lowerExpr(rawArgs.get(0).trim(), stateFields, domains, objects);
+                        if (scalarType.equals("float")) {
+                            String helper = methodName.equals("less")
+                                    ? "moss_float_less" : "moss_float_isequal";
+                            return helper + "(" + left + " as f64, " + right + " as f64)";
+                        }
+                        String operator = methodName.equals("less") ? "<" : "==";
+                        return "(&(" + left + ") " + operator + " &(" + right + "))";
+                    }
+                    if (methodName.equals("hash") && rawArgs.isEmpty()) {
+                        return switch (scalarType) {
+                            case "int" -> "(" + loweredRecv + ")";
+                            case "float" -> "moss_float_hash(" + loweredRecv + " as f64)";
+                            case "bool" -> "(if " + loweredRecv + " { 1i64 } else { 0i64 })";
+                            case "char" -> "((" + loweredRecv + ") as u32 as i64)";
+                            case "string" -> "moss_string_hash(&(" + loweredRecv + "))";
+                            default -> loweredRecv;
+                        };
+                    }
+                    if (methodName.equals("to_string") && rawArgs.isEmpty())
+                        return "MossStr::from((" + loweredRecv + ").to_string())";
+                }
                 if (methodName.equals("codepoint") && rawArgs.isEmpty()
                         && ("char".equals(bindingTypeName(recv))
                         || recv.matches("'(?:[^'\\\\]|\\\\.)*'"))) {

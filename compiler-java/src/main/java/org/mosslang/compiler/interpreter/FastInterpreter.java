@@ -220,6 +220,43 @@ public class FastInterpreter {
         return left < right;
     }
 
+    private static boolean mossScalarEqual(Value left, Value right) {
+        if (left.kind != right.kind) return false;
+        return switch (left.kind) {
+            case INT -> left.asInt() == right.asInt();
+            case FLOAT -> {
+                double a = left.asFloat(), b = right.asFloat();
+                if (Double.isNaN(a) && Double.isNaN(b)) yield true;
+                if (a == 0.0 && b == 0.0)
+                    yield Double.doubleToRawLongBits(a) == Double.doubleToRawLongBits(b);
+                yield a == b;
+            }
+            case BOOL -> left.asBool() == right.asBool();
+            case CHAR -> ((Number) left.raw).intValue() == ((Number) right.raw).intValue();
+            case STRING -> left.asString().equals(right.asString());
+            default -> false;
+        };
+    }
+
+    private static long mossScalarHash(Value value) {
+        return switch (value.kind) {
+            case INT -> value.asInt();
+            case FLOAT -> Double.isNaN(value.asFloat()) ? 0x7ff8000000000000L
+                    : Double.doubleToRawLongBits(value.asFloat());
+            case BOOL -> value.asBool() ? 1L : 0L;
+            case CHAR -> ((Number) value.raw).longValue();
+            case STRING -> {
+                long hash = 0xcbf29ce484222325L;
+                for (byte item : value.asString().getBytes(java.nio.charset.StandardCharsets.UTF_8)) {
+                    hash ^= item & 0xffL;
+                    hash *= 0x100000001b3L;
+                }
+                yield hash;
+            }
+            default -> 0L;
+        };
+    }
+
     private static int compareCodePointStrings(String left, String right) {
         int[] leftPoints = left.codePoints().toArray();
         int[] rightPoints = right.codePoints().toArray();
@@ -2348,6 +2385,17 @@ public class FastInterpreter {
                     } catch (Exception ignored) {}
                 }
                 if (recvVal != null) {
+                    if (Set.of(Value.Kind.INT, Value.Kind.FLOAT, Value.Kind.BOOL,
+                            Value.Kind.CHAR, Value.Kind.STRING).contains(recvVal.kind)) {
+                        if (methodName.equals("less") && evaluatedArgs.size() == 1)
+                            return Value.ofBool(compareSortValues(recvVal, evaluatedArgs.get(0)) < 0);
+                        if (methodName.equals("isequal") && evaluatedArgs.size() == 1)
+                            return Value.ofBool(mossScalarEqual(recvVal, evaluatedArgs.get(0)));
+                        if (methodName.equals("hash") && evaluatedArgs.isEmpty())
+                            return Value.ofInt(mossScalarHash(recvVal));
+                        if (methodName.equals("to_string") && evaluatedArgs.isEmpty())
+                            return Value.ofString(recvVal.toString());
+                    }
                     if (recvVal.kind == Value.Kind.STRING) {
                         if (methodName.equals("length") || methodName.equals("len") || methodName.equals("size")) {
                             return Value.ofInt(recvVal.asString().codePointCount(0, recvVal.asString().length()));

@@ -16034,3 +16034,23 @@ The escaped Char probe returns `65` and `44` in both C++ and Java Fast Debug;
 Java-generated Rust contains the expected `as u32 as i64` conversions. Invalid
 arity is rejected by both checkers. Rust was inspected, not compiled; native and
 broader release acceptance remain open.
+
+### Phase 25.3 continuation — scalar protocol methods
+
+C++ accepts scalar receiver methods `less`, `isequal`, `hash`, and `to_string`
+for Int, Float, Char, String, and Bool, while Java previously rejected them.
+Java now checks exact arity and matching scalar argument types, evaluates the
+methods in Fast Debug, and lowers type-specific Rust operations. Float equality
+preserves Moss NaN and signed-zero rules; float and string hashing use the C++
+Moss hash definitions. Scalar receiver typing covers local bindings, object and
+domain fields, vector indexing, function results, and literals.
+
+Validation: all twelve Java test classes pass in default ABI-v9 and staged
+ABI-v10. A focused C++/Java Fast Debug sample covering Int, Float, Char, and
+String comparisons and hashes produces identical output. Java unit tests also
+cover Bool methods, NaN equality, signed-zero inequality, and String conversion;
+the C++ Fast Debug interpreter has known unsupported paths for Bool comparison
+and String `to_string`, so those are Java semantic tests rather than differential
+runtime claims. Generated Rust was inspected by focused assertions but not
+compiled. Standalone packaging and `moss-0.1` bootstrap pass; native and wider
+release gates remain open.

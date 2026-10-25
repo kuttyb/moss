@@ -51,6 +51,7 @@ public final class FastInterpreterTest {
         testGeneralPipelineCallbacksAndTerminals();
         testSortAndReverseRuntimeSemantics();
         testCharCodepointMethod();
+        testScalarProtocolMethods();
         testTypedVectorFunctionTraceIncludesElementSpecialization();
         testFunctionTraceIncludesSelectedSpecialization();
         testNestedDomainFailurePropagatesToCallerRecovery();
@@ -1224,6 +1225,30 @@ public final class FastInterpreterTest {
         String actual = stdout.toString(StandardCharsets.UTF_8);
         if (!expected.equals(actual))
             throw new AssertionError("Char.codepoint() returned unexpected values: " + actual);
+    }
+
+    private static void testScalarProtocolMethods() {
+        var program = Parser.parseSource(""
+                + "fn main():\n"
+                + "  echo 2.less(3)\n"
+                + "  echo 2.isequal(2)\n"
+                + "  echo 4.hash()\n"
+                + "  echo 4.to_string()\n"
+                + "  echo 1.5.less(2.0)\n"
+                + "  echo 'A'.less('B')\n"
+                + "  echo \"a\".less(\"b\")\n"
+                + "  echo true.isequal(true)\n"
+                + "  echo 0.0.isequal(-0.0)\n"
+                + "  nan = 0.0 / 0.0\n"
+                + "  echo nan.isequal(nan)\n", "fast-interpreter-scalar-protocol.moss");
+        new CheckedProgram(program).run();
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+        new FastInterpreter(program, false, new PrintStream(stdout),
+                new PrintStream(new ByteArrayOutputStream())).run();
+        String expected = "true\ntrue\n4\n4\ntrue\ntrue\ntrue\ntrue\nfalse\ntrue\n";
+        String actual = stdout.toString(StandardCharsets.UTF_8);
+        if (!expected.equals(actual))
+            throw new AssertionError("scalar protocol methods returned unexpected output: " + actual);
     }
 
     private static void testTypedVectorFunctionTraceIncludesElementSpecialization() {

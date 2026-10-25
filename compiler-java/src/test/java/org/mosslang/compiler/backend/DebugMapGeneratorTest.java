@@ -19,6 +19,7 @@ public class DebugMapGeneratorTest {
         testDebugMapGeneration();
         testUserSortFunctionShadowsBuiltinLowering();
         testCharCodepointRustLowering();
+        testScalarProtocolRustLowering();
         testCliFlagsDebugMap();
 
         System.out.println("DebugMapGeneratorTest PASSED: All tests passed successfully.");
@@ -201,6 +202,34 @@ public class DebugMapGeneratorTest {
                 "Char.codepoint lowers the named receiver to its Unicode scalar value");
         assertTrue(rust.contains("(('\\u{2C}') as u32 as i64)"),
                 "Char.codepoint lowers a literal receiver to its Unicode scalar value");
+    }
+
+    private static void testScalarProtocolRustLowering() {
+        String source = """
+                type Counter:
+                  value: Int
+                fn main():
+                  echo 2.less(3)
+                  echo 0.0.isequal(-0.0)
+                  echo 'A'.hash()
+                  echo "moss".hash()
+                  echo true.to_string()
+                  let counter = Counter(value: 4)
+                  echo counter.value.less(5)
+                """;
+        Program program = Parser.parseSource(source, "scalar-protocol.moss");
+        new CheckedProgram(program).run();
+        String rust = NativeGenerator.generate(program, false, false);
+        assertTrue(rust.contains("(&(2_i64) < &(3_i64))"), "Int.less uses scalar ordering");
+        assertTrue(rust.contains("moss_float_isequal(0.0_f64 as f64, -0.0_f64 as f64)"),
+                "Float.isequal uses Moss float equality");
+        assertTrue(rust.contains("(('A') as u32 as i64)"), "Char.hash uses the Unicode scalar value");
+        assertTrue(rust.contains("moss_string_hash(&(MossStr::from(\"moss\")))"),
+                "String.hash uses the Moss string hash helper");
+        assertTrue(rust.contains("MossStr::from((true).to_string())"),
+                "Bool.to_string returns a Moss String");
+        assertTrue(rust.contains("(&(counter.value) < &(5_i64))"),
+                "scalar operation on an object field uses its checked field type");
     }
 
     private static void testCliFlagsDebugMap() throws Exception {

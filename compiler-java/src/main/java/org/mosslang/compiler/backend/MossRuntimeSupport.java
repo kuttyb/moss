@@ -59,6 +59,17 @@ fn moss_float_total_cmp(a: f64, b: f64) -> std::cmp::Ordering {
     else if moss_float_less(b, a) { std::cmp::Ordering::Greater }
     else { std::cmp::Ordering::Equal }
 }
+#[inline(always)]
+fn moss_float_isequal(a: f64, b: f64) -> bool {
+    if a.is_nan() && b.is_nan() { return true; }
+    if a == 0.0 && b == 0.0 { return a.to_bits() == b.to_bits(); }
+    a == b
+}
+#[inline(always)]
+fn moss_float_hash(value: f64) -> i64 {
+    if value.is_nan() { 0x7ff8000000000000u64 as i64 }
+    else { value.to_bits() as i64 }
+}
 // ─── End Moss Float Format Runtime ───────────────────────────────────────
 """;
 
@@ -314,6 +325,15 @@ impl std::ops::Add for MossStr {
         s.push_str(&rhs.0);
         MossStr(s)
     }
+}
+#[allow(dead_code)]
+fn moss_string_hash(value: &MossStr) -> i64 {
+    let mut hash = 0xcbf29ce484222325u64;
+    for byte in value.0.as_bytes() {
+        hash ^= *byte as u64;
+        hash = hash.wrapping_mul(0x100000001b3u64);
+    }
+    hash as i64
 }
 
 #[allow(dead_code)]

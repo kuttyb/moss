@@ -45,6 +45,7 @@ public class SemanticCheckerTest {
         testRangeForRequiresPositiveNonzeroLiteralStep();
         testSortSemanticContractAndWriteEffects();
         testCharCodepointMethod();
+        testScalarProtocolMethods();
         testTypedOnFailLocalCaptureLowering();
         testOnFailRejectsLocalInitializedAfterRaise();
         testOnFailCaptureUsesMatchingRaisedVariant();
@@ -1848,6 +1849,22 @@ public class SemanticCheckerTest {
         new SemanticChecker(valid).run();
         assertCompileError("fn main():\n  let letter = 'A'\n  echo letter.codepoint(1)\n",
                 "TYPE_MISMATCH");
+    }
+
+    private static void testScalarProtocolMethods() {
+        Program valid = Parser.parseSource(""
+                + "fn main():\n"
+                + "  echo 2.less(3)\n"
+                + "  echo 2.isequal(2)\n"
+                + "  echo 4.hash()\n"
+                + "  echo 4.to_string()\n"
+                + "  echo 1.5.less(2.0)\n"
+                + "  echo 'A'.less('B')\n"
+                + "  echo \"a\".less(\"b\")\n"
+                + "  echo true.isequal(true)\n", "scalar-protocol-valid.moss");
+        new SemanticChecker(valid).run();
+        assertCompileError("fn main():\n  echo 1.less(2.0)\n", "TYPE_MISMATCH");
+        assertCompileError("fn main():\n  echo 1.hash(2)\n", "TYPE_MISMATCH");
     }
 
     private static void assertNotIterable(String source) {

@@ -1379,6 +1379,27 @@ public class ExpressionTyper {
             }
         }
 
+        String scalarName = targetType.name();
+        if (Set.of("int", "float", "char", "string", "bool").contains(scalarName)) {
+            if ("less".equals(member) || "isequal".equals(member)) {
+                requireArgumentCount(line, scalarName + "." + member, argExprs, 1, 1);
+                TypeRef argumentType = solver.resolve(infer(argExprs.get(0), line, env));
+                if (!solver.unify(targetType, argumentType)) {
+                    throw new CompileError(line, "method '" + member + "' requires matching scalar types '"
+                            + scalarName + "', got '" + argumentType.toCanonicalString() + "'", "TYPE_MISMATCH");
+                }
+                return TypeRef.primitive("bool");
+            }
+            if ("hash".equals(member)) {
+                requireArgumentCount(line, scalarName + ".hash", argExprs, 0, 0);
+                return TypeRef.primitive("int");
+            }
+            if ("to_string".equals(member)) {
+                requireArgumentCount(line, scalarName + ".to_string", argExprs, 0, 0);
+                return TypeRef.primitive("string");
+            }
+        }
+
         if (targetType.sameHead(TypeRef.primitive("char")) && "codepoint".equals(member)) {
             requireArgumentCount(line, "Char.codepoint", argExprs, 0, 0);
             return TypeRef.primitive("int");
