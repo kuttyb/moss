@@ -291,36 +291,34 @@ public class NativeGenerator {
             genericFunctions.addAll(program.importedGenericFunctions);
         }
         for (Function f : program.functions) {
-            if (!f.name.contains("generic")) {
-                boolean hasGeneric = f.generic;
-                for (Param p : f.params) {
-                    if (p.type == null || p.type.isEmpty() || p.type.contains("?") || genericObjects.contains(p.type)) {
-                        hasGeneric = true;
-                        break;
-                    }
+            boolean hasGeneric = f.generic;
+            for (Param p : f.params) {
+                if (p.type == null || p.type.isEmpty() || p.type.contains("?") || genericObjects.contains(p.type)) {
+                    hasGeneric = true;
+                    break;
                 }
-                if (!hasGeneric && (f.returnType == null || f.returnType.isEmpty() || f.returnType.contains("?"))) {
-                    if (f.resultExpression != null && (f.resultExpression.trim().equals("[]") || genericFunctions.contains(f.resultExpression.trim().replace("()", "")))) {
-                        hasGeneric = true;
-                    }
-                    for (Stmt s : f.body) {
-                        if (s.kind == Stmt.Kind.Return && s.a != null) {
-                            String ra = s.a.trim();
-                            if (ra.equals("[]") || genericFunctions.contains(ra.replace("()", ""))) {
-                                hasGeneric = true;
-                            }
+            }
+            if (!hasGeneric && (f.returnType == null || f.returnType.isEmpty() || f.returnType.contains("?"))) {
+                if (f.resultExpression != null && (f.resultExpression.trim().equals("[]") || genericFunctions.contains(f.resultExpression.trim().replace("()", "")))) {
+                    hasGeneric = true;
+                }
+                for (Stmt s : f.body) {
+                    if (s.kind == Stmt.Kind.Return && s.a != null) {
+                        String ra = s.a.trim();
+                        if (ra.equals("[]") || genericFunctions.contains(ra.replace("()", ""))) {
+                            hasGeneric = true;
                         }
                     }
                 }
-                if (hasGeneric) {
-                    genericFunctions.add(f.name);
-                }
+            }
+            if (hasGeneric) {
+                genericFunctions.add(f.name);
             }
         }
         // Second pass for transitive open-result functions (e.g. relay() -> fresh(), make(flag), outer() -> middle())
         for (int pass = 0; pass < 3; pass++) {
             for (Function f : program.functions) {
-                if (!f.name.contains("generic") && (f.returnType == null || f.returnType.isEmpty())) {
+                if (f.returnType == null || f.returnType.isEmpty()) {
                     for (Stmt s : f.body) {
                         String txt = s.text != null ? s.text : (s.a != null ? s.a : "");
                         for (String gf : new ArrayList<>(genericFunctions)) {

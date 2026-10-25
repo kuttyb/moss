@@ -1042,7 +1042,7 @@ public class ProjectBuilder {
             for (Function fn : prog.functions) {
                 String fnName = fn.name;
                 if (fnName.startsWith(module + "__")) fnName = fnName.substring(module.length() + 2);
-                boolean isGeneric = fn.name.contains("generic") ||
+                boolean isGeneric = fn.generic ||
                         fn.params.stream().anyMatch(p -> p.type == null || p.type.isEmpty() || p.type.equals("Box")) ||
                         (fn.returnType == null || fn.returnType.isEmpty()) && (fn.resultExpression == null || fn.resultExpression.contains("[]") || fn.resultExpression.contains("fresh"));
                 String eff = "effects=local_capture_read=0;local_mutation=0;domain_read=0;domain_write=0;message=0;external_io=0;fileio=0;fileio_unknown=0;may_panic=0;raise_set=-;may_diverge=0;unresolved=0";

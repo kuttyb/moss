@@ -642,7 +642,7 @@ public class SemanticChecker {
                                 }
                             }
                             if (fnRaises) {
-                                throw new CompileError(s.line, "main may not let typed errors escape; handle every raised variant with try/recover", "MOSS_COMPILE_ERROR");
+                                throw new CompileError(program.main.line, "main may not let typed errors escape; handle every raised variant with try/recover", "MOSS_COMPILE_ERROR");
                             }
                         }
                     }

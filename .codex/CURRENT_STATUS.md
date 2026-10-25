@@ -12204,3 +12204,12 @@ intentional failing test, benchmark filter, and native `margo build --json`
 were exercised. Rust compilation/native execution for the changed backend,
 SDK integration, full root-package suites, ABI-v9/v10 source-free acceptance,
 and Architect candidate review have not run.
+
+The next backend audit checkpoint found generic-function lowering and ABI
+classification inspecting function-name substrings. Both now use checker-set
+generic flags and signature/type facts; generated Rust inspection confirms
+`generic_score` uses its generic macro. A three-file structured differential
+for that source and handled/unhandled generic-raise fixtures passes 3/3. It
+also exposed and closed a separate diagnostic location mismatch: a typed error
+escaping from `main` now reports the `main` declaration line, matching C++.
+These latest changes are not yet committed or pushed.
