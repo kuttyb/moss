@@ -15382,3 +15382,18 @@ provider linkage remain open.
 
 All eleven Java test classes pass with ABI-v9 defaults and staged ABI-v10, and
 `git diff --check` passes. No native or SDK gate was run.
+
+
+### Phase 25.3 continuation — verify capture metadata is binder-driven
+
+The earlier open note about fixture-specific `Run`/`Join` capture names was
+checked against the current `ProjectBuilder` writer. The writer consumes
+checker-retained `FailureArm.checkedCaptures`; a producer regression now uses
+the unrelated local name `captured_value` and requires that exact binder in
+the generated ABI-v9 capture rows. This closes the hardcoded-name concern for
+the exercised provider writer only. Source-free/native capture reconstruction
+and broader exceptional-edge validation remain open.
+
+The focused `ProjectBuilderMetadataTest` passes in the full default ABI-v9 and
+staged ABI-v10 Java unit runs; all eleven classes pass in both configurations.
+No native or SDK gate was run.

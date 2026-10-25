@@ -72,10 +72,10 @@ public final class ProjectBuilderMetadataTest {
                 + "  Bad\n"
                 + "domain Worker:\n"
                 + "  fn Work() -> Int:\n"
-                + "    var attempt = 3\n"
+                + "    var captured_value = 3\n"
                 + "    raise Failure.Bad\n"
                 + "  on_fail Failure.Bad:\n"
-                + "    reply attempt\n", "capture-abi.moss");
+                + "    reply captured_value\n", "capture-abi.moss");
         program.domains.get(0).exported = true;
         new org.mosslang.compiler.semantics.CheckedProgram(program).run();
         ProjectManifest manifest = new ProjectManifest(Path.of("tmp"), Path.of("tmp", "moss.toml"),
@@ -88,7 +88,7 @@ public final class ProjectBuilderMetadataTest {
         if (!text.contains("handler_owned_type_shapes \"Work\" 1\n")
                 || !text.contains("handler_owned_type_shape \"Work\" \"int\" \"0:3:int:0:\"\n")
                 || !text.contains("handler_failure_arm \"Work\" 0 \"Failure.Bad\" ")
-                || !text.contains("handler_failure_capture \"Work\" 0 \"attempt\" \"int\" \"attempt\" 1 1 \"0:3:int:0:\"\n")) {
+                || !text.contains("handler_failure_capture \"Work\" 0 \"captured_value\" \"int\" \"captured_value\" 1 1 \"0:3:int:0:\"\n")) {
             throw new AssertionError("project producer did not serialize checker-proved on_fail captures: " + text);
         }
     }
