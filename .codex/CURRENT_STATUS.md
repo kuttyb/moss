@@ -14984,3 +14984,16 @@ root unless a matching recover handles it.
 Validation: uncaught and recovered chain cases agree with C++; all eleven Java
 unit-test classes pass. Generic field substitutions, method-local aliases,
 imported method summaries, and complete effect closure remain open.
+
+
+### Phase 25.3 continuation — resolve straight-line method-local aliases
+
+Method raise closure now tracks the object type of a simple local assignment
+from `self` or a declared field path. A method that assigns
+`target = self.sink` and then calls `target.fail()` propagates the nested
+method's direct raise to the `main` callsite.
+
+Validation: the uncaught local-alias reproducer is rejected by both compilers;
+all eleven Java unit-test classes pass. This is limited to straight-line simple
+assignments; branch-sensitive or loop aliases, generic substitution, imported
+methods, and complete effect closure remain open.

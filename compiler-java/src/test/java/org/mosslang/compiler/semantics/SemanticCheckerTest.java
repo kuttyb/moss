@@ -902,7 +902,8 @@ public class SemanticCheckerTest {
                 + "type Box:\n"
                 + "  sink: Sink\n"
                 + "  fn relay():\n"
-                + "    self.sink.fail()\n";
+                + "    target = self.sink\n"
+                + "    target.fail()\n";
         assertCompileError(methodPrefix
                 + "fn main():\n"
                 + "  box = Box(sink=Sink())\n"

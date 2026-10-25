@@ -1592,6 +1592,7 @@ public class SemanticChecker {
     private Set<String> collectMethodRaiseVariants(Method method, Set<String> visited) {
         Set<String> variants = new LinkedHashSet<>();
         if (method == null || !visited.add(method.owner + "." + method.name)) return variants;
+        Map<String, String> localTypes = new HashMap<>();
         for (int index = 0; index < method.body.size(); index++) {
             Stmt statement = method.body.get(index);
             if (statement == null) continue;
@@ -1602,14 +1603,20 @@ public class SemanticChecker {
                 if (!isMainRaiseHandled(method.body, index, variant)) variants.add(variant);
             }
             String expression = statementExpressionText(statement);
-            collectNestedMethodRaiseVariants(expression, method, visited, variants);
+            collectNestedMethodRaiseVariants(expression, method, localTypes, visited, variants);
+            if (statement.kind == Stmt.Kind.Assign && statement.a != null && statement.b != null
+                    && statement.a.trim().matches("[A-Za-z_][A-Za-z0-9_]*")) {
+                String typeName = resolveMethodValueType(statement.b, method, localTypes);
+                if (typeName != null) localTypes.put(statement.a.trim(), typeName);
+            }
         }
         if (method.resultExpression != null)
-            collectNestedMethodRaiseVariants(method.resultExpression, method, visited, variants);
+            collectNestedMethodRaiseVariants(method.resultExpression, method, localTypes, visited, variants);
         return variants;
     }
 
     private void collectNestedMethodRaiseVariants(String expression, Method ownerMethod,
+                                                  Map<String, String> localTypes,
                                                   Set<String> visited, Set<String> variants) {
         for (ObjectType object : program.objects) {
             for (Method candidate : object.methods) {
@@ -1617,7 +1624,7 @@ public class SemanticChecker {
                         + java.util.regex.Pattern.quote(candidate.name) + "\\s*\\(";
                 java.util.regex.Matcher matcher = java.util.regex.Pattern.compile(pattern).matcher(expression);
                 while (matcher.find()) {
-                    String receiverType = resolveMethodReceiverType(matcher.group(1), ownerMethod);
+                    String receiverType = resolveMethodReceiverType(matcher.group(1), ownerMethod, localTypes);
                     if (!matchesObjectTypeName(receiverType, object.name)) continue;
                     variants.addAll(collectMethodRaiseVariants(candidate, visited));
                 }
@@ -1625,10 +1632,12 @@ public class SemanticChecker {
         }
     }
 
-    private String resolveMethodReceiverType(String receiverPath, Method ownerMethod) {
+    private String resolveMethodReceiverType(String receiverPath, Method ownerMethod,
+                                             Map<String, String> localTypes) {
         String[] path = receiverPath.replaceAll("\\s", "").split("\\.");
-        if (path.length == 0 || !"self".equals(path[0])) return null;
-        String typeName = ownerMethod.owner;
+        if (path.length == 0) return null;
+        String typeName = "self".equals(path[0]) ? ownerMethod.owner : localTypes.get(path[0]);
+        if (typeName == null) return null;
         for (int index = 1; index < path.length; index++) {
             ObjectType owner = findObjectType(typeName);
             if (owner == null) return null;
@@ -1641,6 +1650,21 @@ public class SemanticChecker {
             if (typeName == null || typeName.isBlank()) return null;
         }
         return typeName;
+    }
+
+    private String resolveMethodValueType(String expression, Method ownerMethod,
+                                          Map<String, String> localTypes) {
+        String value = expression == null ? "" : expression.trim();
+        if (value.matches("[A-Za-z_][A-Za-z0-9_]*(?:\\s*\\.\\s*[A-Za-z_][A-Za-z0-9_]*)*")) {
+            return resolveMethodReceiverType(value, ownerMethod, localTypes);
+        }
+        int open = value.indexOf('(');
+        if (open > 0) {
+            String constructor = value.substring(0, open).trim();
+            ObjectType object = findObjectType(constructor);
+            if (object != null) return object.name;
+        }
+        return null;
     }
 
     private String resolveMainReceiverType(String receiverPath, OwnershipEnv env, TypeSolver solver) {
