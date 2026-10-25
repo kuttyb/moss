@@ -19,6 +19,7 @@ public class SemanticChecker {
     private String currentSemanticIdentity = null;
     private Set<String> currentMessagePayloads = Collections.emptySet();
     private List<RaiseSnapshot> currentHandlerRaises;
+    private Set<String> currentHandlerStateFields = Collections.emptySet();
     private int sessionCounter = 1;
 
     public static class MoveInfo {
@@ -465,6 +466,10 @@ public class SemanticChecker {
         typer.currentCallingModule = domain.definingModule != null && !domain.definingModule.isEmpty() ? domain.definingModule : program.moduleName;
         OwnershipEnv env = new OwnershipEnv();
         List<RaiseSnapshot> previousRaises = currentHandlerRaises;
+        Set<String> previousStateFields = currentHandlerStateFields;
+        Set<String> stateFields = new HashSet<>();
+        for (Field field : domain.state) stateFields.add(field.name);
+        currentHandlerStateFields = stateFields;
         List<RaiseSnapshot> raiseEnvironments = new ArrayList<>();
         currentHandlerRaises = raiseEnvironments;
         Set<String> previousPayloads = currentMessagePayloads;
@@ -568,6 +573,7 @@ public class SemanticChecker {
             }
         }
         currentHandlerRaises = previousRaises;
+        currentHandlerStateFields = previousStateFields;
         TypeRef resolvedReply = solver.resolve(expectedReply);
         if (resolvedReply.kind() == TypeKind.InferenceVar) {
             solver.unify(expectedReply, TypeRef.unit());
@@ -636,6 +642,7 @@ public class SemanticChecker {
                 }
             }
             TypeRef expected = null;
+            Integer expectedBindingLine = null;
             for (OwnershipEnv edge : selectedEdges) {
                 TypeRef actual = edge.get(name);
                 if (actual == null) {
@@ -648,6 +655,14 @@ public class SemanticChecker {
                             + "' was consumed before an explicit raise",
                             "ON_FAIL_CAPTURE_CONSUMED");
                 }
+                Integer bindingLine = edge.bindingLines.get(name);
+                if (expectedBindingLine != null && bindingLine != null
+                        && !expectedBindingLine.equals(bindingLine)) {
+                    throw new CompileError(arm.line, "on_fail capture '" + name
+                            + "' resolves to different bindings on selected raise paths",
+                            "ON_FAIL_CAPTURE_BINDING_MISMATCH");
+                }
+                if (bindingLine != null) expectedBindingLine = bindingLine;
                 TypeRef resolved = solver.resolve(actual);
                 if (expected != null && !expected.toCanonicalString().equals(resolved.toCanonicalString())) {
                     throw new CompileError(arm.line, "on_fail capture '" + name
@@ -1350,6 +1365,10 @@ public class SemanticChecker {
     private void consumeBinding(int line, String name, OwnershipEnv env, String destination) {
         TypeRef type = env.get(name);
         if (type == null || !transferType(type)) return;
+        if (currentHandlerStateFields.contains(name)) {
+            throw new CompileError(line, "domain state '" + name + "' cannot be consumed into '"
+                    + destination + "'", "MOSS_COMPILE_ERROR");
+        }
         env.moved.put(name, new MoveInfo(line, destination));
     }
 
@@ -1916,6 +1935,9 @@ public class SemanticChecker {
                     throw new CompileError(s.line, "type mismatch in assignment to '" + varName + "': expected '" +
                             solver.resolve(targetType).toCanonicalString() + "', got '" + solver.resolve(inferred).toCanonicalString() + "'", "TYPE_MISMATCH");
                 }
+                // A mutable local may be reinitialized after ownership transfer.
+                // Clear its consumed state before recording transfers in the RHS.
+                env.moved.remove(varName);
                 if (env.containsKey(expr) && transferType(env.get(expr))) {
                     consumeBinding(s.line, expr, env, varName);
                 } else {

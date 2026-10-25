@@ -13957,3 +13957,17 @@ Java checking and Fast Debug and returns `3`, matching C++. Existing consumed
 capture fixtures still reject with `ON_FAIL_CAPTURE_CONSUMED`, matching C++.
 A semantic unit test covers the pre-transfer capture. Indirect raise-effect
 summaries and broader argument evaluation ordering remain unverified.
+
+Further ownership parity fixes now cover three related cases found in the
+focused fixtures: selected raise edges compare local binding lines and reject
+same-named locals from separate branches with
+`ON_FAIL_CAPTURE_BINDING_MISMATCH`; consuming a domain state field into a local
+is rejected with `MOSS_COMPILE_ERROR`; and assigning a fresh value back to a
+consumed mutable local clears its consumed state. C++/Java acceptance and
+codes now match for the branch-mismatch, state-borrow, and consumed-capture
+fixtures. `phase21_capture_loop_reinit.moss` is accepted by both and returns
+`after` in both. Java ABI-v9 and staged ABI-v10 suites pass.
+
+One remaining Fast Debug discrepancy is `phase21_on_fail_root_nested.moss`:
+C++ prints `8` then `9`, Java prints `8` then `8`. It remains open for focused
+investigation.

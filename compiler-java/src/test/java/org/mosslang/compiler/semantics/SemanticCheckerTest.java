@@ -35,6 +35,8 @@ public class SemanticCheckerTest {
         testBorrowedMatchPayloadCannotBeOnFailCapture();
         testSameCrateRaisingCallPreservesErrorCarrier();
         testOnFailCaptureUsesArgumentEvaluationRaiseEdge();
+        testOnFailCannotConsumeDomainState();
+        testOnFailRejectsDistinctBranchBindings();
         System.out.println("SemanticCheckerTest PASSED.");
     }
 
@@ -311,6 +313,58 @@ public class SemanticCheckerTest {
         if (!program.domains.get(0).handlers.get(0).failureArms.get(0)
                 .checkedCaptures.containsKey("data")) {
             throw new AssertionError("argument raise edge did not preserve the pre-transfer local");
+        }
+    }
+
+    private static void testOnFailCannotConsumeDomainState() {
+        Program program = Parser.parseSource(""
+                + "enum Failure:\n"
+                + "  Bad\n"
+                + "domain Worker:\n"
+                + "  value = \"hello\"\n"
+                + "  fn Run() -> String:\n"
+                + "    local = value\n"
+                + "    raise Failure.Bad\n"
+                + "  on_fail Failure.Bad:\n"
+                + "    reply local\n"
+                + "fn main():\n"
+                + "  worker = Worker()\n"
+                + "  echo message worker.Run()\n", "on-fail-domain-state-consume.moss");
+        try {
+            new SemanticChecker(program).run();
+            throw new AssertionError("domain state cannot be consumed into a handler local");
+        } catch (CompileError error) {
+            if (!"MOSS_COMPILE_ERROR".equals(error.getCode())) {
+                throw new AssertionError("expected MOSS_COMPILE_ERROR, got " + error.getCode(), error);
+            }
+        }
+    }
+
+    private static void testOnFailRejectsDistinctBranchBindings() {
+        Program program = Parser.parseSource(""
+                + "enum Failure:\n"
+                + "  Bad\n"
+                + "domain Worker:\n"
+                + "  fn Run(flag: Bool) -> String:\n"
+                + "    if flag:\n"
+                + "      let item = \"yes\"\n"
+                + "      raise Failure.Bad\n"
+                + "    else:\n"
+                + "      let item = \"no\"\n"
+                + "      raise Failure.Bad\n"
+                + "  on_fail Failure.Bad:\n"
+                + "    reply item\n"
+                + "fn main():\n"
+                + "  worker = Worker()\n"
+                + "  echo message worker.Run(true)\n", "on-fail-branch-binding-mismatch.moss");
+        try {
+            new SemanticChecker(program).run();
+            throw new AssertionError("on_fail cannot capture distinct branch-local bindings by name");
+        } catch (CompileError error) {
+            if (!"ON_FAIL_CAPTURE_BINDING_MISMATCH".equals(error.getCode())) {
+                throw new AssertionError("expected ON_FAIL_CAPTURE_BINDING_MISMATCH, got "
+                        + error.getCode(), error);
+            }
         }
     }
 
