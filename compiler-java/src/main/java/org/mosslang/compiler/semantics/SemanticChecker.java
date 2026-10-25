@@ -1468,37 +1468,11 @@ public class SemanticChecker {
             typer.currentCallingFunction = "main";
             OwnershipEnv env = new OwnershipEnv();
 
-            boolean mainHasTry = false;
             for (Stmt s : program.main.body) {
-                if (s.kind == Stmt.Kind.Try) {
-                    mainHasTry = true;
-                }
                 if (s.text != null && s.text.contains("message ")) {
                     for (Domain d : program.domains) {
                         if (s.text.contains(d.name + "(")) {
                             throw new CompileError(s.line, "domain state initializers must be side-effect-free; pure helper calls are accepted, but messages, domain access, I/O, failing, divergent, and unresolved work are rejected", "DOMAIN_INITIALIZER_EFFECT_INVALID");
-                        }
-                    }
-                }
-                if (!mainHasTry && s.text != null) {
-                    for (Function fn : program.functions) {
-                        if (s.text.contains(fn.name + "(")) {
-                            boolean fnRaises = false;
-                            if (fn.resultExpression != null && fn.resultExpression.contains(".poke(")) {
-                                fnRaises = true;
-                            }
-                            boolean fnHasTry = false;
-                            for (Stmt fs : fn.body) {
-                                if (fs.kind == Stmt.Kind.Try) {
-                                    fnHasTry = true;
-                                }
-                                if (!fnHasTry && (fs.kind == Stmt.Kind.Raise || (fs.text != null && (fs.text.trim().startsWith("raise ") || fs.text.contains(".poke("))))) {
-                                    fnRaises = true;
-                                }
-                            }
-                            if (fnRaises) {
-                                throw new CompileError(program.main.line, "main may not let typed errors escape; handle every raised variant with try/recover", "MOSS_COMPILE_ERROR");
-                            }
                         }
                     }
                 }
@@ -1766,10 +1740,27 @@ public class SemanticChecker {
     }
 
     private boolean containsFunctionCall(String expression, String functionName) {
-        return expression != null && functionName != null
-                && java.util.regex.Pattern.compile("(?<![A-Za-z0-9_])"
-                        + java.util.regex.Pattern.quote(functionName) + "\\s*\\(")
-                        .matcher(expression).find();
+        if (expression == null || functionName == null) return false;
+        StringBuilder code = new StringBuilder(expression.length());
+        boolean inString = false;
+        boolean escaped = false;
+        for (int index = 0; index < expression.length(); index++) {
+            char value = expression.charAt(index);
+            if (inString) {
+                code.append(' ');
+                if (escaped) escaped = false;
+                else if (value == '\\') escaped = true;
+                else if (value == '"') inString = false;
+            } else if (value == '"') {
+                inString = true;
+                code.append(' ');
+            } else {
+                code.append(value);
+            }
+        }
+        return java.util.regex.Pattern.compile("(?<![A-Za-z0-9_])"
+                + java.util.regex.Pattern.quote(functionName) + "\\s*\\(")
+                .matcher(code).find();
     }
 
     private Set<String> collectMethodRaiseVariants(Method method, Set<String> visited) {
@@ -3117,7 +3108,7 @@ public class SemanticChecker {
             for (String expression : expressions) {
                 if (expression == null) continue;
                 for (Function function : functions.values()) {
-                    if (expression.contains(function.name + "("))
+                    if (containsFunctionCall(expression, function.name))
                         collectRootVisibleFunctionRaises(function, raised, visitedFunctions);
                 }
             }
@@ -3151,14 +3142,14 @@ public class SemanticChecker {
             for (String expression : expressions) {
                 if (expression == null) continue;
                 for (Function called : functions.values()) {
-                    if (expression.contains(called.name + "("))
+                    if (containsFunctionCall(expression, called.name))
                         collectRootVisibleFunctionRaises(called, raised, visited);
                 }
             }
         }
         if (function.resultExpression != null) {
             for (Function called : functions.values()) {
-                if (function.resultExpression.contains(called.name + "("))
+                if (containsFunctionCall(function.resultExpression, called.name))
                     collectRootVisibleFunctionRaises(called, raised, visited);
             }
         }
@@ -3203,14 +3194,14 @@ public class SemanticChecker {
             for (String expression : expressions) {
                 if (expression == null) continue;
                 for (Function called : functions.values()) {
-                    if (expression.contains(called.name + "("))
+                    if (containsFunctionCall(expression, called.name))
                         collectFunctionRaisedEnumNames(called, names, visited);
                 }
             }
         }
         if (function.resultExpression != null) {
             for (Function called : functions.values()) {
-                if (function.resultExpression.contains(called.name + "("))
+                if (containsFunctionCall(function.resultExpression, called.name))
                     collectFunctionRaisedEnumNames(called, names, visited);
             }
         }
@@ -3254,14 +3245,14 @@ public class SemanticChecker {
             for (String expression : expressions) {
                 if (expression == null) continue;
                 for (Function called : functions.values()) {
-                    if (expression.contains(called.name + "("))
+                    if (containsFunctionCall(expression, called.name))
                         collectFunctionRaisedVariants(called, variants, visited);
                 }
             }
         }
         if (function.resultExpression != null) {
             for (Function called : functions.values()) {
-                if (function.resultExpression.contains(called.name + "("))
+                if (containsFunctionCall(function.resultExpression, called.name))
                     collectFunctionRaisedVariants(called, variants, visited);
             }
         }

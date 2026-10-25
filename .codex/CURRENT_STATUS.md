@@ -15353,6 +15353,23 @@ shape and helper raise closure only. Rust compilation and source-free native
 execution remain reserved for the frozen-candidate acceptance gate.
 
 
+### Phase 25.3 continuation — ignore function-like text in string literals
+
+A minimal `signal()` / `echo "signal()"` program was accepted by C++ but
+rejected by Java as an unhandled raise. The cause was an older main-function
+raise precheck scanning raw substrings, plus raise-closure call discovery that
+could match function names inside quoted text. Removed the redundant early
+precheck and made function-call detection used by raise closure ignore
+double-quoted strings.
+
+The C++ CLI and source-built Java CLI now both accept the reproducer. The
+source-free `signal` regression also verifies semantic acceptance and that the
+unrelated `note` helper is not given a raised return type. All twelve Java
+unit-test classes pass under ABI-v9 defaults and staged ABI-v10. Rebuilt
+`moss.jar`; the packaged launcher accepts the reproducer and reports its
+version. No native Rust compilation or execution was run.
+
+
 ### Phase 25.3 continuation — route concrete source-free functions to providers
 
 The source-free function raise reproducer exposed linked lowering errors:

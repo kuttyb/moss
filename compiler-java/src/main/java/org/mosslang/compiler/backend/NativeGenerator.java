@@ -1195,13 +1195,6 @@ public class NativeGenerator {
 
     private static boolean expressionCallsRaisingFunction(String expression, Set<String> raisingFunctions) {
         if (expression == null || expression.isEmpty() || raisingFunctions.isEmpty()) return false;
-        for (String callable : raisingFunctions) {
-            if (!callable.contains(".")) continue;
-            if (java.util.regex.Pattern.compile("(?<![A-Za-z0-9_])"
-                    + java.util.regex.Pattern.quote(callable) + "\\s*\\(").matcher(expression).find()) {
-                return true;
-            }
-        }
         for (int i = 0; i < expression.length();) {
             char ch = expression.charAt(i);
             if (ch == '"' || ch == '\'') {
@@ -1224,7 +1217,24 @@ public class NativeGenerator {
             String identifier = expression.substring(start, i);
             int next = i;
             while (next < expression.length() && Character.isWhitespace(expression.charAt(next))) next++;
-            if (next < expression.length() && expression.charAt(next) == '(' && raisingFunctions.contains(identifier)) {
+            StringBuilder qualified = new StringBuilder(identifier);
+            while (next < expression.length() && expression.charAt(next) == '.') {
+                int member = next + 1;
+                while (member < expression.length() && Character.isWhitespace(expression.charAt(member))) member++;
+                if (member >= expression.length()
+                        || (!Character.isLetter(expression.charAt(member)) && expression.charAt(member) != '_')) {
+                    break;
+                }
+                int memberEnd = member + 1;
+                while (memberEnd < expression.length()
+                        && (Character.isLetterOrDigit(expression.charAt(memberEnd))
+                                || expression.charAt(memberEnd) == '_')) memberEnd++;
+                qualified.append('.').append(expression, member, memberEnd);
+                next = memberEnd;
+                while (next < expression.length() && Character.isWhitespace(expression.charAt(next))) next++;
+            }
+            if (next < expression.length() && expression.charAt(next) == '('
+                    && raisingFunctions.contains(qualified.toString())) {
                 return true;
             }
         }

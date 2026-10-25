@@ -114,6 +114,23 @@ public final class SourceFreeFunctionMetadataTest {
             if (handledRaiseRust.contains("pub fn service.signal()")) {
                 throw new AssertionError("source-free function was emitted as an invalid local Rust stub");
             }
+            Program raiseLikeText = Parser.parseSource(""
+                    + "import service\n"
+                    + "fn note():\n"
+                    + "  echo \"service.signal()\"\n"
+                    + "fn main():\n"
+                    + "  note()\n", "source-free-raise-name-in-string.moss");
+            Main.loadMossiFunctions(interfaceFile, "service", raiseLikeText);
+            raiseLikeText.functions.removeIf(function -> !function.name.equals("main")
+                    && !function.name.equals("note")
+                    && !function.name.equals("service.signal")
+                    && !function.name.equals("service__signal"));
+            new SemanticChecker(raiseLikeText).run();
+            String raiseLikeTextRust = org.mosslang.compiler.backend.NativeGenerator.generate(
+                    raiseLikeText, false);
+            if (raiseLikeTextRust.contains("fn note() -> Result<(), __MossRaised>")) {
+                throw new AssertionError("raise-like text literal incorrectly made note a raising function");
+            }
             Program plainSourceFreeCall = Parser.parseSource(""
                     + "import service\n"
                     + "fn main():\n"
