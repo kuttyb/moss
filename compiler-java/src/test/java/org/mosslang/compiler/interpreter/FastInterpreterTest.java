@@ -29,6 +29,7 @@ public final class FastInterpreterTest {
         testNamedDomainStateAndNestedRoutes();
         testPipelineStageUsesFunctionCallTrace();
         testFunctionTraceIncludesSelectedSpecialization();
+        testNestedDomainFailurePropagatesToCallerRecovery();
         System.out.println("FastInterpreterTest PASSED.");
     }
 
@@ -552,6 +553,42 @@ public final class FastInterpreterTest {
         if (!"6\n".equals(stdout.toString(StandardCharsets.UTF_8))
                 || !events.contains("\"specialization\":\"fn:twice<int>@1\"")) {
             throw new AssertionError("selected function specialization was absent from trace: " + events);
+        }
+    }
+
+    private static void testNestedDomainFailurePropagatesToCallerRecovery() {
+        var program = Parser.parseSource(""
+                + "enum Failure:\n"
+                + "  Bad(code: Int)\n"
+                + "domain Inner:\n"
+                + "  fn Run() -> Int:\n"
+                + "    raise Failure.Bad(code: 7)\n"
+                + "  on_fail Failure.Bad(code):\n"
+                + "    reply code + 1\n"
+                + "domain Outer:\n"
+                + "  domainroutes(inner: Inner)\n"
+                + "  fn Run() -> Int:\n"
+                + "    try:\n"
+                + "      reply message inner.Run()\n"
+                + "    recover Failure.Bad(code):\n"
+                + "      reply code + 2\n"
+                + "fn main():\n"
+                + "  inner = Inner()\n"
+                + "  outer = Outer(inner: inner)\n"
+                + "  echo message inner.Run()\n"
+                + "  echo message outer.Run()\n", "fast-interpreter-nested-on-fail.moss");
+        new CheckedProgram(program).run();
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+        ByteArrayOutputStream trace = new ByteArrayOutputStream();
+        new FastInterpreter(program, true,
+                new PrintStream(stdout, true, StandardCharsets.UTF_8),
+                new PrintStream(trace, true, StandardCharsets.UTF_8)).run();
+        String events = trace.toString(StandardCharsets.UTF_8);
+        if (!"8\n9\n".equals(stdout.toString(StandardCharsets.UTF_8))
+                || !events.contains("\"event\":\"recover\"")
+                || !events.contains("\"detail\":\"9\"")) {
+            throw new AssertionError("nested domain failure did not reach caller recovery: "
+                    + events + " stdout=" + stdout);
         }
     }
 }

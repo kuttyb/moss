@@ -1014,7 +1014,7 @@ public class FastInterpreter {
                 } catch (ReturnSignal rs) {
                     retVal = rs.returnValue;
                 } catch (RaisedException rex) {
-                    if (handler.failureArms != null && !handler.failureArms.isEmpty()) {
+                    if (oldHandler.isEmpty() && handler.failureArms != null && !handler.failureArms.isEmpty()) {
                         FailureArm arm = null;
                         for (FailureArm candidate : handler.failureArms) {
                             if (candidate.patterns.isEmpty()) { arm = candidate; break; }

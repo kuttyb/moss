@@ -13971,3 +13971,11 @@ fixtures. `phase21_capture_loop_reinit.moss` is accepted by both and returns
 One remaining Fast Debug discrepancy is `phase21_on_fail_root_nested.moss`:
 C++ prints `8` then `9`, Java prints `8` then `8`. It remains open for focused
 investigation.
+
+The nested failure discrepancy is corrected: Java previously dispatched the
+inner domain's `on_fail` before an enclosing handler's `try/recover`. It now
+propagates a nested message failure to the caller handler boundary, allowing the
+outer recovery to run. `phase21_on_fail_root_nested.moss` prints `8` then `9`
+in both compilers. A focused FastInterpreterTest asserts both direct and nested
+message results and recovery trace presence. ABI-v9 and staged ABI-v10 suites
+pass.
