@@ -11,6 +11,7 @@ public final class FastInterpreterTest {
     public static void main(String[] args) {
         testFractionalAndMixedNumericComparisons();
         testAssertEqualUsesMossVectorEquality();
+        testAssertionFailureEmitsStructuredTrace();
         testIeeeAndMixedNumericEquality();
         testWhileLoopRepeatsCheckedBody();
         testLocalWriteTraceIsStructuredAndEscaped();
@@ -76,6 +77,32 @@ public final class FastInterpreterTest {
         new FastInterpreter(program, false,
                 new PrintStream(new ByteArrayOutputStream()),
                 new PrintStream(new ByteArrayOutputStream())).run();
+    }
+
+    private static void testAssertionFailureEmitsStructuredTrace() {
+        var program = Parser.parseSource(""
+                + "fn main():\n"
+                + "  value = 7\n"
+                + "  assertEqual(value, 6)\n", "fast-interpreter-assertion-trace.moss");
+        if (!"fast-interpreter-assertion-trace.moss".equals(program.main.body.get(1).sourceFile))
+            throw new AssertionError("parsed assertion lost its source file: " + program.main.body.get(1).sourceFile);
+        new CheckedProgram(program).run();
+
+        ByteArrayOutputStream trace = new ByteArrayOutputStream();
+        try {
+            new FastInterpreter(program, true,
+                    new PrintStream(new ByteArrayOutputStream()),
+                    new PrintStream(trace, true, StandardCharsets.UTF_8)).run();
+            throw new AssertionError("assertEqual unexpectedly succeeded");
+        } catch (RuntimeException expected) {
+            if (!expected.getMessage().contains("actual=7, expected=6")) throw expected;
+        }
+        String expected = "{\"event_id\":3,\"event\":\"AssertionFailure\",\"function\":\"main\","
+                + "\"source_file\":\"fast-interpreter-assertion-trace.moss\",\"semantic_identity\":\"main@1\","
+                + "\"line\":3,\"depth\":0,\"detail\":\"assertEqual(value, 6)\"}";
+        if (!trace.toString(StandardCharsets.UTF_8).contains(expected + "\n")) {
+            throw new AssertionError("assertEqual failure trace was missing or malformed: " + trace);
+        }
     }
 
     private static void testIeeeAndMixedNumericEquality() {

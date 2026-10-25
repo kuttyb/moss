@@ -110,6 +110,7 @@ public class Parser {
                             statement.line = function.resultLine;
                             statement.indent = 0;
                             statement.text = function.resultExpression;
+                            statement.sourceFile = function.sourceFile;
                             statement.continuationLines = copyContinuationLines(function.resultContinuationLines);
                             MemberCallResult mcr = new MemberCallResult();
                             SimpleCallResult scr = new SimpleCallResult();

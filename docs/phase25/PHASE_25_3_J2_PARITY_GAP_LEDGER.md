@@ -230,3 +230,18 @@ bindings still restore after shadowing.
 existing object-method loop argument regression and a new positive loop-body
 method-call check. The minimized post-loop probe now receives
 `UNKNOWN_SYMBOL_OR_TYPE` from both compilers. No native or project gate ran.
+
+## Phase 25.3 continuation — assertion failure trace and source provenance
+
+`tests/phase224_debug_domain.moss` fails `assertEqual(result, 6)` after a
+synchronous domain reply. C++ emitted an `AssertionFailure` trace event and a
+line-qualified interpreter error; Java previously emitted no failure event and
+reported an internal error. Its synthesized main tail-expression statement
+also lacked the source filename, leaving assertion argument reads unlocated.
+The Java parser now retains the main function source on that statement, and the
+Fast Debug assertion path emits the failure event and surfaces a line-qualified
+`ExecutionError`.
+
+The complete trace and failure text now match C++ for the selected fixture.
+`./scripts/java/test.sh` passes all eleven classes, including a focused
+`assertEqual` failure regression. Native compilation/execution was not run.

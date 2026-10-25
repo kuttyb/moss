@@ -388,6 +388,12 @@ public class FastInterpreter {
                 + jsonEscape(detail) + "\"" + traceDomainFields() + "}");
     }
 
+    private ExecutionError assertionFailure(Stmt statement, String function, int depth,
+                                            String detail, String message) {
+        traceSimpleEvent(statement, function, "AssertionFailure", detail, depth);
+        return new ExecutionError(statement.line, message);
+    }
+
     private int traceFunctionEvent(Function function, String event, int line) {
         return traceFunctionEvent(function, event, line, null);
     }
@@ -456,6 +462,15 @@ public class FastInterpreter {
         public final Value returnValue;
         public ReturnSignal(Value returnValue) {
             this.returnValue = returnValue;
+        }
+    }
+
+    public static final class ExecutionError extends RuntimeException {
+        public final int line;
+
+        public ExecutionError(int line, String message) {
+            super(message);
+            this.line = line;
         }
     }
 
@@ -879,14 +894,15 @@ public class FastInterpreter {
                     }
                     Value cond = evalExpr(condStr, locals, currentDomain);
                     if (!cond.asBool()) {
-                        throw new RuntimeException("Moss assertion failed at line " + s.line + ": " + s.text);
+                        throw assertionFailure(s, funcName, depth, condStr, "assertion failed: " + condStr);
                     }
                     return Value.ofUnit();
                 } else if (callee.equals("assertEqual")) {
                     Value v1 = evalExpr(s.args.get(0), locals, currentDomain);
                     Value v2 = evalExpr(s.args.get(1), locals, currentDomain);
                     if (!valuesEqual(v1, v2)) {
-                        throw new RuntimeException("Moss assertion failed at line " + s.line + ": " + s.text + "; actual=" + v1 + ", expected=" + v2);
+                        throw assertionFailure(s, funcName, depth, s.text,
+                                "assertEqual failed: actual=" + v1 + ", expected=" + v2);
                     }
                     return Value.ofUnit();
                 }
@@ -1188,14 +1204,14 @@ public class FastInterpreter {
                     String condStr = text.substring(7, text.length() - 1);
                     Value cond = evalExpr(condStr, locals, currentDomain);
                     if (!cond.asBool()) {
-                        throw new RuntimeException("Moss assertion failed at line " + s.line + ": " + s.text);
+                        throw assertionFailure(s, funcName, depth, condStr, "assertion failed: " + condStr);
                     }
                     return Value.ofUnit();
                 } else if (text.startsWith("assert ") && !text.startsWith("assertEqual")) {
                     String condStr = text.substring(7).trim();
                     Value cond = evalExpr(condStr, locals, currentDomain);
                     if (!cond.asBool()) {
-                        throw new RuntimeException("Moss assertion failed at line " + s.line + ": " + s.text);
+                        throw assertionFailure(s, funcName, depth, condStr, "assertion failed: " + condStr);
                     }
                     return Value.ofUnit();
                 } else if (text.startsWith("echo ")) {

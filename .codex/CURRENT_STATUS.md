@@ -14661,3 +14661,18 @@ Validation: all eleven Java unit-test classes pass. The focused post-loop
 reference probe now reports `UNKNOWN_SYMBOL_OR_TYPE` in both Java and C++.
 The existing valid loop-variable-to-object-method-argument regression passes,
 including a new focused case. No native or project acceptance gate was run.
+
+### Phase 25.3 continuation — preserve source and assertion failure traces
+
+A focused failing `phase224_debug_domain.moss` trace showed that Java omitted
+`AssertionFailure` for `assertEqual`, and the synthesized tail-expression
+statement for `fn main()` had no source filename. Java now records structured
+assertion failures, carries source identity to the synthesized main statement,
+and reports assertion execution errors with the Moss line and interpreter-error
+format. The complete stdout/stderr trace and error line for the selected
+phase224 fixture now compare byte-for-byte with C++.
+
+Validation: all eleven Java unit-test classes pass; the FastInterpreter unit
+regression checks the failure event, source filename, and actual/expected
+values. No native compilation or execution ran. This is selected assertion
+failure evidence, not complete Fast Debug trace parity.

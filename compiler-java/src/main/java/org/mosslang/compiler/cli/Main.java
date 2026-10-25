@@ -738,6 +738,14 @@ public class Main {
                 DiagnosticFormatter.writeHumanError(System.err, e.getSourceFile(), e.getLine(), e.getCode(), e.getMessage());
             }
             return 1;
+        } catch (org.mosslang.compiler.interpreter.FastInterpreter.ExecutionError e) {
+            if (jsonOutput) {
+                DiagnosticFormatter.writeStructuredError(System.out, checkOnly ? "check" : "compile", COMPILER_VERSION,
+                        "INTERPRETER_ERROR", e.getMessage(), absPath, e.line, "", "");
+            } else {
+                System.err.println("moss:" + e.line + ": interpreter error: " + e.getMessage());
+            }
+            return 1;
         } catch (Exception e) {
             if (jsonOutput) {
                 DiagnosticFormatter.writeStructuredError(System.out, checkOnly ? "check" : "compile", COMPILER_VERSION,
