@@ -12534,3 +12534,9 @@ heuristics and overall semantic/query parity, native correctness, Margo/SDK
 integration, source-free module coverage, packaging lifecycle, and frozen
 release acceptance remain open. No full `make check`, native execution,
 multi-crate matrix, or codegen-delta sweep was run.
+
+The standalone distribution was rebuilt after the query changes with
+`./scripts/java/package.sh`; both `java -jar compiler-java/dist/moss.jar
+--version` and `scripts/java/moss --version` passed. This verifies the packaged
+artifact and launcher entry points only; it does not verify the persistent
+JDT daemon lifecycle or project/native acceptance.
