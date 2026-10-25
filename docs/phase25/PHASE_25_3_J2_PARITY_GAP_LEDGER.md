@@ -897,3 +897,14 @@ stdout and trace now compare byte-for-byte for the example. Traces for
 `phase224_debug_nested.moss`, `sequential_messages.moss`, and
 `state_payload_snapshot.moss` also matched in focused sampling; broad trace and
 native acceptance remain open.
+
+
+### Validation — Java Margo test and benchmark execution
+
+The Java Margo launcher ran `examples/projects/phase7_demo`: both declared
+tests passed, and all four declared benchmark bodies returned measured results
+from five warmups and 31 samples each. The `phase7_failing_test` project
+returned exit 1 with one failing assertion and one passing test. This confirms
+actual interpreter-backed project test and benchmark execution rather than
+placeholder success for these small projects. Native project builds,
+multi-crate integration, and SDK validation remain deferred.

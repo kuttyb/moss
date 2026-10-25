@@ -16782,3 +16782,15 @@ match byte-for-byte. Traces for `phase224_debug_nested.moss`,
 `sequential_messages.moss`, and `state_payload_snapshot.moss` also matched in
 this sample. Wider collection iteration, message/state traces, and full runtime
 acceptance remain open.
+
+
+### Phase 25.3 continuation — Margo test and benchmark execution evidence
+
+The Java Margo launcher ran the real `examples/projects/phase7_demo` project:
+`test --json` executed its two declared tests and passed both, while
+`bench --json` executed four declared benchmark bodies with five warmups and 31
+measured samples per benchmark. The `phase7_failing_test` project returned exit
+1 with one failing assertion and one passing test, confirming failure
+propagation and continued test execution. This demonstrates non-placeholder
+test and benchmark execution for these small projects; native project build,
+multi-crate integration, and SDK validation remain deferred.
