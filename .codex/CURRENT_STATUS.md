@@ -13246,3 +13246,17 @@ production and source-free checker projection remain open.
 Validation: all ten Java unit-test classes pass after clean builds in default
 ABI-v9 and staged ABI-v10 modes; feedback validation and `git diff --check`
 pass.
+
+### Phase 25.3 continuation — avoid redundant scalar result specialization
+
+The generic call post-pass previously added an open-result binding for every
+open return, including scalar generic identities. This yielded duplicate
+specialization records because the scalar result was already determined by the
+argument type. The post-pass now adds that binding only for results with type
+arguments; identity called with `Int` and `String` retains two distinct stable
+keys and matching return types.
+
+Validation: all ten Java unit-test classes pass after clean builds in default
+ABI-v9 and staged ABI-v10 modes. The C++ and Java compilers accept the
+Int/String identity reproducer; feedback validation and `git diff --check`
+pass. Broader specialization-key parity remains open.

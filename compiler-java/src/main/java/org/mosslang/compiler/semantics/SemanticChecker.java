@@ -1130,7 +1130,6 @@ public class SemanticChecker {
                         if (returnsOpen) {
                             TypeRef resolved = solver.resolve(edge.returnTypeRef);
                             if (resolved != null && resolved.isClosed()) {
-                                TypeRef innerElem = !resolved.typeArgs().isEmpty() ? resolved.typeArgs().get(0) : resolved;
                                 SpecializationKey sk = new SpecializationKey();
                                 sk.callableId = fn.semanticCallableId;
                                 for (String a : edge.argumentTypes) {
@@ -1142,7 +1141,12 @@ public class SemanticChecker {
                                         sk.arguments.add(pt != null ? pt : TypeRef.primitive(a));
                                     }
                                 }
-                                sk.openResultBindings.add(new SpecializationKey.OpenResultBinding(1, innerElem));
+                                TypeRef innerElem = null;
+                                if (!resolved.typeArgs().isEmpty()) {
+                                    innerElem = resolved.typeArgs().get(0);
+                                    sk.openResultBindings.add(
+                                            new SpecializationKey.OpenResultBinding(1, innerElem));
+                                }
                                 String updatedKey = sk.stableKey();
                                 if (updatedKey != null) {
                                     edge.specializationKey = updatedKey;
@@ -1155,7 +1159,10 @@ public class SemanticChecker {
                                         spec.parameterTypeRefs.addAll(sk.arguments);
                                         spec.returnType = resolved.toCanonicalString();
                                         spec.returnTypeRef = resolved;
-                                        spec.openResultBindings.add(new SpecializationKey.OpenResultBinding(1, innerElem));
+                                        if (innerElem != null) {
+                                            spec.openResultBindings.add(
+                                                    new SpecializationKey.OpenResultBinding(1, innerElem));
+                                        }
                                         if (fn.body.stream().anyMatch(st -> (st.text != null && st.text.contains(".length()")) || (st.a != null && st.a.contains(".length()")))) {
                                             FunctionSpecialization.MemberReq req = new FunctionSpecialization.MemberReq();
                                             req.line = edge.line;

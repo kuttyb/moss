@@ -57,8 +57,13 @@ public class SemanticCheckerTest {
             throw new AssertionError("checker facts must not masquerade as a source annotation");
         }
         if (!identity.specializations.stream().anyMatch(s -> s.parameterTypes.contains("int"))
-                || !identity.specializations.stream().anyMatch(s -> s.parameterTypes.contains("string"))) {
-            throw new AssertionError("generic identity calls did not retain both concrete types: "
+                || !identity.specializations.stream().anyMatch(s -> s.parameterTypes.contains("string"))
+                || identity.specializations.stream().map(s -> s.stableTypeKey).distinct().count() != 2
+                || !identity.specializations.stream().anyMatch(s -> s.returnTypeRef != null
+                        && "int".equals(s.returnTypeRef.toCanonicalString()))
+                || !identity.specializations.stream().anyMatch(s -> s.returnTypeRef != null
+                        && "string".equals(s.returnTypeRef.toCanonicalString()))) {
+            throw new AssertionError("generic identity calls did not retain both concrete argument/result types: "
                     + identity.specializations.stream().map(s -> s.parameterTypes.toString()).toList());
         }
     }
