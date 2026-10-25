@@ -16432,6 +16432,12 @@ placement, type, or capability cases; the earlier historical-handle,
 same-domain reply, and callable-result cases now reject in Java. This screen
 does not establish parity beyond these 50 fixtures.
 
+Post-checkpoint refresh of that same sorted 51–100 slice now shows 0 Java and
+0 C++ acceptances among its 50 expected-negative sources, with no acceptance
+mismatches. The basic Java Executor positive fixture remains accepted. These
+checks validate only rejection/acceptance, not executor runtime or native
+generated code.
+
 ### Phase 25.3 continuation — bounded Executor semantic checks
 
 Java now validates direct `Executor.invoke` targets through domain handler

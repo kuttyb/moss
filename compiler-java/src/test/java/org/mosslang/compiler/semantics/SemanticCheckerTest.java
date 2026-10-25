@@ -52,6 +52,7 @@ public class SemanticCheckerTest {
         testTransitiveMessagePayloadWritesAreRejected();
         testDomainHandlesCannotAppearInDataSignatures();
         testExecutorCannotBeStoredInDomainState();
+        testExecutorLifecycleAndConfigurationChecks();
         testRecursionThroughFunctionalCallbacksIsRejected();
         testFilterRequiresBooleanPredicate();
         testReduceCallbackResultMatchesAccumulator();
@@ -1246,6 +1247,49 @@ public class SemanticCheckerTest {
                 + "  message scheduler.Run()\n", "executor-domain-state.moss");
         expectCompileError(invalid, "MOSS_COMPILE_ERROR",
                 "Executor handles cannot be stored in domain state");
+    }
+
+    private static void testExecutorLifecycleAndConfigurationChecks() {
+        Program missingJoin = Parser.parseSource(""
+                + "domain Worker:\n"
+                + "  fn Process():\n"
+                + "    pass\n"
+                + "fn main():\n"
+                + "  worker = Worker()\n"
+                + "  executor = Executor().threads(1).start()\n"
+                + "  executor.invoke(worker.Process())\n", "executor-missing-join.moss");
+        expectCompileError(missingJoin, "EXECUTOR_JOIN_MISSING",
+                "an active Executor must be joined before main exits");
+
+        Program wrongConfig = Parser.parseSource(""
+                + "fn main():\n"
+                + "  executor = Executor().threads(\"two\").start()\n"
+                + "  executor.join()\n", "executor-config-type.moss");
+        expectCompileError(wrongConfig, "EXECUTOR_CONFIG_TYPE",
+                "Executor thread count must be an Int");
+
+        Program valueReturning = Parser.parseSource(""
+                + "domain Worker:\n"
+                + "  fn Read() -> Int:\n"
+                + "    reply 1\n"
+                + "fn main():\n"
+                + "  worker = Worker()\n"
+                + "  executor = Executor().start()\n"
+                + "  executor.invoke(worker.Read())\n"
+                + "  executor.join()\n", "executor-value-return.moss");
+        expectCompileError(valueReturning, "EXECUTOR_INVOKE_VALUE_RETURNING",
+                "Executor.invoke cannot submit a reply-bearing handler");
+
+        Program valid = Parser.parseSource(""
+                + "domain Worker:\n"
+                + "  fn Process():\n"
+                + "    pass\n"
+                + "fn main():\n"
+                + "  worker = Worker()\n"
+                + "  executor = Executor().threads(1).start()\n"
+                + "  executor.invoke(worker.Process())\n"
+                + "  executor.join()\n", "executor-valid-lifecycle.moss");
+        new SemanticChecker(valid).run();
     }
 
     private static void testRecursionThroughFunctionalCallbacksIsRejected() {
