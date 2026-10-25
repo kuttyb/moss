@@ -15169,3 +15169,5 @@ reproducer now agrees with C++ on use-after-consume rejection.
 The semantic regression covers the two-helper chain. All eleven Java test
 classes pass under ABI-v9 and staged ABI-v10; calls through generic/imported
 functions and branch-sensitive argument aliases remain open.
+The summary scan also respects lexical `case` binders so a shadowed local does
+not count as a consume of a same-named parameter.

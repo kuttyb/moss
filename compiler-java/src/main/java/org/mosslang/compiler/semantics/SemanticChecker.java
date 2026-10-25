@@ -2065,7 +2065,7 @@ public class SemanticChecker {
                 }
             }
         }
-        if (functionCallConsumesParam(fn, paramIdx, pName, parameterType)) return true;
+        if (functionCallConsumesParam(fn, pName, parameterType)) return true;
         Deque<Map.Entry<Integer, Set<String>>> caseScopes = new ArrayDeque<>();
         for (Stmt s : fn.body) {
             while (!caseScopes.isEmpty() && s.indent <= caseScopes.peek().getKey()) {
@@ -2088,10 +2088,19 @@ public class SemanticChecker {
         return false;
     }
 
-    private boolean functionCallConsumesParam(Function caller, int paramIdx, String paramName,
-                                              TypeRef parameterType) {
+    private boolean functionCallConsumesParam(Function caller, String paramName, TypeRef parameterType) {
         List<String> expressions = new ArrayList<>();
-        for (Stmt statement : caller.body) expressions.add(statementExpressionText(statement));
+        Deque<Map.Entry<Integer, Set<String>>> caseScopes = new ArrayDeque<>();
+        for (Stmt statement : caller.body) {
+            while (!caseScopes.isEmpty() && statement.indent <= caseScopes.peek().getKey())
+                caseScopes.pop();
+            if (statement.kind == Stmt.Kind.Case) {
+                caseScopes.push(Map.entry(statement.indent, new HashSet<>(statement.args)));
+                continue;
+            }
+            boolean shadowed = caseScopes.stream().anyMatch(scope -> scope.getValue().contains(paramName));
+            if (!shadowed) expressions.add(statementExpressionText(statement));
+        }
         if (caller.resultExpression != null) expressions.add(caller.resultExpression);
         for (Function callee : functions.values()) {
             if (callee == caller) continue;

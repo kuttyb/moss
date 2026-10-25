@@ -510,3 +510,5 @@ receiver mode inference.
 The semantic test covers the two-helper chain. Focused C++/Java diagnostics
 agree, and all eleven Java test classes pass under ABI-v9 and staged ABI-v10.
 Generic/imported function summaries and branch-sensitive aliases remain open.
+The summary scan respects lexical `case` binders so a shadowed local does not
+count as a consume of a same-named parameter.
