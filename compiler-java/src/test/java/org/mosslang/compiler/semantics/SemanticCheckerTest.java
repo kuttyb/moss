@@ -1142,6 +1142,18 @@ public class SemanticCheckerTest {
                 + "  worker = Worker()\n"
                 + "  message worker.Ping()\n", "messaged-domain-handler.moss");
         new SemanticChecker(valid).run();
+
+        Program sameDomain = Parser.parseSource(""
+                + "domain D:\n"
+                + "  domainroutes(other: D)\n"
+                + "  fn First():\n"
+                + "    message other.Second()\n"
+                + "  fn Second():\n"
+                + "    echo \"second\"\n"
+                + "fn main():\n"
+                + "  pass\n", "same-domain-handler-message.moss");
+        expectCompileError(sameDomain, "MOSS_COMPILE_ERROR",
+                "same-domain handlers must use ordinary helper calls");
     }
 
     private static void testRecursionThroughFunctionalCallbacksIsRejected() {

@@ -16299,3 +16299,20 @@ bounded checker screens, not semantic or backend parity proofs. All twelve
 Java tests pass under ABI-v9 and staged ABI-v10; standalone packaging/bootstrap,
 feedback validation, and diff checks pass. Native and release gates remain
 unrun.
+
+### Phase 25.3 continuation — same-domain message rejection and expanded negatives
+
+Java now rejects a handler that synchronously messages another handler on the
+same domain type, matching the Moss rule that same-domain handler calls use
+ordinary helpers. The focused `same_domain_handler_message.moss` negative now
+rejects in Java.
+
+A second sequential slice of 50 sorted negative fixtures (files 51–100) was
+checked against both compilers. C++ rejects all 50; Java accepts 24, with no
+malformed outputs. The remaining disagreements cluster in malformed collection
+type arity (2), static domain capability/route rules (2), Executor/FileIO
+lifecycle and capability rules (13), source-free callable/domain contracts (4),
+transitive message-payload writes (1), and iterator restrictions (2). This is
+not a full negative-corpus run. All Java test classes pass under ABI-v9 and
+staged ABI-v10; packaging/bootstrap and feedback validation pass. No native or
+release gate ran.

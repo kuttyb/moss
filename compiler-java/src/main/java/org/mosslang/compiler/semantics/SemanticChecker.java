@@ -4608,6 +4608,21 @@ public class SemanticChecker {
                     if (insideHandler && s.a.equals("self")) {
                         throw new CompileError(s.line, "self-send is illegal; use helper functions", "ILLEGAL_SELF_SEND");
                     }
+                    if (insideHandler && !s.a.equals("self")
+                            && currentSemanticIdentity != null
+                            && currentSemanticIdentity.startsWith("handler:")) {
+                        int separator = currentSemanticIdentity.indexOf('.', "handler:".length());
+                        TypeRef targetType = env.get(s.a.trim());
+                        TypeRef resolvedTarget = targetType != null ? solver.resolve(targetType) : null;
+                        if (separator > 0 && resolvedTarget != null
+                                && resolvedTarget.kind() == TypeKind.Domain
+                                && currentSemanticIdentity.substring("handler:".length(), separator)
+                                        .equals(resolvedTarget.name())) {
+                            throw new CompileError(s.line,
+                                    "same-domain handler-to-handler messages are illegal; use an ordinary helper function",
+                                    "MOSS_COMPILE_ERROR");
+                        }
+                    }
                 }
                 requireAvailable(s.line, s.text, env);
                 String callExpr;
