@@ -205,7 +205,16 @@ public final class ProjectBuilderMetadataTest {
                 + "domain Recorder:\n"
                 + "  count: Int\n"
                 + "  fn Count() -> Int:\n"
-                + "    reply count\n", "provider.moss");
+                + "    reply count\n"
+                + "enum Failure:\n"
+                + "  Bad\n"
+                + "domain Worker:\n"
+                + "  retries: Int\n"
+                + "  fn Work() -> Int:\n"
+                + "    raise Failure.Bad\n"
+                + "  on_fail Failure.Bad:\n"
+                + "    retries = retries + 1\n"
+                + "    reply retries\n", "provider.moss");
         program.objects.get(0).exported = true;
         org.mosslang.compiler.ast.Method shift = new org.mosslang.compiler.ast.Method(
                 "Point", "ready", 4, "provider.moss");
@@ -213,6 +222,7 @@ public final class ProjectBuilderMetadataTest {
         program.objects.get(0).methods.add(shift);
         program.enums.get(0).exported = true;
         program.domains.get(0).exported = true;
+        program.domains.get(1).exported = true;
         ProjectManifest manifest = new ProjectManifest(Path.of("tmp"),
                 Path.of("tmp", "moss.toml"), "sample", "1.0.0", Path.of("src"));
         BackendToolchain toolchain = new BackendToolchain("rustc", "rustc 1.80.0 (test)\n",
@@ -247,6 +257,11 @@ public final class ProjectBuilderMetadataTest {
                     && record.payload.contains("export domain Recorder opaque")
                     && record.payload.contains("handler Count reply=int"))) {
             throw new AssertionError("Margo ABI-v10 producer omitted exported domain facts");
+        }
+        if (decoded.semanticContract.stream().noneMatch(record ->
+                    record.payload.contains("handler_failure_arm \"Work\" 0 \"Failure.Bad\" ")
+                    && record.payload.contains(" 1 \"retries\" 1 \"retries\" 0\n"))) {
+            throw new AssertionError("Margo ABI-v10 producer did not derive failure-arm state effects");
         }
     }
 

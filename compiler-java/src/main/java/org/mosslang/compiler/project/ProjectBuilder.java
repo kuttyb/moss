@@ -1498,6 +1498,46 @@ public class ProjectBuilder {
         out.append(" 0\n");
     }
 
+    private record FailureArmStateEffects(List<String> reads, List<String> writes) {}
+
+    private static FailureArmStateEffects failureArmStateEffects(
+            FailureArm arm, Domain domain) {
+        Set<String> reads = new java.util.TreeSet<>();
+        Set<String> writes = new java.util.TreeSet<>();
+        for (Field field : domain.state) {
+            for (Stmt statement : arm.body) {
+                boolean assignment = statement.kind == Stmt.Kind.Assign;
+                String lhs = statement.a != null ? statement.a.trim() : "";
+                if (assignment && lhs.equals(field.name)) writes.add(field.name);
+                boolean read = false;
+                if (assignment || statement.kind == Stmt.Kind.Let
+                        || statement.kind == Stmt.Kind.Var) {
+                    read = SemanticChecker.expressionUses(statement.b, field.name);
+                } else {
+                    read = SemanticChecker.expressionUses(statement.a, field.name)
+                            || SemanticChecker.expressionUses(statement.b, field.name)
+                            || SemanticChecker.expressionUses(statement.text, field.name);
+                    if (statement.args != null) {
+                        for (String argument : statement.args) {
+                            read |= SemanticChecker.expressionUses(argument, field.name);
+                        }
+                    }
+                }
+                if (read) reads.add(field.name);
+            }
+        }
+        return new FailureArmStateEffects(List.copyOf(reads), List.copyOf(writes));
+    }
+
+    private static void appendFailureArmStateEffects(StringBuilder out,
+                                                       FailureArmStateEffects effects) {
+        out.append(' ').append(effects.reads().size());
+        for (String field : effects.reads()) out.append(" \"").append(field).append("\"");
+        out.append(' ').append(effects.writes().size());
+        for (String field : effects.writes()) out.append(" \"").append(field).append("\"");
+        out.append(" 0"); // no state consumes are inferred by this writer yet
+    }
+
     private static void emitHandlerMossi(StringBuilder buf, Handler h, Domain d, String module, String domainName, Program prog, boolean isSemantic, ProjectManifest manifest) {
         String replyType = (h.replyType != null && !h.replyType.isEmpty()) ? h.replyType.toLowerCase() : "unit";
         boolean isOneWay = replyType.equals("unit");
@@ -1613,12 +1653,7 @@ public class ProjectBuilder {
             for (int aIdx = 0; aIdx < h.failureArms.size(); aIdx++) {
                 FailureArm arm = h.failureArms.get(aIdx);
                 String armPat = arm.patterns.isEmpty() ? (raiseIdent != null ? raiseIdent : "") : arm.patterns.get(0);
-                boolean armHasCount = false;
-                for (Stmt s : arm.body) {
-                    String txt = s.text != null ? s.text : "";
-                    if (txt.contains("count")) armHasCount = true;
-                }
-                String stateEffect = armHasCount ? " 1 \"count\" 1 \"count\" 0" : " 0 0 0";
+                FailureArmStateEffects stateEffects = failureArmStateEffects(arm, d);
                 int capCount = 0;
                 if (h.name.equals("Run") && domainName.contains("Worker")) {
                     for (Stmt s : arm.body) {
@@ -1629,7 +1664,9 @@ public class ProjectBuilder {
                         if (s.text != null && s.text.contains("joined")) capCount = 1;
                     }
                 }
-                buf.append("  handler_failure_arm \"").append(h.name).append("\" ").append(aIdx).append(" \"").append(armPat).append("\" \"__moss_on_fail_").append(module).append("__").append(domainName).append("_").append(h.name).append("_").append(aIdx).append("\" ").append(capCount).append(" 1").append(stateEffect).append("\n");
+                buf.append("  handler_failure_arm \"").append(h.name).append("\" ").append(aIdx).append(" \"").append(armPat).append("\" \"__moss_on_fail_").append(module).append("__").append(domainName).append("_").append(h.name).append("_").append(aIdx).append("\" ").append(capCount).append(" 1");
+                appendFailureArmStateEffects(buf, stateEffects);
+                buf.append('\n');
                 if (capCount > 0) {
                     if (h.name.equals("Run")) {
                         buf.append("  handler_failure_capture \"Run\" 0 \"attempt\" \"string\"\n");

@@ -12980,3 +12980,17 @@ producer record checks and source-free binary method restoration; default ABI-v9
 build and all ten test classes also pass. `git diff --check` passes. Effectful method templates, requirements/dependencies, open/generic method
 signatures, and native provider-consumer linkage remain open. No Rust/native,
 SDK, or full acceptance gate ran.
+
+### Phase 25.3 continuation — derive failure-arm state footprint by field
+
+The Java Margo interface writer no longer detects failure-arm state effects by
+searching for the fixture-specific name `count`. It now derives direct state
+reads from referenced expressions and writes from assignments against the
+handler domain's declared state fields, emitting sorted per-arm read/write
+sets. A `Worker.retries` producer fixture checks both facts.
+
+Validation: staged ABI-v10 and default ABI-v9 Java builds and all ten test
+classes pass. `git diff --check` passes. State consumption is still emitted as
+empty, nested effect precision is incomplete, and local failure-capture metadata
+still contains Run/Join-specific names; the Margo source-free/native path remains
+unverified. No Rust/native, SDK, or full acceptance gate ran.
