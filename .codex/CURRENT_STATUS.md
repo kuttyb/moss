@@ -12649,3 +12649,10 @@ the older recorded Java unknown-method diagnostic after method-body checking
 was added. It remains an unresolved acceptance difference: no minimal
 reproducer isolates the C++ rejection, and no generated Rust or native
 execution was used to determine runtime correctness.
+
+A durable `SemanticCheckerTest` now guards the well-typed loop-variable
+argument case. Two temporary controls confirmed that a literal argument inside
+the same loop passes both compilers, while replacing it with the loop variable
+causes C++ rejection whether the variable occupies the first or second method
+parameter. Java accepts all tested well-typed variants. The C++ method-call
+behavior remains unclassified; no native gate was run.

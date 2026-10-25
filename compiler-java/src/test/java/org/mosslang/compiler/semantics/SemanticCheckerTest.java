@@ -16,6 +16,7 @@ public class SemanticCheckerTest {
         testInferredMethodReturnMustMatchStructuralTrait();
         testFunctionParameterAccessModesAreRetained();
         testObjectMethodAccessModesAreRetained();
+        testForLoopValuesCanFlowToObjectMethodArguments();
         System.out.println("SemanticCheckerTest PASSED.");
     }
 
@@ -184,6 +185,24 @@ public class SemanticCheckerTest {
                 || method.parameterAccessModes.get(0) != AccessMode.Consume) {
             throw new AssertionError("object method receiver/parameter access modes were not retained");
         }
+    }
+
+    private static void testForLoopValuesCanFlowToObjectMethodArguments() {
+        Program program = Parser.parseSource(""
+                + "type Accumulator:\n"
+                + "  data: Map [String, Int]\n"
+                + "  fn keys() -> Vector [String]:\n"
+                + "    return data.keys()\n"
+                + "  fn increment_by(key: String, amount: Int) -> Int:\n"
+                + "    next = data.get(key, 0) + amount\n"
+                + "    data [key] = next\n"
+                + "    return next\n"
+                + "  fn merge(other: Accumulator):\n"
+                + "    for key in other.keys():\n"
+                + "      self.increment_by(key, 1)\n"
+                + "fn main():\n"
+                + "  pass\n", "method-loop-argument.moss");
+        new SemanticChecker(program).run();
     }
 
     private static void assertEquals(Object expected, Object actual) {
