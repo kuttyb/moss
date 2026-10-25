@@ -7,6 +7,7 @@ import org.mosslang.compiler.ast.Param;
 import org.mosslang.compiler.abi.CheckedBodyCodec;
 import org.mosslang.compiler.abi.MossiInterface;
 import org.mosslang.compiler.abi.MossiRecord;
+import org.mosslang.compiler.abi.AbiV10Records;
 import org.mosslang.compiler.diagnostics.CompileError;
 import org.mosslang.compiler.types.AccessMode;
 
@@ -32,6 +33,7 @@ public final class ProjectBuilderMetadataTest {
         testV10SectionHashValidation();
         testV10Utf8InterfaceValidation();
         testV10RecordFramingUsesUtf8Bytes();
+        testCanonicalNominalTemplateWirePayload();
         testV9FunctionParameterAccessSerialization();
         testExportedObjectFieldSerialization();
         testExportedObjectMethodSerialization();
@@ -156,6 +158,23 @@ public final class ProjectBuilderMetadataTest {
         StringBuilder frame = new StringBuilder();
         ProjectBuilder.appendV10FramedRecord(frame, "fn:é", "café\n");
         assertEquals("record 5 6\nfn:écafé\n\n", frame.toString());
+    }
+
+    private static void testCanonicalNominalTemplateWirePayload() {
+        String module = "module-v1:sample@1.0.0::provider";
+        String provenance = "sha256:" + "1".repeat(64);
+        AbiV10Records.NominalTemplate template = AbiV10Records.NominalTemplate.create(
+                module, "Point",
+                java.util.List.of(new AbiV10Records.NominalField("x",
+                        AbiV10Records.WireType.scalar(
+                                AbiV10Records.WireTypeKind.Primitive, "float"),
+                        true, provenance)), provenance);
+        String goldenHex = "010000003f6e6f6d696e616c2d74656d706c6174652d76313a6d6f64756c652d76313a73616d706c6540312e302e303a3a70726f76696465723a747970653a506f696e74000000206d6f64756c652d76313a73616d706c6540312e302e303a3a70726f766964657200000005506f696e74000000000000000100000001780100000005666c6f61740000000001000000477368613235363a31313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131000000477368613235363a3461383861316639643161376261626238646538643762643765323436336265346361313765323263353631343166616437356532393262333965623761356100000000000000477368613235363a31313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131";
+        String actualHex = java.util.HexFormat.of().formatHex(template.record().payloadBytes());
+        assertEquals(goldenHex, actualHex);
+        AbiV10Records.NominalTemplate decoded = AbiV10Records.NominalTemplate.decode(template.record());
+        assertEquals(template.representationHash, decoded.representationHash);
+        assertEquals(template.templateId, decoded.templateId);
     }
 
     private static void assertEquals(String expected, String actual) {

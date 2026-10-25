@@ -804,6 +804,37 @@ public class Main {
                 StringBuilder legacyRecords = new StringBuilder("moss-module-interface-v2\n")
                         .append("module_id ").append(v10.moduleId).append("\nimports\ncontract\n");
                 for (org.mosslang.compiler.abi.MossiRecord record : v10.binaryContract) {
+                    if (record.id.startsWith("nominal-template-v1:")) {
+                        org.mosslang.compiler.abi.AbiV10Records.NominalTemplate template =
+                                org.mosslang.compiler.abi.AbiV10Records.NominalTemplate.decode(record);
+                        if (!template.moduleId.equals(v10.moduleId)) {
+                            throw new CompileError("SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+                                    "ABI-v10 nominal template belongs to a different module", cand.toString(), 1);
+                        }
+                        String canonicalName = modName + "__" + template.declarationName;
+                        org.mosslang.compiler.ast.ObjectType object = program.objects.stream()
+                                .filter(candidate -> candidate.name.equals(canonicalName))
+                                .findFirst().orElse(null);
+                        if (object == null) {
+                            object = new org.mosslang.compiler.ast.ObjectType(
+                                    canonicalName, "type " + template.declarationName, 1,
+                                    cand.toString(), true);
+                            object.definingModule = modName;
+                            object.declarationName = template.declarationName;
+                            object.sourceFree = true;
+                            program.objects.add(object);
+                        }
+                        for (org.mosslang.compiler.abi.AbiV10Records.NominalField field : template.fields) {
+                            if (object.fields.stream().noneMatch(existing -> existing.name.equals(field.name()))) {
+                                boolean inferred = field.type().kind
+                                        == org.mosslang.compiler.abi.AbiV10Records.WireTypeKind.BoundVar;
+                                object.fields.add(new org.mosslang.compiler.ast.Field(
+                                        field.name(), inferred ? "" : field.type().canonicalName(),
+                                        "", "", 1, cand.toString(), inferred, field.exported()));
+                            }
+                        }
+                        continue;
+                    }
                     legacyRecords.append(record.payload);
                     if (!record.payload.endsWith("\n")) legacyRecords.append('\n');
                 }

@@ -1,0 +1,433 @@
+package org.mosslang.compiler.abi;
+
+import org.mosslang.compiler.diagnostics.CompileError;
+import org.mosslang.compiler.types.TypeKind;
+import org.mosslang.compiler.types.TypeRef;
+
+import java.io.ByteArrayOutputStream;
+import java.nio.ByteBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.CodingErrorAction;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+
+/** Canonical ABI-v10 semantic records shared with src/abi_v10_records.hpp. */
+public final class AbiV10Records {
+    private static final int MAX_STRING_BYTES = 1 << 20;
+
+    private AbiV10Records() {}
+
+    public enum WireTypeKind { Primitive, Builtin, Nominal, Enum, Domain, BoundVar, Unit }
+
+    public static final class WireType {
+        public WireTypeKind kind;
+        public String identity = "";
+        public List<WireType> arguments = new ArrayList<>();
+        public int ordinal;
+
+        public static WireType scalar(WireTypeKind kind, String identity) {
+            WireType result = new WireType();
+            result.kind = kind;
+            result.identity = identity;
+            return result;
+        }
+
+        public static WireType bound(int ordinal) {
+            WireType result = new WireType();
+            result.kind = WireTypeKind.BoundVar;
+            result.ordinal = ordinal;
+            return result;
+        }
+
+        public static WireType unit() {
+            return scalar(WireTypeKind.Unit, "");
+        }
+
+        public String canonicalName() {
+            return switch (kind) {
+                case Primitive -> identity;
+                case Unit -> "unit";
+                case BoundVar -> "_" + ordinal;
+                case Enum, Domain -> finalName(identity);
+                case Nominal -> {
+                    String name = finalName(identity);
+                    if (arguments.isEmpty()) yield name;
+                    yield name + "[" + String.join(", ", arguments.stream()
+                            .map(WireType::canonicalName).toList()) + "]";
+                }
+                case Builtin -> {
+                    String name = switch (identity) {
+                        case "vector" -> "Vector";
+                        case "map" -> "Map";
+                        case "queue" -> "Queue";
+                        case "set" -> "Set";
+                        default -> identity;
+                    };
+                    if (arguments.isEmpty()) yield name;
+                    yield name + "[" + String.join(", ", arguments.stream()
+                            .map(WireType::canonicalName).toList()) + "]";
+                }
+            };
+        }
+
+        private static String finalName(String identity) {
+            int typeAt = identity.lastIndexOf(":type:");
+            int enumAt = identity.lastIndexOf(":enum:");
+            int domainAt = identity.lastIndexOf(":domain:");
+            int at = Math.max(typeAt, Math.max(enumAt, domainAt));
+            return at < 0 ? identity : identity.substring(at + (at == typeAt ? 6 : at == enumAt ? 6 : 8));
+        }
+    }
+
+    public record NominalField(String name, WireType type, boolean exported,
+                               String provenanceId) {}
+
+    public static final class NominalTemplate {
+        public String templateId;
+        public String moduleId;
+        public String declarationName;
+        public int variableCount;
+        public List<NominalField> fields = new ArrayList<>();
+        public String representationHash;
+        public List<String> methodTemplateIds = new ArrayList<>();
+        public String provenanceId;
+
+        public static NominalTemplate create(String moduleId, String name,
+                                             List<NominalField> fields,
+                                             String provenanceId) {
+            NominalTemplate result = new NominalTemplate();
+            result.moduleId = moduleId;
+            result.declarationName = name;
+            result.templateId = "nominal-template-v1:" + moduleId + ":type:" + name;
+            result.fields.addAll(fields);
+            result.provenanceId = provenanceId;
+            for (NominalField field : fields) {
+                if (field.type.kind == WireTypeKind.BoundVar)
+                    result.variableCount = Math.max(result.variableCount, field.type.ordinal + 1);
+            }
+            result.representationHash = result.computeRepresentationHash();
+            return result;
+        }
+
+        public String computeRepresentationHash() {
+            Writer writer = new Writer();
+            writer.string(templateId);
+            writer.number(variableCount);
+            for (NominalField field : fields) {
+                writer.string(field.name);
+                writer.byteValue(field.exported ? 1 : 0);
+                writer.rawString(encodeType(field.type, variableCount));
+            }
+            return hash("moss-abi-v10-nominal-representation", writer.finish());
+        }
+
+        public byte[] encode() {
+            validate();
+            Writer writer = new Writer();
+            writer.byteValue(1);
+            writer.string(templateId);
+            writer.string(moduleId);
+            writer.string(declarationName);
+            writer.number(variableCount);
+            writer.number(fields.size());
+            Set<String> names = new HashSet<>();
+            for (NominalField field : fields) {
+                require(!field.name.isEmpty() && names.add(field.name)
+                        && !field.provenanceId.isEmpty(), "SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+                        "ABI-v10 nominal field identity is invalid");
+                writer.string(field.name);
+                writeType(writer, field.type, variableCount, 0);
+                writer.byteValue(field.exported ? 1 : 0);
+                writer.string(field.provenanceId);
+            }
+            writer.string(representationHash);
+            writer.number(methodTemplateIds.size());
+            String previous = "";
+            for (String methodId : methodTemplateIds) {
+                require(!methodId.isEmpty() && (previous.isEmpty() || previous.compareTo(methodId) < 0),
+                        "SOURCE_FREE_TYPE_IDENTITY_MISMATCH", "ABI-v10 method IDs are not canonical");
+                previous = methodId;
+                writer.string(methodId);
+            }
+            writer.string(provenanceId);
+            return writer.finish();
+        }
+
+        public MossiRecord record() {
+            return MossiRecord.fromBytes(templateId, encode());
+        }
+
+        public void validate() {
+            require(validTemplateId(templateId) && moduleId.equals(moduleFromTemplateId(templateId))
+                            && templateId.equals("nominal-template-v1:" + moduleId + ":type:" + declarationName)
+                            && !declarationName.isEmpty() && variableCount >= 0 && variableCount <= 4096
+                            && fields.size() <= 4096 && representationHash != null
+                            && representationHash.matches("sha256:[0-9a-f]{64}")
+                            && !provenanceId.isEmpty() && representationHash.equals(computeRepresentationHash()),
+                    "SOURCE_FREE_TYPE_IDENTITY_MISMATCH", "ABI-v10 nominal template shape is invalid");
+        }
+
+        public static NominalTemplate decode(MossiRecord record) {
+            Reader reader = new Reader(record.payloadBytes());
+            require(reader.byteValue() == 1, "SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+                    "ABI-v10 nominal record version is unsupported");
+            NominalTemplate value = new NominalTemplate();
+            value.templateId = reader.string();
+            value.moduleId = reader.string();
+            value.declarationName = reader.string();
+            value.variableCount = reader.number();
+            int count = reader.count(4096, "nominal field count");
+            require(value.variableCount <= 4096, "SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+                    "ABI-v10 nominal variable count exceeds the limit");
+            for (int i = 0; i < count; i++) {
+                String name = reader.string();
+                WireType type = readType(reader, value.variableCount, 0);
+                int exported = reader.byteValue();
+                require(exported <= 1, "SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+                        "ABI-v10 field visibility is invalid");
+                value.fields.add(new NominalField(name, type, exported == 1, reader.string()));
+            }
+            value.representationHash = reader.string();
+            int methodCount = reader.count(4096, "nominal method count");
+            for (int i = 0; i < methodCount; i++) value.methodTemplateIds.add(reader.string());
+            value.provenanceId = reader.string();
+            require(reader.done() && Arrays.equals(value.encode(), record.payloadBytes())
+                            && value.templateId.equals(record.id),
+                    "SOURCE_FREE_TYPE_IDENTITY_MISMATCH", "ABI-v10 nominal template is noncanonical");
+            return value;
+        }
+    }
+
+    public record SourceProvenance(String provenanceId, String moduleId,
+                                   String logicalSourceId, String sourceFileDisplay,
+                                   int startLine, int startColumn, int endLine,
+                                   int endColumn, String declarationId) {
+        public static SourceProvenance create(String moduleId, String declarationId,
+                                              String sourceFile, int line) {
+            String display = sourceFile == null || sourceFile.isEmpty() ? ""
+                    : java.nio.file.Path.of(sourceFile).getFileName().toString();
+            String logical = hash("moss-abi-v10-logical-source", moduleId + "\n" + display);
+            int safeLine = Math.max(line, 1);
+            String id = hash("moss-abi-v10-provenance", declarationId + "\n" + logical + "\n" + safeLine);
+            return new SourceProvenance(id, moduleId, logical, display, safeLine, 1, safeLine, 1, declarationId);
+        }
+
+        public byte[] encode() {
+            require(!provenanceId.isEmpty() && validModuleId(moduleId) && !logicalSourceId.isEmpty()
+                            && startLine > 0 && endLine >= startLine
+                            && (endLine != startLine || endColumn >= startColumn),
+                    "SOURCE_FREE_CONTRACT_INVALID", "ABI-v10 source provenance is invalid");
+            Writer writer = new Writer();
+            writer.byteValue(1);
+            writer.string(provenanceId);
+            writer.string(moduleId);
+            writer.string(logicalSourceId);
+            writer.string(sourceFileDisplay);
+            writer.number(startLine);
+            writer.number(startColumn);
+            writer.number(endLine);
+            writer.number(endColumn);
+            writer.string(declarationId);
+            return writer.finish();
+        }
+
+        public MossiRecord record() { return MossiRecord.fromBytes(provenanceId, encode()); }
+
+        public static SourceProvenance decode(MossiRecord record) {
+            Reader reader = new Reader(record.payloadBytes());
+            require(reader.byteValue() == 1, "SOURCE_FREE_CONTRACT_INVALID",
+                    "ABI-v10 source provenance version is unsupported");
+            SourceProvenance value = new SourceProvenance(reader.string(), reader.string(),
+                    reader.string(), reader.string(), reader.number(), reader.number(),
+                    reader.number(), reader.number(), reader.string());
+            require(reader.done() && Arrays.equals(value.encode(), record.payloadBytes())
+                            && value.provenanceId.equals(record.id),
+                    "SOURCE_FREE_CONTRACT_INVALID", "ABI-v10 source provenance is noncanonical");
+            return value;
+        }
+    }
+
+    public static WireType fromTypeRef(TypeRef type) {
+        if (type == null) throw invalid("ABI-v10 field has no resolved type");
+        return switch (type.kind()) {
+            case Primitive -> WireType.scalar(WireTypeKind.Primitive, type.name());
+            case Unit -> WireType.unit();
+            case Builtin -> {
+                WireType result = WireType.scalar(WireTypeKind.Builtin, type.name());
+                for (TypeRef arg : type.typeArgs()) result.arguments.add(fromTypeRef(arg));
+                yield result;
+            }
+            case Enum -> WireType.scalar(WireTypeKind.Enum, type.declaration().getId());
+            case Domain -> WireType.scalar(WireTypeKind.Domain, type.declaration().getId());
+            case NominalInstance -> {
+                if (type.declaration() == null) throw invalid("ABI-v10 nominal field type has no declaration");
+                WireType result = WireType.scalar(WireTypeKind.Nominal, type.declaration().getId());
+                for (TypeRef.FieldSub sub : type.fieldSubstitutions())
+                    result.arguments.add(fromTypeRef(sub.type()));
+                yield result;
+            }
+            default -> throw invalid("ABI-v10 nominal field type is not closed");
+        };
+    }
+
+    public static String hash(String domain, String text) {
+        return hash(domain, text.getBytes(StandardCharsets.UTF_8));
+    }
+
+    public static String hash(String domain, byte[] payload) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            digest.update(domain.getBytes(StandardCharsets.UTF_8));
+            digest.update((byte) 0);
+            digest.update(payload);
+            return "sha256:" + java.util.HexFormat.of().formatHex(digest.digest());
+        } catch (NoSuchAlgorithmException ex) {
+            throw new IllegalStateException(ex);
+        }
+    }
+
+    private static byte[] encodeType(WireType type, int variables) {
+        Writer writer = new Writer();
+        writeType(writer, type, variables, 0);
+        return writer.finish();
+    }
+
+    private static void writeType(Writer writer, WireType type, int variables, int depth) {
+        require(type != null && depth < 64 && type.arguments.size() <= 64,
+                "SOURCE_FREE_CONTRACT_INVALID", "ABI-v10 type expression is too deep");
+        writer.byteValue(type.kind.ordinal() + 1);
+        if (type.kind == WireTypeKind.BoundVar) {
+            require(type.ordinal >= 0 && type.ordinal < variables && type.identity.isEmpty()
+                            && type.arguments.isEmpty(), "SOURCE_FREE_SUMMARY_INVALID",
+                    "ABI-v10 bound variable escapes its scope");
+            writer.number(type.ordinal);
+            return;
+        }
+        if (type.kind == WireTypeKind.Unit) {
+            require(type.identity.isEmpty() && type.arguments.isEmpty(),
+                    "SOURCE_FREE_CONTRACT_INVALID", "ABI-v10 unit type has payload");
+            return;
+        }
+        require(type.identity != null && !type.identity.isEmpty(),
+                "SOURCE_FREE_CONTRACT_INVALID", "ABI-v10 type identity is missing");
+        if (type.kind == WireTypeKind.Nominal)
+            require(validTemplateId(type.identity), "SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+                    "ABI-v10 nominal TypeExpr has a noncanonical template ID");
+        if (type.kind != WireTypeKind.Builtin && type.kind != WireTypeKind.Nominal)
+            require(type.arguments.isEmpty(), "SOURCE_FREE_CONTRACT_INVALID",
+                    "ABI-v10 scalar type has arguments");
+        writer.string(type.identity);
+        writer.number(type.arguments.size());
+        for (WireType arg : type.arguments) writeType(writer, arg, variables, depth + 1);
+    }
+
+    private static WireType readType(Reader reader, int variables, int depth) {
+        require(depth < 64, "SOURCE_FREE_SUMMARY_INVALID", "ABI-v10 type expression is too deep");
+        int tag = reader.byteValue();
+        require(tag >= 1 && tag <= 7, "SOURCE_FREE_CONTRACT_INVALID", "ABI-v10 type tag is unknown");
+        WireTypeKind kind = WireTypeKind.values()[tag - 1];
+        if (kind == WireTypeKind.BoundVar) {
+            int ordinal = reader.number();
+            require(ordinal < variables, "SOURCE_FREE_SUMMARY_INVALID", "ABI-v10 bound variable escapes its scope");
+            return WireType.bound(ordinal);
+        }
+        if (kind == WireTypeKind.Unit) return WireType.unit();
+        WireType type = WireType.scalar(kind, reader.string());
+        int count = reader.count(64, "type argument count");
+        require((kind == WireTypeKind.Builtin || kind == WireTypeKind.Nominal) || count == 0,
+                "SOURCE_FREE_CONTRACT_INVALID", "ABI-v10 scalar type has arguments");
+        if (kind == WireTypeKind.Nominal)
+            require(validTemplateId(type.identity), "SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+                    "ABI-v10 nominal TypeExpr has a noncanonical template ID");
+        for (int i = 0; i < count; i++) type.arguments.add(readType(reader, variables, depth + 1));
+        return type;
+    }
+
+    private static boolean validTemplateId(String id) {
+        if (id == null || !id.startsWith("nominal-template-v1:")) return false;
+        int marker = id.lastIndexOf(":type:");
+        return marker > "nominal-template-v1:".length() && marker + 6 < id.length()
+                && validModuleId(id.substring("nominal-template-v1:".length(), marker));
+    }
+
+    private static String moduleFromTemplateId(String id) {
+        int marker = id.lastIndexOf(":type:");
+        return id.substring("nominal-template-v1:".length(), marker);
+    }
+
+    private static boolean validModuleId(String id) {
+        return CheckedBodyCodec.isModuleIdValid(id);
+    }
+
+    private static void require(boolean condition, String code, String message) {
+        if (!condition) throw new CompileError(0, message, code);
+    }
+
+    private static CompileError invalid(String message) {
+        return new CompileError(0, message, "SOURCE_FREE_TYPE_IDENTITY_MISMATCH");
+    }
+
+    private static final class Writer {
+        private final ByteArrayOutputStream out = new ByteArrayOutputStream();
+        void byteValue(int value) { out.write(value); }
+        void number(int value) {
+            require(value >= 0, "SOURCE_FREE_CONTRACT_INVALID", "ABI-v10 integer is negative");
+            out.write((value >>> 24) & 0xff); out.write((value >>> 16) & 0xff);
+            out.write((value >>> 8) & 0xff); out.write(value & 0xff);
+        }
+        void string(String value) {
+            byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
+            require(bytes.length <= MAX_STRING_BYTES, "SOURCE_FREE_CONTRACT_INVALID", "ABI-v10 string is oversized");
+            number(bytes.length); out.writeBytes(bytes);
+        }
+        void rawString(byte[] bytes) {
+            require(bytes.length <= MAX_STRING_BYTES, "SOURCE_FREE_CONTRACT_INVALID", "ABI-v10 string is oversized");
+            number(bytes.length); out.writeBytes(bytes);
+        }
+        byte[] finish() { return out.toByteArray(); }
+    }
+
+    private static final class Reader {
+        private final byte[] bytes;
+        private int position;
+        Reader(byte[] bytes) { this.bytes = bytes; }
+        int byteValue() {
+            require(position < bytes.length, "SOURCE_FREE_CONTRACT_INVALID", "ABI-v10 semantic record is truncated");
+            return bytes[position++] & 0xff;
+        }
+        int number() {
+            long result = ((long) byteValue() << 24) | ((long) byteValue() << 16)
+                    | ((long) byteValue() << 8) | byteValue();
+            require(result <= Integer.MAX_VALUE, "SOURCE_FREE_CONTRACT_INVALID", "ABI-v10 number exceeds Java bounds");
+            return (int) result;
+        }
+        int count(int maximum, String label) {
+            int count = number();
+            require(count <= maximum && count <= bytes.length,
+                    "SOURCE_FREE_CONTRACT_INVALID", "ABI-v10 " + label + " exceeds the limit");
+            return count;
+        }
+        String string() {
+            int length = number();
+            require(length <= MAX_STRING_BYTES && length <= bytes.length - position,
+                    "SOURCE_FREE_CONTRACT_INVALID", "ABI-v10 semantic string is truncated");
+            try {
+                String value = StandardCharsets.UTF_8.newDecoder()
+                        .onMalformedInput(CodingErrorAction.REPORT)
+                        .onUnmappableCharacter(CodingErrorAction.REPORT)
+                        .decode(ByteBuffer.wrap(bytes, position, length)).toString();
+                position += length;
+                return value;
+            } catch (CharacterCodingException ex) {
+                throw new CompileError(0, "ABI-v10 semantic string is not UTF-8", "SOURCE_FREE_CONTRACT_INVALID");
+            }
+        }
+        boolean done() { return position == bytes.length; }
+    }
+}

@@ -8,6 +8,11 @@ import org.mosslang.compiler.parser.Parser;
 import org.mosslang.compiler.semantics.CheckedProgram;
 import org.mosslang.compiler.semantics.SemanticChecker;
 import org.mosslang.compiler.interpreter.FastInterpreter;
+import org.mosslang.compiler.abi.AbiV10Records;
+import org.mosslang.compiler.abi.CheckedBodyCodec;
+import org.mosslang.compiler.abi.MossiImport;
+import org.mosslang.compiler.abi.MossiInterface;
+import org.mosslang.compiler.abi.MossiRecord;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -542,14 +547,15 @@ public class ProjectBuilder {
                 List<String> deps = moduleImports.getOrDefault(mod, Collections.emptyList());
 
                 // Generate .mossi interface
-                String mossiContent = generateMossiInterface(manifest, mod, prog, toolchain, deps, buildDir, externalCandidateProviders);
+                byte[] mossiContent = generateMossiInterface(manifest, mod, prog, toolchain, deps, buildDir, externalCandidateProviders);
                 Path mossiPath = buildDir.resolve(mod + ".mossi");
                 writeFileIfChanged(mossiPath, mossiContent);
                 emittedInterfaces.add(mossiPath);
 
                 // Generate module Rust
                 boolean isRoot = mod.equals(rootModuleName);
-                String rustContent = generateModuleRust(buildDir, externalCandidateProviders, prog, mod, deps, mossiContent, isRoot);
+                String mossiDigest = providerDigest(mossiContent);
+                String rustContent = generateModuleRust(buildDir, externalCandidateProviders, prog, mod, deps, mossiDigest, isRoot);
                 Path rustPath = buildDir.resolve(mod + ".rs");
                 boolean rc = writeFileIfChanged(rustPath, rustContent);
                 rustChanged = rc || rustChanged;
@@ -1015,6 +1021,21 @@ public class ProjectBuilder {
         return value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
+    private static String providerDigest(byte[] mossiContent) throws CompileError {
+        String prefix = "moss-module-interface-v3\nprovider_contract_digest sha256:";
+        String text = new String(mossiContent, StandardCharsets.UTF_8);
+        if (!text.startsWith(prefix)) {
+            throw new CompileError("SOURCE_FREE_CONTRACT_INVALID",
+                    "generated ABI-v10 interface is missing its provider digest", "", 1);
+        }
+        int end = text.indexOf('\n', prefix.length());
+        if (end < 0) {
+            throw new CompileError("SOURCE_FREE_CONTRACT_INVALID",
+                    "generated ABI-v10 provider digest is malformed", "", 1);
+        }
+        return text.substring(prefix.length(), end).trim();
+    }
+
     static void appendV10FramedRecord(StringBuilder out, String id, String payload) {
         byte[] idBytes = id.getBytes(StandardCharsets.UTF_8);
         byte[] payloadBytes = payload.getBytes(StandardCharsets.UTF_8);
@@ -1022,7 +1043,106 @@ public class ProjectBuilder {
                 .append(id).append(payload).append("\n");
     }
 
-    private static String generateMossiInterface(ProjectManifest manifest, String module, Program prog, BackendToolchain toolchain, List<String> deps, Path buildDir, Map<String, List<Path>> externalCandidateProviders) {
+    private static String localTypeName(String value, String module) {
+        String prefix = module + "__";
+        return value != null && value.startsWith(prefix) ? value.substring(prefix.length()) : value;
+    }
+
+    private static List<String> splitCanonicalTypeArguments(String body) {
+        List<String> result = new ArrayList<>();
+        int depth = 0;
+        int start = 0;
+        for (int i = 0; i < body.length(); i++) {
+            char ch = body.charAt(i);
+            if (ch == '[') depth++;
+            else if (ch == ']') depth--;
+            else if (ch == ',' && depth == 0) {
+                result.add(body.substring(start, i).trim());
+                start = i + 1;
+            }
+        }
+        if (start < body.length()) result.add(body.substring(start).trim());
+        return result;
+    }
+
+    private static AbiV10Records.WireType v10WireType(String raw, String module,
+                                                       String moduleId, Program program) {
+        String value = raw == null ? "" : raw.trim();
+        String lowered = value.toLowerCase(Locale.ROOT);
+        if (lowered.equals("unit")) return AbiV10Records.WireType.unit();
+        if (List.of("int", "float", "bool", "string", "char", "range", "rangebatch", "fileio", "executor").contains(lowered)) {
+            return AbiV10Records.WireType.scalar(AbiV10Records.WireTypeKind.Primitive, lowered);
+        }
+        int open = value.indexOf('[');
+        if (open > 0 && value.endsWith("]")) {
+            String head = value.substring(0, open).trim().toLowerCase(Locale.ROOT);
+            AbiV10Records.WireTypeKind kind = switch (head) {
+                case "vector", "map", "queue", "set" -> AbiV10Records.WireTypeKind.Builtin;
+                default -> null;
+            };
+            if (kind == null) return null;
+            AbiV10Records.WireType result = AbiV10Records.WireType.scalar(kind, head);
+            for (String argument : splitCanonicalTypeArguments(value.substring(open + 1, value.length() - 1))) {
+                AbiV10Records.WireType parsed = v10WireType(argument, module, moduleId, program);
+                if (parsed == null) return null;
+                result.arguments.add(parsed);
+            }
+            int expected = "map".equals(head) ? 2 : 1;
+            return result.arguments.size() == expected ? result : null;
+        }
+        for (ObjectType object : program.objects) {
+            String name = localTypeName(object.name, module);
+            if (value.equals(object.name) || value.equals(name)) {
+                return AbiV10Records.WireType.scalar(AbiV10Records.WireTypeKind.Nominal,
+                        "nominal-template-v1:" + moduleId + ":type:" + name);
+            }
+        }
+        for (EnumType enumeration : program.enums) {
+            String name = localTypeName(enumeration.name, module);
+            if (value.equals(enumeration.name) || value.equals(name)) {
+                return AbiV10Records.WireType.scalar(AbiV10Records.WireTypeKind.Enum,
+                        "nominal-enum-v1:" + moduleId + ":enum:" + name);
+            }
+        }
+        for (Domain domain : program.domains) {
+            String name = localTypeName(domain.name, module);
+            if (value.equals(domain.name) || value.equals(name)) {
+                return AbiV10Records.WireType.scalar(AbiV10Records.WireTypeKind.Domain,
+                        "nominal-domain-v1:" + moduleId + ":domain:" + name);
+            }
+        }
+        return null;
+    }
+
+    private static AbiV10Records.NominalTemplate v10NominalTemplate(
+            ProjectManifest manifest, String module, String moduleId,
+            Program program, ObjectType object,
+            List<AbiV10Records.SourceProvenance> provenanceRecords) {
+        if (!object.exported || object.sourceFree || !object.methods.isEmpty()
+                || (object.definingModule != null && !object.definingModule.isEmpty()
+                    && !object.definingModule.equals(module))) return null;
+        String name = localTypeName(object.name, module);
+        String templateId = "nominal-template-v1:" + moduleId + ":type:" + name;
+        AbiV10Records.SourceProvenance provenance = AbiV10Records.SourceProvenance.create(
+                moduleId, templateId, object.sourceFile, object.line);
+        List<AbiV10Records.NominalField> fields = new ArrayList<>();
+        int variableOrdinal = 0;
+        for (Field field : object.fields) {
+            boolean inferred = field.inferred || field.type == null || field.type.isEmpty();
+            AbiV10Records.WireType type = inferred
+                    ? AbiV10Records.WireType.bound(variableOrdinal++)
+                    : v10WireType(field.type, module, moduleId, program);
+            if (type == null) return null;
+            fields.add(new AbiV10Records.NominalField(field.name, type,
+                    field.exported, provenance.provenanceId()));
+        }
+        AbiV10Records.NominalTemplate template = AbiV10Records.NominalTemplate.create(
+                moduleId, name, fields, provenance.provenanceId());
+        provenanceRecords.add(provenance);
+        return template;
+    }
+
+    private static byte[] generateMossiInterface(ProjectManifest manifest, String module, Program prog, BackendToolchain toolchain, List<String> deps, Path buildDir, Map<String, List<Path>> externalCandidateProviders) {
         StringBuilder contractBuf = new StringBuilder();
         StringBuilder semanticBuf = new StringBuilder();
 
@@ -1106,22 +1226,10 @@ public class ProjectBuilder {
             String modId = "module-v1:" + manifest.getName() + "@" + manifest.getVersion() + "::" + module;
             List<String> sortedDeps = new ArrayList<>(deps);
             Collections.sort(sortedDeps);
-            StringBuilder importsBuf = new StringBuilder();
-            importsBuf.append("imports\ncount ").append(sortedDeps.size()).append("\n");
-            for (String dep : sortedDeps) {
-                Path depMossi = buildDir != null ? buildDir.resolve(dep + ".mossi") : null;
-                if ((depMossi == null || !Files.exists(depMossi)) && externalCandidateProviders != null) {
-                    List<Path> ext = externalCandidateProviders.get(dep);
-                    if (ext != null && !ext.isEmpty()) depMossi = ext.get(0);
-                }
-                SourceFreeAbi.MossiInfo dependency = depMossi != null && Files.exists(depMossi)
-                        ? SourceFreeAbi.parseMossiInfo(depMossi) : null;
-                importsBuf.append(v10ImportRecord(dep, dependency, depMossi));
-            }
-            String importsStr = importsBuf.toString();
-
             List<String[]> binRecords = new ArrayList<>();
             List<String[]> semRecords = new ArrayList<>();
+            List<MossiRecord> nominalRecords = new ArrayList<>();
+            List<AbiV10Records.SourceProvenance> provenanceRecords = new ArrayList<>();
 
             for (EnumType e : prog.enums) {
                 StringBuilder b = new StringBuilder();
@@ -1161,6 +1269,10 @@ public class ProjectBuilder {
                     appendV9ObjectMethodRecord(s, obj, method, module);
                 }
                 semRecords.add(new String[]{"type:" + objName, s.toString()});
+
+                AbiV10Records.NominalTemplate nominal = v10NominalTemplate(
+                        manifest, module, modId, prog, obj, provenanceRecords);
+                if (nominal != null) nominalRecords.add(nominal.record());
             }
 
             for (Function fn : prog.functions) {
@@ -1184,37 +1296,32 @@ public class ProjectBuilder {
             binRecords.sort(Comparator.comparing(record -> record[0]));
             semRecords.sort(Comparator.comparing(record -> record[0]));
 
-            StringBuilder binaryFramed = new StringBuilder("binary_contract\ncount ").append(binRecords.size()).append("\n");
-            for (String[] r : binRecords) {
-                appendV10FramedRecord(binaryFramed, r[0], r[1]);
+            MossiInterface mossi = new MossiInterface(modId);
+            mossi.compiler = "moss-java-0.1.0";
+            mossi.backendFingerprint = toolchain.getFingerprint();
+            mossi.backendRustc = toolchain.getVersionVerbose().split("\\R")[0];
+            for (String dep : sortedDeps) {
+                Path depMossi = buildDir != null ? buildDir.resolve(dep + ".mossi") : null;
+                if ((depMossi == null || !Files.exists(depMossi)) && externalCandidateProviders != null) {
+                    List<Path> ext = externalCandidateProviders.get(dep);
+                    if (ext != null && !ext.isEmpty()) depMossi = ext.get(0);
+                }
+                SourceFreeAbi.MossiInfo dependency = depMossi != null && Files.exists(depMossi)
+                        ? SourceFreeAbi.parseMossiInfo(depMossi) : null;
+                if (dependency == null) {
+                    throw new CompileError("SOURCE_FREE_ABI_REBUILD_REQUIRED",
+                            "ABI-v10 provider dependency '" + dep + "' has no complete interface metadata",
+                            depMossi != null ? depMossi.toString() : "", 1);
+                }
+                mossi.addImport(dependency.moduleId, dependency.binaryHash, dependency.semanticHash);
             }
-            StringBuilder semanticFramed = new StringBuilder("semantic_contract\ncount ").append(semRecords.size()).append("\n");
-            for (String[] r : semRecords) {
-                appendV10FramedRecord(semanticFramed, r[0], r[1]);
+            for (String[] record : binRecords) {
+                mossi.binaryContract.add(new MossiRecord(record[0], record[1]));
             }
-
-            String privFramed = "private_semantic_dependencies\ncount 0\n";
-            String provFramed = "provenance\ncount 0\n";
-
-            String binHash = "sha256:" + sha256("moss-abi-v10-binary-contract\0" + binaryFramed.toString());
-            String semHash = "sha256:" + sha256("moss-abi-v10-semantic-contract\0" + semanticFramed.toString() + privFramed);
-
-            String body = importsStr + binaryFramed.toString() + semanticFramed.toString() + privFramed + provFramed;
-            String header = "moss-module-interface-v3\n" +
-                    "module_id " + modId + "\n" +
-                    "schema_version 10\n" +
-                    "native_abi 10\n" +
-                    "compiler 0.1.0\n" +
-                    "backend_fingerprint " + toolchain.getFingerprint() + "\n" +
-                    "backend_rustc " + toolchain.getVersionVerbose().split("\\R")[0] + "\n" +
-                    "binary_contract_hash " + binHash + "\n" +
-                    "semantic_contract_hash " + semHash + "\n";
-
-            String ifaceHash = "sha256:" + sha256("moss-abi-v10-interface\0" + header + body);
-            String material = header + "interface_hash " + ifaceHash + "\n" + body;
-            String digest = sha256(material);
-            return "moss-module-interface-v3\nprovider_contract_digest sha256:" + digest + "\n" +
-                    material.substring("moss-module-interface-v3\n".length());
+            mossi.binaryContract.addAll(nominalRecords);
+            for (String[] record : semRecords) mossi.semanticContract.add(new MossiRecord(record[0], record[1]));
+            for (AbiV10Records.SourceProvenance provenance : provenanceRecords) mossi.provenance.add(provenance.record());
+            return CheckedBodyCodec.encodeMossiBytes(mossi);
         }
 
         StringBuilder sb = new StringBuilder();
@@ -1240,7 +1347,8 @@ public class ProjectBuilder {
         String material = sb.toString();
         String digest = sha256(material);
         int firstLine = material.indexOf('\n');
-        return material.substring(0, firstLine + 1) + "provider_contract_digest sha256:" + digest + "\n" + material.substring(firstLine + 1);
+        return (material.substring(0, firstLine + 1) + "provider_contract_digest sha256:" + digest + "\n" + material.substring(firstLine + 1))
+                .getBytes(StandardCharsets.UTF_8);
     }
 
     private static String raisedErrorIdentity(String module, List<Stmt> body) {
@@ -1458,7 +1566,7 @@ public class ProjectBuilder {
         }
     }
 
-    private static String generateModuleRust(Path buildDir, Map<String, List<Path>> externalCandidateProviders, Program prog, String module, List<String> deps, String mossiContent, boolean isRoot) {
+    private static String generateModuleRust(Path buildDir, Map<String, List<Path>> externalCandidateProviders, Program prog, String module, List<String> deps, String mossiDigest, boolean isRoot) {
         // Collect generic functions from all deps
         Pattern fnPat = Pattern.compile("\\bfn\\s+([A-Za-z0-9_]+)\\s+kind=generic");
         for (String dep : deps) {
@@ -1509,15 +1617,8 @@ public class ProjectBuilder {
         extra.append("\n");
 
         // Contract marker
-        String digest = "";
-        for (String line : mossiContent.split("\\R")) {
-            if (line.startsWith("provider_contract_digest sha256:")) {
-                digest = line.substring(32).trim();
-                break;
-            }
-        }
         boolean isV10 = "v10".equals(System.getenv("MOSS_STAGED_ABI"));
-        String marker = (isV10 ? "MOSS_ABI_V10_CONTRACT::" : "MOSS_ABI_V9_CONTRACT::") + module + "::" + digest + "::END";
+        String marker = (isV10 ? "MOSS_ABI_V10_CONTRACT::" : "MOSS_ABI_V9_CONTRACT::") + module + "::" + mossiDigest + "::END";
         extra.append("#[used]\n#[no_mangle]\npub static __moss_abi_")
           .append(isV10 ? "v10" : "v9").append("_contract_")
           .append(module).append(": [u8; ").append(marker.length())
@@ -1566,6 +1667,18 @@ public class ProjectBuilder {
                 }
             }
             Files.writeString(file, content, StandardCharsets.UTF_8);
+            return true;
+        } catch (IOException e) {
+            throw new CompileError("MOSS_INTERNAL_OR_IO_ERROR", "cannot write file '" + file + "': " + e.getMessage(), file.toString(), 0);
+        }
+    }
+
+    private static boolean writeFileIfChanged(Path file, byte[] content) throws CompileError {
+        try {
+            if (Files.exists(file) && java.util.Arrays.equals(Files.readAllBytes(file), content)) {
+                return false;
+            }
+            Files.write(file, content);
             return true;
         } catch (IOException e) {
             throw new CompileError("MOSS_INTERNAL_OR_IO_ERROR", "cannot write file '" + file + "': " + e.getMessage(), file.toString(), 0);

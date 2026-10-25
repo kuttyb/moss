@@ -8,6 +8,7 @@ import org.mosslang.compiler.backend.NativeGenerator;
 import org.mosslang.compiler.abi.CheckedBodyCodec;
 import org.mosslang.compiler.abi.MossiInterface;
 import org.mosslang.compiler.abi.MossiRecord;
+import org.mosslang.compiler.abi.AbiV10Records;
 import org.mosslang.compiler.diagnostics.CompileError;
 import org.mosslang.compiler.parser.Parser;
 import org.mosslang.compiler.semantics.SemanticChecker;
@@ -131,10 +132,19 @@ public final class SourceFreeObjectMetadataTest {
         MossiInterface v10 = new MossiInterface("module-v1:sample@0.1.0::provider");
         v10.compiler = "moss-java-é";
         v10.binaryContract.add(new MossiRecord("type:Point", "type Point nominal\n"));
+        AbiV10Records.SourceProvenance pointProvenance = AbiV10Records.SourceProvenance.create(
+                v10.moduleId, "nominal-template-v1:" + v10.moduleId + ":type:Point",
+                "provider.moss", 1);
+        AbiV10Records.NominalTemplate pointTemplate = AbiV10Records.NominalTemplate.create(
+                v10.moduleId, "Point", java.util.List.of(new AbiV10Records.NominalField(
+                        "x", AbiV10Records.WireType.scalar(
+                                AbiV10Records.WireTypeKind.Primitive, "float"),
+                        true, pointProvenance.provenanceId())), pointProvenance.provenanceId());
+        v10.binaryContract.add(pointTemplate.record());
+        v10.provenance.add(pointProvenance.record());
         v10.semanticContract.add(new MossiRecord("type:Point", ""
                 + "export type Point nominal\n"
                 + "  declaration_id nominal-template-v1:module-v1:sample@0.1.0::provider:type:Point\n"
-                + exportedFields
                 + "  object_method replace return=unit receiver=WRITE "
                 + "effects=local_capture_read=0;local_mutation=0;domain_read=0;domain_write=0;message=0;external_io=0;fileio=0;fileio_unknown=0;may_panic=0;raise_set=-;may_diverge=0;unresolved=0 "
                 + "params=1 \"next\" \"Vector[Int]\" CONSUME\n"));
@@ -150,6 +160,9 @@ public final class SourceFreeObjectMetadataTest {
                 .filter(object -> object.name.equals("provider__Point"))
                 .findFirst().orElseThrow();
         if (v10Point.methods.size() != 1
+                || v10Point.fields.size() != 1
+                || !"x".equals(v10Point.fields.get(0).name)
+                || !"float".equals(v10Point.fields.get(0).type)
                 || !"unit".equals(v10Point.methods.get(0).returnType)
                 || v10Point.methods.get(0).receiverAccessMode
                         != org.mosslang.compiler.types.AccessMode.Write
