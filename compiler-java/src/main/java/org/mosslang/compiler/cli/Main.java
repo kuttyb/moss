@@ -798,6 +798,8 @@ public class Main {
         try {
             byte[] rawBytes = Files.readAllBytes(cand);
             String text = readMossiText(cand);
+            Map<String, org.mosslang.compiler.abi.AbiV10Records.Summary> typedV10Summaries = new HashMap<>();
+            Map<String, org.mosslang.compiler.abi.AbiV10Records.CheckedBodyRecord> typedV10Bodies = new HashMap<>();
             if (text.startsWith("moss-module-interface-v3\n")) {
                 org.mosslang.compiler.abi.MossiInterface v10 =
                         org.mosslang.compiler.abi.CheckedBodyCodec.verifySourceFree(rawBytes);
@@ -806,6 +808,13 @@ public class Main {
                 java.util.Map<String, org.mosslang.compiler.abi.AbiV10Records.MethodTemplate> methodTemplates =
                         new java.util.HashMap<>();
                 for (org.mosslang.compiler.abi.MossiRecord record : v10.binaryContract) {
+                    byte[] payload = record.payloadBytes();
+                    if (record.id.startsWith("sha256:") && payload.length > 0
+                            && (payload[0] == 2 || payload[0] == 3 || payload[0] == 4)) {
+                        org.mosslang.compiler.abi.AbiV10Records.Summary summary =
+                                org.mosslang.compiler.abi.AbiV10Records.Summary.decode(record);
+                        typedV10Summaries.put(summary.callableId, summary);
+                    }
                     if (!record.id.startsWith("method-template-v1:")) continue;
                     org.mosslang.compiler.abi.AbiV10Records.MethodTemplate method =
                             org.mosslang.compiler.abi.AbiV10Records.MethodTemplate.decode(record);
@@ -815,7 +824,15 @@ public class Main {
                     }
                     methodTemplates.put(method.methodId, method);
                 }
+                for (org.mosslang.compiler.abi.MossiRecord record : v10.privateSemanticDependencies) {
+                    if (record.id.startsWith("checked-body-v1:")) {
+                        org.mosslang.compiler.abi.AbiV10Records.CheckedBodyRecord body =
+                                org.mosslang.compiler.abi.AbiV10Records.CheckedBodyRecord.decode(record);
+                        typedV10Bodies.put(body.callableId, body);
+                    }
+                }
                 for (org.mosslang.compiler.abi.MossiRecord record : v10.binaryContract) {
+                    if (record.id.startsWith("sha256:")) continue;
                     if (record.id.startsWith("nominal-template-v1:")) {
                         org.mosslang.compiler.abi.AbiV10Records.NominalTemplate template =
                                 org.mosslang.compiler.abi.AbiV10Records.NominalTemplate.decode(record);
@@ -1386,6 +1403,7 @@ public class Main {
                     currentFn = null;
                 }
             }
+            projectV10IdentityCallables(program, cand, typedV10Summaries, typedV10Bodies);
             restoreSourceFreeFailureArms(sourceFreeContractLines, program, modName, cand);
         } catch (CompileError error) {
             throw error;
@@ -1394,6 +1412,89 @@ public class Main {
                     "cannot parse source-free function metadata from '" + cand + "': " + error.getMessage(),
                     cand.toString(), 1);
         }
+    }
+
+    /** Project the currently supported direct-identity checked ABI body into source-free functions. */
+    private static void projectV10IdentityCallables(
+            Program program, Path interfaceFile,
+            Map<String, org.mosslang.compiler.abi.AbiV10Records.Summary> summaries,
+            Map<String, org.mosslang.compiler.abi.AbiV10Records.CheckedBodyRecord> bodies) {
+        for (Map.Entry<String, org.mosslang.compiler.abi.AbiV10Records.Summary> entry : summaries.entrySet()) {
+            String callableId = entry.getKey();
+            org.mosslang.compiler.abi.AbiV10Records.Summary summary = entry.getValue();
+            org.mosslang.compiler.abi.AbiV10Records.CheckedBodyRecord body = bodies.get(callableId);
+            if (body == null || !summary.requirements.isEmpty() || !summary.dependencies.isEmpty()
+                    || summary.observableEffectBits != 0 || !summary.observableEffectTags.isEmpty()
+                    || summary.parameters.size() != 1 || summary.parameterAccess.size() != 1
+                    || summary.variableCount > 4096) continue;
+            org.mosslang.compiler.types.TypeRef parameterType = v10SimpleWireType(
+                    summary.parameters.get(0), summary.variableCount);
+            org.mosslang.compiler.types.TypeRef resultType = v10SimpleWireType(
+                    summary.result, summary.variableCount);
+            if (parameterType == null || resultType == null || !parameterType.equals(resultType)) continue;
+            List<org.mosslang.compiler.abi.CheckedStmt> statements;
+            try {
+                statements = org.mosslang.compiler.abi.CheckedBodyCodec
+                        .decodeCheckedBody(body.checkedIrBytes);
+            } catch (CompileError invalidBody) {
+                continue;
+            }
+            if (statements.size() != 1) continue;
+            org.mosslang.compiler.abi.CheckedStmt statement = statements.get(0);
+            if (statement.kind != org.mosslang.compiler.abi.CheckedStmtKind.Return
+                    || statement.expr == null
+                    || statement.expr.kind != org.mosslang.compiler.abi.CheckedExprKind.Parameter
+                    || statement.expr.ordinal != 0
+                    || !parameterType.equals(statement.expr.type)) continue;
+
+            List<org.mosslang.compiler.ast.Function> matches = program.functions.stream()
+                    .filter(function -> callableId.equals(function.semanticCallableId))
+                    .toList();
+            if (matches.isEmpty() || matches.stream().anyMatch(function -> function.params.size() != 1)) continue;
+            for (org.mosslang.compiler.ast.Function function : matches) {
+                function.params.get(0).bindType(parameterType);
+                function.parameterAccessModes.clear();
+                function.parameterAccessModes.add(switch (summary.parameterAccess.get(0)) {
+                    case Read -> org.mosslang.compiler.types.AccessMode.Read;
+                    case Write -> org.mosslang.compiler.types.AccessMode.Write;
+                    case Consume -> org.mosslang.compiler.types.AccessMode.Consume;
+                });
+                function.bindReturnType(resultType);
+                function.body.clear();
+                org.mosslang.compiler.ast.Stmt projected = new org.mosslang.compiler.ast.Stmt(
+                        org.mosslang.compiler.ast.Stmt.Kind.Return, 1, 1,
+                        "return " + function.params.get(0).name,
+                        function.params.get(0).name, "");
+                projected.sourceFile = interfaceFile.toString();
+                function.body.add(projected);
+                function.resultExpression = function.params.get(0).name;
+                function.resultLine = 1;
+                function.generic = summary.variableCount > 0;
+                function.staticDispatch = function.generic;
+            }
+        }
+    }
+
+    private static org.mosslang.compiler.types.TypeRef v10SimpleWireType(
+            org.mosslang.compiler.abi.AbiV10Records.WireType wire, int variableCount) {
+        return switch (wire.kind) {
+            case Primitive -> org.mosslang.compiler.types.TypeRef.primitive(wire.identity);
+            case Unit -> org.mosslang.compiler.types.TypeRef.unit();
+            case BoundVar -> wire.ordinal >= 0 && wire.ordinal < variableCount
+                    ? org.mosslang.compiler.types.TypeRef.var(
+                            new org.mosslang.compiler.types.TypeVarId(0, 0, wire.ordinal)) : null;
+            case Builtin -> {
+                List<org.mosslang.compiler.types.TypeRef> arguments = new ArrayList<>();
+                for (org.mosslang.compiler.abi.AbiV10Records.WireType argument : wire.arguments) {
+                    org.mosslang.compiler.types.TypeRef converted = v10SimpleWireType(argument, variableCount);
+                    if (converted == null) { arguments.clear(); break; }
+                    arguments.add(converted);
+                }
+                yield arguments.size() == wire.arguments.size()
+                        ? org.mosslang.compiler.types.TypeRef.builtin(wire.identity, arguments) : null;
+            }
+            case Nominal, Enum, Domain -> null;
+        };
     }
 
     private static void restoreSourceFreeFailureArms(List<String> contractLines, Program program,

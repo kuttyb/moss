@@ -13301,3 +13301,21 @@ identity function to `Int` and `String`; the Java semantic checker accepts
 both. The current loader still obtains callable body/signature behavior from
 legacy generic text and does not yet project typed summary/checked-body records
 into checker facts. No native build or execution was run.
+
+### Phase 25.3 continuation — project typed ABI-v10 identity records in the loader
+
+The source-free loader now recognizes canonical ABI-v10 callable summaries
+and checked-body records and projects the narrowly supported pure one-parameter
+identity case into the Java Function AST. It requires a checked-body return of
+parameter zero, a matching open or simple wire type, no requirements or
+semantic dependencies, and no observable effects. The checked-body and
+summary hashes and record identities are validated by the existing verifier
+before projection. The end-to-end Java test removes legacy generic body rows
+from the provider interface, then checks imported Int and String
+specializations. General body projection, nominal type resolution, requirement
+and effect projection, and native source-free provider-consumer validation
+remain open.
+
+Validation: all ten Java unit-test classes pass after clean builds in default
+ABI-v9 and staged ABI-v10 modes; agent-feedback validation and `git diff
+--check` pass. No native or SDK gate ran.

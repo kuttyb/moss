@@ -327,6 +327,8 @@ public final class ProjectBuilderMetadataTest {
                 + "export fn identity(value):\n"
                 + "  return value\n", "identity-provider.moss");
         new org.mosslang.compiler.semantics.CheckedProgram(identityProgram).run();
+        identityProgram.functions.forEach(function -> function.semanticCallableId =
+                "callable-v1:" + "module-v1:sample@1.0.0::provider:fn:identity");
         MossiInterface identityInterface = CheckedBodyCodec.verifySourceFree(
                 ProjectBuilder.generateMossiInterface(manifest, "provider", identityProgram,
                         toolchain, java.util.List.of(), Path.of("tmp"), java.util.Map.of()));
@@ -352,6 +354,16 @@ public final class ProjectBuilderMetadataTest {
         Path identityMossi = null;
         try {
             identityMossi = Files.createTempFile(Path.of("tmp"), "identity-provider-", ".mossi");
+            for (int index = 0; index < identityInterface.semanticContract.size(); index++) {
+                MossiRecord record = identityInterface.semanticContract.get(index);
+                String withoutLegacyBody = record.payload.lines()
+                        .filter(line -> !line.trim().startsWith("generic_stmt ")
+                                && !line.trim().startsWith("generic_result ")
+                                && !line.trim().startsWith("generic_ir_"))
+                        .collect(java.util.stream.Collectors.joining("\n", "", "\n"));
+                identityInterface.semanticContract.set(index,
+                        new MossiRecord(record.id, withoutLegacyBody));
+            }
             Files.write(identityMossi, CheckedBodyCodec.encodeMossiBytes(identityInterface));
             Program consumer = Parser.parseSource(""
                     + "fn use_int() -> Int:\n"
@@ -361,6 +373,19 @@ public final class ProjectBuilderMetadataTest {
                     + "fn main():\n"
                     + "  pass\n", "identity-consumer.moss");
             org.mosslang.compiler.cli.Main.loadMossiFunctions(identityMossi, "provider", consumer);
+            Function importedIdentity = consumer.functions.stream()
+                    .filter(function -> function.name.equals("provider.identity"))
+                    .findFirst().orElseThrow(() -> new AssertionError("source-free identity callable was not loaded"));
+            if (importedIdentity.params.get(0).typeRef == null
+                    || importedIdentity.returnTypeRef == null
+                    || importedIdentity.body.size() != 1
+                    || importedIdentity.body.get(0).kind != org.mosslang.compiler.ast.Stmt.Kind.Return) {
+                throw new AssertionError("ABI-v10 checked identity facts were not projected into the source-free callable: id="
+                        + importedIdentity.semanticCallableId + ", paramType="
+                        + importedIdentity.params.get(0).typeRef + ", returnType="
+                        + importedIdentity.returnTypeRef + ", body=" + importedIdentity.body.size()
+                        + ", summary=" + identitySummary.callableId + ", bodyId=" + identityBody.callableId);
+            }
             new org.mosslang.compiler.semantics.SemanticChecker(consumer).run();
         } catch (java.io.IOException error) {
             throw new AssertionError("could not construct source-free identity consumer", error);
