@@ -425,6 +425,8 @@ public final class ProjectBuilderMetadataTest {
                 + "    return \"point\"\n"
                 + "  fn measure() -> Float:\n"
                 + "    return 1.5\n"
+                + "  fn ready_after(delay: Int) -> Int:\n"
+                + "    return 8\n"
                 + "enum Outcome:\n"
                 + "  Ready(code: Int)\n"
                 + "  Done\n"
@@ -455,7 +457,7 @@ public final class ProjectBuilderMetadataTest {
         AbiV10Records.NominalTemplate pointTemplate = decoded.binaryContract.stream()
                 .filter(record -> record.id.startsWith("nominal-template-v1:"))
                 .map(AbiV10Records.NominalTemplate::decode).findFirst().orElseThrow();
-        if (pointTemplate.methodTemplateIds.size() != 4) {
+        if (pointTemplate.methodTemplateIds.size() != 5) {
             throw new AssertionError("ABI-v10 nominal template omitted its method reference");
         }
         AbiV10Records.MethodTemplate methodTemplate = decoded.binaryContract.stream()
@@ -467,6 +469,15 @@ public final class ProjectBuilderMetadataTest {
                 || !methodTemplate.parameterAccess.isEmpty()
                 || !"int".equals(methodTemplate.result.canonicalName())) {
             throw new AssertionError("ABI-v10 method template omitted its pure literal-return signature");
+        }
+        AbiV10Records.MethodTemplate parameterizedMethodTemplate = decoded.binaryContract.stream()
+                .filter(record -> pointTemplate.methodTemplateIds.contains(record.id))
+                .map(AbiV10Records.MethodTemplate::decode)
+                .filter(method -> "ready_after".equals(method.methodName)).findFirst().orElseThrow();
+        if (parameterizedMethodTemplate.parameters.size() != 1
+                || !"int".equals(parameterizedMethodTemplate.parameters.get(0).canonicalName())
+                || !parameterizedMethodTemplate.parameterAccess.equals(List.of(AccessMode.Read.ordinal() + 1))) {
+            throw new AssertionError("ABI-v10 pure method template lost its typed READ parameter");
         }
         MossiInterface methodTemplateOnly = CheckedBodyCodec.verifySourceFree(generated);
         methodTemplateOnly.semanticContract.clear();
@@ -484,6 +495,8 @@ public final class ProjectBuilderMetadataTest {
                     + "  return point.label()\n"
                     + "fn measure(point: provider__Point) -> Float:\n"
                     + "  return point.measure()\n"
+                    + "fn delayed(point: provider__Point, delay: Int) -> Int:\n"
+                    + "  return point.ready_after(delay)\n"
                     + "fn main():\n"
                     + "  pass\n", "method-template-consumer.moss");
             org.mosslang.compiler.cli.Main.loadMossiFunctions(
@@ -500,7 +513,11 @@ public final class ProjectBuilderMetadataTest {
                                     && "string".equalsIgnoreCase(method.returnType)))
                     || methodConsumer.objects.stream().noneMatch(object -> object.name.equals("provider__Point")
                             && object.methods.stream().anyMatch(method -> method.name.equals("measure")
-                                    && "float".equalsIgnoreCase(method.returnType)))) {
+                                    && "float".equalsIgnoreCase(method.returnType)))
+                    || methodConsumer.objects.stream().noneMatch(object -> object.name.equals("provider__Point")
+                            && object.methods.stream().anyMatch(method -> method.name.equals("ready_after")
+                                    && method.params.size() == 1
+                                    && "int".equalsIgnoreCase(method.params.get(0).type)))) {
                 throw new AssertionError("ABI-v10 method template did not supply source-free method typing");
             }
         } catch (java.io.IOException error) {

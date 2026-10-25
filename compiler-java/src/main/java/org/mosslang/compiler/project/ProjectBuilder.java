@@ -1273,7 +1273,7 @@ public class ProjectBuilder {
     }
 
     private static boolean v10PurePrimitiveLiteralMethod(Method method) {
-        if (!method.params.isEmpty() || method.body.size() != 1
+        if (method.body.size() != 1
                 || method.body.get(0).kind != org.mosslang.compiler.ast.Stmt.Kind.Return
                 || method.returnType == null) return false;
         org.mosslang.compiler.ast.Stmt statement = method.body.get(0);
