@@ -684,6 +684,11 @@ public class SemanticChecker {
 
                 method.receiverAccessMode = AccessMode.Read;
                 for (Field field : object.fields) {
+                    TypeRef fieldType = field.type != null && !field.type.isEmpty()
+                            ? TypeParser.parseCanonical(field.type) : null;
+                    ObjectType fieldObject = fieldType != null
+                            && fieldType.kind() == TypeKind.NominalInstance
+                                    ? objects.get(fieldType.name()) : null;
                     for (Stmt statement : method.body) {
                         String target = statement.a != null ? statement.a.trim() : "";
                         if (target.equals(field.name) || target.startsWith(field.name + ".")
@@ -691,6 +696,15 @@ public class SemanticChecker {
                             method.receiverAccessMode = AccessMode.Write;
                             break;
                         }
+                        if (objectFieldCallWrites(field.name, fieldType, fieldObject, statement.text)) {
+                            method.receiverAccessMode = AccessMode.Write;
+                        }
+                        if (method.receiverAccessMode == AccessMode.Write) break;
+                    }
+                    if (method.receiverAccessMode != AccessMode.Write
+                            && objectFieldCallWrites(field.name, fieldType, fieldObject,
+                                    method.resultExpression)) {
+                        method.receiverAccessMode = AccessMode.Write;
                     }
                     if (method.receiverAccessMode == AccessMode.Write) break;
                 }
@@ -715,6 +729,32 @@ public class SemanticChecker {
                 }
             }
         }
+    }
+
+    private boolean isBuiltinMutatingMethod(TypeRef type, String method) {
+        if (type == null || type.kind() != TypeKind.Builtin) return false;
+        return switch (type.name()) {
+            case "vector" -> Set.of("push", "pop", "append", "reserve", "delete").contains(method);
+            case "map" -> Set.of("delete").contains(method);
+            case "queue" -> Set.of("push", "pop").contains(method);
+            default -> false;
+        };
+    }
+
+    private boolean objectFieldCallWrites(String fieldName, TypeRef fieldType,
+                                          ObjectType fieldObject, String expression) {
+        if (expression == null || expression.isEmpty()) return false;
+        java.util.regex.Matcher call = java.util.regex.Pattern.compile(
+                "\\b" + java.util.regex.Pattern.quote(fieldName)
+                        + "\\.([A-Za-z_][A-Za-z0-9_]*)\\s*\\(").matcher(expression);
+        while (call.find()) {
+            String calledMethod = call.group(1);
+            if (isBuiltinMutatingMethod(fieldType, calledMethod)) return true;
+            if (fieldObject != null && fieldObject.methods.stream().anyMatch(candidate ->
+                    candidate.name.equals(calledMethod)
+                            && candidate.receiverAccessMode == AccessMode.Write)) return true;
+        }
+        return false;
     }
 
     private void checkRecursiveFunctions() {

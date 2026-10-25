@@ -23,6 +23,7 @@ public class SemanticCheckerTest {
         testObjectReceiverWriteEffectPropagatesToFunctionParameter();
         testConsumedObjectParameterLowersByValue();
         testObjectMethodWriteParameterLowersMutably();
+        testNestedObjectFieldWriteLowersMutableReceiver();
         System.out.println("SemanticCheckerTest PASSED.");
     }
 
@@ -287,6 +288,29 @@ public class SemanticCheckerTest {
         String rust = NativeGenerator.generate(program, false);
         if (!rust.contains("pub fn update(&self, inner: &mut Inner)")) {
             throw new AssertionError("object method WRITE parameter must lower to a mutable Rust borrow");
+        }
+    }
+
+    private static void testNestedObjectFieldWriteLowersMutableReceiver() {
+        Program program = Parser.parseSource(""
+                + "type Inner:\n"
+                + "  value: Int\n"
+                + "  fn set(next: Int):\n"
+                + "    value = next\n"
+                + "type Outer:\n"
+                + "  inner: Inner\n"
+                + "  fn update(next: Int):\n"
+                + "    inner.set(next)\n"
+                + "fn main():\n"
+                + "  pass\n", "nested-method-receiver-write.moss");
+        new SemanticChecker(program).run();
+        var update = program.objects.stream()
+                .filter(object -> object.name.equals("Outer"))
+                .findFirst().orElseThrow().methods.get(0);
+        assertEquals(AccessMode.Write, update.receiverAccessMode);
+        String rust = NativeGenerator.generate(program, false);
+        if (!rust.contains("pub fn update(&mut self, next: i64)")) {
+            throw new AssertionError("nested object field write must lower with mutable self");
         }
     }
 

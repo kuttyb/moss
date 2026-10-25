@@ -537,7 +537,8 @@ public class NativeGenerator {
                 if (mRaises) {
                     ret = "Result<" + ret + ", __MossRaised>";
                 }
-                boolean mutatesSelf = false;
+                boolean mutatesSelf = m.receiverAccessMode
+                        == org.mosslang.compiler.types.AccessMode.Write;
                 for (Stmt s : m.body) {
                     String txt = s.text != null ? s.text : "";
                     for (Field f : obj.fields) {

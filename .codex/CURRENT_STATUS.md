@@ -12702,3 +12702,14 @@ checker-marked object method parameters; a focused test asserts
 
 Validation: Java build and all ten Java test classes pass. Generated Rust was
 checked by the unit assertion; no Rust compilation/native execution was run.
+
+### Phase 25.3 continuation — propagate nested field receiver writes
+
+Object method receiver inference now detects calls through an object-valued
+field when the called method has a checker-derived `WRITE` receiver mode. It
+also handles a final expression call retained separately from method body
+statements. A nested `Outer.inner.set(...)` test verifies the enclosing method
+is `WRITE` and lowers with `&mut self`.
+
+Validation: Java build and all ten unit-test classes pass. Generated Rust
+signatures are asserted; Rust compilation/native execution remains unrun.
