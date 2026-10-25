@@ -316,6 +316,7 @@ public class Main {
         }
 
         boolean checkOnly = false;
+        boolean runMode = false;
         boolean interpMode = false;
         boolean traceMode = false;
         boolean jsonOutput = false;
@@ -332,7 +333,7 @@ public class Main {
             if ("check".equals(a) || "--check".equals(a)) {
                 checkOnly = true;
             } else if ("run".equals(a)) {
-                // moss run --interp
+                runMode = true;
             } else if ("debug".equals(a)) {
                 interpMode = true;
             } else if ("--interp".equals(a)) {
@@ -362,6 +363,11 @@ public class Main {
                     sourcePath = a;
                 }
             }
+        }
+
+        if (runMode && jsonOutput) {
+            System.err.println("moss: run does not yet support --json");
+            return 1;
         }
 
         if (sourcePath == null) {

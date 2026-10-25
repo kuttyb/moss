@@ -14676,3 +14676,14 @@ Validation: all eleven Java unit-test classes pass; the FastInterpreter unit
 regression checks the failure event, source filename, and actual/expected
 values. No native compilation or execution ran. This is selected assertion
 failure evidence, not complete Fast Debug trace parity.
+
+### Phase 25.3 continuation — match the unsupported `run --json` contract
+
+A focused assertion-failure invocation with `run --interp --json` showed that
+C++ rejects JSON mode for the `run` command with `moss: run does not yet
+support --json`, while Java incorrectly returned a compile-command JSON error
+envelope. Java now rejects that option combination with the same message and
+exit status before loading the source. `BootstrapTest` covers the CLI response.
+
+Validation: all eleven Java unit-test classes pass under ABI-v9. This keeps the
+existing CLI contract; it does not change JSON diagnostics for check/compile.

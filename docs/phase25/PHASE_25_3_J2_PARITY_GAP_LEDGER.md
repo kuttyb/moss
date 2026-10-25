@@ -245,3 +245,12 @@ Fast Debug assertion path emits the failure event and surfaces a line-qualified
 The complete trace and failure text now match C++ for the selected fixture.
 `./scripts/java/test.sh` passes all eleven classes, including a focused
 `assertEqual` failure regression. Native compilation/execution was not run.
+
+## Phase 25.3 continuation — `run --json` command contract
+
+A focused `run --interp --json` assertion probe showed C++ rejects this
+combination with `moss: run does not yet support --json`, while Java returned a
+JSON error labeled `compile`. Java now matches the unsupported-option response
+and exit status before reading source. `BootstrapTest` pins this CLI behavior.
+All eleven Java unit-test classes pass in ABI-v9. Check/compile JSON behavior is
+unchanged.
