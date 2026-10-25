@@ -6,6 +6,7 @@ import org.mosslang.compiler.types.TypeKind;
 import org.mosslang.compiler.types.TypeRef;
 
 import java.io.IOException;
+import java.io.ByteArrayOutputStream;
 import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.StandardCharsets;
@@ -21,7 +22,7 @@ public class CheckedBodyCodec {
     public static final String MOSSI_HEADER = "moss-module-interface-v3\n";
     private static final int MAX_MOSSI_BYTES = 16 * 1024 * 1024;
     private static final int MAX_MOSSI_RECORDS = 100_000;
-    private static final int MAX_MOSSI_RECORD_CHARS = 4 * 1024 * 1024;
+    private static final int MAX_MOSSI_RECORD_BYTES = 4 * 1024 * 1024;
 
     private static int parseBoundedCount(String value, int maximum, String what) {
         try {
@@ -178,6 +179,14 @@ public class CheckedBodyCodec {
         }
     }
 
+    private static byte[] sha256(byte[] content) {
+        try {
+            return MessageDigest.getInstance("SHA-256").digest(content);
+        } catch (NoSuchAlgorithmException e) {
+            throw new RuntimeException("SHA-256 not available", e);
+        }
+    }
+
     public static String domainHash(String domain, String content) {
         try {
             MessageDigest md = MessageDigest.getInstance("SHA-256");
@@ -266,23 +275,56 @@ public class CheckedBodyCodec {
         }
     }
 
-    private static String frameRecords(List<MossiRecord> records, String sectionName) {
-        List<MossiRecord> sorted = new ArrayList<>(records != null ? records : Collections.emptyList());
-        sorted.sort(Comparator.comparing(a -> a.id));
-        StringBuilder sb = new StringBuilder();
-        sb.append(sectionName).append("\ncount ").append(sorted.size()).append("\n");
-        for (MossiRecord r : sorted) {
-            byte[] idBytes = r.id.getBytes(StandardCharsets.UTF_8);
-            byte[] payloadBytes = r.payload.getBytes(StandardCharsets.UTF_8);
-            sb.append("record ").append(idBytes.length).append(" ").append(payloadBytes.length).append("\n");
-            sb.append(r.id);
-            sb.append(r.payload);
-            sb.append("\n");
-        }
-        return sb.toString();
+    public static String encodeMossi(MossiInterface mossi) {
+        byte[] bytes = encodeMossiBytes(mossi);
+        return decodeUtf8(bytes, 0, bytes.length);
     }
 
-    public static String encodeMossi(MossiInterface mossi) {
+    private static byte[] utf8(String value) {
+        return value.getBytes(StandardCharsets.UTF_8);
+    }
+
+    private static byte[] concat(byte[]... parts) {
+        int length = 0;
+        for (byte[] part : parts) length = Math.addExact(length, part.length);
+        byte[] result = new byte[length];
+        int offset = 0;
+        for (byte[] part : parts) {
+            System.arraycopy(part, 0, result, offset, part.length);
+            offset += part.length;
+        }
+        return result;
+    }
+
+    private static String domainHash(String domain, byte[] content) {
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            md.update(utf8(domain));
+            md.update((byte) 0);
+            md.update(content);
+            return "sha256:" + HexFormat.of().formatHex(md.digest());
+        } catch (NoSuchAlgorithmException ex) {
+            throw new RuntimeException("SHA-256 not available", ex);
+        }
+    }
+
+    private static byte[] frameRecordsBytes(List<MossiRecord> records, String sectionName) {
+        List<MossiRecord> sorted = new ArrayList<>(records != null ? records : Collections.emptyList());
+        sorted.sort(Comparator.comparing(record -> record.id));
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        out.writeBytes(utf8(sectionName + "\ncount " + sorted.size() + "\n"));
+        for (MossiRecord record : sorted) {
+            byte[] id = utf8(record.id);
+            byte[] payload = record.payloadBytes();
+            out.writeBytes(utf8("record " + id.length + " " + payload.length + "\n"));
+            out.writeBytes(id);
+            out.writeBytes(payload);
+            out.write('\n');
+        }
+        return out.toByteArray();
+    }
+
+    public static byte[] encodeMossiBytes(MossiInterface mossi) {
         if (mossi == null) {
             throw new IllegalArgumentException("MossiInterface cannot be null");
         }
@@ -303,16 +345,16 @@ public class CheckedBodyCodec {
         if (mossi.privateSemanticDependencies != null) mossi.privateSemanticDependencies.sort(Comparator.comparing(a -> a.id));
         if (mossi.provenance != null) mossi.provenance.sort(Comparator.comparing(a -> a.id));
 
-        String importsFrame = frameImports(mossi.imports);
-        String binaryFrame = frameRecords(mossi.binaryContract, "binary_contract");
-        String semanticFrame = frameRecords(mossi.semanticContract, "semantic_contract");
-        String privFrame = frameRecords(mossi.privateSemanticDependencies, "private_semantic_dependencies");
-        String provFrame = frameRecords(mossi.provenance, "provenance");
+        byte[] importsFrame = utf8(frameImports(mossi.imports));
+        byte[] binaryFrame = frameRecordsBytes(mossi.binaryContract, "binary_contract");
+        byte[] semanticFrame = frameRecordsBytes(mossi.semanticContract, "semantic_contract");
+        byte[] privFrame = frameRecordsBytes(mossi.privateSemanticDependencies, "private_semantic_dependencies");
+        byte[] provFrame = frameRecordsBytes(mossi.provenance, "provenance");
 
         mossi.binaryHash = domainHash("moss-abi-v10-binary-contract", binaryFrame);
-        mossi.semanticHash = domainHash("moss-abi-v10-semantic-contract", semanticFrame + privFrame);
+        mossi.semanticHash = domainHash("moss-abi-v10-semantic-contract", concat(semanticFrame, privFrame));
 
-        String body = importsFrame + binaryFrame + semanticFrame + privFrame + provFrame;
+        byte[] body = concat(importsFrame, binaryFrame, semanticFrame, privFrame, provFrame);
 
         String header = MOSSI_HEADER +
                         "module_id " + mossi.moduleId + "\n" +
@@ -324,13 +366,13 @@ public class CheckedBodyCodec {
                         "binary_contract_hash " + mossi.binaryHash + "\n" +
                         "semantic_contract_hash " + mossi.semanticHash + "\n";
 
-        mossi.interfaceHash = domainHash("moss-abi-v10-interface", header + body);
-        String material = header + "interface_hash " + mossi.interfaceHash + "\n" + body;
-        mossi.digest = sha256Hex(material);
+        byte[] headerBytes = utf8(header);
+        mossi.interfaceHash = domainHash("moss-abi-v10-interface", concat(headerBytes, body));
+        byte[] material = concat(headerBytes, utf8("interface_hash " + mossi.interfaceHash + "\n"), body);
+        mossi.digest = HexFormat.of().formatHex(sha256(material));
 
-        return MOSSI_HEADER +
-               "provider_contract_digest sha256:" + mossi.digest + "\n" +
-               material.substring(MOSSI_HEADER.length());
+        return concat(utf8(MOSSI_HEADER + "provider_contract_digest sha256:" + mossi.digest + "\n"),
+                Arrays.copyOfRange(material, utf8(MOSSI_HEADER).length, material.length));
     }
 
     private static class MossiTextReader {
@@ -352,11 +394,11 @@ public class CheckedBodyCodec {
             return res;
         }
 
-        String bytes(int count) {
+        byte[] bytes(int count) {
             if (count < 0 || pos + count > input.length) {
                 throw new CompileError(0, "ABI-v10 framed record is truncated", "SOURCE_FREE_CONTRACT_INVALID");
             }
-            String res = decodeUtf8(input, pos, count);
+            byte[] res = Arrays.copyOfRange(input, pos, pos + count);
             pos += count;
             return res;
         }
@@ -401,10 +443,11 @@ public class CheckedBodyCodec {
             if (space == -1) {
                 throw new CompileError(0, "ABI-v10 record frame is malformed", "SOURCE_FREE_CONTRACT_INVALID");
             }
-            int idSize = parseBoundedCount(frame.substring(0, space), MAX_MOSSI_RECORD_CHARS, "record ID size");
-            int payloadSize = parseBoundedCount(frame.substring(space + 1), MAX_MOSSI_RECORD_CHARS, "record payload size");
-            String id = reader.bytes(idSize);
-            String payload = reader.bytes(payloadSize);
+            int idSize = parseBoundedCount(frame.substring(0, space), MAX_MOSSI_RECORD_BYTES, "record ID size");
+            int payloadSize = parseBoundedCount(frame.substring(space + 1), MAX_MOSSI_RECORD_BYTES, "record payload size");
+            byte[] idBytes = reader.bytes(idSize);
+            String id = decodeUtf8(idBytes, 0, idBytes.length);
+            byte[] payload = reader.bytes(payloadSize);
             String trailing = reader.line();
             if (!trailing.isEmpty()) {
                 throw new CompileError(0, "ABI-v10 frame has trailing data", "SOURCE_FREE_CONTRACT_INVALID");
@@ -413,16 +456,24 @@ public class CheckedBodyCodec {
                 throw new CompileError(0, "ABI-v10 record is duplicate, malformed, or out of order: " + id, "SOURCE_FREE_CONTRACT_INVALID");
             }
             prevId = id;
-            records.add(new MossiRecord(id, payload));
+            records.add(MossiRecord.fromBytes(id, payload));
         }
         return records;
     }
 
     public static MossiInterface decodeMossi(String text) {
-        if (text == null || !text.startsWith(MOSSI_HEADER)) {
+        if (text == null) {
             throw new CompileError(0, "source-free provider requires an ABI-v10 source rebuild", "SOURCE_FREE_ABI_REBUILD_REQUIRED");
         }
-        byte[] encodedText = text.getBytes(StandardCharsets.UTF_8);
+        return decodeMossi(utf8(text));
+    }
+
+    public static MossiInterface decodeMossi(byte[] encodedText) {
+        byte[] header = utf8(MOSSI_HEADER);
+        if (encodedText == null || encodedText.length < header.length
+                || !Arrays.equals(Arrays.copyOf(encodedText, header.length), header)) {
+            throw new CompileError(0, "source-free provider requires an ABI-v10 source rebuild", "SOURCE_FREE_ABI_REBUILD_REQUIRED");
+        }
         if (encodedText.length > MAX_MOSSI_BYTES) {
             throw new CompileError(0, "ABI-v10 interface exceeds its size limit", "SOURCE_FREE_CONTRACT_INVALID");
         }
@@ -491,12 +542,22 @@ public class CheckedBodyCodec {
     // --- Source-Free Interface Verification ---
 
     public static MossiInterface verifySourceFree(String text) {
-        MossiInterface mossi = decodeMossi(text);
-        verifySourceFree(mossi, text);
+        if (text == null) throw new CompileError(0, "Interface cannot be null", "SOURCE_FREE_CONTRACT_INVALID");
+        return verifySourceFree(utf8(text));
+    }
+
+    public static MossiInterface verifySourceFree(byte[] bytes) {
+        MossiInterface mossi = decodeMossi(bytes);
+        verifySourceFree(mossi, bytes);
         return mossi;
     }
 
     public static void verifySourceFree(MossiInterface mossi, String text) {
+        if (text == null) throw new CompileError(0, "Interface cannot be null", "SOURCE_FREE_CONTRACT_INVALID");
+        verifySourceFree(mossi, utf8(text));
+    }
+
+    public static void verifySourceFree(MossiInterface mossi, byte[] bytes) {
         if (mossi == null) {
             throw new CompileError(0, "Interface cannot be null", "SOURCE_FREE_CONTRACT_INVALID");
         }
@@ -505,23 +566,27 @@ public class CheckedBodyCodec {
         }
 
         // Verify provider contract digest
-        String prefix = MOSSI_HEADER + "provider_contract_digest sha256:";
-        if (!text.startsWith(prefix)) {
+        byte[] headerPrefix = utf8(MOSSI_HEADER + "provider_contract_digest sha256:");
+        if (bytes == null || bytes.length < headerPrefix.length
+                || !Arrays.equals(Arrays.copyOf(bytes, headerPrefix.length), headerPrefix)) {
             throw new CompileError(0, "ABI-v10 provider contract digest prefix missing", "SOURCE_FREE_CONTRACT_INVALID");
         }
-        int lineEnd = text.indexOf('\n', prefix.length());
-        if (lineEnd == -1) {
+        int lineEnd = headerPrefix.length;
+        while (lineEnd < bytes.length && bytes[lineEnd] != '\n') lineEnd++;
+        if (lineEnd == bytes.length) {
             throw new CompileError(0, "ABI-v10 provider contract digest line truncated", "SOURCE_FREE_CONTRACT_INVALID");
         }
-        String material = MOSSI_HEADER + text.substring(lineEnd + 1);
-        String computedDigest = sha256Hex(material);
-        if (!computedDigest.equals(mossi.digest)) {
+        String declaredDigest = decodeUtf8(bytes, headerPrefix.length, lineEnd - headerPrefix.length);
+        byte[] material = concat(utf8(MOSSI_HEADER), Arrays.copyOfRange(bytes, lineEnd + 1, bytes.length));
+        String computedDigest = HexFormat.of().formatHex(sha256(material));
+        if (!declaredDigest.equals(mossi.digest)
+                || !computedDigest.equals(mossi.digest)) {
             throw new CompileError(0, "ABI-v10 provider metadata does not match its declared contract digest", "SOURCE_FREE_CONTRACT_MISMATCH");
         }
 
         // Verify canonical re-encoding
-        String reencoded = encodeMossi(mossi);
-        if (!reencoded.equals(text)) {
+        byte[] reencoded = encodeMossiBytes(mossi);
+        if (!Arrays.equals(reencoded, bytes)) {
             throw new CompileError(0, "ABI-v10 interface digest or canonical record validation failed", "SOURCE_FREE_CONTRACT_INVALID");
         }
 
@@ -556,7 +621,7 @@ public class CheckedBodyCodec {
     }
 
     public static MossiInterface loadSourceFreeInterface(Path file) throws IOException {
-        String content = Files.readString(file, StandardCharsets.UTF_8);
+        byte[] content = Files.readAllBytes(file);
         return verifySourceFree(content);
     }
 }

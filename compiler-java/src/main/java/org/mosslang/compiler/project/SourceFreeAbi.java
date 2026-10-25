@@ -142,14 +142,20 @@ public class SourceFreeAbi {
     }
 
     public static void validateMossiInterface(Path interfaceFile) throws CompileError {
-        String text;
+        byte[] bytes;
         try {
-            text = readInterfaceText(interfaceFile);
+            bytes = Files.readAllBytes(interfaceFile);
         } catch (IOException e) {
             throw new CompileError("MOSS_INTERFACE_ERROR",
                     "cannot read Moss module interface '" + interfaceFile + "'", interfaceFile.toString(), 1);
         }
-        validateMossiText(interfaceFile, text);
+        String v10Prefix = "moss-module-interface-v3\n";
+        boolean v10 = bytes.length >= v10Prefix.length()
+                && new String(bytes, 0, v10Prefix.length(), StandardCharsets.US_ASCII).equals(v10Prefix);
+        String text = v10 ? new String(bytes, StandardCharsets.UTF_8)
+                : new String(bytes, StandardCharsets.ISO_8859_1);
+        validateMossiText(interfaceFile, text,
+                v10 || "v10".equals(System.getenv("MOSS_STAGED_ABI")), v10 ? bytes : null);
     }
 
     public static void validateMossiText(Path interfaceFile, String text) throws CompileError {
@@ -157,6 +163,11 @@ public class SourceFreeAbi {
     }
 
     static void validateMossiText(Path interfaceFile, String text, boolean isV10) throws CompileError {
+        validateMossiText(interfaceFile, text, isV10, null);
+    }
+
+    private static void validateMossiText(Path interfaceFile, String text, boolean isV10,
+                                          byte[] encodedBytes) throws CompileError {
         if (isV10) {
             if (text.startsWith("moss-module-interface-v2\n")) {
                 throw new CompileError("SOURCE_FREE_ABI_REBUILD_REQUIRED",
@@ -186,33 +197,30 @@ public class SourceFreeAbi {
                         "ABI-v10 provider contract digest is malformed",
                         interfaceFile.toString(), 1);
             }
-            String material = "moss-module-interface-v3\n" + text.substring(lineEnd + 1);
-            String calculatedDigest = sha256Utf8(material);
-            if (!calculatedDigest.equalsIgnoreCase(declaredDigest)) {
-                throw new CompileError("SOURCE_FREE_CONTRACT_INVALID",
-                        "ABI-v10 provider metadata does not match its declared contract digest",
-                        interfaceFile.toString(), 1);
+            org.mosslang.compiler.abi.MossiInterface verified;
+            if (encodedBytes != null) {
+                verified = org.mosslang.compiler.abi.CheckedBodyCodec.verifySourceFree(encodedBytes);
+                declaredDigest = verified.digest;
+            } else {
+                String material = "moss-module-interface-v3\n" + text.substring(lineEnd + 1);
+                String calculatedDigest = sha256Utf8(material);
+                if (!calculatedDigest.equalsIgnoreCase(declaredDigest)) {
+                    throw new CompileError("SOURCE_FREE_CONTRACT_INVALID",
+                            "ABI-v10 provider metadata does not match its declared contract digest",
+                            interfaceFile.toString(), 1);
+                }
+                verified = org.mosslang.compiler.abi.CheckedBodyCodec.verifySourceFree(text);
             }
-
-            org.mosslang.compiler.abi.CheckedBodyCodec.verifySourceFree(text);
 
             // Check module_id
             String stem = interfaceFile.getFileName().toString().replaceAll("\\.mossi$", "");
-            String modIdLine = null;
-            for (String l : text.split("\\R")) {
-                if (l.startsWith("module_id ")) {
-                    modIdLine = l.substring(10).trim();
-                    break;
-                }
-            }
-            if (modIdLine != null) {
-                int sep = modIdLine.lastIndexOf("::");
-                String modName = sep >= 0 ? modIdLine.substring(sep + 2).trim() : modIdLine;
-                if (!toolingName(modName).equals(toolingName(stem))) {
-                    throw new CompileError("SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH",
-                            "ABI-v10 module identity '" + modIdLine + "' does not name its selected provider artifact",
-                            interfaceFile.toString(), 1);
-                }
+            String modIdLine = verified.moduleId;
+            int sep = modIdLine.lastIndexOf("::");
+            String modName = sep >= 0 ? modIdLine.substring(sep + 2).trim() : modIdLine;
+            if (!toolingName(modName).equals(toolingName(stem))) {
+                throw new CompileError("SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH",
+                        "ABI-v10 module identity '" + modIdLine + "' does not name its selected provider artifact",
+                        interfaceFile.toString(), 1);
             }
 
             // Validate rlib

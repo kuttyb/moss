@@ -12834,3 +12834,20 @@ body. Hostile count and trailing-data tests require the structured
 Validation: Java build, focused codec test, and all ten Java unit-test classes
 pass. This hardens checked-body decoding; full canonical v10 summary/IR
 semantics and native provider linkage remain unimplemented or unverified.
+
+### Phase 25.3 continuation — preserve raw ABI-v10 record payload bytes
+
+The accepted C++ ABI-v10 record payloads use binary wire encoding. Java's
+`MossiRecord` and interface codec had represented every payload as UTF-8 text,
+which could not preserve canonical wire bytes. `MossiRecord` now retains an
+immutable raw payload byte vector alongside its text view; the codec exposes
+byte-oriented encode, decode, verify, and file-load paths, and the project
+validator verifies raw v10 interface bytes. Text APIs remain for existing
+textual fixtures and reject non-UTF-8 payloads rather than corrupting them.
+
+Validation: Java build and all ten unit-test classes pass. A binary payload with
+NUL and invalid UTF-8 bytes round-trips byte-for-byte through v10 verification,
+and file-based project validation accepts the sealed fixture with its matching
+artifact marker. The producer still emits text-shaped records, and the CLI
+loader does not yet decode canonical typed record payloads into semantic facts;
+the ABI-v10 logical schema and full source-free checking remain incomplete.

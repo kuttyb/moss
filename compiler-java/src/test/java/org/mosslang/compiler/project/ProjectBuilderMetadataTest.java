@@ -6,6 +6,7 @@ import org.mosslang.compiler.ast.Function;
 import org.mosslang.compiler.ast.Param;
 import org.mosslang.compiler.abi.CheckedBodyCodec;
 import org.mosslang.compiler.abi.MossiInterface;
+import org.mosslang.compiler.abi.MossiRecord;
 import org.mosslang.compiler.diagnostics.CompileError;
 import org.mosslang.compiler.types.AccessMode;
 
@@ -136,13 +137,14 @@ public final class ProjectBuilderMetadataTest {
         Path rlib = dir.resolve("provider.rlib");
         MossiInterface iface = new MossiInterface("module-v1:sample@1.0.0::provider");
         iface.compiler = "moss-java-é";
-        String encoded = CheckedBodyCodec.encodeMossi(iface);
-        Files.writeString(interfaceFile, encoded, java.nio.charset.StandardCharsets.UTF_8);
-        assertEquals(encoded, SourceFreeAbi.readInterfaceText(interfaceFile));
+        iface.binaryContract.add(MossiRecord.fromBytes("wire-record",
+                new byte[] {0, 1, (byte) 0x80, (byte) 0xff}));
+        byte[] encoded = CheckedBodyCodec.encodeMossiBytes(iface);
+        Files.write(interfaceFile, encoded);
         Files.writeString(rlib, "MOSS_ABI_V10_CONTRACT::provider::" + iface.digest + "::END",
                 java.nio.charset.StandardCharsets.US_ASCII);
         try {
-            SourceFreeAbi.validateMossiText(interfaceFile, encoded, true);
+            SourceFreeAbi.validateMossiInterface(interfaceFile);
         } finally {
             Files.deleteIfExists(rlib);
             Files.deleteIfExists(interfaceFile);

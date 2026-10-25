@@ -18,6 +18,7 @@ public class CheckedBodyCodecTest {
         testComplexStatementsRoundTrip();
         testMossiSerializationAndParsing();
         testMossiUtf8ByteFraming();
+        testMossiBinaryPayloadRoundTrip();
         testMossiEncoderRejectsDuplicateIds();
         testMossiRejectsUnboundedCounts();
         testCheckedBodyReaderBoundsAndTrailingData();
@@ -243,6 +244,25 @@ public class CheckedBodyCodecTest {
             throw new AssertionError("ABI-v10 UTF-8 byte-framed record did not round-trip");
         }
         CheckedBodyCodec.verifySourceFree(decoded, encoded);
+    }
+
+    private static void testMossiBinaryPayloadRoundTrip() {
+        MossiInterface original = new MossiInterface("module-v1:wire@1.0.0::provider");
+        original.binaryContract.add(MossiRecord.fromBytes("wire-record",
+                new byte[] {0, 1, 0x7f, (byte) 0x80, (byte) 0xff, 10}));
+        byte[] encoded = CheckedBodyCodec.encodeMossiBytes(original);
+        MossiInterface decoded = CheckedBodyCodec.verifySourceFree(encoded);
+        if (decoded.binaryContract.size() != 1
+                || !java.util.Arrays.equals(original.binaryContract.get(0).payloadBytes(),
+                        decoded.binaryContract.get(0).payloadBytes())) {
+            throw new AssertionError("ABI-v10 binary record payload was not preserved");
+        }
+        try {
+            CheckedBodyCodec.encodeMossi(original);
+            throw new AssertionError("text encoder accepted a non-UTF-8 binary ABI payload");
+        } catch (CompileError expected) {
+            if (!"SOURCE_FREE_CONTRACT_INVALID".equals(expected.getCode())) throw expected;
+        }
     }
 
     private static void testMossiEncoderRejectsDuplicateIds() {

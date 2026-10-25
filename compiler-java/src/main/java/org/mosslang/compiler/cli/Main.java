@@ -796,10 +796,11 @@ public class Main {
 
     static void loadMossiFunctions(Path cand, String modName, Program program) throws CompileError {
         try {
+            byte[] rawBytes = Files.readAllBytes(cand);
             String text = readMossiText(cand);
             if (text.startsWith("moss-module-interface-v3\n")) {
                 org.mosslang.compiler.abi.MossiInterface v10 =
-                        org.mosslang.compiler.abi.CheckedBodyCodec.verifySourceFree(text);
+                        org.mosslang.compiler.abi.CheckedBodyCodec.verifySourceFree(rawBytes);
                 StringBuilder legacyRecords = new StringBuilder("moss-module-interface-v2\n")
                         .append("module_id ").append(v10.moduleId).append("\nimports\ncontract\n");
                 for (org.mosslang.compiler.abi.MossiRecord record : v10.binaryContract) {
