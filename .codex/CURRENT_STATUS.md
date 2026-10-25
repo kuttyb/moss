@@ -13114,3 +13114,8 @@ propagation or capture lifetime correctness.
 Validation: Java build and `SourceFreeObjectMetadataTest` pass (the test also
 exercises ABI-v10 metadata). No Rust compilation, native execution, or SDK gate
 ran.
+
+Follow-up validation after the initial focused run: all ten Java unit-test
+classes pass in both default ABI-v9 and staged ABI-v10 modes; the parser check
+accepts the three quoted fields in each failure-arm record. Feedback validation
+and `git diff --check` pass. No native or SDK gate ran.

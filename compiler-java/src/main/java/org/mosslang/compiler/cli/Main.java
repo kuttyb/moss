@@ -1410,7 +1410,7 @@ public class Main {
             if (currentDomain == null || !line.startsWith("handler_failure_arm ")) continue;
             List<String> quoted = parseMossiQuotedFields(line);
             String[] words = line.replaceAll("\"[^\"]*\"", " QUOTED ").trim().split("\\s+");
-            if (quoted.size() < 4 || words.length < 7) {
+            if (quoted.size() < 3 || words.length < 7) {
                 throw new CompileError("SOURCE_FREE_ABI_INVALID",
                         "compiled provider has malformed ABI-v9 failure-arm metadata",
                         interfaceFile.toString(), 1);
