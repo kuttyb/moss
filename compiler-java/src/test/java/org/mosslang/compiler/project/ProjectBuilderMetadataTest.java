@@ -325,21 +325,31 @@ public final class ProjectBuilderMetadataTest {
         Program identityProgram = Parser.parseSource(""
                 + "module provider\n"
                 + "export fn identity(value):\n"
-                + "  return value\n", "identity-provider.moss");
+                + "  return value\n"
+                + "export fn second(left, right):\n"
+                + "  return right\n", "identity-provider.moss");
         new org.mosslang.compiler.semantics.CheckedProgram(identityProgram).run();
-        identityProgram.functions.forEach(function -> function.semanticCallableId =
-                "callable-v1:" + "module-v1:sample@1.0.0::provider:fn:identity");
+        identityProgram.functions.forEach(function -> {
+            String name = function.name;
+            int separator = Math.max(name.lastIndexOf('.'), name.lastIndexOf("__"));
+            String functionName = name.substring(separator + (name.contains("__") ? 2 : 1));
+            function.semanticCallableId = "callable-v1:module-v1:sample@1.0.0::provider:fn:" + functionName;
+        });
         MossiInterface identityInterface = CheckedBodyCodec.verifySourceFree(
                 ProjectBuilder.generateMossiInterface(manifest, "provider", identityProgram,
                         toolchain, java.util.List.of(), Path.of("tmp"), java.util.Map.of()));
         AbiV10Records.Summary identitySummary = identityInterface.binaryContract.stream()
                 .filter(record -> record.payloadBytes().length > 0
                         && (record.payloadBytes()[0] == 3 || record.payloadBytes()[0] == 4))
-                .map(AbiV10Records.Summary::decode).findFirst().orElseThrow(() ->
+                .map(AbiV10Records.Summary::decode)
+                .filter(summary -> summary.callableId.endsWith(":fn:identity"))
+                .findFirst().orElseThrow(() ->
                         new AssertionError("ABI-v10 producer omitted the checked generic identity summary"));
         AbiV10Records.CheckedBodyRecord identityBody = identityInterface.privateSemanticDependencies.stream()
                 .filter(record -> record.id.startsWith("checked-body-v1:"))
-                .map(AbiV10Records.CheckedBodyRecord::decode).findFirst().orElseThrow(() ->
+                .map(AbiV10Records.CheckedBodyRecord::decode)
+                .filter(body -> body.callableId.endsWith(":fn:identity"))
+                .findFirst().orElseThrow(() ->
                         new AssertionError("ABI-v10 producer omitted the checked generic identity body"));
         if (!identitySummary.callableId.equals(identityBody.callableId)
                 || identitySummary.variableCount != 1
@@ -350,6 +360,29 @@ public final class ProjectBuilderMetadataTest {
                 || identitySummary.result.ordinal != 0
                 || !identitySummary.bodySemanticHash.equals(identityBody.semanticHash)) {
             throw new AssertionError("ABI-v10 identity summary/body did not retain its checked type relation");
+        }
+        AbiV10Records.Summary secondSummary = identityInterface.binaryContract.stream()
+                .filter(record -> record.payloadBytes().length > 0
+                        && (record.payloadBytes()[0] == 3 || record.payloadBytes()[0] == 4))
+                .map(AbiV10Records.Summary::decode)
+                .filter(summary -> summary.callableId.endsWith(":fn:second"))
+                .findFirst().orElseThrow(() ->
+                        new AssertionError("ABI-v10 producer omitted the multi-parameter direct-return summary"));
+        AbiV10Records.CheckedBodyRecord secondBody = identityInterface.privateSemanticDependencies.stream()
+                .filter(record -> record.id.startsWith("checked-body-v1:"))
+                .map(AbiV10Records.CheckedBodyRecord::decode)
+                .filter(body -> body.callableId.endsWith(":fn:second"))
+                .findFirst().orElseThrow(() ->
+                        new AssertionError("ABI-v10 producer omitted the multi-parameter direct-return body"));
+        java.util.List<org.mosslang.compiler.abi.CheckedStmt> secondStatements =
+                CheckedBodyCodec.decodeCheckedBody(secondBody.checkedIrBytes);
+        if (secondSummary.variableCount != 2 || secondSummary.parameters.size() != 2
+                || secondSummary.result.kind != AbiV10Records.WireTypeKind.BoundVar
+                || secondSummary.result.ordinal != 1
+                || secondStatements.size() != 1
+                || secondStatements.get(0).expr.ordinal != 1
+                || !secondSummary.bodySemanticHash.equals(secondBody.semanticHash)) {
+            throw new AssertionError("ABI-v10 multi-parameter summary/body lost its second-parameter relation");
         }
         Path identityMossi = null;
         try {
@@ -370,6 +403,8 @@ public final class ProjectBuilderMetadataTest {
                     + "  return provider__identity(7)\n"
                     + "fn use_string() -> String:\n"
                     + "  return provider__identity(\"seven\")\n"
+                    + "fn use_second() -> String:\n"
+                    + "  return provider__second(7, \"seven\")\n"
                     + "fn main():\n"
                     + "  pass\n", "identity-consumer.moss");
             org.mosslang.compiler.cli.Main.loadMossiFunctions(identityMossi, "provider", consumer);

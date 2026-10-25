@@ -1403,7 +1403,7 @@ public class Main {
                     currentFn = null;
                 }
             }
-            projectV10IdentityCallables(program, cand, typedV10Summaries, typedV10Bodies);
+            projectV10DirectReturnCallables(program, cand, typedV10Summaries, typedV10Bodies);
             restoreSourceFreeFailureArms(sourceFreeContractLines, program, modName, cand);
         } catch (CompileError error) {
             throw error;
@@ -1414,8 +1414,8 @@ public class Main {
         }
     }
 
-    /** Project the currently supported direct-identity checked ABI body into source-free functions. */
-    private static void projectV10IdentityCallables(
+    /** Project supported direct-parameter-return checked ABI bodies into source-free functions. */
+    private static void projectV10DirectReturnCallables(
             Program program, Path interfaceFile,
             Map<String, org.mosslang.compiler.abi.AbiV10Records.Summary> summaries,
             Map<String, org.mosslang.compiler.abi.AbiV10Records.CheckedBodyRecord> bodies) {
@@ -1425,13 +1425,19 @@ public class Main {
             org.mosslang.compiler.abi.AbiV10Records.CheckedBodyRecord body = bodies.get(callableId);
             if (body == null || !summary.requirements.isEmpty() || !summary.dependencies.isEmpty()
                     || summary.observableEffectBits != 0 || !summary.observableEffectTags.isEmpty()
-                    || summary.parameters.size() != 1 || summary.parameterAccess.size() != 1
+                    || summary.parameters.isEmpty()
+                    || summary.parameterAccess.size() != summary.parameters.size()
                     || summary.variableCount > 4096) continue;
-            org.mosslang.compiler.types.TypeRef parameterType = v10SimpleWireType(
-                    summary.parameters.get(0), summary.variableCount);
             org.mosslang.compiler.types.TypeRef resultType = v10SimpleWireType(
                     summary.result, summary.variableCount);
-            if (parameterType == null || resultType == null || !parameterType.equals(resultType)) continue;
+            if (resultType == null) continue;
+            List<org.mosslang.compiler.types.TypeRef> parameterTypes = new ArrayList<>();
+            for (org.mosslang.compiler.abi.AbiV10Records.WireType parameter : summary.parameters) {
+                org.mosslang.compiler.types.TypeRef converted = v10SimpleWireType(parameter, summary.variableCount);
+                if (converted == null) { parameterTypes.clear(); break; }
+                parameterTypes.add(converted);
+            }
+            if (parameterTypes.size() != summary.parameters.size()) continue;
             List<org.mosslang.compiler.abi.CheckedStmt> statements;
             try {
                 statements = org.mosslang.compiler.abi.CheckedBodyCodec
@@ -1444,30 +1450,37 @@ public class Main {
             if (statement.kind != org.mosslang.compiler.abi.CheckedStmtKind.Return
                     || statement.expr == null
                     || statement.expr.kind != org.mosslang.compiler.abi.CheckedExprKind.Parameter
-                    || statement.expr.ordinal != 0
-                    || !parameterType.equals(statement.expr.type)) continue;
+                    || statement.expr.ordinal < 0
+                    || statement.expr.ordinal >= parameterTypes.size()
+                    || !resultType.equals(parameterTypes.get(statement.expr.ordinal))
+                    || !resultType.equals(statement.expr.type)) continue;
 
             List<org.mosslang.compiler.ast.Function> matches = program.functions.stream()
                     .filter(function -> callableId.equals(function.semanticCallableId))
                     .toList();
-            if (matches.isEmpty() || matches.stream().anyMatch(function -> function.params.size() != 1)) continue;
+            if (matches.isEmpty() || matches.stream().anyMatch(
+                    function -> function.params.size() != parameterTypes.size())) continue;
             for (org.mosslang.compiler.ast.Function function : matches) {
-                function.params.get(0).bindType(parameterType);
+                for (int index = 0; index < parameterTypes.size(); index++) {
+                    function.params.get(index).bindType(parameterTypes.get(index));
+                }
                 function.parameterAccessModes.clear();
-                function.parameterAccessModes.add(switch (summary.parameterAccess.get(0)) {
-                    case Read -> org.mosslang.compiler.types.AccessMode.Read;
-                    case Write -> org.mosslang.compiler.types.AccessMode.Write;
-                    case Consume -> org.mosslang.compiler.types.AccessMode.Consume;
-                });
+                for (org.mosslang.compiler.abi.AbiV10Records.Access access : summary.parameterAccess) {
+                    function.parameterAccessModes.add(switch (access) {
+                        case Read -> org.mosslang.compiler.types.AccessMode.Read;
+                        case Write -> org.mosslang.compiler.types.AccessMode.Write;
+                        case Consume -> org.mosslang.compiler.types.AccessMode.Consume;
+                    });
+                }
                 function.bindReturnType(resultType);
                 function.body.clear();
                 org.mosslang.compiler.ast.Stmt projected = new org.mosslang.compiler.ast.Stmt(
                         org.mosslang.compiler.ast.Stmt.Kind.Return, 1, 1,
-                        "return " + function.params.get(0).name,
-                        function.params.get(0).name, "");
+                        "return " + function.params.get(statement.expr.ordinal).name,
+                        function.params.get(statement.expr.ordinal).name, "");
                 projected.sourceFile = interfaceFile.toString();
                 function.body.add(projected);
-                function.resultExpression = function.params.get(0).name;
+                function.resultExpression = function.params.get(statement.expr.ordinal).name;
                 function.resultLine = 1;
                 function.generic = summary.variableCount > 0;
                 function.staticDispatch = function.generic;

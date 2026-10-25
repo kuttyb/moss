@@ -1463,11 +1463,11 @@ public class ProjectBuilder {
                 if (localFunction && sourceBackedFunction && fn.semanticCallableId != null
                         && !fn.semanticCallableId.isEmpty()
                         && emittedCallableIds.add(fn.semanticCallableId)) {
-                    AbiV10Records.Summary summary = v10IdentitySummary(
+                    AbiV10Records.Summary summary = v10DirectReturnSummary(
                             fn, modId, provenanceRecords);
                     if (summary != null) {
                         callableSummaryRecords.add(summary.record());
-                        AbiV10Records.CheckedBodyRecord body = v10IdentityBody(fn, summary);
+                        AbiV10Records.CheckedBodyRecord body = v10DirectReturnBody(fn, summary);
                         checkedBodyRecords.add(body.record());
                     }
                 }
@@ -1534,50 +1534,40 @@ public class ProjectBuilder {
                 .getBytes(StandardCharsets.UTF_8);
     }
 
-    private static AbiV10Records.Summary v10IdentitySummary(
+    private static AbiV10Records.Summary v10DirectReturnSummary(
             Function function, String moduleId,
             List<AbiV10Records.SourceProvenance> provenanceRecords) {
-        if (function.params.size() != 1 || function.returnTypeRef == null) return null;
-        String returned = null;
-        if (function.resultExpression != null && !function.resultExpression.isBlank()
-                && function.body.isEmpty()) {
-            returned = function.resultExpression.trim();
-        } else if (function.body.size() == 1
-                && function.body.get(0).kind == Stmt.Kind.Return) {
-            Stmt statement = function.body.get(0);
-            returned = statement.a != null && !statement.a.isBlank()
-                    ? statement.a.trim() : "";
-            if (returned.isEmpty() && statement.text != null
-                    && statement.text.trim().startsWith("return ")) {
-                returned = statement.text.trim().substring(7).trim();
-            }
-        }
-        if (returned == null || !returned.equals(function.params.get(0).name)) return null;
-        TypeRef parameterType = function.params.get(0).checkedTypeRef;
-        if (!isV10SummaryTypeRepresentable(parameterType)
-                || !isV10SummaryTypeRepresentable(function.returnTypeRef)) return null;
+        if (function.params.isEmpty() || function.returnTypeRef == null) return null;
+        int returnedParameter = v10DirectReturnedParameter(function);
+        if (returnedParameter < 0 || !isV10SummaryTypeRepresentable(function.returnTypeRef)
+                || !function.returnTypeRef.equals(function.params.get(returnedParameter).checkedTypeRef)) return null;
 
         Map<org.mosslang.compiler.types.TypeVarId, Integer> ordinals = new LinkedHashMap<>();
-        collectV10SummaryVariables(parameterType, ordinals);
+        for (Param parameter : function.params) {
+            if (!isV10SummaryTypeRepresentable(parameter.checkedTypeRef)) return null;
+            collectV10SummaryVariables(parameter.checkedTypeRef, ordinals);
+        }
         collectV10SummaryVariables(function.returnTypeRef, ordinals);
-        AbiV10Records.WireType parameterWire = AbiV10Records.fromTypeRef(parameterType, ordinals);
-        AbiV10Records.WireType resultWire = AbiV10Records.fromTypeRef(function.returnTypeRef, ordinals);
 
         AbiV10Records.Summary summary = new AbiV10Records.Summary();
         summary.callableId = function.semanticCallableId;
         summary.variableCount = ordinals.size();
-        summary.parameters.add(parameterWire);
-        org.mosslang.compiler.types.AccessMode access = function.parameterAccessModes.isEmpty()
-                ? org.mosslang.compiler.types.AccessMode.Read : function.parameterAccessModes.get(0);
-        summary.parameterAccess.add(switch (access) {
-            case Read -> AbiV10Records.Access.Read;
-            case Write -> AbiV10Records.Access.Write;
-            case Consume -> AbiV10Records.Access.Consume;
-        });
-        summary.result = resultWire;
+        for (int index = 0; index < function.params.size(); index++) {
+            summary.parameters.add(AbiV10Records.fromTypeRef(
+                    function.params.get(index).checkedTypeRef, ordinals));
+            org.mosslang.compiler.types.AccessMode access = function.parameterAccessModes.size() > index
+                    ? function.parameterAccessModes.get(index)
+                    : org.mosslang.compiler.types.AccessMode.Read;
+            summary.parameterAccess.add(switch (access) {
+                case Read -> AbiV10Records.Access.Read;
+                case Write -> AbiV10Records.Access.Write;
+                case Consume -> AbiV10Records.Access.Consume;
+            });
+        }
+        summary.result = AbiV10Records.fromTypeRef(function.returnTypeRef, ordinals);
         String bodyBytes = CheckedBodyCodec.encodeCheckedBodyV1(List.of(
-                CheckedStmt.returnStmt(CheckedExpr.parameter(0,
-                        canonicalV10SummaryType(parameterType, ordinals)))));
+                CheckedStmt.returnStmt(CheckedExpr.parameter(returnedParameter,
+                        canonicalV10SummaryType(function.params.get(returnedParameter).checkedTypeRef, ordinals)))));
         summary.bodySemanticHash = "body-semantic-v1:sha256:" + CheckedBodyCodec.sha256Hex(bodyBytes);
         AbiV10Records.SourceProvenance provenance = AbiV10Records.SourceProvenance.create(
                 moduleId, summary.callableId, function.sourceFile, function.line);
@@ -1599,14 +1589,38 @@ public class ProjectBuilder {
         };
     }
 
-    private static AbiV10Records.CheckedBodyRecord v10IdentityBody(
+    private static int v10DirectReturnedParameter(Function function) {
+        String returned = null;
+        if (function.resultExpression != null && !function.resultExpression.isBlank()
+                && function.body.isEmpty()) {
+            returned = function.resultExpression.trim();
+        } else if (function.body.size() == 1
+                && function.body.get(0).kind == Stmt.Kind.Return) {
+            Stmt statement = function.body.get(0);
+            returned = statement.a != null && !statement.a.isBlank() ? statement.a.trim() : "";
+            if (returned.isEmpty() && statement.text != null
+                    && statement.text.trim().startsWith("return ")) {
+                returned = statement.text.trim().substring(7).trim();
+            }
+        }
+        if (returned == null) return -1;
+        for (int index = 0; index < function.params.size(); index++) {
+            if (returned.equals(function.params.get(index).name)) return index;
+        }
+        return -1;
+    }
+
+    private static AbiV10Records.CheckedBodyRecord v10DirectReturnBody(
             Function function, AbiV10Records.Summary summary) {
         Map<org.mosslang.compiler.types.TypeVarId, Integer> ordinals = new LinkedHashMap<>();
-        collectV10SummaryVariables(function.params.get(0).checkedTypeRef, ordinals);
+        for (Param parameter : function.params) collectV10SummaryVariables(parameter.checkedTypeRef, ordinals);
         collectV10SummaryVariables(function.returnTypeRef, ordinals);
+        int returnedParameter = v10DirectReturnedParameter(function);
+        if (returnedParameter < 0) throw new CompileError("SOURCE_FREE_SUMMARY_INVALID",
+                "direct-return checked body no longer matches its callable summary", function.sourceFile, function.line);
         List<CheckedStmt> checkedStatements = List.of(CheckedStmt.returnStmt(
-                CheckedExpr.parameter(0, canonicalV10SummaryType(
-                        function.params.get(0).checkedTypeRef, ordinals))));
+                CheckedExpr.parameter(returnedParameter, canonicalV10SummaryType(
+                        function.params.get(returnedParameter).checkedTypeRef, ordinals))));
         AbiV10Records.CheckedBodyRecord body = new AbiV10Records.CheckedBodyRecord();
         body.callableId = summary.callableId;
         body.checkedIrBytes = CheckedBodyCodec.encodeCheckedBodyV1(checkedStatements);
