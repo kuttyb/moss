@@ -13343,5 +13343,4 @@ requirements, effects, and native provider-consumer behavior remain open.
 Validation: all ten Java unit-test classes pass after clean builds in default
 ABI-v9 and staged ABI-v10 modes. `python3 tests/tooling/check_agent_feedback.py`
 and `git diff --check` pass. No native execution, Rust compilation, Margo
-provider-consumer build, SDK gate, or full `make check` was run. The working tree
-contains this uncommitted checkpoint; overall Phase 25.3 remains incomplete.
+provider-consumer build, SDK gate, or full `make check` was run. This checkpoint is pushed at `f5693c57`; overall Phase 25.3 remains incomplete.
