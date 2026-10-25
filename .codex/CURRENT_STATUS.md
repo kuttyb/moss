@@ -15313,3 +15313,13 @@ consumption, propagation through a local `forward` helper, and an ABI-v10
 WRITE/READ alias conflict. All eleven Java
 test classes pass under ABI-v9 and staged ABI-v10; native source-free linkage
 remains a final acceptance gate.
+
+
+### Phase 25.3 continuation — rebuild standalone package after compiler changes
+
+Rebuilt `compiler-java/dist/moss.jar` and the launcher from the current Java
+sources. The packaged launcher bootstrap reports `language_version:
+moss-0.1`; a valid inferred-WRITE example checks successfully, and the
+consuming-receiver caller-reuse example is rejected with
+`OWNERSHIP_USE_AFTER_CONSUME`. This is a packaging smoke check, not a native
+Rust or Margo integration gate.
