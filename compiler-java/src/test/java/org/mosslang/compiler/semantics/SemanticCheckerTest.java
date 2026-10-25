@@ -38,6 +38,7 @@ public class SemanticCheckerTest {
         testOnFailCannotConsumeDomainState();
         testOnFailRejectsDistinctBranchBindings();
         testConstantFalseBranchDoesNotConsumeReachableLocal();
+        testWhileZeroIterationDoesNotInitializeCapture();
         System.out.println("SemanticCheckerTest PASSED.");
     }
 
@@ -394,6 +395,31 @@ public class SemanticCheckerTest {
                 + "  worker = Worker()\n"
                 + "  echo message worker.Run()\n", "constant-branch-ownership.moss");
         new SemanticChecker(program).run();
+    }
+
+    private static void testWhileZeroIterationDoesNotInitializeCapture() {
+        Program program = Parser.parseSource(""
+                + "enum Failure:\n"
+                + "  Bad\n"
+                + "domain Worker:\n"
+                + "  fn Run() -> String:\n"
+                + "    while false:\n"
+                + "      let item = \"inside\"\n"
+                + "    raise Failure.Bad\n"
+                + "  on_fail Failure.Bad:\n"
+                + "    reply item\n"
+                + "fn main():\n"
+                + "  worker = Worker()\n"
+                + "  echo message worker.Run()\n", "while-zero-iteration-capture.moss");
+        try {
+            new SemanticChecker(program).run();
+            throw new AssertionError("a zero-iteration loop cannot initialize an on_fail capture");
+        } catch (CompileError error) {
+            if (!"ON_FAIL_CAPTURE_NOT_INITIALIZED".equals(error.getCode())) {
+                throw new AssertionError("expected ON_FAIL_CAPTURE_NOT_INITIALIZED, got "
+                        + error.getCode(), error);
+            }
+        }
     }
 
     private static void testSameTraitConstraintCanBeForwarded() {

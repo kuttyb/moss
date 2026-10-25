@@ -13993,3 +13993,13 @@ the caller semantic identity and event parents on recover. The complete output
 and trace for `phase21_on_fail_root_nested.moss` now compare byte-for-byte with
 C++; FastInterpreterTest checks the outer recovery identity. Both Java ABI test
 modes pass.
+
+A focused 18-file `phase21_capture_*` check sweep (excluding FileIO) found
+`phase21_capture_loop_uninit.moss` was accepted by Java because loop-body
+locals leaked into the post-loop environment and raise snapshots from a literal
+zero-iteration loop remained visible. Java now checks loop bodies in a scoped
+copy, merges only pre-existing binding ownership for non-constant loops, and
+drops raise snapshots from `while false`. The fixture now rejects with
+`ON_FAIL_CAPTURE_NOT_INITIALIZED`, matching C++; loop-reinit and loop-consumed
+controls also match. The focused capture sweep has one additional false accept
+resolved, and both Java ABI unit suites pass.

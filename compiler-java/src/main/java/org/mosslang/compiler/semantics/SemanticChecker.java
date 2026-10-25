@@ -1612,6 +1612,31 @@ public class SemanticChecker {
         int i = start;
         while (i < end) {
             Stmt s = stmts.get(i);
+            if (s.kind == Stmt.Kind.While) {
+                checkStatement(s, env, typer, solver, insideHandler, enclosingName, expectedType);
+                int bodyEnd = i + 1;
+                while (bodyEnd < end && stmts.get(bodyEnd).indent > s.indent) bodyEnd++;
+                int raiseCount = currentHandlerRaises == null ? 0 : currentHandlerRaises.size();
+                OwnershipEnv bodyEnv = checkBlock(stmts, i + 1, bodyEnd, env.copy(), typer,
+                        solver, insideHandler, enclosingName, expectedType);
+                if ("false".equals(s.a == null ? "" : s.a.trim())) {
+                    if (currentHandlerRaises != null)
+                        currentHandlerRaises.subList(raiseCount, currentHandlerRaises.size()).clear();
+                } else {
+                    Set<String> outerNames = new HashSet<>(env.typeEnv.getBindings().keySet());
+                    OwnershipEnv merged = mergeEnvs(s.line, bodyEnv, env, solver);
+                    for (String name : new HashSet<>(merged.typeEnv.getBindings().keySet())) {
+                        if (outerNames.contains(name)) continue;
+                        merged.typeEnv.remove(name);
+                        merged.moved.remove(name);
+                        merged.immutables.remove(name);
+                        merged.bindingLines.remove(name);
+                    }
+                    env = merged;
+                }
+                i = bodyEnd;
+                continue;
+            }
             if (s.kind == Stmt.Kind.If) {
                 Stmt ifStmt = s;
                 checkStatement(ifStmt, env, typer, solver, insideHandler, enclosingName, expectedType);
