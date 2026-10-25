@@ -15223,3 +15223,15 @@ now agree.
 The reverse-declaration-order regression checks the retained parameter mode.
 All eleven Java test classes pass under ABI-v9 and staged ABI-v10; imported
 helper and nested field write summaries remain open.
+
+
+### Phase 25.3 continuation — summarize nested method receiver writes
+
+For `relay(box) -> box.sink.bump()`, C++ reported `box: WRITE` while Java
+reported READ. Function parameter effect inference now resolves declared field
+paths and propagates a nested method receiver's checked WRITE mode to the root
+parameter. The focused effects queries now agree.
+
+The semantic regression covers the nested receiver path. All eleven Java test
+classes pass under ABI-v9 and staged ABI-v10; local alias and generic/cross-
+module receiver summaries remain open.

@@ -561,3 +561,15 @@ The focused Java regression checks the resulting parameter mode, and the
 C++/Java effects queries agree. All eleven Java test classes pass under
 ABI-v9 and staged ABI-v10. Imported helper and nested field write summaries
 remain open.
+
+
+### Follow-up — summarize nested method receiver writes
+
+For `relay(box) -> box.sink.bump()`, C++ reported `box: WRITE` while Java
+reported READ. Java function parameter inference now resolves declared field
+paths and propagates a nested method receiver's WRITE mode to the root
+parameter.
+
+The semantic test covers the nested call, and focused C++/Java effects queries
+agree. All eleven Java test classes pass under ABI-v9 and staged ABI-v10.
+Local alias and generic/cross-module receiver summaries remain open.

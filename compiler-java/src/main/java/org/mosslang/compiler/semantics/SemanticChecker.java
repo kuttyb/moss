@@ -2262,6 +2262,7 @@ public class SemanticChecker {
                 ? fn.params.get(paramIdx).typeRef
                 : (fn.params.get(paramIdx).type != null
                         ? TypeParser.parseCanonical(fn.params.get(paramIdx).type) : null);
+        if (functionCallsWritingNestedReceiver(fn, pName, parameterType)) return true;
         if (functionCallWritesParam(fn, pName, parameterType)) return true;
         ObjectType parameterObject = parameterType != null
                 && parameterType.kind() == TypeKind.NominalInstance
@@ -2306,6 +2307,53 @@ public class SemanticChecker {
                     || t.startsWith(pName + ".append(") || t.startsWith(pName + ".reserve(")
                     || t.startsWith(pName + " =") || t.startsWith(pName + "=") || t.startsWith(pName + "[")) {
                 return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean functionCallsWritingNestedReceiver(Function caller, String paramName,
+                                                       TypeRef parameterType) {
+        if (parameterType == null) return false;
+        Map<String, TypeRef> bindings = new HashMap<>();
+        if (program.localBindingTypes != null)
+            bindings.putAll(program.localBindingTypes.getOrDefault(caller.name, Map.of()));
+        for (Param parameter : caller.params) {
+            TypeRef type = parameter.typeRef != null ? parameter.typeRef
+                    : (parameter.type != null && !parameter.type.isEmpty()
+                            ? TypeParser.parseCanonical(parameter.type) : null);
+            if (type != null) bindings.putIfAbsent(parameter.name, type);
+        }
+        List<String> expressions = new ArrayList<>();
+        Deque<Map.Entry<Integer, Set<String>>> caseScopes = new ArrayDeque<>();
+        for (Stmt statement : caller.body) {
+            while (!caseScopes.isEmpty() && statement.indent <= caseScopes.peek().getKey())
+                caseScopes.pop();
+            if (statement.kind == Stmt.Kind.Case) {
+                caseScopes.push(Map.entry(statement.indent, new HashSet<>(statement.args)));
+                continue;
+            }
+            if (caseScopes.stream().anyMatch(scope -> scope.getValue().contains(paramName))) continue;
+            expressions.add(statementExpressionText(statement));
+        }
+        if (caller.resultExpression != null) expressions.add(caller.resultExpression);
+        for (ObjectType object : program.objects) {
+            for (Method method : object.methods) {
+                if (method.receiverAccessMode != AccessMode.Write) continue;
+                java.util.regex.Pattern callPattern = java.util.regex.Pattern.compile(
+                        "(?<![A-Za-z0-9_])" + java.util.regex.Pattern.quote(paramName)
+                                + "(?:\\s*\\.\\s*[A-Za-z_][A-Za-z0-9_]*)*"
+                                + "\\s*\\.\\s*" + java.util.regex.Pattern.quote(method.name)
+                                + "\\s*\\(");
+                for (String expression : expressions) {
+                    java.util.regex.Matcher call = callPattern.matcher(expression);
+                    while (call.find()) {
+                        String matchedCall = call.group();
+                        String receiver = matchedCall.substring(0, matchedCall.lastIndexOf('.')).trim();
+                        String receiverType = resolveFunctionReceiverType(receiver, bindings);
+                        if (matchesObjectTypeName(receiverType, object.name)) return true;
+                    }
+                }
             }
         }
         return false;
