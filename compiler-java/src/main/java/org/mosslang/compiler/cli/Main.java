@@ -768,16 +768,17 @@ public class Main {
         for (Map.Entry<String, org.mosslang.compiler.abi.AbiV10Records.Summary> entry : summaries.entrySet()) {
             String callableId = entry.getKey();
             org.mosslang.compiler.abi.AbiV10Records.Summary summary = entry.getValue();
-            boolean genericIdentity = summary.variableCount == 1
-                    && summary.parameters.size() == 1
-                    && summary.parameters.get(0).kind
-                            == org.mosslang.compiler.abi.AbiV10Records.WireTypeKind.BoundVar
-                    && summary.parameters.get(0).ordinal == 0
+            boolean genericParameterReturn = summary.variableCount > 0
+                    && summary.variableCount == summary.parameters.size()
+                    && java.util.stream.IntStream.range(0, summary.parameters.size()).allMatch(index ->
+                            summary.parameters.get(index).kind
+                                    == org.mosslang.compiler.abi.AbiV10Records.WireTypeKind.BoundVar
+                                    && summary.parameters.get(index).ordinal == index)
                     && summary.result.kind
                             == org.mosslang.compiler.abi.AbiV10Records.WireTypeKind.BoundVar
-                    && summary.result.ordinal == 0;
+                    && summary.result.ordinal >= 0 && summary.result.ordinal < summary.parameters.size();
             if (!callableId.startsWith(callablePrefix)
-                    || (summary.variableCount != 0 && !genericIdentity)
+                    || (summary.variableCount != 0 && !genericParameterReturn)
                     || summary.parameters.size() != summary.parameterAccess.size()
                     || !summary.requirements.isEmpty() || !summary.dependencies.isEmpty()
                     || summary.observableEffectBits != 0 || !summary.observableEffectTags.isEmpty()
@@ -788,13 +789,13 @@ public class Main {
             List<org.mosslang.compiler.types.TypeRef> parameters = new ArrayList<>();
             for (org.mosslang.compiler.abi.AbiV10Records.WireType wire : summary.parameters) {
                 org.mosslang.compiler.types.TypeRef parameter = v10SimpleWireType(wire, summary.variableCount);
-                if (parameter == null || (!genericIdentity && !parameter.isClosed())) {
+                if (parameter == null || (!genericParameterReturn && !parameter.isClosed())) {
                     parameters.clear();
                     break;
                 }
                 parameters.add(parameter);
             }
-            if (result == null || (!genericIdentity && !result.isClosed())
+            if (result == null || (!genericParameterReturn && !result.isClosed())
                     || parameters.size() != summary.parameters.size()) continue;
 
             String qualifiedName = moduleName + "." + functionName;
@@ -802,7 +803,7 @@ public class Main {
                     .filter(function -> callableId.equals(function.semanticCallableId)
                             || function.name.equals(qualifiedName))
                     .findFirst().orElse(null);
-            if (genericIdentity && primary != null) continue;
+            if (genericParameterReturn && primary != null) continue;
             if (primary == null) {
                 primary = new org.mosslang.compiler.ast.Function(
                         qualifiedName, "fn " + functionName + "()", 1, interfaceFile.toString(), true);
@@ -819,15 +820,17 @@ public class Main {
                 alias.exported = true;
                 alias.sourceFreeAbiVersion = 10;
                 program.functions.add(alias);
-                if (genericIdentity) seededGenericCallables.add(callableId);
+                if (genericParameterReturn) seededGenericCallables.add(callableId);
             }
             List<org.mosslang.compiler.ast.Function> matches = program.functions.stream()
                     .filter(function -> callableId.equals(function.semanticCallableId)).toList();
             for (org.mosslang.compiler.ast.Function function : matches) {
                 if (!function.params.isEmpty() && function.params.size() != parameters.size()) continue;
-                if (genericIdentity) {
-                    if (function.params.isEmpty()) {
-                        function.params.add(new org.mosslang.compiler.ast.Param("arg0", ""));
+                if (genericParameterReturn) {
+                    for (int index = 0; index < parameters.size(); index++) {
+                        if (function.params.size() <= index) {
+                            function.params.add(new org.mosslang.compiler.ast.Param("arg" + index, ""));
+                        }
                     }
                 } else {
                     for (int index = 0; index < parameters.size(); index++) {
@@ -846,7 +849,7 @@ public class Main {
                         case Consume -> org.mosslang.compiler.types.AccessMode.Consume;
                     });
                 }
-                if (genericIdentity) {
+                if (genericParameterReturn) {
                     function.returnType = "";
                     function.returnTypeRef = null;
                     function.generic = true;
@@ -1790,20 +1793,21 @@ public class Main {
                 continue;
             }
 
-            if (seededGenericCallables.contains(callableId) && summary.variableCount == 1
-                    && parameterTypes.size() == 1
-                    && summary.parameters.get(0).kind
-                            == org.mosslang.compiler.abi.AbiV10Records.WireTypeKind.BoundVar
-                    && summary.parameters.get(0).ordinal == 0
+            if (seededGenericCallables.contains(callableId) && summary.variableCount > 0
+                    && summary.variableCount == parameterTypes.size()
+                    && java.util.stream.IntStream.range(0, summary.parameters.size()).allMatch(index ->
+                            summary.parameters.get(index).kind
+                                    == org.mosslang.compiler.abi.AbiV10Records.WireTypeKind.BoundVar
+                                    && summary.parameters.get(index).ordinal == index)
                     && summary.result.kind
                             == org.mosslang.compiler.abi.AbiV10Records.WireTypeKind.BoundVar
-                    && summary.result.ordinal == 0 && returnedParameter == 0) {
+                    && summary.result.ordinal == returnedParameter) {
                 List<org.mosslang.compiler.ast.Function> identityMatches = program.functions.stream()
                         .filter(function -> callableId.equals(function.semanticCallableId)).toList();
                 if (identityMatches.isEmpty() || identityMatches.stream()
-                        .anyMatch(function -> function.params.size() != 1)) continue;
+                        .anyMatch(function -> function.params.size() != parameterTypes.size())) continue;
                 for (org.mosslang.compiler.ast.Function function : identityMatches) {
-                    function.params.get(0).bindType(null);
+                    for (org.mosslang.compiler.ast.Param parameter : function.params) parameter.bindType(null);
                     function.returnType = "";
                     function.returnTypeRef = null;
                     function.generic = true;
@@ -1817,7 +1821,7 @@ public class Main {
                         });
                     }
                     function.body.clear();
-                    String parameterName = function.params.get(0).name;
+                    String parameterName = function.params.get(returnedParameter).name;
                     org.mosslang.compiler.ast.Stmt projected = new org.mosslang.compiler.ast.Stmt(
                             org.mosslang.compiler.ast.Stmt.Kind.Return, 1, 1,
                             "return " + parameterName, parameterName, "");
