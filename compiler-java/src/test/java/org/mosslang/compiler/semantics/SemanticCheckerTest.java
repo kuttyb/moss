@@ -45,6 +45,9 @@ public class SemanticCheckerTest {
         testBareRaiseOutsideRecoverIsRejected();
         testExecutorRootRequiresRaiseHandling();
         testSynchronousRootMessagePropagatesHelperRaises();
+        testRecoverUsesCallArgumentRaiseOrder();
+        testRecoverUsesVectorElementRaiseOrder();
+        testRecoverUsesPipelineStageRaiseOrder();
         System.out.println("SemanticCheckerTest PASSED.");
     }
 
@@ -842,6 +845,110 @@ public class SemanticCheckerTest {
                 + "fn main():\n"
                 + "  worker = Worker()\n"
                 + "  message worker.Run()\n", "ROOT_UNHANDLED_RAISE");
+    }
+
+    private static void testRecoverUsesCallArgumentRaiseOrder() {
+        String prefix = ""
+                + "enum Failure:\n"
+                + "  Bad\n"
+                + "fn fail() -> Int:\n"
+                + "  raise Failure.Bad\n"
+                + "fn consume(number: Int, data: String) -> String:\n"
+                + "  return data\n"
+                + "fn consume_before(data: String, number: Int) -> String:\n"
+                + "  return data\n"
+                + "domain Worker:\n"
+                + "  fn Run() -> Int:\n"
+                + "    var data = \"abc\"\n"
+                + "    try:\n";
+        String suffix = ""
+                + "    recover Failure.Bad:\n"
+                + "      reply data.length()\n"
+                + "    reply 0\n"
+                + "fn main():\n"
+                + "  worker = Worker()\n"
+                + "  echo message worker.Run()\n";
+        Program raisesBeforeMove = Parser.parseSource(prefix
+                + "      result = consume((fail() + 1), data)\n" + suffix,
+                "recover-call-raise-before-move.moss");
+        new SemanticChecker(raisesBeforeMove).run();
+        assertCompileError(prefix + "      result = consume_before(data, fail())\n" + suffix,
+                "OWNERSHIP_USE_AFTER_CONSUME");
+        String shared = ""
+                + "enum Failure:\n"
+                + "  Bad\n"
+                + "fn maybe_fail(flag: Bool) -> Int:\n"
+                + "  if flag:\n"
+                + "    raise Failure.Bad\n"
+                + "  return 1\n"
+                + "fn consume_and_fail(number: Int, data: String) -> Int:\n"
+                + "  discarded = data\n"
+                + "  raise Failure.Bad\n"
+                + "domain Worker:\n"
+                + "  fn Run(flag: Bool) -> Int:\n"
+                + "    var data = \"abc\"\n"
+                + "    try:\n"
+                + "      result = consume_and_fail(maybe_fail(flag), data)\n"
+                + "    recover Failure.Bad:\n"
+                + "      reply data.length()\n"
+                + "    reply 0\n"
+                + "fn main():\n"
+                + "  worker = Worker()\n"
+                + "  echo message worker.Run(true)\n";
+        assertCompileError(shared, "OWNERSHIP_USE_AFTER_CONSUME");
+    }
+
+    private static void testRecoverUsesVectorElementRaiseOrder() {
+        String prefix = ""
+                + "enum Failure:\n"
+                + "  Bad\n"
+                + "fn fail() -> String:\n"
+                + "  raise Failure.Bad\n"
+                + "domain Worker:\n"
+                + "  fn Run() -> Int:\n"
+                + "    var data = \"abc\"\n"
+                + "    try:\n";
+        String suffix = ""
+                + "    recover Failure.Bad:\n"
+                + "      reply data.length()\n"
+                + "    reply 0\n"
+                + "fn main():\n"
+                + "  worker = Worker()\n"
+                + "  echo message worker.Run()\n";
+        Program raisesBeforeMove = Parser.parseSource(prefix
+                + "      values = [fail(), data]\n" + suffix,
+                "recover-vector-raise-before-move.moss");
+        new SemanticChecker(raisesBeforeMove).run();
+        assertCompileError(prefix + "      values = [data, fail()]\n" + suffix,
+                "OWNERSHIP_USE_AFTER_CONSUME");
+    }
+
+    private static void testRecoverUsesPipelineStageRaiseOrder() {
+        String prefix = ""
+                + "enum Failure:\n"
+                + "  Bad\n"
+                + "fn source(flag: Bool) -> Vector[Int]:\n"
+                + "  if flag:\n"
+                + "    raise Failure.Bad\n"
+                + "  return [1]\n"
+                + "fn fold(accumulator: String, item: Int) -> String:\n";
+        String suffix = ""
+                + "domain Worker:\n"
+                + "  fn Run(flag: Bool) -> Int:\n"
+                + "    var data = \"abc\"\n"
+                + "    try:\n"
+                + "      result = source(flag) |> reduce(data, fold)\n"
+                + "    recover Failure.Bad:\n"
+                + "      reply data.length()\n"
+                + "    reply 0\n"
+                + "fn main():\n"
+                + "  worker = Worker()\n"
+                + "  echo message worker.Run(true)\n";
+        Program sourceRaisesFirst = Parser.parseSource(prefix
+                + "  return accumulator\n" + suffix, "recover-pipeline-source-edge.moss");
+        new SemanticChecker(sourceRaisesFirst).run();
+        assertCompileError(prefix + "  raise Failure.Bad\n" + suffix,
+                "OWNERSHIP_USE_AFTER_CONSUME");
     }
 
     private static void assertCompileError(String source, String code) {

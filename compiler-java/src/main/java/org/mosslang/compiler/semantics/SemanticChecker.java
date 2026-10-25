@@ -582,7 +582,11 @@ public class SemanticChecker {
                     Set<String> raisedVariants = new HashSet<>();
                     for (RaiseSnapshot snapshot : raiseEnvironments)
                         if (snapshot.variant != null && !snapshot.variant.isEmpty()) raisedVariants.add(snapshot.variant);
-                    if (!raisedVariants.isEmpty() && (arm.binding == null || arm.binding.isEmpty())) {
+                    boolean hasCatchAll = handler.failureArms.stream().anyMatch(candidate ->
+                            (candidate.binding == null || candidate.binding.isEmpty())
+                                    && (candidate.patterns == null || candidate.patterns.isEmpty()));
+                    if (!hasCatchAll && !raisedVariants.isEmpty()
+                            && (arm.binding == null || arm.binding.isEmpty())) {
                         Set<String> covered = new HashSet<>();
                         for (FailureArm candidate : handler.failureArms)
                             for (String pattern : candidate.patterns) {
@@ -739,6 +743,27 @@ public class SemanticChecker {
                     int open = expected.indexOf('(');
                     if (open >= 0) expected = expected.substring(0, open).trim();
                     if (snapshot.variant.equals(expected)) selected = true;
+                }
+            }
+            if (selected) selectedEdges.add(snapshot.env);
+        }
+        return selectedEdges;
+    }
+
+    private List<OwnershipEnv> selectedRecoverEdges(Stmt recover, List<RaiseSnapshot> raises) {
+        List<OwnershipEnv> selectedEdges = new ArrayList<>();
+        String pattern = recover.a == null ? "" : recover.a.trim();
+        for (RaiseSnapshot snapshot : raises) {
+            boolean selected = pattern.isEmpty() || pattern.matches("[A-Za-z_][A-Za-z0-9_]*")
+                    || snapshot.variant.isEmpty();
+            if (!selected) {
+                for (String alternative : pattern.split(",")) {
+                    String expected = alternative.trim();
+                    int payload = expected.indexOf('(');
+                    if (payload >= 0) expected = expected.substring(0, payload).trim();
+                    if (snapshot.variant.equals(expected)
+                            || snapshot.variant.endsWith("." + expected)
+                            || expected.endsWith("." + snapshot.variant)) selected = true;
                 }
             }
             if (selected) selectedEdges.add(snapshot.env);
@@ -1587,6 +1612,50 @@ public class SemanticChecker {
     private void consumeCallArguments(int line, String expr, OwnershipEnv env, String fallbackDest) {
         if (expr == null) return;
         expr = expr.trim();
+        ExpressionTyper.BinarySplit pipeline = ExpressionTyper.splitBinary(expr, List.of("|>"));
+        if (pipeline != null) {
+            if (currentHandlerRaises != null) recordDirectCallRaises(pipeline.left(), env);
+            consumeCallArguments(line, pipeline.left(), env, fallbackDest);
+            String stage = pipeline.right().trim();
+            if (stage.startsWith("reduce(") && stage.endsWith(")")) {
+                List<String> arguments = ExpressionTyper.parseArguments(
+                        stage.substring("reduce(".length(), stage.length() - 1));
+                if (arguments.size() == 2) {
+                    String initializer = arguments.get(0).trim();
+                    if (currentHandlerRaises != null) recordDirectCallRaises(initializer, env);
+                    if (env.containsKey(initializer) && transferType(env.get(initializer))) {
+                        consumeBinding(line, initializer, env,
+                                fallbackDest != null ? fallbackDest : "pipeline reduce initializer");
+                    } else {
+                        consumeCallArguments(line, initializer, env, fallbackDest);
+                    }
+                    if (currentHandlerRaises != null)
+                        recordDirectCallRaises(arguments.get(1).trim() + "()", env);
+                }
+            } else {
+                int open = stage.indexOf('(');
+                if (open > 0 && stage.endsWith(")") && currentHandlerRaises != null) {
+                    List<String> arguments = ExpressionTyper.parseArguments(
+                            stage.substring(open + 1, stage.length() - 1));
+                    if (!arguments.isEmpty()) recordDirectCallRaises(arguments.get(0).trim() + "()", env);
+                }
+            }
+            return;
+        }
+        if (expr.startsWith("[") && expr.endsWith("]")) {
+            List<String> elements = ExpressionTyper.parseArguments(expr.substring(1, expr.length() - 1));
+            for (String element : elements) {
+                String item = element.trim();
+                if (currentHandlerRaises != null) recordDirectCallRaises(item, env);
+                if (env.containsKey(item) && transferType(env.get(item))) {
+                    consumeBinding(line, item, env,
+                            fallbackDest != null ? fallbackDest : "an expression at line " + line);
+                } else {
+                    consumeCallArguments(line, item, env, fallbackDest);
+                }
+            }
+            return;
+        }
         if (expr.contains(".") && !expr.endsWith(")")) {
             int openP = expr.indexOf('(');
             int closeP = ExpressionTyper.findMatchingOpenParen(expr.substring(0, expr.lastIndexOf('.')), expr.lastIndexOf('.') - 1);
@@ -1601,12 +1670,6 @@ public class SemanticChecker {
             String callee = expr.substring(0, openP).trim();
             String argsInside = expr.substring(openP + 1, expr.length() - 1).trim();
             List<String> args = ExpressionTyper.parseArguments(argsInside);
-            // Calls in earlier arguments execute before later arguments are
-            // evaluated. Preserve the caller's ownership state on their
-            // exceptional edges before applying normal-path argument moves.
-            if (currentHandlerRaises != null) {
-                for (String argument : args) recordDirectCallRaises(argument, env);
-            }
             Function fn = functions.get(callee);
             Method method = null;
             int methodSeparator = callee.lastIndexOf('.');
@@ -1652,6 +1715,10 @@ public class SemanticChecker {
                 if (a.contains(":") && !a.startsWith("\"")) {
                     a = a.substring(a.indexOf(':') + 1).trim();
                 }
+                // Moss evaluates call arguments left-to-right. Record each
+                // argument's raising edges before applying its ownership move,
+                // then proceed to the next argument from that new state.
+                if (currentHandlerRaises != null) recordDirectCallRaises(a, env);
                 if (env.containsKey(a) && transferType(env.get(a))) {
                     boolean consumesArgument = fn != null ? doesFunctionConsumeParam(fn, i)
                             : method != null && i < method.parameterAccessModes.size()
@@ -1666,29 +1733,54 @@ public class SemanticChecker {
                     }
                 }
             }
+            // The callee body runs only after all arguments have been
+            // evaluated and transferred, so its raising edges use the
+            // post-argument ownership environment.
+            if (currentHandlerRaises != null && fn != null)
+                recordDirectCallRaises(callee + "()", env);
         }
     }
 
     private void recordDirectCallRaises(String expression, OwnershipEnv env) {
         if (expression == null) return;
         String text = expression.trim();
-        int open = text.indexOf('(');
-        if (open <= 0 || !text.endsWith(")")) return;
-        int matching = ExpressionTyper.findMatchingOpenParen(text, text.length() - 1);
-        if (matching != open) return;
-        String callee = text.substring(0, open).trim();
-        Function called = functions.get(callee);
-        if (called != null && currentHandlerRaises != null) {
-            for (Stmt statement : called.body) {
-                if (statement.kind != Stmt.Kind.Raise || statement.a == null) continue;
-                String raised = statement.a.trim();
-                int payload = raised.indexOf('(');
-                if (payload >= 0) raised = raised.substring(0, payload).trim();
-                currentHandlerRaises.add(new RaiseSnapshot(env.copy(), raised));
+        int cursor = 0;
+        while (cursor < text.length()) {
+            if (!Character.isLetter(text.charAt(cursor)) && text.charAt(cursor) != '_') {
+                cursor++;
+                continue;
             }
+            int nameStart = cursor++;
+            while (cursor < text.length() && (Character.isLetterOrDigit(text.charAt(cursor))
+                    || text.charAt(cursor) == '_')) cursor++;
+            String name = text.substring(nameStart, cursor);
+            int open = cursor;
+            while (open < text.length() && Character.isWhitespace(text.charAt(open))) open++;
+            Function called = functions.get(name);
+            if (called == null || open >= text.length() || text.charAt(open) != '(') continue;
+            int depth = 0;
+            int close = -1;
+            for (int index = open; index < text.length(); index++) {
+                if (text.charAt(index) == '(') depth++;
+                else if (text.charAt(index) == ')' && --depth == 0) {
+                    close = index;
+                    break;
+                }
+            }
+            if (close < 0) continue;
+            for (String argument : ExpressionTyper.parseArguments(text.substring(open + 1, close)))
+                recordDirectCallRaises(argument, env);
+            if (currentHandlerRaises != null) {
+                for (Stmt statement : called.body) {
+                    if (statement.kind != Stmt.Kind.Raise || statement.a == null) continue;
+                    String raised = statement.a.trim();
+                    int payload = raised.indexOf('(');
+                    if (payload >= 0) raised = raised.substring(0, payload).trim();
+                    currentHandlerRaises.add(new RaiseSnapshot(env.copy(), raised));
+                }
+            }
+            cursor = close + 1;
         }
-        for (String argument : ExpressionTyper.parseArguments(text.substring(open + 1, text.length() - 1)))
-            recordDirectCallRaises(argument, env);
     }
 
     private OwnershipEnv checkBlock(List<Stmt> stmts, int start, int end, OwnershipEnv env,
@@ -1706,6 +1798,59 @@ public class SemanticChecker {
             if (s.kind == Stmt.Kind.Recover) {
                 activeRecoverIndent = s.indent;
                 activeRecoverDepth++;
+            }
+            if (s.kind == Stmt.Kind.Try && currentHandlerRaises != null) {
+                int tryBodyEnd = i + 1;
+                while (tryBodyEnd < end && stmts.get(tryBodyEnd).indent > s.indent) tryBodyEnd++;
+                int recoverCursor = tryBodyEnd;
+                List<Integer> recoverStarts = new ArrayList<>();
+                List<Integer> recoverEnds = new ArrayList<>();
+                while (recoverCursor < end && stmts.get(recoverCursor).kind == Stmt.Kind.Recover
+                        && stmts.get(recoverCursor).indent == s.indent) {
+                    int recoverEnd = recoverCursor + 1;
+                    while (recoverEnd < end && stmts.get(recoverEnd).indent > s.indent) recoverEnd++;
+                    recoverStarts.add(recoverCursor);
+                    recoverEnds.add(recoverEnd);
+                    recoverCursor = recoverEnd;
+                }
+                if (!recoverStarts.isEmpty()) {
+                    int raiseStart = currentHandlerRaises.size();
+                    OwnershipEnv tryEnv = checkBlock(stmts, i + 1, tryBodyEnd, env.copy(), typer,
+                            solver, insideHandler, enclosingName, expectedType);
+                    int raiseEnd = currentHandlerRaises.size();
+                    List<OwnershipEnv> paths = new ArrayList<>();
+                    paths.add(tryEnv);
+                    List<RaiseSnapshot> tryRaises = new ArrayList<>(
+                            currentHandlerRaises.subList(raiseStart, raiseEnd));
+                    for (int armIndex = 0; armIndex < recoverStarts.size(); armIndex++) {
+                        int recoverIndex = recoverStarts.get(armIndex);
+                        int recoverEnd = recoverEnds.get(armIndex);
+                        Stmt recover = stmts.get(recoverIndex);
+                        List<OwnershipEnv> edges = selectedRecoverEdges(recover, tryRaises);
+                        OwnershipEnv recoverEnv = edges.isEmpty() ? env.copy() : edges.get(0).copy();
+                        for (int edgeIndex = 1; edgeIndex < edges.size(); edgeIndex++)
+                            recoverEnv = mergeEnvs(recover.line, recoverEnv, edges.get(edgeIndex), solver);
+                        if (recover.a != null && recover.a.trim().matches("[A-Za-z_][A-Za-z0-9_]*")) {
+                            TypeRef errorType = recoveryBindingType(stmts, start, recoverIndex, recover.indent);
+                            if (errorType != null) recoverEnv.put(recover.a.trim(), errorType, recover.line);
+                        }
+                        checkStatement(recover, recoverEnv, typer, solver, insideHandler,
+                                enclosingName, expectedType);
+                        activeRecoverDepth++;
+                        try {
+                            OwnershipEnv checkedRecover = checkBlock(stmts, recoverIndex + 1, recoverEnd,
+                                    recoverEnv, typer, solver, insideHandler, enclosingName, expectedType);
+                            if (!edges.isEmpty()) paths.add(checkedRecover);
+                        } finally {
+                            activeRecoverDepth--;
+                        }
+                    }
+                    env = paths.get(0);
+                    for (int pathIndex = 1; pathIndex < paths.size(); pathIndex++)
+                        env = mergeEnvs(s.line, env, paths.get(pathIndex), solver);
+                    i = recoverCursor;
+                    continue;
+                }
             }
             if (s.kind == Stmt.Kind.While) {
                 checkStatement(s, env, typer, solver, insideHandler, enclosingName, expectedType);

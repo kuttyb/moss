@@ -14176,3 +14176,29 @@ Java currently misses this pipeline exceptional-edge flow. The previously
 referenced tooling script also runs Rust compilation/native execution, so that
 expensive gate was not run here. No partial pipeline change was retained; the
 91-file checker sample remains at 8 C++-only and 2 Java-only divergences.
+
+### Phase 25.3 continuation — ordered exceptional ownership edges through calls, vectors, and reduce
+
+A bounded `try/recover` ownership update now checks each recovery arm from the
+ownership snapshots of raise sites selected by its patterns, while retaining
+the normal completion path for the later join. Direct call arguments are
+visited left-to-right: an argument's raise edges are recorded before its move,
+and the callee's own raise edges are recorded after argument transfers. Vector
+literal elements are checked in source order. Functional pipelines process the
+source first, then a `reduce` initializer transfer, then direct callback raises.
+Same-variant snapshots from different evaluation stages are all considered.
+
+Focused paired regressions pass for call argument order, vector element order,
+reduce source versus callback order, and two same-variant raise edges. The
+previous `phase21_peer_warnings` false rejection from a catch-all `on_fail` is
+also corrected: an empty-pattern arm is recognized as exhaustive. Both ABI
+Java suites pass all 11 classes. The refreshed 91-file checker screen reports
+7 C++-only acceptance differences, 0 Java-only differences, 54 accepted by
+both, and 30 rejected by both. Remaining C++-only cases include FileIO and
+raising iterator limitations plus four other focused semantic discrepancies;
+no full parity claim is made. This edge-state path currently operates in
+domain-handler checking where raise snapshots are collected; ordinary
+function-level recover ownership and indirect/inter-domain raise summaries
+remain outside this bounded implementation. The earlier pipeline/vector open
+notes above are historical and are resolved for the paired fixtures listed
+here.
