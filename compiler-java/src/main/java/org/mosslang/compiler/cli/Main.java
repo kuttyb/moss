@@ -1459,6 +1459,12 @@ public class Main {
                     && "int".equalsIgnoreCase(resultType.name())
                     && statement.expr.literalValue.matches("[0-9](?:_?[0-9])*")) {
                 returnedLiteral = statement.expr.literalValue;
+            } else if (statement.expr.kind == org.mosslang.compiler.abi.CheckedExprKind.BoolLiteral
+                    && parameterTypes.isEmpty() && resultType.kind() == org.mosslang.compiler.types.TypeKind.Primitive
+                    && "bool".equalsIgnoreCase(resultType.name())
+                    && ("true".equals(statement.expr.literalValue)
+                        || "false".equals(statement.expr.literalValue))) {
+                returnedLiteral = statement.expr.literalValue;
             } else {
                 continue;
             }
