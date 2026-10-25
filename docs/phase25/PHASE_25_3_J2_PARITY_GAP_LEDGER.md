@@ -108,3 +108,13 @@ Int/Float values for numeric equality and uses IEEE Float equality semantics.
 Coverage exercises `==` and `!=` for mixed values, signed zero, and NaN; the
 six outputs match C++ Fast Debug. Clean build and all eleven Java unit tests
 pass in ABI-v9. Broader Fast Debug and native/Margo/SDK gates remain open.
+
+## Phase 25.3 continuation — structural Fast Debug equality
+
+A C++/Java probe showed separately allocated equal Vector values compared
+unequal in Java because `Objects.equals` compared `Value` element identities.
+Java Fast Debug now compares Vector and Queue elements recursively, Map values
+by matching keys, object fields with nominal type identity, and enum payloads
+structurally. Nested Int and Float Vector comparisons now match C++. Clean Java
+build and all eleven unit-test classes pass in ABI-v9. Broader collection/map
+and full interpreter/native parity remain unverified.

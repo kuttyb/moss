@@ -45,7 +45,10 @@ public final class FastInterpreterTest {
                 + "  echo 0.0 == -0.0\n"
                 + "  echo 0.0 != -0.0\n"
                 + "  echo (0.0 / 0.0) == (0.0 / 0.0)\n"
-                + "  echo (0.0 / 0.0) != (0.0 / 0.0)\n",
+                + "  echo (0.0 / 0.0) != (0.0 / 0.0)\n"
+                + "  echo [1] == [1]\n"
+                + "  echo [[1], [2]] == [[1], [2]]\n"
+                + "  echo [1.0] == [1.0]\n",
                 "fast-interpreter-float-equality.moss");
         new CheckedProgram(program).run();
 
@@ -55,7 +58,7 @@ public final class FastInterpreterTest {
                     new PrintStream(new ByteArrayOutputStream())).run();
         }
         String actual = stdout.toString(StandardCharsets.UTF_8);
-        String expected = "true\nfalse\ntrue\nfalse\nfalse\ntrue\n";
+        String expected = "true\nfalse\ntrue\nfalse\nfalse\ntrue\ntrue\ntrue\ntrue\n";
         if (!expected.equals(actual)) {
             throw new AssertionError("IEEE/mixed numeric equality was incorrect: " + actual);
         }

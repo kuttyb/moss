@@ -103,6 +103,74 @@ public class FastInterpreter {
         }
     }
 
+    private static boolean valuesEqual(Value left, Value right) {
+        boolean leftNumber = left.kind == Value.Kind.INT || left.kind == Value.Kind.FLOAT;
+        boolean rightNumber = right.kind == Value.Kind.INT || right.kind == Value.Kind.FLOAT;
+        if (leftNumber && rightNumber) {
+            return left.kind == Value.Kind.FLOAT || right.kind == Value.Kind.FLOAT
+                    ? left.asFloat() == right.asFloat()
+                    : left.asInt() == right.asInt();
+        }
+        if (left.kind != right.kind) return false;
+        if (left.kind == Value.Kind.VECTOR) {
+            if (!(left.raw instanceof List<?> leftItems)
+                    || !(right.raw instanceof List<?> rightItems)
+                    || leftItems.size() != rightItems.size()) return false;
+            for (int index = 0; index < leftItems.size(); index++) {
+                if (!(leftItems.get(index) instanceof Value leftItem)
+                        || !(rightItems.get(index) instanceof Value rightItem)
+                        || !valuesEqual(leftItem, rightItem)) return false;
+            }
+            return true;
+        }
+        if (left.kind == Value.Kind.QUEUE) {
+            if (!(left.raw instanceof Deque<?> leftQueue)
+                    || !(right.raw instanceof Deque<?> rightQueue)
+                    || leftQueue.size() != rightQueue.size()) return false;
+            Iterator<?> leftItems = leftQueue.iterator();
+            Iterator<?> rightItems = rightQueue.iterator();
+            while (leftItems.hasNext()) {
+                if (!(leftItems.next() instanceof Value leftItem)
+                        || !(rightItems.next() instanceof Value rightItem)
+                        || !valuesEqual(leftItem, rightItem)) return false;
+            }
+            return true;
+        }
+        if (left.kind == Value.Kind.MAP || left.kind == Value.Kind.OBJECT) {
+            if (!(left.raw instanceof Map<?, ?> leftFields)
+                    || !(right.raw instanceof Map<?, ?> rightFields)
+                    || (left.kind == Value.Kind.OBJECT && !Objects.equals(left.typeName, right.typeName))
+                    || leftFields.size() != rightFields.size()) return false;
+            for (Map.Entry<?, ?> entry : leftFields.entrySet()) {
+                if (!rightFields.containsKey(entry.getKey())) return false;
+                Object leftValue = entry.getValue();
+                Object rightValue = rightFields.get(entry.getKey());
+                if (leftValue instanceof Value leftItem && rightValue instanceof Value rightItem) {
+                    if (!valuesEqual(leftItem, rightItem)) return false;
+                } else if (!Objects.equals(leftValue, rightValue)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        if (left.kind == Value.Kind.ENUM
+                && left.raw instanceof EnumValue leftEnum
+                && right.raw instanceof EnumValue rightEnum) {
+            return Objects.equals(leftEnum.enumName, rightEnum.enumName)
+                    && Objects.equals(leftEnum.variant, rightEnum.variant)
+                    && valuesEqual(leftEnum.fields, rightEnum.fields);
+        }
+        return Objects.equals(left.raw, right.raw);
+    }
+
+    private static boolean valuesEqual(Map<String, Value> left, Map<String, Value> right) {
+        if (!left.keySet().equals(right.keySet())) return false;
+        for (String key : left.keySet()) {
+            if (!valuesEqual(left.get(key), right.get(key))) return false;
+        }
+        return true;
+    }
+
     public static class DomainInstance {
         public final Domain domain;
         public final String name;
@@ -853,13 +921,7 @@ public class FastInterpreter {
                     || right.kind == Value.Kind.FLOAT;
             double floatLeft = floatingComparison ? left.asFloat() : 0.0;
             double floatRight = floatingComparison ? right.asFloat() : 0.0;
-            boolean numericEquality = (left.kind == Value.Kind.INT || left.kind == Value.Kind.FLOAT)
-                    && (right.kind == Value.Kind.INT || right.kind == Value.Kind.FLOAT);
-            boolean equal = numericEquality
-                    ? (left.kind == Value.Kind.FLOAT || right.kind == Value.Kind.FLOAT
-                            ? left.asFloat() == right.asFloat()
-                            : left.asInt() == right.asInt())
-                    : Objects.equals(left.raw, right.raw);
+            boolean equal = valuesEqual(left, right);
             switch (oper) {
                 case "==" -> {
                     return Value.ofBool(equal);

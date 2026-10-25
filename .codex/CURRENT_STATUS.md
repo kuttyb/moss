@@ -13600,3 +13600,16 @@ Validation: clean Java build and all eleven Java unit-test classes pass in
 default ABI-v9 and staged ABI-v10 modes. The focused six-result Java Fast
 Debug probe matches C++. Native Rust, Margo, SDK, and full acceptance gates
 remain deferred.
+
+### Phase 25.3 continuation — compare collection values structurally in Fast Debug
+
+The C++/Java equality probe found independently allocated equal Vectors were
+reported unequal in Java Fast Debug because collection elements used object
+identity. Java equality now compares Vector and Queue items recursively, Map
+entries and object fields structurally, and enum payload fields recursively;
+numeric child equality follows the corrected Moss numeric rules.
+
+Validation: clean Java build and all eleven Java unit-test classes pass in
+default ABI-v9 and staged ABI-v10 modes. A focused C++/Java probe over scalar,
+nested, and Float Vectors matches exactly. Native Rust, Margo, SDK, and full
+acceptance checks remain deferred; Phase 25.3 remains in progress.
