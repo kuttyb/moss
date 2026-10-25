@@ -15369,3 +15369,16 @@ the invalid dotted stub. All eleven Java test classes pass under ABI-v9
 defaults and staged ABI-v10; `git diff --check` passes. Provider-crate Rust
 compilation and native linkage remain unverified and are still final-gate
 items.
+
+
+### Phase 25.3 continuation — summarize imported method access through helpers
+
+A focused semantic regression now checks a local helper that forwards a typed
+object and vector to an ABI-v9 source-free method. The helper summary retains
+`WRITE` for the imported method's receiver and `CONSUME` for its argument. This
+adds concrete imported receiver/argument summary evidence to the existing
+source-free method callsite checks; generic receiver specialization and native
+provider linkage remain open.
+
+All eleven Java test classes pass with ABI-v9 defaults and staged ABI-v10, and
+`git diff --check` passes. No native or SDK gate was run.

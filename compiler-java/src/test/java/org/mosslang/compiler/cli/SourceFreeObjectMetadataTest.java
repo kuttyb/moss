@@ -195,6 +195,22 @@ public final class SourceFreeObjectMetadataTest {
                 || !helperMethodRust.contains("point.signal().map_err(|e| __moss_raise(format!(\"{:?}\", e)))?")) {
             throw new AssertionError("helper did not propagate source-free method error: " + helperMethodRust);
         }
+        Program importedMethodSummary = Parser.parseSource(""
+                + "fn relay(point: provider__Point, values: Vector[Int]):\n"
+                + "  point.replace(values)\n"
+                + "fn main():\n"
+                + "  pass\n", "source-free-method-summary.moss");
+        Main.loadMossiFunctions(interfaceFile, "provider", importedMethodSummary);
+        new SemanticChecker(importedMethodSummary).run();
+        Function relaySummary = importedMethodSummary.functions.stream()
+                .filter(function -> function.name.equals("relay")).findFirst().orElseThrow();
+        if (relaySummary.parameterAccessModes.get(0)
+                != org.mosslang.compiler.types.AccessMode.Write
+                || relaySummary.parameterAccessModes.get(1)
+                != org.mosslang.compiler.types.AccessMode.Consume) {
+            throw new AssertionError("source-free method receiver/argument effects were not summarized: "
+                    + relaySummary.parameterAccessModes);
+        }
         Program consumingConsumer = Parser.parseSource(""
                 + "fn use_point(point: provider__Point, values: Vector[Int]) -> Vector[Int]:\n"
                 + "  point.replace(values)\n"
