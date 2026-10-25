@@ -28,7 +28,11 @@ public final class SourceFreeObjectMetadataTest {
         String content = "moss-module-interface-v2\n"
                 + "provider_contract_digest sha256:" + "0".repeat(64) + "\n"
                 + "module_id sample::provider\ncontract\nobject Point\ncomment Café\n"
-                + "semantic_exports\nexport type Point\n" + exportedFields
+                + "semantic_exports\n"
+                + "export enum LegacyResult\n"
+                + "  declaration_id nominal-enum-v1:module-v1:sample@0.1.0::provider:enum:LegacyResult\n"
+                + "  enum_case \"Failed\" 2 \"code\" \"int\" \"message\" \"string\"\n"
+                + "export type Point\n" + exportedFields
                 + "  object_method shift return=float receiver=WRITE "
                 + "effects=local_capture_read=0;local_mutation=0;domain_read=0;domain_write=0;message=0;external_io=0;fileio=0;fileio_unknown=0;may_panic=0;raise_set=-;may_diverge=0;unresolved=0 "
                 + "params=1 \"amount\" \"float\" READ\n"
@@ -53,6 +57,27 @@ public final class SourceFreeObjectMetadataTest {
         }
         if (program.objects.stream().noneMatch(object -> object.name.equals("provider.Point"))) {
             throw new AssertionError("qualified source type alias was not imported");
+        }
+        EnumType legacyResult = program.enums.stream()
+                .filter(enumeration -> enumeration.name.equals("provider__LegacyResult"))
+                .findFirst().orElseThrow(() -> new AssertionError(
+                        "ABI-v9 source-free enum was not imported"));
+        if (!legacyResult.sourceFree || legacyResult.cases.size() != 1
+                || legacyResult.cases.get(0).fields.size() != 2) {
+            throw new AssertionError("ABI-v9 enum payload facts were not imported");
+        }
+        Program legacyEnumConsumer = Parser.parseSource(""
+                + "fn failure() -> provider__LegacyResult:\n"
+                + "  return provider__LegacyResult.Failed(code=3, message=\"bad\")\n"
+                + "fn main():\n"
+                + "  pass\n", "legacy-enum-consumer.moss");
+        Main.loadMossiFunctions(interfaceFile, "provider", legacyEnumConsumer);
+        new SemanticChecker(legacyEnumConsumer).run();
+        String legacyEnumRust = NativeGenerator.generate(legacyEnumConsumer, false);
+        if (!legacyEnumRust.contains("moss_provider::LegacyResult::Failed")
+                || legacyEnumRust.contains("pub enum provider__LegacyResult")) {
+            throw new AssertionError("ABI-v9 source-free enum did not use its provider Rust path: "
+                    + legacyEnumRust);
         }
         if (imported.methods.size() != 2
                 || !"shift".equals(imported.methods.get(0).name)

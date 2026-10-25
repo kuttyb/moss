@@ -12898,3 +12898,15 @@ pass. The verifier rejects a correctly sealed enum record with a foreign
 identity. Native Rust compilation and end-to-end Margo provider/consumer
 linkage remain unverified; broader ABI-v10 summaries/method templates remain
 open.
+
+### Phase 25.3 continuation — ABI-v9 source-free exported enums
+
+The source-free enum loader also supports existing ABI-v9 `export enum`
+semantic rows. ABI-v9 emission now limits semantic enum exports to exported
+local enums and writes their package/module-bound declaration IDs. Imported
+case payloads are restored to the enum AST and lower through provider Rust type
+paths. A focused consumer checks and generates a two-field failure variant.
+
+Validation: Java build, all ten Java unit-test classes, and `git diff --check`
+pass. This verifies interface import and generated Rust shape, not Rust
+compilation or provider/consumer linking.

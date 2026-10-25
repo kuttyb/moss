@@ -1159,15 +1159,18 @@ public class ProjectBuilder {
         StringBuilder semanticBuf = new StringBuilder();
 
         for (EnumType e : prog.enums) {
-            contractBuf.append("enum ").append(e.name).append("\n");
+            String enumName = localTypeName(e.name, module);
+            contractBuf.append("enum ").append(enumName).append("\n");
             for (EnumCase c : e.cases) {
                 appendEnumCaseContract(contractBuf, c);
             }
 
-            semanticBuf.append("export enum ").append(e.name).append("\n");
-            semanticBuf.append("  declaration_id nominal-enum-v1:module-v1:").append(manifest.getName()).append("@").append(manifest.getVersion()).append("::").append(module).append(":enum:").append(e.name).append("\n");
-            for (EnumCase c : e.cases) {
-                appendEnumCaseSemantic(semanticBuf, c);
+            if (e.exported) {
+                semanticBuf.append("export enum ").append(enumName).append("\n");
+                semanticBuf.append("  declaration_id nominal-enum-v1:module-v1:").append(manifest.getName()).append("@").append(manifest.getVersion()).append("::").append(module).append(":enum:").append(enumName).append("\n");
+                for (EnumCase c : e.cases) {
+                    appendEnumCaseSemantic(semanticBuf, c);
+                }
             }
         }
 
@@ -1245,12 +1248,13 @@ public class ProjectBuilder {
             int exportedEnumOrdinal = 0;
 
             for (EnumType e : prog.enums) {
+                String enumName = localTypeName(e.name, module);
                 StringBuilder b = new StringBuilder();
-                b.append("enum ").append(e.name).append("\n");
+                b.append("enum ").append(enumName).append("\n");
                 for (EnumCase c : e.cases) {
                     appendEnumCaseContract(b, c);
                 }
-                binRecords.add(new String[]{"enum:" + e.name, b.toString()});
+                binRecords.add(new String[]{"enum:" + enumName, b.toString()});
                 if (e.exported && !e.sourceFree
                         && (e.definingModule == null || e.definingModule.isEmpty()
                             || e.definingModule.equals(module))) {
