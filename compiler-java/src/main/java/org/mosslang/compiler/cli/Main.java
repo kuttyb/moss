@@ -1444,6 +1444,45 @@ public class Main {
             } catch (CompileError invalidBody) {
                 continue;
             }
+            List<org.mosslang.compiler.ast.Stmt> projectedIntBranches =
+                    projectV10IntBranchReturnBody(statements, parameterTypes, resultType, interfaceFile);
+            if (projectedIntBranches != null) {
+                List<org.mosslang.compiler.ast.Function> branchMatches = program.functions.stream()
+                        .filter(function -> callableId.equals(function.semanticCallableId))
+                        .toList();
+                if (branchMatches.isEmpty() || branchMatches.stream().anyMatch(
+                        function -> function.params.size() != parameterTypes.size())) continue;
+                for (org.mosslang.compiler.ast.Function function : branchMatches) {
+                    for (int index = 0; index < parameterTypes.size(); index++) {
+                        function.params.get(index).bindType(parameterTypes.get(index));
+                    }
+                    function.parameterAccessModes.clear();
+                    for (org.mosslang.compiler.abi.AbiV10Records.Access access : summary.parameterAccess) {
+                        function.parameterAccessModes.add(switch (access) {
+                            case Read -> org.mosslang.compiler.types.AccessMode.Read;
+                            case Write -> org.mosslang.compiler.types.AccessMode.Write;
+                            case Consume -> org.mosslang.compiler.types.AccessMode.Consume;
+                        });
+                    }
+                    function.bindReturnType(resultType);
+                    function.body.clear();
+                    for (org.mosslang.compiler.ast.Stmt statement : projectedIntBranches) {
+                        org.mosslang.compiler.ast.Stmt rebound = new org.mosslang.compiler.ast.Stmt(
+                                statement.kind, statement.line, statement.indent,
+                                replaceSourceFreeParameterOrdinals(statement.text, function),
+                                replaceSourceFreeParameterOrdinals(statement.a, function),
+                                replaceSourceFreeParameterOrdinals(statement.b, function));
+                        rebound.semanticType = statement.semanticType;
+                        rebound.sourceFile = statement.sourceFile;
+                        function.body.add(rebound);
+                    }
+                    function.resultExpression = null;
+                    function.resultLine = 0;
+                    function.generic = summary.variableCount > 0;
+                    function.staticDispatch = function.generic;
+                }
+                continue;
+            }
             Set<String> reservedLocalNames = program.functions.stream()
                     .filter(function -> callableId.equals(function.semanticCallableId))
                     .flatMap(function -> function.params.stream())
@@ -1594,6 +1633,50 @@ public class Main {
                 function.staticDispatch = function.generic;
             }
         }
+    }
+
+    private static List<org.mosslang.compiler.ast.Stmt> projectV10IntBranchReturnBody(
+            List<org.mosslang.compiler.abi.CheckedStmt> statements,
+            List<org.mosslang.compiler.types.TypeRef> parameterTypes,
+            org.mosslang.compiler.types.TypeRef resultType, Path interfaceFile) {
+        org.mosslang.compiler.types.TypeRef intType =
+                org.mosslang.compiler.types.TypeRef.primitive("int");
+        if (statements.size() != 1 || !intType.equals(resultType)
+                || parameterTypes.stream().anyMatch(type -> !intType.equals(type))) return null;
+        org.mosslang.compiler.abi.CheckedStmt branch = statements.get(0);
+        if (branch.kind != org.mosslang.compiler.abi.CheckedStmtKind.If || branch.expr == null
+                || branch.thenBranch.size() != 1 || branch.elseBranch.size() != 1) return null;
+        org.mosslang.compiler.abi.CheckedStmt thenReturn = branch.thenBranch.get(0);
+        org.mosslang.compiler.abi.CheckedStmt elseReturn = branch.elseBranch.get(0);
+        if (thenReturn.kind != org.mosslang.compiler.abi.CheckedStmtKind.Return
+                || elseReturn.kind != org.mosslang.compiler.abi.CheckedStmtKind.Return
+                || thenReturn.expr == null || elseReturn.expr == null
+                || !intType.equals(thenReturn.expr.type) || !intType.equals(elseReturn.expr.type)) return null;
+        String condition = sourceFreeBoolExpression(branch.expr, parameterTypes, 0);
+        String whenTrue = sourceFreeClosedIntExpression(thenReturn.expr, parameterTypes, 0);
+        String whenFalse = sourceFreeClosedIntExpression(elseReturn.expr, parameterTypes, 0);
+        if (condition == null || whenTrue == null || whenFalse == null) return null;
+        List<org.mosslang.compiler.ast.Stmt> projected = new ArrayList<>();
+        org.mosslang.compiler.ast.Stmt ifStatement = new org.mosslang.compiler.ast.Stmt(
+                org.mosslang.compiler.ast.Stmt.Kind.If, 1, 0,
+                "if " + condition + ":", condition, "");
+        ifStatement.sourceFile = interfaceFile.toString();
+        projected.add(ifStatement);
+        org.mosslang.compiler.ast.Stmt thenStatement = new org.mosslang.compiler.ast.Stmt(
+                org.mosslang.compiler.ast.Stmt.Kind.Return, 1, 1,
+                "return " + whenTrue, whenTrue, "");
+        thenStatement.sourceFile = interfaceFile.toString();
+        projected.add(thenStatement);
+        org.mosslang.compiler.ast.Stmt elseStatement = new org.mosslang.compiler.ast.Stmt(
+                org.mosslang.compiler.ast.Stmt.Kind.Else, 1, 0, "else:", "", "");
+        elseStatement.sourceFile = interfaceFile.toString();
+        projected.add(elseStatement);
+        org.mosslang.compiler.ast.Stmt elseReturnStatement = new org.mosslang.compiler.ast.Stmt(
+                org.mosslang.compiler.ast.Stmt.Kind.Return, 1, 1,
+                "return " + whenFalse, whenFalse, "");
+        elseReturnStatement.sourceFile = interfaceFile.toString();
+        projected.add(elseReturnStatement);
+        return projected;
     }
 
     private static String replaceSourceFreeParameterOrdinals(String expression,

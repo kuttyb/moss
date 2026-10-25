@@ -1468,6 +1468,7 @@ public class ProjectBuilder {
                     CheckedExpr constantReturn = null;
                     CheckedExpr arithmeticReturn = null;
                     List<CheckedStmt> numericLocalBody = null;
+                    List<CheckedStmt> intBranchBody = null;
                     CheckedExpr floatArithmeticReturn = null;
                     CheckedExpr numericPredicateReturn = null;
                     if (summary == null) {
@@ -1492,6 +1493,13 @@ public class ProjectBuilder {
                         }
                     }
                     if (summary == null) {
+                        intBranchBody = v10ClosedIntBranchReturnBody(fn);
+                        if (intBranchBody != null) {
+                            summary = v10ClosedNumericBodySummary(
+                                    fn, intBranchBody, modId, provenanceRecords);
+                        }
+                    }
+                    if (summary == null) {
                         floatArithmeticReturn = v10ClosedFloatExpressionReturn(fn);
                         if (floatArithmeticReturn != null) {
                             summary = v10ClosedFloatExpressionSummary(
@@ -1513,6 +1521,8 @@ public class ProjectBuilder {
                                         ? v10SimpleExpressionBody(summary, arithmeticReturn)
                                         : numericLocalBody != null
                                                 ? v10CheckedBodyRecord(summary, numericLocalBody)
+                                        : intBranchBody != null
+                                                ? v10CheckedBodyRecord(summary, intBranchBody)
                                         : floatArithmeticReturn != null
                                                 ? v10SimpleExpressionBody(summary, floatArithmeticReturn)
                                         : numericPredicateReturn != null
@@ -2095,6 +2105,34 @@ public class ProjectBuilder {
         if (!hasLocal || checked.isEmpty()
                 || checked.get(checked.size() - 1).kind != org.mosslang.compiler.abi.CheckedStmtKind.Return) return null;
         return checked;
+    }
+
+    private static List<CheckedStmt> v10ClosedIntBranchReturnBody(Function function) {
+        if (!isV10IntType(function.returnTypeRef) || function.body.size() != 4
+                || function.params.stream().anyMatch(parameter -> !isV10IntType(parameter.checkedTypeRef))) {
+            return null;
+        }
+        Stmt ifSource = function.body.get(0);
+        Stmt thenSource = function.body.get(1);
+        Stmt elseSource = function.body.get(2);
+        Stmt elseReturnSource = function.body.get(3);
+        if (ifSource.kind != Stmt.Kind.If || thenSource.kind != Stmt.Kind.Return
+                || elseSource.kind != Stmt.Kind.Else || elseReturnSource.kind != Stmt.Kind.Return
+                || thenSource.indent <= ifSource.indent || elseSource.indent != ifSource.indent
+                || elseReturnSource.indent <= elseSource.indent) return null;
+        String condition = ifSource.a != null ? ifSource.a.trim() : "";
+        CheckedExpr predicate = v10LowerNumericPredicateExpression(condition, function, false, 0);
+        String thenExpression = thenSource.a != null ? thenSource.a.trim() : "";
+        String elseExpression = elseReturnSource.a != null ? elseReturnSource.a.trim() : "";
+        CheckedExpr thenValue = v10LowerClosedIntExpression(thenExpression, function, 0);
+        CheckedExpr elseValue = v10LowerClosedIntExpression(elseExpression, function, 0);
+        if (predicate == null || thenValue == null || elseValue == null) return null;
+        CheckedStmt branch = new CheckedStmt();
+        branch.kind = org.mosslang.compiler.abi.CheckedStmtKind.If;
+        branch.expr = predicate;
+        branch.thenBranch.add(CheckedStmt.returnStmt(thenValue));
+        branch.elseBranch.add(CheckedStmt.returnStmt(elseValue));
+        return List.of(branch);
     }
 
     private static CheckedExpr v10LowerClosedNumericExpression(

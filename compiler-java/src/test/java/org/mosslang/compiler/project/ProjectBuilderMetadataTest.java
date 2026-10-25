@@ -380,6 +380,11 @@ public final class ProjectBuilderMetadataTest {
                 + "  return value >= 0 and value < 10\n"
                 + "export fn is_nonnegative(value: Int) -> Bool:\n"
                 + "  return not (value < 0)\n"
+                + "export fn abs_value(value: Int) -> Int:\n"
+                + "  if value >= 0:\n"
+                + "    return value\n"
+                + "  else:\n"
+                + "    return -value\n"
                 + "export fn is_warm(value: Float) -> Bool:\n"
                 + "  return value > 0.0 and value < 100.0\n"
                 + "export fn greeting() -> String:\n"
@@ -731,6 +736,24 @@ public final class ProjectBuilderMetadataTest {
                 throw new AssertionError("ABI-v10 Boolean expression tree is incomplete for " + callable);
             }
         }
+        AbiV10Records.CheckedBodyRecord branchBody = identityInterface.privateSemanticDependencies.stream()
+                .filter(record -> record.id.startsWith("checked-body-v1:"))
+                .map(AbiV10Records.CheckedBodyRecord::decode)
+                .filter(body -> body.callableId.endsWith(":fn:abs_value"))
+                .findFirst().orElseThrow(() -> new AssertionError(
+                        "ABI-v10 producer omitted the Int branch-return body"));
+        List<org.mosslang.compiler.abi.CheckedStmt> branchStatements =
+                CheckedBodyCodec.decodeCheckedBody(branchBody.checkedIrBytes);
+        if (branchStatements.size() != 1
+                || branchStatements.get(0).kind != org.mosslang.compiler.abi.CheckedStmtKind.If
+                || branchStatements.get(0).thenBranch.size() != 1
+                || branchStatements.get(0).elseBranch.size() != 1
+                || branchStatements.get(0).thenBranch.get(0).kind
+                        != org.mosslang.compiler.abi.CheckedStmtKind.Return
+                || branchStatements.get(0).elseBranch.get(0).kind
+                        != org.mosslang.compiler.abi.CheckedStmtKind.Return) {
+            throw new AssertionError("ABI-v10 Int branch-return checked body is incomplete");
+        }
         AbiV10Records.Summary combineSummary = identityInterface.binaryContract.stream()
                 .filter(record -> record.payloadBytes().length > 0
                         && (record.payloadBytes()[0] == 3 || record.payloadBytes()[0] == 4))
@@ -819,6 +842,8 @@ public final class ProjectBuilderMetadataTest {
                     + "  return provider__is_in_range(7)\n"
                     + "fn use_is_nonnegative() -> Bool:\n"
                     + "  return provider__is_nonnegative(7)\n"
+                    + "fn use_abs_value() -> Int:\n"
+                    + "  return provider__abs_value(-5)\n"
                     + "fn use_is_warm() -> Bool:\n"
                     + "  return provider__is_warm(22.5)\n"
                     + "fn use_increment() -> Int:\n"
@@ -846,6 +871,16 @@ public final class ProjectBuilderMetadataTest {
                     + "fn main():\n"
                     + "  pass\n", "identity-consumer.moss");
             org.mosslang.compiler.cli.Main.loadMossiFunctions(identityMossi, "provider", consumer);
+            Function importedBranch = consumer.functions.stream()
+                    .filter(function -> function.name.equals("provider.abs_value"))
+                    .findFirst().orElseThrow(() -> new AssertionError("source-free branch callable was not loaded"));
+            if (importedBranch.body.size() != 4
+                    || importedBranch.body.get(0).kind != org.mosslang.compiler.ast.Stmt.Kind.If
+                    || importedBranch.body.get(1).kind != org.mosslang.compiler.ast.Stmt.Kind.Return
+                    || importedBranch.body.get(2).kind != org.mosslang.compiler.ast.Stmt.Kind.Else
+                    || importedBranch.body.get(3).kind != org.mosslang.compiler.ast.Stmt.Kind.Return) {
+                throw new AssertionError("ABI-v10 Int branch-return facts were not projected into the source-free callable");
+            }
             Function importedIdentity = consumer.functions.stream()
                     .filter(function -> function.name.equals("provider.identity"))
                     .findFirst().orElseThrow(() -> new AssertionError("source-free identity callable was not loaded"));

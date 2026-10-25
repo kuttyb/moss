@@ -13480,3 +13480,18 @@ numeric local-body probe. Feedback validation and `git diff --check` pass. No
 native Rust compile/run, Margo provider-consumer build, SDK gate, or full
 `make check` ran. Control flow, calls, effects, general local types, and Phase
 25.3 completion remain open.
+
+### Phase 25.3 continuation — project direct Int if/else returns in ABI-v10
+
+The bounded source-free ABI-v10 callable path now carries a pure Int function
+whose body is one `if` with one direct `return` in each arm. The producer lowers
+an Int comparison and closed Int branch expressions to a checked `If`; the
+loader reconstructs the four-statement Moss form and rebinds checked parameter
+ordinals per imported callable. The producer-consumer regression strips legacy
+generic body rows and runs the consumer through semantic checking. General
+control flow, nested branches, joins, and other statement forms remain open.
+
+Validation: clean Java build and all ten Java unit-test classes pass in default
+ABI-v9 and staged ABI-v10 modes. No native Rust compile/run, Margo
+provider-consumer build, SDK gate, or full `make check` ran. Phase 25.3 remains
+in progress.
