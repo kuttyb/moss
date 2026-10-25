@@ -16720,3 +16720,16 @@ collector overcounted a dotted method callback as the global function. The
 shared callback utility now matches global functions only by their bare or
 `::`-qualified name; semantic-query tests preserve only the method's own raise
 set. All 12 Java unit test classes pass in ABI-v9 and staged ABI-v10.
+
+
+### Phase 25.3 continuation — domain root method-callback raises
+
+A domain handler with `values |> map(box.risky)` could let `Failure.Bad` escape
+through a root message: C++ rejected the unhandled ingress while Java accepted
+it. Root ingress validation now resolves callback receivers from handler state,
+payloads, and checked local bindings, then includes the selected method's raises.
+Function calls from root handlers now use the full local function raise closure.
+Java tests cover rejection without `on_fail` and acceptance with exhaustive
+`on_fail`; a minimized C++/Java handled control passes. `scripts/java/test.sh`
+and `MOSS_STAGED_ABI=v10 scripts/java/test.sh` each pass all 12 test classes.
+No native Rust compilation/execution or SDK gate was run.

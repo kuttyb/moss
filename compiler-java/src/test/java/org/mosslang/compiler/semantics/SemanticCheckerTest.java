@@ -95,6 +95,7 @@ public class SemanticCheckerTest {
         testBareRaiseOutsideRecoverIsRejected();
         testMainRejectsUncaughtTypedRaise();
         testExecutorRootRequiresRaiseHandling();
+        testRootIngressTracksMethodPipelineRaises();
         testSynchronousRootMessagePropagatesHelperRaises();
         testRecoverUsesCallArgumentRaiseOrder();
         testRecoverUsesVectorElementRaiseOrder();
@@ -2468,6 +2469,31 @@ public class SemanticCheckerTest {
                 + "  executor = Executor().threads(1).start()\n"
                 + "  executor.invoke(worker.Run())\n"
                 + "  executor.join()\n", "executor-root-handled.moss");
+        new SemanticChecker(handled).run();
+    }
+
+    private static void testRootIngressTracksMethodPipelineRaises() {
+        String prefix = ""
+                + "enum Failure:\n"
+                + "  Bad\n"
+                + "type Box:\n"
+                + "  fn risky(value: Int) -> Int:\n"
+                + "    raise Failure.Bad\n";
+        String handler = ""
+                + "domain Worker:\n"
+                + "  fn Run():\n"
+                + "    box = Box()\n"
+                + "    values = [1] |> map(box.risky)\n";
+        assertCompileError(prefix + handler
+                + "fn main():\n"
+                + "  worker = Worker()\n"
+                + "  message worker.Run()\n", "ROOT_UNHANDLED_RAISE");
+        Program handled = Parser.parseSource(prefix + handler
+                + "  on_fail Failure.Bad:\n"
+                + "    pass\n"
+                + "fn main():\n"
+                + "  worker = Worker()\n"
+                + "  message worker.Run()\n", "root-ingress-method-pipeline-raise-handled.moss");
         new SemanticChecker(handled).run();
     }
 

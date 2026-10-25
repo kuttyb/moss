@@ -4729,8 +4729,27 @@ public class SemanticChecker {
             for (String expression : expressions) {
                 if (expression == null) continue;
                 for (Function function : functions.values()) {
-                    if (containsFunctionCall(expression, function.name))
-                        collectRootVisibleFunctionRaises(function, raised, visitedFunctions);
+                    if (containsFunctionCall(expression, function.name)
+                            || org.mosslang.compiler.parser.ParserSupport
+                                    .usesPipelineFunctionCallback(expression, function.name)) {
+                        raised.addAll(collectFunctionRaiseVariants(function, visitedFunctions));
+                    }
+                }
+                for (String callback : org.mosslang.compiler.parser.ParserSupport
+                        .pipelineCallbacks(expression)) {
+                    int callbackDot = callback.lastIndexOf('.');
+                    if (callbackDot <= 0) continue;
+                    String methodName = callback.substring(callbackDot + 1);
+                    String callbackReceiverType = resolveHandlerReceiverType(
+                            callback.substring(0, callbackDot), domain, handler);
+                    for (ObjectType object : program.objects) {
+                        if (!matchesObjectTypeName(callbackReceiverType, object.name)) continue;
+                        for (Method method : object.methods) {
+                            if (method.name.equals(methodName)) {
+                                raised.addAll(collectMethodRaiseVariants(method, new HashSet<>()));
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -4743,6 +4762,45 @@ public class SemanticChecker {
         throw error;
     }
 
+    private String resolveHandlerReceiverType(String receiverPath, Domain domain, Handler handler) {
+        Map<String, TypeRef> bindings = new HashMap<>();
+        for (Field field : domain.state) {
+            TypeRef type = field.typeRef != null ? field.typeRef
+                    : (field.type != null ? TypeParser.parseCanonical(field.type) : null);
+            if (type != null) bindings.put(field.name, type);
+        }
+        for (DomainRoute route : domain.routes) bindings.put(route.name, TypeRef.domain(route.type));
+        for (Param parameter : handler.params) {
+            TypeRef type = parameter.typeRef != null ? parameter.typeRef
+                    : (parameter.type != null ? TypeParser.parseCanonical(parameter.type) : null);
+            if (type != null) bindings.put(parameter.name, type);
+        }
+        for (Stmt statement : handler.body) {
+            if (statement == null || statement.a == null || statement.semanticType == null
+                    || statement.semanticType.isBlank()) continue;
+            if (statement.kind == Stmt.Kind.Let || statement.kind == Stmt.Kind.Var
+                    || statement.kind == Stmt.Kind.Assign) {
+                TypeRef type = TypeParser.parseCanonical(statement.semanticType);
+                if (type != null) bindings.put(statement.a.trim(), type);
+            }
+        }
+        String[] path = receiverPath.replaceAll("\\s", "").split("\\.");
+        if (path.length == 0) return null;
+        TypeRef root = bindings.get(path[0]);
+        String typeName = root != null ? root.name() : null;
+        for (int index = 1; typeName != null && index < path.length; index++) {
+            ObjectType owner = findObjectType(typeName);
+            if (owner == null) return null;
+            String fieldName = path[index];
+            Field field = owner.fields.stream().filter(candidate -> candidate.name.equals(fieldName))
+                    .findFirst().orElse(null);
+            if (field == null) return null;
+            TypeRef type = field.typeRef != null ? field.typeRef : TypeParser.parseCanonical(field.type);
+            typeName = type != null ? type.name() : field.type;
+        }
+        return typeName;
+    }
+
     private static boolean sourceFreeRaisePatternMatches(String variant, String pattern) {
         if (variant == null || pattern == null) return false;
         String normalizedVariant = variant.trim().replace("::", "__");
@@ -4751,43 +4809,6 @@ public class SemanticChecker {
         if (payload >= 0) normalizedPattern = normalizedPattern.substring(0, payload).trim();
         return normalizedVariant.equals(normalizedPattern)
                 || normalizedVariant.endsWith("__" + normalizedPattern);
-    }
-
-    private void collectRootVisibleFunctionRaises(Function function, Set<String> raised,
-                                                   Set<String> visited) {
-        if (function == null || !visited.add(function.name)
-                || function.body.stream().anyMatch(s -> s.kind == Stmt.Kind.Try
-                        || s.kind == Stmt.Kind.Recover)) return;
-        raised.addAll(function.sourceFreeRaiseVariants);
-        for (Stmt statement : function.body) {
-            if (statement.kind == Stmt.Kind.Raise && statement.a != null && !statement.a.isBlank()) {
-                String variant = statement.a.trim();
-                int payload = variant.indexOf('(');
-                raised.add(payload < 0 ? variant : variant.substring(0, payload).trim());
-            }
-            List<String> expressions = new ArrayList<>();
-            expressions.add(statement.text);
-            expressions.add(statement.a);
-            expressions.add(statement.b);
-            expressions.addAll(statement.args);
-            for (String expression : expressions) {
-                if (expression == null) continue;
-                for (Function called : functions.values()) {
-                    if (containsFunctionCall(expression, called.name)
-                            || org.mosslang.compiler.parser.ParserSupport
-                                    .usesPipelineFunctionCallback(expression, called.name))
-                        collectRootVisibleFunctionRaises(called, raised, visited);
-                }
-            }
-        }
-        if (function.resultExpression != null) {
-            for (Function called : functions.values()) {
-                if (containsFunctionCall(function.resultExpression, called.name)
-                        || org.mosslang.compiler.parser.ParserSupport
-                                .usesPipelineFunctionCallback(function.resultExpression, called.name))
-                    collectRootVisibleFunctionRaises(called, raised, visited);
-            }
-        }
     }
 
     private void rejectNakedDomainHandlerCall(int line, String expression,

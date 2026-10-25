@@ -836,3 +836,16 @@ callbacks were matching global function suffixes. Function callback matching
 now requires a bare or `::`-qualified function name, and method callback tests
 verify only the selected method's raise set. All 12 Java test classes pass under
 ABI-v9 and staged ABI-v10.
+
+
+### Correction — method callback raises at domain root ingress
+
+A `Worker.Run` handler used `values |> map(box.risky)` where the method raises
+`Failure.Bad`. C++ rejected a root message to that handler without `on_fail`;
+Java accepted it. Root ingress validation now resolves callback receiver types
+from checked handler locals and includes the selected method's raise variants.
+Function calls at a root also use the richer function raise closure, which
+accounts for supported callback/method paths and local recovery. Tests reject
+the unhandled method callback and accept an exhaustive `on_fail` arm. C++ and
+Java accept the handled minimized source. All 12 Java test classes pass under
+ABI-v9 and staged ABI-v10.
