@@ -1,3 +1,21 @@
+## Phase 25.4 B1 — Compiler Hotspot Investigation Complete — UNCONDITIONAL VERIFICATION GO — 2026-10-25
+
+The focused hotspot investigation across four primary slow workloads (`packages/regex`, `sdk/datastructures`, W4 depth 18, and W5 width 100) is complete at commit `e1162bf7`.
+Empirical profiling explains >= 92.8% of compilation time in all four workloads:
+1. `packages/regex/src/main.moss` (21.60 s): 93.0% explained. Dominated by 73,941 redundant statement walks (`infer_statement_expressions` = 12.42 s) and 73,941 redundant TypeSolver sessions (`solve_local_collection_types` = 6.26 s) driven by 1,510 un-gated fixed-point rounds in `infer_function_signatures` (`semantic_checker.cpp:13878`).
+2. `sdk/datastructures/src/datastructures.moss` (24.15 s / 18.26 s): 92.8% explained. Dominated by 380,688 redundant statement walks (`infer_statement_expressions` = 14.46 s) and 380,688 redundant TypeSolver sessions (`solve_local_collection_types` = 5.19 s) driven by 3,400 un-gated fixed-point rounds in `infer_function_signatures`.
+3. W4 deep inference depth 18 (27.62 s): 96.4% explained. Dominated by `spec_effects_pass1` (9.96 s) and duplicate `spec_effects_pass2_recheck` (9.93 s), comprising 2,621,451 recursive un-memoized invocations of `concrete_function_observable_effects` (`semantic_checker.cpp:18229`) on just 37 distinct inputs ($O(2^D)$ tree re-traversal).
+4. W5 wide inference width 100 (11.53 s): 95.7% explained. Dominated by 603,800 repeated return reconciliation passes (`sig_infer_result_reconciliation` = 7.08 s) and statement walks (1.21 s) across 3,020 rounds for 200 static leaf functions.
+
+Top 3 optimization recommendations:
+1. Dirty-tracking early exit and worklist-driven signature inference (projected 10x–30x speedup).
+2. Query-based memoization for transitive specialization effects (projected 500x–1,000x speedup on deep chains).
+3. Elimination of duplicate specialization effects validation pass and AST cloning (instant 2x reduction in effects phase).
+
+Durable traces and reports saved in `benchmarks/phase25_4/cpp_baseline/results/traces/` and `docs/phase25/COMPILER_HOTSPOT_INVESTIGATION.md`.
+Independent Adversarial Architect UNCONDITIONAL VERIFICATION GO recorded at SHA `8865e87900b8686d148e64c9ae45ef35508a8a65`.
+All work committed and pushed to `phase25-4-cpp-torture-b1`. No compiler optimizations implemented; stopping after diagnosis.
+
 ## Phase 25.4 B1 closeout — Permanent Compiler Performance Regression Target — UNCONDITIONAL GO — 2026-10-25
 
 Phase 25.4 B1 delivers the permanent compiler performance regression infrastructure, structured hierarchical profiling, real-world compiler workload manifest, and authoritative C++ performance baseline using optimized `moss-opt` (-O2).
