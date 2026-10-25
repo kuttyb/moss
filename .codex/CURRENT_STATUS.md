@@ -12612,3 +12612,19 @@ or end-to-end provider artifact validation. Parameter/receiver effects and
 observable-effect derivation remain approximate; generic layouts, private
 method dependencies, canonical ABI-v10 nominal/method record encoding, and
 source-free native integration remain open.
+
+### Phase 25.3 continuation — source-free object access modes
+
+Object method parameter and receiver access modes are now retained on the Java
+AST after semantic checking, serialized in the existing object method metadata
+record, and restored when loading source-free interfaces. Ownership checking now
+uses an imported method's `CONSUME` parameter mode when checking calls. Focused
+coverage checks a method that writes an object field while consuming a
+`Vector[Int]` parameter, plus writer/loader round trips and a source-free
+use-after-consume rejection.
+
+Validation: `./scripts/java/build.sh` and `./scripts/java/test.sh` pass; all ten
+Java unit-test classes pass. This metadata still inherits the checker's bounded
+syntax-based effect inference; complete observable method effects, canonical
+ABI-v10 records, and source-free native linkage remain open. No native, SDK, or
+full acceptance gate was run.

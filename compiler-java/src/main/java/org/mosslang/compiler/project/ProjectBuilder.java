@@ -917,32 +917,22 @@ public class ProjectBuilder {
         String returnType = method.returnType != null && !method.returnType.isEmpty()
                 ? method.returnType : "unit";
         String raiseIdent = raisedErrorIdentity(module, method.body);
-        String receiver = "READ";
-        for (Field field : object.fields) {
-            for (Stmt statement : method.body) {
-                String target = statement.a != null ? statement.a.trim() : "";
-                String text = statement.text != null ? statement.text.trim() : "";
-                if (target.equals(field.name) || target.startsWith(field.name + ".")
-                        || text.matches(".*\\b" + java.util.regex.Pattern.quote(field.name)
-                                + "\\s*(?<!=)=(?!=).*")) {
-                    receiver = "WRITE";
-                    break;
-                }
-            }
-            if ("WRITE".equals(receiver)) break;
-        }
         out.append("  object_method ").append(method.name)
                 .append(" return=").append(returnType)
-                .append(" receiver=").append(receiver)
+                .append(" receiver=").append(method.receiverAccessMode.name().toUpperCase(Locale.ROOT))
                 .append(" effects=local_capture_read=0;local_mutation=0;domain_read=0;domain_write=0;message=0;external_io=0;fileio=0;fileio_unknown=0;may_panic=")
                 .append(mayPanic(method.body) ? "1" : "0")
                 .append(";raise_set=").append(raiseIdent)
                 .append(";may_diverge=0;unresolved=0 params=")
                 .append(method.params.size());
-        for (Param parameter : method.params) {
+        for (int index = 0; index < method.params.size(); index++) {
+            Param parameter = method.params.get(index);
+            org.mosslang.compiler.types.AccessMode access = index < method.parameterAccessModes.size()
+                    ? method.parameterAccessModes.get(index)
+                    : org.mosslang.compiler.types.AccessMode.Read;
             out.append(" \"").append(parameter.name).append("\" \"")
                     .append(parameter.type != null ? parameter.type : "")
-                    .append("\" READ");
+                    .append("\" ").append(access.name().toUpperCase(Locale.ROOT));
         }
         out.append("\n");
     }

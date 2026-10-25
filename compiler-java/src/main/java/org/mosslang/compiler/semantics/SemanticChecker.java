@@ -636,6 +636,7 @@ public class SemanticChecker {
     private void checkObjectMethods() {
         for (ObjectType object : program.objects) {
             for (Method method : object.methods) {
+                if (method.sourceFree) continue;
                 currentSemanticIdentity = "method:" + object.name + "." + method.name + "@" + method.line;
                 TypeSolver solver = new TypeSolver(sessionCounter++);
                 ExpressionTyper typer = new ExpressionTyper(program, typeContext, solver, functions,
@@ -680,6 +681,38 @@ public class SemanticChecker {
                     resolved = TypeRef.unit();
                 }
                 if (resolved.isClosed()) method.bindReturnType(resolved);
+
+                method.receiverAccessMode = AccessMode.Read;
+                for (Field field : object.fields) {
+                    for (Stmt statement : method.body) {
+                        String target = statement.a != null ? statement.a.trim() : "";
+                        if (target.equals(field.name) || target.startsWith(field.name + ".")
+                                || target.startsWith(field.name + "[")) {
+                            method.receiverAccessMode = AccessMode.Write;
+                            break;
+                        }
+                    }
+                    if (method.receiverAccessMode == AccessMode.Write) break;
+                }
+                Function accessView = new Function();
+                accessView.params = method.params;
+                accessView.body = method.body;
+                accessView.resultExpression = method.resultExpression;
+                method.parameterAccessModes.clear();
+                for (int index = 0; index < method.params.size(); index++) {
+                    Param parameter = method.params.get(index);
+                    TypeRef parameterType = parameter.typeRef != null ? parameter.typeRef
+                            : (parameter.type != null && !parameter.type.isEmpty()
+                                    ? TypeParser.parseCanonical(parameter.type) : null);
+                    if (doesFunctionConsumeParam(accessView, index)
+                            && parameterType != null && transferType(parameterType)) {
+                        method.parameterAccessModes.add(AccessMode.Consume);
+                    } else if (doesFunctionMutateParam(accessView, index)) {
+                        method.parameterAccessModes.add(AccessMode.Write);
+                    } else {
+                        method.parameterAccessModes.add(AccessMode.Read);
+                    }
+                }
             }
         }
     }
@@ -1192,10 +1225,31 @@ public class SemanticChecker {
             String argsInside = expr.substring(openP + 1, expr.length() - 1).trim();
             List<String> args = ExpressionTyper.parseArguments(argsInside);
             Function fn = functions.get(callee);
+            Method method = null;
+            int methodSeparator = callee.lastIndexOf('.');
+            if (fn == null && methodSeparator > 0) {
+                String receiver = callee.substring(0, methodSeparator).trim();
+                String member = callee.substring(methodSeparator + 1).trim();
+                TypeRef receiverType = env.get(receiver);
+                ObjectType receiverObject = receiverType != null
+                        && receiverType.kind() == TypeKind.NominalInstance
+                                ? objects.get(receiverType.name()) : null;
+                if (receiverObject != null) {
+                    for (Method candidate : receiverObject.methods) {
+                        if (candidate.name.equals(member)) {
+                            method = candidate;
+                            break;
+                        }
+                    }
+                }
+            }
             boolean isObjCtor = objects.containsKey(callee);
-            if (fn != null) {
+            if (fn != null || method != null) {
                 for (int i = 0; i < args.size(); i++) {
-                    if (doesFunctionMutateParam(fn, i)) {
+                    boolean writesArgument = fn != null ? doesFunctionMutateParam(fn, i)
+                            : i < method.parameterAccessModes.size()
+                                    && method.parameterAccessModes.get(i) == AccessMode.Write;
+                    if (writesArgument) {
                         String mutatedVar = args.get(i).trim();
                         if (mutatedVar.matches("^[A-Za-z_][A-Za-z0-9_]*$")) {
                             for (int j = 0; j < args.size(); j++) {
@@ -1216,12 +1270,15 @@ public class SemanticChecker {
                     a = a.substring(a.indexOf(':') + 1).trim();
                 }
                 if (env.containsKey(a) && transferType(env.get(a))) {
-                    if (currentMessagePayloads.contains(a) && fn != null && doesFunctionConsumeParam(fn, i)) {
+                    boolean consumesArgument = fn != null ? doesFunctionConsumeParam(fn, i)
+                            : method != null && i < method.parameterAccessModes.size()
+                                    && method.parameterAccessModes.get(i) == AccessMode.Consume;
+                    if (currentMessagePayloads.contains(a) && consumesArgument) {
                         throw new CompileError(line,
                                 "cannot CONSUME incoming message payload '" + a + "'; message payloads may only be read or forwarded",
                                 "MOSS_COMPILE_ERROR");
                     }
-                    if (isObjCtor || (fn != null && doesFunctionConsumeParam(fn, i))) {
+                    if (isObjCtor || consumesArgument) {
                         consumeBinding(line, a, env, fallbackDest != null ? fallbackDest : callee);
                     }
                 }

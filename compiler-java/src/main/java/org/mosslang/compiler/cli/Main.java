@@ -774,6 +774,15 @@ public class Main {
         }
     }
 
+    private static org.mosslang.compiler.types.AccessMode parseAccessMode(String value) {
+        return switch (value) {
+            case "READ" -> org.mosslang.compiler.types.AccessMode.Read;
+            case "WRITE" -> org.mosslang.compiler.types.AccessMode.Write;
+            case "CONSUME" -> org.mosslang.compiler.types.AccessMode.Consume;
+            default -> throw new IllegalArgumentException("invalid method access mode: " + value);
+        };
+    }
+
     static void loadMossiFunctions(Path cand, String modName, Program program) throws CompileError {
         try {
             String text = Files.readString(cand, StandardCharsets.ISO_8859_1);
@@ -909,8 +918,14 @@ public class Main {
                             .compile("(?:^|\\s)params=([0-9]+)(?:\\s|$)").matcher(record);
                     org.mosslang.compiler.ast.Method method = new org.mosslang.compiler.ast.Method(
                             currentObject.name, methodName, 1, cand.toString());
+                    method.sourceFree = true;
                     if (returnMatcher.find() && !"unit".equals(returnMatcher.group(1))) {
                         method.setReturnType(returnMatcher.group(1));
+                    }
+                    java.util.regex.Matcher receiverMatcher = java.util.regex.Pattern
+                            .compile("(?:^|\\s)receiver=([^\\s]+)").matcher(record);
+                    if (receiverMatcher.find()) {
+                        method.receiverAccessMode = parseAccessMode(receiverMatcher.group(1));
                     }
                     int parameterCount = countMatcher.find()
                             ? Integer.parseInt(countMatcher.group(1)) : 0;
@@ -921,6 +936,15 @@ public class Main {
                     for (int index = 0; index < parameterCount; index++) {
                         method.params.add(new org.mosslang.compiler.ast.Param(
                                 quoted.get(index * 2), quoted.get(index * 2 + 1)));
+                    }
+                    String[] words = line.replaceAll("\"[^\"]*\"", " QUOTED ")
+                            .trim().split("\\s+");
+                    method.parameterAccessModes.clear();
+                    for (int index = 0; index < parameterCount; index++) {
+                        int modeIndex = words.length - parameterCount + index;
+                        method.parameterAccessModes.add(modeIndex >= 0
+                                ? parseAccessMode(words[modeIndex])
+                                : org.mosslang.compiler.types.AccessMode.Read);
                     }
                     currentObject.methods.add(method);
                     continue;

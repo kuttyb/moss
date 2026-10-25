@@ -15,6 +15,7 @@ public class SemanticCheckerTest {
         testInferredMethodReturnSatisfiesStructuralTrait();
         testInferredMethodReturnMustMatchStructuralTrait();
         testFunctionParameterAccessModesAreRetained();
+        testObjectMethodAccessModesAreRetained();
         System.out.println("SemanticCheckerTest PASSED.");
     }
 
@@ -166,6 +167,23 @@ public class SemanticCheckerTest {
         assertEquals(AccessMode.Read, program.functions.get(0).parameterAccessModes.get(0));
         assertEquals(AccessMode.Write, program.functions.get(1).parameterAccessModes.get(0));
         assertEquals(AccessMode.Consume, program.functions.get(2).parameterAccessModes.get(0));
+    }
+
+    private static void testObjectMethodAccessModesAreRetained() {
+        Program program = Parser.parseSource(""
+                + "type Box:\n"
+                + "  values: Vector[Int]\n"
+                + "  fn replace(next: Vector[Int]):\n"
+                + "    values = next\n"
+                + "fn main():\n"
+                + "  pass\n", "method-access-modes.moss");
+        new SemanticChecker(program).run();
+        var method = program.objects.get(0).methods.get(0);
+        if (method.receiverAccessMode != AccessMode.Write
+                || method.parameterAccessModes.size() != 1
+                || method.parameterAccessModes.get(0) != AccessMode.Consume) {
+            throw new AssertionError("object method receiver/parameter access modes were not retained");
+        }
     }
 
     private static void assertEquals(Object expected, Object actual) {

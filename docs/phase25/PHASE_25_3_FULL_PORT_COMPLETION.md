@@ -54,3 +54,15 @@
 - **Agent A:** L6 Coordinator / Implementer / Reviewer (`384f4ec1-b043-4d24-99ac-74606569390d`)
 - **Agent B:** L5 Implementation Worker (`69af64b4-321f-4b61-9dc2-1541b831b144`)
 - **Agent C:** Independent Adversarial Architect (`13982d0f-62ae-4457-90dd-a654c1bb1ab6`)
+
+## Current continuation note — source-free object access modes
+
+The Java checker now retains receiver and parameter access modes for object
+methods, and the existing source-free object method record serializes/restores
+those modes. Ownership checking applies imported method `CONSUME` parameter
+modes at call sites. Focused Java unit tests cover a field-writing method that
+consumes an owned vector parameter and reject a subsequent use. This closes only
+the exercised access-mode metadata and ownership path; effect inference remains
+syntax-bounded, and ABI-v10 canonical method records plus source-free native
+linkage are still unverified. The full port is not complete and the original
+acceptance gates remain pending.

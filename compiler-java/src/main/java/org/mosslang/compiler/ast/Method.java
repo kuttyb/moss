@@ -6,6 +6,7 @@ import org.eclipse.collections.impl.list.mutable.primitive.IntArrayList;
 import org.mosslang.compiler.types.TypeContext;
 import org.mosslang.compiler.types.TypeParser;
 import org.mosslang.compiler.types.TypeRef;
+import org.mosslang.compiler.types.AccessMode;
 
 public class Method {
     public String owner = "";
@@ -19,6 +20,9 @@ public class Method {
     public IntArrayList resultContinuationLines = new IntArrayList();
     public int line = 0;
     public String sourceFile = "";
+    public AccessMode receiverAccessMode = AccessMode.Read;
+    public java.util.List<AccessMode> parameterAccessModes = new java.util.ArrayList<>();
+    public boolean sourceFree = false;
 
     public Method() {}
 
