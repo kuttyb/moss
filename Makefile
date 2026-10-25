@@ -153,6 +153,12 @@ check-parallel: moss-dev moss-opt
 check-serial: moss
 	sh tests/run.sh ./moss build/tests
 
+check-perf: moss-opt
+	python3 tests/tooling/check_phase25_4_performance_baseline.py $(MOSS_OPT)
+
+bench-torture: moss-opt
+	python3 benchmarks/phase25_4/cpp_baseline/run.py --moss $(MOSS_OPT)
+
 examples: examples-optimized
 
 examples-optimized: moss
@@ -186,5 +192,7 @@ help:
 	@echo "  make check        - Run parallel test suite (check-parallel)"
 	@echo "  make check-parallel - Run tests concurrently with tests/run_parallel.py (TEST_JOBS=N)"
 	@echo "  make check-serial - Run original serial regression runner (tests/run.sh)"
+	@echo "  make check-perf   - Run Phase 25.4 B1 permanent compiler performance regression gate"
+	@echo "  make bench-torture - Run full portable compiler torture benchmark suite"
 	@echo "  make examples     - Build and verify optimized examples"
 	@echo "  make clean        - Remove build artifacts and binaries"

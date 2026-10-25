@@ -9,6 +9,7 @@ Key hardening deliverables:
 4. `REPORT.md`: 100% data-driven reporting strictly separating Measured Facts, Derived Estimates, and Hypotheses, with verified 57/57 invariant consistency via `check_report_consistency.py`.
 5. Original raw baseline preserved in `results/results_b1_initial.csv`.
 6. Independent Adversarial Architect Audit recorded with UNCONDITIONAL GO in `docs/phase25/PHASE_25_4_B1_ARCHITECT_AUDIT.md`.
+7. Permanent Performance Regression Target: delivered `tests/tooling/check_phase25_4_performance_baseline.py` and `make check-perf`, enforcing corpus integrity, report consistency, and latency/memory/specialization bounds against B1 thresholds across representative workloads in ~5 seconds. Registered in `tests/run_parallel.py`. Documented in `docs/phase25/PERMANENT_COMPILER_PERFORMANCE_REGRESSION_TARGET.md`.
 All work committed on branch `phase25-4-cpp-torture-b1`. Ready for Phase 25.4 B2.
 
 ## Phase 25.1 R1 next-slice probes — shadowed returns and generic For — 2026-10-21

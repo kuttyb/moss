@@ -133,6 +133,7 @@ TOOLING_TESTS: list[tuple] = [
     ("check_phase25_sc_safe_arithmetic", [sys.executable, "tests/tooling/check_phase25_sc_safe_arithmetic.py", "{compiler}"]),
     ("check_phase25_sa_numeric_literals", [sys.executable, "tests/tooling/check_phase25_sa_numeric_literals.py", "{compiler}"]),
     ("check_phase25_sb_check_display", [sys.executable, "tests/tooling/check_phase25_sb_check_display.py", "{compiler}"]),
+    ("check_phase25_4_performance_baseline", [sys.executable, "tests/tooling/check_phase25_4_performance_baseline.py", "{compiler}"]),
     ("phase25_key_protocol_fixtures", [sys.executable, "tests/phase25/key_protocol/run_fixtures.py", "--moss", "{compiler}"]),
     ("check_builtin_generic_typing", [sys.executable, "tests/tooling/check_builtin_generic_typing.py", "{compiler}"]),
     ("check_swarm_feedback", [sys.executable, "tools/check_swarm_feedback.py", "--self-test"]),
