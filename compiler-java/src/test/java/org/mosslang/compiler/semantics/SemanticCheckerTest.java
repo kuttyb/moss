@@ -17,6 +17,7 @@ public class SemanticCheckerTest {
         testFunctionParameterAccessModesAreRetained();
         testObjectMethodAccessModesAreRetained();
         testForLoopValuesCanFlowToObjectMethodArguments();
+        testObjectMethodArityIsChecked();
         System.out.println("SemanticCheckerTest PASSED.");
     }
 
@@ -203,6 +204,34 @@ public class SemanticCheckerTest {
                 + "fn main():\n"
                 + "  pass\n", "method-loop-argument.moss");
         new SemanticChecker(program).run();
+    }
+
+    private static void testObjectMethodArityIsChecked() {
+        String prefix = ""
+                + "type Box:\n"
+                + "  fn get(value: Int) -> Int:\n"
+                + "    return value\n";
+        assertCompileError(prefix
+                + "fn use(box: Box) -> Int:\n"
+                + "  return box.get()\n"
+                + "fn main():\n"
+                + "  pass\n", "MOSS_COMPILE_ERROR");
+        assertCompileError(prefix
+                + "fn use(box: Box) -> Int:\n"
+                + "  return box.get(1, 2)\n"
+                + "fn main():\n"
+                + "  pass\n", "MOSS_COMPILE_ERROR");
+    }
+
+    private static void assertCompileError(String source, String code) {
+        try {
+            new SemanticChecker(Parser.parseSource(source, "object-method-arity.moss")).run();
+            throw new AssertionError("expected " + code + "");
+        } catch (CompileError error) {
+            if (!code.equals(error.getCode())) {
+                throw new AssertionError("expected " + code + ", got " + error.getCode(), error);
+            }
+        }
     }
 
     private static void assertEquals(Object expected, Object actual) {

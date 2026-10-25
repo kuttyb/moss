@@ -12656,3 +12656,15 @@ the same loop passes both compilers, while replacing it with the loop variable
 causes C++ rejection whether the variable occupies the first or second method
 parameter. Java accepts all tested well-typed variants. The C++ method-call
 behavior remains unclassified; no native gate was run.
+
+### Phase 25.3 continuation — object method argument arity
+
+`ExpressionTyper.inferMethodCall` previously checked only arguments that had a
+matching parameter index, so object methods could accept missing or extra
+arguments. It now requires exact arity before checking argument types. Focused
+unit tests cover both cases; direct Java/C++ checks reject both with
+`MOSS_COMPILE_ERROR`.
+
+Validation: Java build and all ten Java unit-test classes pass. The two focused
+C++ controls and Java controls agree. No native or full integration gate was
+run.

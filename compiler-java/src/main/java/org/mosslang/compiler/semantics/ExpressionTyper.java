@@ -1262,6 +1262,10 @@ public class ExpressionTyper {
             ObjectType obj = objects.get(targetType.name());
             for (Method m : obj.methods) {
                 if (m.name.equals(member)) {
+                    if (argExprs.size() != m.params.size()) {
+                        throw new CompileError(line, "no matching method '" + targetType.name() + "." + member
+                                + "' for supplied arguments", "MOSS_COMPILE_ERROR");
+                    }
                     TypeEnv methodEnv = new TypeEnv();
                     for (Field f : obj.fields) {
                         TypeRef ft = (f.type != null && !f.type.isEmpty()) ? TypeParser.parseCanonical(f.type) : solver.fresh(0);
