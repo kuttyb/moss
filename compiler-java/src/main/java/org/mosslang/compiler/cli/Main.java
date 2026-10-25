@@ -758,7 +758,7 @@ public class Main {
         };
     }
 
-    private static Set<String> seedV10ClosedFunctionDeclarations(
+    private static Set<String> seedV10FunctionDeclarations(
             Program program, String moduleName, String moduleId,
             Map<String, org.mosslang.compiler.abi.AbiV10Records.Summary> summaries,
             Map<String, org.mosslang.compiler.abi.AbiV10Records.CheckedBodyRecord> bodies,
@@ -768,6 +768,13 @@ public class Main {
         for (Map.Entry<String, org.mosslang.compiler.abi.AbiV10Records.Summary> entry : summaries.entrySet()) {
             String callableId = entry.getKey();
             org.mosslang.compiler.abi.AbiV10Records.Summary summary = entry.getValue();
+            boolean genericEmptyVector = summary.variableCount == 1 && summary.parameters.isEmpty()
+                    && summary.result.kind == org.mosslang.compiler.abi.AbiV10Records.WireTypeKind.Builtin
+                    && "vector".equalsIgnoreCase(summary.result.identity)
+                    && summary.result.arguments.size() == 1
+                    && summary.result.arguments.get(0).kind
+                            == org.mosslang.compiler.abi.AbiV10Records.WireTypeKind.BoundVar
+                    && summary.result.arguments.get(0).ordinal == 0;
             boolean genericParameterReturn = summary.variableCount > 0
                     && summary.variableCount == summary.parameters.size()
                     && java.util.stream.IntStream.range(0, summary.parameters.size()).allMatch(index ->
@@ -778,7 +785,7 @@ public class Main {
                             == org.mosslang.compiler.abi.AbiV10Records.WireTypeKind.BoundVar
                     && summary.result.ordinal >= 0 && summary.result.ordinal < summary.parameters.size();
             if (!callableId.startsWith(callablePrefix)
-                    || (summary.variableCount != 0 && !genericParameterReturn)
+                    || (summary.variableCount != 0 && !genericParameterReturn && !genericEmptyVector)
                     || summary.parameters.size() != summary.parameterAccess.size()
                     || !summary.requirements.isEmpty() || !summary.dependencies.isEmpty()
                     || summary.observableEffectBits != 0 || !summary.observableEffectTags.isEmpty()
@@ -789,13 +796,14 @@ public class Main {
             List<org.mosslang.compiler.types.TypeRef> parameters = new ArrayList<>();
             for (org.mosslang.compiler.abi.AbiV10Records.WireType wire : summary.parameters) {
                 org.mosslang.compiler.types.TypeRef parameter = v10SimpleWireType(wire, summary.variableCount);
-                if (parameter == null || (!genericParameterReturn && !parameter.isClosed())) {
+                if (parameter == null || (!genericParameterReturn && !genericEmptyVector
+                        && !parameter.isClosed())) {
                     parameters.clear();
                     break;
                 }
                 parameters.add(parameter);
             }
-            if (result == null || (!genericParameterReturn && !result.isClosed())
+            if (result == null || (!genericParameterReturn && !genericEmptyVector && !result.isClosed())
                     || parameters.size() != summary.parameters.size()) continue;
 
             String qualifiedName = moduleName + "." + functionName;
@@ -803,7 +811,7 @@ public class Main {
                     .filter(function -> callableId.equals(function.semanticCallableId)
                             || function.name.equals(qualifiedName))
                     .findFirst().orElse(null);
-            if (genericParameterReturn && primary != null) continue;
+            if ((genericParameterReturn || genericEmptyVector) && primary != null) continue;
             if (primary == null) {
                 primary = new org.mosslang.compiler.ast.Function(
                         qualifiedName, "fn " + functionName + "()", 1, interfaceFile.toString(), true);
@@ -849,7 +857,7 @@ public class Main {
                         case Consume -> org.mosslang.compiler.types.AccessMode.Consume;
                     });
                 }
-                if (genericParameterReturn) {
+                if (genericParameterReturn || genericEmptyVector) {
                     function.returnType = "";
                     function.returnTypeRef = null;
                     function.generic = true;
@@ -1576,7 +1584,7 @@ public class Main {
                     currentFn = null;
                 }
             }
-            Set<String> seededGenericCallables = seedV10ClosedFunctionDeclarations(program, modName, moduleId,
+            Set<String> seededGenericCallables = seedV10FunctionDeclarations(program, modName, moduleId,
                     typedV10Summaries, typedV10Bodies, cand);
             projectV10DirectReturnCallables(program, cand, typedV10Summaries, typedV10Bodies,
                     seededGenericCallables);

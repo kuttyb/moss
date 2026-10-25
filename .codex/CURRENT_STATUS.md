@@ -14600,20 +14600,19 @@ full logical ABI-v10 compatibility and native/SDK linkage are open.
 The Java source-free loader now seeds supported callable declarations from a
 checked ABI-v10 summary when the legacy declaration rows are absent. Seeding
 runs after legacy rows are parsed so existing declarations keep their source
-parameter names. The regression removes both legacy declaration copies for six
+parameter names. The regression removes both legacy declaration copies for seven
 functions, retains their ABI-v10 summaries and checked bodies, imports the
 provider, and executes `provider__answer()`/`provider__increment(41)` as `42`,
 `provider__enabled()` as `true`, and an indexed source-free String vector read
 as `two`. This covers zero/one closed parameter and Int, Bool, and
-Vector[String] results, plus generic `(T) -> T` and `(T, U) -> U` callables
-specialized with independent Int/String arguments. Both staged ABI-v10 and default ABI-v9 Java
-suites pass all eleven classes; feedback validation and `git diff --check` pass.
+Vector[String] results, plus generic `(T) -> T` and `(T, U) -> U` pass-through callables and a
+zero-argument empty `Vector[T]` return, specialized as Int and Bool. Both staged ABI-v10 and default ABI-v9 Java
+suites pass all eleven classes. The standalone JAR was rebuilt and its out-of-root bootstrap reports moss-0.1; feedback validation and `git diff --check` pass.
 The generic pass-through profile requires one distinct `BoundVar` per
 parameter, returns one of those exact variables, and has no requirements,
-dependencies, or effects. The tested shapes are `(T) -> T` and `(T, U) -> U`.
-Its parameters remain unannotated so the checked body infers each call
-independently; ABI access modes are retained. Regressions cover
-`T -> T` and `(T, U) -> U`. Other generic relations, nominal methods, effects,
+dependencies, or effects. Its parameters remain unannotated so the checked body
+infers each call independently; ABI access modes are retained. Regressions cover
+`T -> T`, `(T, U) -> U`, and an empty `Vector[T]` specialized as Int and Bool. Other generic relations, nominal methods, effects,
 dependencies, full ABI-v10 contract completeness, and native/SDK integration
 remain open.
 
@@ -14640,10 +14639,9 @@ daemon and native/project acceptance gates remain open.
 
 The initial generic v10-only import attempt bound summary `BoundVar` directly
 as shared `TypeRef.InferenceVar`; sequential Int and String calls then
-contaminated each other. That approach was rejected. The bounded fix seeds
-unannotated parameters for the direct pass-through relation where each parameter
-has a distinct BoundVar and the result is one of them, then reconstructs the
-checked parameter-return body. With both legacy declaration copies removed,
-`T -> T` and `(T, U) -> U` execute for Int/String arguments. The first-order
-pass-through cases work without shared inference variables; generic relations
+contaminated each other. That approach was rejected. The bounded fix seeds unannotated parameters for direct pass-through relations
+where each parameter has a distinct BoundVar and the result is one of them. It
+also seeds the zero-parameter empty `Vector[T]` profile. With both legacy
+declaration copies removed, `T -> T` and `(T, U) -> U` execute for Int/String
+arguments, while the empty vector specializes as Int and Bool. Generic relations
 that combine or transform parameters remain untested.
