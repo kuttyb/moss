@@ -453,14 +453,18 @@ public class ExpressionTyper {
                             }
                             if (traits.containsKey(param.type)) {
                                 TypeRef resolvedActual = solver.resolve(actual);
-                                if (!objects.containsKey(resolvedActual.name())) {
+                                boolean satisfiesTrait = resolvedActual.kind() == TypeKind.TraitConstraint
+                                        && param.type.equals(resolvedActual.name());
+                                if (!satisfiesTrait && !objects.containsKey(resolvedActual.name())) {
                                     throw new CompileError(line, "concrete argument does not satisfy member summary trait '" + param.type + "'", "TYPE_MISMATCH");
                                 }
-                                ObjectType obj = objects.get(resolvedActual.name());
-                                Trait tr = traits.get(param.type);
-                                for (TraitMethod tm : tr.methods) {
-                                    if (obj.methods.stream().noneMatch(m -> m.name.equals(tm.name))) {
-                                        throw new CompileError(line, "concrete argument does not satisfy member summary trait '" + param.type + "': missing method " + tm.name, "TYPE_MISMATCH");
+                                if (!satisfiesTrait) {
+                                    ObjectType obj = objects.get(resolvedActual.name());
+                                    Trait tr = traits.get(param.type);
+                                    for (TraitMethod tm : tr.methods) {
+                                        if (obj.methods.stream().noneMatch(m -> m.name.equals(tm.name))) {
+                                            throw new CompileError(line, "concrete argument does not satisfy member summary trait '" + param.type + "': missing method " + tm.name, "TYPE_MISMATCH");
+                                        }
                                     }
                                 }
                             } else if (expected != null && !expected.isBareTemplate() && !solver.unify(actual, expected)) {

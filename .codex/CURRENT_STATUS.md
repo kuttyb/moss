@@ -12316,3 +12316,26 @@ behavior remains real: phase7_demo reports 2 pass; phase7_failing_test reports
 1 fail and 1 pass with exit status failure. Packaged JAR and `scripts/java/moss`
 `--version` both work. Rust/native, ABI source-free, SDK, and final frozen
 acceptance remain unrun.
+
+### Phase 25.3 continuation — forwarded structural trait constraints
+
+A focused RungeKutta check showed that Java rejected a generic function passing
+its `DynamicalSystem` trait-constrained parameter to another function requiring
+the same trait. Java treated the trait constraint as a concrete object and
+reported `TYPE_MISMATCH`; C++ proceeds to a later open-result diagnostic in
+that full example. Expression typing now accepts forwarding the identical
+structural trait constraint while still rejecting a different trait constraint
+as proof of satisfaction. Added two semantic checker unit cases for those
+positive and negative paths.
+
+Validation after this correction: `scripts/java/build.sh` passed; all seven
+Java test classes passed, including parsing all 33 real examples; the
+RungeKutta Java `check --json` now accepts. The broader RungeKutta C++ check
+still reports `TYPE_AMBIGUOUS_OPEN_RESULT` at line 101, so generated/native
+correctness for that example is not established and this is not full parity.
+The 41-file bounded acceptance run predates this edit. Source-free ABI-v9/v10,
+native correctness, SDK, final release gates, and the frozen-candidate
+Architect review remain open. The existing Margo source-free writer still has
+fixture-specific failure-capture metadata and incomplete capture/effect facts;
+the JDT daemon launcher remains tied to an external Eclipse installation and
+its lifecycle was not verified in this workspace.
