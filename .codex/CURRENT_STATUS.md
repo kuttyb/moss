@@ -16574,3 +16574,8 @@ all 12 test classes pass under ABI-v9 and staged ABI-v10. `scripts/java/package.
 rebuilt the JAR; the packaged compiler rejects the Mover constructor callsite
 and accepts the Reader constructor callsite. `git diff --check` and agent-feedback
 validation pass on this tree.
+
+Follow-up validation after adding inline object construction to generic receiver
+resolution: all 12 Java test classes pass again under ABI-v9 and staged ABI-v10.
+The rebuilt JAR rejects the inline Mover callsite and accepts the Reader control.
+These results supersede the earlier focused-only run for that change.
