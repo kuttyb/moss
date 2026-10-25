@@ -365,6 +365,24 @@ public class ExpressionTyper {
                 if ("sort".equals(callee)) {
                     return inferSort(argExprs, line, env);
                 }
+                if ("sum".equals(callee)) {
+                    if (argExprs.size() != 1) {
+                        throw new CompileError(line, "sum expects 1 argument, got " + argExprs.size(),
+                                "ARGUMENT_COUNT_MISMATCH");
+                    }
+                    TypeRef collection = solver.resolve(infer(argExprs.get(0), line, env));
+                    if (collection.kind() == TypeKind.Builtin
+                            && ("vector".equals(collection.name()) || "seq".equals(collection.name()))
+                            && collection.typeArgs().size() == 1) {
+                        return collection.typeArgs().get(0);
+                    }
+                    if (collection.kind() == TypeKind.InferenceVar) {
+                        TypeRef element = solver.fresh(0);
+                        TypeRef vector = TypeRef.builtin("vector", List.of(element));
+                        if (solver.unify(collection, vector)) return element;
+                    }
+                    throw new CompileError(line, "sum requires a Vector or sequence", "TYPE_MISMATCH");
+                }
                 if ("range".equals(callee)) {
                     if (!e.equals(allowedRangeForSource)) {
                         throw new CompileError(line,

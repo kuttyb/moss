@@ -2170,6 +2170,8 @@ public class FastInterpreter {
             List<String> argList = splitArgs(argsStr);
             boolean builtinSort = "sort".equals(callee)
                     && program.functions.stream().noneMatch(function -> function.name.equals("sort"));
+            boolean builtinSum = "sum".equals(callee)
+                    && program.functions.stream().noneMatch(function -> function.name.equals("sum"));
             boolean mapDeleteOutParameter = false;
             if (!expr.startsWith("message ") && callee.contains(".")) {
                 int receiverDot = callee.lastIndexOf('.');
@@ -2291,6 +2293,24 @@ public class FastInterpreter {
                     return descending ? -comparison : comparison;
                 });
                 return Value.ofUnit();
+            }
+
+            if (builtinSum) {
+                if (argList.size() != 1 || evaluatedArgs.isEmpty()
+                        || !(evaluatedArgs.get(0).raw instanceof List<?> rawValues)) {
+                    throw new IllegalStateException("sum requires one checked Vector argument");
+                }
+                @SuppressWarnings("unchecked")
+                List<Value> values = (List<Value>) rawValues;
+                boolean floating = values.stream().anyMatch(value -> value.kind == Value.Kind.FLOAT);
+                if (floating) {
+                    double total = 0.0;
+                    for (Value value : values) total += value.asFloat();
+                    return Value.ofFloat(total);
+                }
+                long total = 0;
+                for (Value value : values) total += value.asInt();
+                return Value.ofInt(total);
             }
 
             String compactBuiltinCallee = callee.replaceAll("\\s+", "");

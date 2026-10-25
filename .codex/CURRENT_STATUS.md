@@ -16167,3 +16167,27 @@ revalidated after this specialization change. Remaining domain coverage
 includes routed or initialized domains, exported/module instances, non-root or
 control-flow message sites, and source-free specialization. No native,
 full-suite, SDK, or multi-crate gate was run. The code change is uncommitted.
+
+### Phase 25.3 continuation — direct Vector sum builtin
+
+The second bounded 50-file checker sample initially found one additional
+C++-accepted/Java-rejected fixture, `phase25_integer_overflow.moss`. The source
+uses `sum(values)` as a direct builtin call; Java recognized `sum` only as a
+pipeline terminal. Java now infers direct Vector sum from the element type,
+lowers Int accumulation with explicit wrapping and Float accumulation through
+an `f64` iterator sum, and evaluates direct numeric sum in Fast Debug.
+
+After the correction, the second 50-file sample reports C++ 50 accepted and
+Java 50 accepted with no acceptance mismatches. The first 50 remain 49/49
+accepted with no mismatches. Java Fast Debug on the overflow fixture matches
+the fixture's expected wrapping Int and Float output. C++ Fast Debug currently
+rejects the direct `sum` call as unsupported, so no C++/Java Fast Debug
+comparison is claimed for it. Focused codegen tests assert Int wrapping and
+Float lowering, but generated Rust has not been compiled.
+
+Validation on this tree: all twelve Java test classes pass under ABI-v9 and
+staged ABI-v10. Standalone packaging/bootstrap, feedback validation, and
+`git diff --check` remain to be rerun after this builtin change. No native Rust
+compilation, full `make check`, SDK, or multi-crate gate was run. Generalized
+sum over open generic collections and ABI-v10 source-free sum coverage remain
+unverified.

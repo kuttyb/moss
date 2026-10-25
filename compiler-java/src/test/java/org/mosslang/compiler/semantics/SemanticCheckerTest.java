@@ -47,6 +47,7 @@ public class SemanticCheckerTest {
         testUniformDomainHandlerInferenceFromMainCalls();
         testPerInstanceDomainLayoutSpecialization();
         testConflictingDomainInstanceTypesAreRejected();
+        testDirectVectorSumTypeAndLowering();
         testValueHandlerRepliesOnEveryNormalPath();
         testUnsupportedCollectionsAreRejectedAsForIterablesAtLoopSite();
         testRangeForRequiresPositiveNonzeroLiteralStep();
@@ -1092,6 +1093,25 @@ public class SemanticCheckerTest {
                 + "  message pair.Set(20, 7)\n", "conflicting-domain-instance.moss");
         expectCompileError(program, "MOSS_COMPILE_ERROR",
                 "one domain instance cannot receive conflicting inferred handler parameter types");
+    }
+
+    private static void testDirectVectorSumTypeAndLowering() {
+        Program program = Parser.parseSource(""
+                + "fn main():\n"
+                + "  values = [9223372036854775807, 1]\n"
+                + "  total = sum(values)\n"
+                + "  floats = [0.5, 1.25]\n"
+                + "  floatTotal = sum(floats)\n"
+                + "  echo total\n", "direct-vector-sum.moss");
+        new SemanticChecker(program).run();
+        String totalType = program.localBindingTypes.get("main").get("total").toCanonicalString();
+        String floatType = program.localBindingTypes.get("main").get("floatTotal").toCanonicalString();
+        String rust = NativeGenerator.generate(program, false);
+        if (!"int".equals(totalType) || !"float".equals(floatType)
+                || !rust.contains("wrapping_add(*__moss_value)")
+                || !rust.contains("sum::<f64>()")) {
+            throw new AssertionError("direct sum must infer element types and preserve Moss numeric lowering");
+        }
     }
 
     private static void testNestedFieldReadInBranchConditionKeepsReceiverReadOnly() {

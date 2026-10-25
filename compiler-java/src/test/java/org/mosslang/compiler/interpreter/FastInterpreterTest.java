@@ -49,6 +49,7 @@ public final class FastInterpreterTest {
         testPipelineStageUsesFunctionCallTrace();
         testFilterPipelineUsesPlaceholder();
         testGeneralPipelineCallbacksAndTerminals();
+        testDirectVectorSumUsesMossNumericSemantics();
         testSortAndReverseRuntimeSemantics();
         testCharCodepointMethod();
         testScalarProtocolMethods();
@@ -1173,6 +1174,24 @@ public final class FastInterpreterTest {
         String expected = "12\n24\n5\ntrue\ntrue\ntrue 3\ntrue\nfalse\n101 103\n";
         if (!expected.equals(stdout.toString(StandardCharsets.UTF_8))) {
             throw new AssertionError("general pipeline callback or terminal result was wrong: " + stdout);
+        }
+    }
+
+    private static void testDirectVectorSumUsesMossNumericSemantics() {
+        var program = Parser.parseSource(""
+                + "fn main():\n"
+                + "  ints = [9223372036854775807, 1]\n"
+                + "  floats = [0.5, 1.25]\n"
+                + "  echo sum(ints)\n"
+                + "  echo sum(floats)\n", "fast-interpreter-direct-sum.moss");
+        new CheckedProgram(program).run();
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+        new FastInterpreter(program, false,
+                new PrintStream(stdout, true, StandardCharsets.UTF_8),
+                new PrintStream(new ByteArrayOutputStream())).run();
+        if (!"-9223372036854775808\n1.75\n".equals(stdout.toString(StandardCharsets.UTF_8))) {
+            throw new AssertionError("direct vector sum did not preserve wrapping Int and Float results: "
+                    + stdout.toString(StandardCharsets.UTF_8));
         }
     }
 

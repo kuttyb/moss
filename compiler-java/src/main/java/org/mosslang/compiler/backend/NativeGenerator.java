@@ -3561,6 +3561,21 @@ public class NativeGenerator {
                 if (callee.equals("assertEqual") || callee.equals("assert_eq")) {
                     return "assert_eq!(" + String.join(", ", argList) + ")";
                 }
+                if (callee.equals("sum") && argList.size() == 1) {
+                    String rawArgument = splitTopLevel(args, ',').get(0).trim();
+                    int namedSeparator = rawArgument.indexOf(':');
+                    if (namedSeparator > 0) rawArgument = rawArgument.substring(namedSeparator + 1).trim();
+                    org.mosslang.compiler.types.TypeRef collectionType = bindingTypeRef(rawArgument);
+                    String elementType = collectionType != null && !collectionType.typeArgs().isEmpty()
+                            ? collectionType.typeArgs().get(0).toCanonicalString() : "";
+                    String lowered = lowerExpr(rawArgument, stateFields, domains, objects);
+                    if ("int".equals(elementType)) {
+                        return "{ let mut __moss_sum: i64 = 0; for __moss_value in (&(" + lowered
+                                + ")).iter() { __moss_sum = __moss_sum.wrapping_add(*__moss_value); } __moss_sum }";
+                    }
+                    String rustType = elementType.isEmpty() ? "_" : NativeGenerator.rustType(elementType);
+                    return "(&(" + lowered + ")).iter().copied().sum::<" + rustType + ">()";
+                }
                 boolean calleeRaises = currentRaisingFunctions.get().contains(callee)
                         || simpleName.equals("fail");
                     String rustCallee = sourceFreeFunctionRustPath(calleeFunction, callee,
