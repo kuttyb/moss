@@ -570,7 +570,7 @@ public final class ProjectBuilderMetadataTest {
                 + "export fn names() -> Vector[String]:\n"
                 + "  return [\"one\", \"two\", \"three\"]\n"
                 + "export fn matrix() -> Vector[Vector[Int]]:\n"
-                + "  return [[1, 2], [3]]\n", "identity-provider.moss");
+                + "  return [[1, 2], [3], []]\n", "identity-provider.moss");
         new org.mosslang.compiler.semantics.CheckedProgram(identityProgram).run();
         identityProgram.functions.forEach(function -> {
             String name = function.name;
@@ -685,10 +685,11 @@ public final class ProjectBuilderMetadataTest {
         java.util.List<org.mosslang.compiler.abi.CheckedStmt> matrixStatements =
                 CheckedBodyCodec.decodeCheckedBody(matrixBody.checkedIrBytes);
         if (matrixStatements.size() != 1
-                || matrixStatements.get(0).expr.operands.size() != 2
+                || matrixStatements.get(0).expr.operands.size() != 3
                 || matrixStatements.get(0).expr.operands.get(0).kind
                         != org.mosslang.compiler.abi.CheckedExprKind.VectorLiteral
-                || matrixStatements.get(0).expr.operands.get(1).operands.size() != 1) {
+                || matrixStatements.get(0).expr.operands.get(1).operands.size() != 1
+                || !matrixStatements.get(0).expr.operands.get(2).operands.isEmpty()) {
             throw new AssertionError("ABI-v10 nested-vector checked body is incomplete");
         }
         AbiV10Records.Summary secondSummary = identityInterface.binaryContract.stream()
@@ -1236,7 +1237,7 @@ public final class ProjectBuilderMetadataTest {
             if (importedMatrix.body.size() != 1
                     || importedMatrix.body.get(0).kind != org.mosslang.compiler.ast.Stmt.Kind.Return
                     || importedMatrix.body.get(0).a == null
-                    || !importedMatrix.body.get(0).a.contains("[[1, 2], [3]]")) {
+                    || !importedMatrix.body.get(0).a.contains("[[1, 2], [3], []]")) {
                 throw new AssertionError("source-free nested-vector literal was not projected: "
                         + importedMatrix.body);
             }

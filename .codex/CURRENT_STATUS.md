@@ -14578,3 +14578,8 @@ provider, and executes `matrix[1][0]` as `3`. All eleven Java unit-test classes
 pass under ABI-v9 and staged ABI-v10. This adds nested primitive vector
 literals only; general collection expressions, native linkage, SDK integration,
 and the full ABI-v10 contract remain incomplete.
+
+The nested-vector regression now includes an empty inner vector (`[]`) and
+checks that the producer emits an empty `VectorLiteral` child and the
+source-free consumer retains the full matrix. The importer executes a separate
+indexed element read successfully. Both ABI test modes pass all eleven classes.

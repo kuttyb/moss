@@ -1807,8 +1807,9 @@ public class ProjectBuilder {
         String expression = source.trim();
         if (expression.length() < 2 || expression.charAt(0) != '['
                 || expression.charAt(expression.length() - 1) != ']') return null;
-        List<String> elements = org.mosslang.compiler.parser.ParserSupport.splitTopLevel(
-                expression.substring(1, expression.length() - 1), ',');
+        String contents = expression.substring(1, expression.length() - 1);
+        List<String> elements = contents.isBlank() ? List.of()
+                : org.mosslang.compiler.parser.ParserSupport.splitTopLevel(contents, ',');
         if (elements.stream().anyMatch(String::isBlank)) return null;
         CheckedExpr vector = new CheckedExpr();
         vector.kind = org.mosslang.compiler.abi.CheckedExprKind.VectorLiteral;
