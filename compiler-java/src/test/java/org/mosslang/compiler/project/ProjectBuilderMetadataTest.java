@@ -1115,7 +1115,8 @@ public final class ProjectBuilderMetadataTest {
                             || record.id.contains("names") || record.payload.contains("fn names")
                             || record.id.contains("identity") || record.payload.contains("fn identity")
                             || record.id.contains("second") || record.payload.contains("fn second")
-                            || record.id.contains("fresh") || record.payload.contains("fn fresh"))
+                            || record.id.contains("fresh") || record.payload.contains("fn fresh")
+                            || record.id.contains("matrix") || record.payload.contains("fn matrix"))
                     .toList();
             if (answerRows.isEmpty()) {
                 throw new AssertionError("could not isolate legacy callable declarations for ABI-v10-only import");
@@ -1127,9 +1128,10 @@ public final class ProjectBuilderMetadataTest {
                             || record.id.equals("fn:names") || record.id.startsWith("fn:names::")
                             || record.id.equals("fn:identity") || record.id.startsWith("fn:identity::")
                             || record.id.equals("fn:second") || record.id.startsWith("fn:second::")
-                            || record.id.equals("fn:fresh") || record.id.startsWith("fn:fresh::"))
+                            || record.id.equals("fn:fresh") || record.id.startsWith("fn:fresh::")
+                            || record.id.equals("fn:matrix") || record.id.startsWith("fn:matrix::"))
                     .toList();
-            for (String functionName : List.of("answer", "increment", "enabled", "names", "identity", "second", "fresh")) {
+            for (String functionName : List.of("answer", "increment", "enabled", "names", "identity", "second", "fresh", "matrix")) {
                 String legacyPrefix = "fn:" + functionName;
                 if (answerRows.stream().noneMatch(record -> record.id.equals(legacyPrefix)
                                 || record.id.startsWith(legacyPrefix + "::"))
@@ -1144,12 +1146,12 @@ public final class ProjectBuilderMetadataTest {
                             record.id.startsWith("fn:answer") || record.id.startsWith("fn:increment")
                                     || record.id.startsWith("fn:enabled") || record.id.startsWith("fn:names")
                                     || record.id.startsWith("fn:identity") || record.id.startsWith("fn:second")
-                                    || record.id.startsWith("fn:fresh"))
+                                    || record.id.startsWith("fn:fresh") || record.id.startsWith("fn:matrix"))
                     || identityInterface.binaryContract.stream().anyMatch(record ->
                             record.id.startsWith("fn:answer") || record.id.startsWith("fn:increment")
                                     || record.id.startsWith("fn:enabled") || record.id.startsWith("fn:names")
                                     || record.id.startsWith("fn:identity") || record.id.startsWith("fn:second")
-                                    || record.id.startsWith("fn:fresh"))) {
+                                    || record.id.startsWith("fn:fresh") || record.id.startsWith("fn:matrix"))) {
                 throw new AssertionError("legacy callable declaration rows remain in the v10-only fixture");
             }
             Files.write(identityMossi, CheckedBodyCodec.encodeMossiBytes(identityInterface));
@@ -1166,6 +1168,7 @@ public final class ProjectBuilderMetadataTest {
                     + "  echo provider__identity(7)\n"
                     + "  echo provider__identity(\"seven\")\n"
                     + "  echo provider__second(7, \"seven\")\n"
+                    + "  echo provider__matrix()[1][0]\n"
                     + "  echo use_fresh_int().len()\n"
                     + "  echo use_fresh_bool().len()\n", "answer-consumer.moss");
             org.mosslang.compiler.cli.Main.loadMossiFunctions(identityMossi, "provider", answerConsumer);
@@ -1185,7 +1188,7 @@ public final class ProjectBuilderMetadataTest {
             new org.mosslang.compiler.interpreter.FastInterpreter(answerConsumer, false,
                     new java.io.PrintStream(answerOutput),
                     new java.io.PrintStream(new java.io.ByteArrayOutputStream())).run();
-            if (!"42\n42\ntrue\ntwo\n7\nseven\nseven\n0\n0\n".equals(
+            if (!"42\n42\ntrue\ntwo\n7\nseven\nseven\n3\n0\n0\n".equals(
                     answerOutput.toString(java.nio.charset.StandardCharsets.UTF_8))) {
                 throw new AssertionError("ABI-v10 summary bodies did not import without their v9 declarations: "
                         + answerOutput);

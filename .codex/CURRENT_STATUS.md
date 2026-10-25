@@ -14597,24 +14597,24 @@ full logical ABI-v10 compatibility and native/SDK linkage are open.
 
 ### Phase 25.3 continuation — seed ABI-v10 callables without legacy declarations
 
-The Java source-free loader now seeds supported callable declarations from a
-checked ABI-v10 summary when the legacy declaration rows are absent. Seeding
-runs after legacy rows are parsed so existing declarations keep their source
-parameter names. The regression removes both legacy declaration copies for seven
-functions, retains their ABI-v10 summaries and checked bodies, imports the
-provider, and executes `provider__answer()`/`provider__increment(41)` as `42`,
-`provider__enabled()` as `true`, and an indexed source-free String vector read
-as `two`. This covers zero/one closed parameter and Int, Bool, and
-Vector[String] results, plus generic `(T) -> T` and `(T, U) -> U` pass-through callables and a
-zero-argument empty `Vector[T]` return, specialized as Int and Bool. Both staged ABI-v10 and default ABI-v9 Java
-suites pass all eleven classes. The standalone JAR was rebuilt and its out-of-root bootstrap reports moss-0.1; feedback validation and `git diff --check` pass.
+The Java source-free loader seeds supported callable declarations from checked
+ABI-v10 summaries when legacy declaration rows are absent. Seeding runs after
+legacy parsing so existing declarations keep their source parameter names. The
+regression removes both legacy declaration copies for eight functions while
+retaining their ABI-v10 summaries and checked bodies. It executes closed Int,
+Bool, String-vector, and nested Vector[Vector[Int]] results; generic `(T) -> T`
+and `(T, U) -> U` pass-through calls; and a zero-argument empty `Vector[T]`
+call specialized as Int and Bool. The nested indexed read returns `3`.
+
 The generic pass-through profile requires one distinct `BoundVar` per
 parameter, returns one of those exact variables, and has no requirements,
-dependencies, or effects. Its parameters remain unannotated so the checked body
-infers each call independently; ABI access modes are retained. Regressions cover
-`T -> T`, `(T, U) -> U`, and an empty `Vector[T]` specialized as Int and Bool. Other generic relations, nominal methods, effects,
-dependencies, full ABI-v10 contract completeness, and native/SDK integration
-remain open.
+dependencies, or effects. Synthetic parameters remain unannotated so the
+checked body infers each call independently; ABI access modes are retained.
+All eleven Java test classes pass under staged ABI-v10 and default ABI-v9. The
+standalone JAR was rebuilt and its out-of-root bootstrap reports `moss-0.1`;
+feedback validation and `git diff --check` pass. Other generic relations,
+nominal methods, effects, dependencies, full ABI-v10 contract completeness,
+and native/SDK integration remain open.
 
 ### Phase 25.3 continuation — refreshed failure-capture Fast Debug traces
 
