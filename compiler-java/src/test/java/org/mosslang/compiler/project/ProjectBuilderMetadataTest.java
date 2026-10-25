@@ -385,6 +385,11 @@ public final class ProjectBuilderMetadataTest {
                 + "    return value\n"
                 + "  else:\n"
                 + "    return -value\n"
+                + "export fn is_nonnegative_branch(value: Int) -> Bool:\n"
+                + "  if value >= 0:\n"
+                + "    return true\n"
+                + "  else:\n"
+                + "    return false\n"
                 + "export fn abs_ratio(value: Float) -> Float:\n"
                 + "  if value >= 0.0:\n"
                 + "    return value\n"
@@ -772,6 +777,20 @@ public final class ProjectBuilderMetadataTest {
                 || !"float".equals(floatBranchStatements.get(0).expr.operands.get(0).type.name())) {
             throw new AssertionError("ABI-v10 Float branch-return checked body is incomplete");
         }
+        AbiV10Records.CheckedBodyRecord boolBranchBody = identityInterface.privateSemanticDependencies.stream()
+                .filter(record -> record.id.startsWith("checked-body-v1:"))
+                .map(AbiV10Records.CheckedBodyRecord::decode)
+                .filter(body -> body.callableId.endsWith(":fn:is_nonnegative_branch"))
+                .findFirst().orElseThrow(() -> new AssertionError(
+                        "ABI-v10 producer omitted the Bool branch-return body"));
+        List<org.mosslang.compiler.abi.CheckedStmt> boolBranchStatements =
+                CheckedBodyCodec.decodeCheckedBody(boolBranchBody.checkedIrBytes);
+        if (boolBranchStatements.size() != 1
+                || boolBranchStatements.get(0).kind != org.mosslang.compiler.abi.CheckedStmtKind.If
+                || boolBranchStatements.get(0).thenBranch.get(0).expr.kind
+                        != org.mosslang.compiler.abi.CheckedExprKind.BoolLiteral) {
+            throw new AssertionError("ABI-v10 Bool branch-return checked body is incomplete");
+        }
         AbiV10Records.Summary combineSummary = identityInterface.binaryContract.stream()
                 .filter(record -> record.payloadBytes().length > 0
                         && (record.payloadBytes()[0] == 3 || record.payloadBytes()[0] == 4))
@@ -864,6 +883,8 @@ public final class ProjectBuilderMetadataTest {
                     + "  return provider__abs_value(-5)\n"
                     + "fn use_abs_ratio() -> Float:\n"
                     + "  return provider__abs_ratio(-5.0)\n"
+                    + "fn use_is_nonnegative_branch() -> Bool:\n"
+                    + "  return provider__is_nonnegative_branch(5)\n"
                     + "fn use_is_warm() -> Bool:\n"
                     + "  return provider__is_warm(22.5)\n"
                     + "fn use_increment() -> Int:\n"
@@ -909,6 +930,15 @@ public final class ProjectBuilderMetadataTest {
                     || importedFloatBranch.body.get(3).a == null
                     || !importedFloatBranch.body.get(3).a.contains("-")) {
                 throw new AssertionError("ABI-v10 Float branch-return facts were not projected into the source-free callable");
+            }
+            Function importedBoolBranch = consumer.functions.stream()
+                    .filter(function -> function.name.equals("provider.is_nonnegative_branch"))
+                    .findFirst().orElseThrow(() -> new AssertionError("source-free Bool branch callable was not loaded"));
+            if (importedBoolBranch.body.size() != 4
+                    || importedBoolBranch.body.get(0).kind != org.mosslang.compiler.ast.Stmt.Kind.If
+                    || importedBoolBranch.body.get(1).a == null
+                    || !importedBoolBranch.body.get(1).a.contains("true")) {
+                throw new AssertionError("ABI-v10 Bool branch-return facts were not projected into the source-free callable");
             }
             Function importedIdentity = consumer.functions.stream()
                     .filter(function -> function.name.equals("provider.identity"))

@@ -1643,9 +1643,17 @@ public class Main {
                 org.mosslang.compiler.types.TypeRef.primitive("int");
         org.mosslang.compiler.types.TypeRef floatType =
                 org.mosslang.compiler.types.TypeRef.primitive("float");
+        org.mosslang.compiler.types.TypeRef boolType =
+                org.mosslang.compiler.types.TypeRef.primitive("bool");
+        boolean boolValues = boolType.equals(resultType);
         boolean floatValues = floatType.equals(resultType);
-        if ((!intType.equals(resultType) && !floatValues) || statements.size() != 1
-                || parameterTypes.stream().anyMatch(type -> !resultType.equals(type))) return null;
+        boolean numericResult = intType.equals(resultType) || floatValues;
+        boolean homogeneousNumericParameters = parameterTypes.isEmpty()
+                || parameterTypes.stream().allMatch(Main::isSourceFreeIntType)
+                || parameterTypes.stream().allMatch(Main::isSourceFreeFloatType);
+        if ((!numericResult && !boolValues) || statements.size() != 1
+                || !homogeneousNumericParameters
+                || (numericResult && parameterTypes.stream().anyMatch(type -> !resultType.equals(type)))) return null;
         org.mosslang.compiler.abi.CheckedStmt branch = statements.get(0);
         if (branch.kind != org.mosslang.compiler.abi.CheckedStmtKind.If || branch.expr == null
                 || branch.thenBranch.size() != 1 || branch.elseBranch.size() != 1) return null;
@@ -1656,11 +1664,11 @@ public class Main {
                 || thenReturn.expr == null || elseReturn.expr == null
                 || !resultType.equals(thenReturn.expr.type) || !resultType.equals(elseReturn.expr.type)) return null;
         String condition = sourceFreeBoolExpression(branch.expr, parameterTypes, 0);
-        String whenTrue = floatValues
-                ? sourceFreeClosedFloatExpression(thenReturn.expr, parameterTypes, 0)
+        String whenTrue = boolValues ? sourceFreeBoolExpression(thenReturn.expr, parameterTypes, 0)
+                : floatValues ? sourceFreeClosedFloatExpression(thenReturn.expr, parameterTypes, 0)
                 : sourceFreeClosedIntExpression(thenReturn.expr, parameterTypes, 0);
-        String whenFalse = floatValues
-                ? sourceFreeClosedFloatExpression(elseReturn.expr, parameterTypes, 0)
+        String whenFalse = boolValues ? sourceFreeBoolExpression(elseReturn.expr, parameterTypes, 0)
+                : floatValues ? sourceFreeClosedFloatExpression(elseReturn.expr, parameterTypes, 0)
                 : sourceFreeClosedIntExpression(elseReturn.expr, parameterTypes, 0);
         if (condition == null || whenTrue == null || whenFalse == null) return null;
         List<org.mosslang.compiler.ast.Stmt> projected = new ArrayList<>();

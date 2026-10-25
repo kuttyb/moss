@@ -13510,3 +13510,20 @@ Validation: clean Java build and all ten Java unit-test classes pass in default
 ABI-v9 and staged ABI-v10 modes. C++ and Java both accept the focused Int/Float
 branch probe. No native Rust compile/run, Margo provider-consumer build, SDK
 gate, or full `make check` ran; Phase 25.3 remains in progress.
+
+### Phase 25.3 continuation — carry Bool branch returns in ABI-v10
+
+The pure source-free branch-return profile now supports Bool results controlled
+by supported Int/Float predicates, with Bool return expressions limited to the
+existing checked predicate forms. ABI-v10 summaries encode each checked
+parameter TypeRef independently from the result TypeRef, which permits the
+Int-to-Bool profile without weakening type checks. Producer-consumer regressions
+strip legacy body rows, reconstruct numeric and Bool branches, then run
+semantic checking. General control flow and non-predicate Bool expressions
+remain open.
+
+Validation: clean Java build and all ten Java unit-test classes pass in default
+ABI-v9 and staged ABI-v10 modes. C++ and Java both accept the focused Int,
+Float, and Bool branch probe. Feedback validation and `git diff --check` pass.
+No native Rust compile/run, Margo provider-consumer build, SDK gate, or full
+`make check` ran. Phase 25.3 remains in progress.

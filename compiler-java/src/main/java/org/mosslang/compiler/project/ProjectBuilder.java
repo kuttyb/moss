@@ -1468,7 +1468,7 @@ public class ProjectBuilder {
                     CheckedExpr constantReturn = null;
                     CheckedExpr arithmeticReturn = null;
                     List<CheckedStmt> numericLocalBody = null;
-                    List<CheckedStmt> numericBranchBody = null;
+                    List<CheckedStmt> branchReturnBody = null;
                     CheckedExpr floatArithmeticReturn = null;
                     CheckedExpr numericPredicateReturn = null;
                     if (summary == null) {
@@ -1488,15 +1488,15 @@ public class ProjectBuilder {
                     if (summary == null) {
                         numericLocalBody = v10ClosedNumericLocalBody(fn);
                         if (numericLocalBody != null) {
-                            summary = v10ClosedNumericBodySummary(
+                            summary = v10ClosedBodySummary(
                                     fn, numericLocalBody, modId, provenanceRecords);
                         }
                     }
                     if (summary == null) {
-                        numericBranchBody = v10ClosedNumericBranchReturnBody(fn);
-                        if (numericBranchBody != null) {
-                            summary = v10ClosedNumericBodySummary(
-                                    fn, numericBranchBody, modId, provenanceRecords);
+                        branchReturnBody = v10ClosedBranchReturnBody(fn);
+                        if (branchReturnBody != null) {
+                            summary = v10ClosedBodySummary(
+                                    fn, branchReturnBody, modId, provenanceRecords);
                         }
                     }
                     if (summary == null) {
@@ -1521,8 +1521,8 @@ public class ProjectBuilder {
                                         ? v10SimpleExpressionBody(summary, arithmeticReturn)
                                         : numericLocalBody != null
                                                 ? v10CheckedBodyRecord(summary, numericLocalBody)
-                                        : numericBranchBody != null
-                                                ? v10CheckedBodyRecord(summary, numericBranchBody)
+                                        : branchReturnBody != null
+                                                ? v10CheckedBodyRecord(summary, branchReturnBody)
                                         : floatArithmeticReturn != null
                                                 ? v10SimpleExpressionBody(summary, floatArithmeticReturn)
                                         : numericPredicateReturn != null
@@ -1746,6 +1746,11 @@ public class ProjectBuilder {
     private static boolean isV10FloatType(TypeRef type) {
         return type != null && type.kind() == org.mosslang.compiler.types.TypeKind.Primitive
                 && "float".equalsIgnoreCase(type.name());
+    }
+
+    private static boolean isV10BoolType(TypeRef type) {
+        return type != null && type.kind() == org.mosslang.compiler.types.TypeKind.Primitive
+                && "bool".equalsIgnoreCase(type.name());
     }
 
     private static CheckedExpr v10ClosedFloatExpressionReturn(Function function) {
@@ -2107,13 +2112,19 @@ public class ProjectBuilder {
         return checked;
     }
 
-    private static List<CheckedStmt> v10ClosedNumericBranchReturnBody(Function function) {
-        TypeRef valueType = function.returnTypeRef;
-        boolean floatValues = isV10FloatType(valueType);
-        if ((!isV10IntType(valueType) && !floatValues) || function.body.size() != 4
-                || function.params.stream().anyMatch(parameter -> !valueType.equals(parameter.checkedTypeRef))) {
-            return null;
-        }
+    private static List<CheckedStmt> v10ClosedBranchReturnBody(Function function) {
+        TypeRef resultType = function.returnTypeRef;
+        boolean intResult = isV10IntType(resultType);
+        boolean floatResult = isV10FloatType(resultType);
+        boolean boolResult = isV10BoolType(resultType);
+        if ((!intResult && !floatResult && !boolResult) || function.body.size() != 4) return null;
+        boolean intOperands = function.params.stream()
+                .allMatch(parameter -> isV10IntType(parameter.checkedTypeRef));
+        boolean floatOperands = function.params.stream()
+                .allMatch(parameter -> isV10FloatType(parameter.checkedTypeRef));
+        if (!function.params.isEmpty() && !intOperands && !floatOperands) return null;
+        if ((intResult && !function.params.isEmpty() && !intOperands)
+                || (floatResult && !function.params.isEmpty() && !floatOperands)) return null;
         Stmt ifSource = function.body.get(0);
         Stmt thenSource = function.body.get(1);
         Stmt elseSource = function.body.get(2);
@@ -2123,13 +2134,15 @@ public class ProjectBuilder {
                 || thenSource.indent <= ifSource.indent || elseSource.indent != ifSource.indent
                 || elseReturnSource.indent <= elseSource.indent) return null;
         String condition = ifSource.a != null ? ifSource.a.trim() : "";
-        CheckedExpr predicate = v10LowerNumericPredicateExpression(condition, function, floatValues, 0);
+        CheckedExpr predicate = v10LowerNumericPredicateExpression(condition, function, floatOperands, 0);
         String thenExpression = thenSource.a != null ? thenSource.a.trim() : "";
         String elseExpression = elseReturnSource.a != null ? elseReturnSource.a.trim() : "";
-        CheckedExpr thenValue = v10LowerClosedNumericExpression(
-                thenExpression, function, Map.of(), valueType, 0);
-        CheckedExpr elseValue = v10LowerClosedNumericExpression(
-                elseExpression, function, Map.of(), valueType, 0);
+        CheckedExpr thenValue = boolResult
+                ? v10LowerNumericPredicateExpression(thenExpression, function, floatOperands, 0)
+                : v10LowerClosedNumericExpression(thenExpression, function, Map.of(), resultType, 0);
+        CheckedExpr elseValue = boolResult
+                ? v10LowerNumericPredicateExpression(elseExpression, function, floatOperands, 0)
+                : v10LowerClosedNumericExpression(elseExpression, function, Map.of(), resultType, 0);
         if (predicate == null || thenValue == null || elseValue == null) return null;
         CheckedStmt branch = new CheckedStmt();
         branch.kind = org.mosslang.compiler.abi.CheckedStmtKind.If;
@@ -2149,14 +2162,14 @@ public class ProjectBuilder {
         return null;
     }
 
-    private static AbiV10Records.Summary v10ClosedNumericBodySummary(
+    private static AbiV10Records.Summary v10ClosedBodySummary(
             Function function, List<CheckedStmt> statements, String moduleId,
             List<AbiV10Records.SourceProvenance> provenanceRecords) {
-        TypeRef valueType = function.returnTypeRef;
         AbiV10Records.Summary summary = new AbiV10Records.Summary();
         summary.callableId = function.semanticCallableId;
         for (int index = 0; index < function.params.size(); index++) {
-            summary.parameters.add(AbiV10Records.fromTypeRef(valueType, Map.of()));
+            summary.parameters.add(AbiV10Records.fromTypeRef(
+                    function.params.get(index).checkedTypeRef, Map.of()));
             org.mosslang.compiler.types.AccessMode access = function.parameterAccessModes.size() > index
                     ? function.parameterAccessModes.get(index)
                     : org.mosslang.compiler.types.AccessMode.Read;
@@ -2166,7 +2179,7 @@ public class ProjectBuilder {
                 case Consume -> AbiV10Records.Access.Consume;
             });
         }
-        summary.result = AbiV10Records.fromTypeRef(valueType, Map.of());
+        summary.result = AbiV10Records.fromTypeRef(function.returnTypeRef, Map.of());
         String bodyBytes = CheckedBodyCodec.encodeCheckedBodyV1(statements);
         summary.bodySemanticHash = "body-semantic-v1:sha256:" + CheckedBodyCodec.sha256Hex(bodyBytes);
         AbiV10Records.SourceProvenance provenance = AbiV10Records.SourceProvenance.create(
