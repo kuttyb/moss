@@ -13672,3 +13672,10 @@ Validation: clean Java build and all eleven Java unit-test classes pass in
 ABI-v9 and staged ABI-v10 modes; focused C++/Java output matches. Other
 interpreter state/effect and complete trace parity remain open. Native, Margo,
 SDK, and full acceptance gates are deferred.
+
+A follow-up recovery probe found the catch payload binder itself was installed
+in the parent locals map and the whole enum value was bound instead of its
+named payload. Java now scopes the recovery binder, projects the matching named
+field (or the single payload field), and restores a shadowed outer binding.
+`Failure.Bad(code: 2)` now prints `2` inside recovery and restores outer `code`
+value `1` afterward, matching C++.

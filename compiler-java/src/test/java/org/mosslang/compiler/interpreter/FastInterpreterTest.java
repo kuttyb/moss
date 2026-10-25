@@ -15,6 +15,7 @@ public final class FastInterpreterTest {
         testLocalWriteTraceIsStructuredAndEscaped();
         testMossStringEscapeDecoding();
         testLexicalBlocksRestoreShadowedLocals();
+        testRecoveryPayloadBindingIsScoped();
         System.out.println("FastInterpreterTest PASSED.");
     }
 
@@ -152,6 +153,28 @@ public final class FastInterpreterTest {
         String actual = stdout.toString(StandardCharsets.UTF_8);
         if (!expected.equals(actual)) {
             throw new AssertionError("Fast Debug leaked block bindings: " + actual);
+        }
+    }
+
+    private static void testRecoveryPayloadBindingIsScoped() {
+        var program = Parser.parseSource(""
+                + "enum Failure:\n"
+                + "  Bad(code: Int)\n"
+                + "fn main():\n"
+                + "  code = 1\n"
+                + "  try:\n"
+                + "    raise Failure.Bad(code: 2)\n"
+                + "  recover Failure.Bad(code):\n"
+                + "    echo code\n"
+                + "  echo code\n", "fast-interpreter-recover-scope.moss");
+        new CheckedProgram(program).run();
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+        new FastInterpreter(program, false,
+                new PrintStream(stdout, true, StandardCharsets.UTF_8),
+                new PrintStream(new ByteArrayOutputStream())).run();
+        String actual = stdout.toString(StandardCharsets.UTF_8);
+        if (!"2\n1\n".equals(actual)) {
+            throw new AssertionError("recovery payload binding escaped its scope: " + actual);
         }
     }
 }

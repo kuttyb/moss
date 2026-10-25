@@ -148,3 +148,12 @@ updates to preexisting bindings while discarding block declarations and loop
 variables. The probe prints `2, 1, 3, 4, 1` in both interpreters. Clean build
 and all eleven Java unit-test classes pass in ABI-v9 and staged ABI-v10;
 complete interpreter parity and release gates remain open.
+
+### Recovery payload binder follow-up
+
+The lexical-scope fix exposed that recovery binders were inserted into the
+parent map and received the full enum value. Java now extracts the named
+payload field (or the single payload) and restores any shadowed outer local
+when leaving the recovery body. A checked `Failure.Bad(code: 2)` probe prints
+`2` in recovery and `1` after it in both interpreters. All eleven Java test
+classes pass in ABI-v9 and staged ABI-v10.

@@ -436,16 +436,37 @@ public class FastInterpreter {
                             currentRaisedValue = rex.raisedValue;
                             String prevVariant = currentRaisedVariant;
                             currentRaisedVariant = rex.variantName;
+                            String recoveryBinding = null;
+                            boolean hadRecoveryBinding = false;
+                            Value previousRecoveryBinding = null;
                             try {
                                 if (pat.contains("(") && pat.endsWith(")")) {
-                                    String binding = pat.substring(pat.indexOf('(') + 1, pat.lastIndexOf(')')).trim();
-                                    if (!binding.isEmpty() && rex.raisedValue != null) {
-                                        locals.put(binding, rex.raisedValue);
+                                    recoveryBinding = pat.substring(pat.indexOf('(') + 1,
+                                            pat.lastIndexOf(')')).trim();
+                                    if (!recoveryBinding.isEmpty() && rex.raisedValue != null) {
+                                        hadRecoveryBinding = locals.containsKey(recoveryBinding);
+                                        previousRecoveryBinding = locals.get(recoveryBinding);
+                                        Value bindingValue = rex.raisedValue;
+                                        if (bindingValue.kind == Value.Kind.ENUM
+                                                && bindingValue.raw instanceof EnumValue enumValue) {
+                                            Value payload = enumValue.fields.get(recoveryBinding);
+                                            if (payload == null && enumValue.fields.size() == 1) {
+                                                payload = enumValue.fields.values().iterator().next();
+                                            }
+                                            if (payload != null) bindingValue = payload;
+                                        }
+                                        locals.put(recoveryBinding, bindingValue);
+                                    } else {
+                                        recoveryBinding = null;
                                     }
                                 }
                                 lastVal = evalScopedBlock(stmts, recStart, recEnd, locals,
                                         currentDomain, funcName, depth, Set.of());
                             } finally {
+                                if (recoveryBinding != null) {
+                                    if (hadRecoveryBinding) locals.put(recoveryBinding, previousRecoveryBinding);
+                                    else locals.remove(recoveryBinding);
+                                }
                                 currentRaisedValue = prevRaised;
                                 currentRaisedVariant = prevVariant;
                             }
