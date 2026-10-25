@@ -12720,6 +12720,17 @@ receiver lowers as `&mut moss_provider::Point` and the vector parameter remains
 owned. This remains generated-text evidence only, not Rust compilation or
 provider artifact linkage.
 
+The same source-free object regression now round-trips an ABI-v10 `.mossi`
+container through `CheckedBodyCodec.encodeMossi` and the production loader, then
+asserts that explicit `return=unit`, receiver WRITE, and parameter CONSUME facts
+are restored. This covers the Java container/loader projection only; it does not
+close the known gap between the Java text-shaped v10 records and the canonical
+ABI-v10 contract, nor provider artifact linkage.
+
+Validation: `./scripts/java/build.sh && ./scripts/java/test.sh` passes all ten
+Java unit-test classes. `git diff --check` passes. No Rust compilation, native
+execution, or SDK gate was run.
+
 ### Phase 25.3 continuation — optional JDT daemon lifecycle
 
 The developer build helper no longer assumes an Eclipse install at a fixed

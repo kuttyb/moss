@@ -5,6 +5,9 @@ import org.mosslang.compiler.ast.Program;
 import org.mosslang.compiler.ast.Function;
 import org.mosslang.compiler.ast.Param;
 import org.mosslang.compiler.backend.NativeGenerator;
+import org.mosslang.compiler.abi.CheckedBodyCodec;
+import org.mosslang.compiler.abi.MossiInterface;
+import org.mosslang.compiler.abi.MossiRecord;
 import org.mosslang.compiler.diagnostics.CompileError;
 import org.mosslang.compiler.parser.Parser;
 import org.mosslang.compiler.semantics.SemanticChecker;
@@ -122,7 +125,33 @@ public final class SourceFreeObjectMetadataTest {
                 throw new AssertionError("expected return-type rejection, got " + error.getCode(), error);
             }
         }
+        MossiInterface v10 = new MossiInterface("module-v1:sample@0.1.0::provider");
+        v10.binaryContract.add(new MossiRecord("type:Point", "type Point nominal\n"));
+        v10.semanticContract.add(new MossiRecord("type:Point", ""
+                + "export type Point nominal\n"
+                + "  declaration_id nominal-template-v1:module-v1:sample@0.1.0::provider:type:Point\n"
+                + exportedFields
+                + "  object_method replace return=unit receiver=WRITE "
+                + "effects=local_capture_read=0;local_mutation=0;domain_read=0;domain_write=0;message=0;external_io=0;fileio=0;fileio_unknown=0;may_panic=0;raise_set=-;may_diverge=0;unresolved=0 "
+                + "params=1 \"next\" \"Vector[Int]\" CONSUME\n"));
+        Path v10File = scratch.resolve("provider-v10.mossi");
+        Files.writeString(v10File, CheckedBodyCodec.encodeMossi(v10));
+        Program v10Consumer = new Program();
+        Main.loadMossiFunctions(v10File, "provider", v10Consumer);
+        ObjectType v10Point = v10Consumer.objects.stream()
+                .filter(object -> object.name.equals("provider__Point"))
+                .findFirst().orElseThrow();
+        if (v10Point.methods.size() != 1
+                || !"unit".equals(v10Point.methods.get(0).returnType)
+                || v10Point.methods.get(0).receiverAccessMode
+                        != org.mosslang.compiler.types.AccessMode.Write
+                || v10Point.methods.get(0).parameterAccessModes.size() != 1
+                || v10Point.methods.get(0).parameterAccessModes.get(0)
+                        != org.mosslang.compiler.types.AccessMode.Consume) {
+            throw new AssertionError("ABI-v10 source-free object method facts were not restored");
+        }
         Files.deleteIfExists(interfaceFile);
+        Files.deleteIfExists(v10File);
         Files.deleteIfExists(scratch);
         System.out.println("SourceFreeObjectMetadataTest PASSED.");
     }
