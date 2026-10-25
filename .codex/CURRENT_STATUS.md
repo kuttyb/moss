@@ -13807,3 +13807,16 @@ and state events in the broader probe still diverge and remain open.
 Validation: clean Java build and all eleven unit-test classes pass in ABI-v9
 and staged ABI-v10. Broader message/state trace parity and release acceptance
 remain open.
+
+### Phase 25.3 continuation — domain message and state trace context
+
+The full trace for `examples/domains_and_messages.moss` showed Java missing
+message/handler nesting IDs, handler semantic identity, structured state access
+metadata, reply events, and the local write of a message result. Java now
+preserves those event contexts and no longer emits an opaque domain handle
+string. The complete trace JSON and stdout for the Worker Run/Get example
+compare byte-for-byte with C++.
+
+Validation: clean Java build and all eleven unit-test classes pass in ABI-v9
+and staged ABI-v10; `git diff --check` passes. Nested/cross-domain routes,
+failure handlers, and final acceptance remain open.

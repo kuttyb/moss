@@ -194,6 +194,11 @@ public class FastInterpreter {
     private final Deque<Integer> traceParentStack = new ArrayDeque<>();
     private final Deque<Integer> traceControlStack = new ArrayDeque<>();
     private final Deque<Integer> traceCallStack = new ArrayDeque<>();
+    private final Deque<Integer> traceMessageStack = new ArrayDeque<>();
+    private final Deque<Integer> traceHandlerStack = new ArrayDeque<>();
+    private String traceInstance = "";
+    private String traceSpecialization = "";
+    private String traceHandler = "";
     private String traceSemanticIdentity = "main@1";
 
     private String traceIdentity() {
@@ -211,8 +216,16 @@ public class FastInterpreter {
         StringBuilder fields = new StringBuilder();
         if (!traceParentStack.isEmpty()) fields.append(",\"parent_event_id\":").append(traceParentStack.peek());
         if (!traceCallStack.isEmpty()) fields.append(",\"call_event_id\":").append(traceCallStack.peek());
+        if (!traceMessageStack.isEmpty()) fields.append(",\"message_event_id\":").append(traceMessageStack.peek());
+        if (!traceHandlerStack.isEmpty()) fields.append(",\"handler_event_id\":").append(traceHandlerStack.peek());
         if (!traceControlStack.isEmpty()) fields.append(",\"control_event_id\":").append(traceControlStack.peek());
         return fields.toString();
+    }
+
+    private String traceDomainFields() {
+        if (traceInstance.isEmpty()) return "";
+        return ",\"instance\":\"" + jsonEscape(traceInstance) + "\",\"specialization\":\""
+                + jsonEscape(traceSpecialization) + "\",\"handler\":\"" + jsonEscape(traceHandler) + "\"";
     }
 
     public FastInterpreter(Program program, boolean trace) {
@@ -279,7 +292,8 @@ public class FastInterpreter {
                 + statement.line + traceContextFields() + ",\"depth\":" + depth + ",\"detail\":\""
                 + jsonEscape(name) + "\""
                 + (before == null ? "" : ",\"before\":\"" + jsonEscape(traceValueSummary(before)) + "\"")
-                + ",\"after\":\"" + jsonEscape(traceValueSummary(value)) + "\"}");
+                + ",\"after\":\"" + jsonEscape(traceValueSummary(value)) + "\""
+                + traceDomainFields() + "}");
     }
 
     private void traceLocalRead(String name) {
@@ -289,7 +303,7 @@ public class FastInterpreter {
                 + jsonEscape(traceFunction) + "\",\"source_file\":\"" + jsonEscape(traceSourceFile)
                 + "\",\"semantic_identity\":\"" + jsonEscape(traceIdentity()) + "\",\"line\":"
                 + traceLine + traceContextFields() + ",\"depth\":" + traceDepth + ",\"detail\":\""
-                + jsonEscape(name) + "\"}");
+                + jsonEscape(name) + "\"" + traceDomainFields() + "}");
     }
 
     private void traceLoopIteration(Stmt statement, String function, int iteration, int depth) {
@@ -323,7 +337,7 @@ public class FastInterpreter {
                 + "\",\"semantic_identity\":\"" + jsonEscape(traceIdentity())
                 + "\",\"line\":" + statement.line + traceContextFields()
                 + ",\"depth\":" + depth + ",\"detail\":\""
-                + jsonEscape(detail) + "\"}");
+                + jsonEscape(detail) + "\"" + traceDomainFields() + "}");
     }
 
     private int traceFunctionEvent(Function function, String event, int line) {
@@ -671,8 +685,8 @@ public class FastInterpreter {
                 throw new RaisedException(rVal, vName);
             } else if (s.kind == Stmt.Kind.Reply || s.kind == Stmt.Kind.Return) {
                 Value rVal = (s.a != null && !s.a.isEmpty()) ? evalExpr(s.a, locals, currentDomain) : Value.ofUnit();
-                if (s.kind == Stmt.Kind.Return)
-                    traceSimpleEvent(s, funcName, "Return", rVal.toString(), depth);
+                traceSimpleEvent(s, funcName, s.kind == Stmt.Kind.Reply ? "reply" : "Return",
+                        rVal.toString(), depth);
                 throw new ReturnSignal(rVal);
             }
             lastVal = evalStmt(s, locals, currentDomain, funcName, depth);
@@ -820,9 +834,13 @@ public class FastInterpreter {
                     Value before = currentDomain.state.get(varName);
                     currentDomain.state.put(varName, val);
                     eventId++;
-                    traceEvent("{\"event_id\":" + eventId + ",\"event\":\"state_write\",\"function\":\"" + funcName +
-                            "\",\"source_file\":\"" + s.sourceFile + "\",\"line\":" + s.line +
-                            ",\"depth\":" + depth + ",\"path\":\"" + varName + "\",\"before\":\"" + before + "\",\"after\":\"" + val + "\"}");
+                    traceEvent("{\"event_id\":" + eventId + ",\"event\":\"state_write\",\"function\":\""
+                            + jsonEscape(funcName) + "\",\"source_file\":\"" + jsonEscape(s.sourceFile)
+                            + "\",\"semantic_identity\":\"" + jsonEscape(traceIdentity()) + "\",\"line\":" + s.line
+                            + traceContextFields() + ",\"depth\":" + depth + traceDomainFields()
+                            + ",\"path\":\"" + jsonEscape(varName) + "\",\"before\":\""
+                            + jsonEscape(traceValueSummary(before)) + "\",\"after\":\""
+                            + jsonEscape(traceValueSummary(val)) + "\"}");
                 } else {
                     Value before = s.kind == Stmt.Kind.Assign ? locals.get(varName) : null;
                     locals.put(varName, val);
@@ -851,6 +869,8 @@ public class FastInterpreter {
                     throw new RuntimeException("domain '" + targetDomain.domain.name + "' has no handler '" + handlerName + "'");
                 }
 
+                if (locals.containsKey(targetName)) traceLocalRead(targetName);
+
                 List<Value> args = new ArrayList<>();
                 StringBuilder argDetails = new StringBuilder();
                 for (int i = 0; i < s.args.size(); i++) {
@@ -862,18 +882,42 @@ public class FastInterpreter {
 
                 eventId++;
                 int msgCallId = eventId;
-                traceEvent("{\"event_id\":" + msgCallId + ",\"event\":\"message_call\",\"function\":\"" + funcName +
-                        "\",\"source_file\":\"" + s.sourceFile + "\",\"line\":" + s.line +
-                        ",\"depth\":" + depth + ",\"detail\":\"" + argDetails + "\",\"instance\":\"" + targetDomain.name +
-                        "\",\"handler\":\"" + handlerName + "\"}");
+                traceEvent("{\"event_id\":" + msgCallId + ",\"event\":\"message_call\",\"function\":\""
+                        + jsonEscape(funcName) + "\",\"source_file\":\"" + jsonEscape(s.sourceFile)
+                        + "\",\"semantic_identity\":\"" + jsonEscape(traceIdentity()) + "\",\"line\":" + s.line
+                        + traceContextFields() + ",\"depth\":" + depth
+                        + (s.args.isEmpty() ? "" : ",\"detail\":\"" + jsonEscape(argDetails.toString()) + "\"")
+                        + ",\"instance\":\"" + jsonEscape(targetDomain.name) + "\",\"specialization\":\"domain-specialization:"
+                        + jsonEscape(targetDomain.domain.name) + ":" + jsonEscape(targetDomain.name.substring(targetDomain.name.lastIndexOf("::") + 2))
+                        + "\",\"handler\":\"" + jsonEscape(handlerName) + "\"}");
+                traceParentStack.push(msgCallId);
+                traceMessageStack.push(msgCallId);
 
                 eventId++;
                 int handlerEnterId = eventId;
-                traceEvent("{\"event_id\":" + handlerEnterId + ",\"event\":\"handler_enter\",\"function\":\"" +
-                        targetDomain.domain.name + "." + handlerName + "\",\"source_file\":\"" + s.sourceFile +
-                        "\",\"line\":" + handler.line + ",\"parent_event_id\":" + msgCallId +
-                        ",\"depth\":" + (depth + 1) + ",\"instance\":\"" + targetDomain.name +
-                        "\",\"handler\":\"" + handlerName + "\"}");
+                String oldFunction = traceFunction, oldSource = traceSourceFile, oldIdentity = traceSemanticIdentity;
+                String oldInstance = traceInstance, oldSpecialization = traceSpecialization, oldHandler = traceHandler;
+                int oldLine = traceLine, oldDepth = traceDepth;
+                String handlerFunction = targetDomain.domain.name + "." + handlerName;
+                String handlerIdentity = "handler:" + handlerFunction + "@" + handler.line;
+                traceEvent("{\"event_id\":" + handlerEnterId + ",\"event\":\"handler_enter\",\"function\":\""
+                        + jsonEscape(handlerFunction) + "\",\"source_file\":\"" + jsonEscape(handler.sourceFile)
+                        + "\",\"semantic_identity\":\"" + jsonEscape(handlerIdentity) + "\",\"line\":" + handler.line
+                        + ",\"parent_event_id\":" + msgCallId + ",\"message_event_id\":" + msgCallId
+                        + ",\"depth\":" + (depth + 1) + ",\"instance\":\"" + jsonEscape(targetDomain.name)
+                        + "\",\"specialization\":\"domain-specialization:" + jsonEscape(targetDomain.domain.name)
+                        + ":" + jsonEscape(targetDomain.name.substring(targetDomain.name.lastIndexOf("::") + 2))
+                        + "\",\"handler\":\"" + jsonEscape(handlerName) + "\"}");
+                traceParentStack.push(handlerEnterId);
+                traceCallStack.push(handlerEnterId);
+                traceHandlerStack.push(handlerEnterId);
+                traceFunction = handlerFunction;
+                traceSourceFile = handler.sourceFile == null || handler.sourceFile.isEmpty() ? s.sourceFile : handler.sourceFile;
+                traceSemanticIdentity = handlerIdentity;
+                traceInstance = targetDomain.name;
+                traceSpecialization = "domain-specialization:" + targetDomain.domain.name + ":"
+                        + targetDomain.name.substring(targetDomain.name.lastIndexOf("::") + 2);
+                traceHandler = handlerName;
 
                 Map<String, Value> handlerLocals = new HashMap<>();
                 for (int i = 0; i < handler.params.size() && i < args.size(); i++) {
@@ -899,21 +943,42 @@ public class FastInterpreter {
                 }
 
                 eventId++;
-                traceEvent("{\"event_id\":" + eventId + ",\"event\":\"handler_exit\",\"function\":\"" +
-                        targetDomain.domain.name + "." + handlerName + "\",\"source_file\":\"" + s.sourceFile +
-                        "\",\"line\":" + handler.line + ",\"parent_event_id\":" + handlerEnterId +
-                        ",\"depth\":" + (depth + 2) + ",\"instance\":\"" + targetDomain.name +
-                        "\",\"handler\":\"" + handlerName + "\"}");
+                traceEvent("{\"event_id\":" + eventId + ",\"event\":\"handler_exit\",\"function\":\""
+                        + jsonEscape(handlerFunction) + "\",\"source_file\":\"" + jsonEscape(traceSourceFile)
+                        + "\",\"semantic_identity\":\"" + jsonEscape(handlerIdentity) + "\",\"line\":" + handler.line
+                        + traceContextFields() + ",\"depth\":" + (depth + 2) + ",\"instance\":\""
+                        + jsonEscape(targetDomain.name) + "\",\"specialization\":\"domain-specialization:"
+                        + jsonEscape(targetDomain.domain.name) + ":" + jsonEscape(targetDomain.name.substring(targetDomain.name.lastIndexOf("::") + 2))
+                        + "\",\"handler\":\"" + jsonEscape(handlerName) + "\"}");
+                traceCallStack.pop();
+                traceParentStack.pop();
+                traceHandlerStack.pop();
+                traceFunction = oldFunction;
+                traceSourceFile = oldSource;
+                traceSemanticIdentity = oldIdentity;
+                traceInstance = oldInstance;
+                traceSpecialization = oldSpecialization;
+                traceHandler = oldHandler;
+                traceLine = oldLine;
+                traceDepth = oldDepth;
 
                 eventId++;
-                traceEvent("{\"event_id\":" + eventId + ",\"event\":\"message_return\",\"function\":\"" + funcName +
-                        "\",\"source_file\":\"" + s.sourceFile + "\",\"line\":" + s.line +
-                        ",\"parent_event_id\":" + msgCallId + ",\"depth\":" + (depth + 1) +
-                        ",\"detail\":\"" + retVal + "\",\"instance\":\"" + targetDomain.name +
-                        "\",\"handler\":\"" + handlerName + "\"}");
+                traceEvent("{\"event_id\":" + eventId + ",\"event\":\"message_return\",\"function\":\""
+                        + jsonEscape(funcName) + "\",\"source_file\":\"" + jsonEscape(s.sourceFile)
+                        + "\",\"semantic_identity\":\"" + jsonEscape(oldIdentity) + "\",\"line\":" + s.line
+                        + ",\"parent_event_id\":" + msgCallId + ",\"message_event_id\":" + msgCallId
+                        + ",\"handler_event_id\":" + handlerEnterId + ",\"depth\":" + (depth + 1)
+                        + ",\"detail\":\"" + jsonEscape(retVal.toString()) + "\",\"instance\":\""
+                        + jsonEscape(targetDomain.name) + "\",\"specialization\":\"domain-specialization:"
+                        + jsonEscape(targetDomain.domain.name) + ":" + jsonEscape(targetDomain.name.substring(targetDomain.name.lastIndexOf("::") + 2))
+                        + "\",\"handler\":\"" + jsonEscape(handlerName) + "\"}");
+                traceParentStack.pop();
+                traceMessageStack.pop();
 
                 if (s.messageResult != null && !s.messageResult.isEmpty()) {
+                    Value before = locals.get(s.messageResult);
                     locals.put(s.messageResult, retVal);
+                    traceLocalWrite(s, s.messageResult, retVal, before, funcName, depth);
                 }
                 return retVal;
             }
@@ -1926,7 +1991,12 @@ public class FastInterpreter {
         // Domain state read e.g. value
         if (currentDomain != null && currentDomain.state.containsKey(expr)) {
             eventId++;
-            traceEvent("{\"event_id\":" + eventId + ",\"event\":\"state_read\",\"path\":\"" + expr + "\"}");
+            traceEvent("{\"event_id\":" + eventId + ",\"event\":\"state_read\",\"function\":\""
+                    + jsonEscape(traceFunction) + "\",\"source_file\":\"" + jsonEscape(traceSourceFile)
+                    + "\",\"semantic_identity\":\"" + jsonEscape(traceIdentity()) + "\",\"line\":"
+                    + traceLine + traceContextFields() + ",\"depth\":" + traceDepth
+                    + traceDomainFields() + ",\"path\":\""
+                    + jsonEscape(expr) + "\"}");
             return currentDomain.state.get(expr);
         }
 

@@ -24,6 +24,7 @@ public final class FastInterpreterTest {
         testObjectMethodTraceCarriesCallContext();
         testExceptionalFunctionTraceUnwindsCallContext();
         testDomainConstructionTraceIsStructured();
+        testDomainMessageTraceCarriesHandlerContext();
         System.out.println("FastInterpreterTest PASSED.");
     }
 
@@ -397,6 +398,49 @@ public final class FastInterpreterTest {
                 + "\"specialization\":\"domain-specialization:Worker:worker\"}\n";
         if (!expected.equals(trace.toString(StandardCharsets.UTF_8))) {
             throw new AssertionError("domain construction trace was incomplete: " + trace);
+        }
+    }
+
+    private static void testDomainMessageTraceCarriesHandlerContext() {
+        var program = Parser.parseSource(""
+                + "domain Worker:\n"
+                + "  total = 0\n"
+                + "\n"
+                + "  fn Run(value: Int):\n"
+                + "    total = total + value\n"
+                + "    echo \"worker:\", total\n"
+                + "\n"
+                + "  fn Get():\n"
+                + "    reply total\n"
+                + "fn main():\n"
+                + "  worker = Worker()\n"
+                + "  message worker.Run(10)\n"
+                + "  current = message worker.Get()\n"
+                + "  echo \"current:\", current\n",
+                "fast-interpreter-domain-message-trace.moss");
+        new CheckedProgram(program).run();
+
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+        ByteArrayOutputStream trace = new ByteArrayOutputStream();
+        new FastInterpreter(program, true,
+                new PrintStream(stdout, true, StandardCharsets.UTF_8),
+                new PrintStream(trace, true, StandardCharsets.UTF_8)).run();
+        String events = trace.toString(StandardCharsets.UTF_8);
+        String[] kinds = {"domain_instance", "LocalRead", "message_call", "handler_enter",
+                "state_read", "LocalRead", "state_write", "state_read", "handler_exit",
+                "message_return", "LocalRead", "message_call", "handler_enter", "state_read",
+                "reply", "handler_exit", "message_return", "LocalWrite", "LocalRead"};
+        int previous = -1;
+        for (String kind : kinds) {
+            int position = events.indexOf("\"event\":\"" + kind + "\"", previous + 1);
+            if (position < 0) throw new AssertionError("domain message trace omitted " + kind + ": " + events);
+            previous = position;
+        }
+        if (events.contains("FastInterpreter$DomainInstance@")
+                || !events.contains("\"semantic_identity\":\"handler:Worker.Run@4\"")
+                || !events.contains("\"message_event_id\":3,\"handler_event_id\":4")
+                || !"worker: 10\ncurrent: 10\n".equals(stdout.toString(StandardCharsets.UTF_8))) {
+            throw new AssertionError("domain message trace lost handler context: " + events);
         }
     }
 }
