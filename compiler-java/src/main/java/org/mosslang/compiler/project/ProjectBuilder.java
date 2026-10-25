@@ -1465,9 +1465,19 @@ public class ProjectBuilder {
                         && emittedCallableIds.add(fn.semanticCallableId)) {
                     AbiV10Records.Summary summary = v10DirectReturnSummary(
                             fn, modId, provenanceRecords);
+                    Long integerLiteral = null;
+                    if (summary == null) {
+                        integerLiteral = v10ZeroArgIntegerReturn(fn);
+                        if (integerLiteral != null) {
+                            summary = v10ZeroArgIntegerSummary(
+                                    fn, integerLiteral, modId, provenanceRecords);
+                        }
+                    }
                     if (summary != null) {
                         callableSummaryRecords.add(summary.record());
-                        AbiV10Records.CheckedBodyRecord body = v10DirectReturnBody(fn, summary);
+                        AbiV10Records.CheckedBodyRecord body = integerLiteral != null
+                                ? v10ZeroArgIntegerBody(fn, summary, integerLiteral)
+                                : v10DirectReturnBody(fn, summary);
                         checkedBodyRecords.add(body.record());
                     }
                 }
@@ -1608,6 +1618,56 @@ public class ProjectBuilder {
             if (returned.equals(function.params.get(index).name)) return index;
         }
         return -1;
+    }
+
+    private static Long v10ZeroArgIntegerReturn(Function function) {
+        if (!function.params.isEmpty() || function.returnTypeRef == null
+                || function.returnTypeRef.kind() != org.mosslang.compiler.types.TypeKind.Primitive
+                || !"int".equalsIgnoreCase(function.returnTypeRef.name())
+                || function.body.size() != 1 || function.body.get(0).kind != Stmt.Kind.Return) return null;
+        Stmt statement = function.body.get(0);
+        String expression = statement.a != null && !statement.a.isBlank()
+                ? statement.a.trim() : "";
+        if (expression.isEmpty() && statement.text != null
+                && statement.text.trim().startsWith("return ")) {
+            expression = statement.text.trim().substring(7).trim();
+        }
+        if (!expression.matches("[0-9](?:_?[0-9])*")) return null;
+        try {
+            return Long.parseLong(expression.replace("_", ""));
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+    }
+
+    private static AbiV10Records.Summary v10ZeroArgIntegerSummary(
+            Function function, long value, String moduleId,
+            List<AbiV10Records.SourceProvenance> provenanceRecords) {
+        TypeRef resultType = function.returnTypeRef;
+        if (!isV10SummaryTypeRepresentable(resultType)) return null;
+        AbiV10Records.Summary summary = new AbiV10Records.Summary();
+        summary.callableId = function.semanticCallableId;
+        summary.result = AbiV10Records.fromTypeRef(resultType, Map.of());
+        String bodyBytes = CheckedBodyCodec.encodeCheckedBodyV1(List.of(
+                CheckedStmt.returnStmt(CheckedExpr.integerLiteral(value,
+                        canonicalV10SummaryType(resultType, Map.of())))));
+        summary.bodySemanticHash = "body-semantic-v1:sha256:" + CheckedBodyCodec.sha256Hex(bodyBytes);
+        AbiV10Records.SourceProvenance provenance = AbiV10Records.SourceProvenance.create(
+                moduleId, summary.callableId, function.sourceFile, function.line);
+        summary.provenanceId = provenance.provenanceId();
+        provenanceRecords.add(provenance);
+        return summary;
+    }
+
+    private static AbiV10Records.CheckedBodyRecord v10ZeroArgIntegerBody(
+            Function function, AbiV10Records.Summary summary, long value) {
+        List<CheckedStmt> checkedStatements = List.of(CheckedStmt.returnStmt(
+                CheckedExpr.integerLiteral(value, canonicalV10SummaryType(function.returnTypeRef, Map.of()))));
+        AbiV10Records.CheckedBodyRecord body = new AbiV10Records.CheckedBodyRecord();
+        body.callableId = summary.callableId;
+        body.checkedIrBytes = CheckedBodyCodec.encodeCheckedBodyV1(checkedStatements);
+        body.semanticHash = summary.bodySemanticHash;
+        return body;
     }
 
     private static AbiV10Records.CheckedBodyRecord v10DirectReturnBody(

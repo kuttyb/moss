@@ -327,7 +327,9 @@ public final class ProjectBuilderMetadataTest {
                 + "export fn identity(value):\n"
                 + "  return value\n"
                 + "export fn second(left, right):\n"
-                + "  return right\n", "identity-provider.moss");
+                + "  return right\n"
+                + "export fn answer() -> Int:\n"
+                + "  return 42\n", "identity-provider.moss");
         new org.mosslang.compiler.semantics.CheckedProgram(identityProgram).run();
         identityProgram.functions.forEach(function -> {
             String name = function.name;
@@ -384,6 +386,30 @@ public final class ProjectBuilderMetadataTest {
                 || !secondSummary.bodySemanticHash.equals(secondBody.semanticHash)) {
             throw new AssertionError("ABI-v10 multi-parameter summary/body lost its second-parameter relation");
         }
+        AbiV10Records.Summary answerSummary = identityInterface.binaryContract.stream()
+                .filter(record -> record.payloadBytes().length > 0
+                        && (record.payloadBytes()[0] == 3 || record.payloadBytes()[0] == 4))
+                .map(AbiV10Records.Summary::decode)
+                .filter(summary -> summary.callableId.endsWith(":fn:answer"))
+                .findFirst().orElseThrow(() ->
+                        new AssertionError("ABI-v10 producer omitted the constant-return summary"));
+        AbiV10Records.CheckedBodyRecord answerBody = identityInterface.privateSemanticDependencies.stream()
+                .filter(record -> record.id.startsWith("checked-body-v1:"))
+                .map(AbiV10Records.CheckedBodyRecord::decode)
+                .filter(body -> body.callableId.endsWith(":fn:answer"))
+                .findFirst().orElseThrow(() ->
+                        new AssertionError("ABI-v10 producer omitted the constant-return body"));
+        java.util.List<org.mosslang.compiler.abi.CheckedStmt> answerStatements =
+                CheckedBodyCodec.decodeCheckedBody(answerBody.checkedIrBytes);
+        if (!answerSummary.parameters.isEmpty()
+                || answerSummary.result.kind != AbiV10Records.WireTypeKind.Primitive
+                || !"int".equals(answerSummary.result.identity)
+                || answerStatements.size() != 1
+                || answerStatements.get(0).expr.kind != org.mosslang.compiler.abi.CheckedExprKind.IntegerLiteral
+                || !"42".equals(answerStatements.get(0).expr.literalValue)
+                || !answerSummary.bodySemanticHash.equals(answerBody.semanticHash)) {
+            throw new AssertionError("ABI-v10 constant-return summary/body is incomplete");
+        }
         Path identityMossi = null;
         try {
             identityMossi = Files.createTempFile(Path.of("tmp"), "identity-provider-", ".mossi");
@@ -405,6 +431,8 @@ public final class ProjectBuilderMetadataTest {
                     + "  return provider__identity(\"seven\")\n"
                     + "fn use_second() -> String:\n"
                     + "  return provider__second(7, \"seven\")\n"
+                    + "fn use_answer() -> Int:\n"
+                    + "  return provider__answer()\n"
                     + "fn main():\n"
                     + "  pass\n", "identity-consumer.moss");
             org.mosslang.compiler.cli.Main.loadMossiFunctions(identityMossi, "provider", consumer);

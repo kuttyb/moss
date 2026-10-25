@@ -1425,7 +1425,6 @@ public class Main {
             org.mosslang.compiler.abi.AbiV10Records.CheckedBodyRecord body = bodies.get(callableId);
             if (body == null || !summary.requirements.isEmpty() || !summary.dependencies.isEmpty()
                     || summary.observableEffectBits != 0 || !summary.observableEffectTags.isEmpty()
-                    || summary.parameters.isEmpty()
                     || summary.parameterAccess.size() != summary.parameters.size()
                     || summary.variableCount > 4096) continue;
             org.mosslang.compiler.types.TypeRef resultType = v10SimpleWireType(
@@ -1448,12 +1447,21 @@ public class Main {
             if (statements.size() != 1) continue;
             org.mosslang.compiler.abi.CheckedStmt statement = statements.get(0);
             if (statement.kind != org.mosslang.compiler.abi.CheckedStmtKind.Return
-                    || statement.expr == null
-                    || statement.expr.kind != org.mosslang.compiler.abi.CheckedExprKind.Parameter
-                    || statement.expr.ordinal < 0
-                    || statement.expr.ordinal >= parameterTypes.size()
-                    || !resultType.equals(parameterTypes.get(statement.expr.ordinal))
-                    || !resultType.equals(statement.expr.type)) continue;
+                    || statement.expr == null || !resultType.equals(statement.expr.type)) continue;
+            int returnedParameter = -1;
+            String returnedLiteral = null;
+            if (statement.expr.kind == org.mosslang.compiler.abi.CheckedExprKind.Parameter) {
+                returnedParameter = statement.expr.ordinal;
+                if (returnedParameter < 0 || returnedParameter >= parameterTypes.size()
+                        || !resultType.equals(parameterTypes.get(returnedParameter))) continue;
+            } else if (statement.expr.kind == org.mosslang.compiler.abi.CheckedExprKind.IntegerLiteral
+                    && parameterTypes.isEmpty() && resultType.kind() == org.mosslang.compiler.types.TypeKind.Primitive
+                    && "int".equalsIgnoreCase(resultType.name())
+                    && statement.expr.literalValue.matches("[0-9](?:_?[0-9])*")) {
+                returnedLiteral = statement.expr.literalValue;
+            } else {
+                continue;
+            }
 
             List<org.mosslang.compiler.ast.Function> matches = program.functions.stream()
                     .filter(function -> callableId.equals(function.semanticCallableId))
@@ -1474,13 +1482,14 @@ public class Main {
                 }
                 function.bindReturnType(resultType);
                 function.body.clear();
+                String returnExpression = returnedParameter >= 0
+                        ? function.params.get(returnedParameter).name : returnedLiteral;
                 org.mosslang.compiler.ast.Stmt projected = new org.mosslang.compiler.ast.Stmt(
                         org.mosslang.compiler.ast.Stmt.Kind.Return, 1, 1,
-                        "return " + function.params.get(statement.expr.ordinal).name,
-                        function.params.get(statement.expr.ordinal).name, "");
+                        "return " + returnExpression, returnExpression, "");
                 projected.sourceFile = interfaceFile.toString();
                 function.body.add(projected);
-                function.resultExpression = function.params.get(statement.expr.ordinal).name;
+                function.resultExpression = returnExpression;
                 function.resultLine = 1;
                 function.generic = summary.variableCount > 0;
                 function.staticDispatch = function.generic;
