@@ -1147,6 +1147,16 @@ public class SemanticCheckerTest {
                 + "  message worker.Ping()\n", "messaged-domain-handler.moss");
         new SemanticChecker(valid).run();
 
+        Program missing = Parser.parseSource(""
+                + "domain Worker:\n"
+                + "  fn Read() -> Int:\n"
+                + "    reply 42\n"
+                + "fn main():\n"
+                + "  worker = Worker()\n"
+                + "  echo worker.DoesNotExist()\n", "missing-domain-handler.moss");
+        expectCompileError(missing, "UNKNOWN_SYMBOL_OR_TYPE",
+                "an unknown domain handler in an expression must be rejected");
+
         Program sameDomain = Parser.parseSource(""
                 + "domain D:\n"
                 + "  domainroutes(other: D)\n"

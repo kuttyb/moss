@@ -4354,7 +4354,11 @@ public class SemanticChecker {
         TypeRef receiverType = solver.resolve(env.get(receiver));
         if (receiverType == null || receiverType.kind() != TypeKind.Domain) return;
         Domain domain = domains.get(receiverType.name());
-        if (domain == null || domain.handlers.stream().noneMatch(handler -> handler.name.equals(handlerName))) return;
+        if (domain == null) return;
+        if (domain.handlers.stream().noneMatch(handler -> handler.name.equals(handlerName))) {
+            throw new CompileError(line, "domain '" + domain.name + "' has no handler '" + handlerName + "'",
+                    "UNKNOWN_SYMBOL_OR_TYPE", program.sourceFile);
+        }
         CompileError error = new CompileError(line,
                 "domain handler '" + domain.name + "." + handlerName + "' must be called with message",
                 "DOMAIN_HANDLER_REQUIRES_MESSAGE", program.sourceFile);
@@ -4933,6 +4937,7 @@ public class SemanticChecker {
                 for (String arg : s.args) {
                     if (arg != null && !arg.trim().isEmpty()) {
                         String trimmed = arg.trim();
+                        rejectNakedDomainHandlerCall(s.line, trimmed, env, solver);
                         TypeRef argType = solver.resolve(typer.infer(trimmed, s.line, env.typeEnv));
                         if (argType != null && !argType.isClosed() && argType.kind() == TypeKind.Builtin
                                 && ("vector".equals(argType.name()) || "map".equals(argType.name()))) {

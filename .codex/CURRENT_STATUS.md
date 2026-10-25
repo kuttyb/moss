@@ -16378,3 +16378,15 @@ The 50-file slice has not been fully rerun. Targeted comparison still shows
 Java-only acceptance for Executor capability arguments, missing domain
 handlers called through ordinary expression paths, and transitive message
 payload writes. No native or release acceptance gates have run.
+
+### Phase 25.3 continuation — reject unknown domain handlers in expressions
+
+Java now validates domain handler names when a domain call appears inside an
+expression such as `echo worker.DoesNotExist()`. The negative fixture
+`phase221_missing_domain_handler.moss` now rejects in both compilers. Java
+uses `UNKNOWN_SYMBOL_OR_TYPE`; C++ uses its message-handler-specific
+`MOSS_COMPILE_ERROR`. Focused `SemanticCheckerTest` coverage was added.
+
+Executor capability argument and transitive message-payload write cases remain
+Java-only accepts in targeted checks. This is not a refreshed 50-file sample.
+Native and release acceptance gates remain unrun.
