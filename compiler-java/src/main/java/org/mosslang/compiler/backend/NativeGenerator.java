@@ -2004,6 +2004,20 @@ public class NativeGenerator {
                     String handler = invocation.substring(dot + 1, open).trim();
                     String rawArgs = invocation.substring(open + 1, close).trim();
                     List<String> arguments = rawArgs.isEmpty() ? List.of() : splitTopLevel(rawArgs, ',');
+                    TypeRef targetType = program == null ? null
+                            : program.localBindingTypes.getOrDefault("main", Map.of()).get(receiver);
+                    Domain targetDomain = targetType == null ? null : domains.get(targetType.name());
+                    Handler targetHandler = targetDomain == null ? null : targetDomain.handlers.stream()
+                            .filter(candidate -> handler.equals(candidate.name)).findFirst().orElse(null);
+                    if (targetHandler == null)
+                        throw new IllegalStateException("checked Executor.invoke target is missing handler metadata: "
+                                + receiver + "." + handler);
+                    boolean handlerRaises = !targetHandler.failureArms.isEmpty()
+                            || targetHandler.body.stream().anyMatch(bodyStatement ->
+                                    bodyStatement.kind == Stmt.Kind.Raise
+                                            || (bodyStatement.text != null
+                                                    && bodyStatement.text.trim().startsWith("raise ")));
+                    String handlerEntry = handlerRaises ? "_root(" : "_shared(";
                     String domainTemp = "__moss_executor_domain_" + s.line;
                     o.append(indent).append("{ let ").append(domainTemp).append(" = ")
                             .append(lowerExpr(receiver, stateFields, domains, objects)).append(".clone();\n");
@@ -2017,7 +2031,7 @@ public class NativeGenerator {
                     }
                     o.append(indent).append("    ").append(s.a.trim())
                             .append(".enqueue(Box::new(move || ").append(domainTemp).append(".")
-                            .append(handler).append("_shared(").append(String.join(", ", argumentTemps))
+                            .append(handler).append(handlerEntry).append(String.join(", ", argumentTemps))
                             .append(")));\n").append(indent).append("}\n");
                 } else {
                     String text = s.text != null ? s.text.trim() : "";

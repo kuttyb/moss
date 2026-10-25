@@ -16469,3 +16469,12 @@ compatibility evidence, Fast Debug/tracing parity, real Margo builds/tests and
 benchmarks, standalone launcher/daemon readiness, SDK compatibility, then the
 frozen-candidate native and SDK acceptance gates and independent Architect
 review. No release-candidate SHA is frozen.
+
+Follow-up: generated Executor roots now call the handler `_root` wrapper when
+the handler raises or has `on_fail` arms; otherwise they call `_shared`. This
+avoids leaving the handler's `Result` unhandled in the queued closure. A
+focused `SemanticCheckerTest` covers an `on_fail` Executor handler. All 12 Java
+test classes pass under ABI-v9 and staged ABI-v10; packaging succeeds, and the
+packaged compiler output was inspected to confirm `Process_root` in the queued
+closure. Rust compilation/native execution remain unrun and executor scheduling
+remains sequential.

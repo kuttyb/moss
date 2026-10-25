@@ -1300,6 +1300,27 @@ public class SemanticCheckerTest {
                 || !rust.contains("1_i64.clone()")) {
             throw new AssertionError("Executor lowering must defer an owned one-way handler call until join");
         }
+
+        Program handledFailure = Parser.parseSource(""
+                + "enum Failure:\n"
+                + "  Bad\n"
+                + "domain Worker:\n"
+                + "  value = 0\n"
+                + "  fn Process(amount: Int):\n"
+                + "    value = value + amount\n"
+                + "    raise Failure.Bad\n"
+                + "  on_fail Failure.Bad:\n"
+                + "    value = value + 1\n"
+                + "fn main():\n"
+                + "  worker = Worker()\n"
+                + "  executor = Executor().threads(2).start()\n"
+                + "  executor.invoke(worker.Process(3))\n"
+                + "  executor.join()\n", "executor-on-fail-root.moss");
+        new SemanticChecker(handledFailure).run();
+        String handledRust = NativeGenerator.generate(handledFailure, false);
+        if (!handledRust.contains("Process_root(__moss_executor_arg_")) {
+            throw new AssertionError("Executor roots with on_fail arms must use the handler root wrapper");
+        }
     }
 
     private static void testRecursionThroughFunctionalCallbacksIsRejected() {
