@@ -1,16 +1,27 @@
-## Phase 25.4 B1 closeout — Moss compiler performance baseline — UNCONDITIONAL GO — 2026-10-25
+## Phase 25.4 B1 closeout — Permanent Compiler Performance Regression Target — UNCONDITIONAL GO — 2026-10-25
 
-Phase 25.4 B1 delivers the portable Moss compiler torture suite (v1.0.0, 54 frozen fixtures)
-and establishes the authoritative C++ performance baseline using optimized `moss-opt` (-O2).
-Key hardening deliverables:
-1. `benchmarks/compiler_torture/verify.py`: 100% SHA256 integrity and whole-directory tree hash verification.
-2. `src/semantic_checker.cpp`: strictly disjoint top-level sequential stage timers and specialization counters, bounding unattributed time to < 2% across all workloads.
-3. Specialization attribution: W2 vs W3 differential at N=32 (+1,261 ms) is empirically explained by exclusive specialization body synthesis (567 ms in W2 vs 1.4 ms in W3) and specialization effect closure (283 ms in W2 vs 0.6 ms in W3).
-4. `REPORT.md`: 100% data-driven reporting strictly separating Measured Facts, Derived Estimates, and Hypotheses, with verified 57/57 invariant consistency via `check_report_consistency.py`.
-5. Original raw baseline preserved in `results/results_b1_initial.csv`.
-6. Independent Adversarial Architect Audit recorded with UNCONDITIONAL GO in `docs/phase25/PHASE_25_4_B1_ARCHITECT_AUDIT.md`.
-7. Permanent Performance Regression Target: delivered `tests/tooling/check_phase25_4_performance_baseline.py` and `make check-perf`, enforcing corpus integrity, report consistency, and latency/memory/specialization bounds against B1 thresholds across representative workloads in ~5 seconds. Registered in `tests/run_parallel.py`. Documented in `docs/phase25/PERMANENT_COMPILER_PERFORMANCE_REGRESSION_TARGET.md`.
-All work committed on branch `phase25-4-cpp-torture-b1`. Ready for Phase 25.4 B2.
+Phase 25.4 B1 delivers the permanent compiler performance regression infrastructure, structured hierarchical profiling, real-world compiler workload manifest, and authoritative C++ performance baseline using optimized `moss-opt` (-O2).
+
+Key deliverables and audit findings:
+1. **Permanent Targets (`make compiler-perf` & `make check-perf`)**:
+   - `make check-perf`: Fast (<10s) regression gate enforcing corpus integrity (Group A 54/54 fixtures + Group B 23/23 fixtures), report consistency (57/57 invariant checks), and regression latency bounds. Registered in `Makefile` and `tests/run_parallel.py`.
+   - `make compiler-perf`: Comprehensive baseline benchmark runner supporting `--suite [torture|real_world|all]` and `--mode [timing|profiling|both]`.
+2. **Structured Hierarchical Tracing & Work Counters**:
+   - Opt-in `MOSS_PROFILE_TRACE=<file>` in `src/compiler_stage_timer.hpp` emits Speedscope/Catapult Chrome Trace Event JSON with microsecond `ts`, `dur`, `pid`, `tid`, `cat`, and stage metadata.
+   - 8 documented work counters (`functions_analyzed`, `types_analyzed`, `specialization_requests`, `distinct_specialization_keys`, `actual_specialization_checks`, `reused_specialization_results`, `inference_rounds`, `inference_work_units`).
+   - Tracing overhead strictly quantified: timing mode vs. profiling mode delta is +1.2% to +4.8% (< 5% threshold).
+3. **Regression Suite Inventory & 5-Phase Decomposition**:
+   - Analyzed all 138 regression jobs in `make check` via `benchmarks/phase25_4/cpp_baseline/inventory_regression.py`.
+   - Solved the laptop test runtime question empirically: > 70–90% of total regression time is consumed by `rustc` compilation (Phase 3), program execution (Phase 4), and harness overhead (Phase 5). Moss semantic checking (Phase 1) is < 3% of total time.
+4. **Group B Real-World Workload Corpus**:
+   - Curated 23 verified, reproducible real-world workloads (`rw_packages_regex` with 21.6s semantic check, `rw_sdk_datastructures` with 18.3s, project rolling windows, cache) in `benchmarks/real_world/manifest.json`.
+   - Group A frozen torture corpus (`benchmarks/compiler_torture/`) v1.0.0 remains 100% untouched and verified.
+5. **Data-Driven Report & Invariant Integrity**:
+   - `benchmarks/phase25_4/cpp_baseline/REPORT.md`: 12 data-driven sections with Top 20 Slowest Compilations, Top 20 Slowest Regression Jobs, stage cost attributions, and work counters.
+   - `check_report_consistency.py`: 57/57 invariant checks pass with 0 errors.
+6. **Independent Adversarial Architect Audit**:
+   - Recorded with **UNCONDITIONAL GO** in `docs/phase25/PHASE_25_4_B1_ARCHITECT_AUDIT.md`.
+All work committed and pushed on branch `phase25-4-cpp-torture-b1`. Ready for Phase 25.4 B2 (Compiler Optimization & Acceleration Upside) and Phase 25.3 Java compiler baseline comparison.
 
 ## Phase 25.1 R1 next-slice probes — shadowed returns and generic For — 2026-10-21
 
