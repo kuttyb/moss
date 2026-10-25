@@ -14,6 +14,7 @@ public final class SemanticQueryEngineTest {
         effectsQueryDoesNotInferPanicFromNames();
         effectsQueryCollectsDirectRaisesForArbitraryNames();
         effectsQueryFollowsOrdinaryFunctionRaises();
+        effectsQueryFollowsLocalObjectMethodRaises();
         effectsQueryFollowsSameObjectMethodRaises();
         effectsQueryExcludesRecoveredDirectRaises();
         effectsQueryIncludesExplicitBareReraises();
@@ -200,6 +201,24 @@ public final class SemanticQueryEngineTest {
                 + "fn main():\n"
                 + "  pass\n";
         Program program = Parser.parseSource(source, "effects-query-called-raise.moss");
+        new SemanticChecker(program).run();
+        String result = queryEffects(program, "calculate");
+        assertContains(result, "\"raise_set\": [\"enum:Trouble:Bad\"]");
+    }
+
+    private static void effectsQueryFollowsLocalObjectMethodRaises() {
+        String source = ""
+                + "enum Trouble:\n"
+                + "  Bad\n"
+                + "type Box:\n"
+                + "  fn source_fault():\n"
+                + "    raise Trouble.Bad\n"
+                + "fn calculate():\n"
+                + "  box = Box()\n"
+                + "  box.source_fault()\n"
+                + "fn main():\n"
+                + "  pass\n";
+        Program program = Parser.parseSource(source, "effects-query-local-method-raise.moss");
         new SemanticChecker(program).run();
         String result = queryEffects(program, "calculate");
         assertContains(result, "\"raise_set\": [\"enum:Trouble:Bad\"]");

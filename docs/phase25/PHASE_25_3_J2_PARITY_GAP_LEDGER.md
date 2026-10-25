@@ -353,3 +353,13 @@ actually derived from the paired try body. The C++/Java query for
 `enum:Failure:A`, despite the arm also listing `Failure.B`. All eleven Java
 unit tests pass in ABI-v9. Other indirect/callback and foreign effect sources
 remain open.
+
+## Phase 25.3 continuation — resolve local receiver type for method effects
+
+Function effect queries now follow object method calls through local receivers
+when the checked local binding identifies the receiver's nominal type. The
+arbitrary `calculate()` caller that constructs `Box` and invokes
+`box.source_fault()` reports `enum:Trouble:Bad` under both C++ and Java.
+
+All eleven Java unit tests pass in ABI-v9 and staged ABI-v10. Field-chain
+receiver typing, generic method effects, and cross-module closure remain open.

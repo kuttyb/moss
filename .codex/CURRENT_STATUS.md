@@ -14801,3 +14801,15 @@ only `enum:Failure:A`, matching C++ and avoiding a false `Failure.B` effect.
 Validation: all eleven Java unit tests pass under ABI-v9; a focused C++/Java
 query on the repository fixture agrees. Callbacks, indirect module effects,
 and other non-source explicit raises remain outside this bounded walk.
+
+### Phase 25.3 continuation — resolve local object method effects by binding type
+
+The effects query now follows a method call through a local receiver when the
+checked binding type identifies the owning nominal type. The arbitrary-name
+`calculate()` helper constructing `Box` and calling `box.source_fault()` now
+reports `enum:Trouble:Bad`, matching C++; this avoids guessing a method solely
+from its spelling when multiple receiver types exist.
+
+Validation: all eleven Java unit-test classes pass in ABI-v9 and staged
+ABI-v10, and the focused C++/Java query results agree. Field-chain receivers,
+generic methods, and cross-module method summaries remain open.

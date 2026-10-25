@@ -1328,6 +1328,22 @@ public class SemanticQueryEngine {
                         variants.addAll(collectRaisedVariants(candidate, null, null, program, visited));
                     }
                 }
+                collectLocalObjectMethodRaises(function.resultExpression, function, body,
+                        body.size(), program, visited, variants);
+            }
+            if (program.objects != null) {
+                for (Stmt statement : body) {
+                    if (statement == null) continue;
+                    StringBuilder expression = new StringBuilder();
+                    if (statement.text != null) expression.append(statement.text).append(' ');
+                    if (statement.a != null) expression.append(statement.a).append(' ');
+                    if (statement.b != null) expression.append(statement.b).append(' ');
+                    if (statement.args != null) {
+                        for (String argument : statement.args) expression.append(argument).append(' ');
+                    }
+                    collectLocalObjectMethodRaises(expression.toString(), function, body,
+                            body.indexOf(statement), program, visited, variants);
+                }
             }
         }
         if (method != null && program != null && program.objects != null) {
@@ -1477,6 +1493,35 @@ public class SemanticQueryEngine {
         return java.util.regex.Pattern.compile("(?<![A-Za-z0-9_])"
                 + java.util.regex.Pattern.quote(functionName) + "\\s*\\(")
                 .matcher(expression).find();
+    }
+
+    private static void collectLocalObjectMethodRaises(String expression, Function function,
+                                                       List<Stmt> callerBody, int statementIndex,
+                                                       Program program, Set<String> visited,
+                                                       Set<String> result) {
+        Map<String, TypeRef> bindings = program.localBindingTypes.getOrDefault(function.name, Map.of());
+        for (ObjectType object : program.objects) {
+            for (Method method : object.methods) {
+                java.util.regex.Pattern call = java.util.regex.Pattern.compile(
+                        "(?<![A-Za-z0-9_])([A-Za-z_][A-Za-z0-9_]*)\\s*\\.\\s*"
+                                + java.util.regex.Pattern.quote(method.name) + "\\s*\\(");
+                java.util.regex.Matcher matcher = call.matcher(expression);
+                while (matcher.find()) {
+                    TypeRef receiverType = bindings.get(matcher.group(1));
+                    if (receiverType == null) continue;
+                    String typeName = receiverType.name();
+                    if (typeName == null || !(typeName.equals(object.name)
+                            || typeName.endsWith("__" + object.name))) continue;
+                    Set<String> methodRaises = collectRaisedVariants(null, method, null, program, visited);
+                    for (String raised : methodRaises) {
+                        if (statementIndex >= callerBody.size()
+                                || !isRaisedVariantRecovered(callerBody, statementIndex, raised)) {
+                            result.add(raised);
+                        }
+                    }
+                }
+            }
+        }
     }
 
     private static boolean isRaisedVariantRecovered(List<Stmt> body, int raiseIndex,
