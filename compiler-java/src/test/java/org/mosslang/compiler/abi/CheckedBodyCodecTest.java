@@ -17,6 +17,7 @@ public class CheckedBodyCodecTest {
         testSimpleReturnEncodeDecodeRoundTrip();
         testCanonicalCxxArithmeticBody();
         testCheckedBodyUtf8ByteFraming();
+        testExtendedCheckedBodyNodesRoundTrip();
         testComplexStatementsRoundTrip();
         testMossiSerializationAndParsing();
         testMossiUtf8ByteFraming();
@@ -131,6 +132,107 @@ public class CheckedBodyCodecTest {
         List<CheckedStmt> decoded = CheckedBodyCodec.decodeCheckedBody(body);
         if (!decoded.equals(statements) || !body.equals(CheckedBodyCodec.encodeCheckedBodyV1(decoded))) {
             throw new AssertionError("UTF-8 checked-body literal did not round trip canonically");
+        }
+    }
+
+    private static void testExtendedCheckedBodyNodesRoundTrip() {
+        TypeRef intType = TypeRef.primitive("int");
+        TypeRef vectorType = TypeRef.builtin("vector", List.of(intType));
+        String enumId = "nominal-enum-v1:sample::Choice";
+        var enumDecl = new org.mosslang.compiler.types.NominalDeclaration(
+                org.mosslang.compiler.types.DeclarationKind.Enum, "Choice", "module-v1:sample@1::m",
+                "Choice", enumId, List.of());
+        TypeRef enumType = TypeRef.enumeration(enumDecl, enumId);
+        CheckedExpr enumValue = CheckedExpr.parameter(0, enumType);
+
+        CheckedExpr message = new CheckedExpr();
+        message.kind = CheckedExprKind.Message;
+        message.type = intType;
+        message.targetDomain = "domain-v1:sample::Worker";
+        message.semanticTargetId = "handler-v1:sample::Worker::get";
+        message.operands.add(CheckedExpr.integerLiteral(7, intType));
+
+        CheckedExpr memberCall = new CheckedExpr();
+        memberCall.kind = CheckedExprKind.MemberCall;
+        memberCall.type = intType;
+        memberCall.semanticTargetId = "member-requirement-v1:sample::Sequence::head";
+        memberCall.memberOrdinal = 2;
+        memberCall.memberName = "head";
+        memberCall.operands.add(CheckedExpr.localRead(0, vectorType));
+
+        CheckedExpr placeholder = new CheckedExpr();
+        placeholder.kind = CheckedExprKind.PipelineElement;
+        placeholder.type = intType;
+        placeholder.semanticTargetId = "pipeline-placeholder:sample:0";
+        CheckedExpr callback = CheckedExpr.binary(CheckedBinaryOp.Add, placeholder,
+                CheckedExpr.integerLiteral(1, intType), intType);
+        CheckedExpr pipelineMap = new CheckedExpr();
+        pipelineMap.kind = CheckedExprKind.PipelineMap;
+        pipelineMap.type = vectorType;
+        pipelineMap.semanticTargetId = "functional:Map";
+        pipelineMap.pipelineInputType = intType;
+        pipelineMap.pipelinePlaceholderIdentity = placeholder.semanticTargetId;
+        pipelineMap.operands.add(CheckedExpr.localRead(0, vectorType));
+        pipelineMap.operands.add(callback);
+
+        CheckedExpr enumConstruct = new CheckedExpr();
+        enumConstruct.kind = CheckedExprKind.EnumConstruct;
+        enumConstruct.type = enumType;
+        enumConstruct.semanticTargetId = "nominal-enum-variant-v1:" + enumId + ":case:Ready";
+
+        var recordDecl = new org.mosslang.compiler.types.NominalDeclaration(
+                org.mosslang.compiler.types.DeclarationKind.Record, "Empty", "module-v1:sample@1::m",
+                "Empty", "nominal-record-v1:sample::Empty", List.of());
+        CheckedExpr nominalConstruct = new CheckedExpr();
+        nominalConstruct.kind = CheckedExprKind.NominalConstruct;
+        nominalConstruct.type = TypeRef.nominalBound(recordDecl, recordDecl.getId(), List.of());
+        nominalConstruct.semanticTargetId = recordDecl.getId();
+
+        List<CheckedStmt> original = new java.util.ArrayList<>();
+        for (CheckedExpr expr : List.of(message, memberCall, pipelineMap, enumConstruct, nominalConstruct)) {
+            original.add(CheckedStmt.exprStmt(expr));
+        }
+        CheckedStmt match = new CheckedStmt();
+        match.kind = CheckedStmtKind.Match;
+        match.expr = enumValue;
+        CheckedStmt.MatchCase matchCase = new CheckedStmt.MatchCase();
+        matchCase.variantTag = "Ready";
+        matchCase.variantId = "nominal-enum-variant-v1:" + enumId + ":case:Ready";
+        matchCase.body.add(new CheckedStmt());
+        matchCase.body.get(0).kind = CheckedStmtKind.Pass;
+        match.matchCases.add(matchCase);
+        original.add(match);
+
+        CheckedStmt tried = new CheckedStmt();
+        tried.kind = CheckedStmtKind.Try;
+        tried.exceptionalIdentity = "exception-set:sample";
+        tried.branchIdentity = "branch:try";
+        tried.exceptionalAlternatives.addAll(List.of("AlternativeA", "AlternativeB"));
+        CheckedStmt pass = new CheckedStmt();
+        pass.kind = CheckedStmtKind.Pass;
+        tried.body.add(pass);
+        CheckedStmt.ExceptionalBranch recover = new CheckedStmt.ExceptionalBranch();
+        recover.branchIdentity = "branch:recover";
+        recover.variantIds.add("variant:sample:Failure");
+        CheckedStmt recoverPass = new CheckedStmt();
+        recoverPass.kind = CheckedStmtKind.Pass;
+        recover.body.add(recoverPass);
+        tried.exceptionalCases.add(recover);
+        original.add(tried);
+
+        CheckedStmt raise = new CheckedStmt();
+        raise.kind = CheckedStmtKind.Raise;
+        raise.exceptionalIdentity = tried.exceptionalIdentity;
+        raise.branchIdentity = "branch:raise";
+        raise.exceptionalAlternatives.addAll(List.of("AlternativeA", "AlternativeB"));
+        raise.expr = enumConstruct;
+        original.add(raise);
+
+        String encoded = CheckedBodyCodec.encodeCheckedBodyV1(original);
+        List<CheckedStmt> decoded = CheckedBodyCodec.decodeCheckedBody(encoded);
+        String reencoded = CheckedBodyCodec.encodeCheckedBodyV1(decoded);
+        if (!encoded.equals(reencoded)) {
+            throw new AssertionError("Extended checked-body nodes did not round-trip canonically");
         }
     }
 

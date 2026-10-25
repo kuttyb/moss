@@ -150,6 +150,44 @@ public class CheckedBodyCodec {
                 encodeField(out, String.valueOf(expr.operands.size() / 2));
                 for (CheckedExpr child : expr.operands) encodeExpr(out, child);
             }
+            case NominalConstruct -> {
+                requireExpr(expr.type.kind() == TypeKind.NominalInstance
+                        && expr.type.declaration() != null
+                        && expr.semanticTargetId.equals(expr.type.declaration().getId())
+                        && expr.literalValue.isEmpty()
+                        && (expr.payloadFieldIds.size() == expr.operands.size()
+                            || (expr.payloadFieldIds.isEmpty()
+                                && expr.operands.size() == expr.type.declaration().getFields().size())),
+                        "invalid checked nominal constructor");
+                encodeField(out, expr.semanticTargetId);
+                encodeField(out, String.valueOf(expr.operands.size()));
+                for (int index = 0; index < expr.operands.size(); index++) {
+                    String fieldId;
+                    if (!expr.payloadFieldIds.isEmpty()) {
+                        fieldId = expr.payloadFieldIds.get(index);
+                    } else {
+                        var slot = expr.type.declaration().getFields().get(index);
+                        TypeRef.FieldSub bound = expr.type.fieldSubstitutions().stream()
+                                .filter(field -> field.name().equals(slot.name())).findFirst().orElse(null);
+                        requireExpr(slot.inferred() && bound != null
+                                        && bound.type().equals(expr.operands.get(index).type),
+                                "checked nominal constructor field does not match its declaration");
+                        fieldId = expr.semanticTargetId + ":field:" + index + ":" + slot.name();
+                    }
+                    requireExpr(fieldId.startsWith(expr.semanticTargetId + ":field:" + index + ":"),
+                            "checked nominal constructor field identity is invalid");
+                    encodeField(out, fieldId);
+                    encodeExpr(out, expr.operands.get(index));
+                }
+            }
+            case Message -> {
+                requireExpr(!expr.targetDomain.isEmpty() && !expr.semanticTargetId.isEmpty()
+                        && expr.literalValue.isEmpty(), "invalid checked message node");
+                encodeField(out, expr.targetDomain);
+                encodeField(out, expr.semanticTargetId);
+                encodeField(out, String.valueOf(expr.operands.size()));
+                for (CheckedExpr child : expr.operands) encodeExpr(out, child);
+            }
             case CollectionCount -> {
                 requireExpr(expr.operands.size() == 1
                         && "builtin:collection-count-v1".equals(expr.semanticTargetId), "invalid checked collection count");
@@ -170,6 +208,54 @@ public class CheckedBodyCodec {
                 encodeField(out, "2");
                 for (CheckedExpr child : expr.operands) encodeExpr(out, child);
             }
+            case MemberCall -> {
+                requireExpr(expr.semanticTargetId.startsWith("member-requirement-v1:")
+                        && !expr.memberName.isEmpty() && !expr.operands.isEmpty()
+                        && expr.memberOrdinal >= 0 && expr.literalValue.isEmpty(),
+                        "invalid checked member call");
+                encodeField(out, expr.semanticTargetId);
+                encodeField(out, String.valueOf(expr.memberOrdinal));
+                encodeField(out, expr.memberName);
+                encodeField(out, String.valueOf(expr.operands.size()));
+                for (CheckedExpr child : expr.operands) encodeExpr(out, child);
+            }
+            case PipelineElement -> {
+                requireExpr(expr.semanticTargetId.startsWith("pipeline-placeholder:")
+                        && expr.operands.isEmpty() && expr.literalValue.isEmpty()
+                        && expr.ordinal == 0 && expr.pipelineInputType == null
+                        && expr.pipelinePlaceholderIdentity.isEmpty(), "invalid checked pipeline element");
+                encodeField(out, expr.semanticTargetId);
+            }
+            case PipelineMap -> {
+                requireExpr("functional:Map".equals(expr.semanticTargetId) && expr.ordinal == 0
+                        && expr.operands.size() == 2 && expr.pipelineInputType != null
+                        && expr.type.kind() == TypeKind.Builtin && "vector".equals(expr.type.name())
+                        && expr.type.typeArgs().size() == 1
+                        && expr.type.typeArgs().get(0).equals(expr.operands.get(1).type)
+                        && expr.literalValue.isEmpty()
+                        && !expr.pipelinePlaceholderIdentity.isEmpty(), "invalid checked pipeline map");
+                encodeField(out, expr.semanticTargetId);
+                encodeField(out, String.valueOf(expr.ordinal));
+                encodeType(out, expr.pipelineInputType);
+                encodeField(out, expr.pipelinePlaceholderIdentity);
+                for (CheckedExpr child : expr.operands) encodeExpr(out, child);
+            }
+            case EnumConstruct -> {
+                requireExpr(expr.type.kind() == TypeKind.Enum && expr.type.declaration() != null
+                        && expr.type.declaration().getKind() == org.mosslang.compiler.types.DeclarationKind.Enum
+                        && expr.semanticTargetId.startsWith("nominal-enum-variant-v1:"
+                                + expr.type.declaration().getId() + ":case:")
+                        && expr.payloadOrdinals.size() == expr.operands.size()
+                        && expr.literalValue.isEmpty(), "invalid checked enum constructor");
+                encodeField(out, expr.semanticTargetId);
+                encodeField(out, String.valueOf(expr.operands.size()));
+                for (int index = 0; index < expr.operands.size(); index++) {
+                    requireExpr(expr.payloadOrdinals.get(index) == index,
+                            "checked enum constructor payload ordinals are noncanonical");
+                    encodeField(out, String.valueOf(index));
+                    encodeExpr(out, expr.operands.get(index));
+                }
+            }
             default -> throw new IllegalArgumentException(
                     "Java checked-body encoder does not support expression kind " + expr.kind);
         }
@@ -187,6 +273,25 @@ public class CheckedBodyCodec {
             case Assign -> {
                 requireStmt(stmt.expr != null, "invalid assignment statement");
                 encodeField(out, String.valueOf(stmt.localOrdinal));
+                encodeExpr(out, stmt.expr);
+            }
+            case AssignField -> {
+                requireStmt(stmt.operands.size() == 1 && stmt.expr != null
+                        && !stmt.semanticTargetId.isEmpty(), "invalid field assignment statement");
+                encodeField(out, stmt.semanticTargetId);
+                encodeField(out, String.valueOf(stmt.memberOrdinal));
+                encodeExpr(out, stmt.operands.get(0));
+                encodeExpr(out, stmt.expr);
+            }
+            case AssignIndex -> {
+                requireStmt(stmt.operands.size() == 2 && stmt.expr != null && stmt.type == null
+                        && stmt.localOrdinal == 0 && stmt.semanticTargetId.isEmpty()
+                        && stmt.memberOrdinal == 0 && stmt.memberName.isEmpty()
+                        && stmt.thenBranch.isEmpty() && stmt.elseBranch.isEmpty()
+                        && stmt.body.isEmpty() && stmt.matchCases.isEmpty(),
+                        "invalid indexed assignment statement");
+                encodeExpr(out, stmt.operands.get(0));
+                encodeExpr(out, stmt.operands.get(1));
                 encodeExpr(out, stmt.expr);
             }
             case ExprStmt -> {
@@ -232,6 +337,70 @@ public class CheckedBodyCodec {
                 encodeExpr(out, stmt.operands.get(0));
                 encodeExpr(out, stmt.operands.get(1));
             }
+            case Match -> {
+                requireStmt(stmt.expr != null, "invalid match statement");
+                encodeExpr(out, stmt.expr);
+                encodeField(out, String.valueOf(stmt.matchCases.size()));
+                for (CheckedStmt.MatchCase matchCase : stmt.matchCases) {
+                    requireStmt(matchCase != null && !matchCase.variantTag.isEmpty()
+                            && !matchCase.variantId.isEmpty()
+                            && matchCase.payloadOrdinals.size() == matchCase.payloadTypes.size(),
+                            "invalid checked match case");
+                    encodeField(out, matchCase.variantTag);
+                    encodeField(out, matchCase.variantId);
+                    encodeField(out, String.valueOf(matchCase.payloadOrdinals.size()));
+                    for (int ordinal : matchCase.payloadOrdinals) encodeField(out, String.valueOf(ordinal));
+                    encodeField(out, String.valueOf(matchCase.payloadTypes.size()));
+                    for (TypeRef type : matchCase.payloadTypes) encodeType(out, type);
+                    encodeField(out, String.valueOf(matchCase.body.size()));
+                    for (CheckedStmt child : matchCase.body) encodeStmt(out, child);
+                }
+            }
+            case Try -> {
+                requireStmt(!stmt.exceptionalIdentity.isEmpty() && !stmt.branchIdentity.isEmpty()
+                        && !stmt.exceptionalAlternatives.isEmpty() && !stmt.body.isEmpty()
+                        && !stmt.exceptionalCases.isEmpty() && stmt.expr == null && stmt.type == null,
+                        "invalid checked try statement");
+                encodeField(out, stmt.exceptionalIdentity);
+                encodeField(out, stmt.branchIdentity);
+                encodeCanonicalStrings(out, stmt.exceptionalAlternatives, "try alternatives");
+                encodeField(out, String.valueOf(stmt.body.size()));
+                for (CheckedStmt child : stmt.body) encodeStmt(out, child);
+                encodeField(out, String.valueOf(stmt.exceptionalCases.size()));
+                String previousBranch = "";
+                for (CheckedStmt.ExceptionalBranch branch : stmt.exceptionalCases) {
+                    requireStmt(branch != null && !branch.branchIdentity.isEmpty()
+                            && previousBranch.compareTo(branch.branchIdentity) < 0
+                            && !branch.variantIds.isEmpty()
+                            && branch.payloadOrdinals.size() == branch.payloadTypes.size()
+                            && !branch.body.isEmpty(), "invalid checked recover branch");
+                    previousBranch = branch.branchIdentity;
+                    encodeField(out, branch.branchIdentity);
+                    encodeCanonicalStrings(out, branch.variantIds, "recover variants");
+                    encodeField(out, String.valueOf(branch.payloadOrdinals.size()));
+                    int previousOrdinal = -1;
+                    for (int index = 0; index < branch.payloadOrdinals.size(); index++) {
+                        int ordinal = branch.payloadOrdinals.get(index);
+                        requireStmt(ordinal > previousOrdinal && branch.payloadTypes.get(index) != null,
+                                "recover payload ordinals are not canonical");
+                        previousOrdinal = ordinal;
+                        encodeField(out, String.valueOf(ordinal));
+                        encodeType(out, branch.payloadTypes.get(index));
+                    }
+                    encodeField(out, String.valueOf(branch.body.size()));
+                    for (CheckedStmt child : branch.body) encodeStmt(out, child);
+                }
+            }
+            case Raise -> {
+                requireStmt(!stmt.exceptionalIdentity.isEmpty() && !stmt.branchIdentity.isEmpty()
+                        && !stmt.exceptionalAlternatives.isEmpty() && stmt.expr != null
+                        && stmt.expr.kind == CheckedExprKind.EnumConstruct && stmt.body.isEmpty()
+                        && stmt.exceptionalCases.isEmpty(), "invalid checked raise statement");
+                encodeField(out, stmt.exceptionalIdentity);
+                encodeField(out, stmt.branchIdentity);
+                encodeCanonicalStrings(out, stmt.exceptionalAlternatives, "raise alternatives");
+                encodeExpr(out, stmt.expr);
+            }
             case Pass -> {
                 requireStmt(stmt.expr == null && stmt.type == null && stmt.localOrdinal == 0
                         && stmt.operands.isEmpty() && stmt.thenBranch.isEmpty()
@@ -266,6 +435,18 @@ public class CheckedBodyCodec {
 
     private static void requireStmt(boolean valid, String message) {
         if (!valid) throw new IllegalArgumentException(message);
+    }
+
+    private static void encodeCanonicalStrings(StringBuilder out, List<String> values, String what) {
+        encodeField(out, String.valueOf(values.size()));
+        String previous = "";
+        for (String value : values) {
+            if (value == null || value.isEmpty() || previous.compareTo(value) >= 0) {
+                throw new IllegalArgumentException("checked body " + what + " are not canonical");
+            }
+            encodeField(out, value);
+            previous = value;
+        }
     }
 
     public static List<CheckedStmt> decodeCheckedBody(String bytes) {

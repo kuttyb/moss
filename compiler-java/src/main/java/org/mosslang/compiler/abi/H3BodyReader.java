@@ -170,6 +170,24 @@ public class H3BodyReader {
                 if (pairs > 32 || pairs > MAX_COLLECTION_ITEMS / 2) throw invalid("checked body map literal exceeds its limit");
                 for (int i = 0; i < pairs * 2; i++) expr.operands.add(readExpr(depth + 1));
             }
+            case NominalConstruct -> {
+                expr.semanticTargetId = field();
+                int arity = count("nominal constructor arity");
+                for (int i = 0; i < arity; i++) {
+                    String fieldId = field();
+                    if (!fieldId.startsWith(expr.semanticTargetId + ":field:" + i + ":")) {
+                        throw invalid("checked nominal constructor field identity is invalid");
+                    }
+                    expr.payloadFieldIds.add(fieldId);
+                    expr.operands.add(readExpr(depth + 1));
+                }
+            }
+            case Message -> {
+                expr.targetDomain = field();
+                expr.semanticTargetId = field();
+                int arity = count("message arity");
+                for (int i = 0; i < arity; i++) expr.operands.add(readExpr(depth + 1));
+            }
             case CollectionCount -> {
                 expr.semanticTargetId = field();
                 expr.operands.add(readExpr(depth + 1));
@@ -185,6 +203,30 @@ public class H3BodyReader {
                 if (arity != 2) throw invalid("checked body collection push arity is invalid");
                 expr.operands.add(readExpr(depth + 1));
                 expr.operands.add(readExpr(depth + 1));
+            }
+            case MemberCall -> {
+                expr.semanticTargetId = field();
+                expr.memberOrdinal = parseNonNegative(field(), "member call ordinal");
+                expr.memberName = field();
+                int arity = count("member call arity");
+                for (int i = 0; i < arity; i++) expr.operands.add(readExpr(depth + 1));
+            }
+            case PipelineElement -> expr.semanticTargetId = field();
+            case PipelineMap -> {
+                expr.semanticTargetId = field();
+                expr.ordinal = parseNonNegative(field(), "pipeline ordinal");
+                expr.pipelineInputType = readType();
+                expr.pipelinePlaceholderIdentity = field();
+                expr.operands.add(readExpr(depth + 1));
+                expr.operands.add(readExpr(depth + 1));
+            }
+            case EnumConstruct -> {
+                expr.semanticTargetId = field();
+                int arity = count("enum constructor arity");
+                for (int i = 0; i < arity; i++) {
+                    expr.payloadOrdinals.add(parseNonNegative(field(), "enum payload ordinal"));
+                    expr.operands.add(readExpr(depth + 1));
+                }
             }
             default -> throw invalid("Java checked-body reader does not support expression kind " + kind);
         }
@@ -267,11 +309,70 @@ public class H3BodyReader {
                 stmt.operands.add(readExpr(depth + 1));
                 stmt.operands.add(readExpr(depth + 1));
             }
+            case Match -> {
+                stmt.expr = readExpr(depth + 1);
+                int cases = count("match case count");
+                for (int index = 0; index < cases; index++) {
+                    CheckedStmt.MatchCase matchCase = new CheckedStmt.MatchCase();
+                    matchCase.variantTag = field();
+                    matchCase.variantId = field();
+                    int ordinalCount = count("match payload ordinal count");
+                    for (int i = 0; i < ordinalCount; i++)
+                        matchCase.payloadOrdinals.add(parseNonNegative(field(), "match payload ordinal"));
+                    int typeCount = count("match payload type count");
+                    for (int i = 0; i < typeCount; i++) matchCase.payloadTypes.add(readType());
+                    int bodyCount = count("match branch statement count");
+                    for (int i = 0; i < bodyCount; i++) matchCase.body.add(readStmt(depth + 1));
+                    stmt.matchCases.add(matchCase);
+                }
+            }
+            case Try -> {
+                stmt.exceptionalIdentity = field();
+                stmt.branchIdentity = field();
+                stmt.exceptionalAlternatives.addAll(readCanonicalStrings("try alternative count"));
+                int bodyCount = count("try body statement count");
+                for (int i = 0; i < bodyCount; i++) stmt.body.add(readStmt(depth + 1));
+                int branchCount = count("recover branch count");
+                for (int index = 0; index < branchCount; index++) {
+                    CheckedStmt.ExceptionalBranch branch = new CheckedStmt.ExceptionalBranch();
+                    branch.branchIdentity = field();
+                    branch.variantIds.addAll(readCanonicalStrings("recover variant count"));
+                    int payloadCount = count("recover payload count");
+                    for (int i = 0; i < payloadCount; i++) {
+                        branch.payloadOrdinals.add(parseNonNegative(field(), "recover payload ordinal"));
+                        branch.payloadTypes.add(readType());
+                    }
+                    int recoverBodyCount = count("recover body statement count");
+                    for (int i = 0; i < recoverBodyCount; i++) branch.body.add(readStmt(depth + 1));
+                    stmt.exceptionalCases.add(branch);
+                }
+            }
+            case Raise -> {
+                stmt.exceptionalIdentity = field();
+                stmt.branchIdentity = field();
+                stmt.exceptionalAlternatives.addAll(readCanonicalStrings("raise alternative count"));
+                stmt.expr = readExpr(depth + 1);
+            }
             case Pass -> { }
             default -> throw invalid("Java checked-body reader does not support statement kind " + kind);
         }
         if (stmt.type == null && stmt.expr != null) stmt.type = stmt.expr.type;
         return stmt;
+    }
+
+    private List<String> readCanonicalStrings(String what) {
+        int count = count(what);
+        List<String> values = new ArrayList<>(count);
+        String previous = "";
+        for (int i = 0; i < count; i++) {
+            String value = field();
+            if (value.isEmpty() || previous.compareTo(value) >= 0) {
+                throw invalid("checked body " + what + " values are not canonical");
+            }
+            values.add(value);
+            previous = value;
+        }
+        return values;
     }
 
     public List<CheckedStmt> read() {

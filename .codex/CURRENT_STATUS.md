@@ -13362,3 +13362,19 @@ Validation after these edits: all ten Java unit-test classes pass after clean
 builds in default ABI-v9 and staged ABI-v10 modes. No C++ consumer execution,
 native Rust compilation, Margo provider-consumer build, SDK gate, or full
 `make check` was run. Overall Phase 25.3 remains incomplete.
+
+### Phase 25.3 continuation — retain structured checked-body variants
+
+The Java checked-body model now preserves the structured payloads required to
+encode and decode additional canonical nodes: message domain/handler identities,
+member-call identities, pipeline input and placeholder metadata, nominal field
+IDs, enum payload ordinals, typed Match arms, and Try/Raise branch identities and
+alternatives. A focused round-trip covers representative message, member-call,
+pipeline-map, nominal/enum construction, Match, Try, and Raise nodes. This is a
+wire-model improvement; it does not establish full C++ semantic validation,
+source-free loader projection for these forms, or native compatibility.
+
+Validation after this checkpoint's edits: all ten Java unit-test classes pass
+in default ABI-v9 and staged ABI-v10 modes; `git diff --check` passes. No native
+execution, Rust compilation, Margo provider-consumer build, SDK gate, or full
+`make check` was run. Phase 25.3 remains incomplete.

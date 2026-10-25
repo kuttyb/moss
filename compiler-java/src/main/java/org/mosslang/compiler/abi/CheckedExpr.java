@@ -14,8 +14,13 @@ public class CheckedExpr {
     public CheckedBinaryOp binaryOp = CheckedBinaryOp.Add;
     public List<CheckedExpr> operands = new ArrayList<>();
     public String semanticTargetId = "";
+    public String targetDomain = "";
     public int memberOrdinal = 0;
     public String memberName = "";
+    public TypeRef pipelineInputType;
+    public String pipelinePlaceholderIdentity = "";
+    public List<Integer> payloadOrdinals = new ArrayList<>();
+    public List<String> payloadFieldIds = new ArrayList<>();
 
     public CheckedExpr() {}
 
@@ -110,12 +115,19 @@ public class CheckedExpr {
                binaryOp == that.binaryOp &&
                Objects.equals(operands, that.operands) &&
                Objects.equals(semanticTargetId, that.semanticTargetId) &&
-               Objects.equals(memberName, that.memberName);
+               Objects.equals(memberName, that.memberName) &&
+               Objects.equals(targetDomain, that.targetDomain) &&
+               Objects.equals(pipelineInputType, that.pipelineInputType) &&
+               Objects.equals(pipelinePlaceholderIdentity, that.pipelinePlaceholderIdentity) &&
+               Objects.equals(payloadOrdinals, that.payloadOrdinals) &&
+               Objects.equals(payloadFieldIds, that.payloadFieldIds);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(kind, type, ordinal, literalValue, unaryOp, binaryOp, operands, semanticTargetId, memberOrdinal, memberName);
+        return Objects.hash(kind, type, ordinal, literalValue, unaryOp, binaryOp, operands,
+                semanticTargetId, targetDomain, memberOrdinal, memberName, pipelineInputType,
+                pipelinePlaceholderIdentity, payloadOrdinals, payloadFieldIds);
     }
 
     @Override

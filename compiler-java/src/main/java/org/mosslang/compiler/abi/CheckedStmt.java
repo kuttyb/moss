@@ -6,6 +6,48 @@ import java.util.List;
 import java.util.Objects;
 
 public class CheckedStmt {
+    public static class MatchCase {
+        public String variantTag = "";
+        public String variantId = "";
+        public List<Integer> payloadOrdinals = new ArrayList<>();
+        public List<TypeRef> payloadTypes = new ArrayList<>();
+        public List<CheckedStmt> body = new ArrayList<>();
+
+        @Override public boolean equals(Object value) {
+            if (this == value) return true;
+            if (!(value instanceof MatchCase other)) return false;
+            return Objects.equals(variantTag, other.variantTag)
+                    && Objects.equals(variantId, other.variantId)
+                    && Objects.equals(payloadOrdinals, other.payloadOrdinals)
+                    && Objects.equals(payloadTypes, other.payloadTypes)
+                    && Objects.equals(body, other.body);
+        }
+        @Override public int hashCode() {
+            return Objects.hash(variantTag, variantId, payloadOrdinals, payloadTypes, body);
+        }
+    }
+
+    public static class ExceptionalBranch {
+        public String branchIdentity = "";
+        public List<String> variantIds = new ArrayList<>();
+        public List<Integer> payloadOrdinals = new ArrayList<>();
+        public List<TypeRef> payloadTypes = new ArrayList<>();
+        public List<CheckedStmt> body = new ArrayList<>();
+
+        @Override public boolean equals(Object value) {
+            if (this == value) return true;
+            if (!(value instanceof ExceptionalBranch other)) return false;
+            return Objects.equals(branchIdentity, other.branchIdentity)
+                    && Objects.equals(variantIds, other.variantIds)
+                    && Objects.equals(payloadOrdinals, other.payloadOrdinals)
+                    && Objects.equals(payloadTypes, other.payloadTypes)
+                    && Objects.equals(body, other.body);
+        }
+        @Override public int hashCode() {
+            return Objects.hash(branchIdentity, variantIds, payloadOrdinals, payloadTypes, body);
+        }
+    }
+
     public CheckedStmtKind kind = CheckedStmtKind.Return;
     public TypeRef type;
     public int localOrdinal = 0;
@@ -18,6 +60,11 @@ public class CheckedStmt {
     public List<CheckedStmt> thenBranch = new ArrayList<>();
     public List<CheckedStmt> elseBranch = new ArrayList<>();
     public List<CheckedStmt> body = new ArrayList<>();
+    public List<MatchCase> matchCases = new ArrayList<>();
+    public String exceptionalIdentity = "";
+    public String branchIdentity = "";
+    public List<String> exceptionalAlternatives = new ArrayList<>();
+    public List<ExceptionalBranch> exceptionalCases = new ArrayList<>();
 
     public CheckedStmt() {}
 
@@ -87,12 +134,19 @@ public class CheckedStmt {
                Objects.equals(memberName, that.memberName) &&
                Objects.equals(thenBranch, that.thenBranch) &&
                Objects.equals(elseBranch, that.elseBranch) &&
-               Objects.equals(body, that.body);
+               Objects.equals(body, that.body) &&
+               Objects.equals(matchCases, that.matchCases) &&
+               Objects.equals(exceptionalIdentity, that.exceptionalIdentity) &&
+               Objects.equals(branchIdentity, that.branchIdentity) &&
+               Objects.equals(exceptionalAlternatives, that.exceptionalAlternatives) &&
+               Objects.equals(exceptionalCases, that.exceptionalCases);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(kind, type, localOrdinal, expr, operands, semanticTargetId, memberOrdinal, memberName, thenBranch, elseBranch, body);
+        return Objects.hash(kind, type, localOrdinal, expr, operands, semanticTargetId, memberOrdinal,
+                memberName, thenBranch, elseBranch, body, matchCases, exceptionalIdentity,
+                branchIdentity, exceptionalAlternatives, exceptionalCases);
     }
 
     @Override
