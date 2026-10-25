@@ -351,7 +351,7 @@ public class FastInterpreter {
                 + jsonEscape(function) + "\",\"source_file\":\"" + jsonEscape(traceSourceFile)
                 + "\",\"semantic_identity\":\"" + jsonEscape(traceIdentity()) + "\",\"line\":"
                 + statement.line + traceContextFields() + ",\"depth\":" + depth
-                + ",\"detail\":\"" + jsonEscape(detail) + "\"}");
+                + ",\"detail\":\"" + jsonEscape(detail) + "\"" + traceDomainFields() + "}");
         traceParentStack.push(controlEventId);
         traceControlStack.push(controlEventId);
     }

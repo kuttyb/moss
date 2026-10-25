@@ -14048,3 +14048,24 @@ selected case source line and scopes its control event through the case body.
 The complete stdout and trace for this recovery/reraise fixture compare
 byte-for-byte with C++. The catch-all recovery unit test asserts the match
 branch trace. Both Java ABI suites pass.
+
+## Phase 25.3 Fast Debug trace-context follow-up — working tree
+
+Added domain instance, specialization, and handler metadata to `BranchTaken` and
+`LoopIteration` control events through the shared trace context helper. The
+nine-file failure-capture trace sample had five exact C++/Java trace matches
+before this addition; those five remain exact, including peer on-fail, branch
+join, nested reraising, message result, and combined slot capture. Across all
+nine fixtures stdout matches. The four remaining complete-trace differences are
+localized: an omitted implicit-else `BranchTaken` for `maybe(false)` in
+`phase21_capture_try_join`, a `LocalRead` emitted by C++ but absent in a Java
+on-fail reply and a loop callee, enum snapshot detail (`Data` versus
+`Data.Have{value=hello}`), and an extra Java implicit `Return`/`FunctionExit`
+for a unit-returning helper. These are trace representation/event differences,
+not stdout or acceptance differences; no textual parity claim is made.
+
+Validation after the control-event context change: `./scripts/java/test.sh`
+and `MOSS_STAGED_ABI=v10 ./scripts/java/test.sh` both pass all 11 Java test
+classes. This is a bounded trace-context correction, not completion of Fast
+Debug parity or the Phase 25.3 port. Continue with semantic/codegen correctness
+work after checkpointing.
