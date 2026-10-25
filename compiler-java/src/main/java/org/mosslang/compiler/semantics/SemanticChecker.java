@@ -853,6 +853,7 @@ public class SemanticChecker {
                     (f.returnType != null && !f.returnType.isEmpty() ? TypeParser.parseCanonical(f.returnType) : solver.fresh(0));
 
             Set<String> tryRaisedVariants = null;
+            Set<String> fileIoLocals = new HashSet<>();
             boolean inUnreachableRecover = false;
             int recoverIndent = -1;
             for (Stmt s : f.body) {
@@ -862,7 +863,17 @@ public class SemanticChecker {
                 }
                 if (s.kind == Stmt.Kind.Try) {
                     tryRaisedVariants = new LinkedHashSet<>();
-                } else if (s.kind == Stmt.Kind.Raise && tryRaisedVariants != null && recoverIndent == -1) {
+                }
+                String statementExpressions = statementExpressions(s);
+                if ((s.kind == Stmt.Kind.Let || s.kind == Stmt.Kind.Var || s.kind == Stmt.Kind.Assign)
+                        && s.a != null && statementExpressions.contains("FileIO.open(")) {
+                    fileIoLocals.add(s.a.trim());
+                }
+                if (tryRaisedVariants != null && recoverIndent == -1
+                        && callsFileIoOperation(statementExpressions, fileIoLocals)) {
+                    tryRaisedVariants.add("std__FileError.IO");
+                }
+                if (s.kind == Stmt.Kind.Raise && tryRaisedVariants != null && recoverIndent == -1) {
                     String rExpr = s.a != null && !s.a.isEmpty() ? s.a.trim() : (s.text != null && s.text.startsWith("raise ") ? s.text.substring(6).trim() : "");
                     if (!rExpr.isEmpty()) {
                         tryRaisedVariants.add(rExpr);
@@ -2270,6 +2281,25 @@ public class SemanticChecker {
                     collectFunctionRaisedEnumNames(called, names, visited);
             }
         }
+    }
+
+    private String statementExpressions(Stmt statement) {
+        StringBuilder expressions = new StringBuilder();
+        if (statement.text != null) expressions.append(statement.text).append('\n');
+        if (statement.a != null) expressions.append(statement.a).append('\n');
+        if (statement.b != null) expressions.append(statement.b).append('\n');
+        if (statement.args != null) {
+            for (String argument : statement.args) expressions.append(argument).append('\n');
+        }
+        return expressions.toString();
+    }
+
+    private boolean callsFileIoOperation(String expressions, Set<String> fileIoLocals) {
+        for (String name : fileIoLocals) {
+            if (expressions.matches("(?s).*\\b" + java.util.regex.Pattern.quote(name)
+                    + "\\.(read|write|sync|close)\\s*\\(.*")) return true;
+        }
+        return false;
     }
 
     private void collectFunctionRaisedVariants(Function function, Set<String> variants, Set<String> visited) {

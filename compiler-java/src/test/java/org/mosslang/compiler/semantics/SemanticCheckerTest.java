@@ -51,6 +51,7 @@ public class SemanticCheckerTest {
         testRecoverUsesPipelineStageRaiseOrder();
         testRecoverBindingInfersRaisesThroughScalarCalls();
         testRangeIndexHasByteType();
+        testFileIoReadMakesIoRecoveryReachable();
         System.out.println("SemanticCheckerTest PASSED.");
     }
 
@@ -1002,6 +1003,28 @@ public class SemanticCheckerTest {
                 + "fn main():\n"
                 + "  pass\n", "range-byte-index-type.moss");
         new SemanticChecker(program).run();
+    }
+
+    private static void testFileIoReadMakesIoRecoveryReachable() {
+        Program program = Parser.parseSource(""
+                + "enum FileError:\n"
+                + "  IO\n"
+                + "fn read_one(path: String) -> Int:\n"
+                + "  try:\n"
+                + "    source = FileIO.open(path, ro)\n"
+                + "    bytes = source.read(0, 1)\n"
+                + "    source.close()\n"
+                + "    return bytes.length()\n"
+                + "  recover FileError.IO:\n"
+                + "    return 0\n"
+                + "fn main():\n"
+                + "  pass\n", "fileio-read-recovery-warning.moss");
+        SemanticChecker checker = new SemanticChecker(program);
+        checker.run();
+        if (checker.getWarnings().stream().anyMatch(warning ->
+                "RECOVER_UNREACHABLE_VARIANT".equals(warning.code()))) {
+            throw new AssertionError("FileIO read must make FileError.IO recovery reachable");
+        }
     }
 
     private static void assertCompileError(String source, String code) {

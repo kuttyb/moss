@@ -14294,3 +14294,18 @@ diagnostic as C++. ABI-v9 and staged ABI-v10 Java suites pass. The refreshed
 `FileError.IO` recovery in `phase21_fileio_close_full.moss` as unreachable,
 while C++ emits no warning. This result is acceptance alignment for the
 sample, not full FileIO semantic parity.
+
+### Phase 25.3 continuation — FileIO recovery reachability warning
+
+Function recovery-warning analysis now tracks locals assigned from
+`FileIO.open` and treats calls to their `read`, `write`, `sync`, or `close`
+methods as raising `std__FileError.IO`. This removes the false unreachable-arm
+warning for `FileError.IO` in `phase21_fileio_close_full.moss`. The scan is
+receiver-specific, so an unrelated user-defined method named `read` does not
+make FileIO errors reachable.
+
+The fixture now emits no Java warnings, matching C++. A focused
+SemanticCheckerTest verifies the FileIO read/recover relationship. Both ABI
+Java suites pass, and the refreshed 91-file screen remains at 0 acceptance
+mismatches (61 both accepted, 30 both rejected). This remains bounded FileIO
+effect evidence rather than a full summary of every FileIO failure mode.
