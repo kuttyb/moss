@@ -96,6 +96,7 @@ public class SemanticChecker {
         final MoveInfo moved;
         final boolean immutable;
         final Integer bindingLine;
+        final Set<String> priorBindings;
 
         LoopShadowSnapshot(String name, OwnershipEnv env) {
             this.name = name;
@@ -104,9 +105,17 @@ public class SemanticChecker {
             this.moved = env.moved.get(name);
             this.immutable = env.immutables.contains(name);
             this.bindingLine = env.bindingLines.get(name);
+            this.priorBindings = new HashSet<>(env.typeEnv.getBindings().keySet());
         }
 
         void restore(OwnershipEnv env) {
+            for (String binding : new HashSet<>(env.typeEnv.getBindings().keySet())) {
+                if (priorBindings.contains(binding)) continue;
+                env.typeEnv.remove(binding);
+                env.moved.remove(binding);
+                env.immutables.remove(binding);
+                env.bindingLines.remove(binding);
+            }
             if (!existed) {
                 env.typeEnv.remove(name);
                 env.moved.remove(name);
@@ -642,6 +651,7 @@ public class SemanticChecker {
                 }
                 OwnershipEnv armEnv = env.copy();
                 List<OwnershipEnv> availableFailureEdges = armEdges;
+                restoreCommonFailureEdgeBindings(armEnv, availableFailureEdges, solver);
                 for (String name : new HashSet<>(armEnv.moved.keySet())) {
                     boolean readByArm = false;
                     for (Stmt bodyStatement : arm.body) {
@@ -785,6 +795,35 @@ public class SemanticChecker {
                         "ON_FAIL_CAPTURE_TYPE_MISMATCH");
             }
             if (expected != null) arm.checkedCaptures.put(name, expected.toCanonicalString());
+        }
+    }
+
+    private void restoreCommonFailureEdgeBindings(OwnershipEnv armEnv,
+                                                   List<OwnershipEnv> failureEdges,
+                                                   TypeSolver solver) {
+        if (failureEdges.isEmpty()) return;
+        OwnershipEnv first = failureEdges.get(0);
+        for (Map.Entry<String, TypeRef> entry : first.typeEnv.getBindings().entrySet()) {
+            String name = entry.getKey();
+            if (armEnv.containsKey(name) || first.moved.containsKey(name)) continue;
+            TypeRef commonType = entry.getValue();
+            boolean availableOnAllEdges = true;
+            boolean immutableOnAllEdges = first.immutables.contains(name);
+            Integer bindingLine = first.bindingLines.get(name);
+            for (int index = 1; index < failureEdges.size(); index++) {
+                OwnershipEnv edge = failureEdges.get(index);
+                TypeRef edgeType = edge.get(name);
+                if (edgeType == null || edge.moved.containsKey(name)
+                        || !solver.unify(commonType, edgeType)) {
+                    availableOnAllEdges = false;
+                    break;
+                }
+                immutableOnAllEdges &= edge.immutables.contains(name);
+                if (!java.util.Objects.equals(bindingLine, edge.bindingLines.get(name))) bindingLine = null;
+            }
+            if (!availableOnAllEdges) continue;
+            armEnv.put(name, solver.resolve(commonType), bindingLine != null ? bindingLine : 0);
+            if (immutableOnAllEdges) armEnv.immutables.add(name);
         }
     }
 
@@ -3113,13 +3152,20 @@ public class SemanticChecker {
                     elseEnv = checkBlock(stmts, elseStart, elseEnd, elseEnv, typer, solver, insideHandler, enclosingName, expectedType);
 
                     String condition = ifStmt.a == null ? "" : ifStmt.a.trim();
-                    if ("true".equals(condition)) env = thenEnv;
-                    else if ("false".equals(condition)) env = elseEnv;
-                    else env = mergeEnvs(ifStmt.line, thenEnv, elseEnv, solver);
+                    OwnershipEnv merged;
+                    if ("true".equals(condition)) merged = thenEnv;
+                    else if ("false".equals(condition)) merged = elseEnv;
+                    else merged = mergeEnvs(ifStmt.line, thenEnv, elseEnv, solver);
+                    pruneOneSidedBranchLocals(merged, env, thenEnv, elseEnv);
+                    env = merged;
                     i = elseEnd;
                 } else {
                     String condition = ifStmt.a == null ? "" : ifStmt.a.trim();
-                    env = "true".equals(condition) ? thenEnv : mergeEnvs(ifStmt.line, thenEnv, env, solver);
+                    OwnershipEnv baseEnv = env;
+                    OwnershipEnv merged = "true".equals(condition)
+                            ? thenEnv : mergeEnvs(ifStmt.line, thenEnv, baseEnv, solver);
+                    pruneOneSidedBranchLocals(merged, baseEnv, thenEnv, baseEnv);
+                    env = merged;
                     i = thenEnd;
                 }
                 continue;
@@ -3584,6 +3630,18 @@ public class SemanticChecker {
         merged.immutables.addAll(path1.immutables);
         merged.immutables.addAll(path2.immutables);
         return merged;
+    }
+
+    private void pruneOneSidedBranchLocals(OwnershipEnv merged, OwnershipEnv parent,
+                                            OwnershipEnv thenEnv, OwnershipEnv elseEnv) {
+        for (String name : new HashSet<>(merged.typeEnv.getBindings().keySet())) {
+            if (parent.containsKey(name)
+                    || (thenEnv.containsKey(name) && elseEnv.containsKey(name))) continue;
+            merged.typeEnv.remove(name);
+            merged.moved.remove(name);
+            merged.immutables.remove(name);
+            merged.bindingLines.remove(name);
+        }
     }
 
     private void checkStatement(Stmt s, OwnershipEnv env, ExpressionTyper typer, TypeSolver solver,

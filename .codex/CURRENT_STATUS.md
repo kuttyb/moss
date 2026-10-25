@@ -16090,3 +16090,23 @@ Java with the same diagnostic text; the historical `tests/fallthrough.moss`
 fixture is also now rejected by Java. The test run exposed and fixed the
 source-free-handler false positive. Native execution and release gates remain
 open.
+
+### Phase 25.3 continuation — scope branch and loop locals
+
+The bounded screen's branch-confined open-vector failure came from Java's
+control-flow merge retaining a name introduced on only one branch. Java now
+keeps branch-local names out of the outer environment unless both `if` arms
+define them, while preserving changes to pre-existing bindings. For-loop exit
+restoration now also removes locals introduced by the loop body. The first
+scope-pruning attempt exposed that `on_fail` captures rely on bindings from
+their selected raise edges; those bindings are now restored into the matching
+failure arm environment when they are available on every selected edge.
+
+Validation on the current working tree: the C++/Java `branch_confined_open_type`
+fixture now passes both checkers; paired probes agree that one-sided `if` and
+`for` locals are unknown after their blocks, while same-name definitions in
+both `if` arms and a later outer open-vector binding are accepted. All twelve
+Java unit-test classes pass under ABI-v9 and staged ABI-v10. The standalone
+package rebuilds and reports `moss-0.1` from bootstrap. The five remaining
+mismatches from the 50-file screen are untyped handler payload/domain-
+specialization cases. No native acceptance gate was run.

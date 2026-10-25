@@ -31,6 +31,7 @@ public class SemanticCheckerTest {
         testObjectMethodAccessModesAreRetained();
         testImmutableLocalRejectsDirectAndForwardedWriteMethods();
         testNestedFieldReadInBranchConditionKeepsReceiverReadOnly();
+        testBranchLocalTypesDoNotLeakFromOneSidedPaths();
         testMovingObjectFieldConsumesMethodReceiver();
         testSiblingMutatorReceiverModeAndUnitCodegen();
         testForLoopValuesCanFlowToObjectMethodArguments();
@@ -1029,6 +1030,61 @@ public class SemanticCheckerTest {
                 || inspectRecord.parameterAccessModes.get(0) != AccessMode.Read) {
             throw new AssertionError("nested field reads in branch conditions must keep receiver READ: method="
                     + recordScore.receiverAccessMode + " function=" + inspectRecord.parameterAccessModes);
+        }
+    }
+
+    private static void testBranchLocalTypesDoNotLeakFromOneSidedPaths() {
+        Program confinedOpenTypes = Parser.parseSource(""
+                + "fn main():\n"
+                + "  if true:\n"
+                + "    values = []\n"
+                + "    values.push(1)\n"
+                + "    echo values[0]\n"
+                + "  values = []\n"
+                + "  values.push(\"outer\")\n"
+                + "  echo values[0]\n", "branch-confined-open-type.moss");
+        new SemanticChecker(confinedOpenTypes).run();
+
+        Program leakedLocal = Parser.parseSource(""
+                + "fn main():\n"
+                + "  if true:\n"
+                + "    branch_value = 1\n"
+                + "  echo branch_value\n", "if-local-leak.moss");
+        try {
+            new SemanticChecker(leakedLocal).run();
+            throw new AssertionError("one-sided branch local escaped its branch");
+        } catch (CompileError error) {
+            if (!"UNKNOWN_SYMBOL_OR_TYPE".equals(error.getCode())) throw error;
+        }
+
+        Program definitelyAssigned = Parser.parseSource(""
+                + "fn main():\n"
+                + "  if true:\n"
+                + "    branch_value = 1\n"
+                + "  else:\n"
+                + "    branch_value = 2\n"
+                + "  echo branch_value\n", "if-local-definitely-assigned.moss");
+        new SemanticChecker(definitelyAssigned).run();
+
+        Program loopScopedTypes = Parser.parseSource(""
+                + "fn main():\n"
+                + "  for item in [1]:\n"
+                + "    result = []\n"
+                + "    result.push(item)\n"
+                + "  result = []\n"
+                + "  result.push(\"done\")\n", "for-local-open-type.moss");
+        new SemanticChecker(loopScopedTypes).run();
+
+        Program leakedLoopLocal = Parser.parseSource(""
+                + "fn main():\n"
+                + "  for item in [1]:\n"
+                + "    loop_value = item\n"
+                + "  echo loop_value\n", "for-local-leak.moss");
+        try {
+            new SemanticChecker(leakedLoopLocal).run();
+            throw new AssertionError("for-loop local escaped its loop scope");
+        } catch (CompileError error) {
+            if (!"UNKNOWN_SYMBOL_OR_TYPE".equals(error.getCode())) throw error;
         }
     }
 
