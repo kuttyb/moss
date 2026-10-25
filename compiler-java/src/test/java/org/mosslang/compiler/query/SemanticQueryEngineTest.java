@@ -221,9 +221,9 @@ public final class SemanticQueryEngineTest {
         Program program = Parser.parseSource(source, "effects-query-sibling-receiver-write.moss");
         new SemanticChecker(program).run();
         assertContains(queryEffects(program, "method:Box.run"),
-                "\"name\": \"self\", \"type\": \"box\", \"effect\": \"WRITE\"");
+                "\"name\": \"self\", \"type\": \"Box\", \"effect\": \"WRITE\"");
         assertContains(queryEffects(program, "apply"),
-                "\"name\": \"box\", \"type\": \"box\", \"effect\": \"WRITE\"");
+                "\"name\": \"box\", \"type\": \"Box\", \"effect\": \"WRITE\"");
     }
 
     private static void effectsQueryReportsNestedFieldReceiverWrite() {
@@ -244,7 +244,7 @@ public final class SemanticQueryEngineTest {
         Program program = Parser.parseSource(source, "effects-query-nested-field-receiver-write.moss");
         new SemanticChecker(program).run();
         assertContains(queryEffects(program, "method:Box.relay"),
-                "\"name\": \"self\", \"type\": \"box\", \"effect\": \"WRITE\"");
+                "\"name\": \"self\", \"type\": \"Box\", \"effect\": \"WRITE\"");
     }
 
     private static void effectsQueryExcludesRecoveredDirectRaises() {

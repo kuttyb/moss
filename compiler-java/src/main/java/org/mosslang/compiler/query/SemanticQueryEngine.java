@@ -1969,7 +1969,8 @@ public class SemanticQueryEngine {
                     for (int i = 0; i < fn.params.size(); i++) {
                         if (i > 0) sb.append(",\n");
                         Param p = fn.params.get(i);
-                        String pType = (i < specTypes.size()) ? specTypes.get(i) : (p.type != null && !p.type.isEmpty() ? p.type.toLowerCase() : "int");
+                        String pType = (i < specTypes.size()) ? canonicalQueryType(specTypes.get(i), program)
+                                : canonicalQueryType(p.type != null && !p.type.isEmpty() ? p.type : "Int", program);
                         String effect = "READ";
                         if (i < fn.parameterAccessModes.size()) {
                             effect = fn.parameterAccessModes.get(i).name().toUpperCase(Locale.ROOT);
@@ -2006,7 +2007,7 @@ public class SemanticQueryEngine {
                     boolean receiverWrite = method.receiverAccessMode == AccessMode.Write;
                     StringBuilder sb = new StringBuilder("[\n")
                             .append("      {\"name\": \"self\", \"type\": \"")
-                            .append(object.name.toLowerCase(Locale.ROOT)).append("\", \"effect\": \"")
+                            .append(canonicalQueryType(object.name, program)).append("\", \"effect\": \"")
                             .append(receiverWrite ? "WRITE" : "READ").append("\"}");
                     for (int index = 0; index < method.params.size(); index++) {
                         Param parameter = method.params.get(index);
@@ -2015,8 +2016,8 @@ public class SemanticQueryEngine {
                                 : "READ";
                         sb.append(",\n      {\"name\": \"").append(parameter.name)
                                 .append("\", \"type\": \"")
-                                .append(parameter.type != null && !parameter.type.isEmpty()
-                                        ? parameter.type.toLowerCase(Locale.ROOT) : "int")
+                                .append(canonicalQueryType(parameter.type != null && !parameter.type.isEmpty()
+                                        ? parameter.type : "Int", program))
                                 .append("\", \"effect\": \"").append(parameterEffect).append("\"}");
                     }
                     return sb.append("\n    ]").toString();
@@ -2028,6 +2029,50 @@ public class SemanticQueryEngine {
       {"name": "self", "type": "%s", "effect": "READ"},
       {"name": "error", "type": "std__ParseError", "effect": "WRITE"}
     ]""".formatted(recvType);
+    }
+
+    private static String canonicalQueryType(String rawType, Program program) {
+        if (rawType == null || rawType.isBlank()) return "int";
+        String type = rawType.trim();
+        String primitive = switch (type.toLowerCase(Locale.ROOT)) {
+            case "int" -> "int";
+            case "float" -> "float";
+            case "bool" -> "bool";
+            case "string" -> "string";
+            case "char" -> "char";
+            case "unit" -> "unit";
+            default -> null;
+        };
+        if (primitive != null) return primitive;
+        if (program != null) {
+            if (program.objects != null) {
+                for (ObjectType object : program.objects) {
+                    if (object.name.equals(type) || type.endsWith("__" + object.name)) return object.name;
+                }
+            }
+            if (program.enums != null) {
+                for (EnumType declaration : program.enums) {
+                    if (declaration.name.equals(type) || type.endsWith("__" + declaration.name))
+                        return declaration.name;
+                }
+            }
+        }
+        int open = type.indexOf('[');
+        if (open > 0 && type.endsWith("]")) {
+            String head = type.substring(0, open).trim();
+            String canonicalHead = switch (head.toLowerCase(Locale.ROOT)) {
+                case "vector" -> "vector";
+                case "map" -> "map";
+                case "queue" -> "queue";
+                case "set" -> "set";
+                default -> head;
+            };
+            List<String> arguments = org.mosslang.compiler.parser.ParserSupport.splitTopLevel(
+                    type.substring(open + 1, type.length() - 1), ',');
+            return canonicalHead + "[" + String.join(",", arguments.stream()
+                    .map(argument -> canonicalQueryType(argument, program)).toList()) + "]";
+        }
+        return type.toLowerCase(Locale.ROOT);
     }
 
     private static String getStableTypeKeyForTypeString(String typeStr) {

@@ -15070,3 +15070,15 @@ Validation: both compilers accept the focused source and their method effects
 queries agree; all eleven Java unit-test classes pass in ABI-v9 and staged
 ABI-v10. Method-local aliasing, generic substitutions, and cross-module effect
 closure remain open.
+
+
+### Phase 25.3 continuation — preserve nominal spelling in effects ownership rows
+
+Effects ownership query rows now preserve declared nominal names such as
+`Box`, while built-in collection and primitive types retain their canonical
+lowercase query form. The focused nested-field method query now returns the
+same `self: Box, WRITE` row as C++.
+
+Validation: C++ and Java query rows agree on the nested receiver case; all
+eleven Java unit-test classes pass under ABI-v9. Broader query schema/data
+parity remains open.

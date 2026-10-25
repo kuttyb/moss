@@ -415,3 +415,12 @@ checker resolves the statically declared self-field path to the mutating method
 and closes receiver writes through it. All eleven Java unit classes pass under
 ABI-v9 and staged ABI-v10. Alias, generic substitution, and cross-module
 closures remain open.
+
+
+### Follow-up — canonical nominal names in effects ownership rows
+
+Effects ownership query serialization now preserves nominal spelling (for
+example `Box`) instead of lowercasing it, while canonicalizing built-in and
+collection names recursively. The nested-field receiver query now returns the
+same `self: Box, WRITE` row under C++ and Java. All eleven Java unit-test
+classes pass under ABI-v9; broader query schema/data parity remains open.
