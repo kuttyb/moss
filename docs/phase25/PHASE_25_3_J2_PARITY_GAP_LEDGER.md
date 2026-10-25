@@ -662,10 +662,10 @@ smoke check, not native Rust or Margo integration evidence.
 
 ### Phase 25.3 continuation — preserve source-free typed raise metadata
 
-An ABI-v9 imported function with `raise_set=enum:Fault:Bad` was accepted in
-`main` without recovery because the function had no body from which to infer
-raises. Java now retains source-free enum variants and includes them in root
-raise closure. The regression rejects the unhandled call and accepts an exact
-`recover Fault.Bad` arm. All eleven Java test classes pass under ABI-v9 and
-staged ABI-v10. Multi-variant ABI encoding and source-free native execution
-remain open.
+An ABI-v9 imported function or object method with
+`raise_set=enum:Fault:Bad` was accepted in `main` without recovery because
+there was no body from which to infer raises. Java now retains source-free
+enum variants for both callables and includes them in root raise closure.
+Regressions reject unhandled calls and accept exact `recover Fault.Bad` arms.
+All eleven Java test classes pass under ABI-v9 and staged ABI-v10. Multi-variant
+ABI encoding and source-free native execution remain open.

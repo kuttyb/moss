@@ -23,6 +23,7 @@ public class Method {
     public AccessMode receiverAccessMode = AccessMode.Read;
     public java.util.List<AccessMode> parameterAccessModes = new java.util.ArrayList<>();
     public boolean sourceFree = false;
+    public java.util.List<String> sourceFreeRaiseVariants = new java.util.ArrayList<>();
 
     public Method() {}
 

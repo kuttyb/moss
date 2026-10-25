@@ -1457,6 +1457,7 @@ public class Main {
                                 ? parseAccessMode(words[modeIndex])
                                 : org.mosslang.compiler.types.AccessMode.Read);
                     }
+                    method.sourceFreeRaiseVariants.addAll(parseSourceFreeRaiseVariants(line));
                     currentObject.methods.add(method);
                     continue;
                 }

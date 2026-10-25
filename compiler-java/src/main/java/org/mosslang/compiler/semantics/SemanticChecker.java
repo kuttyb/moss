@@ -1775,6 +1775,7 @@ public class SemanticChecker {
     private Set<String> collectMethodRaiseVariants(Method method, Set<String> visited) {
         Set<String> variants = new LinkedHashSet<>();
         if (method == null || !visited.add(method.owner + "." + method.name)) return variants;
+        variants.addAll(method.sourceFreeRaiseVariants);
         Map<String, String> localTypes = new HashMap<>();
         for (int index = 0; index < method.body.size(); index++) {
             Stmt statement = method.body.get(index);

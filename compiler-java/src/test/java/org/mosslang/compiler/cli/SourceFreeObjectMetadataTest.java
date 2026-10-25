@@ -44,7 +44,10 @@ public final class SourceFreeObjectMetadataTest {
                 + "params=1 \"amount\" \"float\" READ\n"
                 + "  object_method replace return=unit receiver=WRITE "
                 + "effects=local_capture_read=0;local_mutation=0;domain_read=0;domain_write=0;message=0;external_io=0;fileio=0;fileio_unknown=0;may_panic=0;raise_set=-;may_diverge=0;unresolved=0 "
-                + "params=1 \"next\" \"Vector[Int]\" CONSUME\n";
+                + "params=1 \"next\" \"Vector[Int]\" CONSUME\n"
+                + "  object_method fail return=unit receiver=READ "
+                + "effects=local_capture_read=0;local_mutation=0;domain_read=0;domain_write=0;message=0;external_io=0;fileio=0;fileio_unknown=0;may_panic=0;raise_set=enum:Fault:Bad;may_diverge=0;unresolved=0 "
+                + "params=0\n";
         Files.writeString(interfaceFile, content);
         if (!Main.readMossiText(interfaceFile).contains("comment CafÃ©")) {
             throw new AssertionError("ABI-v9 interface decoding no longer preserves its legacy byte mapping");
@@ -94,7 +97,7 @@ public final class SourceFreeObjectMetadataTest {
             throw new AssertionError("ABI-v9 source-free enum did not use its provider Rust path: "
                     + legacyEnumRust);
         }
-        if (imported.methods.size() != 2
+        if (imported.methods.size() != 3
                 || !"shift".equals(imported.methods.get(0).name)
                 || !"float".equals(imported.methods.get(0).returnType)
                 || imported.methods.get(0).params.size() != 1
@@ -109,6 +112,10 @@ public final class SourceFreeObjectMetadataTest {
                 || imported.methods.get(1).parameterAccessModes.get(0)
                         != org.mosslang.compiler.types.AccessMode.Consume) {
             throw new AssertionError("source-free method signature was not restored");
+        }
+        if (!"fail".equals(imported.methods.get(2).name)
+                || !imported.methods.get(2).sourceFreeRaiseVariants.contains("Fault.Bad")) {
+            throw new AssertionError("source-free method raise facts were not restored");
         }
         if (!"unit".equals(imported.methods.get(1).returnType)) {
             throw new AssertionError("source-free unit method return type was not restored");
@@ -140,6 +147,30 @@ public final class SourceFreeObjectMetadataTest {
             throw new AssertionError("source-free WRITE/CONSUME modes did not reach Rust parameter lowering: "
                     + checkedRust);
         }
+        Program unhandledMethodRaise = Parser.parseSource(""
+                + "enum Fault:\n"
+                + "  Bad\n"
+                + "fn main():\n"
+                + "  point = provider__Point(x=0.0, label=\"x\")\n"
+                + "  point.fail()\n", "source-free-method-raise.moss");
+        Main.loadMossiFunctions(interfaceFile, "provider", unhandledMethodRaise);
+        try {
+            new SemanticChecker(unhandledMethodRaise).run();
+            throw new AssertionError("source-free method raise was allowed to escape main");
+        } catch (CompileError error) {
+            if (!"MOSS_COMPILE_ERROR".equals(error.getCode())) throw error;
+        }
+        Program handledMethodRaise = Parser.parseSource(""
+                + "enum Fault:\n"
+                + "  Bad\n"
+                + "fn main():\n"
+                + "  point = provider__Point(x=0.0, label=\"x\")\n"
+                + "  try:\n"
+                + "    point.fail()\n"
+                + "  recover Fault.Bad:\n"
+                + "    pass\n", "source-free-method-raise-handled.moss");
+        Main.loadMossiFunctions(interfaceFile, "provider", handledMethodRaise);
+        new SemanticChecker(handledMethodRaise).run();
         Program consumingConsumer = Parser.parseSource(""
                 + "fn use_point(point: provider__Point, values: Vector[Int]) -> Vector[Int]:\n"
                 + "  point.replace(values)\n"
