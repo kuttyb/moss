@@ -645,7 +645,7 @@ discrepancy remains recorded above.
 An imported ABI-v10 function retained CONSUME when loaded, but semantic
 checking reset its parameter mode to READ and allowed caller reuse. The Java
 checker now preserves source-free parameter modes and applies ABI metadata
-WRITE/CONSUME at calls. Tests cover ABI-v9 mode import and ABI-v10 caller
-rejection after consumption plus a WRITE/READ alias conflict. All eleven Java
+WRITE/CONSUME at calls. Tests cover ABI-v9 and ABI-v10 caller rejection after
+consumption plus an ABI-v10 WRITE/READ alias conflict. All eleven Java
 test classes pass under ABI-v9 and staged ABI-v10; native source-free linkage
 remains a final acceptance gate.

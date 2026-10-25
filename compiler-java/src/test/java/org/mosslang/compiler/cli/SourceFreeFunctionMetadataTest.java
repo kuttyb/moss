@@ -64,6 +64,21 @@ public final class SourceFreeFunctionMetadataTest {
                     .findFirst().orElseThrow(() -> new AssertionError("ABI-v9 consuming function missing"));
             assertEquals(AccessMode.Consume, v9Consume.parameterAccessModes.get(0),
                     "ABI-v9 consuming function access mode");
+            Program v9Consumer = Parser.parseSource(""
+                    + "fn main():\n"
+                    + "  value = \"moved\"\n"
+                    + "  service.consume(value)\n"
+                    + "  echo value\n", "source-free-v9-consume-consumer.moss");
+            Main.loadMossiFunctions(interfaceFile, "service", v9Consumer);
+            v9Consumer.functions.removeIf(function -> !function.name.equals("main")
+                    && !function.name.equals("service.consume")
+                    && !function.name.equals("service__consume"));
+            try {
+                new SemanticChecker(v9Consumer).run();
+                throw new AssertionError("ABI-v9 source-free CONSUME mode did not consume its argument");
+            } catch (org.mosslang.compiler.diagnostics.CompileError error) {
+                if (!"OWNERSHIP_USE_AFTER_CONSUME".equals(error.getCode())) throw error;
+            }
             Function alias = program.functions.stream()
                     .filter(function -> function.name.equals("service__map"))
                     .findFirst().orElseThrow(() -> new AssertionError("native function alias missing"));
