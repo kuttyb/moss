@@ -13326,3 +13326,22 @@ validation remain open.
 Validation: all ten Java unit-test classes pass after clean builds in default
 ABI-v9 and staged ABI-v10 modes; agent-feedback validation and `git diff
 --check` pass. No native or SDK gate ran.
+
+### Phase 25.3 continuation — generalize checked closed-Int expression bodies
+
+Source-free ABI-v10 callable projection now admits checked closed-`Int` return
+expressions over any number of `Int` parameters, including integer literals,
+parentheses, unary negation, and nested `+`, `-`, `*`, `/`, and `%` operations.
+The producer emits typed summary/body records from the checked function signature
+and the loader reconstructs Moss expressions from the checked IR, resolving
+parameter ordinals against the imported signature. Regression coverage removes
+legacy generic body rows and loads a two-parameter mixed-precedence expression
+and a unary-negation expression into a source-free consumer. This remains a
+bounded pure expression path: non-`Int` operators, local statements, calls,
+requirements, effects, and native provider-consumer behavior remain open.
+
+Validation: all ten Java unit-test classes pass after clean builds in default
+ABI-v9 and staged ABI-v10 modes. `python3 tests/tooling/check_agent_feedback.py`
+and `git diff --check` pass. No native execution, Rust compilation, Margo
+provider-consumer build, SDK gate, or full `make check` was run. The working tree
+contains this uncommitted checkpoint; overall Phase 25.3 remains incomplete.

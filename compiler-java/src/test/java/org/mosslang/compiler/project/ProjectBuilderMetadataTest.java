@@ -346,6 +346,10 @@ public final class ProjectBuilderMetadataTest {
                 + "  return value / 2\n"
                 + "export fn modulo(value: Int) -> Int:\n"
                 + "  return value % 2\n"
+                + "export fn combine(left: Int, right: Int) -> Int:\n"
+                + "  return left * 3 + right / 2\n"
+                + "export fn negated(value: Int) -> Int:\n"
+                + "  return -value + 4\n"
                 + "export fn negative() -> Int:\n"
                 + "  return -42\n"
                 + "export fn negative_ratio() -> Float:\n"
@@ -607,6 +611,49 @@ public final class ProjectBuilderMetadataTest {
                 throw new AssertionError("ABI-v10 integer-" + operation.getKey() + " checked body is incomplete");
             }
         }
+        AbiV10Records.Summary combineSummary = identityInterface.binaryContract.stream()
+                .filter(record -> record.payloadBytes().length > 0
+                        && (record.payloadBytes()[0] == 3 || record.payloadBytes()[0] == 4))
+                .map(AbiV10Records.Summary::decode)
+                .filter(summary -> summary.callableId.endsWith(":fn:combine"))
+                .findFirst().orElseThrow(() ->
+                        new AssertionError("ABI-v10 producer omitted the multi-parameter Int expression summary"));
+        AbiV10Records.CheckedBodyRecord combineBody = identityInterface.privateSemanticDependencies.stream()
+                .filter(record -> record.id.startsWith("checked-body-v1:"))
+                .map(AbiV10Records.CheckedBodyRecord::decode)
+                .filter(body -> body.callableId.endsWith(":fn:combine"))
+                .findFirst().orElseThrow(() ->
+                        new AssertionError("ABI-v10 producer omitted the multi-parameter Int expression body"));
+        java.util.List<org.mosslang.compiler.abi.CheckedStmt> combineStatements =
+                CheckedBodyCodec.decodeCheckedBody(combineBody.checkedIrBytes);
+        if (combineSummary.parameters.size() != 2
+                || combineStatements.size() != 1
+                || combineStatements.get(0).expr.kind != org.mosslang.compiler.abi.CheckedExprKind.Binary
+                || combineStatements.get(0).expr.binaryOp != org.mosslang.compiler.abi.CheckedBinaryOp.Add
+                || combineStatements.get(0).expr.operands.get(0).binaryOp
+                        != org.mosslang.compiler.abi.CheckedBinaryOp.Mul
+                || combineStatements.get(0).expr.operands.get(1).binaryOp
+                        != org.mosslang.compiler.abi.CheckedBinaryOp.Div
+                || !combineSummary.bodySemanticHash.equals(combineBody.semanticHash)) {
+            throw new AssertionError("ABI-v10 multi-parameter nested Int expression is incomplete");
+        }
+        AbiV10Records.CheckedBodyRecord negatedBody = identityInterface.privateSemanticDependencies.stream()
+                .filter(record -> record.id.startsWith("checked-body-v1:"))
+                .map(AbiV10Records.CheckedBodyRecord::decode)
+                .filter(body -> body.callableId.endsWith(":fn:negated"))
+                .findFirst().orElseThrow(() ->
+                        new AssertionError("ABI-v10 producer omitted the unary-negation expression body"));
+        java.util.List<org.mosslang.compiler.abi.CheckedStmt> negatedStatements =
+                CheckedBodyCodec.decodeCheckedBody(negatedBody.checkedIrBytes);
+        if (negatedStatements.size() != 1
+                || negatedStatements.get(0).expr.operands.get(0).kind
+                        != org.mosslang.compiler.abi.CheckedExprKind.Unary
+                || negatedStatements.get(0).expr.operands.get(0).operands.get(0).kind
+                        != org.mosslang.compiler.abi.CheckedExprKind.Parameter) {
+            throw new AssertionError("ABI-v10 unary-negation checked expression is incomplete: "
+                    + negatedStatements.get(0).expr + " / "
+                    + negatedStatements.get(0).expr.operands);
+        }
         Path identityMossi = null;
         try {
             identityMossi = Files.createTempFile(Path.of("tmp"), "identity-provider-", ".mossi");
@@ -652,6 +699,10 @@ public final class ProjectBuilderMetadataTest {
                     + "  return provider__divide(42)\n"
                     + "fn use_modulo() -> Int:\n"
                     + "  return provider__modulo(43)\n"
+                    + "fn use_combine() -> Int:\n"
+                    + "  return provider__combine(20, 8)\n"
+                    + "fn use_negated() -> Int:\n"
+                    + "  return provider__negated(3)\n"
                     + "fn main():\n"
                     + "  pass\n", "identity-consumer.moss");
             org.mosslang.compiler.cli.Main.loadMossiFunctions(identityMossi, "provider", consumer);

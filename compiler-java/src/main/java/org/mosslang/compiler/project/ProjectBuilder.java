@@ -1475,9 +1475,9 @@ public class ProjectBuilder {
                         }
                     }
                     if (summary == null) {
-                        arithmeticReturn = v10SingleIntBinaryReturn(fn);
+                        arithmeticReturn = v10ClosedIntExpressionReturn(fn);
                         if (arithmeticReturn != null) {
-                            summary = v10SingleExpressionSummary(
+                            summary = v10ClosedIntExpressionSummary(
                                     fn, arithmeticReturn, modId, provenanceRecords);
                         }
                     }
@@ -1683,57 +1683,108 @@ public class ProjectBuilder {
         return summary;
     }
 
-    private static CheckedExpr v10SingleIntBinaryReturn(Function function) {
-        if (function.params.size() != 1 || function.returnTypeRef == null
-                || function.returnTypeRef.kind() != org.mosslang.compiler.types.TypeKind.Primitive
-                || !"int".equalsIgnoreCase(function.returnTypeRef.name())
-                || !function.returnTypeRef.equals(function.params.get(0).checkedTypeRef)
+    private static CheckedExpr v10ClosedIntExpressionReturn(Function function) {
+        if (!isV10IntType(function.returnTypeRef)
                 || function.body.size() != 1 || function.body.get(0).kind != Stmt.Kind.Return) return null;
-        String expression = function.body.get(0).a != null ? function.body.get(0).a.trim() : "";
-        org.mosslang.compiler.semantics.ExpressionTyper.BinarySplit split =
-                org.mosslang.compiler.semantics.ExpressionTyper.splitBinary(
-                        expression, List.of("+", "-", "*", "/", "%"));
-        if (split == null || !function.params.get(0).name.equals(split.left().trim())
-                || !split.right().trim().matches("[0-9](?:_?[0-9])*")) return null;
-        long literal;
-        try { literal = Long.parseLong(split.right().trim().replace("_", "")); }
-        catch (NumberFormatException ignored) { return null; }
-        org.mosslang.compiler.abi.CheckedBinaryOp operation = switch (split.op()) {
-            case "+" -> org.mosslang.compiler.abi.CheckedBinaryOp.Add;
-            case "-" -> org.mosslang.compiler.abi.CheckedBinaryOp.Sub;
-            case "*" -> org.mosslang.compiler.abi.CheckedBinaryOp.Mul;
-            case "/" -> org.mosslang.compiler.abi.CheckedBinaryOp.Div;
-            case "%" -> org.mosslang.compiler.abi.CheckedBinaryOp.Mod;
-            default -> null;
-        };
-        if (operation == null) return null;
-        TypeRef intType = canonicalV10SummaryType(function.returnTypeRef, Map.of());
-        return CheckedExpr.binary(operation,
-                CheckedExpr.parameter(0, intType), CheckedExpr.integerLiteral(literal, intType), intType);
+        for (Param parameter : function.params) {
+            if (!isV10IntType(parameter.checkedTypeRef)) return null;
+        }
+        Stmt statement = function.body.get(0);
+        String expression = statement.a != null ? statement.a.trim() : "";
+        if (expression.isEmpty() && statement.text != null
+                && statement.text.trim().startsWith("return ")) {
+            expression = statement.text.trim().substring(7).trim();
+        }
+        return v10LowerClosedIntExpression(expression, function, 0);
     }
 
-    private static AbiV10Records.Summary v10SingleExpressionSummary(
+    private static boolean isV10IntType(TypeRef type) {
+        return type != null && type.kind() == org.mosslang.compiler.types.TypeKind.Primitive
+                && "int".equalsIgnoreCase(type.name());
+    }
+
+    private static CheckedExpr v10LowerClosedIntExpression(
+            String source, Function function, int depth) {
+        if (source == null || depth > 128) return null;
+        String expression = source.trim();
+        while (v10ExpressionHasWrappingParens(expression)) {
+            expression = expression.substring(1, expression.length() - 1).trim();
+        }
+        TypeRef intType = TypeRef.primitive("int");
+        if (expression.matches("[+-]?[0-9](?:_?[0-9])*") ) {
+            try {
+                return CheckedExpr.integerLiteral(Long.parseLong(expression.replace("_", "")), intType);
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+        for (int index = 0; index < function.params.size(); index++) {
+            if (function.params.get(index).name.equals(expression)) {
+                return CheckedExpr.parameter(index, intType);
+            }
+        }
+        for (List<String> operators : List.of(List.of("+", "-"), List.of("*", "/", "%"))) {
+            org.mosslang.compiler.semantics.ExpressionTyper.BinarySplit split =
+                    org.mosslang.compiler.semantics.ExpressionTyper.splitBinary(expression, operators);
+            if (split == null) continue;
+            CheckedExpr left = v10LowerClosedIntExpression(split.left(), function, depth + 1);
+            CheckedExpr right = v10LowerClosedIntExpression(split.right(), function, depth + 1);
+            if (left == null || right == null) return null;
+            org.mosslang.compiler.abi.CheckedBinaryOp operation = switch (split.op()) {
+                case "+" -> org.mosslang.compiler.abi.CheckedBinaryOp.Add;
+                case "-" -> org.mosslang.compiler.abi.CheckedBinaryOp.Sub;
+                case "*" -> org.mosslang.compiler.abi.CheckedBinaryOp.Mul;
+                case "/" -> org.mosslang.compiler.abi.CheckedBinaryOp.Div;
+                case "%" -> org.mosslang.compiler.abi.CheckedBinaryOp.Mod;
+                default -> null;
+            };
+            return operation == null ? null : CheckedExpr.binary(operation, left, right, intType);
+        }
+        if (expression.startsWith("-") && !expression.equals("-")) {
+            CheckedExpr operand = v10LowerClosedIntExpression(expression.substring(1).trim(), function, depth + 1);
+            return operand == null ? null : CheckedExpr.unary(
+                    org.mosslang.compiler.abi.CheckedUnaryOp.Neg, operand, intType);
+        }
+        return null;
+    }
+
+    private static boolean v10ExpressionHasWrappingParens(String expression) {
+        if (expression.length() < 2 || expression.charAt(0) != '(' || expression.charAt(expression.length() - 1) != ')') {
+            return false;
+        }
+        int depth = 0;
+        for (int index = 0; index < expression.length(); index++) {
+            char current = expression.charAt(index);
+            if (current == '(') depth++;
+            else if (current == ')') {
+                depth--;
+                if (depth == 0 && index != expression.length() - 1) return false;
+                if (depth < 0) return false;
+            }
+        }
+        return depth == 0;
+    }
+
+    private static AbiV10Records.Summary v10ClosedIntExpressionSummary(
             Function function, CheckedExpr expression, String moduleId,
             List<AbiV10Records.SourceProvenance> provenanceRecords) {
-        TypeRef parameterType = function.params.get(0).checkedTypeRef;
-        TypeRef resultType = function.returnTypeRef;
-        if (!isV10SummaryTypeRepresentable(parameterType)
-                || !isV10SummaryTypeRepresentable(resultType)) return null;
-        Map<org.mosslang.compiler.types.TypeVarId, Integer> ordinals = new LinkedHashMap<>();
-        collectV10SummaryVariables(parameterType, ordinals);
-        collectV10SummaryVariables(resultType, ordinals);
+        TypeRef resultType = TypeRef.primitive("int");
+        if (!isV10SummaryTypeRepresentable(resultType)
+                || function.params.stream().anyMatch(parameter -> !isV10IntType(parameter.checkedTypeRef))) return null;
         AbiV10Records.Summary summary = new AbiV10Records.Summary();
         summary.callableId = function.semanticCallableId;
-        summary.variableCount = ordinals.size();
-        summary.parameters.add(AbiV10Records.fromTypeRef(parameterType, ordinals));
-        org.mosslang.compiler.types.AccessMode access = function.parameterAccessModes.isEmpty()
-                ? org.mosslang.compiler.types.AccessMode.Read : function.parameterAccessModes.get(0);
-        summary.parameterAccess.add(switch (access) {
-            case Read -> AbiV10Records.Access.Read;
-            case Write -> AbiV10Records.Access.Write;
-            case Consume -> AbiV10Records.Access.Consume;
-        });
-        summary.result = AbiV10Records.fromTypeRef(resultType, ordinals);
+        for (int index = 0; index < function.params.size(); index++) {
+            summary.parameters.add(AbiV10Records.fromTypeRef(resultType, Map.of()));
+            org.mosslang.compiler.types.AccessMode access = function.parameterAccessModes.size() > index
+                    ? function.parameterAccessModes.get(index)
+                    : org.mosslang.compiler.types.AccessMode.Read;
+            summary.parameterAccess.add(switch (access) {
+                case Read -> AbiV10Records.Access.Read;
+                case Write -> AbiV10Records.Access.Write;
+                case Consume -> AbiV10Records.Access.Consume;
+            });
+        }
+        summary.result = AbiV10Records.fromTypeRef(resultType, Map.of());
         String bodyBytes = CheckedBodyCodec.encodeCheckedBodyV1(List.of(CheckedStmt.returnStmt(expression)));
         summary.bodySemanticHash = "body-semantic-v1:sha256:" + CheckedBodyCodec.sha256Hex(bodyBytes);
         AbiV10Records.SourceProvenance provenance = AbiV10Records.SourceProvenance.create(

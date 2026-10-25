@@ -1450,8 +1450,7 @@ public class Main {
                     || statement.expr == null || !resultType.equals(statement.expr.type)) continue;
             int returnedParameter = -1;
             String returnedLiteral = null;
-            String integerBinaryRight = null;
-            String integerBinaryOperator = null;
+            String closedIntExpression = null;
             if (statement.expr.kind == org.mosslang.compiler.abi.CheckedExprKind.Parameter) {
                 returnedParameter = statement.expr.ordinal;
                 if (returnedParameter < 0 || returnedParameter >= parameterTypes.size()
@@ -1479,34 +1478,13 @@ public class Main {
                     && "string".equalsIgnoreCase(resultType.name())
                     && statement.expr.literalValue.matches("[^\"\\\\\\r\\n]*")) {
                 returnedLiteral = "\"" + statement.expr.literalValue + "\"";
-            } else if (statement.expr.kind == org.mosslang.compiler.abi.CheckedExprKind.Binary
-                    && java.util.Set.of(org.mosslang.compiler.abi.CheckedBinaryOp.Add,
-                            org.mosslang.compiler.abi.CheckedBinaryOp.Sub,
-                            org.mosslang.compiler.abi.CheckedBinaryOp.Mul,
-                            org.mosslang.compiler.abi.CheckedBinaryOp.Div,
-                            org.mosslang.compiler.abi.CheckedBinaryOp.Mod)
-                            .contains(statement.expr.binaryOp)
-                    && parameterTypes.size() == 1
-                    && resultType.kind() == org.mosslang.compiler.types.TypeKind.Primitive
+            } else if (resultType.kind() == org.mosslang.compiler.types.TypeKind.Primitive
                     && "int".equalsIgnoreCase(resultType.name())
-                    && statement.expr.operands.size() == 2) {
-                org.mosslang.compiler.abi.CheckedExpr left = statement.expr.operands.get(0);
-                org.mosslang.compiler.abi.CheckedExpr right = statement.expr.operands.get(1);
-                if (left.kind != org.mosslang.compiler.abi.CheckedExprKind.Parameter || left.ordinal != 0
-                        || !parameterTypes.get(0).equals(left.type)
-                        || right.kind != org.mosslang.compiler.abi.CheckedExprKind.IntegerLiteral
-                        || !resultType.equals(right.type)
-                        || !right.literalValue.matches("[0-9](?:_?[0-9])*")) continue;
-                integerBinaryRight = right.literalValue;
-                integerBinaryOperator = switch (statement.expr.binaryOp) {
-                    case Add -> "+";
-                    case Sub -> "-";
-                    case Mul -> "*";
-                    case Div -> "/";
-                    case Mod -> "%";
-                    default -> null;
-                };
-                if (integerBinaryOperator == null) continue;
+                    && parameterTypes.stream().allMatch(type -> type.kind()
+                            == org.mosslang.compiler.types.TypeKind.Primitive
+                            && "int".equalsIgnoreCase(type.name()))) {
+                closedIntExpression = sourceFreeClosedIntExpression(statement.expr, parameterTypes, 0);
+                if (closedIntExpression == null) continue;
             } else {
                 continue;
             }
@@ -1531,10 +1509,13 @@ public class Main {
                 function.bindReturnType(resultType);
                 function.body.clear();
                 String returnExpression = returnedParameter >= 0
-                        ? function.params.get(returnedParameter).name : returnedLiteral;
-                if (integerBinaryRight != null) {
-                    returnExpression = function.params.get(0).name + " " + integerBinaryOperator
-                            + " " + integerBinaryRight;
+                        ? function.params.get(returnedParameter).name
+                        : closedIntExpression != null ? closedIntExpression : returnedLiteral;
+                if (closedIntExpression != null) {
+                    for (int index = 0; index < function.params.size(); index++) {
+                        returnExpression = returnExpression.replace("\u0001" + index + "\u0002",
+                                function.params.get(index).name);
+                    }
                 }
                 org.mosslang.compiler.ast.Stmt projected = new org.mosslang.compiler.ast.Stmt(
                         org.mosslang.compiler.ast.Stmt.Kind.Return, 1, 1,
@@ -1547,6 +1528,48 @@ public class Main {
                 function.staticDispatch = function.generic;
             }
         }
+    }
+
+    private static String sourceFreeClosedIntExpression(
+            org.mosslang.compiler.abi.CheckedExpr expression,
+            List<org.mosslang.compiler.types.TypeRef> parameterTypes, int depth) {
+        if (expression == null || depth > 128 || expression.type == null
+                || expression.type.kind() != org.mosslang.compiler.types.TypeKind.Primitive
+                || !"int".equalsIgnoreCase(expression.type.name())) return null;
+        return switch (expression.kind) {
+            case Parameter -> expression.ordinal >= 0 && expression.ordinal < parameterTypes.size()
+                    && expression.type.equals(parameterTypes.get(expression.ordinal))
+                    ? "\u0001" + expression.ordinal + "\u0002" : null;
+            case IntegerLiteral -> expression.literalValue.matches("-?[0-9](?:_?[0-9])*")
+                    ? expression.literalValue : null;
+            case Unary -> {
+                if (expression.unaryOp != org.mosslang.compiler.abi.CheckedUnaryOp.Neg
+                        || expression.operands.size() != 1) yield null;
+                String operand = sourceFreeClosedIntExpression(expression.operands.get(0), parameterTypes, depth + 1);
+                yield operand == null ? null : "- (" + operand + ")";
+            }
+            case Binary -> {
+                if (!java.util.Set.of(org.mosslang.compiler.abi.CheckedBinaryOp.Add,
+                        org.mosslang.compiler.abi.CheckedBinaryOp.Sub,
+                        org.mosslang.compiler.abi.CheckedBinaryOp.Mul,
+                        org.mosslang.compiler.abi.CheckedBinaryOp.Div,
+                        org.mosslang.compiler.abi.CheckedBinaryOp.Mod).contains(expression.binaryOp)
+                        || expression.operands.size() != 2) yield null;
+                String left = sourceFreeClosedIntExpression(expression.operands.get(0), parameterTypes, depth + 1);
+                String right = sourceFreeClosedIntExpression(expression.operands.get(1), parameterTypes, depth + 1);
+                if (left == null || right == null) yield null;
+                String operator = switch (expression.binaryOp) {
+                    case Add -> "+";
+                    case Sub -> "-";
+                    case Mul -> "*";
+                    case Div -> "/";
+                    case Mod -> "%";
+                    default -> null;
+                };
+                yield operator == null ? null : "(" + left + " " + operator + " " + right + ")";
+            }
+            default -> null;
+        };
     }
 
     private static org.mosslang.compiler.types.TypeRef v10SimpleWireType(
