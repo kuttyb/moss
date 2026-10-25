@@ -8,6 +8,7 @@
 #include <set>
 #include <istream>
 #include "ast.hpp"
+#include "compiler_stage_timer.hpp"
 #include "diagnostics.hpp"
 #include "numeric_literal.hpp"
 #include "parser.hpp"
@@ -1052,6 +1053,7 @@ Program parse_source_lines(vector<Line> lines,
 
 Program parse_source(std::istream& input, const string& source_file,
                      const std::set<string>& standard_aliases) {
+  CompilerStageTimer timer("parsing");
   return parse_source_lines(lex_lines(input, source_file), standard_aliases);
 }
 

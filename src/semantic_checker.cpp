@@ -496,52 +496,55 @@ class Checker {
   }
 
   void run() {
-    p_.semantic_uses.clear();
-    check_enums();
-    check_domain_handle_declarations();
-    // Seed internal structural/generic parameter relations before cross-reference inference.
-    infer_function_signatures(false);
-    infer_object_fields();
-    check_object_layout_cycles();
-    check_enums();
-    check_traits();
-    check_objects();
-    // Function results and handler replies can constrain each other through an
-    // synchronous message or local call. Run non-final inference rounds before the
-    // final unresolved-type diagnostics.
-    for (size_t round = 0; round < 3; ++round) {
-      infer_domain_state_fields(false);
+    {
+      CompilerStageTimer timer("type_inference");
+      p_.semantic_uses.clear();
+      check_enums();
+      check_domain_handle_declarations();
+      // Seed internal structural/generic parameter relations before cross-reference inference.
       infer_function_signatures(false);
-      infer_handler_reply_types(false);
-    }
-    infer_domain_specializations();
-    infer_domain_state_fields(true);
-    infer_handler_reply_types(true);
-    infer_function_signatures(true);
-    build_open_callable_summaries();
-    check_domain_handle_declarations();
-    check_objects();
-    check_declared_map_key_types();
-    check_local_call_cycles();
-    // The first summary pass seeds result relations for call-cycle analysis.
-    // A second pass can bind straight-line private-call results to the exact
-    // call edges retained by that analysis, without guessing from spelling.
-    build_open_callable_summaries();
-    for (auto& function : p_.functions) {
-      if (!function.open_summary) continue;
-      for (const auto& edge : p_.semantic_call_edges) {
-        if (edge.source != "fn:" + function.name ||
-            !starts_with(edge.target, "fn:")) continue;
-        auto dependency = functions_.find(edge.target.substr(3));
-        if (dependency == functions_.end() ||
-            dependency->second->semantic_callable_id.empty())
-          throw std::invalid_argument(
-              "checked open summary has unresolved callable dependency");
-        const string& identity = dependency->second->semantic_callable_id;
-        auto& dependencies = function.open_summary->semantic_dependencies;
-        if (std::find(dependencies.begin(), dependencies.end(), identity) ==
-            dependencies.end())
-          dependencies.push_back(identity);
+      infer_object_fields();
+      check_object_layout_cycles();
+      check_enums();
+      check_traits();
+      check_objects();
+      // Function results and handler replies can constrain each other through an
+      // synchronous message or local call. Run non-final inference rounds before the
+      // final unresolved-type diagnostics.
+      for (size_t round = 0; round < 3; ++round) {
+        infer_domain_state_fields(false);
+        infer_function_signatures(false);
+        infer_handler_reply_types(false);
+      }
+      infer_domain_specializations();
+      infer_domain_state_fields(true);
+      infer_handler_reply_types(true);
+      infer_function_signatures(true);
+      build_open_callable_summaries();
+      check_domain_handle_declarations();
+      check_objects();
+      check_declared_map_key_types();
+      check_local_call_cycles();
+      // The first summary pass seeds result relations for call-cycle analysis.
+      // A second pass can bind straight-line private-call results to the exact
+      // call edges retained by that analysis, without guessing from spelling.
+      build_open_callable_summaries();
+      for (auto& function : p_.functions) {
+        if (!function.open_summary) continue;
+        for (const auto& edge : p_.semantic_call_edges) {
+          if (edge.source != "fn:" + function.name ||
+              !starts_with(edge.target, "fn:")) continue;
+          auto dependency = functions_.find(edge.target.substr(3));
+          if (dependency == functions_.end() ||
+              dependency->second->semantic_callable_id.empty())
+            throw std::invalid_argument(
+                "checked open summary has unresolved callable dependency");
+          const string& identity = dependency->second->semantic_callable_id;
+          auto& dependencies = function.open_summary->semantic_dependencies;
+          if (std::find(dependencies.begin(), dependencies.end(), identity) ==
+              dependencies.end())
+            dependencies.push_back(identity);
+        }
       }
     }
     { CompilerStageTimer timer("effects"); infer_effects(); infer_observable_effects(); }
@@ -568,8 +571,11 @@ class Checker {
     final_parameter_effects_ready_ = true;
     validate_borrowed_view_write_effects();
     { CompilerStageTimer timer("concrete_graph"); build_concrete_domain_graph(); }
-    check_method_ownership();
-    for (const auto& f : p_.functions) check_function(f);
+    {
+      CompilerStageTimer timer("specialization_checking");
+      check_method_ownership();
+      for (const auto& f : p_.functions) check_function(f);
+    }
     refresh_open_nominal_constructor_results_from_checked_types();
     refresh_open_arithmetic_summaries_from_checked_types();
     refresh_open_collection_summaries_from_checked_types();
@@ -1575,6 +1581,11 @@ class Checker {
     p_.typed_semantics = std::make_shared<moss::TypedSemanticModuleV1>(
         moss::project_typed_semantics_v1(p_));
     p_.assert_declaration_type_consistency();
+    if (std::getenv("MOSS_PROFILE_COMPILER") != nullptr) {
+      size_t total_specs = 0;
+      for (const auto& f : p_.functions) total_specs += f.specializations.size();
+      std::cerr << "MOSS_PROFILE|checked_specializations|" << total_specs << '\n';
+    }
   }
 
   const vector<Warning>& warnings() const { return warnings_; }

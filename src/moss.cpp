@@ -15342,6 +15342,7 @@ static CheckedProjectUnit check_project_sources(
     // Load it into the semantic namespace, but keep it out of this build's
     // declaration set so its Rust implementation is consumed from its rlib.
     if (has_explicit_modules) {
+      CompilerStageTimer timer("module_resolution");
       auto request_import = [&](const ModuleImport& import) {
         if (!modules.count(import.name)) requested_imports.emplace(import.name, import);
       };
@@ -15434,6 +15435,7 @@ static CheckedProjectUnit check_project_sources(
       }
     }
     if (has_explicit_modules) {
+      CompilerStageTimer timer("module_resolution");
       program.explicit_module = true;
       std::map<string,std::set<string>> public_exports;
       for (const auto& entry : modules)
