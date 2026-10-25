@@ -503,6 +503,24 @@ public class SemanticChecker {
             }
         }
         if (handler.failureArms != null) {
+            // Match payload binders are available on explicit raise edges from
+            // their case bodies and may be checked as on_fail captures.
+            for (Stmt statement : handler.body) {
+                if (statement.kind != Stmt.Kind.Case || statement.semanticType == null) continue;
+                EnumType matchedEnum = enums.get(statement.semanticType);
+                if (matchedEnum == null) continue;
+                for (EnumCase enumCase : matchedEnum.cases) {
+                    if (!enumCase.name.equals(statement.a)) continue;
+                    for (int index = 0; index < statement.args.size() && index < enumCase.fields.size(); index++) {
+                        Field field = enumCase.fields.get(index);
+                        TypeRef fieldType = TypeParser.parseCanonical(field.type);
+                        if (fieldType == null) fieldType = TypeRef.primitive(field.type.toLowerCase(Locale.ROOT));
+                        if ("consume".equals(statement.b))
+                            env.put(statement.args.get(index), fieldType, statement.line);
+                    }
+                    break;
+                }
+            }
             for (FailureArm arm : handler.failureArms) {
                 if (arm.binding != null && !arm.binding.isEmpty()) {
                     env.put(arm.binding, TypeRef.primitive("int"));
@@ -581,6 +599,8 @@ public class SemanticChecker {
             } else if (statement.kind == Stmt.Kind.Message && statement.messageResult != null
                     && !statement.messageResult.isEmpty() && !nonLocals.contains(statement.messageResult)) {
                 localCandidates.add(statement.messageResult);
+            } else if (statement.kind == Stmt.Kind.Case && statement.args != null) {
+                for (String binder : statement.args) if (!nonLocals.contains(binder)) localCandidates.add(binder);
             }
         }
         for (String name : localCandidates) {

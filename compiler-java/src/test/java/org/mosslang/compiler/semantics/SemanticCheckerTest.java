@@ -31,6 +31,7 @@ public class SemanticCheckerTest {
         testTypedOnFailLocalCaptureLowering();
         testOnFailRejectsLocalInitializedAfterRaise();
         testOnFailCaptureUsesMatchingRaisedVariant();
+        testOwnedMatchPayloadCanBeOnFailCapture();
         testSameCrateRaisingCallPreservesErrorCarrier();
         System.out.println("SemanticCheckerTest PASSED.");
     }
@@ -205,6 +206,30 @@ public class SemanticCheckerTest {
                 + "fn main():\n"
                 + "  pass\n", "variant-specific-handler-capture.moss");
         new SemanticChecker(program).run();
+    }
+
+    private static void testOwnedMatchPayloadCanBeOnFailCapture() {
+        Program program = Parser.parseSource(""
+                + "enum Failure:\n"
+                + "  Bad\n"
+                + "enum Data:\n"
+                + "  Have(value: String)\n"
+                + "domain Worker:\n"
+                + "  fn Run() -> String:\n"
+                + "    data = Data.Have(value: \"hello\")\n"
+                + "    match consume data:\n"
+                + "      case Have(value):\n"
+                + "        raise Failure.Bad\n"
+                + "  on_fail Failure.Bad:\n"
+                + "    reply value\n"
+                + "fn main():\n"
+                + "  worker = Worker()\n"
+                + "  echo message worker.Run()\n", "owned-match-on-fail-capture.moss");
+        new SemanticChecker(program).run();
+        if (!program.domains.get(0).handlers.get(0).failureArms.get(0)
+                .checkedCaptures.containsKey("value")) {
+            throw new AssertionError("owned match payload was not captured on the raise edge");
+        }
     }
 
     private static void testSameCrateRaisingCallPreservesErrorCarrier() {

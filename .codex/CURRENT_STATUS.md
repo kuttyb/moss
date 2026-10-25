@@ -13934,3 +13934,11 @@ for a match-case payload binder used by `on_fail`. The borrowed-payload
 counterpart is rejected by C++ with `ON_FAIL_CAPTURE_NOT_OWNED`; Java's current
 unknown-name error masks that distinction. Both are open Java semantic-checker
 parity issues pending a focused checker design.
+
+The owned match-payload gap is now fixed for `match consume`: the checker
+makes case payload binders available while validating handler failure arms and
+records them as captures on matching raise edges. Java Fast Debug returns
+`hello`, matching C++. A SemanticCheckerTest regression checks the capture
+fact. The borrowed-payload fixture remains rejected, currently with generic
+`UNKNOWN_SYMBOL_OR_TYPE` rather than C++'s more specific
+`ON_FAIL_CAPTURE_NOT_OWNED` diagnostic.
