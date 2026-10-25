@@ -1129,8 +1129,9 @@ public class ProjectBuilder {
     private static AbiV10Records.NominalTemplate v10NominalTemplate(
             ProjectManifest manifest, String module, String moduleId,
             Program program, ObjectType object,
-            List<AbiV10Records.SourceProvenance> provenanceRecords) {
-        if (!object.exported || object.sourceFree || !object.methods.isEmpty()
+            List<AbiV10Records.SourceProvenance> provenanceRecords,
+            List<MossiRecord> methodTemplateRecords) {
+        if (!object.exported || object.sourceFree
                 || (object.definingModule != null && !object.definingModule.isEmpty()
                     && !object.definingModule.equals(module))) return null;
         String name = localTypeName(object.name, module);
@@ -1148,9 +1149,51 @@ public class ProjectBuilder {
             fields.add(new AbiV10Records.NominalField(field.name, type,
                     field.exported, provenance.provenanceId()));
         }
+        List<String> methodIds = new ArrayList<>();
+        List<MossiRecord> pendingMethods = new ArrayList<>();
+        for (Method method : object.methods) {
+            // The Java AST does not yet carry authoritative observable-effect summaries.
+            // Emit the canonical record only when the body proves the zero-effect row.
+            if (method.resultExpression != null && !method.resultExpression.isEmpty()) return null;
+            if (method.body.stream().anyMatch(statement ->
+                    statement.kind != org.mosslang.compiler.ast.Stmt.Kind.Pass)) return null;
+            if (method.returnType != null && !method.returnType.isEmpty()
+                    && !"unit".equalsIgnoreCase(method.returnType)) return null;
+            if (method.receiverAccessMode != org.mosslang.compiler.types.AccessMode.Read
+                    || method.parameterAccessModes.stream().anyMatch(mode ->
+                            mode != org.mosslang.compiler.types.AccessMode.Read)) return null;
+            List<AbiV10Records.WireType> parameters = new ArrayList<>();
+            List<Integer> parameterAccess = new ArrayList<>();
+            for (int index = 0; index < method.params.size(); index++) {
+                Param parameter = method.params.get(index);
+                AbiV10Records.WireType type = v10WireType(parameter.type, module, moduleId, program);
+                if (type == null) return null;
+                parameters.add(type);
+                org.mosslang.compiler.types.AccessMode mode = index < method.parameterAccessModes.size()
+                        ? method.parameterAccessModes.get(index)
+                        : org.mosslang.compiler.types.AccessMode.Read;
+                parameterAccess.add(mode.ordinal() + 1);
+            }
+            AbiV10Records.WireType result = method.returnType == null || method.returnType.isEmpty()
+                    ? AbiV10Records.WireType.unit()
+                    : v10WireType(method.returnType, module, moduleId, program);
+            if (result == null) return null;
+            String methodId = "method-template-v1:" + moduleId + ":type:" + name
+                    + ":method:" + method.name;
+            AbiV10Records.MethodTemplate methodTemplate = AbiV10Records.MethodTemplate.create(
+                    methodId, templateId, method.name, parameters, parameterAccess, result,
+                    method.receiverAccessMode.ordinal() + 1, provenance.provenanceId());
+            methodIds.add(methodId);
+            pendingMethods.add(methodTemplate.record());
+        }
+        methodIds.sort(String::compareTo);
+        pendingMethods.sort(Comparator.comparing(record -> record.id));
         AbiV10Records.NominalTemplate template = AbiV10Records.NominalTemplate.create(
                 moduleId, name, fields, provenance.provenanceId());
+        template.methodTemplateIds.addAll(methodIds);
+        template.representationHash = template.computeRepresentationHash();
         provenanceRecords.add(provenance);
+        methodTemplateRecords.addAll(pendingMethods);
         return template;
     }
 
@@ -1251,6 +1294,7 @@ public class ProjectBuilder {
             List<String[]> binRecords = new ArrayList<>();
             List<String[]> semRecords = new ArrayList<>();
             List<MossiRecord> nominalRecords = new ArrayList<>();
+            List<MossiRecord> methodTemplateRecords = new ArrayList<>();
             List<AbiV10Records.SourceProvenance> provenanceRecords = new ArrayList<>();
             int exportedDeclarationOrdinal = 0;
 
@@ -1328,7 +1372,8 @@ public class ProjectBuilder {
                 semRecords.add(new String[]{"type:" + objName, s.toString()});
 
                 AbiV10Records.NominalTemplate nominal = v10NominalTemplate(
-                        manifest, module, modId, prog, obj, provenanceRecords);
+                        manifest, module, modId, prog, obj, provenanceRecords,
+                        methodTemplateRecords);
                 if (nominal != null) nominalRecords.add(nominal.record());
             }
 
@@ -1376,6 +1421,7 @@ public class ProjectBuilder {
                 mossi.binaryContract.add(new MossiRecord(record[0], record[1]));
             }
             mossi.binaryContract.addAll(nominalRecords);
+            mossi.binaryContract.addAll(methodTemplateRecords);
             for (String[] record : semRecords) mossi.semanticContract.add(new MossiRecord(record[0], record[1]));
             for (AbiV10Records.SourceProvenance provenance : provenanceRecords) mossi.provenance.add(provenance.record());
             return CheckedBodyCodec.encodeMossiBytes(mossi);

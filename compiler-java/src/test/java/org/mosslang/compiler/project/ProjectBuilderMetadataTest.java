@@ -207,6 +207,10 @@ public final class ProjectBuilderMetadataTest {
                 + "  fn Count() -> Int:\n"
                 + "    reply count\n", "provider.moss");
         program.objects.get(0).exported = true;
+        org.mosslang.compiler.ast.Method shift = new org.mosslang.compiler.ast.Method(
+                "Point", "ready", 4, "provider.moss");
+        shift.setReturnType("unit");
+        program.objects.get(0).methods.add(shift);
         program.enums.get(0).exported = true;
         program.domains.get(0).exported = true;
         ProjectManifest manifest = new ProjectManifest(Path.of("tmp"),
@@ -216,6 +220,21 @@ public final class ProjectBuilderMetadataTest {
         byte[] generated = ProjectBuilder.generateMossiInterface(manifest, "provider",
                 program, toolchain, java.util.List.of(), Path.of("tmp"), java.util.Map.of());
         MossiInterface decoded = CheckedBodyCodec.verifySourceFree(generated);
+        AbiV10Records.NominalTemplate pointTemplate = decoded.binaryContract.stream()
+                .filter(record -> record.id.startsWith("nominal-template-v1:"))
+                .map(AbiV10Records.NominalTemplate::decode).findFirst().orElseThrow();
+        if (pointTemplate.methodTemplateIds.size() != 1) {
+            throw new AssertionError("ABI-v10 nominal template omitted its method reference");
+        }
+        AbiV10Records.MethodTemplate methodTemplate = decoded.binaryContract.stream()
+                .filter(record -> record.id.equals(pointTemplate.methodTemplateIds.get(0)))
+                .map(AbiV10Records.MethodTemplate::decode).findFirst().orElseThrow();
+        if (!"ready".equals(methodTemplate.methodName)
+                || methodTemplate.receiverAccess != AccessMode.Read.ordinal() + 1
+                || !methodTemplate.parameterAccess.isEmpty()
+                || !"unit".equals(methodTemplate.result.canonicalName())) {
+            throw new AssertionError("ABI-v10 method template omitted its representable no-op signature");
+        }
         if (decoded.binaryContract.stream().noneMatch(record ->
                     record.id.startsWith("nominal-template-v1:") && record.payloadBytes().length > 0)
                 || decoded.semanticContract.stream().noneMatch(record ->

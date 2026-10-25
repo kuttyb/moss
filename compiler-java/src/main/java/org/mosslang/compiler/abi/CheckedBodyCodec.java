@@ -615,6 +615,31 @@ public class CheckedBodyCodec {
             }
             provenanceIds.add(provenance.provenanceId());
         }
+        Map<String, AbiV10Records.MethodTemplate> methodTemplates = new HashMap<>();
+        for (MossiRecord record : mossi.binaryContract) {
+            if (record.id.startsWith("method-template-v1:")) {
+                AbiV10Records.MethodTemplate method = AbiV10Records.MethodTemplate.decode(record);
+                if (!method.templateId.startsWith("nominal-template-v1:" + mossi.moduleId + ":type:")
+                        || !provenanceIds.contains(method.provenanceId)
+                        || methodTemplates.put(method.methodId, method) != null) {
+                    throw new CompileError(0, "ABI-v10 method template has invalid module or provenance references",
+                            "SOURCE_FREE_TYPE_IDENTITY_MISMATCH");
+                }
+            }
+        }
+        Set<String> nominalTemplateIds = new HashSet<>();
+        for (MossiRecord record : mossi.binaryContract) {
+            if (record.id.startsWith("nominal-template-v1:")) {
+                AbiV10Records.NominalTemplate template = AbiV10Records.NominalTemplate.decode(record);
+                nominalTemplateIds.add(template.templateId);
+            }
+        }
+        for (AbiV10Records.MethodTemplate method : methodTemplates.values()) {
+            if (!nominalTemplateIds.contains(method.templateId)) {
+                throw new CompileError(0, "ABI-v10 method template references an unknown nominal template",
+                        "SOURCE_FREE_TYPE_IDENTITY_MISMATCH");
+            }
+        }
         for (MossiRecord record : mossi.binaryContract) {
             if (!record.id.startsWith("nominal-template-v1:")) continue;
             AbiV10Records.NominalTemplate template = AbiV10Records.NominalTemplate.decode(record);
@@ -624,6 +649,13 @@ public class CheckedBodyCodec {
                             !provenanceIds.contains(field.provenanceId()))) {
                 throw new CompileError(0, "ABI-v10 nominal template has invalid module or provenance references",
                         "SOURCE_FREE_TYPE_IDENTITY_MISMATCH");
+            }
+            for (String methodId : template.methodTemplateIds) {
+                AbiV10Records.MethodTemplate method = methodTemplates.get(methodId);
+                if (method == null || !method.templateId.equals(template.templateId)) {
+                    throw new CompileError(0, "ABI-v10 nominal template references an unknown method template",
+                            "SOURCE_FREE_TYPE_IDENTITY_MISMATCH");
+                }
             }
         }
 

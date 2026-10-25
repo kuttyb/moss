@@ -12959,3 +12959,24 @@ the same concrete result type.
 Validation: default ABI-v9 and staged ABI-v10 Java builds and all ten unit
 test classes pass; feedback validation and `git diff --check` pass. Generic
 open-result summaries and native source-free linking remain unverified.
+
+### Phase 25.3 continuation — canonical ABI-v10 object method templates
+
+The ABI-v10 Java project producer now emits canonical binary method templates
+for exported objects when every field and method signature has a representable
+type and each method is a READ-only no-op. The current Java AST does not carry
+authoritative observable-effect summaries, so this producer restriction avoids
+asserting a false zero-effect row. Nominal templates reference their method IDs;
+method records retain result and parameter types plus receiver/parameter access
+modes and provenance.
+The shared verifier checks method template identity, same-provider ownership,
+provenance, and nominal-to-method references. The source-free loader restores
+methods from these binary records, using positional synthetic argument names
+when source parameter names are not part of the canonical ABI record. The
+legacy semantic method rows remain available as a compatibility projection.
+
+Validation: staged ABI-v10 build and all ten Java test classes pass, including
+producer record checks and source-free binary method restoration; default ABI-v9
+build and all ten test classes also pass. `git diff --check` passes. Effectful method templates, requirements/dependencies, open/generic method
+signatures, and native provider-consumer linkage remain open. No Rust/native,
+SDK, or full acceptance gate ran.

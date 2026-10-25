@@ -166,14 +166,23 @@ public final class SourceFreeObjectMetadataTest {
                         "x", AbiV10Records.WireType.scalar(
                                 AbiV10Records.WireTypeKind.Primitive, "float"),
                         true, pointProvenance.provenanceId())), pointProvenance.provenanceId());
+        String replaceMethodId = "method-template-v1:" + v10.moduleId
+                + ":type:Point:method:replace";
+        AbiV10Records.WireType vectorInt = AbiV10Records.WireType.scalar(
+                AbiV10Records.WireTypeKind.Builtin, "vector");
+        vectorInt.arguments.add(AbiV10Records.WireType.scalar(
+                AbiV10Records.WireTypeKind.Primitive, "int"));
+        AbiV10Records.MethodTemplate replaceMethod = AbiV10Records.MethodTemplate.create(
+                replaceMethodId, pointTemplate.templateId, "replace",
+                java.util.List.of(vectorInt), java.util.List.of(3),
+                AbiV10Records.WireType.unit(), 2, pointProvenance.provenanceId());
+        pointTemplate.methodTemplateIds.add(replaceMethodId);
         v10.binaryContract.add(pointTemplate.record());
+        v10.binaryContract.add(replaceMethod.record());
         v10.provenance.add(pointProvenance.record());
         v10.semanticContract.add(new MossiRecord("type:Point", ""
                 + "export type Point nominal\n"
-                + "  declaration_id nominal-template-v1:module-v1:sample@0.1.0::provider:type:Point\n"
-                + "  object_method replace return=unit receiver=WRITE "
-                + "effects=local_capture_read=0;local_mutation=0;domain_read=0;domain_write=0;message=0;external_io=0;fileio=0;fileio_unknown=0;may_panic=0;raise_set=-;may_diverge=0;unresolved=0 "
-                + "params=1 \"next\" \"Vector[Int]\" CONSUME\n"));
+                + "  declaration_id nominal-template-v1:module-v1:sample@0.1.0::provider:type:Point\n"));
         v10.semanticContract.add(new MossiRecord("00000000 export Outcome", ""
                 + "export enum Outcome\n"
                 + "  declaration_id nominal-enum-v1:module-v1:sample@0.1.0::provider:enum:Outcome\n"

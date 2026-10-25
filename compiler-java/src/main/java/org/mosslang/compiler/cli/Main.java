@@ -803,6 +803,18 @@ public class Main {
                         org.mosslang.compiler.abi.CheckedBodyCodec.verifySourceFree(rawBytes);
                 StringBuilder legacyRecords = new StringBuilder("moss-module-interface-v2\n")
                         .append("module_id ").append(v10.moduleId).append("\nimports\ncontract\n");
+                java.util.Map<String, org.mosslang.compiler.abi.AbiV10Records.MethodTemplate> methodTemplates =
+                        new java.util.HashMap<>();
+                for (org.mosslang.compiler.abi.MossiRecord record : v10.binaryContract) {
+                    if (!record.id.startsWith("method-template-v1:")) continue;
+                    org.mosslang.compiler.abi.AbiV10Records.MethodTemplate method =
+                            org.mosslang.compiler.abi.AbiV10Records.MethodTemplate.decode(record);
+                    if (!method.templateId.startsWith("nominal-template-v1:" + v10.moduleId + ":type:")) {
+                        throw new CompileError("SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+                                "ABI-v10 method template belongs to a different module", cand.toString(), 1);
+                    }
+                    methodTemplates.put(method.methodId, method);
+                }
                 for (org.mosslang.compiler.abi.MossiRecord record : v10.binaryContract) {
                     if (record.id.startsWith("nominal-template-v1:")) {
                         org.mosslang.compiler.abi.AbiV10Records.NominalTemplate template =
@@ -832,6 +844,31 @@ public class Main {
                                         field.name(), inferred ? "" : field.type().canonicalName(),
                                         "", "", 1, cand.toString(), inferred, field.exported()));
                             }
+                        }
+                        for (String methodId : template.methodTemplateIds) {
+                            org.mosslang.compiler.abi.AbiV10Records.MethodTemplate methodFact =
+                                    methodTemplates.get(methodId);
+                            if (methodFact == null || !methodFact.templateId.equals(template.templateId)) {
+                                throw new CompileError("SOURCE_FREE_TYPE_IDENTITY_MISMATCH",
+                                        "ABI-v10 nominal template references a missing or foreign method",
+                                        cand.toString(), 1);
+                            }
+                            if (object.methods.stream().anyMatch(existing -> existing.name.equals(methodFact.methodName))) {
+                                continue;
+                            }
+                            org.mosslang.compiler.ast.Method method = new org.mosslang.compiler.ast.Method(
+                                    object.name, methodFact.methodName, 1, cand.toString());
+                            method.sourceFree = true;
+                            method.setReturnType(methodFact.result.canonicalName());
+                            method.receiverAccessMode = org.mosslang.compiler.types.AccessMode
+                                    .values()[methodFact.receiverAccess - 1];
+                            for (int index = 0; index < methodFact.parameters.size(); index++) {
+                                method.params.add(new org.mosslang.compiler.ast.Param(
+                                        "arg" + index, methodFact.parameters.get(index).canonicalName()));
+                                method.parameterAccessModes.add(org.mosslang.compiler.types.AccessMode
+                                        .values()[methodFact.parameterAccess.get(index) - 1]);
+                            }
+                            object.methods.add(method);
                         }
                         continue;
                     }

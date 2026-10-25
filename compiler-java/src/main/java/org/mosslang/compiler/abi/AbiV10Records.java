@@ -88,6 +88,122 @@ public final class AbiV10Records {
     public record NominalField(String name, WireType type, boolean exported,
                                String provenanceId) {}
 
+    public static final class MethodTemplate {
+        public String methodId;
+        public String templateId;
+        public String methodName;
+        public boolean exported;
+        public int variableCount;
+        public List<WireType> parameters = new ArrayList<>();
+        public List<Integer> parameterAccess = new ArrayList<>();
+        public WireType result;
+        public int receiverAccess = 1;
+        public List<String> requirements = new ArrayList<>();
+        public List<String[]> dependencies = new ArrayList<>();
+        public int observableEffectBits;
+        public List<String> observableEffectTags = new ArrayList<>();
+        public String provenanceId;
+
+        public static MethodTemplate create(String methodId, String templateId,
+                                            String methodName, List<WireType> parameters,
+                                            List<Integer> parameterAccess, WireType result,
+                                            int receiverAccess, String provenanceId) {
+            MethodTemplate value = new MethodTemplate();
+            value.methodId = methodId;
+            value.templateId = templateId;
+            value.methodName = methodName;
+            value.exported = true;
+            value.parameters.addAll(parameters);
+            value.parameterAccess.addAll(parameterAccess);
+            value.result = result;
+            value.receiverAccess = receiverAccess;
+            value.provenanceId = provenanceId;
+            return value;
+        }
+
+        public byte[] encode() {
+            require(methodId != null && !methodId.isEmpty() && validTemplateId(templateId)
+                            && methodName != null && !methodName.isEmpty()
+                            && variableCount >= 0 && variableCount <= 4096
+                            && parameters.size() <= 256 && parameters.size() == parameterAccess.size()
+                            && receiverAccess >= 1 && receiverAccess <= 3
+                            && provenanceId != null && !provenanceId.isEmpty()
+                            && requirements.isEmpty() && dependencies.isEmpty()
+                            && observableEffectBits == 0 && observableEffectTags.isEmpty(),
+                    "SOURCE_FREE_CONTRACT_INVALID", "ABI-v10 method template shape is invalid");
+            Writer writer = new Writer();
+            writer.byteValue(1);
+            writer.string(methodId);
+            writer.string(templateId);
+            writer.string(methodName);
+            writer.byteValue(exported ? 1 : 0);
+            writer.number(variableCount);
+            writer.number(parameters.size());
+            for (int i = 0; i < parameters.size(); i++) {
+                writeType(writer, parameters.get(i), variableCount, 0);
+                int access = parameterAccess.get(i);
+                require(access >= 1 && access <= 3, "SOURCE_FREE_CONTRACT_INVALID",
+                        "ABI-v10 parameter access mode is invalid");
+                writer.byteValue(access);
+            }
+            writeType(writer, result, variableCount, 0);
+            writer.byteValue(receiverAccess);
+            writer.number(0); // requirements
+            writer.number(0); // dependencies
+            writer.number(observableEffectBits);
+            writer.number(0); // observable effect tags
+            writer.string(provenanceId);
+            return writer.finish();
+        }
+
+        public MossiRecord record() { return MossiRecord.fromBytes(methodId, encode()); }
+
+        public static MethodTemplate decode(MossiRecord record) {
+            Reader reader = new Reader(record.payloadBytes());
+            require(reader.byteValue() == 1, "SOURCE_FREE_CONTRACT_INVALID",
+                    "ABI-v10 method template version is unsupported");
+            MethodTemplate value = new MethodTemplate();
+            value.methodId = reader.string();
+            value.templateId = reader.string();
+            value.methodName = reader.string();
+            int exported = reader.byteValue();
+            require(exported <= 1, "SOURCE_FREE_CONTRACT_INVALID",
+                    "ABI-v10 method visibility is invalid");
+            value.exported = exported == 1;
+            value.variableCount = reader.number();
+            require(value.variableCount <= 4096, "SOURCE_FREE_CONTRACT_INVALID",
+                    "ABI-v10 method variable count exceeds the limit");
+            int parameterCount = reader.count(256, "method parameter count");
+            for (int i = 0; i < parameterCount; i++) {
+                value.parameters.add(readType(reader, value.variableCount, 0));
+                int access = reader.byteValue();
+                require(access >= 1 && access <= 3, "SOURCE_FREE_CONTRACT_INVALID",
+                        "ABI-v10 parameter access mode is invalid");
+                value.parameterAccess.add(access);
+            }
+            value.result = readType(reader, value.variableCount, 0);
+            value.receiverAccess = reader.byteValue();
+            require(value.receiverAccess >= 1 && value.receiverAccess <= 3,
+                    "SOURCE_FREE_CONTRACT_INVALID", "ABI-v10 receiver access mode is invalid");
+            int requirementCount = reader.count(4096, "method requirement count");
+            require(requirementCount == 0, "SOURCE_FREE_CONTRACT_INVALID",
+                    "ABI-v10 method requirement projection is unsupported");
+            int dependencyCount = reader.count(4096, "method dependency count");
+            require(dependencyCount == 0, "SOURCE_FREE_CONTRACT_INVALID",
+                    "ABI-v10 method dependency projection is unsupported");
+            value.observableEffectBits = reader.number();
+            int tagCount = reader.count(4096, "method effect tag count");
+            require(tagCount == 0 && value.observableEffectBits == 0,
+                    "SOURCE_FREE_CONTRACT_INVALID",
+                    "ABI-v10 method effect projection is unsupported");
+            value.provenanceId = reader.string();
+            require(reader.done() && Arrays.equals(value.encode(), record.payloadBytes())
+                            && value.methodId.equals(record.id),
+                    "SOURCE_FREE_CONTRACT_INVALID", "ABI-v10 method template is noncanonical");
+            return value;
+        }
+    }
+
     public static final class NominalTemplate {
         public String templateId;
         public String moduleId;

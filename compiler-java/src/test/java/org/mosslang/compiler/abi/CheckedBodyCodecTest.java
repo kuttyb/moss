@@ -21,6 +21,7 @@ public class CheckedBodyCodecTest {
         testMossiBinaryPayloadRoundTrip();
         testMossiEncoderRejectsDuplicateIds();
         testNominalRecordsRequireValidProvenanceReferences();
+        testMethodTemplateNominalReferences();
         testExportedEnumIdentityValidation();
         testMossiRejectsUnboundedCounts();
         testCheckedBodyReaderBoundsAndTrailingData();
@@ -300,6 +301,41 @@ public class CheckedBodyCodecTest {
         try {
             CheckedBodyCodec.verifySourceFree(CheckedBodyCodec.encodeMossiBytes(missingProvenance));
             throw new AssertionError("ABI-v10 verifier accepted a nominal template with missing provenance");
+        } catch (CompileError error) {
+            if (!"SOURCE_FREE_TYPE_IDENTITY_MISMATCH".equals(error.getCode())) throw error;
+        }
+    }
+
+    private static void testMethodTemplateNominalReferences() {
+        String module = "module-v1:methods@1.0.0::provider";
+        String templateId = "nominal-template-v1:" + module + ":type:Point";
+        AbiV10Records.SourceProvenance provenance = AbiV10Records.SourceProvenance.create(
+                module, templateId, "provider.moss", 1);
+        String methodId = "method-template-v1:" + module + ":type:Point:method:ready";
+        AbiV10Records.MethodTemplate method = AbiV10Records.MethodTemplate.create(
+                methodId, templateId, "ready", List.of(), List.of(),
+                AbiV10Records.WireType.unit(), 1, provenance.provenanceId());
+        AbiV10Records.NominalTemplate template = AbiV10Records.NominalTemplate.create(
+                module, "Point", List.of(), provenance.provenanceId());
+        template.methodTemplateIds.add(methodId);
+
+        MossiInterface valid = new MossiInterface(module);
+        valid.binaryContract.add(template.record());
+        valid.binaryContract.add(method.record());
+        valid.provenance.add(provenance.record());
+        CheckedBodyCodec.verifySourceFree(CheckedBodyCodec.encodeMossiBytes(valid));
+
+        AbiV10Records.MethodTemplate orphan = AbiV10Records.MethodTemplate.create(
+                "method-template-v1:" + module + ":type:Missing:method:ready",
+                "nominal-template-v1:" + module + ":type:Missing", "ready", List.of(), List.of(),
+                AbiV10Records.WireType.unit(), 1, provenance.provenanceId());
+        MossiInterface invalid = new MossiInterface(module);
+        invalid.binaryContract.add(template.record());
+        invalid.binaryContract.add(orphan.record());
+        invalid.provenance.add(provenance.record());
+        try {
+            CheckedBodyCodec.verifySourceFree(CheckedBodyCodec.encodeMossiBytes(invalid));
+            throw new AssertionError("ABI-v10 verifier accepted a method with an unknown nominal template");
         } catch (CompileError error) {
             if (!"SOURCE_FREE_TYPE_IDENTITY_MISMATCH".equals(error.getCode())) throw error;
         }
