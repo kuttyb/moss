@@ -604,6 +604,29 @@ public class CheckedBodyCodec {
             }
         }
 
+        // Validate typed ABI-v10 nominal records and their provenance links
+        // before exposing a provider to source-free consumers.
+        Set<String> provenanceIds = new HashSet<>();
+        for (MossiRecord record : mossi.provenance) {
+            AbiV10Records.SourceProvenance provenance = AbiV10Records.SourceProvenance.decode(record);
+            if (!mossi.moduleId.equals(provenance.moduleId())) {
+                throw new CompileError(0, "ABI-v10 provenance belongs to a different module",
+                        "SOURCE_FREE_CONTRACT_INVALID");
+            }
+            provenanceIds.add(provenance.provenanceId());
+        }
+        for (MossiRecord record : mossi.binaryContract) {
+            if (!record.id.startsWith("nominal-template-v1:")) continue;
+            AbiV10Records.NominalTemplate template = AbiV10Records.NominalTemplate.decode(record);
+            if (!mossi.moduleId.equals(template.moduleId)
+                    || !provenanceIds.contains(template.provenanceId)
+                    || template.fields.stream().anyMatch(field ->
+                            !provenanceIds.contains(field.provenanceId()))) {
+                throw new CompileError(0, "ABI-v10 nominal template has invalid module or provenance references",
+                        "SOURCE_FREE_TYPE_IDENTITY_MISMATCH");
+            }
+        }
+
         // Verify checked bodies in semantic contract
         for (MossiRecord r : mossi.semanticContract) {
             if (r.id.startsWith("checked-body-v1:")) {

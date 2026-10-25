@@ -20,6 +20,7 @@ public class CheckedBodyCodecTest {
         testMossiUtf8ByteFraming();
         testMossiBinaryPayloadRoundTrip();
         testMossiEncoderRejectsDuplicateIds();
+        testNominalRecordsRequireValidProvenanceReferences();
         testMossiRejectsUnboundedCounts();
         testCheckedBodyReaderBoundsAndTrailingData();
         testSourceFreeVerificationSuccess();
@@ -275,6 +276,32 @@ public class CheckedBodyCodecTest {
         duplicateImport.addImport("module-v1:dep@1.0.0::api", "1", "2");
         duplicateImport.addImport("module-v1:dep@1.0.0::api", "3", "4");
         assertMossiEncodeRejects(duplicateImport, "duplicate import module ID");
+    }
+
+    private static void testNominalRecordsRequireValidProvenanceReferences() {
+        String module = "module-v1:records@1.0.0::provider";
+        String templateId = "nominal-template-v1:" + module + ":type:Point";
+        AbiV10Records.SourceProvenance provenance = AbiV10Records.SourceProvenance.create(
+                module, templateId, "provider.moss", 1);
+        AbiV10Records.NominalTemplate template = AbiV10Records.NominalTemplate.create(
+                module, "Point", List.of(new AbiV10Records.NominalField("x",
+                        AbiV10Records.WireType.scalar(
+                                AbiV10Records.WireTypeKind.Primitive, "float"),
+                        true, provenance.provenanceId())), provenance.provenanceId());
+
+        MossiInterface valid = new MossiInterface(module);
+        valid.binaryContract.add(template.record());
+        valid.provenance.add(provenance.record());
+        CheckedBodyCodec.verifySourceFree(CheckedBodyCodec.encodeMossiBytes(valid));
+
+        MossiInterface missingProvenance = new MossiInterface(module);
+        missingProvenance.binaryContract.add(template.record());
+        try {
+            CheckedBodyCodec.verifySourceFree(CheckedBodyCodec.encodeMossiBytes(missingProvenance));
+            throw new AssertionError("ABI-v10 verifier accepted a nominal template with missing provenance");
+        } catch (CompileError error) {
+            if (!"SOURCE_FREE_TYPE_IDENTITY_MISMATCH".equals(error.getCode())) throw error;
+        }
     }
 
     private static void assertMossiEncodeRejects(MossiInterface mossi, String description) {

@@ -12869,3 +12869,16 @@ classes), and `git diff --check` pass. No Margo project/native build was run.
 This is a narrow nominal field slice: generic nominal substitutions, canonical
 method templates/effects, broader source-free semantic import, and native
 provider/consumer linkage remain open. No full regression or release gate ran.
+
+### Phase 25.3 continuation — validate nominal provenance links
+
+The shared ABI-v10 verifier now decodes known nominal-template and provenance
+records, requires provenance module identity to match the provider, and checks
+template/field references against the provenance section. This prevents a
+correctly resealed but internally unlinked nominal record from passing provider
+validation. A regression verifies both a valid reference set and rejection of
+a template with missing provenance.
+
+Validation: Java build, all ten Java unit-test classes, and `git diff --check`
+pass. This check covers nominal records only; typed method/summary validation
+and end-to-end native source-free linkage remain open.
