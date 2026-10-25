@@ -15,6 +15,7 @@
 #include <unordered_set>
 #include <utility>
 #include <vector>
+#include "compiler_stage_timer.hpp"
 #include "source_free_abi_v9.hpp"
 
 namespace moss {
@@ -1012,17 +1013,23 @@ class TypeSolver {
 public:
   explicit TypeSolver(uint32_t session) : session_(session) {}
   TypeRef fresh(uint32_t owner_id) {
+    if (CompilerTraceRecorder::instance().is_enabled())
+      CompilerTraceRecorder::instance().increment_counter("typesolver_fresh", 1);
     TypeVarId id{session_, owner_id, next_ordinal_++};
     variables_.emplace(id, Variable{id, std::nullopt, {}});
     return Type::var(id);
   }
   TypeRef resolve(const TypeRef& value) {
+    if (CompilerTraceRecorder::instance().is_enabled())
+      CompilerTraceRecorder::instance().increment_counter("typesolver_resolve", 1);
     return resolve_impl(value, nullptr);
   }
   // Apply one admission's equations as a single transaction. The existing
   // mutation trail rolls back bindings, representatives, and requirements.
   bool unify_all(const std::vector<std::pair<TypeRef, TypeRef>>& equalities,
                  size_t* failed_equality = nullptr) {
+    if (CompilerTraceRecorder::instance().is_enabled())
+      CompilerTraceRecorder::instance().increment_counter("typesolver_unify_all", 1);
     Trail trail;
     for (size_t index = 0; index < equalities.size(); ++index) {
       const auto& equality = equalities[index];
@@ -1035,6 +1042,8 @@ public:
     return true;
   }
   bool unify(const TypeRef& left, const TypeRef& right) {
+    if (CompilerTraceRecorder::instance().is_enabled())
+      CompilerTraceRecorder::instance().increment_counter("typesolver_unify", 1);
     Trail trail;
     if (unify_impl(left, right, trail)) return true;
     rollback(trail);

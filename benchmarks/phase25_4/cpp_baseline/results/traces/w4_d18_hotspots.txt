@@ -1,0 +1,20 @@
+
+================================ COMPILER HOTSPOT BREAKDOWN ================================
+Compiler Operation                   Time (ms)     Calls    Distinct    Repeated    Avg (us)
+--------------------------------------------------------------------------------------------
+build_open_callable_summaries             0.04         2           0           2        17.6
+check_function                            4.33        19          19           0       227.8
+check_ownership                           4.84        39           0          39       124.0
+concrete_function_effects             11764.20   3147052          37     3147015         3.7
+concrete_function_observable_effects   462140.15   2621451          37     2621414       176.3
+infer_domain_state_fields                 0.00         4           0           4         0.2
+infer_handler_reply_types                 0.00         4           0           4         0.2
+infer_statement_expressions              12.99      5795          19        5776         2.2
+observable_body_effects                   0.88        19          19           0        46.4
+phase21_raise_set                         0.87        19          19           0        45.5
+solve_local_collection_types              2.74      5795          19        5776         0.5
+spec_cache_miss_body_check               83.64        19          19           0      4402.3
+spec_effects_pass1                     9959.96         1           0           1   9959961.0
+spec_effects_pass2_recheck             9927.87         1           0           1   9927869.4
+============================================================================================
+

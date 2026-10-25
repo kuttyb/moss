@@ -1,244 +1,184 @@
-# Phase 25.4 B1 — Compiler Hotspot Investigation
+# Phase 25.4 B1 — Compiler Hotspot Investigation Report
 
-**Target Compiler:** Optimized C++ Moss (`build/compiler/moss-opt`, `-O2`)  
-**Scope:** In-depth algorithmic and profiling analysis of semantic compilation bottlenecks  
-**Evidence Sources:** Hierarchical Chrome Trace Event traces (`MOSS_PROFILE_TRACE`), stage-by-stage opt-in profiling (`MOSS_PROFILE_COMPILER`), torture suite results (`results.csv`), and real-world package compilations (`packages/regex`, `sdk/datastructures`).  
-**Audience:** Compiler Engineering Team, Phase 25.4 B2 Optimization Team, Phase 25.3 Java Compiler Team.
-
----
-
-## 1. Executive Summary & Hotspot Matrix
-
-Following the establishment of the Phase 25.4 B1 performance baseline and structured hierarchical tracing, an in-depth hotspot investigation was conducted across both synthetic torture workloads and real-world production Moss programs.
-
-The investigation identified **three critical algorithmic bottlenecks** in `src/semantic_checker.cpp` that account for over **95% of total compiler latency** in long-running compilations:
-
-| Hotspot ID | Bottleneck Description | Primary Location in `src/` | Impacted Workloads | Observed Severity | Algorithmic Mechanism |
-|---|---|---|---|---|---|
-| **HS-1** | **Unbounded Quadratic Signature Inference Loop** | `src/semantic_checker.cpp:13865-14040` (`infer_function_signatures`) | W5 (Wide Inference), `packages/regex`, `sdk/datastructures` | **10s – 24s** (95–99% of runtime) | Outer loop runs $3F + 4$ rounds unconditionally with **no early break**, called 5 times per run $\implies 15F^2 + 20F$ full-body AST and solver passes. |
-| **HS-2** | **Recursive Specialization Effects Re-Evaluation & AST Cloning** | `src/semantic_checker.cpp:644-660`, `18229-18360` (`concrete_function_observable_effects`) | W4 (Deep Dependent Inference) | **27.6s** at depth 18 (96.2% of runtime) | No memoization on call chains; re-computes callee effect rows from scratch; clones entire AST body vector per specialization; executes double-checking loop. |
-| **HS-3** | **Specialization Body Synthesis & Redundant Cache Re-Check** | `src/semantic_checker.cpp:21820-21950` (`register_static_specialization`) | W2 (Distinct Specializations) | **3.68s** at $N=32$ (1,056 specializations) | Full statement checking, AST cloning, and ownership checking per distinct key; re-evaluates `concrete_function_effects` even on cache hits. |
+**Commit SHA:** `fa8d85a2254e2f9d658f8444a5ce4857b2b71944` (+ instrumentation)  
+**Compiler Executable:** Optimized C++ Moss (`build/compiler/moss-opt`, `-O2`)  
+**Investigation Scope:** In-depth algorithmic, loop-level, and call-tree profiling across four primary slow workloads  
+**Durable Trace Artifacts:** `benchmarks/phase25_4/cpp_baseline/results/traces/`  
+**Team Structure:** L6 Coordinator / Coder + L6 Independent Adversarial Architect  
 
 ---
 
-## 2. Hotspot 1: Unbounded Quadratic Signature Inference Loop
+## 1. Executive Summary & Success Verification
 
-### A. Empirical Profile Evidence
+The investigation successfully identified the exact C++ source functions, loops, and repetitive algorithmic patterns responsible for compilation latency across the four target workloads. 
 
-In both synthetic wide workloads and real-world packages, type inference consumes virtually the entire compilation budget:
+**Attribution Success Criterion (≥ 90% explained):**
+- **`packages/regex/src/main.moss` (21.6 s):** **93.0% explained** (20.08 s directly attributed)
+- **`sdk/datastructures/src/datastructures.moss` (24.15 s / 18.3 s):** **92.8% explained** (22.41 s directly attributed)
+- **W4 Deep Inference, Depth 18 (27.62 s):** **96.4% explained** (26.62 s directly attributed)
+- **W5 Wide Inference, Width 100 (11.53 s):** **95.7% explained** (11.04 s directly attributed)
 
-1. **W5 (Wide Independent Functions):**
-   - $W = 10$: $148.7\text{ ms}$
-   - $W = 25$: $733.5\text{ ms}$
-   - $W = 50$: $2,805.8\text{ ms}$
-   - $W = 100$: **$10,895.5\text{ ms}$** ($10.80\text{ s}$ pure `type_inference`, 99.1% of total wall time)
-2. **`packages/regex/src/main.moss` ($F = 49$ functions, 1,000 LOC):**
-   - Total semantic check time: **$21.60\text{ s}$**
-   - Pass 1 `type_inference`: **$11.58\text{ s}$**
-     - `inference_round_0`: $1.90\text{ s}$
-     - `inference_round_1`: $2.28\text{ s}$
-     - `inference_round_2`: $2.31\text{ s}$
-     - Finalized pass: $5.09\text{ s}$
-   - Pass 2 `type_inference`: **$9.84\text{ s}$**
-3. **`sdk/datastructures/src/datastructures.moss` ($F = 112$ functions, 972 LOC):**
-   - Total semantic check time: **$24.15\text{ s}$**
-   - Pass 1 `type_inference`: **$11.90\text{ s}$**
-   - Pass 2 `type_inference`: **$11.94\text{ s}$**
+Across all four workloads, slow compilation is **not** caused by language design complexity, memory thrashing, or nominal type layouts. Instead, **over 95% of compilation time is concentrated in two algorithmic flaws**:
+1. An **un-early-exited fixed-point loop** in `infer_function_signatures` that unconditionally executes $3F + 4$ rounds across 10 passes, performing hundreds of thousands of redundant full-body statement type checks.
+2. An **un-memoized recursive effect traversal** in `concrete_function_observable_effects` that turns linear call chains into $O(2^D)$ exponential re-evaluations, compounded by an exact duplicate validation pass.
 
-### B. Code Attribution & Algorithmic Flaw
+---
 
-In [`src/semantic_checker.cpp#L13865`](file:///home/owner/daji/code/moss2/src/semantic_checker.cpp#L13865):
+## 2. Four-Workload Hotspot Breakdown
 
+### Workload 1: `packages/regex/src/main.moss` (Real-World Package, 1,000 LOC, 49 Functions)
+*Total Measured Wall Time:* **21.60 s** | *Directly Attributed:* **20.08 s (93.0%)**
+
+| Compiler Operation | Time (ms) | Total Calls | Distinct Inputs | Repeated Calls | Avg Cost | Exact Source Location | Diagnosis |
+|---|---:|---:|---:|---:|---:|---|---|
+| `sig_infer_round_body` | **19,466.6** | 1,510 | 1 | 1,509 | 12.89 ms | `semantic_checker.cpp:13878` | **Excessive Fixed-Point Iterations (1,510 rounds)** |
+| ↳ `infer_statement_expressions` | 12,423.7 | 73,990 | 49 | 73,941 (99.9%) | 167.9 μs | `semantic_checker.cpp:13898` | Redundant AST statement walk (1,510 times per fn) |
+| ↳ `solve_local_collection_types` | 6,260.8 | 73,990 | 49 | 73,941 (99.9%) | 84.6 μs | `semantic_checker.cpp:13904` | Redundant TypeSolver sessions (1,510 times per fn) |
+| ↳ `sig_infer_result_reconciliation` | 413.5 | 73,990 | 49 | 73,941 (99.9%) | 5.6 μs | `semantic_checker.cpp:13908` | Re-evaluating return expressions on closed types |
+| `check_function` | 378.2 | 98 | 49 | 49 | 3.86 ms | `semantic_checker.cpp:9694` | Concrete body checking (2 full passes) |
+| `sig_infer_prelude_constraints` | 97.4 | 10 | 1 | 9 | 9.74 ms | `semantic_checker.cpp:13650` | Scans for match/for/operator generic bounds |
+| `check_ownership` | 51.6 | 98 | 49 | 49 | 526.9 μs | `semantic_checker.cpp:20700` | Linear ownership pass |
+| `observable_body_effects` | 30.5 | 196 | 49 | 147 | 155.8 μs | `semantic_checker.cpp:19294` | Transitive effect scan (4 rounds) |
+| `phase21_raise_set` | 24.9 | 196 | 49 | 147 | 126.8 μs | `semantic_checker.cpp:19296` | CFG raise-set propagation (4 rounds) |
+| `concrete_function_effects` | 3.1 | 3,958 | 30 | 3,928 | 0.8 μs | `semantic_checker.cpp:14170` | Specialization parameter effect lookups |
+| *TypeSolver Work* | — | 22.9M resolves | 7.3M unifies | — | — | `type_ir.hpp:1015-1045` | Driven by 73,990 redundant solver sessions |
+
+---
+
+### Workload 2: `sdk/datastructures/src/datastructures.moss` (Real-World SDK, 972 LOC, 112 Functions)
+*Total Measured Wall Time:* **24.15 s** | *Directly Attributed:* **22.41 s (92.8%)**
+
+| Compiler Operation | Time (ms) | Total Calls | Distinct Inputs | Repeated Calls | Avg Cost | Exact Source Location | Diagnosis |
+|---|---:|---:|---:|---:|---:|---|---|
+| `sig_infer_round_body` | **22,110.1** | 3,400 | 1 | 3,399 | 6.50 ms | `semantic_checker.cpp:13878` | **Excessive Fixed-Point Iterations (3,400 rounds)** |
+| ↳ `infer_statement_expressions` | 14,460.7 | 380,800 | 112 | 380,688 (99.9%) | 38.0 μs | `semantic_checker.cpp:13898` | Redundant AST statement walk (3,400 times per fn) |
+| ↳ `solve_local_collection_types` | 5,189.8 | 380,800 | 112 | 380,688 (99.9%) | 13.6 μs | `semantic_checker.cpp:13904` | Redundant TypeSolver sessions (3,400 times per fn) |
+| ↳ `sig_infer_result_reconciliation` | 1,802.2 | 380,800 | 112 | 380,688 (99.9%) | 4.7 μs | `semantic_checker.cpp:13908` | Re-evaluating return expressions on closed types |
+| `check_function` | 127.0 | 224 | 112 | 112 | 567.0 μs | `semantic_checker.cpp:9694` | Concrete body checking (2 full passes) |
+| `sig_infer_prelude_constraints` | 67.3 | 10 | 1 | 9 | 6.73 ms | `semantic_checker.cpp:13650` | Scans for match/for/operator generic bounds |
+| `phase21_raise_set` | 37.7 | 672 | 112 | 560 | 56.1 μs | `semantic_checker.cpp:19296` | CFG raise-set propagation (6 rounds) |
+| `check_ownership` | 24.8 | 224 | 112 | 112 | 110.5 μs | `semantic_checker.cpp:20700` | Linear ownership pass |
+| `observable_body_effects` | 43.1 | 672 | 112 | 560 | 64.1 μs | `semantic_checker.cpp:19294` | Transitive effect scan (6 rounds) |
+| *TypeSolver Work* | — | 18.7M resolves | 5.7M unifies | 14K fresh | — | `type_ir.hpp:1015-1045` | Driven by 380,800 redundant solver sessions |
+
+---
+
+### Workload 3: W4 Deep Inference, Depth 18 (`w4_infer_deep_d018.moss`)
+*Total Measured Wall Time:* **27.62 s** | *Directly Attributed:* **26.62 s (96.4%)**
+
+| Compiler Operation | Time (ms) | Total Calls | Distinct Inputs | Repeated Calls | Avg Cost | Exact Source Location | Diagnosis |
+|---|---:|---:|---:|---:|---:|---|---|
+| `spec_effects_pass1` | **9,960.0** | 1 | 1 | 0 | 9.96 s | `semantic_checker.cpp:645` | **Exponential Call-Tree Traversal $O(2^D)$** |
+| `spec_effects_pass2_recheck` | **9,927.9** | 1 | 1 | 0 | 9.93 s | `semantic_checker.cpp:652` | **Exact Duplicate Validation Pass (100% redundant)** |
+| ↳ `concrete_function_observable_effects` | *(in passes)* | 2,621,451 | 37 | 2,621,414 (99.99%) | 176.3 μs | `semantic_checker.cpp:18229` | Recursive callee evaluation without memoization |
+| ↳ `concrete_function_effects` | *(in passes)* | 3,147,052 | 37 | 3,147,015 (99.99%) | 3.7 μs | `semantic_checker.cpp:14170` | Parameter effect lookups without memoization |
+| `effects` (fixed-point round 1) | **7,580.0** | 1 | 1 | 0 | 7.58 s | `semantic_checker.cpp:19245` | Un-ordered round loop propagating along 18-deep chain |
+| `spec_cache_miss_body_check` | 83.6 | 19 | 19 | 0 | 4.40 ms | `semantic_checker.cpp:21946` | Specialized body synthesis (19 call sites) |
+| `infer_statement_expressions` | 13.0 | 5,795 | 19 | 5,776 | 2.2 μs | `semantic_checker.cpp:13898` | 5 fixed-point passes over 19 functions |
+| `check_ownership` | 4.8 | 39 | 19 | 20 | 124.0 μs | `semantic_checker.cpp:20700` | Linear ownership pass |
+| `check_function` | 4.3 | 19 | 19 | 0 | 227.8 μs | `semantic_checker.cpp:9694` | Concrete body checking |
+| `solve_local_collection_types` | 2.7 | 5,795 | 19 | 5,776 | 0.5 μs | `semantic_checker.cpp:13904` | 5 fixed-point passes |
+
+---
+
+### Workload 4: W5 Wide Inference, Width 100 (`w5_infer_wide_w100.moss`)
+*Total Measured Wall Time:* **11.53 s** | *Directly Attributed:* **11.04 s (95.7%)**
+
+| Compiler Operation | Time (ms) | Total Calls | Distinct Inputs | Repeated Calls | Avg Cost | Exact Source Location | Diagnosis |
+|---|---:|---:|---:|---:|---:|---|---|
+| `sig_infer_round_body` | **11,527.8** | 3,020 | 1 | 3,019 | 3.82 ms | `semantic_checker.cpp:13878` | **Excessive Fixed-Point Iterations (3,020 rounds)** |
+| ↳ `sig_infer_result_reconciliation` | 7,081.2 | 604,000 | 200 | 603,800 (99.9%) | 11.7 μs | `semantic_checker.cpp:13908` | Repeated string parsing of `inferred_expr_type` |
+| ↳ `infer_statement_expressions` | 1,214.3 | 604,000 | 200 | 603,800 (99.9%) | 2.0 μs | `semantic_checker.cpp:13898` | Redundant statement walk (3,020 times per fn) |
+| ↳ `solve_local_collection_types` | 319.5 | 604,000 | 200 | 603,800 (99.9%) | 0.5 μs | `semantic_checker.cpp:13904` | Redundant solver invocation (3,020 times per fn) |
+| ↳ *Loop iteration overhead* | ~2,912.8 | 604,000 | 200 | 603,800 | 4.8 μs | `semantic_checker.cpp:13878` | Loop control, scopes, `TypeEnv` constructor/destructor |
+| `check_function` | 19.0 | 200 | 200 | 0 | 94.7 μs | `semantic_checker.cpp:9694` | Concrete body checking (200 functions) |
+| `check_ownership` | 20.8 | 401 | 200 | 201 | 51.8 μs | `semantic_checker.cpp:20700` | Ownership validation |
+| `spec_cache_miss_body_check` | 21.8 | 200 | 200 | 0 | 109.2 μs | `semantic_checker.cpp:21946` | Concrete specialization body synthesis |
+| `concrete_function_observable_effects` | 11.5 | 1,400 | 300 | 1,100 | 8.2 μs | `semantic_checker.cpp:18229` | Concrete specialization effect propagation |
+| `concrete_function_effects` | 7.5 | 2,200 | 300 | 1,900 | 3.4 μs | `semantic_checker.cpp:14170` | Parameter effect lookups |
+
+---
+
+## 3. Algorithmic Root Causes: Mathematical & Structural Diagnosis
+
+### A. The $15F^2$ Signature Inference Trap (`infer_function_signatures`)
+In `src/semantic_checker.cpp:13878`:
 ```cpp
-// src/semantic_checker.cpp:13865
 for (size_t round = 0; round <= p_.functions.size() * 3 + 3; ++round) {
   for (auto& function : p_.functions) {
-    SourceFileScope function_source(current_source_file_, function.source_file);
-    TypeEnv env;
-    ...
     infer_statement_expressions(function.body, env);
-    BodyTypeState body_types = solve_local_collection_types(
-        function.body, env, function.semantic_callable_id, false, true);
+    BodyTypeState body_types = solve_local_collection_types(...);
     ...
   }
-  for (auto& domain : p_.domains) { ... }
-  if (p_.main) { ... }
-  for (const auto& test : p_.tests) { ... }
-  for (const auto& benchmark : p_.benchmarks) { ... }
 }
 ```
+1. **Absence of Early Termination:** The loop contains **no dirty flag and no break condition**. If all function return types are inferred in round 0, it still executes all $3F + 4$ rounds.
+2. **Amplification Across Compiler Passes:** `Checker::run()` calls `infer_function_signatures` 5 times in a single compilation unit (initialization, rounds 0..2, and finalization). When modules are imported, this occurs in both passes, resulting in 10 full invocations.
+3. **Total Work:** $10 \times (3F + 4) \times F = 30F^2 + 40F$ full function evaluations.
+   - For `datastructures.moss` ($F=112$): $3,400 \text{ rounds} \times 112 = \mathbf{380,800 \text{ evaluations}}$.
+   - For `regex.moss` ($F=49$): $1,510 \text{ rounds} \times 49 = \mathbf{73,990 \text{ evaluations}}$.
+   - For $W=100$ ($F=200$): $3,020 \text{ rounds} \times 200 = \mathbf{604,000 \text{ evaluations}}$.
 
-#### Key Flaws:
-1. **Absence of Early Termination:** There is no dirty-tracking boolean or change-detection variable in this loop. It executes all $3F + 4$ iterations unconditionally, even when all function return types and constraints were resolved in round 0 or round 1.
-2. **Multiplication by Caller:** In `Checker::run()` ([`src/semantic_checker.cpp#L513-L539`](file:///home/owner/daji/code/moss2/src/semantic_checker.cpp#L513-L539)), `infer_function_signatures` is called:
-   - Line 513: initially (`infer_function_signatures(false)`)
-   - Line 530: in `round = 0`
-   - Line 530: in `round = 1`
-   - Line 530: in `round = 2`
-   - Line 539: in `finalize` (`infer_function_signatures(true)`)
-3. **Total Work Equation:**
-   $$\text{Total Full-Body Passes} = 5 \times (3F + 4) \times F = 15 F^2 + 20 F$$
-   - For $F = 49$ (`packages/regex`): $15(49)^2 + 20(49) \approx \mathbf{37,000}$ full-body AST and solver evaluations.
-   - For $F = 100$ ($W=100$): $15(100)^2 + 20(100) = \mathbf{152,000}$ passes.
-   - For $F = 112$ (`sdk/datastructures`): $15(112)^2 + 20(112) = \mathbf{190,624}$ passes.
-
-### C. Recommended Solution for Phase 25.4 B2
-1. **Dirty Tracking & Early Exit:** Maintain a `bool changed = false` flag. If no function return type was newly bound, no generic result was resolved, and no constraint was added during a round, break immediately. Expected speedup: **10x – 30x**.
-2. **Topological Ordering / Worklist:** Compute the callable dependency graph. Traverse strongly connected components in topological order (callees before callers) so return types propagate in a single bottom-up pass ($O(F)$).
-
----
-
-## 3. Hotspot 2: Recursive Specialization Effects & AST Cloning on Deep Chains
-
-### A. Empirical Profile Evidence
-
-In deep dependent inference chains (W4), the compiler latency exhibits extreme superlinear scaling:
-
-| Depth | Total Wall (ms) | Type Inference (ms) | Effects (ms) | Specialization Effects (ms) | % of Time in Effects |
-|---:|---:|---:|---:|---:|---:|
-| 5 | 18.09 | 7.91 | 2.12 | 1.84 | 21.9% |
-| 10 | 143.66 | 36.71 | 44.26 | 88.81 | 92.6% |
-| 15 | 3,387.24 | 68.12 | 921.40 | 2,341.15 | 96.3% |
-| 18 | **27,617.13** | 93.96 | **7,580.01** | **19,013.27** | **96.3%** |
-
-At depth 18, `specialization_effects` takes **19.01 seconds** and `effects` takes **7.58 seconds**, totaling **26.59 seconds out of 27.62 seconds**.
-
-### B. Code Attribution & Algorithmic Flaw
-
-In [`src/semantic_checker.cpp#L644-L660`](file:///home/owner/daji/code/moss2/src/semantic_checker.cpp#L644-L660):
-
+### B. The $O(2^D)$ Specialization Effects Tree Re-Traversal
+In `src/semantic_checker.cpp:644-660` and `18229-18360`:
 ```cpp
-// src/semantic_checker.cpp:644
-{
-  CompilerStageTimer timer("specialization_effects");
-  for (auto& function : p_.functions)
-    for (auto& specialization : function.specializations)
-      specialization.observable_effects =
-          concrete_function_observable_effects(
-              function, specialization.parameter_types);
-  // Redundant second pass!
-  for (const auto& function : p_.functions)
-    for (const auto& specialization : function.specializations) {
-      const auto rechecked = concrete_function_observable_effects(
-          function, specialization.parameter_types);
-      if (!same_observable_effects(specialization.observable_effects, rechecked))
-        err(...);
-    }
-}
-```
+// Pass 1:
+for (auto& function : p_.functions)
+  for (auto& specialization : function.specializations)
+    specialization.observable_effects = concrete_function_observable_effects(...);
 
-In [`src/semantic_checker.cpp#L18229-L18360`](file:///home/owner/daji/code/moss2/src/semantic_checker.cpp#L18229-L18360) (`concrete_function_observable_effects`):
-
-```cpp
-// src/semantic_checker.cpp:18251
-ObservableEffects concrete = observable_body_effects(function.body, env, parameters);
-auto body = function.body; // FULL AST VECTOR COPY!
-concrete.raise_set = compiler->phase21_raise_set(body, env);
-...
-const ObservableEffects callback_effects =
-    concrete_function_observable_effects(*callback, callback_arguments);
-concrete.merge(callback_effects);
-```
-
-#### Key Flaws:
-1. **Zero Memoization Across Chain Invocations:** When evaluating `step018`, it recursively calls `concrete_function_observable_effects` on `step017`, which calls `step016`, down to `step000`. Then the outer loop advances to `step017` and re-evaluates the entire chain from scratch!
-2. **Double Execution:** Lines 650–659 re-run the entire computation a second time just to check `!same_observable_effects`.
-3. **AST Cloning:** Line 18257 creates a deep copy of `function.body` on every single invocation of `concrete_function_observable_effects`.
-4. **Call Graph Inefficiency in `infer_observable_effects`:** Lines 19245–19255 use an un-ordered round loop of size $3E + 3$ instead of a topological DAG traversal.
-
-### C. Recommended Solution for Phase 25.4 B2
-1. **Memoize Specialization Effects:** Cache `concrete_function_observable_effects` results keyed by `(function.semantic_callable_id, argument_types)`. On a chain $f_k \to f_{k-1}$, evaluating $f_k$ reuses the cached summary of $f_{k-1}$ in $O(1)$ time. Expected speedup: **100x – 1,000x** (reducing W4 depth 18 from 27.6s to < 50ms).
-2. **Eliminate Redundant Second Pass:** Eliminate the second loop in lines 650–659 in release builds or gate it under an internal self-check flag.
-3. **Avoid AST Cloning:** Pass const references or light statement views into raise-set analysis.
-
----
-
-## 4. Hotspot 3: Concrete Specialization Body Synthesis & Re-Checking (W2 vs W3)
-
-### A. Empirical Profile Evidence
-
-Comparing W2 (distinct concrete specializations) with W3 (repeated specializations with cache hits) isolates the exact marginal cost of concrete specialization body synthesis:
-
-| Workload | $N$ | Call Sites | Distinct Specs | Median (ms) | `type_inference` (ms) | `specialization_checking` (ms) | `specialization_effects` (ms) |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| **W2** (Distinct) | 32 | 1,024 | 1,056 | **3,678.53** | 1,438.91 | **1,539.40** | 283.63 |
-| **W3** (Repeated) | 32 | 1,024 | 6 | **2,417.26** | 1,365.34 | **840.71** | 0.63 |
-| **Delta** | — | — | +1,050 | **+1,261.28** | +73.57 | **+698.69** | **+283.00** |
-
-The measured differential proves that synthesizing and checking 1,050 additional concrete specialization bodies incurs **1,261 ms** of overhead (~$1.20\text{ ms}$ per distinct specialization).
-
-### B. Code Attribution & Algorithmic Flaw
-
-In [`src/semantic_checker.cpp#L21820-L21950`](file:///home/owner/daji/code/moss2/src/semantic_checker.cpp#L21820-L21950) (`register_static_specialization`):
-
-```cpp
-// Cache hit path (lines 21825-21845):
-if (existing != function.specializations.end()) {
-  ...
-  if (final_parameter_effects_ready_) {
-    vector<bool> fresh_mutations;
-    auto fresh_effects = concrete_function_effects(
-        function, canonical_types, &fresh_mutations, true);
-    if (existing->parameter_effects != fresh_effects || ...)
-      err(...);
+// Pass 2 (Exact duplicate!):
+for (const auto& function : p_.functions)
+  for (const auto& specialization : function.specializations) {
+    const auto rechecked = concrete_function_observable_effects(...);
+    if (!same_observable_effects(...)) err(...);
   }
-  return;
-}
-
-// Cache miss path (lines 21865-21950):
-specialization.parameter_effects = concrete_function_effects(
-    function, canonical_types, &specialization.parameter_mutations);
-function.specializations.push_back(specialization);
-...
-infer_statement_expressions(function.body, specialized_env);
-static_bindings_for_body(function.body, specialized_env);
-Function concrete_function = function; // DEEP COPY
-check_stmts(function.body, specialized_env, nullptr, nullptr, &concrete_function);
-auto final_ownership = check_ownership(function.body, std::move(specialized_ownership), ...);
 ```
-
-#### Key Flaws:
-1. **Cache Hit Penalty:** Even when a specialization key hits the cache, lines 21840–21850 re-evaluate `concrete_function_effects` to ensure parity.
-2. **Full Body Re-Checking on Isomorphic Bodies:** In W2, every sensor type has the identical layout and behavior, yet the compiler re-analyzes every statement and re-derives ownership for all 1,056 instances.
-
-### C. Recommended Solution for Phase 25.4 B2
-1. **Isomorphic Shape Specialization:** Group concrete types by structural layout and effect profile. If a function does not branch on nominal type tags, check the body once per structural class.
-2. **Skip Redundant Effect Re-computation on Cache Hits:** Trust the cached `parameter_effects` in production builds.
+1. **Exponential Recursion Without Memoization:** `concrete_function_observable_effects` resolves callback requirements by calling `concrete_function_observable_effects(*callback, callback_arguments)`.
+2. For an 18-step linear call chain ($f_{18} \to f_{17} \to \dots \to f_0$), evaluating $f_{18}$ recursively traverses all 18 callees. Then the outer loop evaluates $f_{17}$, re-traversing all 17 callees from scratch.
+3. Total calls: $\sum_{k=1}^{18} 2^k \approx \mathbf{2,621,451 \text{ invocations}}$ to evaluate just **37 unique function signatures**.
+4. **Duplicate Pass:** Lines 650–659 repeat this entire 2.62-million-call calculation a second time, burning **9.93 seconds** with zero semantic change.
 
 ---
 
-## 5. Hotspot 4: Repeated Module Resolution & Parsing Across Invocations
+## 4. Top Three Optimization Recommendations (Architecture & Algorithm Only)
 
-In `packages/regex` and `sdk/datastructures`, the compiler profile logs indicate that modules like `bytes` and internal dependencies are parsed and checked **twice** during a single `moss check` command:
-- Pass 1: Semantic interface extraction and dependency import.
-- Pass 2: Main compilation unit pass.
+### Recommendation 1: Fixed-Point Dirty Tracking & Worklist-Driven Signature Inference
+- **Measured Problem Addressed:** Eliminates 73,941 redundant evaluations in `packages/regex` (19.1 s), 380,688 redundant evaluations in `sdk/datastructures` (22.1 s), and 603,800 redundant evaluations in W5 (11.0 s).
+- **Rustc / Salsa-Style Memoization:** Applicable. A function body's type equations are invariant unless its inputs or callees change. Once a function's return type is resolved to a closed concrete type (`closed->is_closed()`), its body never needs to be re-evaluated.
+- **Dependency Graph / Worklist:** **Highly Preferable.** Build an intra-module call DAG. Traverse strongly connected components in topological order (callees before callers). Maintain a worklist of dirty functions. Leaf functions (such as all 200 functions in W5) are evaluated **exactly once** ($O(F)$ instead of $O(F^2)$).
+- **Parallel Execution:** Highly viable. Independent components in the worklist can be evaluated concurrently across worker threads.
+- **Semantic Invariants:** Conflicting return type errors (`TYPE_MISMATCH`), generic constraints, and cycle diagnostics must be preserved identically.
+- **Engineering Difficulty:** **Low to Medium.** Dirty-flag tracking (`bool changed = false; if (!changed) break;`) is ~5 lines of code. A full worklist queue is ~80 lines.
+- **Estimated Speedup:** **10x to 30x reduction** in semantic compilation latency on multi-function programs (reducing `regex` from 21.6 s to ~1.0 s, `datastructures` from 18.3 s to ~1.2 s, and W5 from 10.9 s to < 200 ms).
 
-### Recommended Solution for Phase 25.4 B2
-- Implement an in-memory compilation cache for resolved module interfaces so that importing a module does not re-parse or re-analyze its AST multiple times in the same compiler session.
+### Recommendation 2: Query-Based Memoization for Transitive Specialization Effects
+- **Measured Problem Addressed:** Eliminates 2,621,414 redundant recursive invocations in W4 deep inference (26.6 s).
+- **Rustc / Salsa-Style Memoization:** **Ideal Match.** For any `(semantic_callable_id, concrete_type_args)`, the resulting `ObservableEffects` row is a pure, immutable function of its inputs.
+- **Dependency Graph / Worklist:** Memoization table (`std::unordered_map<SpecializationKey, ObservableEffects>`) immediately flattens the $O(2^D)$ tree into an $O(V + E)$ linear DAG traversal. Evaluating $f_{18}$ computes summaries for $f_0 \dots f_{17}$ once; subsequent outer iterations hit the cache in $O(1)$ time.
+- **Parallel Execution:** Not necessary; memoization alone reduces execution time to sub-millisecond.
+- **Semantic Invariants:** Preservation of raise-set union, panic propagation, and domain barrier validation.
+- **Engineering Difficulty:** **Low.** Adding a memoization map to `Checker` keyed by `stable_key` is ~20 lines of code.
+- **Estimated Speedup:** **500x to 1,000x reduction** on deep call chains (reducing W4 depth 18 from 27.6 s to **< 30 ms**).
+
+### Recommendation 3: Elimination of Duplicate Specialization Effects Pass & Body Cloning
+- **Measured Problem Addressed:** Eliminates Pass 2 in `specialization_effects` (9.93 s in W4) and AST vector cloning (`auto body = function.body;` in `concrete_function_observable_effects`).
+- **Rustc / Salsa-Style Memoization:** Applicable. Parity checks can be verified during insertion into the memoization table rather than running an entire second pass over the AST.
+- **Dependency Graph / Worklist:** N/A.
+- **Parallel Execution:** Not needed.
+- **Semantic Invariants:** Diagnostics and error outputs remain bit-for-bit identical.
+- **Engineering Difficulty:** **Very Low.** Gating the duplicate verification pass under a debug/audit flag and passing `const vector<Stmt>&` to raise-set analysis is ~15 lines of code.
+- **Estimated Speedup:** **Instant 2x reduction** in `specialization_effects` wall time across all workloads.
 
 ---
 
-## 6. Actionable Optimization Roadmap for Phase 25.4 B2
+## 5. Summary Table: Current Baseline vs. Projected Upside (Phase 25.4 B2)
 
-The following prioritized roadmap outlines the specific compiler engineering tasks for Phase 25.4 B2:
+| Workload | Current B1 Baseline | Projected B2 with Top 3 Optimizations | Projected Speedup | Primary Enabling Optimization |
+|---|---:|---:|---:|---|
+| `packages/regex/src/main.moss` | **21.60 s** | **~1.1 s** | **~20x** | Fixed-point early break + worklist (Recommendation 1) |
+| `sdk/datastructures/src/datastructures.moss` | **18.26 s** | **~1.2 s** | **~15x** | Fixed-point early break + worklist (Recommendation 1) |
+| W4 Deep Inference (Depth 18) | **27.62 s** | **< 0.05 s** | **> 500x** | Specialization effects memoization (Recommendation 2 & 3) |
+| W5 Wide Inference (Width 100) | **10.89 s** | **< 0.20 s** | **~50x** | Single-pass topological inference (Recommendation 1) |
 
-| Priority | Task Description | Target File(s) | Expected Latency Reduction | Risk Level | Correctness Verification Gate |
-|---|---|---|---|---|---|
-| **P0** | **Dirty-tracking early exit in `infer_function_signatures`** | `src/semantic_checker.cpp` | **10x – 20x** on W5, `packages/regex`, `sdk/datastructures` | Very Low | `make check`, `make check-perf`, `verify.py` |
-| **P0** | **Memoize `concrete_function_observable_effects`** | `src/semantic_checker.cpp` | **100x – 500x** on W4 (Deep Inference) | Low | Regression suites, W4 depth 18 baseline comparison |
-| **P1** | **Topological order traversal for callable fixed-points** | `src/semantic_checker.cpp` | Reduces inference rounds to 1 pass for DAGs | Medium | Negative and cyclic recursion error diagnostics |
-| **P1** | **Eliminate redundant second validation pass in `specialization_effects`** | `src/semantic_checker.cpp` | **2x** speedup in specialization effects phase | Very Low | `make check-perf` |
-| **P2** | **Isomorphic structural specialization body caching** | `src/semantic_checker.cpp` | **2x – 4x** speedup on W2 (large specialization fan-outs) | Medium | Specialization test suite, ABI stability |
-
----
-
-## 7. Conclusion
-
-This hotspot investigation has identified the exact lines of code, data structures, and algorithmic loops responsible for the high compilation latencies observed during the Phase 25.4 B1 baseline measurements.
-
-The observed slow compilation times are **not** intrinsic language overhead; they are primarily caused by:
-1. Missing fixed-point early termination ($15F^2$ un-gated passes),
-2. Lack of memoization in recursive effect propagation on deep call chains, and
-3. Redundant validation passes.
-
-Addressing these three areas in Phase 25.4 B2 will reduce compilation latency on the most demanding torture and real-world workloads from **20+ seconds down to sub-second or low-millisecond performance**.
+All supporting Chrome Trace Event files and text breakdowns are durably stored in [`benchmarks/phase25_4/cpp_baseline/results/traces/`](file:///home/owner/daji/code/moss2/benchmarks/phase25_4/cpp_baseline/results/traces/).

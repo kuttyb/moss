@@ -642,21 +642,27 @@ class Checker {
     build_functional_ir();
     {
       CompilerStageTimer timer("specialization_effects");
-      for (auto& function : p_.functions)
-        for (auto& specialization : function.specializations)
-          specialization.observable_effects =
-              concrete_function_observable_effects(
-                  function, specialization.parameter_types);
-      for (const auto& function : p_.functions)
-        for (const auto& specialization : function.specializations) {
-          const auto rechecked = concrete_function_observable_effects(
-              function, specialization.parameter_types);
-          if (!same_observable_effects(specialization.observable_effects,
-                                       rechecked))
-            err(function.line,
-                "static specialization has inconsistent observable effects for one key",
-                "SOURCE_FREE_SPECIALIZATION_MISMATCH");
-        }
+      {
+        ScopedOpTimer t_pass1("spec_effects_pass1");
+        for (auto& function : p_.functions)
+          for (auto& specialization : function.specializations)
+            specialization.observable_effects =
+                concrete_function_observable_effects(
+                    function, specialization.parameter_types);
+      }
+      {
+        ScopedOpTimer t_pass2("spec_effects_pass2_recheck");
+        for (const auto& function : p_.functions)
+          for (const auto& specialization : function.specializations) {
+            const auto rechecked = concrete_function_observable_effects(
+                function, specialization.parameter_types);
+            if (!same_observable_effects(specialization.observable_effects,
+                                         rechecked))
+              err(function.line,
+                  "static specialization has inconsistent observable effects for one key",
+                  "SOURCE_FREE_SPECIALIZATION_MISMATCH");
+          }
+      }
     }
     {
       CompilerStageTimer timer("occurrence_and_summary_projection");
@@ -5398,6 +5404,7 @@ class Checker {
   }
 
   void build_open_callable_summaries() {
+    ScopedOpTimer t_sum("build_open_callable_summaries");
     vector<Function*> summary_order;
     std::map<string, int> imported_state;
     for (auto& function : p_.functions)
@@ -8218,6 +8225,7 @@ class Checker {
                                const vector<string>& argument_types = {},
                                bool unknown_argument_is_wildcard = false,
                                MethodResolutionFailure* failure = nullptr) const {
+    ScopedOpTimer t_res("resolve_method", type + "." + name);
     return resolve_object_method(objects_, type, name, argument_types,
                                  unknown_argument_is_wildcard, failure);
   }
@@ -9684,6 +9692,7 @@ class Checker {
   }
 
   void check_function(const Function& f) {
+    ScopedOpTimer t_fn("check_function", f.name);
     current_source_file_ = f.source_file;
     SourceFileScope semantic_context(
         current_semantic_context_, "fn:" + f.name);
@@ -13428,6 +13437,7 @@ class Checker {
   }
 
   void infer_domain_state_fields(bool finalize) {
+    ScopedOpTimer t_dom("infer_domain_state_fields");
     for (size_t round = 0;
          round <= p_.domains.size() * 3 + p_.objects.size() + 3; ++round) {
       for (auto& domain : p_.domains) {
@@ -13556,6 +13566,7 @@ class Checker {
   }
 
   void infer_handler_reply_types(bool finalize) {
+    ScopedOpTimer t_rep("infer_handler_reply_types");
     for (size_t round = 0;
          round <= p_.domains.size() * 3 + p_.functions.size() + 3; ++round) {
       for (auto& domain : p_.domains) {
@@ -13637,13 +13648,15 @@ class Checker {
   }
 
   void infer_function_signatures(bool finalize) {
-    for (auto& function : p_.functions) {
-      SourceFileScope function_source(current_source_file_, function.source_file);
-      if (std::any_of(function.params.begin(), function.params.end(),
-                      [](const Param& parameter) { return parameter.type.empty(); })) {
-        function.generic = true;
-        function.static_dispatch = true;
-      }
+    {
+      ScopedOpTimer t_prelude("sig_infer_prelude_constraints");
+      for (auto& function : p_.functions) {
+        SourceFileScope function_source(current_source_file_, function.source_file);
+        if (std::any_of(function.params.begin(), function.params.end(),
+                        [](const Param& parameter) { return parameter.type.empty(); })) {
+          function.generic = true;
+          function.static_dispatch = true;
+        }
       // A declared nominal with inferred fields is a known template, not a
       // closed parameter layout. Each call supplies its field substitution.
       for (const auto& parameter : function.params) {
@@ -13864,7 +13877,11 @@ class Checker {
         for (const auto& kv : function.generic_results)
           function.set_return_type(kv.first.rfind("element:", 0) == 0 ? "_element:" + kv.first : kv.first.rfind("field:", 0) == 0 ? "_field:" + kv.first : "_generic:" + kv.first);
     }
+    }
     for (size_t round = 0; round <= p_.functions.size() * 3 + 3; ++round) {
+      ScopedOpTimer t_round("sig_infer_round_body");
+      if (CompilerTraceRecorder::instance().is_enabled())
+        CompilerTraceRecorder::instance().increment_counter("sig_infer_outer_rounds", 1);
       for (auto& function : p_.functions) {
         SourceFileScope function_source(current_source_file_, function.source_file);
         TypeEnv env;
@@ -13877,10 +13894,18 @@ class Checker {
                 ? "_generic:" + parameter.name : parameter.type;
           }
         }
-        infer_statement_expressions(function.body, env);
-        BodyTypeState body_types = solve_local_collection_types(
-            function.body, env, function.semantic_callable_id, false, true);
+        {
+          ScopedOpTimer t_infer("infer_statement_expressions", function.name);
+          infer_statement_expressions(function.body, env);
+        }
+        BodyTypeState body_types;
+        {
+          ScopedOpTimer t_solve("solve_local_collection_types", function.name);
+          body_types = solve_local_collection_types(
+              function.body, env, function.semantic_callable_id, false, true);
+        }
         BodyTypeScope body_scope(current_body_types_, &body_types);
+        ScopedOpTimer t_recon("sig_infer_result_reconciliation", function.name);
         moss::TypeRef joined_result;
         bool all_results_typed = true;
         auto result_term = [&](const string& expression, const TypeEnv& eval_env) -> moss::TypeRef {
@@ -14147,6 +14172,11 @@ class Checker {
                                            const vector<string>& types,
                                            vector<bool>* mutations = nullptr,
                                            bool recheck = false) const {
+    string spec_key;
+    if (CompilerTraceRecorder::instance().is_enabled()) {
+      spec_key = function.name + "(" + join_arguments(types) + ")";
+    }
+    ScopedOpTimer t_fn("concrete_function_effects", spec_key);
     if (const auto* specialization = concrete_specialization(function, types);
         !recheck && specialization && !specialization->parameter_effects.empty()) {
       if (mutations) *mutations = specialization->parameter_mutations;
@@ -18228,6 +18258,11 @@ class Checker {
 
   ObservableEffects concrete_function_observable_effects(
       const Function& function, const vector<string>& argument_types) const {
+    string spec_key;
+    if (CompilerTraceRecorder::instance().is_enabled()) {
+      spec_key = function.name + "(" + join_arguments(argument_types) + ")";
+    }
+    ScopedOpTimer t_obs("concrete_function_observable_effects", spec_key);
     ObservableEffects summary = function.observable_effects;
     if (!function.static_dispatch ||
         argument_types.size() != function.params.size() ||
@@ -19247,6 +19282,8 @@ class Checker {
     // the declaration order irrelevant while propagating the finite summaries
     // bottom-up through that acyclic graph.
     for (size_t round = 0; round < entities * 3 + 3; ++round) {
+      if (CompilerTraceRecorder::instance().is_enabled())
+        CompilerTraceRecorder::instance().increment_counter("effects_fixed_point_rounds", 1);
       bool changed = false;
       for (auto& function : p_.functions) {
         // An imported body is absent for a concrete export and its semantic
@@ -19261,14 +19298,22 @@ class Checker {
               ? "_generic:" + parameter.name : parameter.type;
           parameters.insert(parameter.name);
         }
-        auto inferred = observable_body_effects(
-            function.body, env, parameters);
-        inferred.raise_set = phase21_raise_set(function.body, env);
-        if (function.result_expression)
+        ObservableEffects inferred;
+        {
+          ScopedOpTimer t_body("observable_body_effects", function.name);
+          inferred = observable_body_effects(function.body, env, parameters);
+        }
+        {
+          ScopedOpTimer t_raise("phase21_raise_set", function.name);
+          inferred.raise_set = phase21_raise_set(function.body, env);
+        }
+        if (function.result_expression) {
+          ScopedOpTimer t_res("observable_expression_effects", function.name);
           inferred.merge(observable_expression_effects(
               *function.result_expression,
               walk_type_environment(function.body, env,
                   [](const Stmt&, const TypeEnv&) {}, false)));
+        }
         if (!same_observable_effects(inferred, function.observable_effects)) {
           function.observable_effects = inferred;
           changed = true;
@@ -20661,6 +20706,7 @@ class Checker {
                                const Domain* current_domain,
                                const Handler* current_handler,
                                vector<ExceptionalOwnershipExit>* exceptional = nullptr) {
+    ScopedOpTimer t_own("check_ownership");
     auto retained = checked_body_states_.find(&statements);
     BodyTypeScope body_scope(current_body_types_,
         retained == checked_body_states_.end() ? nullptr : retained->second.get());
@@ -21829,6 +21875,7 @@ class Checker {
                                    return specialization.stable_type_key == stable_key;
                                  });
     if (existing != function.specializations.end()) {
+      ScopedOpTimer hit_timer("spec_cache_hit_recheck", stable_key);
       if (CompilerTraceRecorder::instance().is_enabled()) {
         CompilerTraceRecorder::instance().increment_counter("reused_specialization_results", 1);
       }
@@ -21903,6 +21950,7 @@ class Checker {
     record_dependency();
 
     TypeEnv specialized_env;
+    ScopedOpTimer miss_timer("spec_cache_miss_body_check", stable_key);
     for (size_t index = 0; index < function.params.size(); ++index)
       specialized_env[function.params[index].name] = canonical_types[index];
     FunctionSpecialization* previous = checking_specialization_;

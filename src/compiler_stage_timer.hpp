@@ -4,10 +4,12 @@
 #include <cstdint>
 #include <cstdlib>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <map>
 #include <mutex>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #if defined(__unix__) || defined(__APPLE__)
@@ -35,13 +37,20 @@ class CompilerTraceRecorder {
   std::mutex mutex_;
   std::vector<TraceEvent> events_;
   std::map<std::string, uint64_t> counters_;
+  struct OperationMetric {
+    uint64_t count{0};
+    uint64_t total_ns{0};
+    std::unordered_set<std::string> distinct_keys;
+  };
+  std::map<std::string, OperationMetric> operations_;
   bool flushed_{false};
   uint32_t pid_{1};
 
   CompilerTraceRecorder() {
     const char* profile_env = std::getenv("MOSS_PROFILE_COMPILER");
     const char* trace_env = std::getenv("MOSS_PROFILE_TRACE");
-    profile_compiler_ = (profile_env != nullptr);
+    const char* hotspot_env = std::getenv("MOSS_PROFILE_HOTSPOTS");
+    profile_compiler_ = (profile_env != nullptr) || (hotspot_env != nullptr);
     if (trace_env != nullptr && *trace_env != '\0') {
       trace_enabled_ = true;
       trace_file_ = trace_env;
@@ -105,6 +114,43 @@ class CompilerTraceRecorder {
     return counters_;
   }
 
+  void record_operation(const std::string& name, uint64_t dur_ns, const std::string& key = "") {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto& m = operations_[name];
+    m.count++;
+    m.total_ns += dur_ns;
+    if (!key.empty()) m.distinct_keys.insert(key);
+  }
+
+  std::map<std::string, OperationMetric> all_operations() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return operations_;
+  }
+
+  void dump_hotspot_report() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (operations_.empty()) return;
+    std::cerr << "\n================================ COMPILER HOTSPOT BREAKDOWN ================================\n";
+    std::cerr << std::left << std::setw(34) << "Compiler Operation"
+              << std::right << std::setw(12) << "Time (ms)"
+              << std::setw(10) << "Calls"
+              << std::setw(12) << "Distinct"
+              << std::setw(12) << "Repeated"
+              << std::setw(12) << "Avg (us)" << "\n";
+    std::cerr << "--------------------------------------------------------------------------------------------\n";
+    for (const auto& [name, op] : operations_) {
+      double total_ms = static_cast<double>(op.total_ns) / 1000000.0;
+      double avg_us = op.count ? static_cast<double>(op.total_ns) / (1000.0 * op.count) : 0.0;
+      std::cerr << std::left << std::setw(34) << name
+                << std::right << std::setw(12) << std::fixed << std::setprecision(2) << total_ms
+                << std::setw(10) << op.count
+                << std::setw(12) << op.distinct_keys.size()
+                << std::setw(12) << (op.count > op.distinct_keys.size() ? op.count - op.distinct_keys.size() : 0)
+                << std::setw(12) << std::fixed << std::setprecision(1) << avg_us << "\n";
+    }
+    std::cerr << "============================================================================================\n\n";
+  }
+
   void flush_trace() {
     std::lock_guard<std::mutex> lock(mutex_);
     if (!trace_enabled_ || flushed_ || trace_file_.empty()) return;
@@ -162,11 +208,53 @@ class CompilerTraceRecorder {
       first_c = false;
       out << "      \"" << k << "\": " << v;
     }
+    out << "\n    },\n";
+
+    out << "    \"operations\": {\n";
+    bool first_op = true;
+    for (const auto& [name, op] : operations_) {
+      if (!first_op) out << ",\n";
+      first_op = false;
+      double total_ms = static_cast<double>(op.total_ns) / 1000000.0;
+      double avg_us = op.count ? static_cast<double>(op.total_ns) / (1000.0 * op.count) : 0.0;
+      out << "      \"" << name << "\": {\n";
+      out << "        \"calls\": " << op.count << ",\n";
+      out << "        \"total_ms\": " << total_ms << ",\n";
+      out << "        \"distinct_inputs\": " << op.distinct_keys.size() << ",\n";
+      out << "        \"repeated_calls\": " << (op.count > op.distinct_keys.size() ? op.count - op.distinct_keys.size() : 0) << ",\n";
+      out << "        \"avg_us\": " << avg_us << "\n";
+      out << "      }";
+    }
     out << "\n    }\n  }\n}\n";
   }
 
   ~CompilerTraceRecorder() {
     flush_trace();
+    if (std::getenv("MOSS_PROFILE_HOTSPOTS") != nullptr) {
+      dump_hotspot_report();
+    }
+  }
+};
+
+class ScopedOpTimer {
+  const char* name_;
+  std::string key_;
+  bool enabled_;
+  std::chrono::steady_clock::time_point begin_;
+
+ public:
+  explicit ScopedOpTimer(const char* name, std::string key = "")
+      : name_(name),
+        key_(std::move(key)),
+        enabled_(CompilerTraceRecorder::instance().is_enabled()) {
+    if (enabled_) begin_ = std::chrono::steady_clock::now();
+  }
+
+  ~ScopedOpTimer() {
+    if (!enabled_) return;
+    auto end = std::chrono::steady_clock::now();
+    auto duration_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin_).count();
+    CompilerTraceRecorder::instance().record_operation(name_, duration_ns, key_);
   }
 };
 

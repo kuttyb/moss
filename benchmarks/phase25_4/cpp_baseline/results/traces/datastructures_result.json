@@ -1,0 +1,8 @@
+{
+  "protocol_version": 1,
+  "schema_version": "moss-agent-1",
+  "compiler_version": "0.1.0",
+  "command": "check",
+  "ok": true,
+  "result": {"source_file": "/home/owner/daji/code/moss2/sdk/datastructures/src/datastructures.moss", "diagnostics": []}
+}

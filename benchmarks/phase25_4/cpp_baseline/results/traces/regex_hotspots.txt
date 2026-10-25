@@ -1,0 +1,24 @@
+
+================================ COMPILER HOTSPOT BREAKDOWN ================================
+Compiler Operation                   Time (ms)     Calls    Distinct    Repeated    Avg (us)
+--------------------------------------------------------------------------------------------
+build_open_callable_summaries             0.38         4           0           4        94.9
+check_function                          378.21        98          49          49      3859.3
+check_ownership                          51.64        98           0          98       526.9
+concrete_function_effects                 3.07      3958          30        3928         0.8
+concrete_function_observable_effects        0.06      1130          30        1100         0.0
+infer_domain_state_fields                 0.00         8           0           8         0.2
+infer_handler_reply_types                 0.01         8           0           8         1.4
+infer_statement_expressions           12423.74     73990          49       73941       167.9
+observable_body_effects                  30.54       196          49         147       155.8
+observable_expression_effects             0.29        92          23          69         3.1
+phase21_raise_set                        24.85       196          49         147       126.8
+resolve_method                            0.01        20           1          19         0.3
+sig_infer_prelude_constraints            97.35        10           0          10      9735.0
+sig_infer_result_reconciliation         413.47     73990          49       73941         5.6
+sig_infer_round_body                  19466.64      1510           0        1510     12891.8
+solve_local_collection_types           6260.82     73990          49       73941        84.6
+spec_effects_pass1                        0.00         2           0           2         0.5
+spec_effects_pass2_recheck                0.00         2           0           2         0.1
+============================================================================================
+
