@@ -1178,6 +1178,8 @@ public final class FastInterpreterTest {
         var program = Parser.parseSource(""
                 + "fn negate(value: Int) -> Int:\n"
                 + "  return 0 - value\n"
+                + "fn parity(value: Int) -> Int:\n"
+                + "  return value % 2\n"
                 + "fn main():\n"
                 + "  var direct = [5, 2, 8, 1, 9]\n"
                 + "  sort(direct)\n"
@@ -1188,6 +1190,9 @@ public final class FastInterpreterTest {
                 + "  var reversed = [5, 1, 4, 2]\n"
                 + "  sort(reversed, by: Reverse(negate))\n"
                 + "  echo reversed[0], reversed[1], reversed[2], reversed[3]\n"
+                + "  var stable = [3, 1, 5, 2, 4]\n"
+                + "  sort(stable, by: parity)\n"
+                + "  echo stable[0], stable[1], stable[2], stable[3], stable[4]\n"
                 + "  nan = 0.0 / 0.0\n"
                 + "  var floats = [nan, 1.0, 0.0, -0.0, -10.0]\n"
                 + "  sort(floats)\n"
@@ -1197,7 +1202,7 @@ public final class FastInterpreterTest {
         ByteArrayOutputStream stdout = new ByteArrayOutputStream();
         new FastInterpreter(program, false, new PrintStream(stdout),
                 new PrintStream(new ByteArrayOutputStream())).run();
-        String expected = "1 2 5 8 9\n5 4 3 2 1\n1 2 4 5\n-10.0 -0.0 0.0 1.0 NaN\n";
+        String expected = "1 2 5 8 9\n5 4 3 2 1\n1 2 4 5\n2 4 3 1 5\n-10.0 -0.0 0.0 1.0 NaN\n";
         String actual = stdout.toString(StandardCharsets.UTF_8);
         if (!expected.equals(actual)) {
             throw new AssertionError("sort/reverse produced unexpected output: " + actual);

@@ -15986,3 +15986,18 @@ bounded language/backend slice, not evidence of general compiler parity;
 source-free ABI validation, broader accepted-surface coverage, Margo/SDK
 acceptance, daemon lifecycle, native gates, and frozen-candidate review remain
 open.
+
+### Phase 25.3 follow-up — stable keyed Fast Debug sort
+
+Added a regression for equal sort keys: sorting `[3, 1, 5, 2, 4]` by parity
+keeps the original order within each key group and produces `2 4 3 1 5` in
+both C++ and Java Fast Debug. The expanded FastInterpreter test suite passes.
+
+A fresh full trace comparison on the multi-sort runtime fixture produces
+identical stdout but 113 C++ events and 105 Java events. The aligned differences
+are confined to pure key-function invocation events inside the sort comparator;
+C++ uses `std::stable_sort`, while Java uses the JDK's stable list sort, whose
+comparison schedule differs. This is a trace-level implementation difference,
+not an output or ordering mismatch. Exact sort-comparator trace parity remains
+unresolved; no attempt was made to emulate a platform-specific comparison
+schedule. Other Phase 25.3 release gates remain open.
