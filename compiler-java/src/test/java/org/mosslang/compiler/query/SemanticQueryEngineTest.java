@@ -129,8 +129,11 @@ public final class SemanticQueryEngineTest {
         String source = ""
                 + "fn emit():\n"
                 + "  echo \"x\"\n"
+                + "fn demand(value: Bool):\n"
+                + "  assert(value)\n"
                 + "fn relay():\n"
                 + "  emit()\n"
+                + "  demand(false)\n"
                 + "fn calculate():\n"
                 + "  relay()\n"
                 + "fn main():\n"
@@ -139,6 +142,7 @@ public final class SemanticQueryEngineTest {
         new SemanticChecker(program).run();
         String result = queryEffects(program, "calculate");
         assertContains(result, "\"external_io\": true");
+        assertContains(result, "\"may_panic\": true");
     }
 
     private static void effectsQueryExcludesRecoveredDirectRaises() {
