@@ -15701,3 +15701,23 @@ ABI-v9 defaults and staged ABI-v10. This establishes the exercised fixture
 paths only; other collection patterns, native correctness, SDK integration,
 daemon lifecycle, and broad language/codegen acceptance remain open. The
 earlier textual generated-Rust parity initiative stays parked.
+
+
+### Phase 25.3 continuation — copy domain replies and update nested object fields
+
+The `phase106d1_borrowed_reads.moss` probe exposed two Fast Debug runtime
+correctness gaps. Returning a domain-owned object aliased the domain's mutable
+state, and assignments such as `record.profile.values = [4, 5]` wrote a literal
+`profile.values` key instead of traversing the nested object. Message replies
+now recursively copy returned Moss values, and dotted assignments walk each
+object field and emit the full domain-state write path.
+
+A focused regression verifies that a nested object snapshot stays unchanged
+after the domain mutates its source. On the full borrowed-reads fixture, Java
+and C++ stdout now match exactly (`31 13 31 12 39`, then `13 31`). The JSON
+trace is still not fully equal (217 C++ events versus 212 Java events, with an
+earlier domain-instance naming difference), so this is targeted semantics
+evidence rather than broad Fast Debug parity. All twelve Java test classes
+pass under ABI-v9 and staged ABI-v10. Native/backend and SDK acceptance,
+source-free integration, daemon readiness, and the broader semantic/codegen
+scope remain open.

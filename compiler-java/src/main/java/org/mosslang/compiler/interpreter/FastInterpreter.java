@@ -407,6 +407,57 @@ public class FastInterpreter {
         return new Value(value.kind, value.raw, value.typeName);
     }
 
+    private static Value copyReturnedValue(Value value) {
+        if (value == null) return Value.ofUnit();
+        return switch (value.kind) {
+            case OBJECT -> {
+                Map<String, Value> fields = new LinkedHashMap<>();
+                if (value.raw instanceof Map<?, ?> rawFields) {
+                    for (Map.Entry<?, ?> entry : rawFields.entrySet()) {
+                        if (entry.getKey() instanceof String name && entry.getValue() instanceof Value field)
+                            fields.put(name, copyReturnedValue(field));
+                    }
+                }
+                yield new Value(Value.Kind.OBJECT, fields, value.typeName);
+            }
+            case VECTOR -> {
+                List<Value> items = new ArrayList<>();
+                if (value.raw instanceof List<?> rawItems) {
+                    for (Object item : rawItems)
+                        items.add(item instanceof Value element ? copyReturnedValue(element) : Value.ofUnit());
+                }
+                yield new Value(Value.Kind.VECTOR, items, value.typeName);
+            }
+            case QUEUE -> {
+                Deque<Value> items = new ArrayDeque<>();
+                if (value.raw instanceof Deque<?> rawItems) {
+                    for (Object item : rawItems)
+                        items.addLast(item instanceof Value element ? copyReturnedValue(element) : Value.ofUnit());
+                }
+                yield new Value(Value.Kind.QUEUE, items, value.typeName);
+            }
+            case MAP -> {
+                Map<Object, Value> items = new LinkedHashMap<>();
+                if (value.raw instanceof Map<?, ?> rawItems) {
+                    for (Map.Entry<?, ?> entry : rawItems.entrySet())
+                        items.put(entry.getKey(), entry.getValue() instanceof Value element
+                                ? copyReturnedValue(element) : Value.ofUnit());
+                }
+                yield new Value(Value.Kind.MAP, items, value.typeName);
+            }
+            case ENUM -> {
+                if (value.raw instanceof EnumValue enumValue) {
+                    Map<String, Value> fields = new LinkedHashMap<>();
+                    for (Map.Entry<String, Value> entry : enumValue.fields.entrySet())
+                        fields.put(entry.getKey(), copyReturnedValue(entry.getValue()));
+                    yield Value.ofEnum(enumValue.enumName, enumValue.variant, fields);
+                }
+                yield new Value(value.kind, value.raw, value.typeName);
+            }
+            default -> new Value(value.kind, value.raw, value.typeName);
+        };
+    }
+
     private void traceLoopIteration(Stmt statement, String function, int iteration, int depth) {
         traceControlEvent(statement, function, "LoopIteration", Integer.toString(iteration), depth);
     }
@@ -1023,22 +1074,30 @@ public class FastInterpreter {
                     return Value.ofUnit();
                 }
                 if (varName.contains(".") && !varName.contains("[")) {
-                    int dot = varName.indexOf('.');
-                    String objName = varName.substring(0, dot).trim();
-                    String fieldName = varName.substring(dot + 1).trim();
-                    Value objVal = locals.containsKey(objName) ? locals.get(objName) : (currentDomain != null ? currentDomain.state.get(objName) : null);
-                    if (objVal != null && objVal.raw instanceof Map<?, ?> mp) {
+                    String[] pathParts = varName.split("\\.");
+                    String rootName = pathParts[0].trim();
+                    Value rootValue = locals.containsKey(rootName) ? locals.get(rootName)
+                            : (currentDomain != null ? currentDomain.state.get(rootName) : null);
+                    Object target = rootValue == null ? null : rootValue.raw;
+                    for (int part = 1; target instanceof Map<?, ?> fields && part < pathParts.length - 1; part++) {
+                        Object child = fields.get(pathParts[part].trim());
+                        target = child instanceof Value fieldValue ? fieldValue.raw : null;
+                    }
+                    if (target instanceof Map<?, ?> fields && pathParts.length > 1) {
                         @SuppressWarnings("unchecked")
-                        Map<String, Value> m = (Map<String, Value>) mp;
-                        Value before = m.get(fieldName);
-                        m.put(fieldName, val);
-                        if (objVal.traceStatePath != null) {
+                        Map<String, Value> writableFields = (Map<String, Value>) fields;
+                        String fieldName = pathParts[pathParts.length - 1].trim();
+                        Value before = writableFields.put(fieldName, val);
+                        String statePath = rootValue.traceStatePath != null
+                                ? rootValue.traceStatePath + "." + String.join(".", Arrays.copyOfRange(pathParts, 1, pathParts.length))
+                                : currentDomain != null && currentDomain.state.containsKey(rootName) ? varName : null;
+                        if (statePath != null) {
                             eventId++;
                             traceEvent("{\"event_id\":" + eventId + ",\"event\":\"state_write\",\"function\":\""
                                     + jsonEscape(funcName) + "\",\"source_file\":\"" + jsonEscape(s.sourceFile)
                                     + "\",\"semantic_identity\":\"" + jsonEscape(traceIdentity()) + "\",\"line\":"
                                     + s.line + traceContextFields() + ",\"depth\":" + depth + traceDomainFields()
-                                    + ",\"path\":\"" + jsonEscape(objVal.traceStatePath + "." + fieldName)
+                                    + ",\"path\":\"" + jsonEscape(statePath)
                                     + "\",\"before\":\"" + jsonEscape(traceValueSummary(before))
                                     + "\",\"after\":\"" + jsonEscape(traceValueSummary(val)) + "\"}");
                         }
@@ -1239,6 +1298,7 @@ public class FastInterpreter {
                         throw rex;
                     }
                 }
+                retVal = copyReturnedValue(retVal);
 
                 eventId++;
                 traceEvent("{\"event_id\":" + eventId + ",\"event\":\"handler_exit\",\"function\":\""

@@ -26,6 +26,7 @@ public final class FastInterpreterTest {
         testObjectMethodTraceCarriesCallContext();
         testBorrowedDomainObjectTraceKeepsStatePath();
         testIndexedDomainStateTraceKeepsFullPath();
+        testDomainReplyCopiesNestedObjectValue();
         testObjectMethodUpdatesScalarField();
         testObjectMethodFieldShadowsSameNamedParameter();
         testSpacedGenericCollectionConstructors();
@@ -479,6 +480,36 @@ public final class FastInterpreterTest {
                 || !events.substring(indexedWrite).contains("\"path\":\"values[0]\"")
                 || !"initial\ninitial\n".equals(stdout.toString(StandardCharsets.UTF_8))) {
             throw new AssertionError("indexed domain state trace lost its full path: " + events);
+        }
+    }
+
+    private static void testDomainReplyCopiesNestedObjectValue() {
+        var program = Parser.parseSource(""
+                + "type Record:\n"
+                + "  count: Int\n"
+                + "  values: Vector[Int]\n"
+                + "domain Store:\n"
+                + "  record: Record\n"
+                + "  fn Snapshot() -> Record:\n"
+                + "    reply record\n"
+                + "  fn Change():\n"
+                + "    record.count = 2\n"
+                + "    record.values[0] = 9\n"
+                + "fn main():\n"
+                + "  store = Store(record: Record(count: 1, values: [4]))\n"
+                + "  snapshot = message store.Snapshot()\n"
+                + "  message store.Change()\n"
+                + "  echo snapshot.count, snapshot.values[0]\n",
+                "fast-interpreter-domain-reply-copy.moss");
+        new CheckedProgram(program).run();
+
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+        new FastInterpreter(program, false,
+                new PrintStream(stdout, true, StandardCharsets.UTF_8),
+                new PrintStream(new ByteArrayOutputStream(), true, StandardCharsets.UTF_8)).run();
+        if (!"1 4\n".equals(stdout.toString(StandardCharsets.UTF_8))) {
+            throw new AssertionError("domain reply aliased mutable state instead of copying it: "
+                    + stdout.toString(StandardCharsets.UTF_8));
         }
     }
 
