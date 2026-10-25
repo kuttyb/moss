@@ -94,6 +94,10 @@ public final class SourceFreeFunctionMetadataTest {
         iface.semanticContract.add(new MossiRecord("fn:consume", ""
                 + "export fn consume return=unit " + effects + "\n"
                 + "  param 0 string mode=CONSUME name=\"value\"\n"));
+        iface.semanticContract.add(new MossiRecord("fn:mutate_pair", ""
+                + "export fn mutate_pair return=unit " + effects + "\n"
+                + "  param 0 string mode=WRITE name=\"left\"\n"
+                + "  param 1 string mode=READ name=\"right\"\n"));
         Path interfaceFile = Files.createTempFile(scratch, "java-source-free-v10-function-", ".mossi");
         try {
             Files.writeString(interfaceFile, CheckedBodyCodec.encodeMossi(iface));
@@ -129,6 +133,10 @@ public final class SourceFreeFunctionMetadataTest {
             makeOnly.semanticContract.add(new MossiRecord("fn:consume", ""
                     + "export fn consume return=unit " + effects + "\n"
                     + "  param 0 string mode=CONSUME name=\"value\"\n"));
+            makeOnly.semanticContract.add(new MossiRecord("fn:mutate_pair", ""
+                    + "export fn mutate_pair return=unit " + effects + "\n"
+                    + "  param 0 string mode=WRITE name=\"left\"\n"
+                    + "  param 1 string mode=READ name=\"right\"\n"));
             Path makeOnlyFile = Files.createTempFile(scratch, "java-source-free-v10-return-", ".mossi");
             try {
                 Files.write(makeOnlyFile, CheckedBodyCodec.encodeMossiBytes(makeOnly));
@@ -146,6 +154,19 @@ public final class SourceFreeFunctionMetadataTest {
                     throw new AssertionError("source-free CONSUME mode did not consume its argument");
                 } catch (org.mosslang.compiler.diagnostics.CompileError error) {
                     if (!"OWNERSHIP_USE_AFTER_CONSUME".equals(error.getCode())) throw error;
+                }
+
+                Program writeConsumer = Parser.parseSource(""
+                        + "fn main():\n"
+                        + "  value = \"shared\"\n"
+                        + "  service.mutate_pair(value, value)\n",
+                        "source-free-write-consumer.moss");
+                Main.loadMossiFunctions(makeOnlyFile, "service", writeConsumer);
+                try {
+                    new SemanticChecker(writeConsumer).run();
+                    throw new AssertionError("source-free WRITE/READ overlap was not rejected");
+                } catch (org.mosslang.compiler.diagnostics.CompileError error) {
+                    if (!"OWNERSHIP_CONFLICTING_ACCESS".equals(error.getCode())) throw error;
                 }
             } finally {
                 Files.deleteIfExists(makeOnlyFile);
