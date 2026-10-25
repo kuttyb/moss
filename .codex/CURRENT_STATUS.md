@@ -12638,3 +12638,14 @@ unit-returning imported method cannot satisfy an `Int` function result.
 
 Validation: Java build and all ten Java test classes pass, including source-free
 ownership and result-type checks. No native or project integration gate was run.
+
+### Phase 25.3 continuation — recheck Julia Accumulator method call
+
+On the current compiler state, direct checks of
+`examples/swarm/Julia/Accumulator/src/main.moss` show Java accepts the project
+source while C++ rejects at line 27 with `MOSS_COMPILE_ERROR` (“no matching
+method 'Accumulator.increment_by' for supplied arguments”). This differs from
+the older recorded Java unknown-method diagnostic after method-body checking
+was added. It remains an unresolved acceptance difference: no minimal
+reproducer isolates the C++ rejection, and no generated Rust or native
+execution was used to determine runtime correctness.
