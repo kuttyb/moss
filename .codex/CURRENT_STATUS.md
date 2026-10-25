@@ -15676,12 +15676,9 @@ unary functions or inline placeholder expressions. C++ and Java Fast Debug
 stdout now match exactly on this fixture, including values `5` and `17` after
 state mutation.
 
-All twelve Java unit-test classes pass under ABI-v9 defaults and staged
-ABI-v10. The fixture's JSON trace still differs: Java reports object fields as
-local reads and some state reads occur in the caller, while C++ retains
-state-origin paths inside generic function/method calls.
-The object-path portion of this gap is addressed in the following checkpoint;
-collection traces remain open.
+At this checkpoint, JSON trace still differed in object and collection
+state-origin paths. The following two checkpoints address the observed paths
+on this fixture.
 
 
 ### Phase 25.3 continuation — preserve borrowed object paths in Fast Debug traces
@@ -15691,14 +15688,16 @@ defers the object state read until the value is consumed in a generic function
 or method, then reports field reads and writes with the original domain path.
 A focused regression covers a domain object passed through a function into a
 method. On `tests/phase106d1_read_projection.moss`, Java now matches C++ for
-these object paths, and both produce identical stdout. The first remaining trace
-divergence is collection provenance: Java reports `strings` in the handler
-before `echo_text` instead of `strings[0]` inside the function, and Java omits
-the indexed state write for `value.values[0]`.
+these object paths, and both produce identical stdout. The first remaining
+trace divergence at this checkpoint was collection provenance: Java reported
+`strings` in the handler before `echo_text` instead of `strings[0]` inside the
+function, and omitted the indexed state write for `value.values[0]`.
 
-All twelve Java unit-test classes pass under ABI-v9 defaults and staged ABI-v10.
-The Fast Debug fixture trace comparison is partial, not byte-identical (both
-traces contain 137 events; first divergence is event 36). Other collection
-index paths, native correctness, SDK integration, daemon lifecycle, and broad
-language/codegen acceptance remain open. The earlier textual generated-Rust
-parity initiative stays parked.
+The Fast Debug fixture trace comparison is now byte-identical: both traces
+contain 137 matching JSON events, and stdout matches exactly. A focused
+regression covers indexed reads passed into a function, direct indexed reads,
+and indexed state writes. All twelve Java unit-test classes pass under
+ABI-v9 defaults and staged ABI-v10. This establishes the exercised fixture
+paths only; other collection patterns, native correctness, SDK integration,
+daemon lifecycle, and broad language/codegen acceptance remain open. The
+earlier textual generated-Rust parity initiative stays parked.

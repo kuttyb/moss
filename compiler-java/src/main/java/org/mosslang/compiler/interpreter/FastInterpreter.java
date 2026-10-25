@@ -207,6 +207,7 @@ public class FastInterpreter {
     private String traceHandler = "";
     private String traceCallableSpecialization = "";
     private String traceSemanticIdentity = "main@1";
+    private boolean deferDomainStateTrace = false;
 
     private String traceIdentity() {
         return traceSemanticIdentity;
@@ -385,17 +386,25 @@ public class FastInterpreter {
 
     private void traceValueRead(String name, Value value, String member) {
         if (value != null && value.traceStatePath != null) {
-            traceStateRead(value.traceStatePath + (member == null ? "" : "." + member));
+            if (!deferDomainStateTrace)
+                traceStateRead(value.traceStatePath + (member == null ? "" : "." + member));
         } else {
             traceLocalRead(member == null ? name : name + "." + member);
         }
     }
 
     private static Value withTraceStatePath(Value value, String path) {
-        if (value == null || value.kind != Value.Kind.OBJECT) return value;
+        if (value == null) return null;
         Value borrowed = new Value(value.kind, value.raw, value.typeName);
         borrowed.traceStatePath = path;
         return borrowed;
+    }
+
+    private static Value asLocalValue(Value value) {
+        if (value == null || value.traceStatePath == null
+                || value.kind == Value.Kind.OBJECT || value.kind == Value.Kind.VECTOR
+                || value.kind == Value.Kind.MAP || value.kind == Value.Kind.QUEUE) return value;
+        return new Value(value.kind, value.raw, value.typeName);
     }
 
     private void traceLoopIteration(Stmt statement, String function, int iteration, int depth) {
@@ -998,7 +1007,18 @@ public class FastInterpreter {
                     } else if (baseVal != null && baseVal.raw instanceof List<?> lst) {
                         @SuppressWarnings("unchecked")
                         List<Value> l = (List<Value>) lst;
-                        l.set((int) keyVal.asInt(), val);
+                        int index = (int) keyVal.asInt();
+                        Value before = l.set(index, val);
+                        if (baseVal.traceStatePath != null) {
+                            eventId++;
+                            traceEvent("{\"event_id\":" + eventId + ",\"event\":\"state_write\",\"function\":\""
+                                    + jsonEscape(funcName) + "\",\"source_file\":\"" + jsonEscape(s.sourceFile)
+                                    + "\",\"semantic_identity\":\"" + jsonEscape(traceIdentity()) + "\",\"line\":"
+                                    + s.line + traceContextFields() + ",\"depth\":" + depth + traceDomainFields()
+                                    + ",\"path\":\"" + jsonEscape(baseVal.traceStatePath + "[" + index + "]")
+                                    + "\",\"before\":\"" + jsonEscape(traceValueSummary(before))
+                                    + "\",\"after\":\"" + jsonEscape(traceValueSummary(val)) + "\"}");
+                        }
                     }
                     return Value.ofUnit();
                 }
@@ -1049,7 +1069,7 @@ public class FastInterpreter {
                     traceLocalWrite(s, varName, val, before, funcName, depth);
                 } else {
                     Value before = s.kind == Stmt.Kind.Assign ? locals.get(varName) : null;
-                    locals.put(varName, val);
+                    locals.put(varName, asLocalValue(val));
                     if (val.kind != Value.Kind.DOMAIN)
                         traceLocalWrite(s, varName, val, before, funcName, depth);
                 }
@@ -1777,17 +1797,34 @@ public class FastInterpreter {
                 }
             }
             if (openB > 0) {
-                Value baseVal = evalExpr(expr.substring(0, openB).trim(), locals, currentDomain);
+                boolean wasDeferringStateTrace = deferDomainStateTrace;
+                deferDomainStateTrace = true;
+                Value baseVal;
+                try {
+                    baseVal = evalExpr(expr.substring(0, openB).trim(), locals, currentDomain);
+                } finally {
+                    deferDomainStateTrace = wasDeferringStateTrace;
+                }
                 Value idxVal = evalExpr(expr.substring(openB + 1, closeB).trim(), locals, currentDomain);
+                String indexedPath = baseVal.traceStatePath == null ? null
+                        : baseVal.traceStatePath + "[" + idxVal + "]";
                 if (baseVal.raw instanceof List<?> lst) {
                     @SuppressWarnings("unchecked")
                     List<Value> l = (List<Value>) lst;
-                    return l.get((int) idxVal.asInt());
+                    Value item = l.get((int) idxVal.asInt());
+                    if (indexedPath == null) return item;
+                    if (wasDeferringStateTrace) return withTraceStatePath(item, indexedPath);
+                    traceStateRead(indexedPath);
+                    return item;
                 }
                 if (baseVal.raw instanceof Map<?, ?> mp) {
                     @SuppressWarnings("unchecked")
                     Map<Object, Value> m = (Map<Object, Value>) mp;
-                    return m.getOrDefault(idxVal.raw, Value.ofUnit());
+                    Value item = m.getOrDefault(idxVal.raw, Value.ofUnit());
+                    if (indexedPath == null) return item;
+                    if (wasDeferringStateTrace) return withTraceStatePath(item, indexedPath);
+                    traceStateRead(indexedPath);
+                    return item;
                 }
             }
         }
@@ -1855,6 +1892,9 @@ public class FastInterpreter {
                     traceValueRead(receiverName, locals.get(receiverName), null);
             }
             List<Value> evaluatedArgs = new ArrayList<>();
+            boolean wasDeferringStateTrace = deferDomainStateTrace;
+            if (sourceCallable && currentDomain != null) deferDomainStateTrace = true;
+            try {
             for (String a : argList) {
                 if (!a.isEmpty()) {
                     int colIdx = -1;
@@ -1885,6 +1925,9 @@ public class FastInterpreter {
                     } else
                         evaluatedArgs.add(evalExpr(a, locals, currentDomain));
                 }
+            }
+            } finally {
+                deferDomainStateTrace = wasDeferringStateTrace;
             }
 
             Value enumConstructor = makeEnumValue(callee, argList, evaluatedArgs);
@@ -2351,7 +2394,7 @@ public class FastInterpreter {
                     traceValueRead(recvExpr, recvVal, fieldOrVariant);
                 } else {
                     recvVal = evalExpr(recvExpr, locals, currentDomain);
-                    if (recvVal != null && recvVal.traceStatePath != null)
+                    if (!deferDomainStateTrace && recvVal != null && recvVal.traceStatePath != null)
                         traceStateRead(recvVal.traceStatePath + "." + fieldOrVariant);
                 }
                 if (recvVal != null && recvVal.kind == Value.Kind.OBJECT && recvVal.raw instanceof Map<?, ?> fm) {
@@ -2367,7 +2410,9 @@ public class FastInterpreter {
         // Domain state read e.g. value
         if (currentDomain != null && currentDomain.state.containsKey(expr)) {
             Value stateValue = currentDomain.state.get(expr);
-            if (stateValue != null && stateValue.kind == Value.Kind.OBJECT)
+            if (deferDomainStateTrace || (stateValue != null
+                    && (stateValue.kind == Value.Kind.OBJECT || stateValue.kind == Value.Kind.VECTOR
+                    || stateValue.kind == Value.Kind.MAP || stateValue.kind == Value.Kind.QUEUE)))
                 return withTraceStatePath(stateValue, expr);
             traceStateRead(expr);
             return stateValue;

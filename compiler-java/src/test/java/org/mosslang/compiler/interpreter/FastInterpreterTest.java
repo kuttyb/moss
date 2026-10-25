@@ -25,6 +25,7 @@ public final class FastInterpreterTest {
         testRaiseRecoverTraceCarriesErrorIdentity();
         testObjectMethodTraceCarriesCallContext();
         testBorrowedDomainObjectTraceKeepsStatePath();
+        testIndexedDomainStateTraceKeepsFullPath();
         testObjectMethodUpdatesScalarField();
         testObjectMethodFieldShadowsSameNamedParameter();
         testSpacedGenericCollectionConstructors();
@@ -441,6 +442,43 @@ public final class FastInterpreterTest {
                 || events.substring(0, functionEnter).contains("\"path\":\"value\"")
                 || !"borrowed\n".equals(stdout.toString(StandardCharsets.UTF_8))) {
             throw new AssertionError("borrowed domain object trace lost its state path: " + events);
+        }
+    }
+
+    private static void testIndexedDomainStateTraceKeepsFullPath() {
+        var program = Parser.parseSource(""
+                + "fn consume(value: String):\n"
+                + "  echo value\n"
+                + "domain Store:\n"
+                + "  values: Vector[String]\n"
+                + "  fn Read():\n"
+                + "    consume(values[0])\n"
+                + "    echo values[0]\n"
+                + "  fn Write():\n"
+                + "    values[0] = \"updated\"\n"
+                + "fn main():\n"
+                + "  store = Store(values: [\"initial\"])\n"
+                + "  message store.Read()\n"
+                + "  message store.Write()\n",
+                "fast-interpreter-indexed-domain-state-trace.moss");
+        new CheckedProgram(program).run();
+
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+        ByteArrayOutputStream trace = new ByteArrayOutputStream();
+        new FastInterpreter(program, true,
+                new PrintStream(stdout, true, StandardCharsets.UTF_8),
+                new PrintStream(trace, true, StandardCharsets.UTF_8)).run();
+        String events = trace.toString(StandardCharsets.UTF_8);
+        int enter = events.indexOf("\"event\":\"FunctionEnter\",\"function\":\"consume\"");
+        int calleeRead = events.indexOf("\"event\":\"state_read\",\"function\":\"consume\"");
+        int directRead = events.indexOf("\"event\":\"state_read\",\"function\":\"Store.Read\"");
+        int indexedWrite = events.indexOf("\"event\":\"state_write\",\"function\":\"Store.Write\"");
+        if (enter < 0 || calleeRead <= enter || directRead <= calleeRead || indexedWrite <= directRead
+                || !events.substring(calleeRead).contains("\"path\":\"values[0]\"")
+                || !events.substring(directRead).contains("\"path\":\"values[0]\"")
+                || !events.substring(indexedWrite).contains("\"path\":\"values[0]\"")
+                || !"initial\ninitial\n".equals(stdout.toString(StandardCharsets.UTF_8))) {
+            throw new AssertionError("indexed domain state trace lost its full path: " + events);
         }
     }
 
