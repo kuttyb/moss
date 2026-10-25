@@ -1,0 +1,664 @@
+{
+  "timestamp": "2026-10-25T22:08:13Z",
+  "compiler": "/home/owner/daji/code/moss2/build/compiler/moss-opt",
+  "total_moss_files_discovered": 2058,
+  "real_world_workload_count": 17,
+  "top_20_slowest_regression_jobs": [
+    {
+      "job": "check_phase25_char_string_sdk_packages",
+      "total_duration_ms": 50363.504433,
+      "phase1_moss_check_ms": 0,
+      "phase2_moss_rust_codegen_ms": 0,
+      "phase3_rustc_compilation_ms": 2579.594106,
+      "phase4_binary_execution_ms": 0.0,
+      "phase5_harness_overhead_ms": 0.0,
+      "rustc_count": 15,
+      "moss_count": 5
+    },
+    {
+      "job": "check_phase24_adversarial_architect",
+      "total_duration_ms": 32383.757504,
+      "phase1_moss_check_ms": 0,
+      "phase2_moss_rust_codegen_ms": 0,
+      "phase3_rustc_compilation_ms": 12196.314918,
+      "phase4_binary_execution_ms": 8074.977034400001,
+      "phase5_harness_overhead_ms": 12112.4655516,
+      "rustc_count": 114,
+      "moss_count": 0
+    },
+    {
+      "job": "shard_phase4_diff",
+      "total_duration_ms": 23161.556949,
+      "phase1_moss_check_ms": 0,
+      "phase2_moss_rust_codegen_ms": 734.239,
+      "phase3_rustc_compilation_ms": 18330.271236,
+      "phase4_binary_execution_ms": 1591.0819755999999,
+      "phase5_harness_overhead_ms": 2386.6229633999997,
+      "rustc_count": 102,
+      "moss_count": 128
+    },
+    {
+      "job": "check_generic_specialization",
+      "total_duration_ms": 19906.133106,
+      "phase1_moss_check_ms": 137.739748,
+      "phase2_moss_rust_codegen_ms": 160.01115,
+      "phase3_rustc_compilation_ms": 11723.862599,
+      "phase4_binary_execution_ms": 2794.2176420000005,
+      "phase5_harness_overhead_ms": 4191.326463,
+      "rustc_count": 36,
+      "moss_count": 338
+    },
+    {
+      "job": "shard_swarm_cases",
+      "total_duration_ms": 17040.407732,
+      "phase1_moss_check_ms": 0,
+      "phase2_moss_rust_codegen_ms": 392.976239,
+      "phase3_rustc_compilation_ms": 11809.051786,
+      "phase4_binary_execution_ms": 1774.886814,
+      "phase5_harness_overhead_ms": 2662.3302209999997,
+      "rustc_count": 63,
+      "moss_count": 173
+    },
+    {
+      "job": "phase25_key_protocol_fixtures",
+      "total_duration_ms": 15793.950469,
+      "phase1_moss_check_ms": 71.577872,
+      "phase2_moss_rust_codegen_ms": 88.19741,
+      "phase3_rustc_compilation_ms": 11189.17273,
+      "phase4_binary_execution_ms": 0.0,
+      "phase5_harness_overhead_ms": 0.0,
+      "rustc_count": 87,
+      "moss_count": 107
+    },
+    {
+      "job": "shard_concurrency",
+      "total_duration_ms": 14183.421479,
+      "phase1_moss_check_ms": 1.272181,
+      "phase2_moss_rust_codegen_ms": 176.354048,
+      "phase3_rustc_compilation_ms": 7446.11714,
+      "phase4_binary_execution_ms": 1247.2333308000002,
+      "phase5_harness_overhead_ms": 1870.8499962,
+      "rustc_count": 49,
+      "moss_count": 118
+    },
+    {
+      "job": "check_phase25_s3_key_protocol",
+      "total_duration_ms": 13413.257005,
+      "phase1_moss_check_ms": 34.231058,
+      "phase2_moss_rust_codegen_ms": 375.069469,
+      "phase3_rustc_compilation_ms": 9332.740605,
+      "phase4_binary_execution_ms": 0.0,
+      "phase5_harness_overhead_ms": 0.0,
+      "rustc_count": 58,
+      "moss_count": 81
+    },
+    {
+      "job": "check_phase20_executor_fileio",
+      "total_duration_ms": 12197.107159,
+      "phase1_moss_check_ms": 0,
+      "phase2_moss_rust_codegen_ms": 1023.7319699999999,
+      "phase3_rustc_compilation_ms": 8582.94037,
+      "phase4_binary_execution_ms": 549.3839319999992,
+      "phase5_harness_overhead_ms": 824.0758979999988,
+      "rustc_count": 40,
+      "moss_count": 74
+    },
+    {
+      "job": "check_phase21_source_free_abi",
+      "total_duration_ms": 7395.702923,
+      "phase1_moss_check_ms": 0,
+      "phase2_moss_rust_codegen_ms": 0,
+      "phase3_rustc_compilation_ms": 5504.324185,
+      "phase4_binary_execution_ms": 0.0,
+      "phase5_harness_overhead_ms": 0.0,
+      "rustc_count": 57,
+      "moss_count": 39
+    },
+    {
+      "job": "check_phase25_4_performance_baseline",
+      "total_duration_ms": 5895.721438,
+      "phase1_moss_check_ms": 5397.218566,
+      "phase2_moss_rust_codegen_ms": 0,
+      "phase3_rustc_compilation_ms": 0,
+      "phase4_binary_execution_ms": 0.0,
+      "phase5_harness_overhead_ms": 498.502872,
+      "rustc_count": 0,
+      "moss_count": 20
+    },
+    {
+      "job": "shard_showcase",
+      "total_duration_ms": 4672.18256,
+      "phase1_moss_check_ms": 0,
+      "phase2_moss_rust_codegen_ms": 164.493458,
+      "phase3_rustc_compilation_ms": 3332.984767,
+      "phase4_binary_execution_ms": 405.41051040000025,
+      "phase5_harness_overhead_ms": 608.1157656000003,
+      "rustc_count": 18,
+      "moss_count": 39
+    },
+    {
+      "job": "check_phase25_nominal_identity",
+      "total_duration_ms": 3806.988581,
+      "phase1_moss_check_ms": 10.960447,
+      "phase2_moss_rust_codegen_ms": 0,
+      "phase3_rustc_compilation_ms": 2394.814007,
+      "phase4_binary_execution_ms": 0.0,
+      "phase5_harness_overhead_ms": 0.0,
+      "rustc_count": 33,
+      "moss_count": 26
+    },
+    {
+      "job": "check_phase25_checked_body_ir",
+      "total_duration_ms": 3566.005818,
+      "phase1_moss_check_ms": 0,
+      "phase2_moss_rust_codegen_ms": 0,
+      "phase3_rustc_compilation_ms": 0,
+      "phase4_binary_execution_ms": 0.0,
+      "phase5_harness_overhead_ms": 3545.150642,
+      "rustc_count": 0,
+      "moss_count": 9
+    },
+    {
+      "job": "shard_phase46_opt",
+      "total_duration_ms": 2997.126154,
+      "phase1_moss_check_ms": 0,
+      "phase2_moss_rust_codegen_ms": 139.615897,
+      "phase3_rustc_compilation_ms": 2178.577271,
+      "phase4_binary_execution_ms": 232.0504884,
+      "phase5_harness_overhead_ms": 348.0757326,
+      "rustc_count": 12,
+      "moss_count": 20
+    },
+    {
+      "job": "shard_negative",
+      "total_duration_ms": 2758.430997,
+      "phase1_moss_check_ms": 12.666044,
+      "phase2_moss_rust_codegen_ms": 0,
+      "phase3_rustc_compilation_ms": 0,
+      "phase4_binary_execution_ms": 0.0,
+      "phase5_harness_overhead_ms": 2502.70552,
+      "rustc_count": 0,
+      "moss_count": 133
+    },
+    {
+      "job": "check_phase21_peer_recovery",
+      "total_duration_ms": 2301.500184,
+      "phase1_moss_check_ms": 24.830649,
+      "phase2_moss_rust_codegen_ms": 27.864134,
+      "phase3_rustc_compilation_ms": 1443.780609,
+      "phase4_binary_execution_ms": 304.9129100000001,
+      "phase5_harness_overhead_ms": 457.36936500000013,
+      "rustc_count": 8,
+      "moss_count": 32
+    },
+    {
+      "job": "check_phase21_chunk_fileio_raise",
+      "total_duration_ms": 606.948294,
+      "phase1_moss_check_ms": 0,
+      "phase2_moss_rust_codegen_ms": 7.123683,
+      "phase3_rustc_compilation_ms": 533.3976299999999,
+      "phase4_binary_execution_ms": 26.57079240000003,
+      "phase5_harness_overhead_ms": 39.85618860000004,
+      "rustc_count": 2,
+      "moss_count": 1
+    },
+    {
+      "job": "check_phase21_recovery_native",
+      "total_duration_ms": 487.700867,
+      "phase1_moss_check_ms": 0,
+      "phase2_moss_rust_codegen_ms": 16.702314,
+      "phase3_rustc_compilation_ms": 346.57012,
+      "phase4_binary_execution_ms": 42.576277600000026,
+      "phase5_harness_overhead_ms": 63.86441640000004,
+      "rustc_count": 2,
+      "moss_count": 3
+    },
+    {
+      "job": "check_phase21_fileio_close_full",
+      "total_duration_ms": 354.418039,
+      "phase1_moss_check_ms": 6.07857,
+      "phase2_moss_rust_codegen_ms": 8.451822,
+      "phase3_rustc_compilation_ms": 270.416341,
+      "phase4_binary_execution_ms": 27.788522400000012,
+      "phase5_harness_overhead_ms": 41.682783600000015,
+      "rustc_count": 1,
+      "moss_count": 2
+    }
+  ],
+  "top_20_slowest_semantic_compilations": [
+    {
+      "id": "rw_packages_regex",
+      "name": "packages/regex",
+      "file": "packages/regex/src/main.moss",
+      "wall_ms": 21605.439885,
+      "success": true,
+      "counters": {
+        "functions_analyzed": 49,
+        "types_analyzed": 4,
+        "specialization_requests": 113,
+        "distinct_specialization_keys": 0,
+        "actual_specialization_checks": 0,
+        "checked_specializations": 0,
+        "reused_specialization_results": 0,
+        "inference_rounds": 10,
+        "inference_work_units": 494
+      },
+      "stages_ms": {
+        "parsing": 1.120568,
+        "module_resolution": 5.533649,
+        "declaration_and_symbol_analysis": 0.04615,
+        "inference_round_0": 1953.368451,
+        "inference_round_1": 1919.250398,
+        "inference_round_2": 1946.918622,
+        "open_callable_summaries": 0.161767,
+        "type_inference": 10204.328018,
+        "effects": 54.886596,
+        "concrete_graph": 0.000482,
+        "specialization_checking": 186.975511,
+        "specialization_effects": 0.000292,
+        "occurrence_and_summary_projection": 0.087853,
+        "synchronization_plan": 319.17775,
+        "typed_semantics_export": 0.532335,
+        "specialization_body_checking": 0.0,
+        "semantic_analysis": 10772.152778,
+        "functional_optimizer": 0.157256,
+        "rust_generation": 21.59318
+      }
+    },
+    {
+      "id": "rw_sdk_datastructures",
+      "name": "sdk/datastructures",
+      "file": "sdk/datastructures/tests/datastructures.moss",
+      "wall_ms": 18263.749212,
+      "success": true,
+      "counters": {
+        "functions_analyzed": 112,
+        "types_analyzed": 11,
+        "specialization_requests": 397,
+        "distinct_specialization_keys": 0,
+        "actual_specialization_checks": 0,
+        "checked_specializations": 0,
+        "reused_specialization_results": 0,
+        "inference_rounds": 5,
+        "inference_work_units": 570
+      },
+      "stages_ms": {
+        "parsing": 0.737167,
+        "module_resolution": 13.524703,
+        "declaration_and_symbol_analysis": 0.012521,
+        "inference_round_0": 10.710547,
+        "inference_round_1": 10.753393,
+        "inference_round_2": 11.029955,
+        "open_callable_summaries": 0.000297,
+        "type_inference": 76.850166,
+        "effects": 0.255631,
+        "concrete_graph": 0.000526,
+        "specialization_checking": 108.295077,
+        "specialization_effects": 0.000591,
+        "occurrence_and_summary_projection": 0.196726,
+        "synchronization_plan": 34.673987,
+        "typed_semantics_export": 0.588402,
+        "specialization_body_checking": 0.0,
+        "semantic_analysis": 77.115381,
+        "functional_optimizer": 0.049194
+      }
+    },
+    {
+      "id": "rw_projects_rolling_window",
+      "name": "projects/rolling_window",
+      "file": "projects/rolling_window/src/main.moss",
+      "wall_ms": 150.563266,
+      "success": true,
+      "counters": {
+        "functions_analyzed": 1,
+        "types_analyzed": 2,
+        "specialization_requests": 20,
+        "distinct_specialization_keys": 0,
+        "actual_specialization_checks": 0,
+        "checked_specializations": 0,
+        "reused_specialization_results": 0,
+        "inference_rounds": 10,
+        "inference_work_units": 22
+      },
+      "stages_ms": {
+        "parsing": 0.716413,
+        "declaration_and_symbol_analysis": 0.027583,
+        "inference_round_0": 5.8387,
+        "inference_round_1": 7.672252,
+        "inference_round_2": 8.06096,
+        "open_callable_summaries": 0.013445,
+        "type_inference": 44.918615,
+        "effects": 5.054833,
+        "concrete_graph": 0.034166,
+        "specialization_checking": 17.866343,
+        "specialization_effects": 7.9e-05,
+        "occurrence_and_summary_projection": 0.014029,
+        "synchronization_plan": 2.81373,
+        "typed_semantics_export": 0.080932,
+        "specialization_body_checking": 0.0,
+        "semantic_analysis": 71.719846,
+        "functional_optimizer": 0.019344,
+        "rust_generation": 1.928449
+      }
+    },
+    {
+      "id": "rw_projects_cache",
+      "name": "projects/cache",
+      "file": "projects/cache/src/main.moss",
+      "wall_ms": 83.068935,
+      "success": true,
+      "counters": {
+        "functions_analyzed": 1,
+        "types_analyzed": 2,
+        "specialization_requests": 12,
+        "distinct_specialization_keys": 0,
+        "actual_specialization_checks": 0,
+        "checked_specializations": 0,
+        "reused_specialization_results": 0,
+        "inference_rounds": 10,
+        "inference_work_units": 22
+      },
+      "stages_ms": {
+        "parsing": 0.286608,
+        "declaration_and_symbol_analysis": 0.016961,
+        "inference_round_0": 3.94556,
+        "inference_round_1": 3.654383,
+        "inference_round_2": 2.304491,
+        "open_callable_summaries": 0.010556,
+        "type_inference": 24.115138,
+        "effects": 2.853979,
+        "concrete_graph": 0.04242,
+        "specialization_checking": 11.669752,
+        "specialization_effects": 0.000105,
+        "occurrence_and_summary_projection": 0.008453,
+        "synchronization_plan": 0.924646,
+        "typed_semantics_export": 0.05201,
+        "specialization_body_checking": 0.0,
+        "semantic_analysis": 40.255339,
+        "functional_optimizer": 0.011775,
+        "rust_generation": 1.118926
+      }
+    },
+    {
+      "id": "rw_tests_phase25_integer_overflow_moss",
+      "name": "tests/phase25_integer_overflow.moss",
+      "file": "tests/phase25_integer_overflow.moss",
+      "wall_ms": 23.105028,
+      "success": true,
+      "counters": {
+        "functions_analyzed": 1,
+        "types_analyzed": 4,
+        "specialization_requests": 2,
+        "distinct_specialization_keys": 2,
+        "actual_specialization_checks": 2,
+        "checked_specializations": 2,
+        "reused_specialization_results": 0,
+        "inference_rounds": 5,
+        "inference_work_units": 25
+      },
+      "stages_ms": {
+        "parsing": 0.08142,
+        "declaration_and_symbol_analysis": 0.050192,
+        "inference_round_0": 4.023065,
+        "inference_round_1": 3.189383,
+        "inference_round_2": 2.404718,
+        "open_callable_summaries": 0.011266,
+        "type_inference": 17.416296,
+        "effects": 0.640336,
+        "concrete_graph": 0.023821,
+        "specialization_body_checking": 0.192752,
+        "specialization_checking": 2.800889,
+        "specialization_effects": 0.049067,
+        "occurrence_and_summary_projection": 0.007849,
+        "synchronization_plan": 0.287848,
+        "typed_semantics_export": 0.094449,
+        "semantic_analysis": 21.662208,
+        "functional_optimizer": 0.000358
+      }
+    },
+    {
+      "id": "rw_examples_checkout_moss",
+      "name": "examples/checkout.moss",
+      "file": "examples/checkout.moss",
+      "wall_ms": 10.743475,
+      "success": true,
+      "counters": {
+        "functions_analyzed": 0,
+        "types_analyzed": 3,
+        "specialization_requests": 0,
+        "distinct_specialization_keys": 0,
+        "actual_specialization_checks": 0,
+        "checked_specializations": 0,
+        "reused_specialization_results": 0,
+        "inference_rounds": 5,
+        "inference_work_units": 15
+      },
+      "stages_ms": {
+        "parsing": 0.048348,
+        "declaration_and_symbol_analysis": 0.029331,
+        "inference_round_0": 1.583425,
+        "inference_round_1": 1.599838,
+        "inference_round_2": 1.616032,
+        "open_callable_summaries": 0.000245,
+        "type_inference": 7.415469,
+        "effects": 0.321635,
+        "concrete_graph": 0.020014,
+        "specialization_checking": 1.19083,
+        "specialization_effects": 7.7e-05,
+        "occurrence_and_summary_projection": 0.001705,
+        "synchronization_plan": 0.434892,
+        "typed_semantics_export": 0.056107,
+        "specialization_body_checking": 0.0,
+        "semantic_analysis": 9.631309,
+        "functional_optimizer": 0.000174
+      }
+    },
+    {
+      "id": "rw_sdk_cbor",
+      "name": "sdk/cbor",
+      "file": "sdk/cbor/tests/cbor_decoder_test.moss",
+      "wall_ms": 8.094386,
+      "success": false,
+      "counters": {},
+      "stages_ms": {
+        "parsing": 0.874013,
+        "module_resolution": 0.031406
+      }
+    },
+    {
+      "id": "rw_sdk_json",
+      "name": "sdk/json",
+      "file": "sdk/json/tests/json_test.moss",
+      "wall_ms": 4.512827,
+      "success": false,
+      "counters": {},
+      "stages_ms": {
+        "parsing": 0.368051,
+        "module_resolution": 0.031098
+      }
+    },
+    {
+      "id": "rw_examples_functional_pipeline_moss",
+      "name": "examples/functional_pipeline.moss",
+      "file": "examples/functional_pipeline.moss",
+      "wall_ms": 4.263637,
+      "success": true,
+      "counters": {
+        "functions_analyzed": 1,
+        "types_analyzed": 0,
+        "specialization_requests": 2,
+        "distinct_specialization_keys": 0,
+        "actual_specialization_checks": 0,
+        "checked_specializations": 0,
+        "reused_specialization_results": 0,
+        "inference_rounds": 5,
+        "inference_work_units": 5
+      },
+      "stages_ms": {
+        "parsing": 0.011476,
+        "declaration_and_symbol_analysis": 0.04062,
+        "inference_round_0": 0.174103,
+        "inference_round_1": 0.175582,
+        "inference_round_2": 0.173618,
+        "open_callable_summaries": 0.002161,
+        "type_inference": 1.093747,
+        "effects": 0.058719,
+        "concrete_graph": 0.002949,
+        "specialization_checking": 0.318823,
+        "specialization_effects": 5.9e-05,
+        "occurrence_and_summary_projection": 0.00198,
+        "synchronization_plan": 0.013514,
+        "typed_semantics_export": 0.004775,
+        "specialization_body_checking": 0.0,
+        "semantic_analysis": 1.540785,
+        "functional_optimizer": 0.000155
+      }
+    },
+    {
+      "id": "rw_tests_branch_confined_open_type_moss",
+      "name": "tests/branch_confined_open_type.moss",
+      "file": "tests/branch_confined_open_type.moss",
+      "wall_ms": 3.575168,
+      "success": true,
+      "counters": {
+        "functions_analyzed": 0,
+        "types_analyzed": 0,
+        "specialization_requests": 0,
+        "distinct_specialization_keys": 0,
+        "actual_specialization_checks": 0,
+        "checked_specializations": 0,
+        "reused_specialization_results": 0,
+        "inference_rounds": 5,
+        "inference_work_units": 0
+      },
+      "stages_ms": {
+        "parsing": 0.029928,
+        "declaration_and_symbol_analysis": 0.029563,
+        "inference_round_0": 0.19579,
+        "inference_round_1": 0.192151,
+        "inference_round_2": 0.190735,
+        "open_callable_summaries": 0.000121,
+        "type_inference": 1.334366,
+        "effects": 0.086564,
+        "concrete_graph": 0.005723,
+        "specialization_checking": 0.974471,
+        "specialization_effects": 4.8e-05,
+        "occurrence_and_summary_projection": 0.005335,
+        "synchronization_plan": 0.001586,
+        "typed_semantics_export": 0.007338,
+        "specialization_body_checking": 0.0,
+        "semantic_analysis": 2.56434,
+        "functional_optimizer": 0.000182
+      }
+    },
+    {
+      "id": "rw_packages_hash",
+      "name": "packages/hash",
+      "file": "packages/hash/src/main.moss",
+      "wall_ms": 3.125221,
+      "success": false,
+      "counters": {},
+      "stages_ms": {
+        "parsing": 0.747728,
+        "module_resolution": 0.045787
+      }
+    },
+    {
+      "id": "rw_packages_linalg",
+      "name": "packages/linalg",
+      "file": "packages/linalg/src/main.moss",
+      "wall_ms": 3.049082,
+      "success": false,
+      "counters": {},
+      "stages_ms": {
+        "parsing": 0.669685,
+        "module_resolution": 0.050752
+      }
+    },
+    {
+      "id": "rw_examples_domains_and_messages_moss",
+      "name": "examples/domains_and_messages.moss",
+      "file": "examples/domains_and_messages.moss",
+      "wall_ms": 2.589883,
+      "success": true,
+      "counters": {
+        "functions_analyzed": 0,
+        "types_analyzed": 1,
+        "specialization_requests": 0,
+        "distinct_specialization_keys": 0,
+        "actual_specialization_checks": 0,
+        "checked_specializations": 0,
+        "reused_specialization_results": 0,
+        "inference_rounds": 5,
+        "inference_work_units": 5
+      },
+      "stages_ms": {
+        "parsing": 0.018956,
+        "declaration_and_symbol_analysis": 0.029311,
+        "inference_round_0": 0.234205,
+        "inference_round_1": 0.229738,
+        "inference_round_2": 0.225272,
+        "open_callable_summaries": 9.6e-05,
+        "type_inference": 1.13888,
+        "effects": 0.0811,
+        "concrete_graph": 0.006816,
+        "specialization_checking": 0.250335,
+        "specialization_effects": 3.4e-05,
+        "occurrence_and_summary_projection": 0.00089,
+        "synchronization_plan": 0.067676,
+        "typed_semantics_export": 0.018489,
+        "specialization_body_checking": 0.0,
+        "semantic_analysis": 1.650726,
+        "functional_optimizer": 0.000132
+      }
+    },
+    {
+      "id": "rw_packages_statistics",
+      "name": "packages/statistics",
+      "file": "packages/statistics/src/main.moss",
+      "wall_ms": 2.187884,
+      "success": false,
+      "counters": {},
+      "stages_ms": {
+        "parsing": 0.411493,
+        "module_resolution": 0.032711
+      }
+    },
+    {
+      "id": "rw_projects_build_planner",
+      "name": "projects/build_planner",
+      "file": "projects/build_planner/planner/src/main.moss",
+      "wall_ms": 2.015752,
+      "success": false,
+      "counters": {},
+      "stages_ms": {
+        "parsing": 0.089191,
+        "module_resolution": 0.035502
+      }
+    },
+    {
+      "id": "rw_packages_compress",
+      "name": "packages/compress",
+      "file": "packages/compress/src/main.moss",
+      "wall_ms": 1.727865,
+      "success": false,
+      "counters": {},
+      "stages_ms": {
+        "parsing": 0.340496,
+        "module_resolution": 0.026036
+      }
+    },
+    {
+      "id": "rw_sdk_foundations",
+      "name": "sdk/foundations",
+      "file": "sdk/foundations/algorithms/examples/basic/src/main.moss",
+      "wall_ms": 1.017965,
+      "success": false,
+      "counters": {},
+      "stages_ms": {
+        "parsing": 0.015858,
+        "module_resolution": 0.021884
+      }
+    }
+  ]
+}

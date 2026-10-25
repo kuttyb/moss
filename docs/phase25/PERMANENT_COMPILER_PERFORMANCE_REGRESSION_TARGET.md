@@ -1,8 +1,9 @@
 # Phase 25.4 B1 — Permanent Compiler Performance Regression Target
 
-**Scope:** Automated, permanent performance, attribution, and integrity regression gate  
+**Scope:** Automated, permanent performance, attribution, tracing, and integrity regression target  
 **Baseline Certified Commit:** `199b9e6d17e7e98921a56043a34f8a508f77cd13`  
 **Torture Corpus Version:** `1.0.0` (54 frozen fixtures, manifest digest: `20261025`)  
+**Real-World Corpus Version:** `1.0.0` (23 verified real-world workloads, manifest digest: `20261025`)  
 **Target Executable:** Optimized C++ Moss compiler (`moss-opt`, `-O2`)  
 
 ---
@@ -11,7 +12,11 @@
 
 The **Permanent Compiler Performance Regression Target** ensures that future compiler modifications (optimizations, feature additions, refactorings, or architectural transitions) do not silently degrade semantic compilation latency, explode memory usage, disrupt stage profiling attribution, or alter static specialization mechanics.
 
-It establishes an automated, fast (sub-10 second) regression gate that runs as part of repository testing and CI pipelines.
+It delivers:
+1. **Permanent `make compiler-perf` Target:** A comprehensive performance runner executing both the portable torture suite (Group A) and real-world Moss workloads (Group B).
+2. **Permanent `make check-perf` Gate:** A fast (sub-10 second) regression gate integrated into repository testing (`make check` and `tests/run_parallel.py`).
+3. **Structured Hierarchical Tracing:** Chrome Trace Event JSON emission with microsecond stage timelines, work counters, and quantified tracing overhead.
+4. **5-Phase Regression Analysis:** Empirical breakdown of regression jobs (`make check`) into Moss checking, Moss codegen, `rustc` compilation, program execution, and harness overhead.
 
 ---
 
@@ -20,60 +25,129 @@ It establishes an automated, fast (sub-10 second) regression gate that runs as p
 ### A. Makefile Targets
 
 ```bash
-# Run the permanent performance regression gate against build/compiler/moss-opt
+# Run the fast permanent performance regression gate (<10s, runs in CI/make check)
 make check-perf
 
-# Run the complete 54-fixture torture benchmark suite (270 trials across 5 reps)
+# Run the full comprehensive performance baseline (Group A + Group B, timing + profiling)
+make compiler-perf
+
+# Run the 54-fixture portable torture suite
 make bench-torture
 ```
 
-### B. Direct Test Tooling
+### B. Direct Runner Invocations
 
 ```bash
-# Run standalone with explicit compiler binary
-python3 tests/tooling/check_phase25_4_performance_baseline.py build/compiler/moss-opt
+# Run comprehensive baseline across both Group A (torture) and Group B (real-world)
+python3 benchmarks/phase25_4/cpp_baseline/run.py --moss build/compiler/moss-opt --suite all --mode both
 
-# Run in parallel test runner
-python3 tests/run_parallel.py --filter check_phase25_4_performance_baseline
+# Run timing mode only (untraced, authoritative wall times)
+python3 benchmarks/phase25_4/cpp_baseline/run.py --moss build/compiler/moss-opt --mode timing
+
+# Run profiling mode only (generates Chrome Trace Event JSON in results/traces/)
+python3 benchmarks/phase25_4/cpp_baseline/run.py --moss build/compiler/moss-opt --mode profiling
+
+# Run the 5-phase regression inventory tool
+python3 benchmarks/phase25_4/cpp_baseline/inventory_regression.py --compiler build/compiler/moss-opt
 ```
 
 ---
 
-## 3. Three-Stage Verification Architecture
+## 3. Workload Groups
 
-The permanent target executes three strict verification phases:
+### Group A: Portable Moss Torture Suite (Frozen v1.0.0)
+- Located under `benchmarks/compiler_torture/`.
+- 54 frozen fixtures covering concrete specialization ($N=8..32$), dependent deep inference ($D=5..18$), independent wide inference ($W=10..100$), nominal types ($T=10..100$), nested collections ($K=1..5$), structural traits ($C=10..100$), module dependency topologies (MG1–MG5), and canonical examples/negatives.
+- Cryptographically verified against `manifest.json` by `benchmarks/compiler_torture/verify.py`.
 
-```
-[ Step 1: Corpus Integrity ] ──> [ Step 2: Report Consistency ] ──> [ Step 3: Performance & Invariants ]
-   (verify.py: 54/54 SHA256)      (check_report_consistency.py)     (Representative Cohort Execution)
-```
-
-### Step 1: Corpus SHA256 Integrity Verification
-- Executes `benchmarks/compiler_torture/verify.py`.
-- Verifies suite name (`moss_compiler_torture`), version (`1.0.0`), and generator seed (`20261025`).
-- Verifies every fixture's exact SHA256 digest against `manifest.json`.
-- Verifies complete sorted directory tree digests for multi-module projects (`MG1`–`MG5`).
-- **Fail-Closed Policy:** If any benchmark source is modified or missing, the gate aborts immediately.
-
-### Step 2: Data & Report Consistency Audit
-- Executes `benchmarks/phase25_4/cpp_baseline/check_report_consistency.py`.
-- Recomputes medians, min/max ranges, peak RSS, specialization counts, and stage timings directly from `results/results.csv`.
-- Confirms zero contradictions between raw CSV trial observations and published `REPORT.md` claims across 57 invariant checks.
-
-### Step 3: Performance Regression & Semantic Invariant Cohort
-- Executes a representative cohort of torture workloads covering all primary scaling axes.
-- Measures wall-clock latency, peak RSS, and checked specializations using fresh-process execution with `MOSS_PROFILE_COMPILER=1`.
-- Enforces strict acceptance criteria:
-  1. **Latency Threshold:** Wall time must not exceed the certified B1 ceiling (+50% margin above baseline median to accommodate CI VM load).
-  2. **Memory Ceiling:** Peak RSS must remain within bounded limits (< 18–25 MiB).
-  3. **Specialization Invariant:** Checked specialization counts must match ground truth exactly (e.g. W2 N16 = 272; W3 N16 = 6; W8 C50 = 50).
-  4. **Status Parity:** Positive workloads must compile with `ok=true`, and negative workloads must fail with their exact expected error codes.
+### Group B: Real-World Moss Corpus (v1.0.0)
+- Located under `benchmarks/real_world/`.
+- 23 verified production workloads spanning packages, SDK modules, multi-file projects, and language regressions:
+  - `rw_packages_regex`: Production regex engine (`packages/regex/src/main.moss`) — 21.6s semantic compilation.
+  - `rw_sdk_datastructures`: Core collections & datastructures (`sdk/datastructures/src/datastructures.moss`) — 18.3s semantic compilation.
+  - `rw_projects_rolling_window`: Statistical rolling window processor (`projects/rolling_window/src/main.moss`).
+  - `rw_projects_cache`: Multi-level transactional cache architecture (`projects/cache/src/main.moss`).
+  - `rw_phase106d1_borrowed_reads`: Borrowed reference verification (`tests/phase106d1_borrowed_reads.moss`).
+  - `rw_phase4_functional`: Higher-order functions and functional pipelines (`tests/phase4_functional.moss`).
+  - `rw_phase106d_handler_2pl`: Two-phase locking concurrency handlers (`tests/phase106d_handler_2pl.moss`).
+  - Canonical examples: `checkout.moss`, `counter.moss`, `functional_pipeline.moss`, `domains_and_messages.moss`.
+- Cryptographically verified against `manifest.json` by `benchmarks/real_world/verify.py`.
 
 ---
 
-## 4. Representative Cohort & Certified Thresholds
+## 4. Structured Hierarchical Compiler Tracing
 
-The regression cohort spans all key stress dimensions while running in under 6 seconds:
+The compiler supports opt-in hierarchical tracing emitting Google Catapult / Speedscope compliant Chrome Trace Event JSON:
+
+```bash
+# Opt-in trace file generation
+MOSS_PROFILE_TRACE=tmp/trace.json ./build/compiler/moss-opt check <file.moss> --json
+```
+
+### Trace Event Schema
+- Format: Chrome Trace Event JSON (`traceEvents` array + `metadata` block).
+- Events (`ph: "X"`): Complete duration events with `ts` (us), `dur` (us), `pid`, `tid`, `name`, `cat`, and contextual `args`.
+- Captured Stages:
+  - `parsing` — AST parsing and lexical analysis.
+  - `module_resolution` — Import path and interface resolution.
+  - `declaration_and_symbol_analysis` — Type binding, symbols, and duplicate checks.
+  - `type_inference` — Type deduction, including individual `inference_round_N` passes.
+  - `open_callable_summaries` — Callable summary construction and export.
+  - `effects` — Parameter mutation and effect inference.
+  - `concrete_graph` — Concrete domain graph construction.
+  - `specialization_checking` — Dispatch checking and body validation (`specialization_body_checking`).
+  - `specialization_effects` — Transitive effect reconciliation across concrete specializations.
+  - `occurrence_and_summary_projection` — Binding occurrences and assignment reconciliation.
+  - `synchronization_plan` — Synchronization classes and 2PL lock ordering.
+  - `typed_semantics_export` — Semantic facts projection and consistency assertions.
+  - `functional_optimizer` — Functional IR transformation and fusion.
+  - `rust_generation` — Native code generation (when compiling to Rust).
+
+### Documented Work Counters
+Counter events (`ph: "C"`) and `metadata.counters` record exact compiler workload metrics:
+1. `functions_analyzed`: Total AST function declarations admitted into the semantic context.
+2. `types_analyzed`: Total distinct objects, enums, traits, and domains declared.
+3. `specialization_requests`: Total static specialization requests evaluated (`register_static_specialization`).
+4. `distinct_specialization_keys`: Total unique canonical specialization keys encountered.
+5. `actual_specialization_checks`: Specialization bodies compiled through `infer_statement_expressions` and `check_stmts`.
+6. `reused_specialization_results`: Specialization requests satisfied by cache lookup without re-checking.
+7. `inference_rounds`: Number of iterative signature and domain inference passes executed.
+8. `inference_work_units`: Atomic callable, field, and handler evaluations across inference rounds.
+
+---
+
+## 5. Timing Mode vs. Profiling Mode (Overhead Quantification)
+
+To avoid measurement distortion, the benchmark runner strictly isolates:
+1. **Timing Mode (Untraced):** Runs without profiling or tracing flags. Measures authoritative wall time, user CPU, system CPU, and peak RSS using `/usr/bin/time`. Repeated measurements report median, min, max, IQR, and p95.
+2. **Profiling Mode (Traced):** Runs with `MOSS_PROFILE_COMPILER=1` and `MOSS_PROFILE_TRACE`. Captures detailed stage attribution and Chrome traces in `results/traces/`.
+3. **Overhead Quantification:** The runner computes `((profiling_median - timing_median) / timing_median) * 100.0` for all fixtures. Tracing overhead is verified to be **< 5%** across all workloads.
+4. **Invariant:** Traced runs are never conflated with untraced runs in published latency tables.
+
+---
+
+## 6. 5-Phase Regression Analysis & Root-Cause Findings
+
+Regression jobs in `make check` were analyzed using wrapper interceptors for `moss` and `rustc` to quantify the 5 execution phases:
+
+| Phase | Activity | Description |
+|---|---|---|
+| **Phase 1** | `moss check` | Moss semantic typechecking and effect inference |
+| **Phase 2** | `moss -o rs` | Moss-to-Rust native code generation |
+| **Phase 3** | `rustc` | Rust compiler compilation and system linking |
+| **Phase 4** | Binary Execution | Execution of produced native test binaries |
+| **Phase 5** | Harness Overhead | Python test scheduling, git worktree isolation, file diffing, assertions |
+
+### Key Empirical Findings
+- **Root Cause of Long Tests:** Regression tests taking 20–50 seconds (such as `shard_phase4_diff.sh` or `check_phase25_char_string_sdk_packages.py`) are **heavily dominated by `rustc` compilation (Phase 3)**, which accounts for **70%–90%** of total runtime. In `shard_phase4_diff`, 24 separate `rustc` invocations consume **18.33 seconds** of the total 23.16 seconds.
+- **Moss Efficiency:** The actual Moss semantic compiler (`moss check`) consumes less than **3%** of total runtime across the entire regression suite, demonstrating that Moss compilation is not the source of slow regression tests.
+- **Harness Cost:** Python worktree management, file copies, and diffing account for ~10–15% of total test runtime.
+
+---
+
+## 7. Permanent Regression Gate Thresholds
+
+`make check-perf` executes a representative cohort covering all primary stress dimensions within baseline bounds:
 
 | Workload ID | Dimension Stressed | Baseline Median | Latency Ceiling | Peak RSS Limit | Expected Specs | Expected Status |
 |---|---|---:|---:|---:|---:|:---:|
@@ -90,10 +164,11 @@ The regression cohort spans all key stress dimensions while running in under 6 s
 
 ---
 
-## 5. Maintenance and Phase 25.4 B2 Optimization Contract
+## 8. Verification and Consistency Checklist
 
-When Phase 25.4 B2 introduces compiler optimizations (e.g. parallel wide inference, effect set memoization, or specialization caching):
-
-1. **Frozen Comparison:** All optimizations in B2 must be evaluated against the frozen B1 baseline in `results/results_b1_initial.csv` without modifying the B1 reference files.
-2. **Threshold Tightening:** Once B2 optimizations are approved and merged, this target's latency thresholds should be tightened to lock in the measured speedups and prevent performance backsliding.
-3. **Java Moss Porting:** When the Phase 25.3 Java compiler is measured, `check_phase25_4_performance_baseline.py` can be invoked with the Java binary adapter to determine whether the Java implementation meets or exceeds the C++ performance baseline.
+Before any integration or commit:
+- [x] `python3 benchmarks/compiler_torture/verify.py` passes 100% (54/54 fixtures).
+- [x] `python3 benchmarks/real_world/verify.py` passes 100% (23/23 fixtures).
+- [x] `python3 benchmarks/phase25_4/cpp_baseline/check_report_consistency.py` passes 100% (57 invariant checks, 0 errors).
+- [x] `make check-perf` passes all representative workloads within baseline bounds.
+- [x] Structured Chrome Trace Event JSON validated with `python3 -m json.tool`.

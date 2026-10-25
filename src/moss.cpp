@@ -69,16 +69,8 @@ using std::vector;
 
 namespace moss {
 
-CompilerStageTimer::CompilerStageTimer(const char* stage)
-    : stage_(stage), enabled_(std::getenv("MOSS_PROFILE_COMPILER") != nullptr) {
-  if (enabled_) begin_ = std::chrono::steady_clock::now();
-}
+// CompilerStageTimer and CompilerTraceRecorder are defined in compiler_stage_timer.hpp
 
-CompilerStageTimer::~CompilerStageTimer() {
-  if (enabled_) std::cerr << "MOSS_PROFILE|" << stage_ << '|' <<
-      std::chrono::duration_cast<std::chrono::nanoseconds>(
-          std::chrono::steady_clock::now() - begin_).count() << '\n';
-}
 
 // Opt-in developer timing, kept out of semantic state and deterministic JSON.
 // Durations include each named stage's ordinary checks; no timing gate exists.

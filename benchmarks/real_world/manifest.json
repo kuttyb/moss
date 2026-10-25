@@ -1,0 +1,262 @@
+{
+  "manifest_version": "1.0.0",
+  "suite": "Moss Real-World Compiler Performance Corpus",
+  "description": "Representative heavyweight real-world Moss programs from packages, SDK, projects, showcases, and regression suites",
+  "created_at": "2026-10-25T22:11:51Z",
+  "workload_count": 23,
+  "workloads": [
+    {
+      "id": "rw_packages_regex",
+      "name": "packages/regex/src/main.moss",
+      "category": "package",
+      "entry_file": "packages/regex/src/main.moss",
+      "sha256": "a8d8c05b0e720c69894e6b34945b1b6c9ee1aa3ca3c05a23814a08739a686605",
+      "description": "Production regex engine implementation",
+      "is_deduplicated_closure": false,
+      "deduplicated_target": null,
+      "provenance": "Real-world Moss workload from repository path: packages/regex/src/main.moss"
+    },
+    {
+      "id": "rw_sdk_datastructures",
+      "name": "sdk/datastructures/src/datastructures.moss",
+      "category": "sdk",
+      "entry_file": "sdk/datastructures/src/datastructures.moss",
+      "sha256": "d810c98fedd07351107456300c3d21e87e3e781488792719812b86cb533d668f",
+      "description": "Core datastructures SDK implementation",
+      "is_deduplicated_closure": false,
+      "deduplicated_target": null,
+      "provenance": "Real-world Moss workload from repository path: sdk/datastructures/src/datastructures.moss"
+    },
+    {
+      "id": "rw_projects_rolling_window",
+      "name": "projects/rolling_window/src/main.moss",
+      "category": "project",
+      "entry_file": "projects/rolling_window/src/main.moss",
+      "sha256": "1b067fa7db1bf09621ab945c858e36c7c49396cfbc56064fdf4ced073291dbc1",
+      "description": "Rolling window statistical processor",
+      "is_deduplicated_closure": false,
+      "deduplicated_target": null,
+      "provenance": "Real-world Moss workload from repository path: projects/rolling_window/src/main.moss"
+    },
+    {
+      "id": "rw_projects_cache",
+      "name": "projects/cache/src/main.moss",
+      "category": "project",
+      "entry_file": "projects/cache/src/main.moss",
+      "sha256": "0e9f227c9d5b37ff9dbb7cc4d8b0f5decefe76cd5bce095602fbcb40c3cae100",
+      "description": "Transactional multi-level cache architecture",
+      "is_deduplicated_closure": false,
+      "deduplicated_target": null,
+      "provenance": "Real-world Moss workload from repository path: projects/cache/src/main.moss"
+    },
+    {
+      "id": "rw_phase106d1_borrowed_reads",
+      "name": "tests/phase106d1_borrowed_reads.moss",
+      "category": "tests",
+      "entry_file": "tests/phase106d1_borrowed_reads.moss",
+      "sha256": "8f70dffa33f78b0ee7dadbaa4017acabee42441feab0be761ed27fac1bbb8a7a",
+      "description": "Borrowed read reference validation",
+      "is_deduplicated_closure": false,
+      "deduplicated_target": null,
+      "provenance": "Real-world Moss workload from repository path: tests/phase106d1_borrowed_reads.moss"
+    },
+    {
+      "id": "rw_phase4_functional",
+      "name": "tests/phase4_functional.moss",
+      "category": "tests",
+      "entry_file": "tests/phase4_functional.moss",
+      "sha256": "c293d86edbb518be242fe071c597bca84f6b8892879d7dee38e5977162a6ec4d",
+      "description": "Functional pipeline and higher-order functions",
+      "is_deduplicated_closure": false,
+      "deduplicated_target": null,
+      "provenance": "Real-world Moss workload from repository path: tests/phase4_functional.moss"
+    },
+    {
+      "id": "rw_phase106d1_read_projection",
+      "name": "tests/phase106d1_read_projection.moss",
+      "category": "tests",
+      "entry_file": "tests/phase106d1_read_projection.moss",
+      "sha256": "9bab39347b3164d53651deb0cad64a4800fce57150abcf14baa6dd2cb7e0aecd",
+      "description": "Field projection read effects",
+      "is_deduplicated_closure": false,
+      "deduplicated_target": null,
+      "provenance": "Real-world Moss workload from repository path: tests/phase106d1_read_projection.moss"
+    },
+    {
+      "id": "rw_phase106d_handler_2pl",
+      "name": "tests/phase106d_handler_2pl.moss",
+      "category": "tests",
+      "entry_file": "tests/phase106d_handler_2pl.moss",
+      "sha256": "f9bfebfa51a894b0c50246767b6e2a0698c288532542362ee239753628ae5892",
+      "description": "Two-phase locking domain handlers",
+      "is_deduplicated_closure": false,
+      "deduplicated_target": null,
+      "provenance": "Real-world Moss workload from repository path: tests/phase106d_handler_2pl.moss"
+    },
+    {
+      "id": "rw_swarm_066_for_range",
+      "name": "tests/swarm_066_for_range_lowering.moss",
+      "category": "tests",
+      "entry_file": "tests/swarm_066_for_range_lowering.moss",
+      "sha256": "e7ac6d3f78af89d171637f7ca9e807d20807c5ac276915bc924086bc50420ece",
+      "description": "Range iteration and for-loop lowering",
+      "is_deduplicated_closure": false,
+      "deduplicated_target": null,
+      "provenance": "Real-world Moss workload from repository path: tests/swarm_066_for_range_lowering.moss"
+    },
+    {
+      "id": "rw_swarm_047_reduce_map",
+      "name": "tests/swarm_047_reduce_map_control_flow.moss",
+      "category": "tests",
+      "entry_file": "tests/swarm_047_reduce_map_control_flow.moss",
+      "sha256": "ee01895252994bdce7905b44b648a5e9d488e925a49916a1d66456db3dff0062",
+      "description": "Reduce and map control flow integration",
+      "is_deduplicated_closure": false,
+      "deduplicated_target": null,
+      "provenance": "Real-world Moss workload from repository path: tests/swarm_047_reduce_map_control_flow.moss"
+    },
+    {
+      "id": "rw_phase24_string_concat",
+      "name": "tests/phase24_string_concat.moss",
+      "category": "tests",
+      "entry_file": "tests/phase24_string_concat.moss",
+      "sha256": "996c8fdd4149e45444169cb154373cb3eadafef31814038bec7824be55c8c705",
+      "description": "String concatenation and buffer manipulation",
+      "is_deduplicated_closure": false,
+      "deduplicated_target": null,
+      "provenance": "Real-world Moss workload from repository path: tests/phase24_string_concat.moss"
+    },
+    {
+      "id": "rw_phase46_semantic_barriers",
+      "name": "tests/phase46_semantic_barriers.moss",
+      "category": "tests",
+      "entry_file": "tests/phase46_semantic_barriers.moss",
+      "sha256": "05f2da9b72b472a5ca91ce1d8d827cdd1c766905a7f7828d4ec673ad6a860dec",
+      "description": "Optimization barriers across scopes",
+      "is_deduplicated_closure": false,
+      "deduplicated_target": null,
+      "provenance": "Real-world Moss workload from repository path: tests/phase46_semantic_barriers.moss"
+    },
+    {
+      "id": "rw_phase47_iteration",
+      "name": "tests/phase47_iteration.moss",
+      "category": "tests",
+      "entry_file": "tests/phase47_iteration.moss",
+      "sha256": "5e3b6f93ac8bf2580f4ab1a2821d6989aa200fc8364a9803099a51d82ad0ebd9",
+      "description": "Standard iteration trait protocol",
+      "is_deduplicated_closure": false,
+      "deduplicated_target": null,
+      "provenance": "Real-world Moss workload from repository path: tests/phase47_iteration.moss"
+    },
+    {
+      "id": "rw_phase25_integer_overflow",
+      "name": "tests/phase25_integer_overflow.moss",
+      "category": "tests",
+      "entry_file": "tests/phase25_integer_overflow.moss",
+      "sha256": "77b1ceef24dfe5432aa47cf63e4bc6f6e129f9cc531d03df0b5c704e40aee11f",
+      "description": "Safe arithmetic and overflow trapping",
+      "is_deduplicated_closure": false,
+      "deduplicated_target": null,
+      "provenance": "Real-world Moss workload from repository path: tests/phase25_integer_overflow.moss"
+    },
+    {
+      "id": "rw_phase15_15_enum_positive",
+      "name": "tests/phase15_15_enum_positive.moss",
+      "category": "tests",
+      "entry_file": "tests/phase15_15_enum_positive.moss",
+      "sha256": "5734d3b4630317a70404caadcaa8dfd39e3d1344aceb7d22d44ed2c07351b25f",
+      "description": "Algebraic data types and pattern matching",
+      "is_deduplicated_closure": false,
+      "deduplicated_target": null,
+      "provenance": "Real-world Moss workload from repository path: tests/phase15_15_enum_positive.moss"
+    },
+    {
+      "id": "rw_phase21_fileio_root_cleanup",
+      "name": "tests/phase21_fileio_root_cleanup.moss",
+      "category": "tests",
+      "entry_file": "tests/phase21_fileio_root_cleanup.moss",
+      "sha256": "f6532dde4b64ba9e0fb77102b4f618b762c320a53167529d0d5e70fc5e7eb69c",
+      "description": "File I/O resource cleanup lifecycle",
+      "is_deduplicated_closure": false,
+      "deduplicated_target": null,
+      "provenance": "Real-world Moss workload from repository path: tests/phase21_fileio_root_cleanup.moss"
+    },
+    {
+      "id": "rw_phase20_fileio_helper",
+      "name": "tests/phase20_fileio_helper_parameter.moss",
+      "category": "tests",
+      "entry_file": "tests/phase20_fileio_helper_parameter.moss",
+      "sha256": "fac481e7e609252b5e5a4a03ed9f3c699e900d7a35f862b3a1704aeba98306f7",
+      "description": "File I/O parameter passing and effect tracking",
+      "is_deduplicated_closure": false,
+      "deduplicated_target": null,
+      "provenance": "Real-world Moss workload from repository path: tests/phase20_fileio_helper_parameter.moss"
+    },
+    {
+      "id": "rw_tests_branch_confined_open",
+      "name": "tests/branch_confined_open_type.moss",
+      "category": "tests",
+      "entry_file": "tests/branch_confined_open_type.moss",
+      "sha256": "b6f1702417cf04a5e0414ef075a472648bb383a0687fa5911f9922f256cf69a5",
+      "description": "Branch-confined open generic inference",
+      "is_deduplicated_closure": false,
+      "deduplicated_target": null,
+      "provenance": "Real-world Moss workload from repository path: tests/branch_confined_open_type.moss"
+    },
+    {
+      "id": "rw_example_collections",
+      "name": "examples/collections.moss",
+      "category": "examples",
+      "entry_file": "examples/collections.moss",
+      "sha256": "d7adce5e32a8ef0d6bfc1015373681c0ccf69572ac83b875a11ec69bf68f966b",
+      "description": "Idiomatic collections showcase",
+      "is_deduplicated_closure": false,
+      "deduplicated_target": null,
+      "provenance": "Real-world Moss workload from repository path: examples/collections.moss"
+    },
+    {
+      "id": "rw_example_checkout",
+      "name": "examples/checkout.moss",
+      "category": "examples",
+      "entry_file": "examples/checkout.moss",
+      "sha256": "a746151d39c8663a7d8bde2bc9ce94dd1e3cbbff4e2b30c7ae8c0ed7ba480ba5",
+      "description": "E-commerce checkout transaction domain workflow",
+      "is_deduplicated_closure": false,
+      "deduplicated_target": null,
+      "provenance": "Real-world Moss workload from repository path: examples/checkout.moss"
+    },
+    {
+      "id": "rw_example_counter",
+      "name": "examples/counter.moss",
+      "category": "examples",
+      "entry_file": "examples/counter.moss",
+      "sha256": "0bed96bb16e60a746649aa7db7893f70692fbbfb7b047acc0c15e06e1c4c5243",
+      "description": "Actor-style message passing domain",
+      "is_deduplicated_closure": false,
+      "deduplicated_target": null,
+      "provenance": "Real-world Moss workload from repository path: examples/counter.moss"
+    },
+    {
+      "id": "rw_example_pipeline",
+      "name": "examples/functional_pipeline.moss",
+      "category": "examples",
+      "entry_file": "examples/functional_pipeline.moss",
+      "sha256": "feb1a3b7523559803db563775be4a23ccf475a5ffed164cf01d709b7605b8951",
+      "description": "Declarative streaming transform pipeline",
+      "is_deduplicated_closure": false,
+      "deduplicated_target": null,
+      "provenance": "Real-world Moss workload from repository path: examples/functional_pipeline.moss"
+    },
+    {
+      "id": "rw_example_domains",
+      "name": "examples/domains_and_messages.moss",
+      "category": "examples",
+      "entry_file": "examples/domains_and_messages.moss",
+      "sha256": "41215f7161b7525fb7256a9bc1a4a46cd045ae74d74120b08e5be4fbb55be6a9",
+      "description": "Inter-domain message routing",
+      "is_deduplicated_closure": false,
+      "deduplicated_target": null,
+      "provenance": "Real-world Moss workload from repository path: examples/domains_and_messages.moss"
+    }
+  ]
+}

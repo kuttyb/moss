@@ -143,13 +143,19 @@ def run_command(args: list[str], cwd: Path = ROOT_DIR) -> subprocess.CompletedPr
 
 
 def verify_corpus_integrity() -> bool:
-    print("Step 1/3: Verifying portable torture corpus SHA256 integrity...")
+    print("Step 1/3: Verifying portable torture corpus & real-world corpus SHA256 integrity...")
     verify_py = TORTURE_ROOT / "verify.py"
     res = run_command([sys.executable, str(verify_py)])
     if res.returncode != 0:
         print(f"[FAIL] Corpus integrity verification failed:\n{res.stdout}\n{res.stderr}")
         return False
-    print("  [PASS] 100% fixture SHA256 integrity verified.")
+    rw_verify_py = ROOT_DIR / "benchmarks" / "real_world" / "verify.py"
+    if rw_verify_py.is_file():
+        res2 = run_command([sys.executable, str(rw_verify_py)])
+        if res2.returncode != 0:
+            print(f"[FAIL] Real-world corpus verification failed:\n{res2.stdout}\n{res2.stderr}")
+            return False
+    print("  [PASS] 100% fixture SHA256 integrity verified (Group A + Group B).")
     return True
 
 

@@ -320,6 +320,10 @@ bool fileio_typed(const TypeEnv& env, const string& name) {
 class Checker {
  public:
   explicit Checker(Program& p) : p_(p) {
+    CompilerStageTimer decl_timer("declaration_and_symbol_analysis");
+    CompilerTraceRecorder::instance().set_counter("functions_analyzed", p_.functions.size());
+    CompilerTraceRecorder::instance().set_counter("types_analyzed",
+        p_.objects.size() + p_.enums.size() + p_.traits.size() + p_.domains.size());
     const std::pair<const char*, vector<string>> standard_errors[] = {
         {"FileError", {"NotFound", "PermissionDenied", "NotRegularFile",
                        "InUse", "Full", "IO"}},
@@ -496,8 +500,12 @@ class Checker {
   }
 
   void run() {
+    CompilerStageTimer semantic_timer("semantic_analysis");
     {
       CompilerStageTimer timer("type_inference");
+      CompilerTraceRecorder::instance().increment_counter("inference_rounds", 1);
+      CompilerTraceRecorder::instance().increment_counter("inference_work_units",
+          p_.functions.size() + p_.objects.size() + p_.domains.size());
       p_.semantic_uses.clear();
       check_enums();
       check_domain_handle_declarations();
@@ -512,15 +520,27 @@ class Checker {
       // synchronous message or local call. Run non-final inference rounds before the
       // final unresolved-type diagnostics.
       for (size_t round = 0; round < 3; ++round) {
+        CompilerTraceRecorder::instance().increment_counter("inference_rounds", 1);
+        CompilerTraceRecorder::instance().increment_counter("inference_work_units",
+            p_.domains.size() + p_.functions.size());
+        CompilerStageTimer round_timer(round == 0 ? "inference_round_0" :
+                                       round == 1 ? "inference_round_1" : "inference_round_2",
+                                       "type_inference");
         infer_domain_state_fields(false);
         infer_function_signatures(false);
         infer_handler_reply_types(false);
       }
+      CompilerTraceRecorder::instance().increment_counter("inference_rounds", 1);
+      CompilerTraceRecorder::instance().increment_counter("inference_work_units",
+          p_.domains.size() + p_.functions.size());
       infer_domain_specializations();
       infer_domain_state_fields(true);
       infer_handler_reply_types(true);
       infer_function_signatures(true);
-      build_open_callable_summaries();
+      {
+        CompilerStageTimer summary_timer("open_callable_summaries");
+        build_open_callable_summaries();
+      }
       check_domain_handle_declarations();
       check_objects();
       check_declared_map_key_types();
@@ -528,7 +548,10 @@ class Checker {
       // The first summary pass seeds result relations for call-cycle analysis.
       // A second pass can bind straight-line private-call results to the exact
       // call edges retained by that analysis, without guessing from spelling.
-      build_open_callable_summaries();
+      {
+        CompilerStageTimer summary_timer("open_callable_summaries");
+        build_open_callable_summaries();
+      }
       for (auto& function : p_.functions) {
         if (!function.open_summary) continue;
         for (const auto& edge : p_.semantic_call_edges) {
@@ -1594,12 +1617,27 @@ class Checker {
           moss::project_typed_semantics_v1(p_));
       p_.assert_declaration_type_consistency();
     }
-    if (std::getenv("MOSS_PROFILE_COMPILER") != nullptr) {
+    if (CompilerTraceRecorder::instance().is_enabled()) {
       size_t total_specs = 0;
       for (const auto& f : p_.functions) total_specs += f.specializations.size();
-      std::cerr << "MOSS_PROFILE|specialization_requests|" << specialization_requests_ << '\n';
-      std::cerr << "MOSS_PROFILE|checked_specializations|" << total_specs << '\n';
-      std::cerr << "MOSS_PROFILE|specialization_body_checking|" << specialization_body_checking_ns_ << '\n';
+      auto& recorder = CompilerTraceRecorder::instance();
+      recorder.set_counter("actual_specialization_checks", total_specs);
+      recorder.set_counter("checked_specializations", total_specs);
+      recorder.set_counter("specialization_requests", specialization_requests_);
+      recorder.set_counter("specialization_body_checking", specialization_body_checking_ns_);
+
+      if (std::getenv("MOSS_PROFILE_COMPILER") != nullptr) {
+        std::cerr << "MOSS_PROFILE|functions_analyzed|" << recorder.get_counter("functions_analyzed") << '\n';
+        std::cerr << "MOSS_PROFILE|types_analyzed|" << recorder.get_counter("types_analyzed") << '\n';
+        std::cerr << "MOSS_PROFILE|specialization_requests|" << specialization_requests_ << '\n';
+        std::cerr << "MOSS_PROFILE|distinct_specialization_keys|" << recorder.get_counter("distinct_specialization_keys") << '\n';
+        std::cerr << "MOSS_PROFILE|actual_specialization_checks|" << total_specs << '\n';
+        std::cerr << "MOSS_PROFILE|checked_specializations|" << total_specs << '\n';
+        std::cerr << "MOSS_PROFILE|reused_specialization_results|" << recorder.get_counter("reused_specialization_results") << '\n';
+        std::cerr << "MOSS_PROFILE|specialization_body_checking|" << specialization_body_checking_ns_ << '\n';
+        std::cerr << "MOSS_PROFILE|inference_rounds|" << recorder.get_counter("inference_rounds") << '\n';
+        std::cerr << "MOSS_PROFILE|inference_work_units|" << recorder.get_counter("inference_work_units") << '\n';
+      }
     }
   }
 
@@ -1659,6 +1697,7 @@ class Checker {
   bool final_parameter_effects_ready_ = false;
   uint64_t specialization_requests_ = 0;
   uint64_t specialization_body_checking_ns_ = 0;
+  std::set<string> specialization_keys_seen_;
   std::unique_ptr<moss::TypeContext::Scope> type_scope_;
   mutable vector<bool>* parameter_mutation_capture_ = nullptr;
   mutable string current_source_file_;
@@ -21677,8 +21716,9 @@ class Checker {
                                           moss::TypeRef>>& open_result_bindings = {},
                                       const std::optional<moss::TypeRef>&
                                           closed_result_type = std::nullopt) {
-    if (std::getenv("MOSS_PROFILE_COMPILER") != nullptr) {
+    if (CompilerTraceRecorder::instance().is_enabled()) {
       ++specialization_requests_;
+      CompilerTraceRecorder::instance().increment_counter("specialization_requests", 1);
     }
     if (!function.static_dispatch) return;
     require_staged_v10_callable_body(line, function);
@@ -21724,6 +21764,11 @@ class Checker {
       err(line, "static specialization has an unresolved argument type",
           "TYPE_AMBIGUOUS_OPEN_RESULT");
     const string stable_key = *semantic_key->stable_key();
+    if (CompilerTraceRecorder::instance().is_enabled()) {
+      specialization_keys_seen_.insert(stable_key);
+      CompilerTraceRecorder::instance().set_counter("distinct_specialization_keys",
+                                                    specialization_keys_seen_.size());
+    }
     if (function.open_summary &&
         !function.open_summary->member_requirements.empty() &&
         !member_requirements.empty() &&
@@ -21784,6 +21829,9 @@ class Checker {
                                    return specialization.stable_type_key == stable_key;
                                  });
     if (existing != function.specializations.end()) {
+      if (CompilerTraceRecorder::instance().is_enabled()) {
+        CompilerTraceRecorder::instance().increment_counter("reused_specialization_results", 1);
+      }
       if (existing->semantic_key.stable_key() != semantic_key->stable_key())
         err(line, "inconsistent static specialization identity",
             "SOURCE_FREE_SPECIALIZATION_MISMATCH");
@@ -21859,10 +21907,15 @@ class Checker {
       specialized_env[function.params[index].name] = canonical_types[index];
     FunctionSpecialization* previous = checking_specialization_;
     const string call_source = current_source_file_;
-    const bool profile_spec = std::getenv("MOSS_PROFILE_COMPILER") != nullptr;
+    if (CompilerTraceRecorder::instance().is_enabled()) {
+      CompilerTraceRecorder::instance().increment_counter("actual_specialization_checks", 1);
+    }
+    const bool profile_spec = CompilerTraceRecorder::instance().is_enabled();
     const auto spec_body_start = profile_spec ? std::chrono::steady_clock::now()
                                               : std::chrono::time_point<std::chrono::steady_clock>();
     try {
+    CompilerStageTimer spec_body_timer("specialization_body_checking", "specialization",
+                                       {{"function", function.name}});
     checking_specialization_ = &function.specializations.back();
     SourceFileScope function_source(current_source_file_, function.source_file);
     SourceFileScope checked_callee_context(current_semantic_context_,

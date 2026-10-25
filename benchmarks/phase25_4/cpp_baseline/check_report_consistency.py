@@ -174,10 +174,13 @@ def check_report():
             checks_passed += 1
 
     # 5. Check Stage Attribution Table numbers
+    section4_text = report_text
+    if "## 4. Stage-by-Stage Cost Attribution" in report_text:
+        section4_text = report_text.split("## 4. Stage-by-Stage Cost Attribution")[1].split("## 5.")[0]
     stage_row_pattern = re.compile(
         r"\|\s*`([^`]+)`\s*\|\s*([\d\.]+)\s*\|\s*([\d\.]+)\s*\|\s*([\d\.]+)\s*\|\s*([\d\.]+)\s*\|\s*([\d\.]+)\s*\|\s*([\d\.]+)\s*\|\s*([\d\.]+)\s*\|"
     )
-    for fid, parse_s, types_s, effects_s, spec_s, spec_fx_s, unattrib_s, wall_s in stage_row_pattern.findall(report_text):
+    for fid, parse_s, types_s, effects_s, spec_s, spec_fx_s, unattrib_s, wall_s in stage_row_pattern.findall(section4_text):
         s = stats.get(fid, {})
         stg = s.get("stage_meds", {})
         if abs(float(wall_s) - s.get("wall_med", 0.0)) > 0.05:
