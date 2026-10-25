@@ -16519,3 +16519,23 @@ The standalone JAR was rebuilt from this source state. Its bootstrap reports
 ABI-v10. The six `scripts/java/test_jdt_client.py` tests pass. They exercise
 client protocol/lifecycle behavior with mocked or local test servers; live
 Eclipse daemon startup and a persistent incremental build remain unverified.
+
+### Phase 25.3 continuation — consume owned field projections
+
+A minimized source revealed Java accepted a later read after moving a nested
+owned field in only one branch, while C++ rejected it with
+`OWNERSHIP_USE_AFTER_CONSUME`. Java now consumes the local owner when a direct
+field projection of a transfer type is moved into a local binding; the existing
+control-flow ownership merge carries that consumed state past the branch join.
+Copy field reads remain non-consuming. Regression coverage checks both cases.
+
+Validation: `scripts/java/test.sh` and `MOSS_STAGED_ABI=v10
+scripts/java/test.sh` pass all 12 test classes. The C++ checker and rebuilt
+standalone Java JAR both reject the minimized branch-move fixture with
+`OWNERSHIP_USE_AFTER_CONSUME`. `scripts/java/package.sh` succeeds. Focused JDT
+startup was attempted, but this environment has no discoverable Eclipse
+executable; daemon startup and persistent builds remain unverified. No native
+Rust compilation, execution, Margo package acceptance, SDK gate, full `make
+check`, or Architect review has been run. Work is currently uncommitted at the
+continuation SHA; the next step is feedback validation, checkpoint, and push,
+then continue the remaining parity/runtime gaps.

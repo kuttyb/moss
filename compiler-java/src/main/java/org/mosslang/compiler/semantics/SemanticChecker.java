@@ -3124,6 +3124,20 @@ public class SemanticChecker {
         env.moved.put(name, new MoveInfo(line, destination));
     }
 
+    private boolean consumeOwnedFieldProjection(int line, String expression, TypeRef projectedType,
+                                               OwnershipEnv env, String destination) {
+        if (expression == null || projectedType == null || !transferType(projectedType)) return false;
+        String path = expression.trim();
+        if (!path.matches("[A-Za-z_][A-Za-z0-9_]*(?:\\s*\\.\\s*[A-Za-z_][A-Za-z0-9_]*)+")) {
+            return false;
+        }
+        int separator = path.indexOf('.');
+        String root = path.substring(0, separator).trim();
+        if (!env.containsKey(root) || !transferType(env.get(root))) return false;
+        consumeBinding(line, root, env, destination);
+        return true;
+    }
+
     private boolean doesFunctionConsumeParam(Function fn, int paramIdx) {
         TypeRef parameterType = fn != null && paramIdx >= 0 && paramIdx < fn.params.size()
                 ? functionParameterType(fn.params.get(paramIdx)) : null;
@@ -4834,7 +4848,7 @@ public class SemanticChecker {
                 // If expr is a bare identifier referring to a transfer type, consume it
                 if (env.containsKey(expr) && transferType(env.get(expr))) {
                     consumeBinding(s.line, expr, env, varName);
-                } else {
+                } else if (!consumeOwnedFieldProjection(s.line, expr, inferred, env, varName)) {
                     consumeCallArguments(s.line, expr, env, varName);
                 }
             }
@@ -4940,7 +4954,7 @@ public class SemanticChecker {
                     env.put(varName, inferred, s.line);
                     if (env.containsKey(expr) && transferType(env.get(expr))) {
                         consumeBinding(s.line, expr, env, varName);
-                    } else {
+                    } else if (!consumeOwnedFieldProjection(s.line, expr, inferred, env, varName)) {
                         consumeCallArguments(s.line, expr, env, varName);
                     }
                     return;
@@ -4957,7 +4971,7 @@ public class SemanticChecker {
                 env.moved.remove(varName);
                 if (env.containsKey(expr) && transferType(env.get(expr))) {
                     consumeBinding(s.line, expr, env, varName);
-                } else {
+                } else if (!consumeOwnedFieldProjection(s.line, expr, inferred, env, varName)) {
                     consumeCallArguments(s.line, expr, env, varName);
                 }
             }

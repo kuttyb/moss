@@ -21,6 +21,7 @@ public class SemanticCheckerTest {
         testFunctionParameterAccessModesAreRetained();
         testInferredGenericConsumeSummaryUsesCheckedParameterType();
         testFunctionConsumeSummaryIncludesNestedFieldMoves();
+        testMovingOwnedFieldConsumesOwnerAcrossBranches();
         testFunctionWriteSummaryPropagatesThroughHelperCalls();
         testFunctionWriteModePropagatesThroughNestedMethodReceiver();
         testInferredFunctionReceiverRetainsWriteMode();
@@ -797,6 +798,38 @@ public class SemanticCheckerTest {
                 + "  observe(box)\n"
                 + "  echo box.count\n", "function-copy-field-read.moss");
         new SemanticChecker(copyProgram).run();
+    }
+
+    private static void testMovingOwnedFieldConsumesOwnerAcrossBranches() {
+        Program invalid = Parser.parseSource(""
+                + "type Payload:\n"
+                + "  text: String\n"
+                + "type Box:\n"
+                + "  sink: Payload\n"
+                + "  count: Int\n"
+                + "fn inspect(box: Box, take: Bool) -> Int:\n"
+                + "  if take:\n"
+                + "    moved = box.sink\n"
+                + "  else:\n"
+                + "    pass\n"
+                + "  return box.count\n"
+                + "fn main():\n"
+                + "  pass\n", "branch-owned-field-move.moss");
+        expectCompileError(invalid, "OWNERSHIP_USE_AFTER_CONSUME",
+                "moving an owned field in one branch must consume its whole owner after the join");
+
+        Program copyField = Parser.parseSource(""
+                + "type Payload:\n"
+                + "  text: String\n"
+                + "type Box:\n"
+                + "  sink: Payload\n"
+                + "  count: Int\n"
+                + "fn inspect(box: Box) -> Int:\n"
+                + "  copied = box.count\n"
+                + "  return box.sink.text.length() + copied\n"
+                + "fn main():\n"
+                + "  pass\n", "copy-field-keeps-owner.moss");
+        new SemanticChecker(copyField).run();
     }
 
     private static void testFunctionWriteSummaryPropagatesThroughHelperCalls() {
