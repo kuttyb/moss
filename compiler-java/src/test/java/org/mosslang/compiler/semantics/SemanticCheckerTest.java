@@ -17,6 +17,7 @@ public class SemanticCheckerTest {
         testInferredMethodReturnSatisfiesStructuralTrait();
         testInferredMethodReturnMustMatchStructuralTrait();
         testFunctionParameterAccessModesAreRetained();
+        testFunctionRetainsResolvedOpenParameterTypes();
         testObjectMethodAccessModesAreRetained();
         testForLoopValuesCanFlowToObjectMethodArguments();
         testObjectMethodArityIsChecked();
@@ -29,6 +30,31 @@ public class SemanticCheckerTest {
         testOnFailCaptureUsesMatchingRaisedVariant();
         testSameCrateRaisingCallPreservesErrorCarrier();
         System.out.println("SemanticCheckerTest PASSED.");
+    }
+
+    private static void testFunctionRetainsResolvedOpenParameterTypes() {
+        Program program = Parser.parseSource(""
+                + "fn identity(value):\n"
+                + "  return value\n"
+                + "fn main():\n"
+                + "  pass\n", "open-parameter-facts.moss");
+        new SemanticChecker(program).run();
+        Function identity = program.functions.stream()
+                .filter(function -> function.name.equals("identity"))
+                .findFirst().orElseThrow();
+        if (identity.params.size() != 1 || identity.params.get(0).checkedTypeRef == null
+                || identity.params.get(0).checkedTypeRef.kind()
+                        != org.mosslang.compiler.types.TypeKind.InferenceVar
+                || identity.returnTypeRef == null
+                || identity.returnTypeRef.kind() != org.mosslang.compiler.types.TypeKind.InferenceVar
+                || !identity.params.get(0).checkedTypeRef.varId().equals(identity.returnTypeRef.varId())) {
+            throw new AssertionError("checker did not retain the shared open type of identity's parameter/result: "
+                    + identity.params.get(0).checkedTypeRef + " -> " + identity.returnTypeRef);
+        }
+        if (identity.params.get(0).typeRef != null
+                || identity.params.get(0).type == null || !identity.params.get(0).type.isEmpty()) {
+            throw new AssertionError("checker facts must not masquerade as a source annotation");
+        }
     }
 
     private static void testTypedOnFailLocalCaptureLowering() {

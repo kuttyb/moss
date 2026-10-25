@@ -711,7 +711,22 @@ public class SemanticChecker {
                 solver.unify(expectedReturn, res);
             }
             TypeRef resolvedReturn = solver.resolve(expectedReturn);
-            if (resolvedReturn.kind() == TypeKind.InferenceVar) {
+            boolean hasValueReturn = f.resultExpression != null && !f.resultExpression.isBlank();
+            if (!hasValueReturn) {
+                for (Stmt statement : f.body) {
+                    if (statement.kind != Stmt.Kind.Return) continue;
+                    String expression = statement.a != null ? statement.a.trim() : "";
+                    if (expression.isEmpty() && statement.text != null) {
+                        String text = statement.text.trim();
+                        if (text.startsWith("return ")) expression = text.substring(7).trim();
+                    }
+                    if (!expression.isEmpty() && !"return".equals(expression)) {
+                        hasValueReturn = true;
+                        break;
+                    }
+                }
+            }
+            if (resolvedReturn.kind() == TypeKind.InferenceVar && !hasValueReturn) {
                 solver.unify(expectedReturn, TypeRef.unit());
                 resolvedReturn = TypeRef.unit();
             }
@@ -723,6 +738,9 @@ public class SemanticChecker {
             f.parameterAccessModes.clear();
             for (int parameterIndex = 0; parameterIndex < f.params.size(); parameterIndex++) {
                 Param parameter = f.params.get(parameterIndex);
+                TypeRef checkedParameterType = env.get(parameter.name);
+                parameter.checkedTypeRef = checkedParameterType != null
+                        ? solver.resolve(checkedParameterType) : null;
                 TypeRef parameterType = parameter.typeRef != null ? parameter.typeRef
                         : (parameter.type != null && !parameter.type.isEmpty()
                                 ? TypeParser.parseCanonical(parameter.type) : null);

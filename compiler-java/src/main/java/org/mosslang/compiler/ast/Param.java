@@ -9,6 +9,8 @@ public class Param {
     public String type = "";
     public boolean inferred = false;
     public TypeRef typeRef = null;
+    /** Resolved checker type; distinct from an optional source annotation. */
+    public TypeRef checkedTypeRef = null;
 
     public Param() {}
 

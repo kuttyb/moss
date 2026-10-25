@@ -13213,3 +13213,18 @@ open. No native or SDK gate ran.
 Follow-up ABI verification: the private enum codec's fixed payload bytes and
 `moss-abi-v10-private-enum-dependency` hash match a C++ fixture generated from
 `src/abi_v10_records.hpp` using the same declaration and provenance identity.
+
+### Phase 25.3 continuation — retain open return types for generic identity
+
+The checker previously defaulted every unresolved function result to `Unit`,
+even when an explicit value return unified that result with an open parameter.
+It now defaults to `Unit` only when no value return exists, and retains each
+parameter's resolved checker TypeRef separately from its source annotation. A
+minimal `identity(value) -> value` regression confirms the parameter and result
+share the same open TypeVar; both C++ and Java accept the source.
+
+Validation: all ten Java unit-test classes pass after clean builds in default
+ABI-v9 and staged ABI-v10 modes. The minimal generic identity source is accepted
+by both compiler `check --json` commands. Feedback validation and
+`git diff --check` pass. Broader generic inference and ABI summary production
+remain open.
