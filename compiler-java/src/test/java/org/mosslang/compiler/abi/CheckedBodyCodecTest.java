@@ -20,6 +20,7 @@ public class CheckedBodyCodecTest {
         testMossiUtf8ByteFraming();
         testMossiEncoderRejectsDuplicateIds();
         testMossiRejectsUnboundedCounts();
+        testCheckedBodyReaderBoundsAndTrailingData();
         testSourceFreeVerificationSuccess();
         testSourceFreeVerificationTamperDetection();
         System.out.println("CheckedBodyCodecTest PASSED: All tests passed successfully.");
@@ -211,6 +212,22 @@ public class CheckedBodyCodecTest {
         try {
             CheckedBodyCodec.decodeMossi(negative);
             throw new AssertionError("ABI-v10 decoder accepted a negative record count");
+        } catch (CompileError error) {
+            if (!"SOURCE_FREE_CONTRACT_INVALID".equals(error.getCode())) throw error;
+        }
+    }
+
+    private static void testCheckedBodyReaderBoundsAndTrailingData() {
+        String hostileCount = CheckedBodyCodec.HEADER + "10:2147483647";
+        assertCheckedBodyRejects(hostileCount, "unbounded statement count");
+        String trailing = CheckedBodyCodec.encodeCheckedBodyV1(List.of()) + "garbage";
+        assertCheckedBodyRejects(trailing, "trailing body data");
+    }
+
+    private static void assertCheckedBodyRejects(String body, String description) {
+        try {
+            CheckedBodyCodec.decodeCheckedBody(body);
+            throw new AssertionError("checked body reader accepted " + description);
         } catch (CompileError error) {
             if (!"SOURCE_FREE_CONTRACT_INVALID".equals(error.getCode())) throw error;
         }

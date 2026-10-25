@@ -12824,3 +12824,13 @@ against exact expected frame lengths.
 Validation: Java build, all ten Java unit-test classes, and `git diff --check`
 pass. Full source-free Margo provider/consumer integration has not run; the
 canonical logical record schema remains incomplete.
+
+The nested checked-body reader now bounds statement, operand, expression,
+type-argument, and field-substitution counts before allocation; validates
+numeric and field-length parsing; and rejects trailing data after the declared
+body. Hostile count and trailing-data tests require the structured
+`SOURCE_FREE_CONTRACT_INVALID` diagnostic.
+
+Validation: Java build, focused codec test, and all ten Java unit-test classes
+pass. This hardens checked-body decoding; full canonical v10 summary/IR
+semantics and native provider linkage remain unimplemented or unverified.

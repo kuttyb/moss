@@ -1,12 +1,14 @@
 package org.mosslang.compiler.abi;
 
 import org.mosslang.compiler.types.*;
+import org.mosslang.compiler.diagnostics.CompileError;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
 public class H3BodyReader {
+    private static final int MAX_COLLECTION_ITEMS = 100_000;
     private final String bytes;
     private final TypeContext context;
     private int position = 0;
@@ -29,10 +31,15 @@ public class H3BodyReader {
             (position - begin > 1 && bytes.charAt(begin) == '0')) {
             throw new IllegalArgumentException("malformed checked body field length at position " + position);
         }
-        int length = Integer.parseInt(bytes.substring(begin, position));
+        int length;
+        try {
+            length = Integer.parseInt(bytes.substring(begin, position));
+        } catch (NumberFormatException ex) {
+            throw invalid("checked body field length is malformed");
+        }
         position++; // Skip ':'
-        if (position + length > bytes.length()) {
-            throw new IllegalArgumentException("checked body field exceeds bounds");
+        if (length < 0 || length > bytes.length() - position) {
+            throw invalid("checked body field exceeds bounds");
         }
         String value = bytes.substring(position, position + length);
         position += length;
@@ -42,9 +49,25 @@ public class H3BodyReader {
     public int number() {
         String f = field();
         if (f.isEmpty()) {
-            throw new IllegalArgumentException("checked body integer is empty");
+            throw invalid("checked body integer is empty");
         }
-        return Integer.parseInt(f);
+        try {
+            return Integer.parseInt(f);
+        } catch (NumberFormatException ex) {
+            throw invalid("checked body integer is malformed");
+        }
+    }
+
+    private int count(String what) {
+        int value = number();
+        if (value < 0 || value > MAX_COLLECTION_ITEMS || value > bytes.length()) {
+            throw invalid("checked body " + what + " exceeds its limit");
+        }
+        return value;
+    }
+
+    private CompileError invalid(String message) {
+        return new CompileError(0, message, "SOURCE_FREE_CONTRACT_INVALID");
     }
 
     public TypeRef readType() {
@@ -55,13 +78,13 @@ public class H3BodyReader {
         TypeKind kind = TypeKind.values()[kindOrdinal];
         String identity = field();
 
-        int typeArgCount = number();
+        int typeArgCount = count("type argument count");
         List<TypeRef> typeArgs = new ArrayList<>(typeArgCount);
         for (int i = 0; i < typeArgCount; i++) {
             typeArgs.add(readType());
         }
 
-        int fieldSubCount = number();
+        int fieldSubCount = count("field substitution count");
         List<TypeRef.FieldSub> fieldSubs = new ArrayList<>(fieldSubCount);
         for (int i = 0; i < fieldSubCount; i++) {
             String name = field();
@@ -145,7 +168,7 @@ public class H3BodyReader {
                 expr.ordinal = number();
             }
             case Add -> {
-                int arity = number();
+                int arity = count("expression arity");
                 for (int i = 0; i < arity; i++) {
                     expr.operands.add(readExpr());
                 }
@@ -198,13 +221,13 @@ public class H3BodyReader {
         int hasExpr = number();
         CheckedExpr expr = (hasExpr == 1) ? readExpr() : null;
 
-        int operandCount = number();
+        int operandCount = count("statement operand count");
         List<CheckedExpr> operands = new ArrayList<>(operandCount);
         for (int i = 0; i < operandCount; i++) {
             operands.add(readExpr());
         }
 
-        int bodyCount = number();
+        int bodyCount = count("statement body count");
         List<CheckedStmt> body = new ArrayList<>(bodyCount);
         for (int i = 0; i < bodyCount; i++) {
             body.add(readStmt());
@@ -225,11 +248,12 @@ public class H3BodyReader {
             throw new IllegalArgumentException("Invalid checked body header: expected " + CheckedBodyCodec.HEADER);
         }
         position = CheckedBodyCodec.HEADER.length();
-        int count = number();
+        int count = count("top-level statement count");
         List<CheckedStmt> statements = new ArrayList<>(count);
         for (int i = 0; i < count; i++) {
             statements.add(readStmt());
         }
+        if (!isDone()) throw invalid("checked body has trailing data");
         return statements;
     }
 
