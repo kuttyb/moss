@@ -4360,6 +4360,7 @@ public class SemanticChecker {
                                             solver.resolve(baseType.typeArgs().get(0)).toCanonicalString() + "', got '" +
                                             solver.resolve(indexType).toCanonicalString() + "'", "TYPE_MISMATCH");
                                 }
+                                typer.rejectUnsupportedMapKey(s.line, baseType.typeArgs().get(0));
                                 if (baseType.typeArgs().size() >= 2) {
                                     if (!solver.unify(valType, baseType.typeArgs().get(1))) {
                                         throw new CompileError(s.line, "map value type mismatch: expected '" +

@@ -56,6 +56,15 @@ public class ExpressionTyper {
         }
     }
 
+    public void rejectUnsupportedMapKey(int line, TypeRef keyType) {
+        TypeRef resolved = solver.resolve(keyType);
+        if (resolved != null && resolved.kind() == TypeKind.Enum) {
+            throw new CompileError(line,
+                    "enum values cannot be Map keys; enum equality and hashing are unsupported",
+                    "ENUM_MAP_KEY_UNSUPPORTED");
+        }
+    }
+
     public TypeRef infer(String expression, int line, TypeEnv env) {
         if (expression == null) {
             return TypeRef.unit();
@@ -288,6 +297,7 @@ public class ExpressionTyper {
                         if (!solver.unify(indexType, keyType)) {
                             throw new CompileError(line, "map key type mismatch", "TYPE_MISMATCH");
                         }
+                        rejectUnsupportedMapKey(line, keyType);
                         return valType;
                     }
                     return solver.fresh(0);
@@ -1424,6 +1434,9 @@ public class ExpressionTyper {
                     throw new CompileError(line, "map 'get' key type mismatch: expected '" +
                             solver.resolve(targetType.typeArgs().get(0)).toCanonicalString() + "', got '" +
                             kArg.toCanonicalString() + "'", "TYPE_MISMATCH");
+                }
+                if (!targetType.typeArgs().isEmpty()) {
+                    rejectUnsupportedMapKey(line, targetType.typeArgs().get(0));
                 }
                 if (targetType.typeArgs().size() >= 2 && !solver.unify(targetType.typeArgs().get(1), fbArg)) {
                     throw new CompileError(line, "map 'get' fallback type mismatch: expected '" +

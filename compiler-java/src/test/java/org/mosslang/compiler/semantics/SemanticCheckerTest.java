@@ -51,6 +51,7 @@ public class SemanticCheckerTest {
         testRecursionThroughFunctionalCallbacksIsRejected();
         testFilterRequiresBooleanPredicate();
         testReduceCallbackResultMatchesAccumulator();
+        testEnumValuesAreRejectedAsMapKeys();
         testDirectVectorSumTypeAndLowering();
         testValueHandlerRepliesOnEveryNormalPath();
         testUnsupportedCollectionsAreRejectedAsForIterablesAtLoopSite();
@@ -1199,6 +1200,26 @@ public class SemanticCheckerTest {
                 + "  values = [1, 2, 3]\n"
                 + "  total = values |> reduce(0, add)\n"
                 + "  echo total\n", "reduce-result-match.moss");
+        new SemanticChecker(valid).run();
+    }
+
+    private static void testEnumValuesAreRejectedAsMapKeys() {
+        Program invalid = Parser.parseSource(""
+                + "enum Color:\n"
+                + "  Red\n"
+                + "  Blue\n"
+                + "fn main():\n"
+                + "  var colors = Map()\n"
+                + "  colors[Color.Red] = 1\n"
+                + "  echo colors[Color.Red]\n", "enum-map-key.moss");
+        expectCompileError(invalid, "ENUM_MAP_KEY_UNSUPPORTED",
+                "enum values cannot be Map keys");
+
+        Program valid = Parser.parseSource(""
+                + "fn main():\n"
+                + "  var colors = Map()\n"
+                + "  colors[\"red\"] = 1\n"
+                + "  echo colors[\"red\"]\n", "string-map-key.moss");
         new SemanticChecker(valid).run();
     }
 

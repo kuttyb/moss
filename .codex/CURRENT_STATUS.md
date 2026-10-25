@@ -16247,3 +16247,18 @@ validation and `git diff --check` pass. This is still a bounded callback check:
 reduce result validation currently covers resolved named/bound callbacks, and
 the broader ownership/effect and callback rules remain open. Native codegen and
 release acceptance gates were not run.
+
+### Phase 25.3 continuation — reject enum Map keys
+
+Java now rejects enum Map keys after key-type inference for indexed reads and
+writes, and for the Map `get` method. The sampled
+`tests/negative/enum_index_map_key.moss` now rejects with
+`ENUM_MAP_KEY_UNSUPPORTED`, matching C++'s code and diagnostic. A String-keyed
+Map remains accepted.
+
+The refreshed first-50 negative-fixture sample has 0 C++ acceptances and 11
+Java acceptances, with no malformed compiler results. Those 11 Java-only
+acceptances are ownership aliasing and functional callback capture, mutation,
+and domain-boundary cases. All twelve Java test classes pass under ABI-v9 and
+staged ABI-v10. Standalone packaging/bootstrap, feedback validation, and
+`git diff --check` pass. Native and release acceptance gates remain unrun.
