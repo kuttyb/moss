@@ -953,11 +953,61 @@ public class ExpressionTyper {
             return TypeRef.builtin("vector", List.of(solver.fresh(0)));
         }
         if (stageExpr.startsWith("filter(") && stageExpr.endsWith(")")) {
+            String inner = stageExpr.substring(7, stageExpr.length() - 1).trim();
+            String placeholder = "__moss_pipeline_item";
+            while (env.containsKey(placeholder)) {
+                placeholder += "_";
+            }
+            String substituted = replacePipelinePlaceholder(inner, placeholder);
+            TypeRef predicateResult = null;
+            if (!substituted.equals(inner)) {
+                TypeEnv callbackEnv = env.copy();
+                callbackEnv.put(placeholder, elemType);
+                predicateResult = infer(substituted, line, callbackEnv);
+            } else {
+                String callback = functions.containsKey(inner) ? inner : currentCallableBindings.get(inner);
+                if (callback != null || inner.contains(".")) {
+                    String argument = "__moss_pipeline_arg";
+                    while (env.containsKey(argument)) {
+                        argument += "_";
+                    }
+                    TypeEnv callbackEnv = env.copy();
+                    callbackEnv.put(argument, elemType);
+                    predicateResult = infer((callback != null ? callback : inner)
+                            + "(" + argument + ")", line, callbackEnv);
+                }
+            }
+            if (predicateResult != null && !solver.unify(predicateResult, TypeRef.primitive("bool"))) {
+                throw new CompileError(line, "filter predicate must return bool, got '"
+                        + solver.resolve(predicateResult).toCanonicalString() + "'", "TYPE_MISMATCH");
+            }
             return TypeRef.builtin("vector", List.of(elemType));
         }
         if (stageExpr.startsWith("reduce(") && stageExpr.endsWith(")")) {
             String argsStr = stageExpr.substring(7, stageExpr.length() - 1).trim();
             List<String> args = parseArguments(argsStr);
+            if (args.size() >= 2) {
+                TypeRef accumulatorType = infer(args.get(0), line, env);
+                String callbackName = args.get(1).trim();
+                String callback = functions.containsKey(callbackName)
+                        ? callbackName : currentCallableBindings.get(callbackName);
+                if (callback != null) {
+                    String accumulator = "__moss_reduce_accumulator";
+                    String element = "__moss_reduce_element";
+                    while (env.containsKey(accumulator)) accumulator += "_";
+                    while (env.containsKey(element) || element.equals(accumulator)) element += "_";
+                    TypeEnv callbackEnv = env.copy();
+                    callbackEnv.put(accumulator, accumulatorType);
+                    callbackEnv.put(element, elemType);
+                    TypeRef resultType = infer(callback + "(" + accumulator + ", " + element + ")", line, callbackEnv);
+                    if (!solver.unify(resultType, accumulatorType)) {
+                        throw new CompileError(line, "reduce callback result must match accumulator type '"
+                                + solver.resolve(accumulatorType).toCanonicalString() + "', got '"
+                                + solver.resolve(resultType).toCanonicalString() + "'", "TYPE_MISMATCH");
+                    }
+                }
+                return accumulatorType;
+            }
             if (!args.isEmpty()) {
                 return infer(args.get(0), line, env);
             }

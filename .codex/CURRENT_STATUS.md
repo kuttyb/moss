@@ -16229,3 +16229,21 @@ test classes pass under ABI-v9 and staged ABI-v10. Feedback validation and
 and ownership gaps found in the sampled negative corpus. No native Rust
 compilation or release acceptance gate ran. Packaging is being revalidated for
 this checkpoint.
+
+### Phase 25.3 continuation — functional filter/reduce result validation
+
+`ExpressionTyper` now checks callback result types for functional `filter` and
+named `reduce` callbacks. Filter requires a Boolean result for placeholder
+expressions and resolved named/bound callbacks; reduce requires a named
+callback's result to unify with its seed/accumulator type. The previously
+false-accepted fixtures `functional_filter_not_bool.moss` and
+`functional_reduce_mismatch.moss` now reject with `TYPE_MISMATCH`, matching the
+C++ compiler's reject behavior. Positive controls cover a named Boolean filter
+and the existing reduction examples.
+
+All twelve Java test classes pass under ABI-v9 and staged ABI-v10. Standalone
+packaging succeeds and packaged bootstrap reports `moss-0.1`; feedback
+validation and `git diff --check` pass. This is still a bounded callback check:
+reduce result validation currently covers resolved named/bound callbacks, and
+the broader ownership/effect and callback rules remain open. Native codegen and
+release acceptance gates were not run.

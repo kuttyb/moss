@@ -49,6 +49,8 @@ public class SemanticCheckerTest {
         testConflictingDomainInstanceTypesAreRejected();
         testDomainHandlersRequireMessageSyntax();
         testRecursionThroughFunctionalCallbacksIsRejected();
+        testFilterRequiresBooleanPredicate();
+        testReduceCallbackResultMatchesAccumulator();
         testDirectVectorSumTypeAndLowering();
         testValueHandlerRepliesOnEveryNormalPath();
         testUnsupportedCollectionsAreRejectedAsForIterablesAtLoopSite();
@@ -1158,6 +1160,46 @@ public class SemanticCheckerTest {
                 + "  echo recurse(1)\n", "recursive-hof-callback.moss");
         expectCompileError(forwarded, "RECURSION_CYCLE",
                 "forwarded functional callback recursion must be rejected");
+    }
+
+    private static void testFilterRequiresBooleanPredicate() {
+        Program invalid = Parser.parseSource(""
+                + "fn main():\n"
+                + "  values = [1, 2, 3]\n"
+                + "  invalid = values |> filter(_ + 1)\n"
+                + "  echo invalid[0]\n", "filter-non-bool-predicate.moss");
+        expectCompileError(invalid, "TYPE_MISMATCH",
+                "filter predicates must return bool");
+
+        Program valid = Parser.parseSource(""
+                + "fn is_positive(value: Int) -> Bool:\n"
+                + "  return value > 0\n"
+                + "fn main():\n"
+                + "  values = [1, 2, 3]\n"
+                + "  positives = values |> filter(is_positive)\n"
+                + "  echo positives[0]\n", "filter-bool-predicate.moss");
+        new SemanticChecker(valid).run();
+    }
+
+    private static void testReduceCallbackResultMatchesAccumulator() {
+        Program invalid = Parser.parseSource(""
+                + "fn wrong_accumulator(accumulator: Int, value: Int) -> Bool:\n"
+                + "  return value > accumulator\n"
+                + "fn main():\n"
+                + "  values = [1, 2, 3]\n"
+                + "  invalid = values |> reduce(0, wrong_accumulator)\n"
+                + "  echo invalid\n", "reduce-result-mismatch.moss");
+        expectCompileError(invalid, "TYPE_MISMATCH",
+                "reduce callback results must match the accumulator type");
+
+        Program valid = Parser.parseSource(""
+                + "fn add(accumulator: Int, value: Int) -> Int:\n"
+                + "  return accumulator + value\n"
+                + "fn main():\n"
+                + "  values = [1, 2, 3]\n"
+                + "  total = values |> reduce(0, add)\n"
+                + "  echo total\n", "reduce-result-match.moss");
+        new SemanticChecker(valid).run();
     }
 
     private static void testNestedFieldReadInBranchConditionKeepsReceiverReadOnly() {
