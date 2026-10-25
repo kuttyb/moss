@@ -14261,3 +14261,17 @@ screen reports 3 C++-only, 0 Java-only, 58 accepted by both, and 30 rejected
 by both. Remaining C++-only fixtures are two FileIO/close-related cases and
 `phase21_peer_speculation.moss`'s loop-shadow type restoration gap. Results are
 in disposable `tmp/phase253_phase21_acceptance_current.json`.
+
+### Phase 25.3 continuation — restore pre-existing For-loop shadow bindings
+
+A narrow scope restoration now snapshots a binding only when a `for` iteration
+variable shadows an existing name, lets the current loop-body checker run
+unchanged, and restores the outer binding after the loop body. This avoids the
+broader body rewrite that hid loop binders from valid method calls. The
+`phase21_peer_speculation.moss` fixture passes again, and
+`testForLoopValuesCanFlowToObjectMethodArguments` remains green.
+
+Both ABI Java suites pass. The refreshed 91-file checker screen reports 2
+C++-only, 0 Java-only, 59 accepted by both, and 30 rejected by both; the two
+remaining acceptance mismatches are FileIO-related. No broad parity claim is
+made.

@@ -88,6 +88,31 @@ public class SemanticChecker {
         }
     }
 
+    private static final class LoopShadowSnapshot {
+        final String name;
+        final TypeRef type;
+        final MoveInfo moved;
+        final boolean immutable;
+        final Integer bindingLine;
+
+        LoopShadowSnapshot(String name, OwnershipEnv env) {
+            this.name = name;
+            this.type = env.get(name);
+            this.moved = env.moved.get(name);
+            this.immutable = env.immutables.contains(name);
+            this.bindingLine = env.bindingLines.get(name);
+        }
+
+        void restore(OwnershipEnv env) {
+            env.put(name, type, bindingLine == null ? 0 : bindingLine);
+            if (moved != null) env.moved.put(name, moved);
+            if (immutable) env.immutables.add(name);
+            else env.immutables.remove(name);
+            if (bindingLine != null) env.bindingLines.put(name, bindingLine);
+            else env.bindingLines.remove(name);
+        }
+    }
+
     public SemanticChecker(Program program) {
         this.program = program;
     }
@@ -1788,7 +1813,13 @@ public class SemanticChecker {
                                     boolean insideHandler, String enclosingName, TypeRef expectedType) {
         int i = start;
         int activeRecoverIndent = -1;
+        Map<Integer, List<LoopShadowSnapshot>> loopShadowRestores = new HashMap<>();
         while (i < end) {
+            List<LoopShadowSnapshot> restores = loopShadowRestores.remove(i);
+            if (restores != null) {
+                for (int restoreIndex = restores.size() - 1; restoreIndex >= 0; restoreIndex--)
+                    restores.get(restoreIndex).restore(env);
+            }
             Stmt s = stmts.get(i);
             if (activeRecoverIndent >= 0 && s.indent <= activeRecoverIndent
                     && (s.kind != Stmt.Kind.Recover || s.indent == activeRecoverIndent)) {
@@ -2005,8 +2036,23 @@ public class SemanticChecker {
                 TypeRef errorType = recoveryBindingType(stmts, start, i, s.indent);
                 if (errorType != null) env.put(s.a.trim(), errorType, s.line);
             }
+            LoopShadowSnapshot loopShadow = null;
+            int loopBodyEnd = i + 1;
+            if (s.kind == Stmt.Kind.For) {
+                while (loopBodyEnd < end && stmts.get(loopBodyEnd).indent > s.indent) loopBodyEnd++;
+                String loopName = s.a == null ? "" : s.a.trim();
+                if (!loopName.isEmpty() && env.containsKey(loopName))
+                    loopShadow = new LoopShadowSnapshot(loopName, env);
+            }
             checkStatement(s, env, typer, solver, insideHandler, enclosingName, expectedType);
+            if (loopShadow != null)
+                loopShadowRestores.computeIfAbsent(loopBodyEnd, ignored -> new ArrayList<>()).add(loopShadow);
             i++;
+        }
+        List<LoopShadowSnapshot> finalRestores = loopShadowRestores.remove(end);
+        if (finalRestores != null) {
+            for (int restoreIndex = finalRestores.size() - 1; restoreIndex >= 0; restoreIndex--)
+                finalRestores.get(restoreIndex).restore(env);
         }
         if (activeRecoverIndent >= 0) activeRecoverDepth--;
         return env;
