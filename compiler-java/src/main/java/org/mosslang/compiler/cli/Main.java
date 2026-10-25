@@ -1474,6 +1474,11 @@ public class Main {
                     && statement.expr.literalValue.matches(
                             "[-+]?(?:[0-9]+\\.[0-9]+|[0-9]+[eE][+-]?[0-9]+|[0-9]+\\.[0-9]+[eE][+-]?[0-9]+)")) {
                 returnedLiteral = statement.expr.literalValue;
+            } else if (statement.expr.kind == org.mosslang.compiler.abi.CheckedExprKind.StringLiteral
+                    && parameterTypes.isEmpty() && resultType.kind() == org.mosslang.compiler.types.TypeKind.Primitive
+                    && "string".equalsIgnoreCase(resultType.name())
+                    && statement.expr.literalValue.matches("[^\"\\\\\\r\\n]*")) {
+                returnedLiteral = "\"" + statement.expr.literalValue + "\"";
             } else if (statement.expr.kind == org.mosslang.compiler.abi.CheckedExprKind.Binary
                     && java.util.Set.of(org.mosslang.compiler.abi.CheckedBinaryOp.Add,
                             org.mosslang.compiler.abi.CheckedBinaryOp.Sub,

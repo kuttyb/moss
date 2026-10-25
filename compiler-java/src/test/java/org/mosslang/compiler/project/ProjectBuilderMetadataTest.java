@@ -349,7 +349,9 @@ public final class ProjectBuilderMetadataTest {
                 + "export fn negative() -> Int:\n"
                 + "  return -42\n"
                 + "export fn negative_ratio() -> Float:\n"
-                + "  return -1.5\n", "identity-provider.moss");
+                + "  return -1.5\n"
+                + "export fn greeting() -> String:\n"
+                + "  return \"hello\"\n", "identity-provider.moss");
         new org.mosslang.compiler.semantics.CheckedProgram(identityProgram).run();
         identityProgram.functions.forEach(function -> {
             String name = function.name;
@@ -529,6 +531,19 @@ public final class ProjectBuilderMetadataTest {
                 || !"-1.5".equals(negativeRatioStatements.get(0).expr.literalValue)) {
             throw new AssertionError("ABI-v10 signed float constant body is incomplete");
         }
+        AbiV10Records.CheckedBodyRecord greetingBody = identityInterface.privateSemanticDependencies.stream()
+                .filter(record -> record.id.startsWith("checked-body-v1:"))
+                .map(AbiV10Records.CheckedBodyRecord::decode)
+                .filter(body -> body.callableId.endsWith(":fn:greeting"))
+                .findFirst().orElseThrow(() ->
+                        new AssertionError("ABI-v10 producer omitted the String constant body"));
+        java.util.List<org.mosslang.compiler.abi.CheckedStmt> greetingStatements =
+                CheckedBodyCodec.decodeCheckedBody(greetingBody.checkedIrBytes);
+        if (greetingStatements.size() != 1
+                || greetingStatements.get(0).expr.kind != org.mosslang.compiler.abi.CheckedExprKind.StringLiteral
+                || !"hello".equals(greetingStatements.get(0).expr.literalValue)) {
+            throw new AssertionError("ABI-v10 String constant body is incomplete");
+        }
         AbiV10Records.Summary incrementSummary = identityInterface.binaryContract.stream()
                 .filter(record -> record.payloadBytes().length > 0
                         && (record.payloadBytes()[0] == 3 || record.payloadBytes()[0] == 4))
@@ -625,6 +640,8 @@ public final class ProjectBuilderMetadataTest {
                     + "  return provider__ratio()\n"
                     + "fn use_negative_ratio() -> Float:\n"
                     + "  return provider__negative_ratio()\n"
+                    + "fn use_greeting() -> String:\n"
+                    + "  return provider__greeting()\n"
                     + "fn use_increment() -> Int:\n"
                     + "  return provider__increment(41)\n"
                     + "fn use_scale() -> Int:\n"

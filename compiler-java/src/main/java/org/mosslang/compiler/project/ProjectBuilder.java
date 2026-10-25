@@ -1642,6 +1642,10 @@ public class ProjectBuilder {
             expression = statement.text.trim().substring(7).trim();
         }
         TypeRef resultType = canonicalV10SummaryType(function.returnTypeRef, Map.of());
+        if ("string".equalsIgnoreCase(function.returnTypeRef.name())
+                && expression.matches("\"[^\"\\\\\\r\\n]*\"")) {
+            return CheckedExpr.stringLiteral(expression.substring(1, expression.length() - 1), resultType);
+        }
         if ("float".equalsIgnoreCase(function.returnTypeRef.name())
                 && expression.matches("[-+]?(?:[0-9]+\\.[0-9]+|[0-9]+[eE][+-]?[0-9]+|[0-9]+\\.[0-9]+[eE][+-]?[0-9]+)")) {
             return CheckedExpr.floatLiteral(expression, resultType);
