@@ -13820,3 +13820,16 @@ compare byte-for-byte with C++.
 Validation: clean Java build and all eleven unit-test classes pass in ABI-v9
 and staged ABI-v10; `git diff --check` passes. Nested/cross-domain routes,
 failure handlers, and final acceptance remain open.
+
+### Phase 25.3 continuation — nested function traces in handlers
+
+A trace comparison of `examples/phase2_safety.moss` exposed duplicate caller
+reads for simple direct-call arguments, wrong nested call depth inside a domain
+handler, and expanded object message details. Java now skips the redundant
+argument read, derives nested call depth from its active event stack, carries
+domain context on nested function events, and summarizes object message values
+by their Moss type. The complete example trace and stdout now match C++ exactly.
+
+Validation: clean Java build and all eleven unit-test classes pass in ABI-v9
+and staged ABI-v10; `git diff --check` passes. Other nested domain and ownership
+cases and final acceptance remain open.

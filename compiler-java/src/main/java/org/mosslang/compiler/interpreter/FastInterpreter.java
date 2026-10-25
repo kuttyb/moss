@@ -355,7 +355,8 @@ public class FastInterpreter {
                 + "\",\"semantic_identity\":\"" + jsonEscape(identity)
                 + "\",\"line\":" + line + traceContextFields()
                 + ",\"depth\":" + traceParentStack.size()
-                + (detail == null ? "" : ",\"detail\":\"" + jsonEscape(detail) + "\"") + "}");
+                + (detail == null ? "" : ",\"detail\":\"" + jsonEscape(detail) + "\"")
+                + traceDomainFields() + "}");
         return eventId;
     }
 
@@ -371,7 +372,8 @@ public class FastInterpreter {
                 + "\",\"semantic_identity\":\"" + jsonEscape(identity)
                 + "\",\"line\":" + line + traceContextFields()
                 + ",\"depth\":" + traceParentStack.size()
-                + (detail == null ? "" : ",\"detail\":\"" + jsonEscape(detail) + "\"") + "}");
+                + (detail == null ? "" : ",\"detail\":\"" + jsonEscape(detail) + "\"")
+                + traceDomainFields() + "}");
         return eventId;
     }
 
@@ -686,7 +688,7 @@ public class FastInterpreter {
             } else if (s.kind == Stmt.Kind.Reply || s.kind == Stmt.Kind.Return) {
                 Value rVal = (s.a != null && !s.a.isEmpty()) ? evalExpr(s.a, locals, currentDomain) : Value.ofUnit();
                 traceSimpleEvent(s, funcName, s.kind == Stmt.Kind.Reply ? "reply" : "Return",
-                        rVal.toString(), depth);
+                        traceValueSummary(rVal), depth);
                 throw new ReturnSignal(rVal);
             }
             lastVal = evalStmt(s, locals, currentDomain, funcName, depth);
@@ -877,7 +879,7 @@ public class FastInterpreter {
                     if (i > 0) argDetails.append(", ");
                     Value v = evalExpr(s.args.get(i), locals, currentDomain);
                     args.add(v);
-                    argDetails.append(v.toString());
+                    argDetails.append(traceValueSummary(v));
                 }
 
                 eventId++;
@@ -968,7 +970,7 @@ public class FastInterpreter {
                         + "\",\"semantic_identity\":\"" + jsonEscape(oldIdentity) + "\",\"line\":" + s.line
                         + ",\"parent_event_id\":" + msgCallId + ",\"message_event_id\":" + msgCallId
                         + ",\"handler_event_id\":" + handlerEnterId + ",\"depth\":" + (depth + 1)
-                        + ",\"detail\":\"" + jsonEscape(retVal.toString()) + "\",\"instance\":\""
+                        + ",\"detail\":\"" + jsonEscape(traceValueSummary(retVal)) + "\",\"instance\":\""
                         + jsonEscape(targetDomain.name) + "\",\"specialization\":\"domain-specialization:"
                         + jsonEscape(targetDomain.domain.name) + ":" + jsonEscape(targetDomain.name.substring(targetDomain.name.lastIndexOf("::") + 2))
                         + "\",\"handler\":\"" + jsonEscape(handlerName) + "\"}");
@@ -1514,6 +1516,10 @@ public class FastInterpreter {
         }
         if (p > 0 && expr.endsWith(")")) {
             String callee = expr.substring(0, p).trim();
+            boolean sourceCallable = program.functions.stream().anyMatch(f -> f.name.equals(callee)
+                    || f.name.endsWith("__" + callee) || callee.endsWith("." + f.name))
+                    || program.objects.stream().flatMap(obj -> obj.methods.stream())
+                    .anyMatch(method -> method.name.equals(callee.substring(callee.lastIndexOf('.') + 1)));
             if (callee.equals("FileIO.open") || expr.contains("FileIO.open(")) {
                 throw new org.mosslang.compiler.diagnostics.CompileError(
                         0,
@@ -1545,7 +1551,10 @@ public class FastInterpreter {
                     if (colIdx > 0) {
                         a = a.substring(colIdx + 1).trim();
                     }
-                    evaluatedArgs.add(evalExpr(a, locals, currentDomain));
+                    if (sourceCallable && a.matches("[A-Za-z_][A-Za-z0-9_]*") && locals.containsKey(a))
+                        evaluatedArgs.add(locals.get(a));
+                    else
+                        evaluatedArgs.add(evalExpr(a, locals, currentDomain));
                 }
             }
 
@@ -1794,7 +1803,7 @@ public class FastInterpreter {
                                 boolean completed = false;
                                 try {
                                     res = evalBlock(m.body, 0, m.body.size(), mLocals, null, methodFunction,
-                                            trace && enterId != 0 ? 1 : 0);
+                                            trace && enterId != 0 ? traceParentStack.size() : 0);
                                     if (m.resultExpression != null && !m.resultExpression.isEmpty()) {
                                         res = evalExpr(m.resultExpression, mLocals, null);
                                     }
@@ -1807,7 +1816,7 @@ public class FastInterpreter {
                                     if (completed) {
                                         if (!explicitReturn)
                                             traceMethodEvent(m, "Return", m.resultLine > 0 ? m.resultLine : m.line,
-                                                    res.toString());
+                                                    traceValueSummary(res));
                                         traceMethodEvent(m, "MethodExit", m.resultLine > 0 ? m.resultLine : m.line, null);
                                     }
                                     if (trace && enterId != 0) {
@@ -1910,7 +1919,7 @@ public class FastInterpreter {
                     boolean completed = false;
                     try {
                         res = evalBlock(f.body, 0, f.body.size(), fnLocals, null, f.name,
-                                trace && enterId != 0 ? 1 : 0);
+                                trace && enterId != 0 ? traceParentStack.size() : 0);
                         if (f.resultExpression != null && !f.resultExpression.isEmpty()) {
                             res = evalExpr(f.resultExpression, fnLocals, null);
                         }
@@ -1923,7 +1932,7 @@ public class FastInterpreter {
                         if (completed) {
                             if (!explicitReturn)
                                 traceFunctionEvent(f, "Return", f.resultLine > 0 ? f.resultLine : f.line,
-                                        res.toString());
+                                        traceValueSummary(res));
                             traceFunctionEvent(f, "FunctionExit", f.resultLine > 0 ? f.resultLine : f.line);
                         }
                         if (trace && enterId != 0) {
@@ -1978,7 +1987,13 @@ public class FastInterpreter {
                             Collections.emptyList(), Collections.emptyList());
                     return enumConstructor != null ? enumConstructor : Value.ofString(expr);
                 }
-                Value recvVal = evalExpr(recvExpr, locals, currentDomain);
+                Value recvVal;
+                if (locals.containsKey(recvExpr)) {
+                    recvVal = locals.get(recvExpr);
+                    traceLocalRead(expr);
+                } else {
+                    recvVal = evalExpr(recvExpr, locals, currentDomain);
+                }
                 if (recvVal != null && recvVal.kind == Value.Kind.OBJECT && recvVal.raw instanceof Map<?, ?> fm) {
                     Object fVal = fm.get(fieldOrVariant);
                     if (fVal instanceof Value v) {

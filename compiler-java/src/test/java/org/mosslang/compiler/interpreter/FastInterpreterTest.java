@@ -25,6 +25,7 @@ public final class FastInterpreterTest {
         testExceptionalFunctionTraceUnwindsCallContext();
         testDomainConstructionTraceIsStructured();
         testDomainMessageTraceCarriesHandlerContext();
+        testLocalArgumentTraceOccursInsideCallee();
         System.out.println("FastInterpreterTest PASSED.");
     }
 
@@ -441,6 +442,33 @@ public final class FastInterpreterTest {
                 || !events.contains("\"message_event_id\":3,\"handler_event_id\":4")
                 || !"worker: 10\ncurrent: 10\n".equals(stdout.toString(StandardCharsets.UTF_8))) {
             throw new AssertionError("domain message trace lost handler context: " + events);
+        }
+    }
+
+    private static void testLocalArgumentTraceOccursInsideCallee() {
+        var program = Parser.parseSource(""
+                + "fn identity(value: Int) -> Int:\n"
+                + "  return value\n"
+                + "fn main():\n"
+                + "  let number = 3\n"
+                + "  echo identity(number)\n",
+                "fast-interpreter-call-argument-trace.moss");
+        new CheckedProgram(program).run();
+
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+        ByteArrayOutputStream trace = new ByteArrayOutputStream();
+        new FastInterpreter(program, true,
+                new PrintStream(stdout, true, StandardCharsets.UTF_8),
+                new PrintStream(trace, true, StandardCharsets.UTF_8)).run();
+        String expected = ""
+                + "{\"event_id\":1,\"event\":\"LocalWrite\",\"function\":\"main\",\"source_file\":\"fast-interpreter-call-argument-trace.moss\",\"semantic_identity\":\"main@3\",\"line\":4,\"depth\":0,\"detail\":\"number\",\"after\":\"3\"}\n"
+                + "{\"event_id\":2,\"event\":\"FunctionEnter\",\"function\":\"identity\",\"source_file\":\"fast-interpreter-call-argument-trace.moss\",\"semantic_identity\":\"fn:identity@1\",\"line\":1,\"depth\":0}\n"
+                + "{\"event_id\":3,\"event\":\"LocalRead\",\"function\":\"identity\",\"source_file\":\"fast-interpreter-call-argument-trace.moss\",\"semantic_identity\":\"fn:identity@1\",\"line\":2,\"parent_event_id\":2,\"call_event_id\":2,\"depth\":1,\"detail\":\"value\"}\n"
+                + "{\"event_id\":4,\"event\":\"Return\",\"function\":\"identity\",\"source_file\":\"fast-interpreter-call-argument-trace.moss\",\"semantic_identity\":\"fn:identity@1\",\"line\":2,\"parent_event_id\":2,\"call_event_id\":2,\"depth\":1,\"detail\":\"3\"}\n"
+                + "{\"event_id\":5,\"event\":\"FunctionExit\",\"function\":\"identity\",\"source_file\":\"fast-interpreter-call-argument-trace.moss\",\"semantic_identity\":\"fn:identity@1\",\"line\":1,\"parent_event_id\":2,\"call_event_id\":2,\"depth\":1}\n";
+        if (!expected.equals(trace.toString(StandardCharsets.UTF_8))
+                || !"3\n".equals(stdout.toString(StandardCharsets.UTF_8))) {
+            throw new AssertionError("direct call argument generated an extra trace read: " + trace);
         }
     }
 }
