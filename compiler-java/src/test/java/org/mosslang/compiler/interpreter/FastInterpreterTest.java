@@ -49,6 +49,7 @@ public final class FastInterpreterTest {
         testPipelineStageUsesFunctionCallTrace();
         testFilterPipelineUsesPlaceholder();
         testGeneralPipelineCallbacksAndTerminals();
+        testSortAndReverseRuntimeSemantics();
         testTypedVectorFunctionTraceIncludesElementSpecialization();
         testFunctionTraceIncludesSelectedSpecialization();
         testNestedDomainFailurePropagatesToCallerRecovery();
@@ -1170,6 +1171,36 @@ public final class FastInterpreterTest {
         String expected = "12\n24\n5\ntrue\ntrue\ntrue 3\ntrue\nfalse\n101 103\n";
         if (!expected.equals(stdout.toString(StandardCharsets.UTF_8))) {
             throw new AssertionError("general pipeline callback or terminal result was wrong: " + stdout);
+        }
+    }
+
+    private static void testSortAndReverseRuntimeSemantics() {
+        var program = Parser.parseSource(""
+                + "fn negate(value: Int) -> Int:\n"
+                + "  return 0 - value\n"
+                + "fn main():\n"
+                + "  var direct = [5, 2, 8, 1, 9]\n"
+                + "  sort(direct)\n"
+                + "  echo direct[0], direct[1], direct[2], direct[3], direct[4]\n"
+                + "  var keyed = [1, 2, 3, 4, 5]\n"
+                + "  sort(keyed, by: negate)\n"
+                + "  echo keyed[0], keyed[1], keyed[2], keyed[3], keyed[4]\n"
+                + "  var reversed = [5, 1, 4, 2]\n"
+                + "  sort(reversed, by: Reverse(negate))\n"
+                + "  echo reversed[0], reversed[1], reversed[2], reversed[3]\n"
+                + "  nan = 0.0 / 0.0\n"
+                + "  var floats = [nan, 1.0, 0.0, -0.0, -10.0]\n"
+                + "  sort(floats)\n"
+                + "  echo floats[0], floats[1], floats[2], floats[3], floats[4]\n",
+                "fast-interpreter-sort.moss");
+        new CheckedProgram(program).run();
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+        new FastInterpreter(program, false, new PrintStream(stdout),
+                new PrintStream(new ByteArrayOutputStream())).run();
+        String expected = "1 2 5 8 9\n5 4 3 2 1\n1 2 4 5\n-10.0 -0.0 0.0 1.0 NaN\n";
+        String actual = stdout.toString(StandardCharsets.UTF_8);
+        if (!expected.equals(actual)) {
+            throw new AssertionError("sort/reverse produced unexpected output: " + actual);
         }
     }
 

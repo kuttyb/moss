@@ -362,6 +362,9 @@ public class ExpressionTyper {
                     }
                     return TypeRef.unit();
                 }
+                if ("sort".equals(callee)) {
+                    return inferSort(argExprs, line, env);
+                }
                 if ("range".equals(callee)) {
                     if (!e.equals(allowedRangeForSource)) {
                         throw new CompileError(line,
@@ -1068,6 +1071,171 @@ public class ExpressionTyper {
             }
         }
         return TypeRef.builtin("vector", List.of(solver.resolve(elemType)));
+    }
+
+    private TypeRef inferSort(List<String> arguments, int line, TypeEnv env) {
+        if (arguments.isEmpty() || arguments.size() > 2) {
+            throw new CompileError(line,
+                    "sort expects sort(v), sort(v, by: key), or sort(v, by: Reverse(key))",
+                    "SORT_SIGNATURE");
+        }
+        String place = arguments.get(0).trim();
+        if (!place.matches("[A-Za-z_][A-Za-z0-9_]*(?:\\s*(?:\\.[A-Za-z_][A-Za-z0-9_]*|\\[[^]]+\\]))*")) {
+            throw new CompileError(line, "sort requires an assignable Vector place, found '" + place + "'",
+                    "SORT_REQUIRES_PLACE");
+        }
+        TypeRef vectorType = solver.resolve(infer(place, line, env));
+        if (vectorType.kind() != TypeKind.Builtin || !"vector".equals(vectorType.name())
+                || vectorType.typeArgs().isEmpty()) {
+            throw new CompileError(line, "sort requires a Vector place, found '"
+                    + vectorType.toCanonicalString() + "'", "SORT_REQUIRES_VECTOR");
+        }
+        TypeRef elementType = solver.resolve(vectorType.typeArgs().get(0));
+        if (arguments.size() == 1) {
+            if (!isTotalOrderScalar(elementType)) {
+                throw new CompileError(line, "sort(v) requires Int, Float, Char, String, or Bool elements, found '"
+                        + elementType.toCanonicalString() + "'; supply sort(v, by: key)", "SORT_KEY_UNORDERED");
+            }
+            return TypeRef.unit();
+        }
+
+        String named = arguments.get(1).trim();
+        int colon = topLevelColon(named);
+        if (colon < 0 || !"by".equals(named.substring(0, colon).trim())) {
+            throw new CompileError(line, "sort's second argument must be 'by: key'", "SORT_SIGNATURE");
+        }
+        String key = named.substring(colon + 1).trim();
+        if (key.startsWith("Reverse(") && key.endsWith(")")) {
+            List<String> reverseArguments = parseArguments(key.substring(8, key.length() - 1));
+            if (reverseArguments.size() != 1) {
+                throw new CompileError(line, "Reverse expects one key function", "SORT_SIGNATURE");
+            }
+            key = reverseArguments.get(0).trim();
+        }
+        if (!key.matches("[A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)*")) {
+            throw new CompileError(line, "sort key must be a named function, found '" + key + "'",
+                    "SORT_KEY_CALLABLE");
+        }
+        Function keyFunction = functions.get(key);
+        if (keyFunction == null) keyFunction = functions.get(key.replace(".", "__"));
+        if (keyFunction == null) {
+            throw new CompileError(line, "sort key must be a named function, found '" + key + "'",
+                    "SORT_KEY_CALLABLE");
+        }
+        TypeEnv keyEnv = env.copy();
+        keyEnv.put("__moss_sort_key_item", elementType);
+        TypeRef result = solver.resolve(infer(key + "(__moss_sort_key_item)", line, keyEnv));
+        if (!isTotalOrderScalar(result)) {
+            throw new CompileError(line, "sort key '" + key
+                    + "' must return Int, Float, Char, String, or Bool, found '"
+                    + result.toCanonicalString() + "'", "SORT_KEY_UNORDERED");
+        }
+        if (!keyFunction.parameterAccessModes.isEmpty()
+                && keyFunction.parameterAccessModes.get(0) == AccessMode.Write) {
+            throw new CompileError(line, "sort key '" + key + "' must not write its argument",
+                    "SORT_KEY_IMPURE");
+        }
+        String effectBarrier = sortKeyEffectBarrier(keyFunction, new HashSet<>());
+        if (effectBarrier != null) {
+            throw new CompileError(line, "sort key '" + key + "' must be pure; it has "
+                    + effectBarrier, "SORT_KEY_IMPURE");
+        }
+        return TypeRef.unit();
+    }
+
+    private String sortKeyEffectBarrier(Function function, Set<String> visiting) {
+        if (function == null) return "unresolved effect";
+        if (!visiting.add(function.name)) return "possible divergence";
+        try {
+            for (Stmt statement : function.body) {
+                if (statement.kind == Stmt.Kind.Echo) return "external/I/O effect";
+                if (statement.kind == Stmt.Kind.Message) return "message effect";
+                if (statement.kind == Stmt.Kind.Raise) return "raising effect";
+                if (statement.kind == Stmt.Kind.While || statement.kind == Stmt.Kind.For)
+                    return "possible divergence";
+                List<String> expressions = new ArrayList<>();
+                if (statement.text != null) expressions.add(statement.text);
+                if (statement.a != null) expressions.add(statement.a);
+                if (statement.b != null) expressions.add(statement.b);
+                if (statement.args != null) expressions.addAll(statement.args);
+                for (String expression : expressions) {
+                    String barrier = sortKeyExpressionBarrier(expression, visiting);
+                    if (barrier != null) return barrier;
+                }
+            }
+            return function.resultExpression == null ? null
+                    : sortKeyExpressionBarrier(function.resultExpression, visiting);
+        } finally {
+            visiting.remove(function.name);
+        }
+    }
+
+    private String sortKeyExpressionBarrier(String expression, Set<String> visiting) {
+        if (expression == null || expression.isEmpty()) return null;
+        java.util.regex.Matcher calls = java.util.regex.Pattern
+                .compile("(?<![A-Za-z0-9_])([A-Za-z_][A-Za-z0-9_.]*)\\s*\\(")
+                .matcher(expression);
+        while (calls.find()) {
+            String callee = calls.group(1);
+            if (Set.of("Vector", "Map", "Queue", "Set", "Some", "None", "Reverse",
+                    "len", "size", "sqrt", "is_nan", "is_finite").contains(callee)) continue;
+            if (Set.of("assert", "assertEqual", "fail").contains(callee))
+                return "possible panic";
+            Function called = functions.get(callee);
+            if (called == null) called = functions.get(callee.replace(".", "__"));
+            if (called != null) {
+                String barrier = sortKeyEffectBarrier(called, visiting);
+                if (barrier != null) return barrier;
+                continue;
+            }
+            int dot = callee.lastIndexOf('.');
+            if (dot > 0) {
+                String methodName = callee.substring(dot + 1);
+                for (ObjectType object : objects.values()) {
+                    for (Method method : object.methods) {
+                        if (!method.name.equals(methodName)) continue;
+                        if (method.receiverAccessMode != AccessMode.Read) return "local mutation effect";
+                        for (Stmt statement : method.body) {
+                            if (statement.kind == Stmt.Kind.Echo) return "external/I/O effect";
+                            if (statement.kind == Stmt.Kind.Message) return "message effect";
+                            if (statement.kind == Stmt.Kind.Raise) return "raising effect";
+                        }
+                        continue;
+                    }
+                }
+            }
+            return "unresolved effect";
+        }
+        return null;
+    }
+
+    private static boolean isTotalOrderScalar(TypeRef type) {
+        if (type == null) return false;
+        return switch (type.name()) {
+            case "int", "float", "char", "string", "bool" -> true;
+            default -> false;
+        };
+    }
+
+    private static int topLevelColon(String value) {
+        int paren = 0, bracket = 0, brace = 0;
+        boolean inString = false, escaped = false;
+        for (int index = 0; index < value.length(); index++) {
+            char current = value.charAt(index);
+            if (inString) {
+                if (escaped) escaped = false;
+                else if (current == '\\') escaped = true;
+                else if (current == '"') inString = false;
+            } else if (current == '"') inString = true;
+            else if (current == '(') paren++;
+            else if (current == ')') paren--;
+            else if (current == '[') bracket++;
+            else if (current == ']') bracket--;
+            else if (current == '{') brace++;
+            else if (current == '}') brace--;
+            else if (current == ':' && paren == 0 && bracket == 0 && brace == 0) return index;
+        }
+        return -1;
     }
 
     private void requireStringMethodArgs(String member, List<String> args, int arity, int line, TypeEnv env) {

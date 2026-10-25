@@ -1257,6 +1257,27 @@ public class SemanticChecker {
         };
     }
 
+    private static int matchingCloseParen(String expression, int open) {
+        if (expression == null || open < 0 || open >= expression.length()
+                || expression.charAt(open) != '(') return -1;
+        int depth = 0;
+        boolean inString = false;
+        boolean escaped = false;
+        for (int index = open; index < expression.length(); index++) {
+            char current = expression.charAt(index);
+            if (inString) {
+                if (escaped) escaped = false;
+                else if (current == '\\') escaped = true;
+                else if (current == '"') inString = false;
+                continue;
+            }
+            if (current == '"') inString = true;
+            else if (current == '(') depth++;
+            else if (current == ')' && --depth == 0) return index;
+        }
+        return -1;
+    }
+
     private void validateRangeForSource(int line, String expression, ExpressionTyper typer,
                                         TypeSolver solver, TypeEnv env) {
         if (expression == null) return;
@@ -2063,6 +2084,31 @@ public class SemanticChecker {
 
     private void requireAvailable(int line, String expression, OwnershipEnv env) {
         if (expression == null || expression.isEmpty()) return;
+        if (!functions.containsKey("sort")) {
+            java.util.regex.Matcher sortCall = java.util.regex.Pattern
+                    .compile("(?<![A-Za-z0-9_.])sort\\s*\\(").matcher(expression);
+            while (sortCall.find()) {
+                int open = expression.indexOf('(', sortCall.start());
+                int close = matchingCloseParen(expression, open);
+                if (close < 0) continue;
+                List<String> args = ExpressionTyper.parseArguments(
+                        expression.substring(open + 1, close));
+                if (args.isEmpty()) continue;
+                String place = callArgumentValue(args.get(0));
+                String root = place;
+                int separator = root.length();
+                int dot = root.indexOf('.');
+                int bracket = root.indexOf('[');
+                if (dot >= 0) separator = Math.min(separator, dot);
+                if (bracket >= 0) separator = Math.min(separator, bracket);
+                root = root.substring(0, separator).trim();
+                if (env.immutables.contains(root)) {
+                    throw new CompileError(line, "cannot mutate immutable local '" + root
+                            + "'; declare it with `var` if mutation is intended",
+                            "IMMUTABLE_LOCAL_MUTATION");
+                }
+            }
+        }
         java.util.regex.Matcher methodCall = java.util.regex.Pattern
                 .compile("(?<![A-Za-z0-9_])([A-Za-z_][A-Za-z0-9_]*(?:\\s*\\.\\s*[A-Za-z_][A-Za-z0-9_]*)*)"
                         + "\\s*\\.\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*\\(")
@@ -2385,6 +2431,7 @@ public class SemanticChecker {
         if (fn == null || paramIdx < 0 || paramIdx >= fn.params.size()) return false;
         String pName = fn.params.get(paramIdx).name;
         TypeRef parameterType = functionParameterType(fn.params.get(paramIdx));
+        if (!functions.containsKey("sort") && functionSortsRootedIn(fn, pName)) return true;
         if (functionCallsPassingParamToWritingMethod(fn, pName, parameterType)) return true;
         if (functionCallsWritingNestedReceiver(fn, pName, parameterType)) return true;
         if (functionCallWritesParam(fn, pName, parameterType)) return true;
@@ -2431,6 +2478,29 @@ public class SemanticChecker {
                     || t.startsWith(pName + ".append(") || t.startsWith(pName + ".reserve(")
                     || t.startsWith(pName + " =") || t.startsWith(pName + "=") || t.startsWith(pName + "[")) {
                 return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean functionSortsRootedIn(Function function, String parameterName) {
+        List<String> expressions = new ArrayList<>();
+        for (Stmt statement : function.body) expressions.add(statementExpressionText(statement));
+        if (function.resultExpression != null) expressions.add(function.resultExpression);
+        java.util.regex.Pattern sortCall = java.util.regex.Pattern
+                .compile("(?<![A-Za-z0-9_.])sort\\s*\\(");
+        for (String expression : expressions) {
+            java.util.regex.Matcher matcher = sortCall.matcher(expression);
+            while (matcher.find()) {
+                int open = expression.indexOf('(', matcher.start());
+                int close = matchingCloseParen(expression, open);
+                if (close < 0) continue;
+                List<String> args = ExpressionTyper.parseArguments(
+                        expression.substring(open + 1, close));
+                if (args.isEmpty()) continue;
+                String place = callArgumentValue(args.get(0));
+                if (place.equals(parameterName) || place.startsWith(parameterName + ".")
+                        || place.startsWith(parameterName + "[")) return true;
             }
         }
         return false;

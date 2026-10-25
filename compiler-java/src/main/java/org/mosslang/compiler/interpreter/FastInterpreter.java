@@ -177,6 +177,60 @@ public class FastInterpreter {
         return true;
     }
 
+    private Value evalSortKey(String functionName, Value value, Map<String, Value> locals,
+                              DomainInstance currentDomain) {
+        Function function = program.functions.stream()
+                .filter(candidate -> candidate.name.equals(functionName)).findFirst().orElse(null);
+        if (function == null || function.params.isEmpty()) return Value.ofUnit();
+        String temporary = "__moss_sort_key_argument";
+        boolean hadPrevious = locals.containsKey(temporary);
+        Value previous = locals.get(temporary);
+        locals.put(temporary, value);
+        try {
+            return evalExpr(function.name + "(" + temporary + ")", locals, currentDomain);
+        } finally {
+            if (hadPrevious) locals.put(temporary, previous);
+            else locals.remove(temporary);
+        }
+    }
+
+    private static int compareSortValues(Value left, Value right) {
+        if (left.kind == Value.Kind.FLOAT || right.kind == Value.Kind.FLOAT) {
+            double a = left.asFloat();
+            double b = right.asFloat();
+            if (mossFloatLess(a, b)) return -1;
+            if (mossFloatLess(b, a)) return 1;
+            return 0;
+        }
+        return switch (left.kind) {
+            case INT -> Long.compare(left.asInt(), right.asInt());
+            case BOOL -> Boolean.compare(left.asBool(), right.asBool());
+            case CHAR -> Integer.compare((int) left.raw, (int) right.raw);
+            case STRING -> compareCodePointStrings(left.asString(), right.asString());
+            default -> throw new IllegalArgumentException("sort key is not a total-order scalar");
+        };
+    }
+
+    private static boolean mossFloatLess(double left, double right) {
+        if (Double.isNaN(left)) return false;
+        if (Double.isNaN(right)) return true;
+        if (left == 0.0 && right == 0.0)
+            return Double.doubleToRawLongBits(left) < 0
+                    && Double.doubleToRawLongBits(right) >= 0;
+        return left < right;
+    }
+
+    private static int compareCodePointStrings(String left, String right) {
+        int[] leftPoints = left.codePoints().toArray();
+        int[] rightPoints = right.codePoints().toArray();
+        int limit = Math.min(leftPoints.length, rightPoints.length);
+        for (int index = 0; index < limit; index++) {
+            int comparison = Integer.compare(leftPoints[index], rightPoints[index]);
+            if (comparison != 0) return comparison;
+        }
+        return Integer.compare(leftPoints.length, rightPoints.length);
+    }
+
     public static class DomainInstance {
         public final Domain domain;
         public String name;
@@ -2077,6 +2131,8 @@ public class FastInterpreter {
             }
             String argsStr = expr.substring(p + 1, expr.length() - 1).trim();
             List<String> argList = splitArgs(argsStr);
+            boolean builtinSort = "sort".equals(callee)
+                    && program.functions.stream().noneMatch(function -> function.name.equals("sort"));
             boolean mapDeleteOutParameter = false;
             if (!expr.startsWith("message ") && callee.contains(".")) {
                 int receiverDot = callee.lastIndexOf('.');
@@ -2107,6 +2163,22 @@ public class FastInterpreter {
             try {
             for (int argumentIndex = 0; argumentIndex < argList.size(); argumentIndex++) {
                 String a = argList.get(argumentIndex);
+                if (builtinSort && argumentIndex == 0) {
+                    String target = a.trim();
+                    Value targetValue = locals.get(target);
+                    if (targetValue == null && currentDomain != null
+                            && currentDomain.state.containsKey(target)) {
+                        targetValue = withTraceStatePath(currentDomain.state.get(target), target);
+                    }
+                    if (targetValue != null) {
+                        evaluatedArgs.add(targetValue);
+                        continue;
+                    }
+                }
+                if (builtinSort && argumentIndex == 1) {
+                    evaluatedArgs.add(Value.ofUnit());
+                    continue;
+                }
                 if (!a.isEmpty()) {
                     int colIdx = -1;
                     int pDepth = 0;
@@ -2145,6 +2217,44 @@ public class FastInterpreter {
 
             Value enumConstructor = makeEnumValue(callee, argList, evaluatedArgs);
             if (enumConstructor != null) return enumConstructor;
+
+            if (builtinSort) {
+                if (evaluatedArgs.isEmpty() || !(evaluatedArgs.get(0).raw instanceof List<?> rawValues))
+                    return Value.ofUnit();
+                @SuppressWarnings("unchecked")
+                List<Value> values = (List<Value>) rawValues;
+                String keyName = null;
+                boolean reverse = false;
+                if (argList.size() > 1) {
+                    String named = argList.get(1).trim();
+                    int colon = named.indexOf(':');
+                    String key = colon < 0 ? named : named.substring(colon + 1).trim();
+                    if (key.startsWith("Reverse(") && key.endsWith(")")) {
+                        reverse = true;
+                        key = key.substring(8, key.length() - 1).trim();
+                    }
+                    keyName = key;
+                    for (Function function : program.functions) {
+                        if (function.name.equals(keyName) || function.name.endsWith("__" + keyName)
+                                || function.name.equals(keyName.replace('.', '_'))
+                                || function.name.equals(keyName.replace(".", "__"))) {
+                            keyName = function.name;
+                            break;
+                        }
+                    }
+                }
+                final String resolvedKey = keyName;
+                final boolean descending = reverse;
+                values.sort((left, right) -> {
+                    Value leftKey = resolvedKey == null ? left
+                            : evalSortKey(resolvedKey, left, locals, currentDomain);
+                    Value rightKey = resolvedKey == null ? right
+                            : evalSortKey(resolvedKey, right, locals, currentDomain);
+                    int comparison = compareSortValues(leftKey, rightKey);
+                    return descending ? -comparison : comparison;
+                });
+                return Value.ofUnit();
+            }
 
             String compactBuiltinCallee = callee.replaceAll("\\s+", "");
             if (compactBuiltinCallee.equals("Vector") || compactBuiltinCallee.startsWith("Vector[")) {

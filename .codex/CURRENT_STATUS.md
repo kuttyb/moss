@@ -15963,3 +15963,26 @@ its expression checker. This is a real supported-language gap that spans type
 checking, WRITE effects, Rust lowering, and Fast Debug. It remains open; the
 next useful milestone is to inspect those C++ contracts and implement the
 supported forms with focused tests. No sort code was changed in this checkpoint.
+
+### Phase 25.3 continuation — bounded built-in sort implementation
+
+Java now recognizes `sort(v)`, `sort(v, by: key)`, and
+`sort(v, by: Reverse(key))`. The semantic path checks vector-place shape,
+scalar ordering, named-key signature/result, and a bounded purity/effect barrier;
+WRITE effects propagate through helper parameters. Rust generation emits stable
+in-place ordering and Moss float total ordering. Fast Debug sorts mutable
+vectors, including keyed and reverse cases.
+
+Validation on the current working tree: all twelve Java test classes pass under
+ABI-v9 and staged ABI-v10; standalone packaging succeeds and its bootstrap
+reports `moss-0.1`; feedback validation and `git diff --check` pass. Focused
+C++/Java checks agree on valid direct/keyed/reverse/object-key sorts and the
+impure-key rejection. Selected Java and C++ Fast Debug sort fixtures produce
+identical stdout for integer, reverse, and NaN/signed-zero ordering. Generated
+Rust was inspected for these cases but not compiled or executed. Fast Debug
+trace parity for sort key invocations remains unverified, and the purity check
+is intentionally not a complete effect-summary implementation. This is a
+bounded language/backend slice, not evidence of general compiler parity;
+source-free ABI validation, broader accepted-surface coverage, Margo/SDK
+acceptance, daemon lifecycle, native gates, and frozen-candidate review remain
+open.

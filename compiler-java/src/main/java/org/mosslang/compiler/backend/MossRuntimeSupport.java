@@ -44,6 +44,21 @@ fn __moss_format_float(value: f64) -> String {
     }
     output
 }
+#[inline(always)]
+fn moss_float_less(a: f64, b: f64) -> bool {
+    if a.is_nan() { return false; }
+    if b.is_nan() { return true; }
+    if a == 0.0 && b == 0.0 {
+        return (a.to_bits() >> 63) > (b.to_bits() >> 63);
+    }
+    a < b
+}
+#[inline(always)]
+fn moss_float_total_cmp(a: f64, b: f64) -> std::cmp::Ordering {
+    if moss_float_less(a, b) { std::cmp::Ordering::Less }
+    else if moss_float_less(b, a) { std::cmp::Ordering::Greater }
+    else { std::cmp::Ordering::Equal }
+}
 // ─── End Moss Float Format Runtime ───────────────────────────────────────
 """;
 

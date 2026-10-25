@@ -43,6 +43,7 @@ public class SemanticCheckerTest {
         testNestedObjectFieldWriteLowersMutableReceiver();
         testUnsupportedCollectionsAreRejectedAsForIterablesAtLoopSite();
         testRangeForRequiresPositiveNonzeroLiteralStep();
+        testSortSemanticContractAndWriteEffects();
         testTypedOnFailLocalCaptureLowering();
         testOnFailRejectsLocalInitializedAfterRaise();
         testOnFailCaptureUsesMatchingRaisedVariant();
@@ -1794,6 +1795,47 @@ public class SemanticCheckerTest {
                 + "  for index in range(0, 3, +2):\n"
                 + "    pass\n", "range-for-valid.moss");
         new SemanticChecker(valid).run();
+    }
+
+    private static void testSortSemanticContractAndWriteEffects() {
+        Program valid = Parser.parseSource(""
+                + "fn identity(value: Int) -> Int:\n"
+                + "  return value\n"
+                + "fn main():\n"
+                + "  var values = [3, 1, 2]\n"
+                + "  sort(values)\n"
+                + "  sort(values, by: identity)\n"
+                + "  sort(values, by: Reverse(identity))\n", "sort-semantic-valid.moss");
+        new SemanticChecker(valid).run();
+
+        assertCompileError("fn main():\n  let values = [3, 1, 2]\n  sort(values)\n",
+                "IMMUTABLE_LOCAL_MUTATION");
+        assertCompileError("fn main():\n  value = sort([3, 1, 2])\n",
+                "SORT_REQUIRES_PLACE");
+        assertCompileError("fn main():\n  var values = [3, 1, 2]\n  sort(values, identity)\n",
+                "SORT_SIGNATURE");
+        assertCompileError("fn main():\n  var values = [[3], [1]]\n  sort(values)\n",
+                "SORT_KEY_UNORDERED");
+        assertCompileError(""
+                + "fn noisy(value: Int) -> Int:\n"
+                + "  echo value\n"
+                + "  return value\n"
+                + "fn main():\n"
+                + "  var values = [3, 1, 2]\n"
+                + "  sort(values, by: noisy)\n", "SORT_KEY_IMPURE");
+
+        Program forwardedWrite = Parser.parseSource(""
+                + "fn reorder(values: Vector[Int]):\n"
+                + "  sort(values)\n"
+                + "fn main():\n"
+                + "  let values = [3, 1, 2]\n"
+                + "  reorder(values)\n", "sort-semantic-forwarded-write.moss");
+        try {
+            new SemanticChecker(forwardedWrite).run();
+            throw new AssertionError("sort's inferred WRITE effect was not propagated");
+        } catch (CompileError error) {
+            if (!"IMMUTABLE_LOCAL_MUTATION".equals(error.getCode())) throw error;
+        }
     }
 
     private static void assertNotIterable(String source) {

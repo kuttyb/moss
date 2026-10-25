@@ -2160,6 +2160,36 @@ public class NativeGenerator {
         return bindingTypeName(name, context);
     }
 
+    private static org.mosslang.compiler.types.TypeRef bindingTypeRef(String name) {
+        Program program = currentProgram.get();
+        if (program == null || program.localBindingTypes == null) return null;
+        String identity = currentEnclosingIdentity.get();
+        String context = "";
+        if (identity != null) {
+            if (identity.startsWith("main@")) context = "main";
+            else if (identity.startsWith("fn:")) {
+                String target = identity.substring(3);
+                int at = target.lastIndexOf('@');
+                context = at > 0 ? target.substring(0, at) : target;
+            }
+        }
+        Map<String, org.mosslang.compiler.types.TypeRef> bindings =
+                program.localBindingTypes.get(context);
+        org.mosslang.compiler.types.TypeRef type = bindings == null ? null : bindings.get(name);
+        if (type == null) {
+            String lookupContext = context;
+            Function function = program.functions.stream()
+                    .filter(candidate -> candidate.name.equals(lookupContext)).findFirst().orElse(null);
+            if (function != null) {
+                Param parameter = function.params.stream()
+                        .filter(candidate -> candidate.name.equals(name)).findFirst().orElse(null);
+                if (parameter != null) type = parameter.checkedTypeRef != null
+                        ? parameter.checkedTypeRef : parameter.typeRef;
+            }
+        }
+        return type;
+    }
+
     private static String bindingTypeName(String name, String context) {
         Program program = currentProgram.get();
         if (program == null) return "";
@@ -2453,6 +2483,119 @@ public class NativeGenerator {
             expr = expr.replaceAll("(?<!\\.)\\b" + f + "\\b", "self." + f);
         }
         return lowerExpr(expr, stateFields, domains, objects);
+    }
+
+    private static String lowerSortCall(List<String> arguments, Set<String> stateFields,
+                                        Map<String, Domain> domains,
+                                        Map<String, ObjectType> objects) {
+        if (arguments.isEmpty()) return "()";
+        String place = stripSortNamedValue(arguments.get(0));
+        org.mosslang.compiler.types.TypeRef vectorTypeRef = bindingTypeRef(place);
+        if (vectorTypeRef == null && place.endsWith("]")) {
+            int open = org.mosslang.compiler.semantics.ExpressionTyper
+                    .findMatchingOpenBracket(place, place.length() - 1);
+            if (open > 0) {
+                org.mosslang.compiler.types.TypeRef baseType = bindingTypeRef(
+                        place.substring(0, open).trim());
+                if (baseType != null && !baseType.typeArgs().isEmpty())
+                    vectorTypeRef = baseType.typeArgs().get(0);
+            }
+        }
+        String elementType = vectorTypeRef != null && !vectorTypeRef.typeArgs().isEmpty()
+                ? vectorTypeRef.typeArgs().get(0).toCanonicalString() : "int";
+        String target = lowerSortPlace(place, stateFields, domains, objects);
+        if (arguments.size() == 1) {
+            return "(" + target + ").sort_by(|__moss_a, __moss_b| "
+                    + sortComparison(elementType, "*__moss_a", "*__moss_b") + ")";
+        }
+
+        String named = arguments.get(1).trim();
+        int colon = named.indexOf(':');
+        String key = colon < 0 ? named : named.substring(colon + 1).trim();
+        boolean reverse = false;
+        if (key.startsWith("Reverse(") && key.endsWith(")")) {
+            List<String> reverseArgs = splitTopLevel(key.substring(8, key.length() - 1), ',');
+            if (reverseArgs.size() == 1) {
+                reverse = true;
+                key = reverseArgs.get(0).trim();
+            }
+        }
+        String callA = lowerSortKeyCall(key, "__moss_a", elementType, stateFields, domains, objects);
+        String callB = lowerSortKeyCall(key, "__moss_b", elementType, stateFields, domains, objects);
+        String keyType = "int";
+        Program program = currentProgram.get();
+        if (program != null) {
+            Function keyFunction = findSortKeyFunction(program, key);
+            if (keyFunction != null) {
+                if (keyFunction.returnTypeRef != null)
+                    keyType = keyFunction.returnTypeRef.toCanonicalString();
+                else if (keyFunction.returnType != null && !keyFunction.returnType.isEmpty())
+                    keyType = keyFunction.returnType;
+            }
+        }
+        String left = reverse ? "__moss_kb" : "__moss_ka";
+        String right = reverse ? "__moss_ka" : "__moss_kb";
+        return "(" + target + ").sort_by(|__moss_a, __moss_b| { let __moss_ka = " + callA
+                + "; let __moss_kb = " + callB + "; "
+                + sortComparison(keyType, left, right) + " })";
+    }
+
+    private static String stripSortNamedValue(String value) {
+        String trimmed = value == null ? "" : value.trim();
+        int colon = trimmed.indexOf(':');
+        return colon > 0 ? trimmed.substring(colon + 1).trim() : trimmed;
+    }
+
+    private static String lowerSortPlace(String place, Set<String> stateFields,
+                                         Map<String, Domain> domains,
+                                         Map<String, ObjectType> objects) {
+        String value = place.trim();
+        if (value.endsWith("]")) {
+            int open = org.mosslang.compiler.semantics.ExpressionTyper
+                    .findMatchingOpenBracket(value, value.length() - 1);
+            if (open > 0) {
+                String base = lowerSortPlace(value.substring(0, open), stateFields, domains, objects);
+                String index = lowerExpr(value.substring(open + 1, value.length() - 1).trim(),
+                        stateFields, domains, objects);
+                return base + "[(" + index + ") as usize]";
+            }
+        }
+        return lowerExpr(value, stateFields, domains, objects);
+    }
+
+    private static String lowerSortKeyCall(String key, String argument, String elementType,
+                                           Set<String> stateFields, Map<String, Domain> domains,
+                                           Map<String, ObjectType> objects) {
+        Program program = currentProgram.get();
+        Function keyFunction = program == null ? null : findSortKeyFunction(program, key);
+        if (keyFunction == null) return key + "(" + argument + ")";
+        String rustPath = sourceFreeFunctionRustPath(keyFunction, key, currentGenericFunctions.get());
+        boolean copy = Set.of("int", "float", "bool", "char")
+                .contains(elementType == null ? "" : elementType.toLowerCase(Locale.ROOT));
+        org.mosslang.compiler.types.AccessMode mode = keyFunction.parameterAccessModes.isEmpty()
+                ? org.mosslang.compiler.types.AccessMode.Read : keyFunction.parameterAccessModes.get(0);
+        String actual;
+        if (copy) actual = "*" + argument;
+        else if (mode == org.mosslang.compiler.types.AccessMode.Read) actual = argument;
+        else actual = "(*" + argument + ").clone()";
+        if (currentGenericFunctions.get().contains(keyFunction.name))
+            return "__moss_fn_" + keyFunction.name + "!(" + actual + ")";
+        return rustPath + "(" + actual + ")";
+    }
+
+    private static Function findSortKeyFunction(Program program, String key) {
+        if (program == null) return null;
+        String normalized = key.replace('.', '_');
+        String internal = key.replace(".", "__");
+        return program.functions.stream().filter(function -> function.name.equals(key)
+                || function.name.equals(normalized) || function.name.equals(internal)
+                || function.declarationName.equals(key)).findFirst().orElse(null);
+    }
+
+    private static String sortComparison(String type, String left, String right) {
+        if (type != null && type.toLowerCase(Locale.ROOT).equals("float"))
+            return "moss_float_total_cmp(" + left + " as f64, " + right + " as f64)";
+        return "(" + left + ").cmp(&(" + right + "))";
     }
 
     private static boolean hasOuterParens(String s) {
@@ -3162,6 +3305,12 @@ public class NativeGenerator {
                     }
                 }
                 return "__moss_fn_" + callee + "!(" + String.join(", ", macroArgs) + ")";
+            }
+
+            if ("sort".equals(callee)) {
+                List<String> sortArgs = splitTopLevel(
+                        expr.substring(openParen + 1, expr.length() - 1).trim(), ',');
+                return lowerSortCall(sortArgs, stateFields, domains, objects);
             }
 
             if ("replace".equals(callee)) {
