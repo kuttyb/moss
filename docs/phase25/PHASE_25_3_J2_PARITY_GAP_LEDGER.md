@@ -315,3 +315,11 @@ helper's variant; unhandled and directly recovered controls also remain.
 All eleven Java unit-test classes pass in default ABI-v9 and staged ABI-v10.
 This remains a bounded source walk, not complete method, callback, bare-reraise,
 or cross-module effect closure.
+
+## Phase 25.3 continuation — same-owner method raise query
+
+Effects-query call traversal now follows same-owner object method calls,
+including method tail-result expressions. The focused `Box.calculate()` to
+`self.source_fault()` case reports `enum:Trouble:Bad` under both C++ and Java.
+All eleven Java unit tests pass in ABI-v9. This does not close effects for
+arbitrary receivers, generic/cross-module methods, or callbacks.

@@ -14752,3 +14752,14 @@ Validation: all eleven Java test classes pass in default ABI-v9 and staged
 ABI-v10. This covers direct, acyclic ordinary function calls and explicit
 call-site recovery; method/callback, bare-reraise, and cross-module effect
 closure remain open.
+
+### Phase 25.3 continuation — follow same-object method raises in effects queries
+
+The source-derived effects walk now follows same-owner method calls, including
+calls in a method's tail result expression. A `Box.calculate()` method calling
+`self.source_fault()` reports `enum:Trouble:Bad` in both C++ and Java. This is
+limited to statically named methods on the same nominal owner; arbitrary
+receiver resolution and generic/cross-module method summaries remain open.
+
+Validation: all eleven Java unit-test classes pass under ABI-v9; focused C++
+and Java queries agree on the method raise set.

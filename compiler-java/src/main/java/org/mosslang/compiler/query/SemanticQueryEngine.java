@@ -1336,6 +1336,41 @@ public class SemanticQueryEngine {
                 }
             }
         }
+        if (method != null && program != null && program.objects != null) {
+            for (ObjectType object : program.objects) {
+                if (!object.name.equals(method.owner)) continue;
+                for (Method candidate : object.methods) {
+                    if (candidate == method) continue;
+                    for (int index = 0; index < body.size(); index++) {
+                        Stmt statement = body.get(index);
+                        if (statement == null) continue;
+                        StringBuilder expression = new StringBuilder();
+                        if (statement.text != null) expression.append(statement.text).append(' ');
+                        if (statement.a != null) expression.append(statement.a).append(' ');
+                        if (statement.b != null) expression.append(statement.b).append(' ');
+                        if (statement.args != null) {
+                            for (String argument : statement.args) expression.append(argument).append(' ');
+                        }
+                        if (!containsFunctionCall(expression.toString(), candidate.name)) continue;
+                        Set<String> calledRaises = collectRaisedVariants(null, candidate, null, program, visited);
+                        for (String raised : calledRaises) {
+                            if (!isRaisedVariantRecovered(body, index, raised)) variants.add(raised);
+                        }
+                    }
+                    if (method.resultExpression != null
+                            && containsFunctionCall(method.resultExpression, candidate.name)) {
+                        variants.addAll(collectRaisedVariants(null, candidate, null, program, visited));
+                    }
+                }
+            }
+            if (method.resultExpression != null && program.functions != null) {
+                for (Function candidate : program.functions) {
+                    if (containsFunctionCall(method.resultExpression, candidate.name)) {
+                        variants.addAll(collectRaisedVariants(candidate, null, null, program, visited));
+                    }
+                }
+            }
+        }
         return variants;
     }
 
