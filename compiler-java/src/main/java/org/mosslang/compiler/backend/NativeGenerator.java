@@ -407,6 +407,7 @@ public class NativeGenerator {
 
         // Objects
         for (ObjectType obj : program.objects) {
+            if (obj.sourceFree) continue;
             String typeIdentity = "type:" + obj.name + "@" + obj.line;
             o.append("// Moss tooling begin|type|").append(typeIdentity).append("|").append(obj.name).append("|\n");
             o.append("// Moss line ").append(obj.line).append(": type ").append(obj.name).append(":\n");
@@ -1253,7 +1254,7 @@ public class NativeGenerator {
                 }
             }
             if (!isGeneric) {
-                return base;
+                return sourceFreeRustName(base, prog);
             }
             List<String> parts = splitTopLevel(inside, ',');
             List<String> loweredParts = new ArrayList<>();
@@ -1264,8 +1265,10 @@ public class NativeGenerator {
                 }
                 loweredParts.add(rustType(p));
             }
-            return base + "<" + String.join(", ", loweredParts) + ">";
+            return sourceFreeRustName(base, prog) + "<" + String.join(", ", loweredParts) + ">";
         }
+        String sourceFreeName = sourceFreeRustName(mossType, currentProgram.get());
+        if (!sourceFreeName.equals(mossType)) return sourceFreeName;
         if (mossType.contains(".")) {
             return mossType.replace(".", "__");
         }
@@ -1282,6 +1285,19 @@ public class NativeGenerator {
             case "Executor" -> "__MossExecutor";
             default -> mossType.endsWith("Ref") ? mossType : mossType;
         };
+    }
+
+    private static String sourceFreeRustName(String mossType, Program program) {
+        if (program == null || mossType == null) return mossType;
+        for (ObjectType object : program.objects) {
+            if (!object.sourceFree || !object.name.equals(mossType)) continue;
+            if (object.definingModule == null || object.definingModule.isEmpty()
+                    || object.declarationName == null || object.declarationName.isEmpty()) {
+                return mossType;
+            }
+            return "moss_" + object.definingModule + "::" + object.declarationName;
+        }
+        return mossType;
     }
 
     private static void genBlockStmts(StringBuilder o, List<Stmt> stmts, String indent,
@@ -2584,7 +2600,8 @@ public class NativeGenerator {
                         }
                     }
                 }
-                return callee + " { " + String.join(", ", fieldAssignments) + " }";
+                return sourceFreeRustName(callee, currentProgram.get()) + " { "
+                        + String.join(", ", fieldAssignments) + " }";
             }
             if (callee.equals("Executor")) {
                 return "__MossExecutor";

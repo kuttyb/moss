@@ -12594,3 +12594,21 @@ method templates/effects, provider Rust type linkage, canonical binary ABI-v10
 nominal records, and source-free native behavior remain open. No native or SDK
 gate was run. Feedback is recorded in
 `agent-feedback/phase25/team-l7-phase25-3/source-free-object-fields/observations.jsonl`.
+
+### Phase 25.3 continuation — restore source-free object method signatures
+
+Source-free exported object records now carry method return types, ordered
+parameter names/types, a receiver effect, and the existing effect tuple in v9
+and v10 semantic records. The Java loader restores method declarations on the
+source-free object aliases. `ObjectType.sourceFree` marks imported types so
+`NativeGenerator` does not emit local structs or placeholder method bodies and
+lowers their Moss names to `moss_<module>::<Type>` paths.
+
+Validation: Java build and all ten unit-test classes pass. The focused test
+loads a synthetic interface, checks a consumer's imported method call with the
+Java semantic checker, and verifies generated Rust references the provider
+crate path without locally redefining the object. This is not Rust compilation
+or end-to-end provider artifact validation. Parameter/receiver effects and
+observable-effect derivation remain approximate; generic layouts, private
+method dependencies, canonical ABI-v10 nominal/method record encoding, and
+source-free native integration remain open.

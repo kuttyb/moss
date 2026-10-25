@@ -2,6 +2,11 @@ package org.mosslang.compiler.cli;
 
 import org.mosslang.compiler.ast.ObjectType;
 import org.mosslang.compiler.ast.Program;
+import org.mosslang.compiler.ast.Function;
+import org.mosslang.compiler.ast.Param;
+import org.mosslang.compiler.backend.NativeGenerator;
+import org.mosslang.compiler.parser.Parser;
+import org.mosslang.compiler.semantics.SemanticChecker;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -17,7 +22,10 @@ public final class SourceFreeObjectMetadataTest {
         String content = "moss-module-interface-v2\n"
                 + "provider_contract_digest sha256:" + "0".repeat(64) + "\n"
                 + "module_id sample::provider\ncontract\nobject Point\n"
-                + "semantic_exports\nexport type Point\n" + exportedFields;
+                + "semantic_exports\nexport type Point\n" + exportedFields
+                + "  object_method shift return=float receiver=WRITE "
+                + "effects=local_capture_read=0;local_mutation=0;domain_read=0;domain_write=0;message=0;external_io=0;fileio=0;fileio_unknown=0;may_panic=0;raise_set=-;may_diverge=0;unresolved=0 "
+                + "params=1 \"amount\" \"float\" READ\n";
         Files.writeString(interfaceFile, content);
         Program program = new Program();
         Main.loadMossiFunctions(interfaceFile, "provider", program);
@@ -34,6 +42,34 @@ public final class SourceFreeObjectMetadataTest {
         if (program.objects.stream().noneMatch(object -> object.name.equals("provider.Point"))) {
             throw new AssertionError("qualified source type alias was not imported");
         }
+        if (imported.methods.size() != 1
+                || !"shift".equals(imported.methods.get(0).name)
+                || !"float".equals(imported.methods.get(0).returnType)
+                || imported.methods.get(0).params.size() != 1
+                || !"amount".equals(imported.methods.get(0).params.get(0).name)
+                || !"float".equals(imported.methods.get(0).params.get(0).type)) {
+            throw new AssertionError("source-free method signature was not restored");
+        }
+        Function consumer = new Function("consume", "fn consume(value: provider__Point)",
+                1, "consumer.moss", false);
+        consumer.params.add(new Param("value", "provider__Point"));
+        consumer.setReturnType("unit");
+        program.functions.add(consumer);
+        String rust = NativeGenerator.generate(program, false);
+        if (!rust.contains("value: &moss_provider::Point")) {
+            throw new AssertionError("source-free nominal type did not lower to its provider crate path: " + rust);
+        }
+        if (rust.contains("pub struct provider__Point")
+                || rust.contains("impl provider__Point")) {
+            throw new AssertionError("source-free nominal was incorrectly redefined locally");
+        }
+        Program checkedConsumer = Parser.parseSource(""
+                + "fn use_point(point: provider__Point) -> Float:\n"
+                + "  return point.shift(2.0)\n"
+                + "fn main():\n"
+                + "  pass\n", "consumer.moss");
+        Main.loadMossiFunctions(interfaceFile, "provider", checkedConsumer);
+        new SemanticChecker(checkedConsumer).run();
         Files.deleteIfExists(interfaceFile);
         Files.deleteIfExists(scratch);
         System.out.println("SourceFreeObjectMetadataTest PASSED.");

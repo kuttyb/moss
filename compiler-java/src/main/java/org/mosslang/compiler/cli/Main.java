@@ -860,6 +860,7 @@ public class Main {
                                     canonicalName, "type " + typeName, 1, cand.toString(), true);
                             currentObject.definingModule = modName;
                             currentObject.declarationName = typeName;
+                            currentObject.sourceFree = true;
                             program.objects.add(currentObject);
                         }
                         String qualifiedName = modName + "." + typeName;
@@ -869,6 +870,7 @@ public class Main {
                                     currentObject.sourceFile, true);
                             alias.definingModule = modName;
                             alias.declarationName = typeName;
+                            alias.sourceFree = true;
                             alias.fields = currentObject.fields;
                             alias.methods = currentObject.methods;
                             program.objects.add(alias);
@@ -888,6 +890,39 @@ public class Main {
                                 fieldName, fieldType, "", "", 1, cand.toString(),
                                 fieldType.isEmpty(), true));
                     }
+                    continue;
+                }
+                if (inSemanticExports && currentObject != null
+                        && line.startsWith("object_method ")) {
+                    String[] head = line.split("\\s+", 3);
+                    if (head.length < 2) {
+                        throw new IllegalArgumentException("object_method requires a name");
+                    }
+                    String methodName = head[1];
+                    if (currentObject.methods.stream().anyMatch(method -> method.name.equals(methodName))) {
+                        continue;
+                    }
+                    String record = head.length == 3 ? head[2] : "";
+                    java.util.regex.Matcher returnMatcher = java.util.regex.Pattern
+                            .compile("(?:^|\\s)return=([^\\s]+)").matcher(record);
+                    java.util.regex.Matcher countMatcher = java.util.regex.Pattern
+                            .compile("(?:^|\\s)params=([0-9]+)(?:\\s|$)").matcher(record);
+                    org.mosslang.compiler.ast.Method method = new org.mosslang.compiler.ast.Method(
+                            currentObject.name, methodName, 1, cand.toString());
+                    if (returnMatcher.find() && !"unit".equals(returnMatcher.group(1))) {
+                        method.setReturnType(returnMatcher.group(1));
+                    }
+                    int parameterCount = countMatcher.find()
+                            ? Integer.parseInt(countMatcher.group(1)) : 0;
+                    List<String> quoted = parseMossiQuotedFields(line);
+                    if (quoted.size() < parameterCount * 2) {
+                        throw new IllegalArgumentException("object_method parameter records are incomplete");
+                    }
+                    for (int index = 0; index < parameterCount; index++) {
+                        method.params.add(new org.mosslang.compiler.ast.Param(
+                                quoted.get(index * 2), quoted.get(index * 2 + 1)));
+                    }
+                    currentObject.methods.add(method);
                     continue;
                 }
 

@@ -30,6 +30,7 @@ public final class ProjectBuilderMetadataTest {
         testV10SectionHashValidation();
         testV9FunctionParameterAccessSerialization();
         testExportedObjectFieldSerialization();
+        testExportedObjectMethodSerialization();
         System.out.println("ProjectBuilderMetadataTest PASSED.");
     }
 
@@ -62,6 +63,25 @@ public final class ProjectBuilderMetadataTest {
         assertEquals("  public_representation field x float\n"
                         + "  public_representation field label string\n",
                 fields.toString());
+    }
+
+    private static void testExportedObjectMethodSerialization() {
+        org.mosslang.compiler.ast.ObjectType object =
+                new org.mosslang.compiler.ast.ObjectType("Point", "type Point", 1,
+                        "provider.moss", true);
+        object.fields.add(new Field("x", "float", "", "", 2,
+                "provider.moss", false, true));
+        org.mosslang.compiler.ast.Method method = new org.mosslang.compiler.ast.Method(
+                "Point", "shift", 4, "provider.moss");
+        method.setReturnType("float");
+        method.params.add(new Param("amount", "float"));
+        method.body.add(new org.mosslang.compiler.ast.Stmt(
+                org.mosslang.compiler.ast.Stmt.Kind.Assign, 5, 0,
+                "x = x + amount", "x", "x + amount"));
+        StringBuilder record = new StringBuilder();
+        ProjectBuilder.appendV9ObjectMethodRecord(record, object, method, "provider");
+        assertContains(record.toString(), "object_method shift return=float receiver=WRITE");
+        assertContains(record.toString(), "params=1 \"amount\" \"float\" READ");
     }
 
     private static void testV10ImportRecordRequiresModuleBoundHashes() {

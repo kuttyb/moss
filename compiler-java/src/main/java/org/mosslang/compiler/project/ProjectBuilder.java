@@ -912,6 +912,41 @@ public class ProjectBuilder {
         }
     }
 
+    static void appendV9ObjectMethodRecord(StringBuilder out, ObjectType object,
+                                           Method method, String module) {
+        String returnType = method.returnType != null && !method.returnType.isEmpty()
+                ? method.returnType : "unit";
+        String raiseIdent = raisedErrorIdentity(module, method.body);
+        String receiver = "READ";
+        for (Field field : object.fields) {
+            for (Stmt statement : method.body) {
+                String target = statement.a != null ? statement.a.trim() : "";
+                String text = statement.text != null ? statement.text.trim() : "";
+                if (target.equals(field.name) || target.startsWith(field.name + ".")
+                        || text.matches(".*\\b" + java.util.regex.Pattern.quote(field.name)
+                                + "\\s*(?<!=)=(?!=).*")) {
+                    receiver = "WRITE";
+                    break;
+                }
+            }
+            if ("WRITE".equals(receiver)) break;
+        }
+        out.append("  object_method ").append(method.name)
+                .append(" return=").append(returnType)
+                .append(" receiver=").append(receiver)
+                .append(" effects=local_capture_read=0;local_mutation=0;domain_read=0;domain_write=0;message=0;external_io=0;fileio=0;fileio_unknown=0;may_panic=")
+                .append(mayPanic(method.body) ? "1" : "0")
+                .append(";raise_set=").append(raiseIdent)
+                .append(";may_diverge=0;unresolved=0 params=")
+                .append(method.params.size());
+        for (Param parameter : method.params) {
+            out.append(" \"").append(parameter.name).append("\" \"")
+                    .append(parameter.type != null ? parameter.type : "")
+                    .append("\" READ");
+        }
+        out.append("\n");
+    }
+
     static void appendV9FunctionRecord(StringBuilder out, Function function, String publicName,
                                        String effects, boolean semanticRecord) {
         String kind = function.generic ? "generic"
@@ -1037,24 +1072,12 @@ public class ProjectBuilder {
             }
             contractBuf.append("object ").append(objName).append("\n");
             for (Method m : obj.methods) {
-                String raiseIdent = raisedErrorIdentity(module, m.body);
-                boolean raises = !raiseIdent.equals("-");
-                contractBuf.append("  object_method ").append(m.name)
-                           .append(" effects=local_capture_read=0;local_mutation=0;domain_read=0;domain_write=0;message=0;external_io=0;fileio=0;fileio_unknown=0;may_panic=")
-                           .append(mayPanic(m.body) ? "1" : "0")
-                           .append(";raise_set=").append(raises ? raiseIdent : "-")
-                           .append(";may_diverge=0;unresolved=0\n");
+                appendV9ObjectMethodRecord(contractBuf, obj, m, module);
             }
             semanticBuf.append("export type ").append(objName).append("\n");
             appendExportedObjectFields(semanticBuf, obj);
             for (Method m : obj.methods) {
-                String raiseIdent = raisedErrorIdentity(module, m.body);
-                boolean raises = !raiseIdent.equals("-");
-                semanticBuf.append("  object_method ").append(m.name)
-                           .append(" effects=local_capture_read=0;local_mutation=0;domain_read=0;domain_write=0;message=0;external_io=0;fileio=0;fileio_unknown=0;may_panic=")
-                           .append(mayPanic(m.body) ? "1" : "0")
-                           .append(";raise_set=").append(raises ? raiseIdent : "-")
-                           .append(";may_diverge=0;unresolved=0\n");
+                appendV9ObjectMethodRecord(semanticBuf, obj, m, module);
             }
         }
 
@@ -1137,6 +1160,9 @@ public class ProjectBuilder {
                 s.append("export type ").append(objName).append(" nominal\n");
                 s.append("  declaration_id nominal-template-v1:").append(modId).append(":type:").append(objName).append("\n");
                 appendExportedObjectFields(s, obj);
+                for (Method method : obj.methods) {
+                    appendV9ObjectMethodRecord(s, obj, method, module);
+                }
                 semRecords.add(new String[]{"type:" + objName, s.toString()});
             }
 
