@@ -14609,7 +14609,8 @@ Vector[String] results, plus a generic identity callable specialized
 independently as Int and String. Both staged ABI-v10 and default ABI-v9 Java
 suites pass all eleven classes; feedback validation and `git diff --check` pass.
 The generic identity shape is restricted to one `T` parameter returned directly
-as `T`, with no requirements, dependencies, or effects. The initial
+as `T`, with no requirements, dependencies, or effects. Its declared ABI
+parameter access mode is preserved in the seeded AST. The initial
 attempt to bind `T` as a shared solver variable contaminated the second call;
 the final path leaves the synthetic parameter unannotated so the checked body
 infers each call independently. Other generic relations, nominal methods,

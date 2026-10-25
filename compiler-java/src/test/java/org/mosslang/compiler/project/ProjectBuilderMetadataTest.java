@@ -1156,6 +1156,17 @@ public final class ProjectBuilderMetadataTest {
                     + "  echo provider__identity(7)\n"
                     + "  echo provider__identity(\"seven\")\n", "answer-consumer.moss");
             org.mosslang.compiler.cli.Main.loadMossiFunctions(identityMossi, "provider", answerConsumer);
+            Function seededIdentity = answerConsumer.functions.stream()
+                    .filter(function -> function.name.equals("provider.identity"))
+                    .findFirst().orElseThrow(() -> new AssertionError("ABI-v10 identity declaration was not seeded"));
+            if (!seededIdentity.generic || seededIdentity.params.size() != 1
+                    || seededIdentity.params.get(0).typeRef != null
+                    || seededIdentity.parameterAccessModes.size() != 1
+                    || seededIdentity.body.size() != 1
+                    || seededIdentity.body.get(0).kind != org.mosslang.compiler.ast.Stmt.Kind.Return
+                    || !seededIdentity.body.get(0).a.equals(seededIdentity.params.get(0).name)) {
+                throw new AssertionError("ABI-v10 generic identity seed did not retain the open call-local profile");
+            }
             new org.mosslang.compiler.semantics.SemanticChecker(answerConsumer).run();
             java.io.ByteArrayOutputStream answerOutput = new java.io.ByteArrayOutputStream();
             new org.mosslang.compiler.interpreter.FastInterpreter(answerConsumer, false,

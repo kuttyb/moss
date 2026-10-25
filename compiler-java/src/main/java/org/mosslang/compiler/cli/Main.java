@@ -1797,8 +1797,7 @@ public class Main {
                     && summary.parameters.get(0).ordinal == 0
                     && summary.result.kind
                             == org.mosslang.compiler.abi.AbiV10Records.WireTypeKind.BoundVar
-                    && summary.result.ordinal == 0
-                    && returnedParameter == 0) {
+                    && summary.result.ordinal == 0 && returnedParameter == 0) {
                 List<org.mosslang.compiler.ast.Function> identityMatches = program.functions.stream()
                         .filter(function -> callableId.equals(function.semanticCallableId)).toList();
                 if (identityMatches.isEmpty() || identityMatches.stream()
@@ -1810,7 +1809,13 @@ public class Main {
                     function.generic = true;
                     function.staticDispatch = true;
                     function.parameterAccessModes.clear();
-                    function.parameterAccessModes.add(org.mosslang.compiler.types.AccessMode.Read);
+                    for (org.mosslang.compiler.abi.AbiV10Records.Access access : summary.parameterAccess) {
+                        function.parameterAccessModes.add(switch (access) {
+                            case Read -> org.mosslang.compiler.types.AccessMode.Read;
+                            case Write -> org.mosslang.compiler.types.AccessMode.Write;
+                            case Consume -> org.mosslang.compiler.types.AccessMode.Consume;
+                        });
+                    }
                     function.body.clear();
                     String parameterName = function.params.get(0).name;
                     org.mosslang.compiler.ast.Stmt projected = new org.mosslang.compiler.ast.Stmt(
