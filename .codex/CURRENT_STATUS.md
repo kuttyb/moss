@@ -12293,3 +12293,26 @@ reproduce the same context. This needs a focused project-context diagnosis and
 is not closed by the object-body checking change. Do not claim method-body
 parity yet. All source-free ABI, native backend, SDK, and frozen-candidate gates
 remain open.
+
+### Phase 25.3 continuation — Fast Debug values, routes, and pipeline callbacks
+
+A selected Fast Debug run found the Java interpreter was treating named object
+constructor fields written with `=` as unit values. The same run found domain
+route bindings were not retained when constructing the interpreter's static
+instance graph, so a handler forwarding a message through its route failed. The
+interpreter now evaluates named constructor arguments and carries route
+instances into handler context. `phase26_immutable_payload.moss` prints
+`sink: 21` and `checksum: 42`; its trace includes the Router.Route and
+Sink.Process message entry/return events.
+
+Fast Debug also returned unit for a scalar pipeline stage (`3 |> square`). It
+now invokes the one-argument Moss function stage; the Java run prints `81`.
+The C++ interpreter rejects this source with “unsupported checked pipeline
+stage 'square'”, so this is evidence of Java Moss execution, not a cross-
+interpreter parity result. In a four-source selection, collections,
+domains/messages, and phase26 pass C++/Java interpreter comparison (3/4; the
+remaining C++ interpreter limitation is classified separately). Margo test
+behavior remains real: phase7_demo reports 2 pass; phase7_failing_test reports
+1 fail and 1 pass with exit status failure. Packaged JAR and `scripts/java/moss`
+`--version` both work. Rust/native, ABI source-free, SDK, and final frozen
+acceptance remain unrun.

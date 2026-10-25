@@ -480,6 +480,7 @@ public class FastInterpreter {
                 String targetName = s.a;
                 String handlerName = s.b;
                 Value targetVal = locals.get(targetName);
+                if (targetVal == null && currentDomain != null) targetVal = currentDomain.state.get(targetName);
                 if (targetVal == null || targetVal.kind != Value.Kind.DOMAIN) {
                     throw new RuntimeException("message target '" + targetName + "' is not an active domain instance");
                 }
@@ -802,6 +803,23 @@ public class FastInterpreter {
                 }
                 return acc;
             }
+            for (Function function : program.functions) {
+                if (!(function.name.equals(stage) || function.name.endsWith("__" + stage)
+                        || stage.endsWith("." + function.name)) || function.params.size() != 1) continue;
+                Map<String, Value> fnLocals = new HashMap<>();
+                fnLocals.put(function.params.get(0).name, left);
+                Value result = Value.ofUnit();
+                try {
+                    result = evalBlock(function.body, 0, function.body.size(), fnLocals,
+                            null, function.name, 0);
+                    if (function.resultExpression != null && !function.resultExpression.isEmpty()) {
+                        result = evalExpr(function.resultExpression, fnLocals, null);
+                    }
+                } catch (ReturnSignal signal) {
+                    result = signal.returnValue;
+                }
+                return result;
+            }
         }
 
         // 1. " or "
@@ -1067,7 +1085,9 @@ public class FastInterpreter {
                         if (!inStr) {
                             if (ch == '(' || ch == '[' || ch == '{') pDepth++;
                             else if (ch == ')' || ch == ']' || ch == '}') pDepth--;
-                            else if (ch == ':' && pDepth == 0) {
+                            else if (pDepth == 0 && (ch == ':' || (ch == '=' &&
+                                    (ci + 1 >= a.length() || a.charAt(ci + 1) != '=') &&
+                                    (ci == 0 || "=<>!".indexOf(a.charAt(ci - 1)) < 0)))) {
                                 colIdx = ci;
                                 break;
                             }
@@ -1105,6 +1125,16 @@ public class FastInterpreter {
                         String init = f.init != null && !f.init.isEmpty() ? f.init : "0";
                         inst.state.put(f.name, evalExpr(init, locals, null));
                     }
+                    for (int i = 0; i < argList.size() && i < evaluatedArgs.size(); i++) {
+                        String rawArg = argList.get(i);
+                        int separator = rawArg.indexOf(':');
+                        if (separator < 0) separator = rawArg.indexOf('=');
+                        if (separator <= 0) continue;
+                        String routeName = rawArg.substring(0, separator).trim();
+                        if (d.routes.stream().anyMatch(route -> route.name.equals(routeName))) {
+                            inst.state.put(routeName, evaluatedArgs.get(i));
+                        }
+                    }
                     eventId++;
                     traceEvent("{\"event_id\":" + eventId + ",\"event\":\"domain_instance\",\"function\":\"main\",\"line\":" +
                             d.line + ",\"instance\":\"" + inst.name + "\"}");
@@ -1134,7 +1164,9 @@ public class FastInterpreter {
                             if (!inStr) {
                                 if (ch == '(' || ch == '[' || ch == '{') pDepth++;
                                 else if (ch == ')' || ch == ']' || ch == '}') pDepth--;
-                                else if (ch == ':' && pDepth == 0) {
+                                else if (pDepth == 0 && (ch == ':' || (ch == '=' &&
+                                        (ci + 1 >= rawA.length() || rawA.charAt(ci + 1) != '=') &&
+                                        (ci == 0 || "=<>!".indexOf(rawA.charAt(ci - 1)) < 0)))) {
                                     namedField = rawA.substring(0, ci).trim();
                                     break;
                                 }
