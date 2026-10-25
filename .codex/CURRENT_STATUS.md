@@ -14887,3 +14887,16 @@ This proves only signature projection for pure primitive-literal returns and
 unchanged typed parameter returns with checked access modes. General body
 summaries, method effects, generic methods, native linkage, and ABI-v10 contract
 completeness remain open.
+
+
+### Phase 25.3 continuation — follow field-chain method effects
+
+The effects-query walker now resolves a receiver path through declared object
+fields, starting from a checked local binding or the current method receiver.
+An accepted `Box` containing `Sink` now reports `external_io: true` for both
+`box.sink.emit()` and `Box.relay()` calling `self.sink.emit()`, matching C++.
+
+Validation: both compilers accept the minimized source and report
+`external_io: true`; all eleven Java unit-test classes pass. Generic field
+substitution, cross-module calls, source-free method effects, and complete
+checker-retained effect summaries remain open.

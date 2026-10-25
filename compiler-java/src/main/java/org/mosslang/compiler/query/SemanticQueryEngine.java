@@ -1290,19 +1290,49 @@ public class SemanticQueryEngine {
                 }
             }
         }
-        if (callerFunction == null || program.localBindingTypes == null) return false;
-        Map<String, TypeRef> bindings = program.localBindingTypes.getOrDefault(callerFunction.name, Map.of());
+        Map<String, TypeRef> bindings = callerFunction != null && program.localBindingTypes != null
+                ? program.localBindingTypes.getOrDefault(callerFunction.name, Map.of()) : Map.of();
         for (ObjectType object : program.objects) {
             for (Method method : object.methods) {
-                java.util.regex.Matcher call = java.util.regex.Pattern.compile(
-                        "(?<![A-Za-z0-9_])([A-Za-z_][A-Za-z0-9_]*)\\s*\\.\\s*"
-                                + java.util.regex.Pattern.quote(method.name) + "\\s*\\(")
-                        .matcher(expression);
+                String pattern = "(?<![A-Za-z0-9_])((?:self|[A-Za-z_][A-Za-z0-9_]*)(?:\\s*\\.\\s*[A-Za-z_][A-Za-z0-9_]*)*)\\s*\\.\\s*"
+                        + java.util.regex.Pattern.quote(method.name) + "\\s*\\(";
+                java.util.regex.Matcher call = java.util.regex.Pattern.compile(pattern).matcher(expression);
                 while (call.find()) {
-                    TypeRef receiverType = bindings.get(call.group(1));
-                    if (receiverType == null || receiverType.name() == null) continue;
-                    String typeName = receiverType.name();
-                    if (!(typeName.equals(object.name) || typeName.endsWith("__" + object.name))) continue;
+                    String[] receiverPath = call.group(1).replaceAll("\\s", "").split("\\.");
+                    String typeName;
+                    if (receiverPath.length > 0 && "self".equals(receiverPath[0]) && ownerMethod != null) {
+                        typeName = ownerMethod.owner;
+                    } else {
+                        TypeRef receiverType = receiverPath.length > 0 ? bindings.get(receiverPath[0]) : null;
+                        typeName = receiverType != null ? receiverType.name() : null;
+                    }
+                    if (typeName == null) continue;
+                    boolean resolved = true;
+                    for (int pathIndex = 1; pathIndex < receiverPath.length; pathIndex++) {
+                        ObjectType receiverObject = findObjectType(program, typeName);
+                        if (receiverObject == null) {
+                            resolved = false;
+                            break;
+                        }
+                        String fieldName = receiverPath[pathIndex];
+                        Field field = receiverObject.fields.stream()
+                                .filter(candidate -> candidate.name.equals(fieldName))
+                                .findFirst().orElse(null);
+                        if (field == null || field.type == null || field.type.isBlank()) {
+                            resolved = false;
+                            break;
+                        }
+                        TypeRef fieldType = field.typeRef != null
+                                ? field.typeRef : TypeParser.parseCanonical(field.type);
+                        String fieldTypeName = fieldType != null ? fieldType.name() : field.type;
+                        if (fieldTypeName == null || fieldTypeName.isBlank()) {
+                            resolved = false;
+                            break;
+                        }
+                        typeName = fieldTypeName;
+                    }
+                    if (!resolved) continue;
+                    if (!matchesObjectTypeName(typeName, object.name)) continue;
                     String identity = "method:" + method.owner + "." + method.name;
                     if (!visited.add(identity)) continue;
                     if (callableHasEffect(method.body, method.resultExpression, program, visited, effect,
@@ -1311,6 +1341,20 @@ public class SemanticQueryEngine {
             }
         }
         return false;
+    }
+
+    private static ObjectType findObjectType(Program program, String typeName) {
+        if (program == null || program.objects == null || typeName == null) return null;
+        for (ObjectType object : program.objects) {
+            if (matchesObjectTypeName(typeName, object.name)) return object;
+        }
+        return null;
+    }
+
+    private static boolean matchesObjectTypeName(String typeName, String objectName) {
+        return typeName != null && objectName != null
+                && (typeName.equals(objectName) || typeName.endsWith("__" + objectName)
+                        || typeName.endsWith("::" + objectName));
     }
 
     private static boolean hasEffect(String source, Stmt statement, EffectKind effect) {

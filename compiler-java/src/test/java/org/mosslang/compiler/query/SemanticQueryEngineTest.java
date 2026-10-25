@@ -15,6 +15,7 @@ public final class SemanticQueryEngineTest {
         effectsQueryCollectsDirectRaisesForArbitraryNames();
         effectsQueryFollowsNestedFunctionEffects();
         effectsQueryFollowsLocalMethodEffects();
+        effectsQueryFollowsFieldChainMethodEffects();
         effectsQueryReportsMethodParameterAccessModes();
         effectsQueryFollowsHandlerHelperEffects();
         effectsQueryFollowsOrdinaryFunctionRaises();
@@ -161,6 +162,26 @@ public final class SemanticQueryEngineTest {
         new SemanticChecker(program).run();
         String result = queryEffects(program, "calculate");
         assertContains(result, "\"external_io\": true");
+    }
+
+    private static void effectsQueryFollowsFieldChainMethodEffects() {
+        String source = ""
+                + "type Sink:\n"
+                + "  fn emit():\n"
+                + "    echo \"x\"\n"
+                + "type Box:\n"
+                + "  sink: Sink\n"
+                + "  fn relay():\n"
+                + "    self.sink.emit()\n"
+                + "fn calculate():\n"
+                + "  box = Box(sink=Sink())\n"
+                + "  box.sink.emit()\n"
+                + "  box.relay()\n"
+                + "fn main():\n"
+                + "  calculate()\n";
+        Program program = Parser.parseSource(source, "effects-query-field-chain-method-io.moss");
+        new SemanticChecker(program).run();
+        assertContains(queryEffects(program, "calculate"), "\"external_io\": true");
     }
 
     private static void effectsQueryReportsMethodParameterAccessModes() {
