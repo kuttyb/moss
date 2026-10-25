@@ -30,6 +30,7 @@ examples/projects/*/.moss/
 
 compiler-java/bin/
 compiler-java/bin/**
+compiler-java/dist/
 compiler-java/jdt/daemon.log
 compiler-java/jdt/workspace/**
 compiler-java/jdt/configuration/**/.manager/

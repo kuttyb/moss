@@ -231,14 +231,47 @@ impl MossStr {
         MossStr(s.to_string())
     }
     pub fn length(&self) -> i64 {
-        self.0.len() as i64
+        self.0.chars().count() as i64
     }
-    pub fn char_at(&self, idx: i64) -> MossStr {
-        let ch = self.0.chars().nth(idx as usize).unwrap_or('\0');
-        MossStr(ch.to_string())
+    pub fn char_at(&self, idx: i64) -> char {
+        if idx < 0 { panic!("String character index out of bounds"); }
+        self.0.chars().nth(idx as usize).expect("String character index out of bounds")
+    }
+    pub fn chars(&self) -> std::vec::Vec<char> {
+        self.0.chars().collect()
+    }
+    pub fn find(&self, pattern: MossStr) -> i64 {
+        match self.0.find(&pattern.0) {
+            Some(byte) => self.0[..byte].chars().count() as i64,
+            None => -1,
+        }
+    }
+    pub fn slice(&self, start: i64, length: i64) -> MossStr {
+        if start < 0 || length < 0 { return MossStr::from(""); }
+        let chars: std::vec::Vec<char> = self.0.chars().collect();
+        let start = start as usize;
+        let length = length as usize;
+        if start > chars.len() || length > chars.len() - start { return MossStr::from(""); }
+        MossStr(chars[start..start + length].iter().collect())
+    }
+    pub fn ascii_lower(&self) -> MossStr {
+        MossStr(self.0.to_ascii_lowercase())
+    }
+    pub fn ascii_upper(&self) -> MossStr {
+        MossStr(self.0.to_ascii_uppercase())
+    }
+    pub fn reserve(&mut self, additional_bytes: i64) {
+        if additional_bytes > 0 { self.0.reserve(additional_bytes as usize); }
+    }
+    pub fn append(&mut self, part: MossStr) {
+        self.0.push_str(&part.0);
     }
     pub fn split(&self, sep: MossStr) -> std::vec::Vec<MossStr> {
+        if sep.0.is_empty() { panic!("String split requires a nonempty separator"); }
         self.0.split(&sep.0).map(|s| MossStr(s.to_string())).collect()
+    }
+    pub fn join(&self, parts: std::vec::Vec<MossStr>) -> MossStr {
+        MossStr(parts.iter().map(|part| part.0.as_str()).collect::<std::vec::Vec<_>>().join(&self.0))
     }
 }
 

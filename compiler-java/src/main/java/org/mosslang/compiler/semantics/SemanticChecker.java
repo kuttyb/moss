@@ -809,6 +809,17 @@ public class SemanticChecker {
 
     private void requireAvailable(int line, String expression, OwnershipEnv env) {
         if (expression == null || expression.isEmpty()) return;
+        java.util.regex.Matcher mutatingStringCall = java.util.regex.Pattern
+                .compile("([A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)*)\\.(append|reserve)\\(")
+                .matcher(expression);
+        while (mutatingStringCall.find()) {
+            String receiver = mutatingStringCall.group(1);
+            String root = receiver.contains(".") ? receiver.substring(0, receiver.indexOf('.')) : receiver;
+            if (env.immutables.contains(root)) {
+                throw new CompileError(line, "cannot mutate immutable local '" + root + "'; declare it with `var` if mutation is intended",
+                        "IMMUTABLE_LOCAL_MUTATION");
+            }
+        }
         for (Map.Entry<String, MoveInfo> entry : env.moved.entrySet()) {
             if (expressionUses(expression, entry.getKey())) {
                 CompileError err = new CompileError(line, "value '" + entry.getKey() + "' was transferred to '" +
@@ -833,14 +844,23 @@ public class SemanticChecker {
         if (fn.resultExpression != null && fn.resultExpression.trim().equals(pName)) {
             return true;
         }
+        Deque<Map.Entry<Integer, Set<String>>> caseScopes = new ArrayDeque<>();
         for (Stmt s : fn.body) {
+            while (!caseScopes.isEmpty() && s.indent <= caseScopes.peek().getKey()) {
+                caseScopes.pop();
+            }
+            if (s.kind == Stmt.Kind.Case) {
+                caseScopes.push(Map.entry(s.indent, new HashSet<>(s.args)));
+                continue;
+            }
+            boolean shadowed = caseScopes.stream().anyMatch(scope -> scope.getValue().contains(pName));
             if (s.kind == Stmt.Kind.Return) {
                 String ret = s.a != null && !s.a.isEmpty() ? s.a.trim() : (s.text != null ? s.text.trim() : "");
                 if (ret.startsWith("return ")) ret = ret.substring(7).trim();
-                if (ret.equals(pName)) return true;
+                if (!shadowed && ret.equals(pName)) return true;
             } else if (s.kind == Stmt.Kind.Let || s.kind == Stmt.Kind.Var || s.kind == Stmt.Kind.Assign) {
                 String rhs = s.b != null ? s.b.trim() : "";
-                if (rhs.equals(pName)) return true;
+                if (!shadowed && rhs.equals(pName)) return true;
             }
         }
         return false;
@@ -851,16 +871,37 @@ public class SemanticChecker {
         String pName = fn.params.get(paramIdx).name;
         if (fn.resultExpression != null) {
             String r = fn.resultExpression.trim();
-            if (r.startsWith(pName + ".push(") || r.startsWith(pName + ".pop(") || r.startsWith(pName + ".delete(") || r.startsWith(pName + "[")) {
+            if (r.startsWith(pName + ".push(") || r.startsWith(pName + ".pop(") || r.startsWith(pName + ".delete(")
+                    || r.startsWith(pName + ".append(") || r.startsWith(pName + ".reserve(") || r.startsWith(pName + "[")) {
                 return true;
             }
         }
         for (Stmt s : fn.body) {
             String t = s.text != null ? s.text.trim() : "";
             if (t.startsWith(pName + ".push(") || t.startsWith(pName + ".pop(") || t.startsWith(pName + ".delete(")
+                    || t.startsWith(pName + ".append(") || t.startsWith(pName + ".reserve(")
                     || t.startsWith(pName + " =") || t.startsWith(pName + "=") || t.startsWith(pName + "[")) {
                 return true;
             }
+        }
+        return false;
+    }
+
+    private boolean expressionContainsWriteCall(String expression, String binding) {
+        if (expression == null) return false;
+        String text = expression.trim();
+        if (text.contains(binding + ".append(") || text.contains(binding + ".reserve(") ||
+                text.contains(binding + ".push(") || text.contains(binding + ".pop(")) return true;
+        int open = text.indexOf('(');
+        if (open <= 0 || !text.endsWith(")")) return false;
+        Function fn = functions.get(text.substring(0, open).trim());
+        if (fn == null) return false;
+        List<String> args = ExpressionTyper.parseArguments(text.substring(open + 1, text.length() - 1));
+        for (int i = 0; i < args.size() && i < fn.params.size(); i++) {
+            String arg = args.get(i).trim();
+            int colon = arg.indexOf(':');
+            if (colon >= 0) arg = arg.substring(colon + 1).trim();
+            if (doesFunctionMutateParam(fn, i) && expressionUses(arg, binding)) return true;
         }
         return false;
     }
@@ -890,7 +931,8 @@ public class SemanticChecker {
                         String mutatedVar = args.get(i).trim();
                         if (mutatedVar.matches("^[A-Za-z_][A-Za-z0-9_]*$")) {
                             for (int j = 0; j < args.size(); j++) {
-                                if (i != j && expressionUses(args.get(j), mutatedVar)) {
+                                if (i != j && expressionUses(args.get(j), mutatedVar)
+                                        && !expressionContainsWriteCall(args.get(j), mutatedVar)) {
                                     throw new CompileError(line,
                                             "conflicting access to '" + mutatedVar + "' in call to '" + callee + "': WRITE overlaps with READ",
                                             "OWNERSHIP_CONFLICTING_ACCESS");
@@ -949,6 +991,84 @@ public class SemanticChecker {
                 }
                 continue;
             }
+            if (s.kind == Stmt.Kind.Match) {
+                String scrutinee = s.a != null ? s.a.trim() : "";
+                requireAvailable(s.line, scrutinee, env);
+                TypeRef scrutineeType = solver.resolve(typer.infer(scrutinee, s.line, env.typeEnv));
+                EnumType enumType = enums.get(scrutineeType.name());
+                if (enumType == null) {
+                    throw new CompileError(s.line, "match requires an enum scrutinee, got '" +
+                            scrutineeType.toCanonicalString() + "'", "TYPE_MISMATCH");
+                }
+                s.semanticType = enumType.name;
+                if ("consume".equals(s.b) && env.containsKey(scrutinee)) {
+                    consumeBinding(s.line, scrutinee, env, "match consume");
+                }
+
+                Map<String, EnumCase> variants = new LinkedHashMap<>();
+                for (EnumCase enumCase : enumType.cases) {
+                    variants.put(enumCase.name, enumCase);
+                }
+                Set<String> seenCases = new HashSet<>();
+                Set<String> matchBinders = new HashSet<>();
+                List<OwnershipEnv> caseEnvs = new ArrayList<>();
+                int matchEnd = i + 1;
+                while (matchEnd < end && stmts.get(matchEnd).indent > s.indent) {
+                    matchEnd++;
+                }
+                int caseIndex = i + 1;
+                while (caseIndex < matchEnd) {
+                    Stmt caseStmt = stmts.get(caseIndex);
+                    if (caseStmt.kind != Stmt.Kind.Case) {
+                        caseIndex++;
+                        continue;
+                    }
+                    EnumCase enumCase = variants.get(caseStmt.a);
+                    if (enumCase == null) {
+                        throw new CompileError(caseStmt.line, "unknown case '" + caseStmt.a +
+                                "' for enum '" + enumType.name + "'", "UNKNOWN_SYMBOL_OR_TYPE");
+                    }
+                    if (!seenCases.add(enumCase.name)) {
+                        throw new CompileError(caseStmt.line, "duplicate case '" + enumCase.name +
+                                "' in match on '" + enumType.name + "'", "DUPLICATE_ENUM_CASE");
+                    }
+                    caseStmt.semanticType = enumType.name;
+                    caseStmt.b = s.b;
+                    if (caseStmt.args.size() != enumCase.fields.size()) {
+                        throw new CompileError(caseStmt.line, "case '" + enumCase.name + "' expects " +
+                                enumCase.fields.size() + " payload bindings, got " + caseStmt.args.size(), "TYPE_MISMATCH");
+                    }
+                    OwnershipEnv caseEnv = env.copy();
+                    for (int fi = 0; fi < enumCase.fields.size(); fi++) {
+                        Field field = enumCase.fields.get(fi);
+                        String binder = caseStmt.args.get(fi);
+                        matchBinders.add(binder);
+                        if (!field.name.equals(binder)) {
+                            throw new CompileError(caseStmt.line, "payload binding '" + binder +
+                                    "' must match field '" + field.name + "' in declaration order", "TYPE_MISMATCH");
+                        }
+                        TypeRef fieldType = TypeParser.parseCanonical(field.type);
+                        if (fieldType == null) fieldType = TypeRef.primitive(field.type.toLowerCase(Locale.ROOT));
+                        caseEnv.put(binder, fieldType, caseStmt.line);
+                    }
+                    int caseEnd = caseIndex + 1;
+                    while (caseEnd < matchEnd && stmts.get(caseEnd).indent > caseStmt.indent) {
+                        caseEnd++;
+                    }
+                    caseEnvs.add(checkBlock(stmts, caseIndex + 1, caseEnd, caseEnv, typer, solver,
+                            insideHandler, enclosingName, expectedType));
+                    caseIndex = caseEnd;
+                }
+                if (seenCases.size() != variants.size()) {
+                    Set<String> missing = new LinkedHashSet<>(variants.keySet());
+                    missing.removeAll(seenCases);
+                    throw new CompileError(s.line, "match on '" + enumType.name +
+                            "' must cover every case; missing " + String.join(", ", missing), "NON_EXHAUSTIVE_MATCH");
+                }
+                env = mergeMatchEnvs(s.line, env, caseEnvs, matchBinders, solver);
+                i = matchEnd;
+                continue;
+            }
             if (s.kind == Stmt.Kind.Else) {
                 i++;
                 continue;
@@ -957,6 +1077,32 @@ public class SemanticChecker {
             i++;
         }
         return env;
+    }
+
+    private OwnershipEnv mergeMatchEnvs(int line, OwnershipEnv original,
+                                        List<OwnershipEnv> branches, Set<String> matchBinders,
+                                        TypeSolver solver) {
+        OwnershipEnv merged = original.copy();
+        for (String name : original.typeEnv.getBindings().keySet()) {
+            if (matchBinders.contains(name)) continue;
+            TypeRef first = branches.get(0).get(name);
+            boolean firstMoved = branches.get(0).moved.containsKey(name);
+            for (int i = 1; i < branches.size(); i++) {
+                OwnershipEnv branch = branches.get(i);
+                TypeRef next = branch.get(name);
+                if (next != null && first != null && !solver.unify(first, next)) {
+                    throw new CompileError(line, "binding '" + name +
+                            "' has conflicting types across match cases", "TYPE_MISMATCH");
+                }
+                if (branch.moved.containsKey(name) != firstMoved) {
+                    throw new CompileError(line, "binding '" + name +
+                            "' has inconsistent ownership across match cases", "OWNERSHIP_CONFLICTING_ACCESS");
+                }
+            }
+            if (first != null) merged.typeEnv.put(name, solver.resolve(first));
+            if (firstMoved) merged.moved.put(name, branches.get(0).moved.get(name));
+        }
+        return merged;
     }
 
     private OwnershipEnv mergeEnvs(int line, OwnershipEnv path1, OwnershipEnv path2, TypeSolver solver) {

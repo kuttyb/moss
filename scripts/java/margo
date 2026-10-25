@@ -1,0 +1,4 @@
+#!/bin/bash
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+export MOSS="${REPO_ROOT}/scripts/java/moss"
+exec "${REPO_ROOT}/margo" "$@"

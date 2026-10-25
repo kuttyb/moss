@@ -7,7 +7,7 @@ import java.util.*;
 
 public class FastInterpreter {
     public static class Value {
-        public enum Kind { INT, FLOAT, BOOL, STRING, UNIT, OBJECT, DOMAIN, VECTOR, MAP, QUEUE }
+        public enum Kind { INT, FLOAT, BOOL, STRING, CHAR, UNIT, OBJECT, DOMAIN, VECTOR, MAP, QUEUE, ENUM }
         public final Kind kind;
         public final Object raw;
         public String typeName = null;
@@ -27,8 +27,12 @@ public class FastInterpreter {
         public static Value ofFloat(double v) { return new Value(Kind.FLOAT, v); }
         public static Value ofBool(boolean v) { return new Value(Kind.BOOL, v); }
         public static Value ofString(String v) { return new Value(Kind.STRING, v); }
+        public static Value ofChar(int v) { return new Value(Kind.CHAR, v); }
         public static Value ofUnit() { return new Value(Kind.UNIT, null); }
         public static Value ofDomain(DomainInstance d) { return new Value(Kind.DOMAIN, d); }
+        public static Value ofEnum(String enumName, String variant, Map<String, Value> fields) {
+            return new Value(Kind.ENUM, new EnumValue(enumName, variant, fields), enumName);
+        }
 
         public long asInt() { return ((Number) raw).longValue(); }
         public double asFloat() { return ((Number) raw).doubleValue(); }
@@ -39,7 +43,9 @@ public class FastInterpreter {
         @Override
         public String toString() {
             if (raw == null) return "()";
+            if (raw instanceof EnumValue enumValue) return enumValue.toString();
             if (kind == Kind.BOOL) return (Boolean) raw ? "true" : "false";
+            if (kind == Kind.CHAR) return new String(Character.toChars(((Number) raw).intValue()));
             if (kind == Kind.FLOAT) return formatFloat(((Number) raw).doubleValue());
             return raw.toString();
         }
@@ -77,6 +83,23 @@ public class FastInterpreter {
                 output.append('e').append(exponent);
             }
             return output.toString();
+        }
+    }
+
+    private static final class EnumValue {
+        final String enumName;
+        final String variant;
+        final Map<String, Value> fields;
+
+        EnumValue(String enumName, String variant, Map<String, Value> fields) {
+            this.enumName = enumName;
+            this.variant = variant;
+            this.fields = new LinkedHashMap<>(fields);
+        }
+
+        @Override public String toString() {
+            if (fields.isEmpty()) return enumName + "." + variant;
+            return enumName + "." + variant + fields;
         }
     }
 
@@ -301,7 +324,7 @@ public class FastInterpreter {
                     matchEnd++;
                 }
                 Value scrut = evalExpr(s.a, locals, currentDomain);
-                String scrutStr = scrut.toString();
+                EnumValue enumValue = scrut.raw instanceof EnumValue ev ? ev : null;
                 int ci = i + 1;
                 boolean matched = false;
                 while (ci < matchEnd) {
@@ -314,9 +337,22 @@ public class FastInterpreter {
                             caseBodyEnd++;
                         }
                         String pat = cs.a != null ? cs.a.trim() : "";
-                        if (!matched && (scrutStr.equals(pat) || scrutStr.endsWith("." + pat) || scrutStr.endsWith("::" + pat) || scrutStr.contains(pat))) {
+                        if (!matched && enumValue != null && enumValue.variant.equals(pat)) {
                             matched = true;
-                            lastVal = evalBlock(stmts, caseBodyStart, caseBodyEnd, locals, currentDomain, funcName, depth);
+                            Map<String, Value> branchLocals = new HashMap<>(locals);
+                            for (String binder : cs.args) {
+                                Value field = enumValue.fields.get(binder);
+                                if (field == null) {
+                                    throw new IllegalStateException("enum payload " + enumValue.enumName + "." +
+                                            enumValue.variant + " is missing field '" + binder + "'");
+                                }
+                                branchLocals.put(binder, field);
+                            }
+                            lastVal = evalBlock(stmts, caseBodyStart, caseBodyEnd, branchLocals,
+                                    currentDomain, funcName, depth);
+                            for (Map.Entry<String, Value> entry : branchLocals.entrySet()) {
+                                if (!cs.args.contains(entry.getKey())) locals.put(entry.getKey(), entry.getValue());
+                            }
                         }
                         ci = caseBodyEnd;
                     } else {
@@ -640,6 +676,17 @@ public class FastInterpreter {
         return null;
     }
 
+    private static String asciiCase(String text, boolean upper) {
+        StringBuilder result = new StringBuilder(text.length());
+        for (int i = 0; i < text.length(); i++) {
+            char ch = text.charAt(i);
+            if (upper && ch >= 'a' && ch <= 'z') ch = (char) (ch - ('a' - 'A'));
+            else if (!upper && ch >= 'A' && ch <= 'Z') ch = (char) (ch + ('a' - 'A'));
+            result.append(ch);
+        }
+        return result.toString();
+    }
+
     private static List<String> splitArgs(String s) {
         List<String> list = new ArrayList<>();
         if (s == null || s.trim().isEmpty()) return list;
@@ -662,6 +709,39 @@ public class FastInterpreter {
             list.add(s.substring(start).trim());
         }
         return list;
+    }
+
+    private Value makeEnumValue(String qualifiedCase, List<String> rawArgs, List<Value> values) {
+        int dot = qualifiedCase.lastIndexOf('.');
+        if (dot < 0) return null;
+        String enumQualifier = qualifiedCase.substring(0, dot);
+        String variantName = qualifiedCase.substring(dot + 1);
+        for (EnumType enumType : program.enums) {
+            String declaredName = enumType.name;
+            String shortName = declaredName.substring(declaredName.lastIndexOf('.') + 1);
+            if (!(enumQualifier.equals(declaredName) || enumQualifier.endsWith("." + declaredName)
+                    || enumQualifier.equals(shortName) || enumQualifier.endsWith("." + shortName)
+                    || enumQualifier.endsWith("__" + shortName))) continue;
+            for (EnumCase enumCase : enumType.cases) {
+                if (!enumCase.name.equals(variantName)) continue;
+                if (enumCase.fields.size() != values.size()) return null;
+                Map<String, Value> fields = new LinkedHashMap<>();
+                for (int i = 0; i < enumCase.fields.size(); i++) {
+                    String fieldName = enumCase.fields.get(i).name;
+                    if (i < rawArgs.size()) {
+                        String raw = rawArgs.get(i).trim();
+                        int colon = raw.indexOf(':');
+                        if (colon > 0) {
+                            String suppliedName = raw.substring(0, colon).trim();
+                            if (!suppliedName.equals(fieldName)) return null;
+                        }
+                    }
+                    fields.put(fieldName, values.get(i));
+                }
+                return Value.ofEnum(declaredName, variantName, fields);
+            }
+        }
+        return null;
     }
 
     private Value evalExpr(String expr, Map<String, Value> locals, DomainInstance currentDomain) {
@@ -867,6 +947,21 @@ public class FastInterpreter {
         if (expr.startsWith("\"") && expr.endsWith("\"") && expr.length() >= 2) {
             return Value.ofString(expr.substring(1, expr.length() - 1));
         }
+        if (expr.startsWith("'") && expr.endsWith("'") && expr.length() >= 3) {
+            String content = expr.substring(1, expr.length() - 1);
+            if (content.startsWith("\\u{") && content.endsWith("}")) {
+                return Value.ofChar(Integer.parseInt(content.substring(3, content.length() - 1), 16));
+            }
+            if (content.startsWith("\\")) {
+                content = switch (content) {
+                    case "\\n" -> "\n"; case "\\r" -> "\r"; case "\\t" -> "\t";
+                    case "\\0" -> "\0"; case "\\\\" -> "\\"; case "\\'" -> "'";
+                    default -> content.substring(1);
+                };
+            }
+            int[] cps = content.codePoints().toArray();
+            if (cps.length == 1) return Value.ofChar(cps[0]);
+        }
         if (expr.equals("true")) return Value.ofBool(true);
         if (expr.equals("false")) return Value.ofBool(false);
         if (expr.matches("^-?\\d+$")) {
@@ -985,6 +1080,9 @@ public class FastInterpreter {
                 }
             }
 
+            Value enumConstructor = makeEnumValue(callee, argList, evaluatedArgs);
+            if (enumConstructor != null) return enumConstructor;
+
             if (callee.equals("Vector") || callee.startsWith("Vector[")) {
                 return new Value(Value.Kind.VECTOR, new ArrayList<Value>());
             }
@@ -1067,20 +1165,58 @@ public class FastInterpreter {
                 if (recvVal != null) {
                     if (recvVal.kind == Value.Kind.STRING) {
                         if (methodName.equals("length") || methodName.equals("len") || methodName.equals("size")) {
-                            return Value.ofInt(recvVal.asString().length());
+                            return Value.ofInt(recvVal.asString().codePointCount(0, recvVal.asString().length()));
                         }
                         if (methodName.equals("char_at") && !evaluatedArgs.isEmpty()) {
                             int idx = (int) evaluatedArgs.get(0).asInt();
-                            return Value.ofString(String.valueOf(recvVal.asString().charAt(idx)));
+                            int[] cps = recvVal.asString().codePoints().toArray();
+                            if (idx < 0 || idx >= cps.length) throw new IndexOutOfBoundsException("String character index out of bounds");
+                            return Value.ofChar(cps[idx]);
+                        }
+                        if (methodName.equals("chars")) {
+                            List<Value> chars = new ArrayList<>();
+                            recvVal.asString().codePoints().forEach(cp -> chars.add(Value.ofChar(cp)));
+                            return new Value(Value.Kind.VECTOR, chars);
+                        }
+                        if (methodName.equals("find") && !evaluatedArgs.isEmpty()) {
+                            String value = recvVal.asString();
+                            String pattern = evaluatedArgs.get(0).asString();
+                            int byteIndex = value.indexOf(pattern);
+                            return Value.ofInt(byteIndex < 0 ? -1 : value.codePointCount(0, byteIndex));
+                        }
+                        if (methodName.equals("slice") && evaluatedArgs.size() == 2) {
+                            int[] cps = recvVal.asString().codePoints().toArray();
+                            long start = evaluatedArgs.get(0).asInt(), length = evaluatedArgs.get(1).asInt();
+                            if (start < 0 || length < 0 || start > cps.length || length > cps.length - start) return Value.ofString("");
+                            return Value.ofString(new String(cps, (int) start, (int) length));
+                        }
+                        if (methodName.equals("ascii_lower")) return Value.ofString(asciiCase(recvVal.asString(), false));
+                        if (methodName.equals("ascii_upper")) return Value.ofString(asciiCase(recvVal.asString(), true));
+                        if (methodName.equals("append") && !evaluatedArgs.isEmpty()) {
+                            Value appended = Value.ofString(recvVal.asString() + evaluatedArgs.get(0).asString());
+                            if (locals.containsKey(recvName)) locals.put(recvName, appended);
+                            else if (currentDomain != null && currentDomain.state.containsKey(recvName)) currentDomain.state.put(recvName, appended);
+                            return Value.ofUnit();
+                        }
+                        if (methodName.equals("reserve")) {
+                            return Value.ofUnit();
                         }
                         if (methodName.equals("split") && !evaluatedArgs.isEmpty()) {
                             String sep = evaluatedArgs.get(0).asString();
+                            if (sep.isEmpty()) throw new IllegalArgumentException("String split requires a nonempty separator");
                             List<Value> parts = new ArrayList<>();
                             for (String pt : recvVal.asString().split(java.util.regex.Pattern.quote(sep), -1)) {
                                 parts.add(Value.ofString(pt));
                             }
                             return new Value(Value.Kind.VECTOR, parts);
                         }
+                        if (methodName.equals("join") && !evaluatedArgs.isEmpty() && evaluatedArgs.get(0).raw instanceof List<?> list) {
+                            @SuppressWarnings("unchecked") List<Value> parts = (List<Value>) list;
+                            List<String> strings = parts.stream().map(Value::asString).toList();
+                            return Value.ofString(String.join(recvVal.asString(), strings));
+                        }
+                    } else if (recvVal.kind == Value.Kind.CHAR && methodName.equals("to_string")) {
+                        return Value.ofString(recvVal.toString());
                     } else if (recvVal.kind == Value.Kind.VECTOR && recvVal.raw instanceof List<?> lst) {
                         @SuppressWarnings("unchecked")
                         List<Value> l = (List<Value>) lst;
@@ -1282,7 +1418,9 @@ public class FastInterpreter {
                 String recvExpr = expr.substring(0, lastDot).trim();
                 String fieldOrVariant = expr.substring(lastDot + 1).trim();
                 if (!fieldOrVariant.isEmpty() && Character.isUpperCase(fieldOrVariant.charAt(0)) && !expr.contains("(")) {
-                    return Value.ofString(expr);
+                    Value enumConstructor = makeEnumValue(recvExpr + "." + fieldOrVariant,
+                            Collections.emptyList(), Collections.emptyList());
+                    return enumConstructor != null ? enumConstructor : Value.ofString(expr);
                 }
                 Value recvVal = evalExpr(recvExpr, locals, currentDomain);
                 if (recvVal != null && recvVal.kind == Value.Kind.OBJECT && recvVal.raw instanceof Map<?, ?> fm) {

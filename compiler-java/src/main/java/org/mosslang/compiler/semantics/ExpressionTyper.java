@@ -16,6 +16,7 @@ public class ExpressionTyper {
     private final Map<String, EnumType> enums;
     private final Map<String, Trait> traits;
     private final Deque<String> activeSpecializations = new ArrayDeque<>();
+    private Map<String, String> currentCallableBindings = new HashMap<>();
     public String currentCallingModule = null;
     public String currentCallingFunction = "main";
     public String currentCallerSpecializationKey = null;
@@ -290,7 +291,7 @@ public class ExpressionTyper {
                 boolean isFunctionCall = functions.containsKey(callee) ||
                         (dot > 0 && (functions.containsKey(callee.substring(0, dot) + "." + callee.substring(dot + 1)) ||
                                      functions.containsKey(callee.substring(0, dot) + "__" + callee.substring(dot + 1))));
-                if (dot > 0 && !callee.startsWith("\"") && !isFunctionCall) {
+                if (dot > 0 && !isFunctionCall) {
                     String target = callee.substring(0, dot).trim();
                     String member = callee.substring(dot + 1).trim();
                     if (enums.containsKey(target)) {
@@ -414,6 +415,7 @@ public class ExpressionTyper {
                     List<TypeRef> actualArgs = new ArrayList<>();
                     List<String> displayArgTypes = new ArrayList<>();
                     List<String> callableArgs = new ArrayList<>();
+                    Map<String, String> callableBindingsForCall = new HashMap<>();
                     boolean hasGenericParam = false;
                     for (int i = 0; i < argExprs.size(); i++) {
                         String aExpr = stripNamedArgPrefix(argExprs.get(i));
@@ -427,6 +429,9 @@ public class ExpressionTyper {
                             displayArgTypes.add("callable:" + aExpr);
                             callableArgs.add(argFn.semanticCallableId);
                             actual = TypeRef.unit();
+                            if (param != null) {
+                                callableBindingsForCall.put(param.name, aExpr);
+                            }
                         } else {
                             TypeRef prevExpected = this.currentExpectedType;
                             this.currentExpectedType = expected;
@@ -577,8 +582,12 @@ public class ExpressionTyper {
                         activeSpecializations.push(specKey);
                         String prevCaller = currentCallingFunction;
                         String prevCallerKey = currentCallerSpecializationKey;
+                        Map<String, String> prevCallableBindings = currentCallableBindings;
+                        Map<String, String> nextCallableBindings = new HashMap<>(prevCallableBindings);
+                        nextCallableBindings.putAll(callableBindingsForCall);
                         currentCallingFunction = "fn:" + fn.name;
                         currentCallerSpecializationKey = stableKey;
+                        currentCallableBindings = nextCallableBindings;
                         try {
                             TypeEnv callEnv = new TypeEnv();
                             for (int i = 0; i < fn.params.size(); i++) {
@@ -650,6 +659,7 @@ public class ExpressionTyper {
                         } finally {
                             currentCallingFunction = prevCaller;
                             currentCallerSpecializationKey = prevCallerKey;
+                            currentCallableBindings = prevCallableBindings;
                             activeSpecializations.pop();
                         }
                     }
@@ -811,16 +821,26 @@ public class ExpressionTyper {
         }
         if (stageExpr.startsWith("map(") && stageExpr.endsWith(")")) {
             String inner = stageExpr.substring(4, stageExpr.length() - 1).trim();
-            if (functions.containsKey(inner)) {
-                String dummyArg = "0";
-                if (elemType.sameHead(TypeRef.primitive("string"))) {
-                    dummyArg = "\"\"";
-                } else if (elemType.sameHead(TypeRef.primitive("float"))) {
-                    dummyArg = "0.0";
-                } else if (elemType.sameHead(TypeRef.primitive("bool"))) {
-                    dummyArg = "false";
+            String placeholder = "__moss_pipeline_item";
+            while (env.containsKey(placeholder)) {
+                placeholder += "_";
+            }
+            String substituted = replacePipelinePlaceholder(inner, placeholder);
+            if (!substituted.equals(inner)) {
+                TypeEnv callbackEnv = env.copy();
+                callbackEnv.put(placeholder, elemType);
+                TypeRef result = infer(substituted, line, callbackEnv);
+                return TypeRef.builtin("vector", List.of(result));
+            }
+            String callback = functions.containsKey(inner) ? inner : currentCallableBindings.get(inner);
+            if (callback != null || inner.contains(".")) {
+                String argument = "__moss_pipeline_arg";
+                while (env.containsKey(argument)) {
+                    argument += "_";
                 }
-                TypeRef ret = infer(inner + "(" + dummyArg + ")", line, env);
+                TypeEnv callbackEnv = env.copy();
+                callbackEnv.put(argument, elemType);
+                TypeRef ret = infer((callback != null ? callback : inner) + "(" + argument + ")", line, callbackEnv);
                 return TypeRef.builtin("vector", List.of(ret));
             }
             return TypeRef.builtin("vector", List.of(solver.fresh(0)));
@@ -850,6 +870,39 @@ public class ExpressionTyper {
         }
 
         return TypeRef.builtin("vector", List.of(elemType));
+    }
+
+    private static String replacePipelinePlaceholder(String expression, String replacement) {
+        StringBuilder result = new StringBuilder(expression.length());
+        char quote = 0;
+        boolean escaped = false;
+        for (int i = 0; i < expression.length(); i++) {
+            char current = expression.charAt(i);
+            if (quote != 0) {
+                result.append(current);
+                if (escaped) {
+                    escaped = false;
+                } else if (current == '\\') {
+                    escaped = true;
+                } else if (current == quote) {
+                    quote = 0;
+                }
+                continue;
+            }
+            if (current == '"' || current == '\'') {
+                quote = current;
+                result.append(current);
+                continue;
+            }
+            if (current == '_' &&
+                    (i == 0 || !Character.isLetterOrDigit(expression.charAt(i - 1)) && expression.charAt(i - 1) != '_') &&
+                    (i + 1 == expression.length() || !Character.isLetterOrDigit(expression.charAt(i + 1)) && expression.charAt(i + 1) != '_')) {
+                result.append(replacement);
+            } else {
+                result.append(current);
+            }
+        }
+        return result.toString();
     }
 
     public TypeRef inferMessageCall(String callExpr, int line, TypeEnv env) {
@@ -929,6 +982,32 @@ public class ExpressionTyper {
             }
         }
         return TypeRef.builtin("vector", List.of(solver.resolve(elemType)));
+    }
+
+    private void requireStringMethodArgs(String member, List<String> args, int arity, int line, TypeEnv env) {
+        requireStringMethodArgsCount(member, args, arity, line);
+        requireStringMethodType(member, arity, "string", args.get(0), line, env);
+    }
+
+    private void requireStringMethodArgsCount(String member, List<String> args, int arity, int line) {
+        if (args.size() != arity) {
+            throw new CompileError(line, "method '" + member + "' on string expects " + arity +
+                    " argument" + (arity == 1 ? "" : "s") + ", got " + args.size(), "TYPE_MISMATCH");
+        }
+    }
+
+    private void requireStringMethodType(String member, int arity, String expectedName,
+                                         String argument, int line, TypeEnv env) {
+        if (argument == null || argument.isEmpty()) {
+            throw new CompileError(line, "method '" + member + "' on string expects " + arity +
+                    " argument" + (arity == 1 ? "" : "s"), "TYPE_MISMATCH");
+        }
+        TypeRef expected = TypeRef.primitive(expectedName);
+        TypeRef actual = solver.resolve(infer(argument, line, env));
+        if (!solver.unify(actual, expected)) {
+            throw new CompileError(line, "method '" + member + "' requires " + expectedName +
+                    " argument, got '" + actual.toCanonicalString() + "'", "TYPE_MISMATCH");
+        }
     }
 
     private TypeRef inferMethodCall(String target, String member, List<String> argExprs, int line, TypeEnv env) {
@@ -1021,6 +1100,51 @@ public class ExpressionTyper {
                 TypeRef idxType = solver.resolve(infer(argExprs.get(0), line, env));
                 if (!solver.unify(idxType, TypeRef.primitive("int"))) {
                     throw new CompileError(line, "method 'char_at' requires int argument, got '" + idxType.toCanonicalString() + "'", "TYPE_MISMATCH");
+                }
+                return TypeRef.primitive("char");
+            }
+            if ("chars".equals(member)) {
+                if (!argExprs.isEmpty()) {
+                    throw new CompileError(line, "method 'chars' on string expects 0 arguments, got " + argExprs.size(), "TYPE_MISMATCH");
+                }
+                return TypeRef.builtin("vector", List.of(TypeRef.primitive("char")));
+            }
+            if ("find".equals(member)) {
+                requireStringMethodArgs(member, argExprs, 1, line, env);
+                return TypeRef.primitive("int");
+            }
+            if ("slice".equals(member)) {
+                if (argExprs.size() != 2) {
+                    throw new CompileError(line, "method 'slice' on string expects 2 arguments, got " + argExprs.size(), "TYPE_MISMATCH");
+                }
+                requireStringMethodType(member, 0, "int", argExprs.get(0), line, env);
+                requireStringMethodType(member, 1, "int", argExprs.get(1), line, env);
+                return TypeRef.primitive("string");
+            }
+            if ("ascii_lower".equals(member) || "ascii_upper".equals(member)) {
+                if (!argExprs.isEmpty()) {
+                    throw new CompileError(line, "method '" + member + "' on string expects 0 arguments, got " + argExprs.size(), "TYPE_MISMATCH");
+                }
+                return TypeRef.primitive("string");
+            }
+            if ("reserve".equals(member)) {
+                requireStringMethodArgsCount(member, argExprs, 1, line);
+                requireStringMethodType(member, 1, "int", argExprs.size() == 1 ? argExprs.get(0) : "", line, env);
+                return TypeRef.unit();
+            }
+            if ("append".equals(member)) {
+                requireStringMethodArgsCount(member, argExprs, 1, line);
+                requireStringMethodType(member, 1, "string", argExprs.size() == 1 ? argExprs.get(0) : "", line, env);
+                return TypeRef.unit();
+            }
+            if ("join".equals(member)) {
+                if (argExprs.size() != 1) {
+                    throw new CompileError(line, "method 'join' on string expects 1 argument, got " + argExprs.size(), "TYPE_MISMATCH");
+                }
+                TypeRef parts = solver.resolve(infer(argExprs.get(0), line, env));
+                TypeRef expectedParts = TypeRef.builtin("vector", List.of(TypeRef.primitive("string")));
+                if (!solver.unify(parts, expectedParts)) {
+                    throw new CompileError(line, "method 'join' requires Vector[String] argument, got '" + parts.toCanonicalString() + "'", "TYPE_MISMATCH");
                 }
                 return TypeRef.primitive("string");
             }

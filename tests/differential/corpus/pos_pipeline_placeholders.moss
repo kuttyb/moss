@@ -1,0 +1,14 @@
+# EXPECT: ok=true
+
+fn increment(value: Int) -> Int:
+  return value + 1
+
+fn transform(values, operation):
+  return values |> map(operation)
+
+fn main():
+  values = [-1, 2, 4]
+  transformed = values |> map(_ + 3) |> filter(_ > 0)
+  total = values |> map(increment) |> sum
+  doubled = transform(values, increment)
+  echo transformed[0], transformed[1], total, doubled[2]

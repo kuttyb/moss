@@ -6,11 +6,14 @@ import org.mosslang.compiler.diagnostics.CompileError;
 import org.mosslang.compiler.diagnostics.DiagnosticFormatter;
 import org.mosslang.compiler.parser.Parser;
 import org.mosslang.compiler.semantics.CheckedProgram;
+import org.mosslang.compiler.interpreter.FastInterpreter;
 
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.io.ByteArrayOutputStream;
+import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.security.MessageDigest;
@@ -19,6 +22,92 @@ import java.util.regex.*;
 import java.util.stream.Stream;
 
 public class ProjectBuilder {
+
+    private static final class ProjectTestResult {
+        String id;
+        String name;
+        String sourceFile;
+        int line;
+        boolean passed;
+        String detail;
+    }
+
+    private static final class ProjectBenchmarkResult {
+        String id;
+        String name;
+        String sourceFile;
+        int line;
+        long medianNs;
+        long p25Ns;
+        long p75Ns;
+        int samples;
+        int warmup;
+        int iterations;
+        List<Long> sampleValues;
+    }
+
+    private static void reportProjectTests(ProjectManifest manifest, String filter,
+                                           List<ProjectTestResult> results, boolean json) {
+        int passed = (int) results.stream().filter(result -> result.passed).count();
+        int failed = results.size() - passed;
+        if (json) {
+            StringBuilder out = new StringBuilder("{\n  \"schema_version\": \"moss-agent-1\",\n  \"command\": \"test\",\n  \"ok\": ")
+                    .append(failed == 0).append(",\n  \"result\": {\"project\": \"")
+                    .append(escapeJson(manifest.getName())).append("\", \"filter\": ")
+                    .append(filter == null || filter.isBlank() ? "null" : "\"" + escapeJson(filter) + "\"")
+                    .append(", \"tests\": [");
+            for (int i = 0; i < results.size(); i++) {
+                ProjectTestResult result = results.get(i);
+                if (i > 0) out.append(", ");
+                out.append("{\"id\": \"").append(escapeJson(result.id)).append("\", \"name\": \"")
+                        .append(escapeJson(result.name)).append("\", \"status\": \"")
+                        .append(result.passed ? "pass" : "fail").append("\", \"source_file\": \"")
+                        .append(escapeJson(result.sourceFile)).append("\", \"line\": ").append(result.line)
+                        .append(", \"diagnostic\": ")
+                        .append(result.passed ? "null" : "{\"code\": \"TEST_ASSERTION_FAILED\", \"message\": \"" + escapeJson(result.detail) + "\"}")
+                        .append("}");
+            }
+            out.append("], \"passed\": ").append(passed).append(", \"failed\": ").append(failed).append("}\n}");
+            System.out.println(out);
+            return;
+        }
+        System.out.println("Running tests for " + manifest.getName() + "...");
+        for (ProjectTestResult result : results) {
+            System.out.println((result.passed ? "PASS " : "FAIL ") + result.name);
+            if (!result.passed) System.out.println("  " + result.sourceFile + ":" + result.line + ": " + result.detail);
+        }
+        System.out.println(passed + " passed; " + failed + " failed");
+    }
+
+    private static void reportProjectBenchmarks(ProjectManifest manifest, String filter,
+                                                List<ProjectBenchmarkResult> results, boolean json) {
+        if (json) {
+            StringBuilder out = new StringBuilder("{\n  \"schema_version\": \"moss-agent-1\",\n  \"command\": \"bench\",\n  \"ok\": true,\n  \"result\": {\"project\": \"")
+                    .append(escapeJson(manifest.getName())).append("\", \"filter\": ")
+                    .append(filter == null || filter.isBlank() ? "null" : "\"" + escapeJson(filter) + "\"")
+                    .append(", \"benchmarks\": [");
+            for (int i = 0; i < results.size(); i++) {
+                ProjectBenchmarkResult result = results.get(i);
+                if (i > 0) out.append(", ");
+                out.append("{\"id\": \"").append(escapeJson(result.id)).append("\", \"name\": \"")
+                        .append(escapeJson(result.name)).append("\", \"source_file\": \"")
+                        .append(escapeJson(result.sourceFile)).append("\", \"line\": ").append(result.line)
+                        .append(", \"median_ns\": ").append(result.medianNs).append(", \"p25_ns\": ").append(result.p25Ns)
+                        .append(", \"p75_ns\": ").append(result.p75Ns).append(", \"samples\": ").append(result.samples)
+                        .append(", \"warmup\": ").append(result.warmup).append(", \"iterations\": ").append(result.iterations)
+                        .append(", \"sample_values_ns\": ").append(result.sampleValues).append("}");
+            }
+            out.append("]}\n}");
+            System.out.println(out);
+            return;
+        }
+        System.out.println("Benchmarks for " + manifest.getName() + " (Fast Debug interpreter; nanoseconds per execution):");
+        for (ProjectBenchmarkResult result : results) {
+            System.out.println(result.name + ": median=" + result.medianNs + " ns, p25=" + result.p25Ns
+                    + " ns, p75=" + result.p75Ns + " ns (" + result.samples + " samples, "
+                    + result.warmup + " warmups, " + result.iterations + " executions/sample)");
+        }
+    }
 
     public static int clean(ProjectManifest manifest, boolean json) throws CompileError {
         Path buildDir = manifest.getRoot().resolve("build");
@@ -46,35 +135,174 @@ public class ProjectBuilder {
     }
 
     public static int test(ProjectManifest manifest, String filter, boolean release, boolean json) throws CompileError {
-        // First verify imports
+        return test(manifest, filter, release, json, false);
+    }
+
+    public static int test(ProjectManifest manifest, String filter, boolean release, boolean json, boolean trace) throws CompileError {
         verifyImports(manifest);
+        Program program = loadProjectDeclarations(manifest, "tests");
+        List<TestDecl> selected = new ArrayList<>();
+        for (TestDecl test : program.tests) {
+            if (filter == null || filter.isBlank() || test.name.contains(filter)
+                    || test.semanticIdentity.contains(filter)) selected.add(test);
+        }
+        if (selected.isEmpty()) {
+            throw new CompileError("TEST_DISCOVERY_ERROR",
+                    filter == null || filter.isBlank() ? "no Moss tests were found"
+                            : "no Moss tests matched filter '" + filter + "'",
+                    manifest.getRoot().toString(), 0);
+        }
 
-        Path testsDir = manifest.getRoot().resolve("tests");
-        List<Path> testFiles = new ArrayList<>();
-        if (Files.isDirectory(testsDir)) {
-            try (Stream<Path> walk = Files.walk(testsDir)) {
-                walk.filter(Files::isRegularFile)
-                    .filter(f -> f.toString().endsWith(".moss"))
-                    .forEach(testFiles::add);
-            } catch (IOException e) {
-                throw new CompileError("TEST_DISCOVERY_ERROR", "cannot scan tests: " + e.getMessage(), testsDir.toString(), 0);
+        // Check the complete project once, then execute each test body in a fresh
+        // Fast Debug state so a failed test cannot contaminate the next one.
+        new CheckedProgram(program).run();
+        List<ProjectTestResult> results = new ArrayList<>();
+        for (TestDecl test : selected) {
+            Program executable = executableWithBody(program, test.body, test.sourceFile);
+            ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+            ByteArrayOutputStream stderr = new ByteArrayOutputStream();
+            ProjectTestResult result = new ProjectTestResult();
+            result.id = test.semanticIdentity;
+            result.name = test.name;
+            result.sourceFile = test.sourceFile;
+            result.line = test.line;
+            try {
+                new FastInterpreter(executable, trace,
+                        new PrintStream(stdout, true, StandardCharsets.UTF_8),
+                        trace ? System.err : new PrintStream(stderr, true, StandardCharsets.UTF_8)).run();
+                result.passed = true;
+                result.detail = "";
+            } catch (RuntimeException e) {
+                result.passed = false;
+                result.detail = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
             }
+            results.add(result);
         }
-
-        if (testFiles.isEmpty()) {
-            throw new CompileError("TEST_DISCOVERY_ERROR", "no Moss tests were found", manifest.getRoot().toString(), 0);
-        }
-
-        // Run test via FastInterpreter or native
-        System.out.println("Running tests for " + manifest.getName() + "...");
-        System.out.println("MOSS_TEST|PASS|" + hexEncode("test:1") + "|" + hexEncode("dependency answer") + "|");
-        return 0;
+        reportProjectTests(manifest, filter, results, json);
+        return results.stream().allMatch(r -> r.passed) ? 0 : 1;
     }
 
     public static int bench(ProjectManifest manifest, String filter, boolean json) throws CompileError {
         verifyImports(manifest);
-        System.out.println("MOSS_BENCH|" + hexEncode("bench:1") + "|" + hexEncode(filter != null ? filter : "bench") + "|100|90|110|31|5|1000|100");
+        Program program = loadProjectDeclarations(manifest, "benches");
+        List<BenchDecl> selected = new ArrayList<>();
+        for (BenchDecl bench : program.benchmarks) {
+            if (filter == null || filter.isBlank() || bench.name.contains(filter)
+                    || bench.semanticIdentity.contains(filter)) selected.add(bench);
+        }
+        if (selected.isEmpty()) {
+            throw new CompileError("BENCHMARK_CONFIGURATION_ERROR",
+                    filter == null || filter.isBlank() ? "no Moss benchmarks were found"
+                            : "no Moss benchmarks matched filter '" + filter + "'",
+                    manifest.getRoot().toString(), 0);
+        }
+        // Reuse the semantic test-body checker for benchmark declarations.
+        Program checked = projectCopy(program);
+        for (BenchDecl bench : selected) {
+            TestDecl asTest = new TestDecl(bench.name, bench.header, bench.line, bench.sourceFile);
+            asTest.body = bench.body;
+            checked.tests.add(asTest);
+        }
+        checked.benchmarks.clear();
+        new CheckedProgram(checked).run();
+
+        List<ProjectBenchmarkResult> results = new ArrayList<>();
+        final int warmup = 5;
+        final int samples = 31;
+        final int iterations = 100;
+        for (BenchDecl bench : selected) {
+            Program executable = executableWithBody(program, bench.body, bench.sourceFile);
+            for (int i = 0; i < warmup; i++) runInterpreter(executable);
+            List<Long> values = new ArrayList<>();
+            for (int sample = 0; sample < samples; sample++) {
+                long start = System.nanoTime();
+                for (int iteration = 0; iteration < iterations; iteration++) runInterpreter(executable);
+                values.add((System.nanoTime() - start) / iterations);
+            }
+            Collections.sort(values);
+            ProjectBenchmarkResult result = new ProjectBenchmarkResult();
+            result.id = bench.semanticIdentity;
+            result.name = bench.name;
+            result.sourceFile = bench.sourceFile;
+            result.line = bench.line;
+            result.medianNs = values.get(values.size() / 2);
+            result.p25Ns = values.get(values.size() / 4);
+            result.p75Ns = values.get((values.size() * 3) / 4);
+            result.samples = samples;
+            result.warmup = warmup;
+            result.iterations = iterations;
+            result.sampleValues = values;
+            results.add(result);
+        }
+        reportProjectBenchmarks(manifest, filter, results, json);
         return 0;
+    }
+
+    private static void runInterpreter(Program program) {
+        new FastInterpreter(program, false,
+                new PrintStream(new ByteArrayOutputStream()),
+                new PrintStream(new ByteArrayOutputStream())).run();
+    }
+
+    private static Program executableWithBody(Program source, List<Stmt> body, String sourceFile) {
+        Program executable = projectCopy(source);
+        executable.tests.clear();
+        executable.benchmarks.clear();
+        executable.main = new MainProc();
+        executable.main.body.addAll(body);
+        executable.main.sourceFile = sourceFile;
+        return executable;
+    }
+
+    private static Program projectCopy(Program source) {
+        Program copy = new Program();
+        copy.sourceFile = source.sourceFile;
+        copy.sourceLines.addAll(source.sourceLines);
+        copy.moduleName = source.moduleName;
+        copy.mainModule = source.mainModule;
+        copy.explicitModule = source.explicitModule;
+        copy.imports.addAll(source.imports);
+        copy.functions.addAll(source.functions);
+        copy.traits.addAll(source.traits);
+        copy.objects.addAll(source.objects);
+        copy.enums.addAll(source.enums);
+        copy.domains.addAll(source.domains);
+        copy.tests.addAll(source.tests);
+        copy.benchmarks.addAll(source.benchmarks);
+        copy.main = source.main;
+        return copy;
+    }
+
+    private static Program loadProjectDeclarations(ProjectManifest manifest, String declarationDirectory) throws CompileError {
+        List<Path> paths = new ArrayList<>(manifest.findSourceFiles());
+        Path extra = manifest.getRoot().resolve(declarationDirectory);
+        if (Files.isDirectory(extra)) {
+            try (Stream<Path> walk = Files.walk(extra)) {
+                walk.filter(Files::isRegularFile).filter(f -> f.toString().endsWith(".moss")).forEach(paths::add);
+            } catch (IOException e) {
+                throw new CompileError("TEST_DISCOVERY_ERROR", "cannot scan " + declarationDirectory + ": " + e.getMessage(), extra.toString(), 0);
+            }
+        }
+        paths.sort(Comparator.comparing(Path::toString));
+        Program combined = new Program();
+        Set<String> enumNames = new HashSet<>();
+        for (Path path : paths) {
+            try {
+                Program parsed = Parser.parseSource(Files.readString(path, StandardCharsets.UTF_8), path.toString());
+                if (combined.sourceFile.isEmpty()) combined.sourceFile = path.toString();
+                combined.functions.addAll(parsed.functions);
+                combined.traits.addAll(parsed.traits);
+                combined.objects.addAll(parsed.objects);
+                for (EnumType value : parsed.enums) if (enumNames.add(value.name)) combined.enums.add(value);
+                combined.domains.addAll(parsed.domains);
+                combined.tests.addAll(parsed.tests);
+                combined.benchmarks.addAll(parsed.benchmarks);
+                if (parsed.main != null && combined.main == null) combined.main = parsed.main;
+            } catch (IOException e) {
+                throw new CompileError("PROJECT_SOURCE_NOT_FOUND", "cannot read Moss source '" + path + "': " + e.getMessage(), path.toString(), 0);
+            }
+        }
+        return combined;
     }
 
     private static void verifyImports(ProjectManifest manifest) throws CompileError {

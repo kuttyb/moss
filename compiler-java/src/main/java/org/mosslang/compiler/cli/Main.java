@@ -81,15 +81,17 @@ public class Main {
         if ("test".equals(first)) {
             boolean release = false;
             boolean json = false;
+            boolean trace = false;
             String filter = null;
             for (int i = 1; i < args.length; i++) {
                 if ("--release".equals(args[i])) release = true;
                 else if ("--json".equals(args[i])) json = true;
+                else if ("--trace".equals(args[i])) trace = true;
                 else if (!args[i].startsWith("-") && filter == null) filter = args[i];
             }
             try {
                 org.mosslang.compiler.project.ProjectManifest manifest = org.mosslang.compiler.project.ProjectManifest.load(Paths.get("."));
-                return org.mosslang.compiler.project.ProjectBuilder.test(manifest, filter, release, json);
+                return org.mosslang.compiler.project.ProjectBuilder.test(manifest, filter, release, json, trace);
             } catch (CompileError e) {
                 if (json) {
                     DiagnosticFormatter.writeStructuredError(System.out, "test", COMPILER_VERSION,

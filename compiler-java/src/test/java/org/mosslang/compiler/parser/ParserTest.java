@@ -130,8 +130,8 @@ public class ParserTest {
         assertEquals(1, obj.methods.size(), "methods count");
         assertEquals("dist_sq", obj.methods.get(0).name, "m0 name");
 
-        assertEquals(1, p.enums.size(), "enums count");
-        EnumType en = p.enums.get(0);
+        EnumType en = p.enums.stream().filter(e -> "Color".equals(e.name)).findFirst()
+                .orElseThrow(() -> new AssertionError("Color enum missing"));
         assertEquals("Color", en.name, "enum name");
         assertEquals(3, en.cases.size(), "enum cases count");
         assertEquals("Red", en.cases.get(0).name, "case 0");

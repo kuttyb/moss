@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PACKAGED="${SCRIPT_DIR}/../../compiler-java/dist/moss.jar"
+if [ -f "${PACKAGED}" ]; then
+    exec java -jar "${PACKAGED}" "$@"
+fi
+exec "${SCRIPT_DIR}/run.sh" "$@"

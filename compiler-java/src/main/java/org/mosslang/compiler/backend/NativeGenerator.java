@@ -4,22 +4,18 @@ import org.mosslang.compiler.ast.*;
 import org.mosslang.compiler.semantics.ExpressionTyper;
 import org.mosslang.compiler.semantics.SemanticChecker;
 import org.mosslang.compiler.types.TypeKind;
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.*;
 
 public class NativeGenerator {
     private static final ThreadLocal<Set<String>> currentRaisingFunctions = ThreadLocal.withInitial(HashSet::new);
     private static final ThreadLocal<Set<String>> currentWriteFunctions = ThreadLocal.withInitial(HashSet::new);
+    private static final ThreadLocal<Map<String, Set<Integer>>> currentWriteParamIndices = ThreadLocal.withInitial(HashMap::new);
     private static final ThreadLocal<Set<String>> currentWriteMethods = ThreadLocal.withInitial(HashSet::new);
     private static final ThreadLocal<Set<String>> currentWriteParams = ThreadLocal.withInitial(HashSet::new);
     private static final ThreadLocal<Set<String>> currentGenericFunctions = ThreadLocal.withInitial(HashSet::new);
     private static final ThreadLocal<Boolean> currentInTry = ThreadLocal.withInitial(() -> false);
     private static final ThreadLocal<Program> currentProgram = new ThreadLocal<>();
+    private static final ThreadLocal<String> currentEnclosingIdentity = new ThreadLocal<>();
 
     public static class HandlerSyncPlan {
         public final Set<String> readFields = new HashSet<>();
@@ -59,13 +55,13 @@ public class NativeGenerator {
         } else {
             String txt = s.text != null ? s.text.trim() : "";
             for (Field f : d.state) {
+                if (txt.contains(f.name + ".append(") || txt.contains(f.name + ".reserve(")) {
+                    plan.writeFields.add(f.name);
+                }
                 for (String wf : currentWriteFunctions.get()) {
                     if (txt.contains(wf + "(" + f.name + ")") || txt.contains("." + wf + "(" + f.name + ")")) {
                         plan.writeFields.add(f.name);
                     }
-                }
-                if (txt.contains("increment(" + f.name + ")") || txt.contains("bump(" + f.name + ")")) {
-                    plan.writeFields.add(f.name);
                 }
             }
             analyzeReadEffects(s.text, d, plan);
@@ -75,6 +71,50 @@ public class NativeGenerator {
                 analyzeReadEffects(arg, d, plan);
             }
         }
+    }
+
+    private static boolean fnMutatesParameter(Function fn, String name) {
+        List<String> bodies = new ArrayList<>();
+        if (fn.resultExpression != null) bodies.add(fn.resultExpression);
+        for (Stmt stmt : fn.body) if (stmt != null && stmt.text != null) bodies.add(stmt.text);
+        for (String body : bodies) {
+            String text = body.trim();
+            if (text.startsWith(name + " =") || text.startsWith(name + "=") ||
+                    text.startsWith(name + "[") || text.contains(name + ".push(") ||
+                    text.contains(name + ".pop(") || text.contains(name + ".delete(") ||
+                    text.contains(name + ".append(") || text.contains(name + ".reserve(")) return true;
+        }
+        return false;
+    }
+
+    private static boolean callPassesParameter(String body, String callee, int argIndex, String param) {
+        String marker = callee + "(";
+        int at = body.indexOf(marker);
+        while (at >= 0) {
+            int begin = at + marker.length();
+            int depth = 1;
+            boolean inString = false;
+            int end = begin;
+            for (; end < body.length(); end++) {
+                char ch = body.charAt(end);
+                if (ch == '"' && (end == 0 || body.charAt(end - 1) != '\\')) inString = !inString;
+                if (!inString) {
+                    if (ch == '(') depth++;
+                    else if (ch == ')' && --depth == 0) break;
+                }
+            }
+            if (end < body.length()) {
+                List<String> args = splitTopLevel(body.substring(begin, end), ',');
+                if (argIndex < args.size()) {
+                    String value = args.get(argIndex).trim();
+                    int colon = value.indexOf(':');
+                    if (colon >= 0) value = value.substring(colon + 1).trim();
+                    if (value.equals(param)) return true;
+                }
+            }
+            at = body.indexOf(marker, at + marker.length());
+        }
+        return false;
     }
 
     private static void analyzeReadEffects(String text, Domain d, HandlerSyncPlan plan) {
@@ -90,71 +130,7 @@ public class NativeGenerator {
         return generate(program, debugBuild, false);
     }
 
-    private static boolean isBorrowedReads(Program program) {
-        return program.domains.stream().anyMatch(d -> d.name.equals("Store") && d.handlers.stream().anyMatch(h -> h.name.equals("Pipeline")))
-            && program.objects.stream().anyMatch(o -> o.name.equals("Record") && o.fields.stream().anyMatch(f -> f.name.equals("profile")));
-    }
-
-    private static boolean isReadProjection(Program program) {
-        return program.domains.stream().anyMatch(d -> d.name.equals("Store") && d.handlers.stream().anyMatch(h -> h.name.equals("Dataflow")))
-            && program.objects.stream().anyMatch(o -> o.name.equals("Data"));
-    }
-
-    private static boolean isHandler2pl(Program program) {
-        return program.domains.stream().anyMatch(d -> d.name.equals("Store") && d.handlers.stream().anyMatch(h -> h.name.equals("LeftAgain")))
-            && program.domains.stream().anyMatch(d -> d.name.equals("Split"));
-    }
-
-    private static boolean isPhase106dNested(Program program) {
-        return program.domains.stream().anyMatch(d -> d.name.equals("Root"))
-            && program.domains.stream().anyMatch(d -> d.name.equals("Branch"))
-            && program.domains.stream().anyMatch(d -> d.name.equals("Leaf"));
-    }
-
-    private static boolean isPhase106dSpecializations(Program program) {
-        return program.domains.stream().anyMatch(d -> d.name.equals("Box") && d.handlers.stream().anyMatch(h -> h.name.equals("Update")))
-            && program.objects.stream().anyMatch(o -> o.name.equals("Left"))
-            && program.objects.stream().anyMatch(o -> o.name.equals("Right"));
-    }
-
-    private static String loadResource(String name) {
-        try {
-            java.io.InputStream is = NativeGenerator.class.getResourceAsStream(name);
-            if (is != null) {
-                try (BufferedReader reader = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8))) {
-                    StringBuilder sb = new StringBuilder();
-                    String line;
-                    while ((line = reader.readLine()) != null) {
-                        sb.append(line).append("\n");
-                    }
-                    return sb.toString();
-                }
-            }
-            Path p = Paths.get("compiler-java/src/main/resources" + name);
-            if (Files.exists(p)) {
-                return Files.readString(p, StandardCharsets.UTF_8);
-            }
-        } catch (Exception ignored) {}
-        return "";
-    }
-
     public static String generate(Program program, boolean debugBuild, boolean optimized) {
-        if (isBorrowedReads(program)) {
-            return loadResource("/phase106d1_borrowed_reads.rs");
-        }
-        if (isReadProjection(program)) {
-            return loadResource("/phase106d1_read_projection.rs");
-        }
-        if (isHandler2pl(program)) {
-            return loadResource("/phase106d_handler_2pl.rs");
-        }
-        if (isPhase106dNested(program)) {
-            return loadResource("/phase106d_nested.rs");
-        }
-        if (isPhase106dSpecializations(program)) {
-            return loadResource("/phase106d_specializations.rs");
-        }
-
         StringBuilder o = new StringBuilder();
         o.append("// Generated by Moss v0.1. Do not edit by hand.\n");
         o.append("// Synchronous domain calls enter compiler-planned handler-level 2PL.\n");
@@ -220,8 +196,6 @@ public class NativeGenerator {
         currentRaisingFunctions.set(raisingFunctions);
 
         Set<String> writeFunctions = new HashSet<>();
-        writeFunctions.add("increment");
-        writeFunctions.add("bump");
         for (Function f : program.functions) {
             for (Param p : f.params) {
                 if (f.resultExpression != null) {
@@ -229,6 +203,7 @@ public class NativeGenerator {
                     if (re.contains(p.name + ".push(") || re.contains(p.name + ".pop(") || re.contains(p.name + ".delete(")) {
                         writeFunctions.add(f.name);
                     }
+                    if (re.contains(p.name + ".append(") || re.contains(p.name + ".reserve(")) writeFunctions.add(f.name);
                 }
                 for (Stmt s : f.body) {
                     if (s.kind == Stmt.Kind.Assign && p.name.equals(s.a != null ? s.a.trim() : "")) {
@@ -237,7 +212,8 @@ public class NativeGenerator {
                     if (s.text != null) {
                         String st = s.text.trim();
                         if (st.startsWith(p.name + " =") || st.startsWith(p.name + "=")
-                                || st.contains(p.name + ".push(") || st.contains(p.name + ".pop(") || st.contains(p.name + ".delete(")) {
+                                || st.contains(p.name + ".push(") || st.contains(p.name + ".pop(") || st.contains(p.name + ".delete(")
+                                || st.contains(p.name + ".append(") || st.contains(p.name + ".reserve(")) {
                             writeFunctions.add(f.name);
                         }
                     }
@@ -267,6 +243,39 @@ public class NativeGenerator {
         }
         currentWriteFunctions.set(writeFunctions);
 
+        Map<String, Set<Integer>> writeParamIndices = new HashMap<>();
+        for (Function fn : program.functions) {
+            Set<Integer> indices = new HashSet<>();
+            for (int pi = 0; pi < fn.params.size(); pi++) {
+                String name = fn.params.get(pi).name;
+                if (fnMutatesParameter(fn, name)) indices.add(pi);
+            }
+            if (!indices.isEmpty()) writeParamIndices.put(fn.name, indices);
+        }
+        for (int pass = 0; pass < program.functions.size(); pass++) {
+            boolean changed = false;
+            for (Function fn : program.functions) {
+                Set<Integer> indices = writeParamIndices.computeIfAbsent(fn.name, ignored -> new HashSet<>());
+                List<String> bodies = new ArrayList<>();
+                if (fn.resultExpression != null) bodies.add(fn.resultExpression);
+                for (Stmt stmt : fn.body) if (stmt != null && stmt.text != null) bodies.add(stmt.text);
+                for (Function callee : program.functions) {
+                    Set<Integer> calleeWrites = writeParamIndices.get(callee.name);
+                    if (calleeWrites == null || calleeWrites.isEmpty()) continue;
+                    for (String body : bodies) {
+                        for (int ai : calleeWrites) {
+                            if (ai >= fn.params.size()) continue;
+                            String param = fn.params.get(ai).name;
+                            if (callPassesParameter(body, callee.name, ai, param) && indices.add(ai)) changed = true;
+                        }
+                    }
+                }
+                if (indices.isEmpty()) writeParamIndices.remove(fn.name);
+            }
+            if (!changed) break;
+        }
+        currentWriteParamIndices.set(writeParamIndices);
+
         Set<String> genericObjects = new HashSet<>();
         for (ObjectType obj : program.objects) {
             for (Field f : obj.fields) {
@@ -282,7 +291,7 @@ public class NativeGenerator {
             genericFunctions.addAll(program.importedGenericFunctions);
         }
         for (Function f : program.functions) {
-            if (!f.name.contains("generic") && !f.name.equals("summarize")) {
+            if (!f.name.contains("generic")) {
                 boolean hasGeneric = f.generic;
                 for (Param p : f.params) {
                     if (p.type == null || p.type.isEmpty() || p.type.contains("?") || genericObjects.contains(p.type)) {
@@ -311,7 +320,7 @@ public class NativeGenerator {
         // Second pass for transitive open-result functions (e.g. relay() -> fresh(), make(flag), outer() -> middle())
         for (int pass = 0; pass < 3; pass++) {
             for (Function f : program.functions) {
-                if (!f.name.contains("generic") && !f.name.equals("summarize") && (f.returnType == null || f.returnType.isEmpty())) {
+                if (!f.name.contains("generic") && (f.returnType == null || f.returnType.isEmpty())) {
                     for (Stmt s : f.body) {
                         String txt = s.text != null ? s.text : (s.a != null ? s.a : "");
                         for (String gf : new ArrayList<>(genericFunctions)) {
@@ -1006,12 +1015,7 @@ public class NativeGenerator {
             }
             String fnIdentity;
             String fnGeneratedSymbol = fn.name;
-            if (fn.name.equals("summarize") && !fn.params.isEmpty() && fn.params.get(0).type != null && fn.params.get(0).type.equalsIgnoreCase("vector")) {
-                fnIdentity = "fn:summarize<vector[int]>@" + fn.line + "#specialization-v2:sha256:34e20df438a72f02b4519c27572e48ea8639e950132ea3d78c03077e2cc2f710";
-                fnGeneratedSymbol = "__moss_specialize_summarize_0";
-            } else {
-                fnIdentity = "fn:" + fn.name + "@" + fn.line;
-            }
+            fnIdentity = "fn:" + fn.name + "@" + fn.line;
             String fnNative = DebugMapGenerator.toolingNativeSymbol("function", fn.name, fnIdentity);
             o.append("// Moss tooling begin|function|").append(fnIdentity).append("|").append(fnGeneratedSymbol).append("|").append(fnNative).append("\n");
             o.append("// Moss line ").append(fn.line).append(": fn ").append(fn.name).append("\n");
@@ -1029,7 +1033,8 @@ public class NativeGenerator {
                 String pType = (p.type != null && !p.type.isEmpty())
                         ? rustType(p.type)
                         : (p.typeRef != null ? rustType(p.typeRef.toCanonicalString()) : (objects.containsKey("Box") && fn.name.contains("generic") ? "Box" : "i64"));
-                boolean paramMutated = writeFunctions.contains(fn.name);
+                boolean paramMutated = currentWriteParamIndices.get()
+                        .getOrDefault(fn.name, Collections.emptySet()).contains(i);
                 for (Stmt s : fn.body) {
                     if (s.kind == Stmt.Kind.Assign && p.name.equals(s.a != null ? s.a.trim() : "")) {
                         paramMutated = true;
@@ -1069,42 +1074,26 @@ public class NativeGenerator {
             }
             o.append(" {\n");
 
-            // Check if function body is a functional pipeline (e.g. summarize)
-            boolean generatedPipeline = false;
-            if (fn.name.equals("summarize")) {
-                for (Stmt s : fn.body) {
-                    if (s.text != null && s.text.contains("|>")) {
-                        generatedPipeline = true;
-                        genPipeline(o, s, optimized);
-                        break;
-                    }
+            currentWriteParams.set(writeParams);
+            currentEnclosingIdentity.set(fnIdentity);
+            genBlockStmts(o, fn.body, "    ", declared, Collections.emptySet(), Collections.emptySet(), domains, objects, false, false, false, fnRaises);
+            if (fn.resultExpression != null) {
+                emitFunctionalPipelineMarkers(o, fnIdentity, fn.resultLine, fn.resultExpression, "    ");
+                currentInTry.set(fnRaises);
+                String retVal = lowerExpr(fn.resultExpression, Collections.emptySet(), Collections.emptySet(), domains, objects, false);
+                currentInTry.set(false);
+                if (fnRaises) {
+                    o.append("    return Ok(").append(retVal).append(");\n");
+                } else if (fnRetRust.equals("()")) {
+                    o.append("    ").append(retVal).append(";\n");
+                } else {
+                    o.append("    return ").append(retVal).append(";\n");
                 }
+            } else if (fnRaises && fnRetRust.equals("()")) {
+                o.append("    Ok(())\n");
             }
-            if (!generatedPipeline) {
-                currentWriteParams.set(writeParams);
-                genBlockStmts(o, fn.body, "    ", declared, Collections.emptySet(), Collections.emptySet(), domains, objects, false, false, false, fnRaises);
-                if (fn.resultExpression != null) {
-                    if (fn.resultExpression.contains("|>")) {
-                        Stmt s = new Stmt(Stmt.Kind.Return, fn.resultLine, 4, fn.resultExpression, fn.sourceFile);
-                        s.a = fn.resultExpression;
-                        genPipeline(o, s, optimized);
-                    } else {
-                        currentInTry.set(fnRaises);
-                        String retVal = lowerExpr(fn.resultExpression, Collections.emptySet(), Collections.emptySet(), domains, objects, false);
-                        currentInTry.set(false);
-                        if (fnRaises) {
-                            o.append("    return Ok(").append(retVal).append(");\n");
-                        } else if (fnRetRust.equals("()")) {
-                            o.append("    ").append(retVal).append(";\n");
-                        } else {
-                            o.append("    return ").append(retVal).append(";\n");
-                        }
-                    }
-                } else if (fnRaises && fnRetRust.equals("()")) {
-                    o.append("    Ok(())\n");
-                }
-                currentWriteParams.set(Collections.emptySet());
-            }
+            currentWriteParams.set(Collections.emptySet());
+            currentEnclosingIdentity.remove();
             o.append("}\n");
             o.append("// Moss tooling end|").append(fnIdentity).append("\n\n");
 
@@ -1125,45 +1114,9 @@ public class NativeGenerator {
             o.append("#[export_name = \"moss__main\"]\n");
             o.append("fn main() {\n");
             Set<String> declared = new HashSet<>();
-
-            // Check for phase45 shared traversal in main
-            boolean isPhase45 = false;
-            for (Stmt s : program.main.body) {
-                if (s.text != null && s.text.contains("total = values |> sum")) {
-                    isPhase45 = true;
-                    break;
-                }
-            }
-
-            if (isPhase45 && optimized) {
-                // Emit shared traversal DAG block
-                o.append("    // Moss line 2: values = [-2, 1, 3, 4]\n");
-                o.append("    let mut values = vec![-2_i64, 1_i64, 3_i64, 4_i64];\n");
-                o.append("    // Moss backend: SHARED FUNCTIONAL SOURCE TRAVERSAL (3 terminal consumers); one dataflow DAG loop\n");
-                o.append("    let (mut total, mut item_count, mut positive_count) = {\n");
-                o.append("        // Moss dataflow group %1, semantic main@3:shared-source; provenance main@3:expression:0:source main@3:expression:0:stage:1 main@4:expression:0:source main@4:expression:0:stage:1 main@5:expression:0:source main@5:expression:0:stage:1 main@5:expression:0:stage:2\n");
-                o.append("        let __moss_shared_source_1 = &(values);\n");
-                o.append("        let mut __moss_shared_result_1_0 = 0_i64;\n");
-                o.append("        let mut __moss_shared_result_1_1 = __moss_shared_source_1.len() as i64;\n");
-                o.append("        let mut __moss_shared_result_1_2 = 0_i64;\n");
-                o.append("        for __moss_shared_item_ref_1 in __moss_shared_source_1.iter() {\n");
-                o.append("                '__moss_consumer_1_0: {\n");
-                o.append("                    let __moss_shared_value_1_0_0 = *__moss_shared_item_ref_1;\n");
-                o.append("                    __moss_shared_result_1_0 = __moss_shared_result_1_0.wrapping_add(__moss_shared_value_1_0_0);\n");
-                o.append("                }\n");
-                o.append("                '__moss_consumer_1_2: {\n");
-                o.append("                    let __moss_shared_value_1_2_0 = *__moss_shared_item_ref_1;\n");
-                o.append("                    if !(((__moss_shared_value_1_2_0) > (0_i64))) { break '__moss_consumer_1_2; }\n");
-                o.append("                    __moss_shared_result_1_2 = __moss_shared_result_1_2.wrapping_add(1_i64);\n");
-                o.append("                }\n");
-                o.append("        }\n");
-                o.append("        (__moss_shared_result_1_0, __moss_shared_result_1_1, __moss_shared_result_1_2)\n");
-                o.append("    };\n");
-                o.append("    // Moss line 6: echo total, item_count, positive_count\n");
-                o.append("    println!(\"{} {} {}\", total, item_count, positive_count);\n");
-            } else {
-                genBlockStmts(o, program.main.body, "    ", declared, Collections.emptySet(), Collections.emptySet(), domains, objects, false, false, false, false);
-            }
+            currentEnclosingIdentity.set(mainIdentity);
+            genBlockStmts(o, program.main.body, "    ", declared, Collections.emptySet(), Collections.emptySet(), domains, objects, false, false, false, false);
+            currentEnclosingIdentity.remove();
             o.append("}\n");
             o.append("// Moss tooling end|").append(mainIdentity).append("\n");
         } else {
@@ -1174,45 +1127,23 @@ public class NativeGenerator {
         return o.toString();
     }
 
-    private static void genPipeline(StringBuilder o, Stmt s, boolean optimized) {
-        o.append("    // Moss line ").append(s.line).append(": return values |> map(normalize) |> filter(_ > 2) |> sum\n");
-        o.append("    return {\n");
-        if (optimized) {
-            o.append("        // Moss backend: FUSED FUNCTIONAL PIPELINE; one explicit loop, intermediates eliminated; plan %1, semantic fn:summarize<vector[int]>@12:expression:0; provenance fn:summarize<vector[int]>@12:expression:0:source fn:summarize<vector[int]>@12:expression:0:stage:1 fn:summarize<vector[int]>@12:expression:0:stage:2 fn:summarize<vector[int]>@12:expression:0:stage:3\n");
-            o.append("        let __moss_pipeline_source = &(values);\n");
-            o.append("        let mut __moss_result = 0_i64;\n");
-            o.append("        for __moss_item_ref in __moss_pipeline_source.iter() {\n");
-            o.append("            let __moss_value_0 = *__moss_item_ref;\n");
-            o.append("            let __moss_value_1 = normalize(__moss_value_0);\n");
-            o.append("            if !(((__moss_value_1) > (2_i64))) { continue; }\n");
-            o.append("            __moss_result = __moss_result.wrapping_add(__moss_value_1);\n");
-            o.append("        }\n");
-            o.append("        __moss_result\n");
-        } else {
-            o.append("        // Moss backend: EAGER FUNCTIONAL PIPELINE reference semantics (plan %1, semantic fn:summarize<vector[int]>@12:expression:0)\n");
-            o.append("        // Moss functional origin|fn:summarize<vector[int]>@12:expression:0:source\n");
-            o.append("        let __moss_pipeline_source = &(values);\n");
-            o.append("        // Moss functional origin|fn:summarize<vector[int]>@12:expression:0:stage:1\n");
-            o.append("        let mut __moss_stage_0 = std::vec::Vec::new();\n");
-            o.append("        for __moss_item_ref_0 in __moss_pipeline_source.iter() {\n");
-            o.append("            let __moss_value_0 = *__moss_item_ref_0;\n");
-            o.append("            __moss_stage_0.push(normalize(__moss_value_0));\n");
-            o.append("        }\n");
-            o.append("        // Moss functional origin|fn:summarize<vector[int]>@12:expression:0:stage:2\n");
-            o.append("        let mut __moss_stage_1 = std::vec::Vec::new();\n");
-            o.append("        for __moss_item_ref_1 in __moss_stage_0.iter() {\n");
-            o.append("            let __moss_value_1 = *__moss_item_ref_1;\n");
-            o.append("            if (__moss_value_1) > (2_i64) { __moss_stage_1.push(__moss_value_1); }\n");
-            o.append("        }\n");
-            o.append("        // Moss functional origin|fn:summarize<vector[int]>@12:expression:0:stage:3\n");
-            o.append("        let mut __moss_result = 0_i64;\n");
-            o.append("        for __moss_terminal_ref in __moss_stage_1.iter() {\n");
-            o.append("            let __moss_terminal_value = *__moss_terminal_ref;\n");
-            o.append("            __moss_result = __moss_result.wrapping_add(__moss_terminal_value);\n");
-            o.append("        }\n");
-            o.append("        __moss_result\n");
+    private static void emitFunctionalPipelineMarkers(StringBuilder out, String enclosingIdentity,
+                                                      int sourceLine, String expression, String indent) {
+        if (expression == null || !expression.contains("|>")) return;
+        List<String> stages = splitPipeline(expression);
+        if (stages.size() < 2 || sourceLine <= 0) return;
+        String owner = enclosingIdentity != null ? enclosingIdentity : "main";
+        int at = owner.indexOf('@');
+        if (at >= 0) owner = owner.substring(0, at);
+        String identity = owner + "@" + sourceLine + ":expression:0";
+        List<String> provenance = new ArrayList<>();
+        provenance.add(identity + ":source");
+        for (int i = 1; i < stages.size(); i++) provenance.add(identity + ":stage:" + i);
+        out.append(indent).append("// Moss backend: EAGER FUNCTIONAL PIPELINE semantics (semantic ")
+                .append(identity).append("; provenance ").append(String.join(" ", provenance)).append(")\n");
+        for (String origin : provenance) {
+            out.append(indent).append("// Moss functional origin|").append(origin).append("\n");
         }
-        o.append("    };\n");
     }
 
     private static void emitGenericMacro(StringBuilder o, Function fn, Set<String> writeFunctions,
@@ -1400,6 +1331,15 @@ public class NativeGenerator {
                 o.append(indent).append("// Moss line ").append(s.line).append(": ")
                  .append(s.text != null ? s.text : s.kind.name().toLowerCase()).append("\n");
             }
+            if (s.kind == Stmt.Kind.Let || s.kind == Stmt.Kind.Var || s.kind == Stmt.Kind.Assign) {
+                emitFunctionalPipelineMarkers(o, currentEnclosingIdentity.get(), s.line, s.b, indent);
+            } else if (s.kind == Stmt.Kind.Return || s.kind == Stmt.Kind.Reply) {
+                emitFunctionalPipelineMarkers(o, currentEnclosingIdentity.get(), s.line, s.a, indent);
+            } else if (s.kind == Stmt.Kind.Echo) {
+                for (String arg : s.args) emitFunctionalPipelineMarkers(o, currentEnclosingIdentity.get(), s.line, arg, indent);
+            } else if (s.kind == Stmt.Kind.Call) {
+                emitFunctionalPipelineMarkers(o, currentEnclosingIdentity.get(), s.line, s.text, indent);
+            }
             if (s.kind == Stmt.Kind.If) {
                 String cond = s.a != null ? s.a.trim() : (s.text != null && s.text.contains("if ") ? s.text.substring(s.text.indexOf("if ") + 3).trim() : "");
                 if (cond.endsWith(":")) cond = cond.substring(0, cond.length() - 1).trim();
@@ -1428,12 +1368,36 @@ public class NativeGenerator {
             } else if (s.kind == Stmt.Kind.Match) {
                 String scrut = s.a != null ? s.a.trim() : "";
                 String loweredScrut = lowerExpr(scrut, stateFields, objFields, domains, objects);
-                o.append(indent).append("match format!(\"{:?}\", ").append(loweredScrut).append(").as_str() {\n");
+                String matchValue = "consume".equals(s.b) ? loweredScrut : "&(" + loweredScrut + ")";
+                o.append(indent).append("match ").append(matchValue).append(" {\n");
                 blockIndents.push(s.indent);
                 blockIsMatch.push(true);
             } else if (s.kind == Stmt.Kind.Case) {
                 String caseName = s.a != null ? s.a.trim() : "";
-                o.append(indent).append("    __s if __s.contains(\"").append(caseName).append("\") => {\n");
+                String rustEnum = s.semanticType != null ? s.semanticType.replace(".", "__") : "";
+                o.append(indent).append("    ").append(rustEnum).append("::").append(caseName);
+                if (s.args != null && !s.args.isEmpty()) {
+                    o.append(" { ");
+                    for (int ai = 0; ai < s.args.size(); ai++) {
+                        if (ai > 0) o.append(", ");
+                        String binder = s.args.get(ai);
+                        if ("consume".equals(s.b)) {
+                            o.append(binder).append(": ").append(binder);
+                        } else {
+                            String refName = "__moss_ref_" + binder;
+                            o.append(binder).append(": ").append(refName);
+                        }
+                    }
+                    o.append(" }");
+                }
+                o.append(" => {\n");
+                if (!"consume".equals(s.b)) {
+                    for (String binder : s.args) {
+                        o.append(indent).append("        let ").append(binder).append(" = (*__moss_ref_")
+                         .append(binder).append(").clone();\n");
+                    }
+                }
+                if (s.args != null) declared.addAll(s.args);
                 caseIndent = s.indent;
             } else if (s.kind == Stmt.Kind.Try) {
                 inTry = true;
@@ -1911,6 +1875,29 @@ public class NativeGenerator {
         }
     }
 
+    private static List<String> splitPipeline(String expression) {
+        List<String> stages = new ArrayList<>();
+        int depth = 0, start = 0;
+        boolean inString = false, inChar = false, escaped = false;
+        for (int i = 0; i < expression.length(); i++) {
+            char ch = expression.charAt(i);
+            if (escaped) { escaped = false; continue; }
+            if ((inString || inChar) && ch == '\\') { escaped = true; continue; }
+            if (!inChar && ch == '"') { inString = !inString; continue; }
+            if (!inString && ch == '\'') { inChar = !inChar; continue; }
+            if (inString || inChar) continue;
+            if (ch == '(' || ch == '[' || ch == '{') depth++;
+            else if (ch == ')' || ch == ']' || ch == '}') depth--;
+            else if (depth == 0 && ch == '|' && i + 1 < expression.length() && expression.charAt(i + 1) == '>') {
+                stages.add(expression.substring(start, i).trim());
+                start = i + 2;
+                i++;
+            }
+        }
+        stages.add(expression.substring(start).trim());
+        return stages;
+    }
+
     public static List<String> splitTopLevel(String str, char delimiter) {
         List<String> result = new ArrayList<>();
         int depth = 0;
@@ -1971,6 +1958,36 @@ public class NativeGenerator {
             }
         }
         return depth == 0;
+    }
+
+    private static String replacePipelinePlaceholder(String expression, String replacement) {
+        StringBuilder out = new StringBuilder(expression.length() + replacement.length());
+        boolean inString = false, inChar = false, escaped = false;
+        for (int i = 0; i < expression.length(); i++) {
+            char ch = expression.charAt(i);
+            if (escaped) {
+                out.append(ch);
+                escaped = false;
+                continue;
+            }
+            if ((inString || inChar) && ch == '\\') {
+                out.append(ch);
+                escaped = true;
+                continue;
+            }
+            if (!inChar && ch == '"') inString = !inString;
+            else if (!inString && ch == '\'') inChar = !inChar;
+            if (!inString && !inChar && ch == '_') {
+                boolean leftIdentifier = i > 0 && (Character.isLetterOrDigit(expression.charAt(i - 1)) || expression.charAt(i - 1) == '_');
+                boolean rightIdentifier = i + 1 < expression.length() && (Character.isLetterOrDigit(expression.charAt(i + 1)) || expression.charAt(i + 1) == '_');
+                if (!leftIdentifier && !rightIdentifier) {
+                    out.append(replacement);
+                    continue;
+                }
+            }
+            out.append(ch);
+        }
+        return out.toString();
     }
 
     private static boolean isSingleStringLiteral(String s) {
@@ -2043,20 +2060,20 @@ public class NativeGenerator {
         }
         if (expr.isEmpty()) return "";
 
-        if (expr.contains("|>")) {
-            String[] stages = expr.split("\\|>");
-            if (stages.length == 2 && stages[1].trim().equals("sum")) {
-                return stages[0].trim() + ".iter().sum::<i64>()";
+        if (expr.contains("|>") && splitPipeline(expr).size() > 1) {
+            List<String> stages = splitPipeline(expr);
+            if (stages.size() == 2 && stages.get(1).trim().equals("sum")) {
+                return "(" + lowerExpr(stages.get(0).trim(), stateFields, domains, objects) + ").iter().sum::<i64>()";
             }
-            String src = lowerExpr(stages[0].trim(), stateFields, domains, objects);
-            if (stages.length == 2 && stages[1].trim().equals("count")) {
+            String src = lowerExpr(stages.get(0).trim(), stateFields, domains, objects);
+            if (stages.size() == 2 && stages.get(1).trim().equals("count")) {
                 return "((" + src + ").len() as i64)";
             }
             StringBuilder pipe = new StringBuilder();
             pipe.append("{ let __moss_src = (").append(src).append(").clone(); ");
             String currentVec = "__moss_src";
-            for (int si = 1; si < stages.length; si++) {
-                String stage = stages[si].trim();
+            for (int si = 1; si < stages.size(); si++) {
+                String stage = stages.get(si).trim();
                 if (stage.equals("sum")) {
                     pipe.append(currentVec).append(".iter().sum::<i64>() }");
                     return pipe.toString();
@@ -2068,7 +2085,9 @@ public class NativeGenerator {
                     String nextVec = "__moss_map_" + si;
                     pipe.append("let mut ").append(nextVec).append(" = std::vec::Vec::new(); ");
                     pipe.append("for __item in ").append(currentVec).append(".into_iter() { ");
-                    String callExpr = mapper.contains("_") ? mapper.replace("_", "__item") : (mapper + "(__item)");
+                    String callExpr = replacePipelinePlaceholder(mapper, "__item")
+                            .equals(mapper) ? mapper + "(__item)"
+                            : replacePipelinePlaceholder(mapper, "__item");
                     pipe.append(nextVec).append(".push(").append(lowerExpr(callExpr, stateFields, domains, objects)).append("); } ");
                     currentVec = nextVec;
                 } else if (stage.startsWith("filter(") && stage.endsWith(")")) {
@@ -2076,7 +2095,8 @@ public class NativeGenerator {
                     String nextVec = "__moss_filter_" + si;
                     pipe.append("let mut ").append(nextVec).append(" = std::vec::Vec::new(); ");
                     pipe.append("for __item in ").append(currentVec).append(".into_iter() { ");
-                    String condExpr = pred.contains("_") ? pred.replace("_", "__item.clone()") : (pred + "(__item.clone())");
+                    String replaced = replacePipelinePlaceholder(pred, "__item.clone()");
+                    String condExpr = replaced.equals(pred) ? pred + "(__item.clone())" : replaced;
                     pipe.append("if ").append(lowerExpr(condExpr, stateFields, domains, objects)).append(" { ").append(nextVec).append(".push(__item); } } ");
                     currentVec = nextVec;
                 } else if (stage.startsWith("reduce(") && stage.endsWith(")")) {
@@ -2588,11 +2608,11 @@ public class NativeGenerator {
             if (Character.isLowerCase(callee.charAt(0)) || callee.contains("__") || simpleName.equals("FlipFn")) {
                 String args = expr.substring(openParen + 1, expr.length() - 1).trim();
                 List<String> argList = new ArrayList<>();
-                boolean isWriteCall = currentWriteFunctions.get().contains(callee)
-                        || currentWriteFunctions.get().contains(simpleName)
-                        || simpleName.equals("increment");
+                Set<Integer> writeArgs = currentWriteParamIndices.get().getOrDefault(callee,
+                        currentWriteParamIndices.get().getOrDefault(simpleName, Collections.emptySet()));
                 if (!args.isEmpty()) {
                     for (String part : splitTopLevel(args, ',')) {
+                        int argIndex = argList.size();
                         part = part.trim();
                         int colonIdx = -1;
                         int pDepth = 0;
@@ -2630,7 +2650,7 @@ public class NativeGenerator {
                             argList.add("state." + part);
                         } else {
                             String loweredPart = lowerExpr(part, stateFields, domains, objects);
-                            if (isWriteCall) {
+                            if (writeArgs.contains(argIndex)) {
                                 loweredPart = "&mut " + loweredPart;
                             } else if (loweredPart.contains(" { ") && !loweredPart.startsWith("&")) {
                                 Program prog = currentProgram.get();

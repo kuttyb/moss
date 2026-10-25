@@ -1,0 +1,7 @@
+# EXPECT: ok=false
+# EXPECT: error.code=IMMUTABLE_LOCAL_MUTATION
+# EXPECT: error.line=7
+
+fn main():
+  let text = "hello"
+  text.append("!")

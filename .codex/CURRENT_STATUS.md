@@ -12143,3 +12143,64 @@ The durable report preserves scope, evidence, diagnostic clusters, and bounded
 follow-up suggestions. No compiler changes were made; do not run full `make
 check` or expensive acceptance gates until L7 reviews this assessment. Full
 parity is not claimed.
+
+## Phase 25.3 Java port — resumed correctness work — 2026-10-24
+
+L7 parked generated-Rust textual parity; the assessment above remains historical
+evidence only. Work resumed from pushed Java compiler SHA
+`0ad213c0454482cc9e7030c917cd79efdd5c2956` on `phase25-3-java-j2`. The tree
+was preserved. Java matches the C++ compiler's check acceptance/rejection for
+all 33 top-level examples (33/33).
+
+Focused repairs close the previously observed pipeline result inference, enum
+payload/match typing, and String API acceptance clusters. Java enum values and
+payload matches are structural in Fast Debug and native lowering. String
+typing/runtime/lowering now includes Unicode code-point methods and mutable
+append/reserve effects; writes through `let` are rejected. Generated-Rust
+lowering no longer returns five fixture-shaped resource files or emits the
+special `summarize`/phase-45 pipeline bodies. Pipeline expression lowering is
+generic for the currently supported map/filter/reduce/count/sum forms, and
+source-derived functional debug-map markers are retained.
+
+Validation on the current uncommitted tree: Java build passed; all six classes
+in `scripts/java/test.sh` passed; C++/Java structured acceptance differential
+passed 33/33 examples and a focused 10-file set; Fast Debug differential passed
+4/4 enum/String fixtures; Rust-generation differential passed 41/42 examples
+and selected fixtures before a recursive nested-pipeline bug was fixed, then
+the affected String fixture passed its focused generation check. Five former
+resource-override fixtures all generate through the general backend. No Rust
+compilation, native execution, Margo project gate, SDK gate, or full `make
+check` has run; generated Rust correctness remains unverified. The historical
+52-file textual comparison is not a release gate.
+
+Current edits are not committed yet. Continue with the JAR/`moss` launcher and
+remaining original port gaps, then freeze one candidate and run mandatory
+acceptance gates once. An independent Architect review is still required at the
+frozen candidate. Do not merge to `main`.
+
+### Phase 25.3 continuation — packaging and project test/bench behavior
+
+The standalone packaging path now builds `compiler-java/dist/moss.jar` with
+both Eclipse Collections dependencies and an adjacent `moss` launcher. The
+repository `scripts/java/moss` launcher chooses the packaged JAR when present
+and otherwise uses the normal classpath launcher; `scripts/java/margo` now uses
+that launcher. `--version` succeeds through both packaged launch paths.
+
+The Java `ProjectBuilder.test` and `bench` paths previously emitted fabricated
+success records. They now discover and type-check project declarations, execute
+each selected test body in isolated Fast Debug state, report assertion failures
+and nonzero status, and benchmark actual declared bodies with warmups and
+samples. Verified `examples/projects/phase7_demo` reports 2 passing tests and
+four real benchmark bodies, while `phase7_failing_test` reports one failing and
+one passing test and exits 1. `--trace` is passed through for `margo test
+--interp --trace`. These project tests and benchmarks currently exercise Fast
+Debug; native project test/benchmark parity remains open and must not be claimed.
+
+Validation after these changes: Java full-javac build and all six Java unit
+test classes pass. Structured C++/Java acceptance differential passes 41/41
+files (`examples/*.moss` plus `tests/differential/corpus/*.moss`), and the
+focused enum/String Fast Debug differential passes 4/4. Phase7 project test,
+intentional failing test, benchmark filter, and native `margo build --json`
+were exercised. Rust compilation/native execution for the changed backend,
+SDK integration, full root-package suites, ABI-v9/v10 source-free acceptance,
+and Architect candidate review have not run.
