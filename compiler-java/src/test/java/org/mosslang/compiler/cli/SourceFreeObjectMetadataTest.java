@@ -62,6 +62,9 @@ public final class SourceFreeObjectMetadataTest {
                         != org.mosslang.compiler.types.AccessMode.Consume) {
             throw new AssertionError("source-free method signature was not restored");
         }
+        if (!"unit".equals(imported.methods.get(1).returnType)) {
+            throw new AssertionError("source-free unit method return type was not restored");
+        }
         Function consumer = new Function("consume", "fn consume(value: provider__Point)",
                 1, "consumer.moss", false);
         consumer.params.add(new Param("value", "provider__Point"));
@@ -96,6 +99,20 @@ public final class SourceFreeObjectMetadataTest {
             if (!"OWNERSHIP_USE_AFTER_CONSUME".equals(error.getCode())) {
                 throw new AssertionError("expected OWNERSHIP_USE_AFTER_CONSUME, got "
                         + error.getCode(), error);
+            }
+        }
+        Program wrongReturnConsumer = Parser.parseSource(""
+                + "fn wrong_return(point: provider__Point, values: Vector[Int]) -> Int:\n"
+                + "  return point.replace(values)\n"
+                + "fn main():\n"
+                + "  pass\n", "consumer-return-type.moss");
+        Main.loadMossiFunctions(interfaceFile, "provider", wrongReturnConsumer);
+        try {
+            new SemanticChecker(wrongReturnConsumer).run();
+            throw new AssertionError("unit-returning source-free method cannot satisfy Int result");
+        } catch (CompileError error) {
+            if (!"MOSS_COMPILE_ERROR".equals(error.getCode())) {
+                throw new AssertionError("expected return-type rejection, got " + error.getCode(), error);
             }
         }
         Files.deleteIfExists(interfaceFile);

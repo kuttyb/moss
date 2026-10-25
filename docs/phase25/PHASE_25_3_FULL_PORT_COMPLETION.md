@@ -66,3 +66,7 @@ the exercised access-mode metadata and ownership path; effect inference remains
 syntax-bounded, and ABI-v10 canonical method records plus source-free native
 linkage are still unverified. The full port is not complete and the original
 acceptance gates remain pending.
+
+The source-free object loader also restores an explicit `unit` method result;
+a negative consumer test confirms the call cannot satisfy an `Int` result. This
+is focused semantic coverage, not native source-free integration evidence.

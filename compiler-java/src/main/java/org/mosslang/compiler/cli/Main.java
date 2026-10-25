@@ -919,7 +919,7 @@ public class Main {
                     org.mosslang.compiler.ast.Method method = new org.mosslang.compiler.ast.Method(
                             currentObject.name, methodName, 1, cand.toString());
                     method.sourceFree = true;
-                    if (returnMatcher.find() && !"unit".equals(returnMatcher.group(1))) {
+                    if (returnMatcher.find()) {
                         method.setReturnType(returnMatcher.group(1));
                     }
                     java.util.regex.Matcher receiverMatcher = java.util.regex.Pattern

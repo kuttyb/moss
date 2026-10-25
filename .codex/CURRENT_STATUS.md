@@ -12628,3 +12628,13 @@ Java unit-test classes pass. This metadata still inherits the checker's bounded
 syntax-based effect inference; complete observable method effects, canonical
 ABI-v10 records, and source-free native linkage remain open. No native, SDK, or
 full acceptance gate was run.
+
+### Phase 25.3 continuation — source-free unit method results
+
+The source-free object method loader discarded an explicit `return=unit` fact,
+which left its result unconstrained during consumer checking. It now restores
+the declared result type, and a focused negative consumer confirms a
+unit-returning imported method cannot satisfy an `Int` function result.
+
+Validation: Java build and all ten Java test classes pass, including source-free
+ownership and result-type checks. No native or project integration gate was run.
