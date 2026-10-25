@@ -13728,3 +13728,15 @@ Validation: clean Java build and all eleven Java unit-test classes pass in
 ABI-v9 and staged ABI-v10. `python3 tests/tooling/check_agent_feedback.py` and
 `git diff --check` pass. Native, project, SDK, and full acceptance gates remain
 deferred; Phase 25.3 remains in progress.
+
+### Phase 25.3 continuation — compact Vector trace summaries
+
+A Vector range-for trace probe showed Java's local write detail expanded the
+Vector elements while C++ emitted a compact `Vector(size=n)` summary. Java
+trace summaries now report collection sizes and object type names for local
+writes. The complete Vector loop trace and stdout match C++ exactly.
+
+Validation: clean Java build and all eleven unit-test classes pass in ABI-v9
+and staged ABI-v10; the Vector probe traces and output compare byte-for-byte.
+Native, project, SDK, and full acceptance gates remain deferred; Phase 25.3
+remains in progress.

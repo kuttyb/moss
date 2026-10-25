@@ -253,6 +253,16 @@ public class FastInterpreter {
         return escaped.toString();
     }
 
+    private static String traceValueSummary(Value value) {
+        return switch (value.kind) {
+            case VECTOR -> "Vector(size=" + ((List<?>) value.raw).size() + ")";
+            case QUEUE -> "Queue(size=" + ((Deque<?>) value.raw).size() + ")";
+            case MAP -> "Map(size=" + ((Map<?, ?>) value.raw).size() + ")";
+            case OBJECT -> value.typeName == null ? "<struct>" : value.typeName;
+            default -> value.toString();
+        };
+    }
+
     private void traceLocalWrite(Stmt statement, String name, Value value, Value before,
                                  String function, int depth) {
         if (!trace) return;
@@ -262,8 +272,8 @@ public class FastInterpreter {
                 + "\",\"semantic_identity\":\"" + jsonEscape(traceIdentity()) + "\",\"line\":"
                 + statement.line + traceContextFields() + ",\"depth\":" + depth + ",\"detail\":\""
                 + jsonEscape(name) + "\""
-                + (before == null ? "" : ",\"before\":\"" + jsonEscape(before.toString()) + "\"")
-                + ",\"after\":\"" + jsonEscape(value.toString()) + "\"}");
+                + (before == null ? "" : ",\"before\":\"" + jsonEscape(traceValueSummary(before)) + "\"")
+                + ",\"after\":\"" + jsonEscape(traceValueSummary(value)) + "\"}");
     }
 
     private void traceLocalRead(String name) {

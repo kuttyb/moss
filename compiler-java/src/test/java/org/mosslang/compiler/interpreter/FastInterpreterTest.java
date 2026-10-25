@@ -19,6 +19,7 @@ public final class FastInterpreterTest {
         testForLoopTraceMatchesIterationStructure();
         testBranchTraceCarriesControlContext();
         testFunctionCallTraceCarriesCallContext();
+        testCollectionTraceUsesCompactSummary();
         System.out.println("FastInterpreterTest PASSED.");
     }
 
@@ -264,6 +265,25 @@ public final class FastInterpreterTest {
                 + "{\"event_id\":4,\"event\":\"FunctionExit\",\"function\":\"add_one\",\"source_file\":\"fast-interpreter-function-trace.moss\",\"semantic_identity\":\"fn:add_one@1\",\"line\":1,\"parent_event_id\":1,\"call_event_id\":1,\"depth\":1}\n";
         if (!expected.equals(events) || !"5\n".equals(stdout.toString(StandardCharsets.UTF_8))) {
             throw new AssertionError("function trace did not retain call context: " + events);
+        }
+    }
+
+    private static void testCollectionTraceUsesCompactSummary() {
+        var program = Parser.parseSource(""
+                + "fn main():\n"
+                + "  let xs = [3, 4]\n",
+                "fast-interpreter-vector-trace.moss");
+        new CheckedProgram(program).run();
+
+        ByteArrayOutputStream trace = new ByteArrayOutputStream();
+        new FastInterpreter(program, true,
+                new PrintStream(new ByteArrayOutputStream()),
+                new PrintStream(trace, true, StandardCharsets.UTF_8)).run();
+        String expected = "{\"event_id\":1,\"event\":\"LocalWrite\",\"function\":\"main\","
+                + "\"source_file\":\"fast-interpreter-vector-trace.moss\",\"semantic_identity\":\"main@1\","
+                + "\"line\":2,\"depth\":0,\"detail\":\"xs\",\"after\":\"Vector(size=2)\"}\n";
+        if (!expected.equals(trace.toString(StandardCharsets.UTF_8))) {
+            throw new AssertionError("collection trace summary differed: " + trace);
         }
     }
 }
