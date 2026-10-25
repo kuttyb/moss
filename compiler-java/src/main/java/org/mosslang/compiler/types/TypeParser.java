@@ -114,6 +114,7 @@ public class TypeParser {
             if ("Range".equals(head)) return TypeRef.primitive("Range");
             if ("RangeBatch".equals(head)) return TypeRef.primitive("RangeBatch");
             if ("FileIO".equals(head)) return TypeRef.primitive("FileIO");
+            if ("Executor".equals(head)) return TypeRef.primitive("Executor");
             if ("executor".equals(head)) return TypeRef.primitive("executor");
 
             if ("Vector".equals(head)) head = "vector";

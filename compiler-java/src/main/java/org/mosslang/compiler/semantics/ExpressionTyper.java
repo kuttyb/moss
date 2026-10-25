@@ -1245,6 +1245,18 @@ public class ExpressionTyper {
                 }
             }
             TypeRef actual = infer(argExprs.get(i), line, env);
+            if (containsCapability(actual, "Executor")) {
+                throw new CompileError(line, "Executor capabilities cannot cross a domain message boundary",
+                        "UNKNOWN_SYMBOL_OR_TYPE");
+            }
+            if (containsCapability(actual, "FileIO")) {
+                throw new CompileError(line, "handler parameters cannot contain FileIO capabilities",
+                        "FILEIO_BOUNDARY_ESCAPE");
+            }
+            if (containsDomainHandle(actual)) {
+                throw new CompileError(line, "domain handles cannot be passed as handler payloads",
+                        "MOSS_COMPILE_ERROR");
+            }
             Param param = target.params.get(i);
             TypeRef expected = param.typeRef != null ? param.typeRef : TypeParser.parseCanonical(param.type);
             if (expected != null && !solver.unify(actual, expected)) {
@@ -1260,6 +1272,22 @@ public class ExpressionTyper {
             return parsed != null ? parsed : TypeRef.primitive(target.replyType);
         }
         return TypeRef.unit();
+    }
+
+    private boolean containsCapability(TypeRef type, String name) {
+        if (type == null) return false;
+        if (type.kind() == TypeKind.Primitive && name.equals(type.name())) return true;
+        for (TypeRef argument : type.typeArgs())
+            if (containsCapability(argument, name)) return true;
+        return false;
+    }
+
+    private boolean containsDomainHandle(TypeRef type) {
+        if (type == null) return false;
+        if (type.kind() == TypeKind.Domain) return true;
+        for (TypeRef argument : type.typeArgs())
+            if (containsDomainHandle(argument)) return true;
+        return false;
     }
 
     private TypeRef inferVectorLiteral(String e, int line, TypeEnv env) {
@@ -1822,6 +1850,8 @@ public class ExpressionTyper {
                 || "FileIO".equals(target) || "Range".equalsIgnoreCase(targetType.name())
                 || "RangeBatch".equals(targetType.name()) || "Executor".equals(targetType.name())
                 || "file".equals(target) || "executor".equals(target)) {
+            if ("Executor".equals(targetType.name()))
+                return inferExecutorMethod(target, member, argExprs, line, env);
             for (String arg : argExprs) {
                 if (!arg.equals("ro") && !arg.equals("rw") && !arg.equals("_")) {
                     infer(arg, line, env);
@@ -1838,6 +1868,69 @@ public class ExpressionTyper {
         }
 
         throw new CompileError(line, "type '" + targetType.toCanonicalString() + "' has no method '" + member + "' (missing required method '" + member + "')", "METHOD_NOT_FOUND");
+    }
+
+    private TypeRef inferExecutorMethod(String target, String member, List<String> args,
+                                        int line, TypeEnv env) {
+        if ("start".equals(member)) {
+            requireArgumentCount(line, "Executor.start", args, 0, 0);
+            return TypeRef.primitive("Executor");
+        }
+        if ("threads".equals(member) || "max_threads".equals(member) || "priority".equals(member)) {
+            requireArgumentCount(line, "Executor." + member, args, 1, 1);
+            TypeRef actual = solver.resolve(infer(args.get(0), line, env));
+            if (actual == null || actual.kind() != TypeKind.Primitive || !"int".equals(actual.name())) {
+                throw new CompileError(line, "Executor." + member + " requires an Int",
+                        "EXECUTOR_CONFIG_TYPE");
+            }
+            String literal = args.get(0).trim();
+            if ("threads".equals(member) && literal.matches("-?\\d+")
+                    && Long.parseLong(literal) <= 0) {
+                throw new CompileError(line, "Executor.threads must be positive",
+                        "EXECUTOR_CONFIG_RANGE");
+            }
+            if ("max_threads".equals(member) && literal.matches("-?\\d+")) {
+                int configuredThreads = configuredInteger(target, "threads");
+                if (configuredThreads > 0 && Long.parseLong(literal) < configuredThreads) {
+                    throw new CompileError(line, "Executor.max_threads cannot be less than threads",
+                            "EXECUTOR_CONFIG_RANGE");
+                }
+            }
+            return TypeRef.primitive("Executor");
+        }
+        if ("affinity".equals(member)) {
+            requireArgumentCount(line, "Executor.affinity", args, 1, 1);
+            TypeRef actual = solver.resolve(infer(args.get(0), line, env));
+            if (actual == null || actual.kind() != TypeKind.Builtin || !"vector".equals(actual.name())
+                    || actual.typeArgs().size() != 1 || actual.typeArgs().get(0).kind() != TypeKind.Primitive
+                    || !"int".equals(actual.typeArgs().get(0).name())) {
+                throw new CompileError(line, "Executor.affinity requires Vector[Int] of core ids",
+                        "EXECUTOR_CONFIG_TYPE");
+            }
+            return TypeRef.primitive("Executor");
+        }
+        if ("join".equals(member)) {
+            requireArgumentCount(line, "Executor.join", args, 0, 0);
+            return TypeRef.unit();
+        }
+        if ("invoke".equals(member)) {
+            requireArgumentCount(line, "Executor.invoke", args, 1, 1);
+            return TypeRef.unit();
+        }
+        throw new CompileError(line, "unknown Executor configuration method '" + member + "'",
+                "EXECUTOR_UNKNOWN_CONFIG_METHOD");
+    }
+
+    private int configuredInteger(String expression, String method) {
+        String suffix = "." + method + "(";
+        int start = expression.lastIndexOf(suffix);
+        if (start < 0) return -1;
+        int end = expression.indexOf(')', start + suffix.length());
+        if (end < 0) return -1;
+        String value = expression.substring(start + suffix.length(), end).trim();
+        if (!value.matches("\\d+")) return -1;
+        try { return Integer.parseInt(value); }
+        catch (NumberFormatException ignored) { return -1; }
     }
 
     private void requireArgumentCount(int line, String callable, List<String> arguments,

@@ -51,6 +51,7 @@ public class SemanticCheckerTest {
         testDomainRoutesCannotBeReassigned();
         testTransitiveMessagePayloadWritesAreRejected();
         testDomainHandlesCannotAppearInDataSignatures();
+        testExecutorCannotBeStoredInDomainState();
         testRecursionThroughFunctionalCallbacksIsRejected();
         testFilterRequiresBooleanPredicate();
         testReduceCallbackResultMatchesAccumulator();
@@ -1232,6 +1233,19 @@ public class SemanticCheckerTest {
                 + "  take(worker)\n", "domain-handle-data-parameter.moss");
         expectCompileError(invalid, "MOSS_COMPILE_ERROR",
                 "a domain handle cannot be used as a function data parameter");
+    }
+
+    private static void testExecutorCannotBeStoredInDomainState() {
+        Program invalid = Parser.parseSource(""
+                + "domain Scheduler:\n"
+                + "  pool: Executor\n"
+                + "  fn Run():\n"
+                + "    pass\n"
+                + "fn main():\n"
+                + "  scheduler = Scheduler()\n"
+                + "  message scheduler.Run()\n", "executor-domain-state.moss");
+        expectCompileError(invalid, "MOSS_COMPILE_ERROR",
+                "Executor handles cannot be stored in domain state");
     }
 
     private static void testRecursionThroughFunctionalCallbacksIsRejected() {

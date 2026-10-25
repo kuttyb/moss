@@ -16431,3 +16431,20 @@ Java-only accepts and 0 C++ accepts. All 13 are Executor/FileIO lifecycle,
 placement, type, or capability cases; the earlier historical-handle,
 same-domain reply, and callable-result cases now reject in Java. This screen
 does not establish parity beyond these 50 fixtures.
+
+### Phase 25.3 continuation — bounded Executor semantic checks
+
+Java now validates direct `Executor.invoke` targets through domain handler
+contracts, rejects value-returning or unknown handlers, checks argument types,
+prevents Executor and FileIO capabilities from crossing domain message
+boundaries, and rejects Executor state storage. A focused main-body lifecycle
+pass checks construction outside main, one active executor, branch-consistent
+joins, use after join, early return, and missing joins. Executor configuration
+methods now validate arity, integer and vector types, literal thread bounds,
+max-thread ordering, and unknown methods.
+
+The 13 Executor/FileIO negatives from the 51–100 sample all reject in Java,
+and `tests/phase20_executor_basic.moss` remains accepted. These are checker
+screens; the Java executor runtime is still a stub and native execution or
+Rust compilation has not been run. Full ABI-v9/v10 Java tests and feedback
+validation are the next local checks. Native and release gates remain unrun.

@@ -463,14 +463,15 @@ public class SemanticChecker {
                 : rawType == null || rawType.isBlank() ? null : TypeParser.parseCanonical(rawType);
         if (containsDomainHandleType(type)) {
             throw new CompileError(line, context
-                    + " cannot use a domain handle as data; domain handles are static routing capabilities",
+                    + " cannot use a domain or Executor handle as data; these are scoped capabilities",
                     "MOSS_COMPILE_ERROR", program.sourceFile);
         }
     }
 
     private boolean containsDomainHandleType(TypeRef type) {
         if (type == null) return false;
-        if (type.kind() == TypeKind.Domain) return true;
+        if (type.kind() == TypeKind.Domain
+                || (type.kind() == TypeKind.Primitive && "Executor".equals(type.name()))) return true;
         for (TypeRef argument : type.typeArgs())
             if (containsDomainHandleType(argument)) return true;
         return false;
@@ -2372,6 +2373,7 @@ public class SemanticChecker {
                 }
             }
             env = checkBlock(program.main.body, 0, program.main.body.size(), env, typer, solver, false, "main", TypeRef.unit());
+            validateExecutorLifecycle(program.main.body);
             validateDirectMainRaises(program.main.body);
             validateMainFunctionRaises(program.main.body);
             validateMainMethodRaises(program.main.body, env, solver);
@@ -2457,6 +2459,115 @@ public class SemanticChecker {
                 }
             }
         }
+    }
+
+    private static final class ExecutorFlowState {
+        final Map<String, Boolean> active = new LinkedHashMap<>();
+        ExecutorFlowState copy() {
+            ExecutorFlowState copy = new ExecutorFlowState();
+            copy.active.putAll(active);
+            return copy;
+        }
+        boolean hasActive() { return active.containsValue(Boolean.TRUE); }
+    }
+
+    private void validateExecutorLifecycle(List<Stmt> mainStatements) {
+        for (Function function : program.functions) {
+            for (Stmt statement : function.body) {
+                String expressions = statementExpressions(statement);
+                if (expressions.matches("(?s).*\\bExecutor\\s*\\(.*")) {
+                    throw new CompileError(statement.line,
+                            "Executor may only be configured and started directly in main",
+                            "EXECUTOR_CONSTRUCT_OUTSIDE_MAIN", program.sourceFile);
+                }
+            }
+        }
+        ExecutorFlowState finalState = checkExecutorBlock(mainStatements, 0, mainStatements.size(),
+                new ExecutorFlowState(), true);
+        if (finalState.hasActive()) {
+            throw new CompileError(program.main.line, "active Executor must reach Executor.join()",
+                    "EXECUTOR_JOIN_MISSING", program.sourceFile);
+        }
+    }
+
+    private ExecutorFlowState checkExecutorBlock(List<Stmt> statements, int start, int end,
+                                                 ExecutorFlowState input, boolean directMainBody) {
+        ExecutorFlowState state = input.copy();
+        for (int i = start; i < end;) {
+            Stmt statement = statements.get(i);
+            if (statement.kind == Stmt.Kind.If) {
+                int bodyEnd = i + 1;
+                while (bodyEnd < end && statements.get(bodyEnd).indent > statement.indent) bodyEnd++;
+                int elseEnd = bodyEnd;
+                int elseStart = -1;
+                if (elseEnd < end && statements.get(elseEnd).kind == Stmt.Kind.Else
+                        && statements.get(elseEnd).indent == statement.indent) {
+                    elseStart = elseEnd + 1;
+                    elseEnd = elseStart;
+                    while (elseEnd < end && statements.get(elseEnd).indent > statement.indent) elseEnd++;
+                }
+                ExecutorFlowState thenState = checkExecutorBlock(statements, i + 1, bodyEnd,
+                        state, false);
+                ExecutorFlowState otherwise = elseStart < 0 ? state.copy()
+                        : checkExecutorBlock(statements, elseStart, elseEnd, state, false);
+                if (!thenState.active.equals(otherwise.active)) {
+                    throw new CompileError(statement.line,
+                            "all branches must join active Executors consistently",
+                            "EXECUTOR_JOIN_MISSING", program.sourceFile);
+                }
+                state = thenState;
+                i = elseStart < 0 ? bodyEnd : elseEnd;
+                continue;
+            }
+            if (statement.kind == Stmt.Kind.For || statement.kind == Stmt.Kind.While) {
+                int bodyEnd = i + 1;
+                while (bodyEnd < end && statements.get(bodyEnd).indent > statement.indent) bodyEnd++;
+                ExecutorFlowState loopState = checkExecutorBlock(statements, i + 1, bodyEnd,
+                        state, false);
+                if (!loopState.active.equals(state.active)) {
+                    throw new CompileError(statement.line,
+                            "Executor lifecycle changes inside a loop are not statically bounded",
+                            "EXECUTOR_JOIN_MISSING", program.sourceFile);
+                }
+                i = bodyEnd;
+                continue;
+            }
+            if ((statement.kind == Stmt.Kind.Let || statement.kind == Stmt.Kind.Var
+                    || statement.kind == Stmt.Kind.Assign)
+                    && statement.a != null && statement.b != null
+                    && statement.b.contains("Executor(") && statement.b.contains(".start()")) {
+                if (!directMainBody || statement.a.contains(".") || statement.a.contains("[")) {
+                    throw new CompileError(statement.line,
+                            "Executor may only be configured and started directly in main",
+                            "EXECUTOR_CONSTRUCT_OUTSIDE_MAIN", program.sourceFile);
+                }
+                if (state.hasActive()) {
+                    throw new CompileError(statement.line, "at most one Executor may be active",
+                            "EXECUTOR_MULTIPLE_ACTIVE", program.sourceFile);
+                }
+                state.active.put(statement.a.trim(), true);
+                i++;
+                continue;
+            }
+            if (statement.kind == Stmt.Kind.Return && state.hasActive()) {
+                throw new CompileError(statement.line, "'return' leaves Executor before Executor.join()",
+                        "EXECUTOR_JOIN_MISSING", program.sourceFile);
+            }
+            if (statement.kind == Stmt.Kind.Call && statement.a != null) {
+                String executor = statement.a.trim();
+                if ("join".equals(statement.b) || "invoke".equals(statement.b)) {
+                    Boolean isActive = state.active.get(executor);
+                    if (isActive == null || !isActive) {
+                        throw new CompileError(statement.line,
+                                "Executor has already joined and been consumed",
+                                "EXECUTOR_USE_AFTER_JOIN", program.sourceFile);
+                    }
+                    if ("join".equals(statement.b)) state.active.put(executor, false);
+                }
+            }
+            i++;
+        }
+        return state;
     }
 
     private void validateDirectMainRaises(List<Stmt> statements) {
@@ -5015,6 +5126,21 @@ public class SemanticChecker {
                 requireAvailable(s.line, s.text, env);
                 String callExpr = s.text != null ? s.text.trim() : "";
                 if (!callExpr.isEmpty()) {
+                    TypeRef executorType = s.a == null || !env.containsKey(s.a.trim())
+                            ? null : solver.resolve(env.get(s.a.trim()));
+                    if ("invoke".equals(s.b) && executorType != null
+                            && "Executor".equals(executorType.name())) {
+                        if (s.args.size() != 1) {
+                            throw new CompileError(s.line, "Executor.invoke expects one one-way domain handler call",
+                                    "ARGUMENT_COUNT_MISMATCH");
+                        }
+                        TypeRef invokeResult = typer.inferMessageCall(s.args.get(0), s.line, env.typeEnv);
+                        if (invokeResult != null && invokeResult.kind() != TypeKind.Unit
+                                && !(invokeResult.kind() == TypeKind.Builtin && "unit".equals(invokeResult.name()))) {
+                            throw new CompileError(s.line, "Executor.invoke requires a one-way handler",
+                                    "EXECUTOR_INVOKE_VALUE_RETURNING");
+                        }
+                    }
                     rejectNakedDomainHandlerCall(s.line, callExpr, env, solver);
                     typer.infer(callExpr, s.line, env.typeEnv);
                     for (String payload : currentMessagePayloads) {
