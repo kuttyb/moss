@@ -1,0 +1,40 @@
+name: Phase 25.4 B1 C++ Compiler Torture
+
+on:
+  push:
+    branches: [phase25-4-cpp-torture-b1]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cpp-semantic-baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain metadata
+        run: |
+          uname -a
+          nproc
+          clang++ --version
+          free -h
+      - name: Build C++ Moss compiler (no full regression)
+        run: make --jobs=2 MOSS_LDFLAGS= moss-dev
+      - name: Run matched W2/W3 semantic-only stress, seven paired repetitions
+        run: |
+          python3 benchmarks/phase25_4/b1_cpp/torture.py run \
+            --moss ./build/compiler/moss-dev \
+            --sizes 8,16,32 \
+            --reps 7 \
+            --cap-seconds 40
+      - name: Upload raw evidence and generated fixtures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase25-4-b1-cpp
+          path: |
+            benchmarks/phase25_4/b1_cpp/results/
+            benchmarks/phase25_4/b1_cpp/fixtures/
+          if-no-files-found: warn
