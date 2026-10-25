@@ -1266,6 +1266,25 @@ public class ExpressionTyper {
                         }
                         methodEnv.put(p.name, actual);
                     }
+                    if (program != null && program.semanticCallEdges != null) {
+                        SemanticCallEdge edge = new SemanticCallEdge();
+                        edge.source = currentCallingFunction != null ? currentCallingFunction : "main";
+                        edge.target = "method:" + targetType.name() + "." + member;
+                        edge.line = line;
+                        edge.sourceFile = program.sourceFile != null ? program.sourceFile : "";
+                        edge.receiver = target;
+                        edge.argumentTypes.addAll(actualTypeNames);
+                        int occurrence = 0;
+                        int programOccurrence = 0;
+                        for (SemanticCallEdge existing : program.semanticCallEdges) {
+                            if (!existing.source.equals(edge.source) || !existing.target.equals(edge.target)) continue;
+                            programOccurrence++;
+                            if (existing.line == line) occurrence++;
+                        }
+                        edge.occurrence = occurrence;
+                        edge.programOccurrence = programOccurrence;
+                        program.semanticCallEdges.add(edge);
+                    }
                     if (m.returnTypeRef != null && m.returnTypeRef.isClosed()) {
                         return m.returnTypeRef;
                     }

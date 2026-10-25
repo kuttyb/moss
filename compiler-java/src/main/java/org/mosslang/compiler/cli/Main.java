@@ -147,7 +147,7 @@ public class Main {
             }
         }
 
-        if (Set.of("inspect", "type", "effects", "ownership", "calls", "why", "fmt").contains(first)) {
+        if (Set.of("resolve", "inspect", "type", "effects", "ownership", "calls", "why", "fmt").contains(first)) {
             String target = args.length > 1 ? args[1] : "";
             String src = null;
             String kind = null;
@@ -173,6 +173,17 @@ public class Main {
                 String content = Files.readString(Paths.get(src), StandardCharsets.UTF_8);
                 String absSrc = new File(src).getAbsolutePath();
                 Program p = Parser.parseSource(content, absSrc);
+                if ("resolve".equals(first)) {
+                    Path querySource = Paths.get(src).toAbsolutePath().normalize();
+                    Path queryRoot = org.mosslang.compiler.project.ProjectManifest.findProjectRoot(querySource);
+                    if (queryRoot != null) {
+                        org.mosslang.compiler.project.ProjectManifest manifest =
+                                org.mosslang.compiler.project.ProjectManifest.load(queryRoot);
+                        if (querySource.startsWith(manifest.getSourceDirectory())) {
+                            p = org.mosslang.compiler.project.ProjectBuilder.loadProjectDeclarations(manifest, null);
+                        }
+                    }
+                }
                 if (p.imports != null && !p.imports.isEmpty()) {
                     Path sourceFile = Paths.get(src).toAbsolutePath();
                     Path dir = sourceFile.getParent();
@@ -287,8 +298,9 @@ public class Main {
                 }
                 org.mosslang.compiler.semantics.SemanticChecker checker = new org.mosslang.compiler.semantics.SemanticChecker(p);
                 checker.run();
-                org.mosslang.compiler.query.SemanticQueryEngine.executeQuery(first, target, p, absSrc, json, kind, enclosing, System.out);
-                return 0;
+                boolean resolved = org.mosslang.compiler.query.SemanticQueryEngine.executeQuery(
+                        first, target, p, absSrc, json, kind, enclosing, System.out);
+                return resolved ? 0 : 1;
             } catch (CompileError e) {
                 if (json) {
                     DiagnosticFormatter.writeStructuredError(System.out, first, COMPILER_VERSION,

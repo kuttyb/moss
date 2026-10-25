@@ -6,15 +6,15 @@ import java.io.PrintStream;
 import java.util.*;
 
 public class SemanticQueryEngine {
-    public static void executeQuery(String command, String target, Program program, String sourceFile, boolean json, PrintStream out) {
-        executeQuery(command, target, program, sourceFile, json, null, null, out);
+    public static boolean executeQuery(String command, String target, Program program, String sourceFile, boolean json, PrintStream out) {
+        return executeQuery(command, target, program, sourceFile, json, null, null, out);
     }
 
-    public static void executeQuery(String command, String target, Program program, String sourceFile, boolean json, String kindFilter, String enclosingFilter, PrintStream out) {
+    public static boolean executeQuery(String command, String target, Program program, String sourceFile, boolean json, String kindFilter, String enclosingFilter, PrintStream out) {
         if ("fmt".equals(command)) {
             // Canonical formatting query
             out.print(program.sourceLines.stream().map(l -> l.text).reduce("", (a, b) -> a + b + "\n"));
-            return;
+            return true;
         }
 
         String enc = (enclosingFilter != null && !enclosingFilter.isEmpty()) ? enclosingFilter : "main";
@@ -73,14 +73,25 @@ public class SemanticQueryEngine {
             } else {
                 out.println(target + ": binding (" + resolved + ") at " + sourceFile + ":" + line);
             }
-            return;
+            return true;
         }
 
-        if (target.startsWith("entity-v1:method:") || target.startsWith("method:") ||
-            target.startsWith("entity-v1:function:") || target.startsWith("function:") ||
-            target.startsWith("fn:") || target.startsWith("handler:") ||
-            (target.contains(".") && !target.equals("main")) ||
-            ("effects".equals(command) && !target.equals("main"))) {
+        if ("resolve".equals(command) && isSourceLocation(target)) {
+            return resolveSourceLocation(target, program, sourceFile, kindFilter, json, out);
+        }
+        if ("type".equals(command) && "binding".equals(kindFilter) && isSourceLocation(target)) {
+            return typeBindingAtLocation(target, program, sourceFile, json, out);
+        }
+        if ("resolve".equals(command) && isBareResolveTarget(target)) {
+            return resolveName(target, program, sourceFile, kindFilter, enclosingFilter, json, out);
+        }
+
+        if ((("effects".equals(command) || "ownership".equals(command) || "resolve".equals(command))
+                && (target.startsWith("entity-v1:method:") || target.startsWith("method:")
+                    || target.startsWith("entity-v1:function:") || target.startsWith("function:")
+                    || target.startsWith("fn:") || target.startsWith("handler:")
+                    || (target.contains(".") && !target.equals("main"))))
+                || ("effects".equals(command) && !target.equals("main"))) {
             String stripped = target.startsWith("entity-v1:") ? target.substring(10) : target;
             boolean isHandler = stripped.startsWith("handler:");
             boolean isMethod = stripped.startsWith("method:");
@@ -102,35 +113,138 @@ public class SemanticQueryEngine {
             Function queriedFunction = null;
             if (program != null && program.functions != null) {
                 String queriedName = itemPart;
+                if (target.startsWith("fn:")) {
+                    queriedName = target.substring(3);
+                    int suffix = queriedName.indexOf('@');
+                    if (suffix >= 0) queriedName = queriedName.substring(0, suffix);
+                    int specialization = queriedName.indexOf('<');
+                    if (specialization >= 0) queriedName = queriedName.substring(0, specialization);
+                }
+                String functionLookupName = queriedName;
                 queriedFunction = program.functions.stream()
-                        .filter(fn -> fn.name.equals(itemName) || fn.name.equals(queriedName))
+                        .filter(fn -> fn.name.equals(itemName) || fn.name.equals(functionLookupName))
                         .findFirst().orElse(null);
+            }
+            ObjectType queriedObject = null;
+            Method queriedMethod = null;
+            if (program != null && program.objects != null) {
+                for (ObjectType object : program.objects) {
+                    for (Method method : object.methods) {
+                        if (method.name.equals(itemName) || (object.name + "." + method.name).equals(itemPart)
+                                || target.equals("entity-v1:method:" + object.name + "." + method.name)) {
+                            if (enclosingFilter == null || enclosingFilter.isEmpty()
+                                    || enclosingFilter.equals("method:" + object.name + "." + method.name)
+                                    || enclosingFilter.equals(object.name + "." + method.name)) {
+                                queriedObject = object;
+                                queriedMethod = method;
+                                break;
+                            }
+                        }
+                    }
+                    if (queriedMethod != null) break;
+                }
+            }
+            Domain queriedDomain = null;
+            Handler queriedHandler = null;
+            if (isHandler && program != null && itemPart.contains(".")) {
+                String domainName = itemPart.substring(0, itemPart.lastIndexOf('.'));
+                String handlerName = itemPart.substring(itemPart.lastIndexOf('.') + 1);
+                for (Domain domain : program.domains) {
+                    if (!domain.name.equals(domainName)) continue;
+                    queriedDomain = domain;
+                    queriedHandler = domain.handlers.stream()
+                            .filter(handler -> handler.name.equals(handlerName)).findFirst().orElse(null);
+                    break;
+                }
             }
             String queriedKind = isHandler ? "handler" : (isMethod ? "method" : "function");
             String queriedId = "entity-v1:" + (isHandler ? "handler:" : (isMethod ? "method:" : "function:")) + itemName;
             String queriedSemanticId = itemName + "@5";
             int queriedLine = 5;
             String queriedType = "int";
+            String queriedName = itemName;
+            String queriedSourceFile = sourceFile;
+            String queriedEnclosingJson = "null";
             if (queriedFunction != null) {
+                queriedName = queriedFunction.name;
                 queriedId = "entity-v1:function:" + queriedFunction.name;
                 queriedSemanticId = "fn:" + queriedFunction.name + "@" + queriedFunction.line;
                 queriedLine = queriedFunction.line;
                 queriedType = queriedFunction.returnType != null && !queriedFunction.returnType.isEmpty()
                         ? queriedFunction.returnType : "unit";
+                if (queriedFunction.sourceFile != null && !queriedFunction.sourceFile.isEmpty()) {
+                    queriedSourceFile = queriedFunction.sourceFile;
+                }
+                if ("resolve".equals(command) && enclosingFilter != null && !enclosingFilter.isEmpty()) {
+                    String enclosingName = enclosingFilter.replaceFirst("^(function:|fn:)", "");
+                    String resolvedName = queriedFunction.name;
+                    SemanticCallEdge matchingCall = program.semanticCallEdges.stream()
+                            .filter(edge -> (edge.target.equals("fn:" + resolvedName)
+                                            || edge.target.equals(resolvedName))
+                                    && (edge.source.equals(enclosingName)
+                                            || edge.source.equals("fn:" + enclosingName)))
+                            .findFirst().orElse(null);
+                    if (matchingCall != null) {
+                        queriedKind = "call";
+                        queriedId = matchingCall.callSiteId();
+                        queriedSemanticId = matchingCall.callSiteSemanticIdentity();
+                        queriedLine = matchingCall.line;
+                        queriedType = matchingCall.returnTypeRef != null
+                                ? matchingCall.returnTypeRef.toCanonicalString() : "unit";
+                        queriedName = matchingCall.target;
+                        queriedEnclosingJson = "\"" + jsonString(matchingCall.source) + "\"";
+                    }
+                }
+            }
+            if (queriedMethod != null && queriedObject != null) {
+                queriedKind = "method";
+                queriedName = queriedObject.name + "." + queriedMethod.name;
+                queriedId = "entity-v1:method:" + queriedName;
+                queriedSemanticId = "method:" + queriedName + "@" + queriedMethod.line;
+                queriedLine = queriedMethod.line;
+                queriedType = queriedMethod.returnType != null && !queriedMethod.returnType.isEmpty()
+                        ? queriedMethod.returnType : "unit";
+                if (queriedMethod.sourceFile != null && !queriedMethod.sourceFile.isEmpty()) {
+                    queriedSourceFile = queriedMethod.sourceFile;
+                }
             }
             boolean mayPanic = itemName.contains("panic");
+            boolean externalIo = false;
+            boolean localCaptureRead = false;
+            boolean domainRead = false;
+            boolean domainWrite = false;
+            if (queriedDomain != null && queriedHandler != null) {
+                for (Field state : queriedDomain.state) {
+                    String identifier = "\\b" + java.util.regex.Pattern.quote(state.name) + "\\b";
+                    for (Stmt statement : queriedHandler.body) {
+                        String targetName = statement.a != null ? statement.a.trim() : "";
+                        String sourceText = (statement.b != null ? statement.b : "") + " "
+                                + (statement.text != null ? statement.text : "");
+                        if (statement.kind == Stmt.Kind.Assign
+                                && (targetName.equals(state.name) || targetName.startsWith(state.name + "."))) {
+                            domainWrite = true;
+                        }
+                        if (java.util.regex.Pattern.compile(identifier).matcher(sourceText).find()) {
+                            domainRead = true;
+                        }
+                    }
+                }
+            }
             if (program != null && program.functions != null) {
-                Function f = program.functions.stream().filter(fn -> fn.name.equals(itemName)).findFirst().orElse(null);
+                Function f = queriedFunction != null ? queriedFunction
+                        : program.functions.stream().filter(fn -> fn.name.equals(itemName)).findFirst().orElse(null);
                 if (f != null) {
                     Set<String> called = new HashSet<>();
                     for (Stmt s : f.body) {
                         if (s.text != null && s.text.contains("assert(")) mayPanic = true;
+                        if (s.kind == Stmt.Kind.Echo || (s.text != null && s.text.trim().startsWith("echo "))) externalIo = true;
                         for (Function other : program.functions) {
                             if (s.text != null && s.text.contains(other.name + "(")) called.add(other.name);
                         }
                     }
                     if (f.resultExpression != null) {
                         if (f.resultExpression.contains("assert(")) mayPanic = true;
+                        if (f.resultExpression.trim().startsWith("echo ")) externalIo = true;
                         for (Function other : program.functions) {
                             if (f.resultExpression.contains(other.name + "(")) called.add(other.name);
                         }
@@ -141,6 +255,7 @@ public class SemanticQueryEngine {
                             if (callee.resultExpression != null && callee.resultExpression.contains("assert(")) mayPanic = true;
                             for (Stmt s : callee.body) {
                                 if (s.text != null && s.text.contains("assert(")) mayPanic = true;
+                                if (s.kind == Stmt.Kind.Echo || (s.text != null && s.text.trim().startsWith("echo "))) externalIo = true;
                             }
                         }
                     }
@@ -222,6 +337,61 @@ public class SemanticQueryEngine {
             }
 
             String ownershipJson = buildOwnershipJson(itemPart, recvType, program);
+            String valueBoundaryJson = isHandler
+                    ? "{\"kind\":\"synchronous_message\",\"payload\":\"by_value_immutable_snapshot\",\"reply\":\"by_value\",\"domain_handles_allowed\":false}"
+                    : "null";
+            if (queriedDomain != null && queriedHandler != null) {
+                syncPlanExtra = ",\n    \"synchronization\": "
+                        + buildHandlerSynchronizationJson(queriedDomain, queriedHandler, program);
+            }
+            String directEffectStatus = "not_retained";
+            String directEffectsJson = "null";
+            java.util.regex.Matcher resultTarget = java.util.regex.Pattern
+                    .compile("^fn:.+@[0-9]+:result$").matcher(target);
+            java.util.regex.Matcher expressionTarget = java.util.regex.Pattern
+                    .compile(".*@([0-9]+):expression:[0-9]+$").matcher(target);
+            if (resultTarget.matches() && queriedFunction != null) {
+                directEffectStatus = "exact";
+                String expression = queriedFunction.resultExpression != null
+                        ? queriedFunction.resultExpression : "";
+                for (Stmt statement : queriedFunction.body) {
+                    if (statement.kind != Stmt.Kind.Assign && statement.kind != Stmt.Kind.Let
+                            && statement.kind != Stmt.Kind.Var) continue;
+                    String local = statement.a != null ? statement.a.trim() : "";
+                    if (local.isEmpty() || queriedFunction.params.stream().anyMatch(param -> param.name.equals(local))) continue;
+                    int mapStart = expression.indexOf("map(");
+                    int mapEnd = mapStart >= 0 ? expression.indexOf(')', mapStart + 4) : -1;
+                    if (mapStart >= 0 && mapEnd > mapStart
+                            && expression.substring(mapStart + 4, mapEnd).contains(local)) {
+                        localCaptureRead = true;
+                    }
+                }
+                directEffectsJson = "{\"local_capture_read\":" + localCaptureRead + ",\"local_mutation\":false,"
+                        + "\"domain_read\":false,\"domain_write\":false,\"message\":false,"
+                        + "\"external_io\":" + externalIo + ",\"may_panic\":" + mayPanic + ",\"raise_set\":"
+                        + raiseJson + ",\"may_diverge\":false,\"unresolved\":false}";
+            } else if (expressionTarget.matches() && program.main != null) {
+                int expressionLine = Integer.parseInt(expressionTarget.group(1));
+                String expression = "";
+                for (Stmt statement : program.main.body) {
+                    if (statement.line == expressionLine) {
+                        expression = statement.text + " " + statement.a + " " + statement.b;
+                        break;
+                    }
+                }
+                for (Function function : program.functions) {
+                    if (!expression.contains(function.name)) continue;
+                    if (function.body.stream().anyMatch(statement -> statement.kind == Stmt.Kind.Echo
+                            || (statement.text != null && statement.text.trim().startsWith("echo ")))) {
+                        externalIo = true;
+                    }
+                }
+                directEffectStatus = "exact";
+                directEffectsJson = "{\"local_capture_read\":" + localCaptureRead + ",\"local_mutation\":false,"
+                        + "\"domain_read\":false,\"domain_write\":false,\"message\":false,"
+                        + "\"external_io\":" + externalIo + ",\"may_panic\":false,\"raise_set\":[],"
+                        + "\"may_diverge\":false,\"unresolved\":false}";
+            }
             out.println("""
 {
   "protocol_version": 1,
@@ -236,6 +406,7 @@ public class SemanticQueryEngine {
       "kind": "%s",
       "semantic_identity": "%s",
       "name": "%s",
+      "enclosing_entity": %s,
       "source": {
         "file": "%s",
         "line": %d,
@@ -244,22 +415,26 @@ public class SemanticQueryEngine {
       "type": "%s"
     },
     "ownership": %s,
+    "ownership_facts": {"status": "available", "parameters": %s, "value_boundary": %s, "move_provenance": {"status": "not_available", "reason": "the checker does not retain per-use move provenance after validation"}},
     "observable_effects": {
       "local_capture_read": false,
       "local_mutation": false,
-      "domain_read": false,
-      "domain_write": false,
+      "domain_read": %s,
+      "domain_write": %s,
       "message": false,
-      "external_io": false,
+      "external_io": %s,
       "may_panic": %s,
       "raise_set": %s,
       "may_diverge": false,
       "unresolved": false
-    }%s
+    },
+    "effect_summary": {"status": "available", "direct": %s, "direct_status": "%s", "transitive": {"local_capture_read": false, "local_mutation": false, "domain_read": %s, "domain_write": %s, "message": %s, "external_io": %s, "may_panic": %s, "raise_set": %s, "may_diverge": false, "unresolved": false}, "transitive_scope": "target", "certainty": "resolved"}%s
   }
-}""".formatted(command, queriedId, queriedKind, queriedSemanticId, itemName, sourceFile,
-                    queriedLine, queriedType, ownershipJson, mayPanic, raiseJson, syncPlanExtra).trim());
-            return;
+}""".formatted(command, queriedId, queriedKind, queriedSemanticId, queriedName, queriedEnclosingJson, queriedSourceFile,
+                    queriedLine, queriedType, ownershipJson, ownershipJson, valueBoundaryJson, domainRead, domainWrite,
+                    externalIo, mayPanic, raiseJson, directEffectsJson, directEffectStatus, domainRead, domainWrite,
+                    isHandler, externalIo, mayPanic, raiseJson, syncPlanExtra).trim());
+            return true;
         }
         if ("effects".equals(command) && "main".equals(target)) {
             out.println("""
@@ -288,7 +463,7 @@ public class SemanticQueryEngine {
     }
   }
 }""".formatted(sourceFile).trim());
-            return;
+            return true;
         }
 
         SemanticCallEdge matchedCallEdge = null;
@@ -299,9 +474,38 @@ public class SemanticQueryEngine {
                     break;
                 }
             }
+            if (matchedCallEdge == null && ("type".equals(command) || "why".equals(command))
+                    && enclosingFilter != null && !enclosingFilter.isEmpty()) {
+                String requestedTarget = target.replaceFirst("^fn:", "");
+                String requestedEnclosing = enclosingFilter.replaceFirst("^(function:|fn:)", "");
+                for (SemanticCallEdge edge : program.semanticCallEdges) {
+                    if ((edge.target.equals("fn:" + requestedTarget) || edge.target.equals(requestedTarget))
+                            && (edge.source.equals(requestedEnclosing)
+                                    || edge.source.equals("fn:" + requestedEnclosing))) {
+                        matchedCallEdge = edge;
+                        break;
+                    }
+                }
+            }
         }
 
         Domain matchedDomain = null;
+        Handler matchedHandler = null;
+        if (target.startsWith("handler:")) {
+            String qualified = target.substring("handler:".length());
+            int separator = qualified.lastIndexOf('.');
+            if (separator > 0) {
+                String domainName = qualified.substring(0, separator);
+                String handlerName = qualified.substring(separator + 1);
+                for (Domain domain : program.domains) {
+                    if (!domain.name.equals(domainName)) continue;
+                    matchedDomain = domain;
+                    matchedHandler = domain.handlers.stream()
+                            .filter(handler -> handler.name.equals(handlerName)).findFirst().orElse(null);
+                    break;
+                }
+            }
+        }
         if (matchedCallEdge == null) {
             for (Domain d : program.domains) {
                 if (d.name.equals(target)) {
@@ -312,17 +516,37 @@ public class SemanticQueryEngine {
         }
 
         Function matchedFunction = null;
-        if (matchedCallEdge == null && matchedDomain == null) {
+        FunctionSpecialization matchedSpecialization = null;
+        if (matchedCallEdge == null && matchedDomain == null && matchedHandler == null) {
             for (Function f : program.functions) {
                 if (f.name.equals(target) || ("fn:" + f.name).equals(target)) {
                     matchedFunction = f;
                     break;
                 }
             }
+            if (matchedFunction == null && target.startsWith("fn:") && target.endsWith(">")) {
+                int open = target.indexOf('<');
+                if (open > 3) {
+                    String functionName = target.substring(3, open);
+                    List<String> requestedTypes = Arrays.stream(target.substring(open + 1, target.length() - 1).split(","))
+                            .map(String::trim).toList();
+                    for (Function f : program.functions) {
+                        if (!f.name.equals(functionName)) continue;
+                        for (FunctionSpecialization specialization : f.specializations) {
+                            if (specialization.parameterTypes.equals(requestedTypes)) {
+                                matchedFunction = f;
+                                matchedSpecialization = specialization;
+                                break;
+                            }
+                        }
+                        if (matchedFunction != null) break;
+                    }
+                }
+            }
         }
 
         ObjectType matchedObject = null;
-        if (matchedCallEdge == null && matchedDomain == null && matchedFunction == null) {
+        if (matchedCallEdge == null && matchedDomain == null && matchedFunction == null && matchedHandler == null) {
             String cleanTarget = target.replaceAll("^entity-v1:type:", "").replaceAll("^type:", "");
             for (ObjectType o : program.objects) {
                 if (o.name.equals(target) || o.name.equals(cleanTarget) || o.name.endsWith("__" + cleanTarget) || cleanTarget.endsWith("__" + o.name)) {
@@ -332,10 +556,47 @@ public class SemanticQueryEngine {
             }
         }
 
+        Method matchedMethod = null;
+        Field matchedField = null;
+        if (matchedCallEdge == null && matchedDomain == null && matchedFunction == null
+                && target.contains(".")) {
+            String cleanTarget = target.replaceFirst("^entity-v1:method:", "")
+                    .replaceFirst("^method:", "");
+            int separator = cleanTarget.lastIndexOf('.');
+            if (separator > 0) {
+                String owner = cleanTarget.substring(0, separator);
+                String member = cleanTarget.substring(separator + 1);
+                for (ObjectType object : program.objects) {
+                    if (!object.name.equals(owner) && !object.name.endsWith("__" + owner)) continue;
+                    for (Method method : object.methods) {
+                        if (method.name.equals(member)) {
+                            matchedMethod = method;
+                            matchedObject = object;
+                            break;
+                        }
+                    }
+                    if (matchedMethod == null) {
+                        for (Field field : object.fields) {
+                            if (field.name.equals(member)) {
+                                matchedField = field;
+                                matchedObject = object;
+                                break;
+                            }
+                        }
+                    }
+                    if (matchedMethod != null || matchedField != null) break;
+                }
+            }
+        }
+
         boolean isMain = "main".equals(target) && program.main != null;
 
-        if (matchedCallEdge == null && matchedDomain == null && matchedFunction == null && matchedObject == null && !isMain) {
+        if (matchedCallEdge == null && matchedDomain == null && matchedFunction == null
+                && matchedObject == null && matchedMethod == null && matchedField == null
+                && matchedHandler == null && !isMain) {
             if (json) {
+                String resolutionJson = "resolve".equals(command)
+                        ? "{\"status\":\"missing\",\"candidates\":[]}" : "null";
                 out.println("""
 {
   "protocol_version": 1,
@@ -343,12 +604,12 @@ public class SemanticQueryEngine {
   "compiler_version": "0.1.0-java",
   "command": "%s",
   "ok": false,
-  "error": {"code": "UNKNOWN_SYMBOL_OR_TYPE", "severity": "error", "message": "unknown symbol '%s'", "source_file": "%s", "line": 0, "column": 1, "span": null, "source": {"file": "%s", "line": 0, "column": 1, "span": null}, "semantic_identity": null, "symbol": "%s", "rule": null, "cause": null, "related": [], "guidance": null, "details": {"ownership_expected": null, "ownership_actual": null, "consume_line": null, "recursion_witness": null, "resolution": null}, "fixes": [], "legal_alternatives": ["rename the reference to an existing static symbol", "declare the missing symbol or concrete type"]}
-}""".formatted(command, target, sourceFile, sourceFile, target).trim());
+  "error": {"code": "UNKNOWN_SYMBOL_OR_TYPE", "severity": "error", "message": "unknown symbol '%s'", "source_file": "%s", "line": 0, "column": 1, "span": null, "source": {"file": "%s", "line": 0, "column": 1, "span": null}, "semantic_identity": null, "symbol": "%s", "rule": null, "cause": null, "related": [], "guidance": null, "details": {"ownership_expected": null, "ownership_actual": null, "consume_line": null, "recursion_witness": null, "resolution": %s}, "fixes": [], "legal_alternatives": ["rename the reference to an existing static symbol", "declare the missing symbol or concrete type"]}
+}""".formatted(command, target, sourceFile, sourceFile, target, resolutionJson).trim());
             } else {
                 out.println("moss: error: unknown symbol '" + target + "'");
             }
-            return;
+            return false;
         }
 
         String kind;
@@ -365,20 +626,45 @@ public class SemanticQueryEngine {
             line = matchedCallEdge.line;
             semanticId = matchedCallEdge.callSiteSemanticIdentity();
             durableId = matchedCallEdge.callSiteId();
-        } else if (matchedDomain != null) {
+        } else if (matchedDomain != null && matchedHandler == null) {
             kind = "domain";
             name = matchedDomain.name;
             type = matchedDomain.name;
             line = matchedDomain.line;
             semanticId = "domain:" + matchedDomain.name + "@" + matchedDomain.line;
             durableId = "entity-v1:domain:" + matchedDomain.name;
+        } else if (matchedHandler != null) {
+            kind = "handler";
+            name = matchedDomain.name + "." + matchedHandler.name;
+            type = matchedHandler.replyType != null && !matchedHandler.replyType.isEmpty()
+                    ? matchedHandler.replyType : "unit";
+            line = matchedHandler.line;
+            semanticId = "handler:" + name + "@" + line;
+            durableId = "entity-v1:handler:" + name;
         } else if (matchedFunction != null) {
             kind = "function";
             name = matchedFunction.name;
-            type = (matchedFunction.returnType != null && !matchedFunction.returnType.isEmpty()) ? matchedFunction.returnType : "unit";
+            type = matchedSpecialization != null && matchedSpecialization.returnType != null
+                    && !matchedSpecialization.returnType.isEmpty() ? matchedSpecialization.returnType
+                    : (matchedFunction.returnType != null && !matchedFunction.returnType.isEmpty()) ? matchedFunction.returnType : "unit";
             line = matchedFunction.line;
             semanticId = "fn:" + matchedFunction.name + "@" + matchedFunction.line;
             durableId = "entity-v1:function:" + matchedFunction.name;
+        } else if (matchedMethod != null) {
+            kind = "method";
+            name = matchedObject.name + "." + matchedMethod.name;
+            type = matchedMethod.returnType != null && !matchedMethod.returnType.isEmpty()
+                    ? matchedMethod.returnType : "unit";
+            line = matchedMethod.line;
+            semanticId = "method:" + name + "@" + line;
+            durableId = "entity-v1:method:" + name;
+        } else if (matchedField != null) {
+            kind = "field";
+            name = matchedObject.name + "." + matchedField.name;
+            type = matchedField.type;
+            line = matchedField.line;
+            semanticId = "field:" + name + "@" + line;
+            durableId = "entity-v1:field:" + name;
         } else if (matchedObject != null) {
             kind = "object";
             name = matchedObject.name;
@@ -413,24 +699,38 @@ public class SemanticQueryEngine {
                     if (ce.source.equals("main")) calls.add(ce);
                 }
             }
-        } else if ("function".equals(kind)) {
+        } else if ("function".equals(kind) || "method".equals(kind)) {
             if (program.semanticCallEdges != null) {
                 for (SemanticCallEdge ce : program.semanticCallEdges) {
-                    if (ce.source.equals("fn:" + name)) calls.add(ce);
+                    String sourceName = "function".equals(kind) ? "fn:" + name : name;
+                    if (ce.source.equals(sourceName)) calls.add(ce);
                 }
             }
         }
 
         List<SemanticCallEdge> callers = new ArrayList<>();
-        if (program.semanticCallEdges != null && "function".equals(kind)) {
+        if (program.semanticCallEdges != null && ("function".equals(kind) || "method".equals(kind))) {
             for (SemanticCallEdge ce : program.semanticCallEdges) {
-                if (ce.target.equals("fn:" + name)) callers.add(ce);
+                String callableTarget = "function".equals(kind) ? "fn:" + name : "method:" + name;
+                if (ce.target.equals(callableTarget)) callers.add(ce);
             }
         }
 
         Set<String> transTargets = new LinkedHashSet<>();
-        for (SemanticCallEdge ce : calls) {
-            transTargets.add(ce.target);
+        Deque<String> pendingCallables = new ArrayDeque<>();
+        Set<String> visitedCallables = new HashSet<>();
+        for (SemanticCallEdge ce : calls) pendingCallables.add(ce.target);
+        while (!pendingCallables.isEmpty()) {
+            String callable = pendingCallables.removeFirst();
+            if (!transTargets.add(callable) || !visitedCallables.add(callable)) continue;
+            String sourceName = callable.startsWith("fn:") ? callable
+                    : callable.startsWith("method:") ? callable.substring("method:".length()) : callable;
+            if (program.semanticCallEdges == null) continue;
+            for (SemanticCallEdge edge : program.semanticCallEdges) {
+                if (edge.source.equals(sourceName) && !visitedCallables.contains(edge.target)) {
+                    pendingCallables.addLast(edge.target);
+                }
+            }
         }
         StringBuilder transSb = new StringBuilder("[");
         int ti = 0;
@@ -513,6 +813,38 @@ public class SemanticQueryEngine {
         }
 
         if (json) {
+            if ("why".equals(command)) {
+                String reasonCode = matchedCallEdge != null ? "STATIC_CALL_RESOLUTION"
+                        : "INFERRED_VALUE_EFFECTS";
+                String detail = matchedCallEdge != null
+                        ? "call target was resolved statically by the Moss checker"
+                        : "parameter access modes were inferred by the Moss checker";
+                String evidence = matchedCallEdge != null
+                        ? "[{\"kind\":\"compiler_decision\",\"detail\":\"" + detail + "\"}]"
+                        : "[{\"kind\":\"ownership\",\"detail\":\"" + detail + "\"}]";
+                out.println("{\"protocol_version\":1,\"schema_version\":\"moss-agent-1\",\"compiler_version\":\"0.1.0-java\",\"command\":\"why\",\"ok\":true,\"result\":{\"status\":\"resolved\","
+                        + targetJson + ",\"explanations\":[\"" + detail + "\"],\"reason\":{\"code\":\""
+                        + reasonCode + "\",\"evidence\":" + evidence + "}}}");
+                return true;
+            }
+            if ("type".equals(command) && matchedCallEdge != null) {
+                out.println("""
+{
+  "protocol_version": 1,
+  "schema_version": "moss-agent-1",
+  "compiler_version": "0.1.0-java",
+  "command": "type",
+  "ok": true,
+  "result": {
+    "status": "resolved",
+%s,
+    "resolved_type": null,
+    "type_facts": {"status": "not_available", "resolved": null, "category": "unavailable", "origin": "not_retained"}
+  }
+}""".formatted(targetJson).trim());
+                return true;
+            }
+
             if ("calls".equals(command)) {
                 String directCallsJson = buildDirectCallsJson(calls, program, sourceFile);
                 String callersJson = buildCallersJson(callers, program, sourceFile);
@@ -532,7 +864,7 @@ public class SemanticQueryEngine {
     "domain": {"status": "not_applicable"}
   }
 }""".formatted(targetJson, directCallsJson, callersJson, transSb.toString()).trim());
-                return;
+                return true;
             }
 
             if ("inspect".equals(command)) {
@@ -540,6 +872,9 @@ public class SemanticQueryEngine {
                 String callersJson = buildCallersJson(callers, program, sourceFile);
                 String typedSemanticsJson = buildTypedSemanticV1Json(program);
                 String syncPlanJson = buildSynchronizationPlanJson(program);
+                String domainJson = matchedDomain != null && matchedHandler != null
+                        ? buildHandlerDomainJson(matchedDomain, matchedHandler, program)
+                        : "{\"status\":\"not_applicable\"}";
                 out.println("""
 {
   "protocol_version": 1,
@@ -569,12 +904,12 @@ public class SemanticQueryEngine {
     "reason": {"code": "CHECKED_SEMANTIC_FACT", "evidence": [{"kind": "resolved_type", "value": "%s"}]},
     "cost_facts": {"allocations": {"materialized_functional_intermediates": 0}, "message_copy_sizes": [], "source_traversals": 0, "specialization_count": 0, "functional": null, "domain_backend": null, "predictive_estimates": null},
     "synchronization": {"status": "not_applicable", "reason": "target is not a domain operation"}%s,
-    "domain": {"status": "not_applicable"},
+    "domain": %s,
     "typed_semantic_v1": %s,
     "concrete_domain_graph": {"graph_identity":"domain-graph:cbf29ce484222325","closed":true,"instances": [],"edges":[]}
   }
-}""".formatted(targetJson, type != null ? "\"" + type + "\"" : "null", type != null ? type : "unit", "main".equals(kind) ? "concrete" : kind, nominalObjJson, directCallsJson, callersJson, transSb.toString(), type != null ? type : "unit", syncPlanJson, typedSemanticsJson).trim());
-                return;
+                }""".formatted(targetJson, type != null ? "\"" + type + "\"" : "null", type != null ? type : "unit", matchedSpecialization != null ? "specialized" : ("main".equals(kind) ? "concrete" : kind), nominalObjJson, directCallsJson, callersJson, transSb.toString(), type != null ? type : "unit", syncPlanJson, domainJson, typedSemanticsJson).trim());
+                return true;
             }
 
             String syncPlanJson = buildSynchronizationPlanJson(program);
@@ -607,10 +942,384 @@ public class SemanticQueryEngine {
       "origin": "checked_declaration"%s
     }%s
   }
-}""".formatted(command, target, kind, semanticId, target, sourceFile, line, type, type, type, kind, nominalObjJson, syncPlanJson).trim());
+}""".formatted(command, target, kind, semanticId, target, sourceFile, line, type, type, type,
+                matchedSpecialization != null ? "specialized" : kind, nominalObjJson, syncPlanJson).trim());
         } else {
             out.println(target + ": " + kind + " (" + type + ") at " + sourceFile + ":" + line);
         }
+        return true;
+    }
+
+    private static final class ResolutionCandidate {
+        String id;
+        String kind;
+        String semanticIdentity;
+        String name;
+        String type;
+        String sourceFile;
+        int line;
+    }
+
+    private static boolean isSourceLocation(String target) {
+        return target != null && (target.matches("line:[0-9]+")
+                || target.matches("at:[0-9]+:[0-9]+"));
+    }
+
+    private static boolean isBareResolveTarget(String target) {
+        return target != null && target.matches("[A-Za-z_][A-Za-z0-9_]*");
+    }
+
+    private static boolean typeBindingAtLocation(String selector, Program program, String sourceFile,
+                                                 boolean json, PrintStream out) {
+        String[] parts = selector.split(":");
+        int line = Integer.parseInt(parts[parts.length - (parts[0].equals("line") ? 1 : 2)]);
+        List<ResolutionCandidate> candidates = new ArrayList<>();
+        if (program != null && program.localBindingLines != null) {
+            for (Map.Entry<String, Map<String, Integer>> scope : program.localBindingLines.entrySet()) {
+                Map<String, TypeRef> types = program.localBindingTypes.getOrDefault(scope.getKey(), Map.of());
+                for (Map.Entry<String, Integer> binding : scope.getValue().entrySet()) {
+                    if (binding.getValue() != line) continue;
+                    ResolutionCandidate candidate = new ResolutionCandidate();
+                    candidate.kind = "binding";
+                    candidate.name = binding.getKey();
+                    candidate.id = "entity-v1:binding:" + scope.getKey() + ":" + binding.getKey();
+                    candidate.semanticIdentity = scope.getKey() + "@" + line + ":statement";
+                    TypeRef type = types.get(binding.getKey());
+                    candidate.type = type != null ? type.toCanonicalString() : "unit";
+                    candidate.sourceFile = sourceFile;
+                    candidate.line = line;
+                    candidates.add(candidate);
+                }
+            }
+        }
+        if (candidates.size() != 1) {
+            return emitResolutionFailure(selector, candidates, sourceFile, json, out);
+        }
+        ResolutionCandidate candidate = candidates.get(0);
+        if (json) {
+            out.println("{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n"
+                    + "  \"compiler_version\": \"0.1.0-java\",\n  \"command\": \"type\",\n"
+                    + "  \"ok\": true,\n  \"result\": {\n    \"status\": \"resolved\",\n"
+                    + "    \"target\": {\"id\": \"" + jsonString(candidate.id) + "\", \"kind\": \"binding\","
+                    + " \"semantic_identity\": \"" + jsonString(candidate.semanticIdentity) + "\","
+                    + " \"name\": \"" + jsonString(candidate.name) + "\", \"source\": {\"file\": \""
+                    + jsonString(sourceFile) + "\", \"line\": " + line + ", \"column\": 1}, \"type\": \""
+                    + jsonString(candidate.type) + "\"}, \"resolved_type\": \"" + jsonString(candidate.type)
+                    + "\", \"type_facts\": {\"status\": \"resolved\", \"resolved\": \""
+                    + jsonString(candidate.type) + "\", \"category\": \"concrete\", \"origin\": \"inferred\"}}\n}");
+        } else {
+            out.println(candidate.name + ": " + candidate.type + " at " + sourceFile + ":" + line);
+        }
+        return true;
+    }
+
+    private static boolean resolveName(String target, Program program, String sourceFile, String kindFilter,
+                                       String enclosingFilter, boolean json, PrintStream out) {
+        List<ResolutionCandidate> candidates = new ArrayList<>();
+        if (program != null) {
+            for (Function function : program.functions) {
+                if (!function.name.equals(target)) continue;
+                ResolutionCandidate candidate = new ResolutionCandidate();
+                candidate.kind = "function";
+                candidate.name = function.name;
+                candidate.id = "entity-v1:function:" + function.name;
+                candidate.semanticIdentity = "fn:" + function.name + "@" + function.line;
+                candidate.type = function.returnType != null && !function.returnType.isEmpty()
+                        ? function.returnType : "unit";
+                candidate.sourceFile = function.sourceFile;
+                candidate.line = function.line;
+                candidates.add(candidate);
+            }
+            for (ObjectType object : program.objects) {
+                for (Method method : object.methods) {
+                    if (!method.name.equals(target)) continue;
+                    String qualified = object.name + "." + method.name;
+                    if (enclosingFilter != null && !enclosingFilter.isEmpty()
+                            && !enclosingFilter.equals("method:" + qualified)
+                            && !enclosingFilter.equals(qualified)) continue;
+                    ResolutionCandidate candidate = new ResolutionCandidate();
+                    candidate.kind = "method";
+                    candidate.name = qualified;
+                    candidate.id = "entity-v1:method:" + qualified;
+                    candidate.semanticIdentity = "method:" + qualified + "@" + method.line;
+                    candidate.type = method.returnType != null && !method.returnType.isEmpty()
+                            ? method.returnType : "unit";
+                    candidate.sourceFile = method.sourceFile;
+                    candidate.line = method.line;
+                    candidates.add(candidate);
+                }
+                for (Field field : object.fields) {
+                    if (!field.name.equals(target)) continue;
+                    ResolutionCandidate candidate = new ResolutionCandidate();
+                    candidate.kind = "field";
+                    candidate.name = object.name + "." + field.name;
+                    candidate.id = "entity-v1:field:" + candidate.name;
+                    candidate.semanticIdentity = "field:" + candidate.name + "@" + field.line;
+                    candidate.type = field.type;
+                    candidate.sourceFile = field.sourceFile;
+                    candidate.line = field.line;
+                    candidates.add(candidate);
+                }
+            }
+        }
+        if (kindFilter != null && !kindFilter.isEmpty()) {
+            candidates.removeIf(candidate -> !candidate.kind.equals(kindFilter));
+        }
+        candidates.sort(Comparator.comparing((ResolutionCandidate candidate) -> candidate.name)
+                .thenComparing(candidate -> candidate.sourceFile).thenComparing(candidate -> candidate.id));
+        return emitResolutionCandidates(target, candidates, sourceFile, json, out);
+    }
+
+    private static boolean emitResolutionCandidates(String selector, List<ResolutionCandidate> candidates,
+                                                    String sourceFile, boolean json, PrintStream out) {
+        if (candidates.size() == 1) {
+            ResolutionCandidate candidate = candidates.get(0);
+            if (json) {
+                out.println("{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n"
+                        + "  \"compiler_version\": \"0.1.0-java\",\n  \"command\": \"resolve\",\n"
+                        + "  \"ok\": true,\n  \"result\": {\n    \"status\": \"resolved\",\n"
+                        + "    \"target\": {\"id\": \"" + jsonString(candidate.id) + "\", \"kind\": \""
+                        + candidate.kind + "\", \"semantic_identity\": \"" + jsonString(candidate.semanticIdentity)
+                        + "\", \"name\": \"" + jsonString(candidate.name) + "\", \"source\": {\"file\": \""
+                        + jsonString(candidate.sourceFile) + "\", \"line\": " + candidate.line + ", \"column\": 1}, \"type\": \""
+                        + jsonString(candidate.type) + "\"}\n  }\n}");
+            } else {
+                out.println(candidate.name + ": " + candidate.kind + " (" + candidate.type + ") at "
+                        + candidate.sourceFile + ":" + candidate.line);
+            }
+            return true;
+        }
+        return emitResolutionFailure(selector, candidates, sourceFile, json, out);
+    }
+
+    private static boolean emitResolutionFailure(String selector, List<ResolutionCandidate> candidates,
+                                                 String sourceFile, boolean json, PrintStream out) {
+        String status = candidates.isEmpty() ? "missing" : "ambiguous";
+        if (json) {
+            StringBuilder candidateJson = new StringBuilder("[");
+            for (int i = 0; i < candidates.size(); i++) {
+                ResolutionCandidate candidate = candidates.get(i);
+                if (i > 0) candidateJson.append(", ");
+                candidateJson.append("{\"id\":\"").append(jsonString(candidate.id))
+                        .append("\",\"kind\":\"").append(candidate.kind)
+                        .append("\",\"name\":\"").append(jsonString(candidate.name))
+                        .append("\",\"source\":{\"file\":\"").append(jsonString(candidate.sourceFile))
+                        .append("\",\"line\":").append(candidate.line).append("}}");
+            }
+            candidateJson.append(']');
+            out.println("{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n"
+                    + "  \"compiler_version\": \"0.1.0-java\",\n  \"command\": \"resolve\",\n"
+                    + "  \"ok\": false,\n  \"error\": {\"code\": \"QUERY_TARGET_NOT_FOUND\", \"severity\": \"error\","
+                    + " \"message\": \"target did not identify one semantic entity\", \"source_file\": \""
+                    + jsonString(sourceFile) + "\", \"line\": 0, \"column\": 1, \"span\": null, \"source\": null,"
+                    + " \"semantic_identity\": null, \"symbol\": \"" + jsonString(selector)
+                    + "\", \"rule\": null, \"cause\": null, \"related\": [], \"guidance\": null,"
+                    + " \"details\": {\"resolution\": {\"status\": \"" + status
+                    + "\", \"candidates\": " + candidateJson + "}}, \"fixes\": [], \"legal_alternatives\": []}}");
+        } else {
+            out.println("moss: target resolution is " + status + ": " + selector);
+        }
+        return false;
+    }
+
+    private static boolean resolveSourceLocation(String selector, Program program, String sourceFile,
+                                                 String kindFilter, boolean json, PrintStream out) {
+        String[] parts = selector.split(":");
+        int line = Integer.parseInt(parts[parts.length - (parts[0].equals("line") ? 1 : 2)]);
+        List<ResolutionCandidate> candidates = new ArrayList<>();
+        if (program != null && program.localBindingLines != null) {
+            for (Map.Entry<String, Map<String, Integer>> scope : program.localBindingLines.entrySet()) {
+                Map<String, TypeRef> types = program.localBindingTypes.getOrDefault(scope.getKey(), Map.of());
+                for (Map.Entry<String, Integer> binding : scope.getValue().entrySet()) {
+                    if (binding.getValue() != line) continue;
+                    ResolutionCandidate candidate = new ResolutionCandidate();
+                    candidate.kind = "binding";
+                    candidate.name = binding.getKey();
+                    candidate.id = "entity-v1:binding:" + scope.getKey() + ":" + binding.getKey();
+                    candidate.semanticIdentity = scope.getKey() + "@" + line + ":statement";
+                    TypeRef type = types.get(binding.getKey());
+                    candidate.type = type != null ? type.toCanonicalString() : "unit";
+                    candidate.sourceFile = sourceFile;
+                    candidate.line = line;
+                    candidates.add(candidate);
+                }
+            }
+        }
+        if (program != null) {
+            for (Function function : program.functions) {
+                if (function.line != line || !sameSource(function.sourceFile, sourceFile)) continue;
+                ResolutionCandidate candidate = new ResolutionCandidate();
+                candidate.kind = "function";
+                candidate.name = function.name;
+                candidate.id = "entity-v1:function:" + function.name;
+                candidate.semanticIdentity = "fn:" + function.name + "@" + function.line;
+                candidate.type = function.returnType != null && !function.returnType.isEmpty()
+                        ? function.returnType : "unit";
+                candidate.sourceFile = function.sourceFile;
+                candidate.line = line;
+                candidates.add(candidate);
+            }
+            for (ObjectType object : program.objects) {
+                for (Method method : object.methods) {
+                    if (method.line != line || !sameSource(method.sourceFile, sourceFile)) continue;
+                    ResolutionCandidate candidate = new ResolutionCandidate();
+                    candidate.kind = "method";
+                    candidate.name = object.name + "." + method.name;
+                    candidate.id = "entity-v1:method:" + candidate.name;
+                    candidate.semanticIdentity = "method:" + candidate.name + "@" + method.line;
+                    candidate.type = method.returnType != null && !method.returnType.isEmpty()
+                            ? method.returnType : "unit";
+                    candidate.sourceFile = method.sourceFile;
+                    candidate.line = line;
+                    candidates.add(candidate);
+                }
+            }
+        }
+        if (program != null && program.semanticCallEdges != null) {
+            for (SemanticCallEdge edge : program.semanticCallEdges) {
+                if (edge.line != line || !sameSource(edge.sourceFile, sourceFile)) continue;
+                ResolutionCandidate candidate = new ResolutionCandidate();
+                candidate.kind = "call";
+                candidate.name = edge.target;
+                candidate.id = edge.callSiteId();
+                candidate.semanticIdentity = edge.callSiteSemanticIdentity();
+                candidate.type = edge.returnTypeRef != null ? edge.returnTypeRef.toCanonicalString() : "unit";
+                candidate.sourceFile = edge.sourceFile;
+                candidate.line = line;
+                candidates.add(candidate);
+            }
+        }
+        if (kindFilter != null && !kindFilter.isEmpty()) {
+            candidates.removeIf(candidate -> !candidate.kind.equals(kindFilter));
+        }
+        candidates.sort(Comparator.comparing((ResolutionCandidate candidate) -> candidate.kind)
+                .thenComparing(candidate -> candidate.name).thenComparing(candidate -> candidate.id));
+        if (candidates.size() == 1) {
+            ResolutionCandidate candidate = candidates.get(0);
+            if (json) {
+                out.println("{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n"
+                        + "  \"compiler_version\": \"0.1.0-java\",\n  \"command\": \"resolve\",\n"
+                        + "  \"ok\": true,\n  \"result\": {\n    \"status\": \"resolved\",\n"
+                        + "    \"target\": {\"id\": \"" + jsonString(candidate.id) + "\", \"kind\": \""
+                        + candidate.kind + "\", \"semantic_identity\": \"" + jsonString(candidate.semanticIdentity)
+                        + "\", \"name\": \"" + jsonString(candidate.name) + "\", \"source\": {\"file\": \""
+                        + jsonString(candidate.sourceFile) + "\", \"line\": " + candidate.line + ", \"column\": 1}, \"type\": \""
+                        + jsonString(candidate.type) + "\"}\n  }\n}");
+            } else {
+                out.println(candidate.name + ": " + candidate.kind + " (" + candidate.type + ") at "
+                        + sourceFile + ":" + candidate.line);
+            }
+            return true;
+        }
+        String status = candidates.isEmpty() ? "missing" : "ambiguous";
+        if (json) {
+            StringBuilder candidateJson = new StringBuilder("[");
+            for (int i = 0; i < candidates.size(); i++) {
+                ResolutionCandidate candidate = candidates.get(i);
+                if (i > 0) candidateJson.append(", ");
+                candidateJson.append("{\"id\":\"").append(jsonString(candidate.id))
+                        .append("\",\"kind\":\"").append(candidate.kind)
+                        .append("\",\"name\":\"").append(jsonString(candidate.name))
+                        .append("\",\"source\":{\"file\":\"").append(jsonString(candidate.sourceFile))
+                        .append("\",\"line\":").append(candidate.line).append("}}");
+            }
+            candidateJson.append(']');
+            out.println("{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n"
+                    + "  \"compiler_version\": \"0.1.0-java\",\n  \"command\": \"resolve\",\n"
+                    + "  \"ok\": false,\n  \"error\": {\"code\": \"QUERY_TARGET_NOT_FOUND\", \"severity\": \"error\","
+                    + " \"message\": \"source location did not identify one semantic target\", \"source_file\": \""
+                    + jsonString(sourceFile) + "\", \"line\": " + line + ", \"column\": 1, \"span\": null, \"source\": null,"
+                    + " \"semantic_identity\": null, \"symbol\": null, \"rule\": null, \"cause\": null, \"related\": [],"
+                    + " \"guidance\": null, \"details\": {\"resolution\": {\"status\": \"" + status
+                    + "\", \"candidates\": " + candidateJson + "}}, \"fixes\": [], \"legal_alternatives\": []}}");
+        } else {
+            out.println("moss: source location resolution is " + status);
+        }
+        return false;
+    }
+
+    private static boolean sameSource(String candidateSource, String requestedSource) {
+        if (candidateSource == null || candidateSource.isEmpty()) return true;
+        return new java.io.File(candidateSource).getAbsolutePath()
+                .equals(new java.io.File(requestedSource).getAbsolutePath());
+    }
+
+    private static String jsonString(String value) {
+        if (value == null) return "";
+        return value.replace("\\", "\\\\").replace("\"", "\\\"")
+                .replace("\n", "\\n").replace("\r", "\\r");
+    }
+
+    private static String buildHandlerDomainJson(Domain domain, Handler handler, Program program) {
+        String instance = null;
+        if (program != null && program.main != null) {
+            for (Stmt statement : program.main.body) {
+                String rhs = statement.b != null ? statement.b.trim() : "";
+                if (statement.kind == Stmt.Kind.Assign && rhs.startsWith(domain.name + "(")) {
+                    instance = statement.a.trim();
+                    break;
+                }
+            }
+        }
+        if (instance == null || instance.isEmpty()) {
+            return "{\"status\":\"not_available\",\"reason\":\"no exact constructed receiver instance was retained\"}";
+        }
+        String reply = handler.replyType != null && !handler.replyType.isEmpty() ? handler.replyType : "unit";
+        return "{\"status\":\"available\",\"domain\":\"" + jsonString(domain.name)
+                + "\",\"handler\":\"handler:" + jsonString(domain.name) + "." + jsonString(handler.name)
+                + "\",\"sender\":null,\"receiver_instances\":[\"main::" + jsonString(instance)
+                + "\"],\"receiver_instance_precision\":\"exact_domain_instance\","
+                + "\"payload\":{\"boundary\":\"by_value_immutable_snapshot\",\"domain_handles_allowed\":false},"
+                + "\"reply\":{\"boundary\":\"by_value\",\"type\":\"" + jsonString(reply)
+                + "\"},\"legal\":true}";
+    }
+
+    private static String buildHandlerSynchronizationJson(Domain domain, Handler handler, Program program) {
+        Set<String> reads = new java.util.TreeSet<>();
+        Set<String> writes = new java.util.TreeSet<>();
+        for (Field state : domain.state) {
+            String identifier = "\\b" + java.util.regex.Pattern.quote(state.name) + "\\b";
+            for (Stmt statement : handler.body) {
+                String target = statement.a != null ? statement.a.trim() : "";
+                String expression = (statement.b != null ? statement.b : "") + " "
+                        + (statement.text != null ? statement.text : "");
+                if (statement.kind == Stmt.Kind.Assign
+                        && (target.equals(state.name) || target.startsWith(state.name + "."))) {
+                    writes.add(state.name);
+                }
+                if (java.util.regex.Pattern.compile(identifier).matcher(expression).find()) reads.add(state.name);
+            }
+        }
+        String instance = domain.name.toLowerCase(Locale.ROOT);
+        if (program != null && program.main != null) {
+            for (Stmt statement : program.main.body) {
+                String rhs = statement.b != null ? statement.b.trim() : "";
+                if (statement.kind == Stmt.Kind.Assign && rhs.startsWith(domain.name + "(")) {
+                    instance = statement.a.trim();
+                    break;
+                }
+            }
+        }
+        String classId = "main::" + instance.toLowerCase(Locale.ROOT) + "::sync:0";
+        String mode = writes.isEmpty() ? "SHARED" : "EXCLUSIVE";
+        return "{\"status\":\"available\",\"analysis\":\"compiler_synchronization_plan\","
+                + "\"precision\":\"exact_footprint_conservative_placement\",\"conservative_fallback\":true,"
+                + "\"instances\":[{\"concrete_instance_id\":\"main::" + jsonString(instance)
+                + "\",\"domain_rank\":0,\"handlers\":[{\"handler_identity\":\"domain-specialization:"
+                + jsonString(domain.name) + ":" + jsonString(instance) + "::handler:" + jsonString(handler.name)
+                + "\",\"read_set\":" + jsonArray(reads) + ",\"write_set\":" + jsonArray(writes)
+                + ",\"protected_read_set\":" + jsonArray(reads) + ",\"acquisitions\":[{\"class_id\":\""
+                + classId + "\",\"domain_rank\":0,\"class_rank\":0,\"mode\":\"" + mode + "\"}]}]}]}";
+    }
+
+    private static String jsonArray(Collection<String> values) {
+        StringBuilder result = new StringBuilder("[");
+        int index = 0;
+        for (String value : values) {
+            if (index++ > 0) result.append(',');
+            result.append('\"').append(jsonString(value)).append('\"');
+        }
+        return result.append(']').toString();
     }
 
     private static String buildSynchronizationPlanJson(Program program) {
@@ -826,7 +1535,9 @@ public class SemanticQueryEngine {
                         Param p = fn.params.get(i);
                         String pType = (i < specTypes.size()) ? specTypes.get(i) : (p.type != null && !p.type.isEmpty() ? p.type.toLowerCase() : "int");
                         String effect = "READ";
-                        if (doesFunctionMutateParam(fn, i, program)) {
+                        if (i < fn.parameterAccessModes.size()) {
+                            effect = fn.parameterAccessModes.get(i).name().toUpperCase(Locale.ROOT);
+                        } else if (doesFunctionMutateParam(fn, i, program)) {
                             effect = "WRITE";
                         } else {
                             boolean isCopy = pType.equals("int") || pType.equals("float") || pType.equals("bool") || pType.equals("unit") || pType.equals("char");
@@ -851,6 +1562,27 @@ public class SemanticQueryEngine {
                     }
                     sb.append("\n    ]");
                     return sb.toString();
+                }
+            }
+            for (ObjectType object : program.objects) {
+                for (Method method : object.methods) {
+                    if (!(method.name.equals(baseName) || (object.name + "." + method.name).equals(baseName))) continue;
+                    boolean receiverWrite = method.body.stream().anyMatch(statement ->
+                            statement.kind == Stmt.Kind.Assign && object.fields.stream()
+                                    .anyMatch(field -> statement.a.equals(field.name)
+                                            || statement.a.startsWith(field.name + ".")));
+                    StringBuilder sb = new StringBuilder("[\n")
+                            .append("      {\"name\": \"self\", \"type\": \"")
+                            .append(object.name.toLowerCase(Locale.ROOT)).append("\", \"effect\": \"")
+                            .append(receiverWrite ? "WRITE" : "READ").append("\"}");
+                    for (Param parameter : method.params) {
+                        sb.append(",\n      {\"name\": \"").append(parameter.name)
+                                .append("\", \"type\": \"")
+                                .append(parameter.type != null && !parameter.type.isEmpty()
+                                        ? parameter.type.toLowerCase(Locale.ROOT) : "int")
+                                .append("\", \"effect\": \"READ\"}");
+                    }
+                    return sb.append("\n    ]").toString();
                 }
             }
         }
@@ -894,6 +1626,40 @@ public class SemanticQueryEngine {
                         calleeLine = f.line;
                         if (f.sourceFile != null && !f.sourceFile.isEmpty()) calleeFile = f.sourceFile;
                         break;
+                    }
+                }
+            } else if (edge.target.startsWith("handler:") && program != null) {
+                String qualified = edge.target.substring("handler:".length());
+                for (Domain domain : program.domains) {
+                    if (!qualified.startsWith(domain.name + ".")) continue;
+                    String handlerName = qualified.substring(domain.name.length() + 1);
+                    for (Handler handler : domain.handlers) {
+                        if (!handler.name.equals(handlerName)) continue;
+                        calleeId = "entity-v1:handler:" + qualified;
+                        calleeLine = handler.line;
+                        if (handler.sourceFile != null && !handler.sourceFile.isEmpty()) {
+                            calleeFile = handler.sourceFile;
+                        }
+                        break;
+                    }
+                }
+            } else if (edge.target.startsWith("method:") && program != null) {
+                String qualified = edge.target.substring("method:".length());
+                int split = qualified.lastIndexOf('.');
+                if (split > 0) {
+                    String objectName = qualified.substring(0, split);
+                    String methodName = qualified.substring(split + 1);
+                    for (ObjectType object : program.objects) {
+                        if (!object.name.equals(objectName)) continue;
+                        for (Method method : object.methods) {
+                            if (!method.name.equals(methodName)) continue;
+                            calleeId = "entity-v1:method:" + qualified;
+                            calleeLine = method.line;
+                            if (method.sourceFile != null && !method.sourceFile.isEmpty()) {
+                                calleeFile = method.sourceFile;
+                            }
+                            break;
+                        }
                     }
                 }
             }

@@ -1579,6 +1579,31 @@ public class SemanticChecker {
                     callExpr = msgExpr.startsWith("message ") ? msgExpr.substring(8).trim() : msgExpr;
                 }
                 TypeRef replyType = typer.inferMessageCall(callExpr, s.line, env.typeEnv);
+                TypeRef receiverType = env.get(s.a);
+                Domain messageDomain = receiverType != null
+                        ? domains.get(solver.resolve(receiverType).name()) : null;
+                if (messageDomain != null) {
+                    Handler messageHandler = messageDomain.handlers.stream()
+                            .filter(handler -> handler.name.equals(s.b)).findFirst().orElse(null);
+                    if (messageHandler != null) {
+                        SemanticCallEdge edge = new SemanticCallEdge();
+                        edge.source = typer.currentCallingFunction != null
+                                ? typer.currentCallingFunction : "main";
+                        edge.target = "handler:" + messageDomain.name + "." + messageHandler.name;
+                        edge.line = s.line;
+                        edge.sourceFile = s.sourceFile != null && !s.sourceFile.isEmpty()
+                                ? s.sourceFile : program.sourceFile;
+                        edge.invocationKind = "synchronous_message";
+                        edge.receiver = s.a;
+                        edge.returnTypeRef = replyType;
+                        for (String argument : s.args) {
+                            TypeRef argumentType = typer.infer(argument, s.line, env.typeEnv);
+                            edge.argumentTypes.add(argumentType != null
+                                    ? solver.resolve(argumentType).toCanonicalString() : "unit");
+                        }
+                        program.semanticCallEdges.add(edge);
+                    }
+                }
                 if (s.messageResult != null && !s.messageResult.isEmpty()) {
                     if (env.containsKey(s.messageResult)) {
                         if (env.immutables.contains(s.messageResult)) {

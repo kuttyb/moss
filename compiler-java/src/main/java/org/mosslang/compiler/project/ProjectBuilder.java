@@ -274,10 +274,10 @@ public class ProjectBuilder {
         return copy;
     }
 
-    private static Program loadProjectDeclarations(ProjectManifest manifest, String declarationDirectory) throws CompileError {
+    public static Program loadProjectDeclarations(ProjectManifest manifest, String declarationDirectory) throws CompileError {
         List<Path> paths = new ArrayList<>(manifest.findSourceFiles());
-        Path extra = manifest.getRoot().resolve(declarationDirectory);
-        if (Files.isDirectory(extra)) {
+        Path extra = declarationDirectory != null ? manifest.getRoot().resolve(declarationDirectory) : null;
+        if (extra != null && Files.isDirectory(extra)) {
             try (Stream<Path> walk = Files.walk(extra)) {
                 walk.filter(Files::isRegularFile).filter(f -> f.toString().endsWith(".moss")).forEach(paths::add);
             } catch (IOException e) {
@@ -294,6 +294,7 @@ public class ProjectBuilder {
                 combined.functions.addAll(parsed.functions);
                 combined.traits.addAll(parsed.traits);
                 combined.objects.addAll(parsed.objects);
+                combined.imports.addAll(parsed.imports);
                 for (EnumType value : parsed.enums) if (enumNames.add(value.name)) combined.enums.add(value);
                 combined.domains.addAll(parsed.domains);
                 combined.tests.addAll(parsed.tests);

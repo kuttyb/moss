@@ -12514,3 +12514,23 @@ files. Direct Java/C++ query output agrees on the identified target fields and
 ownership/effect values. `./scripts/java/package.sh` then rebuilt the JAR, and
 the packaged JAR and `scripts/java/moss` both passed `--version`. Native, SDK,
 and final release gates remain open.
+
+### Phase 25.3 continuation — semantic-query focused parity slice
+
+The existing semantic-query regression exposed missing Java command dispatch
+for `resolve`, incomplete handler target resolution, missing statically
+constructed receiver facts for handler `inspect`, and missing `why` evidence.
+The Java CLI now routes resolver requests; query targeting includes handler and
+call-site identities, and handler inspect reports an exact receiver instance
+when it is retained in `main`. `why` projects static call-resolution and
+inferred ownership evidence from resolved call edges/function declarations.
+
+Validation on the working tree: `./scripts/java/build.sh`,
+`python3 tests/tooling/check_semantic_queries.py ./scripts/java/run.sh`, and
+`./scripts/java/test.sh` passed. The Java suite passed all ten test classes,
+including parsing 33 real Moss examples. `git diff --check` passed. This is
+only a focused query API regression slice; several query projections still use
+heuristics and overall semantic/query parity, native correctness, Margo/SDK
+integration, source-free module coverage, packaging lifecycle, and frozen
+release acceptance remain open. No full `make check`, native execution,
+multi-crate matrix, or codegen-delta sweep was run.
