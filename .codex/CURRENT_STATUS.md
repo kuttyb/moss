@@ -16512,3 +16512,10 @@ raise set with only one handled arm (rejected), and exhaustive arms (accepted).
 Generated Executor Rust selects `_root` for the handled cases. All 12 Java test
 classes pass under ABI-v9 and staged ABI-v10. Provider artifact generation,
 native linkage, and runtime execution remain pending.
+
+The standalone JAR was rebuilt from this source state. Its bootstrap reports
+`moss-0.1`, and the packaged launcher accepts
+`tests/phase20_executor_multi_root.moss` under default ABI-v9 and staged
+ABI-v10. The six `scripts/java/test_jdt_client.py` tests pass. They exercise
+client protocol/lifecycle behavior with mocked or local test servers; live
+Eclipse daemon startup and a persistent incremental build remain unverified.
