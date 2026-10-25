@@ -13055,3 +13055,7 @@ the call site. `./scripts/java/build.sh`, all ten Java unit-test classes,
 feedback validation, and `git diff --check` pass after this follow-up. Cross-
 crate error conversion and caller-local capture insertion remain open; no Rust
 or native gate was run.
+
+The raising-call regression now exercises a two-hop call chain and confirms a
+string literal containing `failer()` does not create a false raising effect.
+The focused SemanticCheckerTest and Java build pass with this coverage.
