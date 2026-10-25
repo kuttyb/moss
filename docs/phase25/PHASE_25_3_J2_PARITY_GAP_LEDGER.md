@@ -138,3 +138,13 @@ by the parser. The focused probe's local events and stdout match C++. Clean
 build and all eleven Java unit-test classes pass in ABI-v9 and staged ABI-v10.
 General control/event-stack, state/message trace parity, and acceptance gates
 remain open.
+
+## Phase 25.3 continuation — Fast Debug lexical local scopes
+
+A checked C++/Java probe found Java nested blocks shared the parent locals map,
+so `let` and `for` bindings overwrote outer variables. Java now evaluates
+if/else, while, for, try/recover, and match blocks in scoped local maps, merging
+updates to preexisting bindings while discarding block declarations and loop
+variables. The probe prints `2, 1, 3, 4, 1` in both interpreters. Clean build
+and all eleven Java unit-test classes pass in ABI-v9 and staged ABI-v10;
+complete interpreter parity and release gates remain open.

@@ -14,6 +14,7 @@ public final class FastInterpreterTest {
         testWhileLoopRepeatsCheckedBody();
         testLocalWriteTraceIsStructuredAndEscaped();
         testMossStringEscapeDecoding();
+        testLexicalBlocksRestoreShadowedLocals();
         System.out.println("FastInterpreterTest PASSED.");
     }
 
@@ -128,6 +129,29 @@ public final class FastInterpreterTest {
         String actual = stdout.toString(StandardCharsets.UTF_8);
         if (!expected.equals(actual)) {
             throw new AssertionError("Moss string escapes were decoded incorrectly: " + actual);
+        }
+    }
+
+    private static void testLexicalBlocksRestoreShadowedLocals() {
+        var program = Parser.parseSource(""
+                + "fn main():\n"
+                + "  value = 1\n"
+                + "  if true:\n"
+                + "    let value = 2\n"
+                + "    echo value\n"
+                + "  echo value\n"
+                + "  for value in [3, 4]:\n"
+                + "    echo value\n"
+                + "  echo value\n", "fast-interpreter-block-scopes.moss");
+        new CheckedProgram(program).run();
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+        new FastInterpreter(program, false,
+                new PrintStream(stdout, true, StandardCharsets.UTF_8),
+                new PrintStream(new ByteArrayOutputStream())).run();
+        String expected = "2\n1\n3\n4\n1\n";
+        String actual = stdout.toString(StandardCharsets.UTF_8);
+        if (!expected.equals(actual)) {
+            throw new AssertionError("Fast Debug leaked block bindings: " + actual);
         }
     }
 }

@@ -318,9 +318,11 @@ public class FastInterpreter {
                 }
                 Value cond = evalExpr(s.a, locals, currentDomain);
                 if (cond.asBool()) {
-                    lastVal = evalBlock(stmts, i + 1, thenEnd, locals, currentDomain, funcName, depth);
+                    lastVal = evalScopedBlock(stmts, i + 1, thenEnd, locals,
+                            currentDomain, funcName, depth, Set.of());
                 } else if (elseStart != -1) {
-                    lastVal = evalBlock(stmts, elseStart, elseEnd, locals, currentDomain, funcName, depth);
+                    lastVal = evalScopedBlock(stmts, elseStart, elseEnd, locals,
+                            currentDomain, funcName, depth, Set.of());
                 }
                 i = elseEnd;
                 continue;
@@ -331,8 +333,8 @@ public class FastInterpreter {
                     bodyEnd++;
                 }
                 while (evalExpr(s.a, locals, currentDomain).asBool()) {
-                    lastVal = evalBlock(stmts, i + 1, bodyEnd, locals,
-                            currentDomain, funcName, depth);
+                    lastVal = evalScopedBlock(stmts, i + 1, bodyEnd, locals,
+                            currentDomain, funcName, depth, Set.of());
                 }
                 i = bodyEnd;
                 continue;
@@ -384,8 +386,8 @@ public class FastInterpreter {
                     }
                 }
                 for (Value itm : items) {
-                    locals.put(loopVar, itm);
-                    lastVal = evalBlock(stmts, i + 1, forEnd, locals, currentDomain, funcName, depth);
+                    lastVal = evalScopedBlock(stmts, i + 1, forEnd, locals,
+                            currentDomain, funcName, depth, Set.of(loopVar), loopVar, itm);
                 }
                 i = forEnd;
                 continue;
@@ -401,7 +403,8 @@ public class FastInterpreter {
                     tryEnd++;
                 }
                 try {
-                    lastVal = evalBlock(stmts, i + 1, tryEnd, locals, currentDomain, funcName, depth);
+                    lastVal = evalScopedBlock(stmts, i + 1, tryEnd, locals,
+                            currentDomain, funcName, depth, Set.of());
                     i = tryEnd;
                     while (i < endIdx && stmts.get(i).kind == Stmt.Kind.Recover && stmts.get(i).indent == baseInd) {
                         i++;
@@ -440,7 +443,8 @@ public class FastInterpreter {
                                         locals.put(binding, rex.raisedValue);
                                     }
                                 }
-                                lastVal = evalBlock(stmts, recStart, recEnd, locals, currentDomain, funcName, depth);
+                                lastVal = evalScopedBlock(stmts, recStart, recEnd, locals,
+                                        currentDomain, funcName, depth, Set.of());
                             } finally {
                                 currentRaisedValue = prevRaised;
                                 currentRaisedVariant = prevVariant;
@@ -482,10 +486,12 @@ public class FastInterpreter {
                                 }
                                 branchLocals.put(binder, field);
                             }
-                            lastVal = evalBlock(stmts, caseBodyStart, caseBodyEnd, branchLocals,
-                                    currentDomain, funcName, depth);
+                            lastVal = evalScopedBlock(stmts, caseBodyStart, caseBodyEnd, branchLocals,
+                                    currentDomain, funcName, depth, Set.copyOf(cs.args));
                             for (Map.Entry<String, Value> entry : branchLocals.entrySet()) {
-                                if (!cs.args.contains(entry.getKey())) locals.put(entry.getKey(), entry.getValue());
+                                if (locals.containsKey(entry.getKey())) {
+                                    locals.put(entry.getKey(), entry.getValue());
+                                }
                             }
                         }
                         ci = caseBodyEnd;
@@ -511,6 +517,56 @@ public class FastInterpreter {
             i++;
         }
         return lastVal;
+    }
+
+    private Value evalScopedBlock(List<Stmt> statements, int start, int end,
+                                  Map<String, Value> parentLocals,
+                                  DomainInstance currentDomain, String function,
+                                  int depth, Set<String> additionalShadows) {
+        return evalScopedBlock(statements, start, end, parentLocals,
+                currentDomain, function, depth, additionalShadows, null, null);
+    }
+
+    private Value evalScopedBlock(List<Stmt> statements, int start, int end,
+                                  Map<String, Value> parentLocals,
+                                  DomainInstance currentDomain, String function,
+                                  int depth, Set<String> additionalShadows,
+                                  String scopedName, Value scopedValue) {
+        Map<String, Value> scopedLocals = new HashMap<>(parentLocals);
+        Set<String> shadowed = new HashSet<>(additionalShadows);
+        shadowed.addAll(blockDeclarations(statements, start, end));
+        if (scopedName != null) {
+            scopedLocals.put(scopedName, scopedValue);
+            shadowed.add(scopedName);
+        }
+        try {
+            return evalBlock(statements, start, end, scopedLocals,
+                    currentDomain, function, depth);
+        } finally {
+            for (String name : new ArrayList<>(parentLocals.keySet())) {
+                if (shadowed.contains(name)) continue;
+                if (scopedLocals.containsKey(name)) parentLocals.put(name, scopedLocals.get(name));
+                else parentLocals.remove(name);
+            }
+        }
+    }
+
+    private static Set<String> blockDeclarations(List<Stmt> statements, int start, int end) {
+        if (start >= end) return Set.of();
+        int baseIndent = statements.get(start).indent;
+        Set<String> declarations = new HashSet<>();
+        for (int index = start; index < end; index++) {
+            Stmt statement = statements.get(index);
+            if (statement.indent != baseIndent) continue;
+            if (statement.kind == Stmt.Kind.Let || statement.kind == Stmt.Kind.Var
+                    || statement.kind == Stmt.Kind.For) {
+                String name = statement.a == null ? "" : statement.a.trim();
+                int typeSeparator = name.indexOf(':');
+                if (typeSeparator >= 0) name = name.substring(0, typeSeparator).trim();
+                if (!name.isEmpty()) declarations.add(name);
+            }
+        }
+        return declarations;
     }
 
     private Value evalStmt(Stmt s, Map<String, Value> locals, DomainInstance currentDomain, String funcName, int depth) {

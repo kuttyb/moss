@@ -13658,3 +13658,17 @@ test classes pass in both default ABI-v9 and staged ABI-v10 modes.
 Rebuilt the standalone JAR after the Fast Debug changes and re-ran the packaged
 launcher bootstrap. It still reports compiler `0.1.0` and language `moss-0.1`.
 The JDT daemon client tests remain mocked lifecycle tests only.
+
+### Phase 25.3 continuation — preserve Fast Debug lexical block scopes
+
+Java Fast Debug previously executed nested blocks against the same locals map,
+so explicit `let` shadowing and `for` loop variables overwrote outer bindings.
+Nested if/else, while, for, try/recover, and match bodies now run in scoped
+local maps; writes to preexisting outer locals propagate, while declared block
+bindings and loop variables do not escape. A checked if/for shadowing probe
+matches C++ output `2, 1, 3, 4, 1`.
+
+Validation: clean Java build and all eleven Java unit-test classes pass in
+ABI-v9 and staged ABI-v10 modes; focused C++/Java output matches. Other
+interpreter state/effect and complete trace parity remain open. Native, Margo,
+SDK, and full acceptance gates are deferred.
