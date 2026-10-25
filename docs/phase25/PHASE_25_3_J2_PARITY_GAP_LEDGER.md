@@ -773,3 +773,17 @@ wrapper recovering one variant retains only the other, and a wrapper recovering
 both reports an empty raise set. `SemanticQueryEngineTest` now covers all three
 outcomes. The focused test and both compilers' minimized probes pass. Generic,
 callback, and cross-module effect closure remain open.
+
+
+### Correction — raises through named pipeline callbacks
+
+A Moss function using `map(risky)` where `risky` raises a typed enum case was
+accepted by both checkers, but C++'s effects query reported the callback's
+escaping raise while Java returned an empty set. Java effects traversal now
+recognizes named function callbacks in `map`, `filter`, `any`, `all`, and the
+callback position of `reduce`. Regression coverage checks all five forms and a
+wrapper recovering the callback's raise. Focused Java tests and minimized
+C++/Java query probes agree. Bound-method callbacks, generic callback
+specialization, and cross-module callback effects remain open. This corrects
+query reporting only; native execution and root raise checking for callback
+invocation have not been validated here.

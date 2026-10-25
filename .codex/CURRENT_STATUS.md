@@ -16663,3 +16663,15 @@ wrapper recovering one variant, and a wrapper recovering both.
 CLI probes agree on the raise sets: both variants, the remaining variant, and
 an empty set. This validates only ordinary same-module direct-call and recovery
 closure; generic, callback, and cross-module effect propagation remain open.
+
+
+### Phase 25.3 continuation — named pipeline callback raise queries
+
+Fixed a query gap where `map(risky)` omitted a named callback's typed raise from
+the caller's effects result. Traversal now recognizes named function callbacks
+in `map`, `filter`, `any`, `all`, and `reduce`. Tests cover each operation and
+a wrapper that recovers the callback raise. `scripts/java/build.sh` and focused
+`SemanticQueryEngineTest` pass. Minimized C++ and Java effects queries agree on
+all five forms, including recovered and unhandled cases. Bound methods, generic
+and cross-module callbacks, root raise-checking through callback invocation,
+and native execution remain open.

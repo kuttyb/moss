@@ -25,6 +25,7 @@ public final class SemanticQueryEngineTest {
         effectsQueryFollowsFieldChainMethodRaises();
         effectsQueryFollowsSameObjectMethodRaises();
         effectsQueryTracksMultipleRaiseVariantsAcrossRecovery();
+        effectsQueryIncludesNamedPipelineCallbackRaises();
         effectsQueryExcludesRecoveredDirectRaises();
         effectsQueryIncludesExplicitBareReraises();
         effectsQueryIncludesCatchAllBareReraises();
@@ -446,6 +447,45 @@ public final class SemanticQueryEngineTest {
         assertContains(queryEffects(program, "catches_bad"),
                 "\"raise_set\": [\"enum:Fault:Worse\"]");
         assertContains(queryEffects(program, "catches_both"), "\"raise_set\": []");
+    }
+
+    private static void effectsQueryIncludesNamedPipelineCallbackRaises() {
+        String source = ""
+                + "enum Fault:\n"
+                + "  Bad\n"
+                + "fn risky(value: Int) -> Int:\n"
+                + "  raise Fault.Bad\n"
+                + "fn risky_predicate(value: Int) -> Bool:\n"
+                + "  raise Fault.Bad\n"
+                + "fn risky_combine(accumulator: Int, value: Int) -> Int:\n"
+                + "  raise Fault.Bad\n"
+                + "fn mapped(values: Vector[Int]) -> Vector[Int]:\n"
+                + "  return values |> map(risky)\n"
+                + "fn filtered(values: Vector[Int]) -> Vector[Int]:\n"
+                + "  return values |> filter(risky_predicate)\n"
+                + "fn any_match(values: Vector[Int]) -> Bool:\n"
+                + "  return values |> any(risky_predicate)\n"
+                + "fn all_match(values: Vector[Int]) -> Bool:\n"
+                + "  return values |> all(risky_predicate)\n"
+                + "fn reduced(values: Vector[Int]) -> Int:\n"
+                + "  return values |> reduce(0, risky_combine)\n"
+                + "fn handled(values: Vector[Int]):\n"
+                + "  try:\n"
+                + "    mapped(values)\n"
+                + "  recover Fault.Bad:\n"
+                + "    pass\n"
+                + "fn main():\n"
+                + "  try:\n"
+                + "    mapped([1])\n"
+                + "  recover Fault.Bad:\n"
+                + "    pass\n";
+        Program program = Parser.parseSource(source, "effects-query-pipeline-callback-raise.moss");
+        new SemanticChecker(program).run();
+        for (String callable : new String[] {"mapped", "filtered", "any_match", "all_match", "reduced"}) {
+            assertContains(queryEffects(program, callable),
+                    "\"raise_set\": [\"enum:Fault:Bad\"]");
+        }
+        assertContains(queryEffects(program, "handled"), "\"raise_set\": []");
     }
 
     private static void assertContains(String value, String expected) {
