@@ -884,3 +884,16 @@ deduplicated by helper and contextual type bindings. The focused semantic test
 passes. Minimized C++/Java checks agree on rejection without recovery and
 acceptance with `on_fail`. This does not establish parity for unrelated
 contextual effects or native execution.
+
+
+### Correction — indexed string-key Fast Debug trace detail
+
+`examples/collections.moss` produced identical output in C++ and Java Fast
+Debug, but the Java `LocalRead` trace rendered `prices[NVDA]` instead of
+retaining the source expression `prices["NVDA"]`. Java now records the source
+index expression in local collection-read details while using the evaluated
+index for lookup and state paths. `FastInterpreterTest` passes, and the full
+stdout and trace now compare byte-for-byte for the example. Traces for
+`phase224_debug_nested.moss`, `sequential_messages.moss`, and
+`state_payload_snapshot.moss` also matched in focused sampling; broad trace and
+native acceptance remain open.

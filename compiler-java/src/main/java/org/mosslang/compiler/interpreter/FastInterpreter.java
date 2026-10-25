@@ -2121,6 +2121,7 @@ public class FastInterpreter {
                     deferDomainStateTrace = wasDeferringStateTrace;
                 }
                 Value idxVal = evalExpr(expr.substring(openB + 1, closeB).trim(), locals, currentDomain);
+                String sourceIndex = expr.substring(openB + 1, closeB).trim();
                 String indexedPath = baseVal.traceStatePath == null ? null
                         : baseVal.traceStatePath + "[" + idxVal + "]";
                 if (baseVal.raw instanceof List<?> lst) {
@@ -2128,7 +2129,7 @@ public class FastInterpreter {
                     List<Value> l = (List<Value>) lst;
                     Value item = l.get((int) idxVal.asInt());
                     if (localCollectionRead)
-                        traceValueRead(baseExpr + "[" + idxVal + "]", item, null);
+                        traceValueRead(baseExpr + "[" + sourceIndex + "]", item, null);
                     if (indexedPath == null) return item;
                     if (wasDeferringStateTrace) return withTraceStatePath(item, indexedPath);
                     traceStateRead(indexedPath);
@@ -2139,7 +2140,7 @@ public class FastInterpreter {
                     Map<Object, Value> m = (Map<Object, Value>) mp;
                     Value item = m.getOrDefault(idxVal.raw, Value.ofUnit());
                     if (localCollectionRead)
-                        traceValueRead(baseExpr + "[" + idxVal + "]", item, null);
+                        traceValueRead(baseExpr + "[" + sourceIndex + "]", item, null);
                     if (indexedPath == null) return item;
                     if (wasDeferringStateTrace) return withTraceStatePath(item, indexedPath);
                     traceStateRead(indexedPath);

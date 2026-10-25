@@ -16769,3 +16769,16 @@ containing the function and contextual types. The focused `SemanticCheckerTest`
 passes, and minimized C++/Java checks agree on rejection without recovery and
 acceptance with `on_fail`. This covers local generic helper call chains only;
 other contextual effect families and runtime/SDK acceptance remain unverified.
+
+
+### Phase 25.3 continuation — Fast Debug indexed string-key trace
+
+A C++/Java `examples/collections.moss` trace comparison found one event detail
+mismatch: Java displayed `prices[NVDA]` where C++ retained the source spelling
+`prices["NVDA"]`. Local indexed-read tracing now uses the original index
+expression while runtime lookup continues to use its evaluated value.
+`FastInterpreterTest` passes, and the example's stdout and complete trace now
+match byte-for-byte. Traces for `phase224_debug_nested.moss`,
+`sequential_messages.moss`, and `state_payload_snapshot.moss` also matched in
+this sample. Wider collection iteration, message/state traces, and full runtime
+acceptance remain open.

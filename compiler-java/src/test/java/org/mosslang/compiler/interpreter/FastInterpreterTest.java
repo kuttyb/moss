@@ -47,6 +47,7 @@ public final class FastInterpreterTest {
         testDomainConstructionTraceUsesBindingName();
         testDomainMessageTraceCarriesHandlerContext();
         testLocalArgumentTraceOccursInsideCallee();
+        testIndexedStringMapReadTraceRetainsSourceLiteral();
         testNamedDomainStateAndNestedRoutes();
         testPipelineStageUsesFunctionCallTrace();
         testFilterPipelineUsesPlaceholder();
@@ -249,6 +250,21 @@ public final class FastInterpreterTest {
                 || !"say \"hello\"\n".equals(stdout.toString(StandardCharsets.UTF_8))) {
             throw new AssertionError("Fast Debug trace omitted or malformed the local write: " + event);
         }
+    }
+
+    private static void testIndexedStringMapReadTraceRetainsSourceLiteral() {
+        var program = Parser.parseSource(""
+                + "fn main():\n"
+                + "  prices = Map()\n"
+                + "  prices[\"NVDA\"] = 1\n"
+                + "  price = prices[\"NVDA\"]\n", "fast-interpreter-map-read-trace.moss");
+        new CheckedProgram(program).run();
+        ByteArrayOutputStream trace = new ByteArrayOutputStream();
+        new FastInterpreter(program, true,
+                new PrintStream(new ByteArrayOutputStream(), true, StandardCharsets.UTF_8),
+                new PrintStream(trace, true, StandardCharsets.UTF_8)).run();
+        if (!trace.toString(StandardCharsets.UTF_8).contains("\"detail\":\"prices[\\\"NVDA\\\"]\""))
+            throw new AssertionError("map index trace lost the source string literal: " + trace);
     }
 
     private static void testMossStringEscapeDecoding() {
