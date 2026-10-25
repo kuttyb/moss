@@ -234,30 +234,56 @@ public class FastInterpreter {
     }
 
     private static String specializationForCall(Function function, List<Value> args) {
-        if (!function.generic) return "";
         List<String> argumentTypes = new ArrayList<>();
         for (Value value : args) {
-            argumentTypes.add(switch (value.kind) {
-                case INT -> "int";
-                case FLOAT -> "float";
-                case BOOL -> "bool";
-                case STRING -> "string";
-                case CHAR -> "char";
-                case VECTOR -> "vector";
-                case MAP -> "map";
-                case QUEUE -> "queue";
-                case OBJECT -> value.typeName == null ? "" : value.typeName;
-                case ENUM -> value.typeName == null ? "" : value.typeName;
-                case DOMAIN -> "domain";
-                case UNIT -> "unit";
-            });
+            argumentTypes.add(traceTypeOf(value));
         }
+        boolean inferredContainerArgument = false;
+        for (int index = 0; index < function.params.size() && index < argumentTypes.size(); index++) {
+            String declared = function.params.get(index).type;
+            String actual = argumentTypes.get(index);
+            if (declared == null || actual == null) continue;
+            String normalized = declared.toLowerCase(java.util.Locale.ROOT);
+            if ((normalized.equals("vector") && actual.startsWith("vector["))
+                    || (normalized.equals("queue") && actual.startsWith("queue["))) {
+                inferredContainerArgument = true;
+            }
+        }
+        if (!function.generic && !inferredContainerArgument) return "";
         for (FunctionSpecialization specialization : function.specializations) {
             if (specialization.parameterTypes.equals(argumentTypes)) {
                 return "fn:" + function.name + "<" + String.join(",", argumentTypes) + ">@" + function.line;
             }
         }
+        if (inferredContainerArgument) {
+            return "fn:" + function.name + "<" + String.join(",", argumentTypes) + ">@" + function.line;
+        }
         return "";
+    }
+
+    private static String traceTypeOf(Value value) {
+        return switch (value.kind) {
+            case INT -> "int";
+            case FLOAT -> "float";
+            case BOOL -> "bool";
+            case STRING -> "string";
+            case CHAR -> "char";
+            case VECTOR -> "vector[" + collectionElementTraceType(value.raw) + "]";
+            case MAP -> "map";
+            case QUEUE -> "queue[" + collectionElementTraceType(value.raw) + "]";
+            case OBJECT, ENUM -> value.typeName == null ? "" : value.typeName;
+            case DOMAIN -> "domain";
+            case UNIT -> "unit";
+        };
+    }
+
+    private static String collectionElementTraceType(Object raw) {
+        if (raw instanceof Collection<?> collection) {
+            for (Object element : collection) {
+                if (element instanceof Value value) return traceTypeOf(value);
+            }
+        }
+        return "_";
     }
 
     public FastInterpreter(Program program, boolean trace) {
@@ -1433,6 +1459,29 @@ public class FastInterpreter {
                             tmpLocals.put("__pipe_item", v);
                             outList.add(evalExpr(fnName + "(__pipe_item)", tmpLocals, currentDomain));
                         }
+                    }
+                }
+                return new Value(Value.Kind.VECTOR, outList);
+            }
+            if (stage.startsWith("filter(") && stage.endsWith(")")) {
+                String callback = stage.substring(7, stage.length() - 1).trim();
+                List<Value> outList = new ArrayList<>();
+                boolean namedCallback = program.functions.stream().anyMatch(function ->
+                        (function.name.equals(callback) || function.name.endsWith("__" + callback)
+                                || callback.endsWith("." + function.name)) && function.params.size() == 1);
+                if (left.raw instanceof Collection<?> col) {
+                    for (Object o : col) {
+                        if (!(o instanceof Value value)) continue;
+                        Map<String, Value> callbackLocals = new HashMap<>(locals);
+                        Value accepted;
+                        if (namedCallback) {
+                            callbackLocals.put("__pipe_item", value);
+                            accepted = evalExpr(callback + "(__pipe_item)", callbackLocals, currentDomain);
+                        } else {
+                            callbackLocals.put("_", value);
+                            accepted = evalExpr(callback, callbackLocals, currentDomain);
+                        }
+                        if (accepted.asBool()) outList.add(value);
                     }
                 }
                 return new Value(Value.Kind.VECTOR, outList);

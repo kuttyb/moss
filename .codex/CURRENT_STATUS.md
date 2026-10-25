@@ -15646,3 +15646,22 @@ contributes `may_panic=1`, alongside parameter, field, and self receiver cases.
 All twelve Java unit-test classes pass under ABI-v9 defaults and staged
 ABI-v10; feedback and diff checks are pending for the checkpoint. More complex
 branch-dependent aliasing and generic receiver inference remain open.
+
+
+### Phase 25.3 continuation — Fast Debug filter pipelines and typed-vector traces
+
+A focused Fast Debug comparison of `tests/phase5_tooling.moss` first exposed
+missing `filter` execution in Java, which caused a null-number internal error
+for the accepted map/filter/sum pipeline. Java now evaluates placeholder (`_`)
+and named-function predicates over collections. The same trace exposed missing
+element specialization metadata for typed `Vector` function arguments; Java now
+reports `vector[int]` specialization where applicable while preserving ordinary
+scalar traces.
+
+C++ and Java Fast Debug both exit 0 on `phase5_tooling.moss`; stdout and JSON
+trace match byte-for-byte with both the source-built Java launcher and freshly
+packaged JAR. A focused unit regression covers placeholder and named filters
+plus typed-vector trace specialization. All twelve Java unit-test classes pass
+under ABI-v9 defaults and staged ABI-v10; feedback and diff checks are pending
+for this checkpoint. Other pipeline stages, collection types, and broad trace
+parity remain open.

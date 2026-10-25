@@ -40,6 +40,8 @@ public final class FastInterpreterTest {
         testLocalArgumentTraceOccursInsideCallee();
         testNamedDomainStateAndNestedRoutes();
         testPipelineStageUsesFunctionCallTrace();
+        testFilterPipelineUsesPlaceholder();
+        testTypedVectorFunctionTraceIncludesElementSpecialization();
         testFunctionTraceIncludesSelectedSpecialization();
         testNestedDomainFailurePropagatesToCallerRecovery();
         testCatchAllRecoveryBindsRaisedEnum();
@@ -851,6 +853,56 @@ public final class FastInterpreterTest {
                 || !events.contains("\"semantic_identity\":\"fn:twice@1\"")
                 || !events.contains("\"event\":\"FunctionExit\",\"function\":\"twice\"")) {
             throw new AssertionError("pipeline callback bypassed normal call tracing: " + events);
+        }
+    }
+
+    private static void testFilterPipelineUsesPlaceholder() {
+        var program = Parser.parseSource(""
+                + "fn main():\n"
+                + "  let values = [1, 2, 3]\n"
+                + "  let selected = values |> filter(_ > 2)\n"
+                + "  echo selected |> sum\n", "fast-interpreter-filter-pipeline.moss");
+        new CheckedProgram(program).run();
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+        new FastInterpreter(program, false,
+                new PrintStream(stdout, true, StandardCharsets.UTF_8),
+                new PrintStream(new ByteArrayOutputStream())).run();
+        if (!"3\n".equals(stdout.toString(StandardCharsets.UTF_8))) {
+            throw new AssertionError("filter pipeline did not retain values matching its placeholder: " + stdout);
+        }
+
+        var namedProgram = Parser.parseSource(""
+                + "fn above_two(value: Int) -> Bool:\n"
+                + "  return value > 2\n"
+                + "fn main():\n"
+                + "  echo [1, 2, 3] |> filter(above_two) |> sum\n",
+                "fast-interpreter-filter-named-callback.moss");
+        new CheckedProgram(namedProgram).run();
+        ByteArrayOutputStream namedOutput = new ByteArrayOutputStream();
+        new FastInterpreter(namedProgram, false,
+                new PrintStream(namedOutput, true, StandardCharsets.UTF_8),
+                new PrintStream(new ByteArrayOutputStream())).run();
+        if (!"3\n".equals(namedOutput.toString(StandardCharsets.UTF_8))) {
+            throw new AssertionError("filter pipeline did not invoke its named predicate: " + namedOutput);
+        }
+    }
+
+    private static void testTypedVectorFunctionTraceIncludesElementSpecialization() {
+        var program = Parser.parseSource(""
+                + "fn summarize(values: Vector) -> Int:\n"
+                + "  return values |> sum\n"
+                + "fn main():\n"
+                + "  echo summarize([1, 2])\n", "fast-interpreter-vector-specialization-trace.moss");
+        new CheckedProgram(program).run();
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+        ByteArrayOutputStream trace = new ByteArrayOutputStream();
+        new FastInterpreter(program, true,
+                new PrintStream(stdout, true, StandardCharsets.UTF_8),
+                new PrintStream(trace, true, StandardCharsets.UTF_8)).run();
+        String events = trace.toString(StandardCharsets.UTF_8);
+        if (!"3\n".equals(stdout.toString(StandardCharsets.UTF_8))
+                || !events.contains("\"specialization\":\"fn:summarize<vector[int]>@1\"")) {
+            throw new AssertionError("typed vector trace omitted its element specialization: " + events);
         }
     }
 
