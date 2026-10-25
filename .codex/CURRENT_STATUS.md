@@ -15924,3 +15924,18 @@ Four corrected minimal probes now match C++ on both
 All twelve Java unit-test classes pass under ABI-v9 and staged ABI-v10; the
 standalone JAR was rebuilt. This closes only the exercised direct builtin paths;
 branch alias, generic receiver, and source-free mutability coverage remain open.
+
+### Phase 25.3 continuation — validate range loop sources
+
+A focused probe found Java accepted `for index in range(0, 3, 0)` while C++
+rejected the zero step. The Java `for` checker now validates range arity, Int
+arguments, and a positive nonzero integer literal step. Regression coverage
+includes zero and leading-zero steps, negative and dynamic steps, bad arity,
+non-Int arguments, and valid two-argument and `+2` forms. Seven C++/Java
+acceptance and diagnostic comparisons match.
+
+All twelve Java unit-test classes pass under default ABI-v9 and staged ABI-v10.
+The standalone JAR was rebuilt; its launcher rejects the zero-step reproducer
+with the matching diagnostic. The feedback validator passes. Broader semantic,
+backend, source-free, Margo/SDK, daemon, and frozen-candidate acceptance remain
+open; no expensive native or full-repository gates were run.

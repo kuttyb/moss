@@ -1257,6 +1257,39 @@ public class SemanticChecker {
         };
     }
 
+    private void validateRangeForSource(int line, String expression, ExpressionTyper typer,
+                                        TypeSolver solver, TypeEnv env) {
+        if (expression == null) return;
+        String source = expression.trim();
+        int openParen = source.indexOf('(');
+        if (openParen < 0 || !"range".equals(source.substring(0, openParen).trim())
+                || !source.endsWith(")")) return;
+        List<String> arguments = org.mosslang.compiler.parser.ParserSupport
+                .splitTopLevel(source.substring(openParen + 1, source.length() - 1), ',');
+        if (arguments.size() != 2 && arguments.size() != 3) {
+            throw new CompileError(line,
+                    "range expects range(start, end) or range(start, end, step)",
+                    "TYPE_MISMATCH");
+        }
+        for (String argument : arguments) {
+            TypeRef argumentType = typer.infer(argument, line, env);
+            if (!solver.unify(argumentType, TypeRef.primitive("int"))) {
+                throw new CompileError(line, "range arguments must have type 'Int'", "MOSS_COMPILE_ERROR");
+            }
+        }
+        if (arguments.size() == 3) {
+            String step = arguments.get(2).trim();
+            String digits = step.startsWith("+") ? step.substring(1) : step;
+            boolean positiveIntLiteral = !digits.isEmpty()
+                    && digits.chars().allMatch(character -> character >= '0' && character <= '9');
+            if (!positiveIntLiteral || new java.math.BigInteger(digits).signum() == 0) {
+                throw new CompileError(line,
+                        "range step must be a positive non-zero Int literal",
+                        "MOSS_COMPILE_ERROR");
+            }
+        }
+    }
+
     private AccessMode objectFieldCallMode(String fieldName, TypeRef fieldType,
                                            ObjectType fieldObject, String expression) {
         if (expression == null || expression.isEmpty()) return AccessMode.Read;
@@ -3705,6 +3738,7 @@ public class SemanticChecker {
                 String varName = s.a != null ? s.a.trim() : "";
                 String iterExpr = s.b != null ? s.b.trim() : "";
                 if (!iterExpr.isEmpty()) {
+                    validateRangeForSource(s.line, iterExpr, typer, solver, env.typeEnv);
                     TypeRef iterType = typer.infer(iterExpr, s.line, env.typeEnv);
                     if (iterType.kind() == TypeKind.Builtin
                             && ("map".equals(iterType.name()) || "queue".equals(iterType.name()))) {

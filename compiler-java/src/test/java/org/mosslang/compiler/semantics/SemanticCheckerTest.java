@@ -42,6 +42,7 @@ public class SemanticCheckerTest {
         testObjectMethodWriteParameterLowersMutably();
         testNestedObjectFieldWriteLowersMutableReceiver();
         testUnsupportedCollectionsAreRejectedAsForIterablesAtLoopSite();
+        testRangeForRequiresPositiveNonzeroLiteralStep();
         testTypedOnFailLocalCaptureLowering();
         testOnFailRejectsLocalInitializedAfterRaise();
         testOnFailCaptureUsesMatchingRaisedVariant();
@@ -1771,6 +1772,26 @@ public class SemanticCheckerTest {
                 + "  values.push(2)\n"
                 + "  for item in values:\n"
                 + "    echo item\n");
+    }
+
+    private static void testRangeForRequiresPositiveNonzeroLiteralStep() {
+        String prefix = "fn main():\n  for index in ";
+        String suffix = ":\n    pass\n";
+        assertCompileError(prefix + "range(0, 3, 0)" + suffix, "MOSS_COMPILE_ERROR");
+        assertCompileError(prefix + "range(0, 3, 00)" + suffix, "MOSS_COMPILE_ERROR");
+        assertCompileError(prefix + "range(0, 3, -1)" + suffix, "MOSS_COMPILE_ERROR");
+        assertCompileError("fn main():\n  step = 1\n  for index in range(0, 3, step):\n    pass\n",
+                "MOSS_COMPILE_ERROR");
+        assertCompileError(prefix + "range(0, 3, 1, 2)" + suffix, "TYPE_MISMATCH");
+        assertCompileError(prefix + "range(0, true)" + suffix, "MOSS_COMPILE_ERROR");
+
+        Program valid = Parser.parseSource(""
+                + "fn main():\n"
+                + "  for index in range(0, 3):\n"
+                + "    pass\n"
+                + "  for index in range(0, 3, +2):\n"
+                + "    pass\n", "range-for-valid.moss");
+        new SemanticChecker(valid).run();
     }
 
     private static void assertNotIterable(String source) {
