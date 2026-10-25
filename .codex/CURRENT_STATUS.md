@@ -13443,3 +13443,21 @@ ABI-v9 and staged ABI-v10 modes. C++ and Java both accept the focused Float
 predicate source probe. Feedback validation and `git diff --check` pass. No
 native Rust compile/run, Margo provider-consumer build, SDK gate, or full
 `make check` ran. General callable body projection and Phase 25.3 remain open.
+
+### Phase 25.3 continuation — project straight-line Int local bodies in ABI-v10
+
+The source-free ABI-v10 producer now lowers bounded straight-line pure Int
+functions with typed parameters, `let`, implicit mutable local bindings,
+reassignment, optional `pass`, and a final return into canonical checked-body
+IR. The loader validates dense local ordinals, mutable assignment targets,
+Int TypeRefs, and that LocalRead nodes refer to previously declared locals before
+reconstructing Moss statements. The producer-consumer regression removes legacy
+generic body rows and checks both immutable and mutable local paths. Control
+flow, calls, effects, other local value types, and native compatibility remain
+open.
+
+Validation: all ten Java unit-test classes pass after a clean build in default
+ABI-v9 and staged ABI-v10 modes. C++ and Java both accept the focused local-body
+probe. Feedback validation and `git diff --check` pass. No native Rust compile
+or run, Margo provider-consumer build, SDK gate, or full `make check` ran.
+Phase 25.3 remains incomplete.

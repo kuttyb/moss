@@ -1467,6 +1467,7 @@ public class ProjectBuilder {
                             fn, modId, provenanceRecords);
                     CheckedExpr constantReturn = null;
                     CheckedExpr arithmeticReturn = null;
+                    List<CheckedStmt> intLocalBody = null;
                     CheckedExpr floatArithmeticReturn = null;
                     CheckedExpr numericPredicateReturn = null;
                     if (summary == null) {
@@ -1481,6 +1482,12 @@ public class ProjectBuilder {
                         if (arithmeticReturn != null) {
                             summary = v10ClosedIntExpressionSummary(
                                     fn, arithmeticReturn, modId, provenanceRecords);
+                        }
+                    }
+                    if (summary == null) {
+                        intLocalBody = v10ClosedIntLocalBody(fn);
+                        if (intLocalBody != null) {
+                            summary = v10ClosedIntBodySummary(fn, intLocalBody, modId, provenanceRecords);
                         }
                     }
                     if (summary == null) {
@@ -1503,6 +1510,8 @@ public class ProjectBuilder {
                                 ? v10SimpleExpressionBody(summary, constantReturn)
                                 : arithmeticReturn != null
                                         ? v10SimpleExpressionBody(summary, arithmeticReturn)
+                                        : intLocalBody != null
+                                                ? v10CheckedBodyRecord(summary, intLocalBody)
                                         : floatArithmeticReturn != null
                                                 ? v10SimpleExpressionBody(summary, floatArithmeticReturn)
                                         : numericPredicateReturn != null
@@ -1924,6 +1933,11 @@ public class ProjectBuilder {
 
     private static CheckedExpr v10LowerClosedIntExpression(
             String source, Function function, int depth) {
+        return v10LowerClosedIntExpression(source, function, Map.of(), depth);
+    }
+
+    private static CheckedExpr v10LowerClosedIntExpression(
+            String source, Function function, Map<String, Integer> localOrdinals, int depth) {
         if (source == null || depth > 128) return null;
         String expression = source.trim();
         while (v10ExpressionHasWrappingParens(expression)) {
@@ -1942,12 +1956,14 @@ public class ProjectBuilder {
                 return CheckedExpr.parameter(index, intType);
             }
         }
+        Integer localOrdinal = localOrdinals.get(expression);
+        if (localOrdinal != null) return CheckedExpr.localRead(localOrdinal, intType);
         for (List<String> operators : List.of(List.of("+", "-"), List.of("*", "/", "%"))) {
             org.mosslang.compiler.semantics.ExpressionTyper.BinarySplit split =
                     org.mosslang.compiler.semantics.ExpressionTyper.splitBinary(expression, operators);
             if (split == null) continue;
-            CheckedExpr left = v10LowerClosedIntExpression(split.left(), function, depth + 1);
-            CheckedExpr right = v10LowerClosedIntExpression(split.right(), function, depth + 1);
+            CheckedExpr left = v10LowerClosedIntExpression(split.left(), function, localOrdinals, depth + 1);
+            CheckedExpr right = v10LowerClosedIntExpression(split.right(), function, localOrdinals, depth + 1);
             if (left == null || right == null) return null;
             org.mosslang.compiler.abi.CheckedBinaryOp operation = switch (split.op()) {
                 case "+" -> org.mosslang.compiler.abi.CheckedBinaryOp.Add;
@@ -1960,7 +1976,8 @@ public class ProjectBuilder {
             return operation == null ? null : CheckedExpr.binary(operation, left, right, intType);
         }
         if (expression.startsWith("-") && !expression.equals("-")) {
-            CheckedExpr operand = v10LowerClosedIntExpression(expression.substring(1).trim(), function, depth + 1);
+            CheckedExpr operand = v10LowerClosedIntExpression(
+                    expression.substring(1).trim(), function, localOrdinals, depth + 1);
             return operand == null ? null : CheckedExpr.unary(
                     org.mosslang.compiler.abi.CheckedUnaryOp.Neg, operand, intType);
         }
@@ -2011,6 +2028,100 @@ public class ProjectBuilder {
         summary.provenanceId = provenance.provenanceId();
         provenanceRecords.add(provenance);
         return summary;
+    }
+
+    private static List<CheckedStmt> v10ClosedIntLocalBody(Function function) {
+        if (!isV10IntType(function.returnTypeRef) || function.body.size() < 2) return null;
+        if (function.params.stream().anyMatch(parameter -> !isV10IntType(parameter.checkedTypeRef))) return null;
+        Map<String, Integer> localOrdinals = new LinkedHashMap<>();
+        Map<String, Boolean> localMutability = new HashMap<>();
+        List<CheckedStmt> checked = new ArrayList<>();
+        TypeRef intType = TypeRef.primitive("int");
+        boolean hasLocal = false;
+        for (int index = 0; index < function.body.size(); index++) {
+            Stmt statement = function.body.get(index);
+            if (statement.kind == Stmt.Kind.Return) {
+                if (index != function.body.size() - 1) return null;
+                String expression = statement.a != null ? statement.a.trim() : "";
+                if (expression.isEmpty() && statement.text != null
+                        && statement.text.trim().startsWith("return ")) {
+                    expression = statement.text.trim().substring(7).trim();
+                }
+                CheckedExpr value = v10LowerClosedIntExpression(
+                        expression, function, localOrdinals, 0);
+                if (value == null) return null;
+                checked.add(CheckedStmt.returnStmt(value));
+                continue;
+            }
+            if (statement.kind == Stmt.Kind.Pass) {
+                CheckedStmt pass = new CheckedStmt();
+                pass.kind = org.mosslang.compiler.abi.CheckedStmtKind.Pass;
+                checked.add(pass);
+                continue;
+            }
+            if (statement.kind != Stmt.Kind.Let && statement.kind != Stmt.Kind.Var
+                    && statement.kind != Stmt.Kind.Assign) return null;
+            String name = statement.a != null ? statement.a.trim() : "";
+            if (!name.matches("[A-Za-z_][A-Za-z0-9_]*")) return null;
+            String sourceExpression = statement.b != null ? statement.b.trim() : "";
+            CheckedExpr value = v10LowerClosedIntExpression(
+                    sourceExpression, function, localOrdinals, 0);
+            if (value == null) return null;
+            if (statement.kind == Stmt.Kind.Assign && localOrdinals.containsKey(name)) {
+                if (!Boolean.TRUE.equals(localMutability.get(name))) return null;
+                checked.add(CheckedStmt.assignStmt(localOrdinals.get(name), value));
+                hasLocal = true;
+                continue;
+            }
+            if (statement.kind != Stmt.Kind.Assign && localOrdinals.containsKey(name)) return null;
+            int ordinal = localOrdinals.size();
+            CheckedStmt declaration = statement.kind == Stmt.Kind.Let
+                    ? CheckedStmt.letStmt(ordinal, value) : CheckedStmt.varStmt(ordinal, value);
+            declaration.type = intType;
+            checked.add(declaration);
+            localOrdinals.put(name, ordinal);
+            localMutability.put(name, statement.kind != Stmt.Kind.Let);
+            hasLocal = true;
+        }
+        if (!hasLocal || checked.isEmpty()
+                || checked.get(checked.size() - 1).kind != org.mosslang.compiler.abi.CheckedStmtKind.Return) return null;
+        return checked;
+    }
+
+    private static AbiV10Records.Summary v10ClosedIntBodySummary(
+            Function function, List<CheckedStmt> statements, String moduleId,
+            List<AbiV10Records.SourceProvenance> provenanceRecords) {
+        TypeRef intType = TypeRef.primitive("int");
+        AbiV10Records.Summary summary = new AbiV10Records.Summary();
+        summary.callableId = function.semanticCallableId;
+        for (int index = 0; index < function.params.size(); index++) {
+            summary.parameters.add(AbiV10Records.fromTypeRef(intType, Map.of()));
+            org.mosslang.compiler.types.AccessMode access = function.parameterAccessModes.size() > index
+                    ? function.parameterAccessModes.get(index)
+                    : org.mosslang.compiler.types.AccessMode.Read;
+            summary.parameterAccess.add(switch (access) {
+                case Read -> AbiV10Records.Access.Read;
+                case Write -> AbiV10Records.Access.Write;
+                case Consume -> AbiV10Records.Access.Consume;
+            });
+        }
+        summary.result = AbiV10Records.fromTypeRef(intType, Map.of());
+        String bodyBytes = CheckedBodyCodec.encodeCheckedBodyV1(statements);
+        summary.bodySemanticHash = "body-semantic-v1:sha256:" + CheckedBodyCodec.sha256Hex(bodyBytes);
+        AbiV10Records.SourceProvenance provenance = AbiV10Records.SourceProvenance.create(
+                moduleId, summary.callableId, function.sourceFile, function.line);
+        summary.provenanceId = provenance.provenanceId();
+        provenanceRecords.add(provenance);
+        return summary;
+    }
+
+    private static AbiV10Records.CheckedBodyRecord v10CheckedBodyRecord(
+            AbiV10Records.Summary summary, List<CheckedStmt> statements) {
+        AbiV10Records.CheckedBodyRecord body = new AbiV10Records.CheckedBodyRecord();
+        body.callableId = summary.callableId;
+        body.checkedIrBytes = CheckedBodyCodec.encodeCheckedBodyV1(statements);
+        body.semanticHash = summary.bodySemanticHash;
+        return body;
     }
 
     private static AbiV10Records.CheckedBodyRecord v10SimpleExpressionBody(

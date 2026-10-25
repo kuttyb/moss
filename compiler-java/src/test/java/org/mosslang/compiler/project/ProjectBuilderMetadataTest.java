@@ -349,6 +349,13 @@ public final class ProjectBuilderMetadataTest {
                 + "  return value % 2\n"
                 + "export fn combine(left: Int, right: Int) -> Int:\n"
                 + "  return left * 3 + right / 2\n"
+                + "export fn with_local(value: Int) -> Int:\n"
+                + "  let bumped = value + 1\n"
+                + "  return bumped * 2\n"
+                + "export fn with_mutable_local(value: Int) -> Int:\n"
+                + "  count = value\n"
+                + "  count = count + 1\n"
+                + "  return count\n"
                 + "export fn negated(value: Int) -> Int:\n"
                 + "  return -value + 4\n"
                 + "export fn negative() -> Int:\n"
@@ -624,6 +631,28 @@ public final class ProjectBuilderMetadataTest {
                 throw new AssertionError("ABI-v10 integer-" + operation.getKey() + " checked body is incomplete");
             }
         }
+        for (String localCallable : List.of("with_local", "with_mutable_local")) {
+            AbiV10Records.CheckedBodyRecord localBody = identityInterface.privateSemanticDependencies.stream()
+                    .filter(record -> record.id.startsWith("checked-body-v1:"))
+                    .map(AbiV10Records.CheckedBodyRecord::decode)
+                    .filter(body -> body.callableId.endsWith(":fn:" + localCallable))
+                    .findFirst().orElseThrow(() -> new AssertionError(
+                            "ABI-v10 producer omitted local-body IR for " + localCallable));
+            List<org.mosslang.compiler.abi.CheckedStmt> localStatements =
+                    CheckedBodyCodec.decodeCheckedBody(localBody.checkedIrBytes);
+            org.mosslang.compiler.abi.CheckedStmtKind expectedDeclaration = localCallable.equals("with_local")
+                    ? org.mosslang.compiler.abi.CheckedStmtKind.Let
+                    : org.mosslang.compiler.abi.CheckedStmtKind.Var;
+            int expectedSize = localCallable.equals("with_local") ? 2 : 3;
+            int returnIndex = expectedSize - 1;
+            if (localStatements.size() != expectedSize
+                    || localStatements.get(0).kind != expectedDeclaration
+                    || (localCallable.equals("with_mutable_local")
+                            && localStatements.get(1).kind != org.mosslang.compiler.abi.CheckedStmtKind.Assign)
+                    || localStatements.get(returnIndex).kind != org.mosslang.compiler.abi.CheckedStmtKind.Return) {
+                throw new AssertionError("ABI-v10 local statement body is incomplete for " + localCallable);
+            }
+        }
         for (String floatCallable : List.of("weighted", "adjust_ratio")) {
             AbiV10Records.Summary floatSummary = identityInterface.binaryContract.stream()
                     .filter(record -> record.payloadBytes().length > 0
@@ -792,6 +821,10 @@ public final class ProjectBuilderMetadataTest {
                     + "  return provider__modulo(43)\n"
                     + "fn use_combine() -> Int:\n"
                     + "  return provider__combine(20, 8)\n"
+                    + "fn use_with_local() -> Int:\n"
+                    + "  return provider__with_local(20)\n"
+                    + "fn use_with_mutable_local() -> Int:\n"
+                    + "  return provider__with_mutable_local(20)\n"
                     + "fn use_negated() -> Int:\n"
                     + "  return provider__negated(3)\n"
                     + "fn main():\n"
