@@ -24,7 +24,41 @@ public class SemanticCheckerTest {
         testConsumedObjectParameterLowersByValue();
         testObjectMethodWriteParameterLowersMutably();
         testNestedObjectFieldWriteLowersMutableReceiver();
+        testTypedOnFailLocalCaptureLowering();
         System.out.println("SemanticCheckerTest PASSED.");
+    }
+
+    private static void testTypedOnFailLocalCaptureLowering() {
+        Program program = Parser.parseSource(""
+                + "enum Failure:\n"
+                + "  Bad\n"
+                + "domain Worker:\n"
+                + "  fn Run() -> String:\n"
+                + "    var payload = \"kept\"\n"
+                + "    raise Failure.Bad\n"
+                + "  on_fail Failure.Bad:\n"
+                + "    reply payload\n"
+                + "  fn Count() -> Int:\n"
+                + "    var count = 17\n"
+                + "    raise Failure.Bad\n"
+                + "  on_fail Failure.Bad:\n"
+                + "    reply count\n"
+                + "fn main():\n"
+                + "  worker = Worker()\n"
+                + "  echo message worker.Run()\n"
+                + "  echo message worker.Count()\n", "handler-capture.moss");
+        new SemanticChecker(program).run();
+        String rust = NativeGenerator.generate(program, false);
+        if (!rust.contains("captures.insert(\"payload\".to_string(), Box::new(payload.clone()))")
+                || !rust.contains("get_capture::<MossStr>(\"payload\")")
+                || !rust.contains("captures.insert(\"count\".to_string(), Box::new(count.clone()))")
+                || !rust.contains("get_capture::<i64>(\"count\")")
+                || !rust.contains("pub trait __MossCloneCapture")) {
+            throw new AssertionError("on_fail did not preserve and restore a typed local capture: " + rust);
+        }
+        if (rust.contains("payload.to_string()")) {
+            throw new AssertionError("on_fail local capture was serialized as display text");
+        }
     }
 
     private static void testSameTraitConstraintCanBeForwarded() {

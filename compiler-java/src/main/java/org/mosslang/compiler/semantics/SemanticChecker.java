@@ -479,6 +479,16 @@ public class SemanticChecker {
                 (handler.replyType != null && !handler.replyType.isEmpty() ? TypeParser.parseCanonical(handler.replyType) : solver.fresh(0));
 
         env = checkBlock(handler.body, 0, handler.body.size(), env, typer, solver, true, handler.name, expectedReply);
+        for (Stmt statement : handler.body) {
+            if (statement.kind != Stmt.Kind.Let && statement.kind != Stmt.Kind.Var
+                    && statement.kind != Stmt.Kind.Assign) continue;
+            String name = statement.a != null ? statement.a.trim() : "";
+            if (name.isEmpty() || !env.containsKey(name)) continue;
+            TypeRef resolved = solver.resolve(env.get(name));
+            if (resolved != null && resolved.isClosed()) {
+                statement.semanticType = resolved.toCanonicalString();
+            }
+        }
         if (handler.failureArms != null) {
             for (FailureArm arm : handler.failureArms) {
                 if (arm.binding != null && !arm.binding.isEmpty()) {

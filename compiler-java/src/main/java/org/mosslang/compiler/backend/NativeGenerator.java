@@ -719,7 +719,9 @@ public class NativeGenerator {
                 }
                 o.append("    let mut __moss_reply: Option<").append(replyType).append("> = None;\n");
                 o.append("    'handler: {\n");
-                genBlockStmts(o, h.body, "        ", declared, stateFields, Collections.emptySet(), domains, objects, true, false, false, hRaises);
+                Map<String, String> failureCaptureTypes = handlerFailureCaptureTypes(h, declared, stateFields);
+                genBlockStmts(o, h.body, "        ", declared, stateFields, Collections.emptySet(),
+                        domains, objects, true, false, false, hRaises, failureCaptureTypes);
                 o.append("    }\n");
                 if (hRaises) {
                     o.append("    Ok(__moss_reply)\n");
@@ -753,18 +755,24 @@ public class NativeGenerator {
                             String varName = pat.substring(pat.indexOf('(') + 1, pat.indexOf(')')).trim();
                             o.append("    let ").append(varName).append(" = __moss_error.get_code();\n");
                         }
-                        Set<String> stringCaptures = stringLocalsUsedByFailureArms(h, declared);
                         for (String capture : failureArmLocalUses(arm, declared)) {
-                            if (stringCaptures.contains(capture)) {
-                                o.append("    let ").append(capture)
-                                 .append(" = MossStr::from(&__moss_error.get_capture(\"")
-                                 .append(capture).append("\"));\n");
+                            if (stateFields.contains(capture)) continue;
+                            String mossType = failureCaptureTypes.get(capture);
+                            if (mossType == null || mossType.isEmpty()) {
+                                throw new IllegalStateException("missing checked type for on_fail capture '"
+                                        + capture + "' in " + d.name + "." + h.name);
                             }
+                            o.append("    let ").append(capture)
+                             .append(" = __moss_error.get_capture::<")
+                             .append(rustType(mossType)).append(">(\"")
+                             .append(capture).append("\");\n");
                         }
                         o.append("    let mut __moss_failure_reply: Option<").append(replyType).append("> = None;\n");
                         o.append("    'handler: {\n");
                         Set<String> armDeclared = new HashSet<>(declared);
-                        genBlockStmts(o, arm.body, "        ", armDeclared, stateFields, Collections.emptySet(), domains, objects, true, true, false, false);
+                        genBlockStmts(o, arm.body, "        ", armDeclared, stateFields,
+                                Collections.emptySet(), domains, objects, true, true,
+                                false, false, failureCaptureTypes);
                         o.append("    }\n");
                         if (replyType.equals("()")) {
                             o.append("    ()\n");
@@ -1336,7 +1344,8 @@ public class NativeGenerator {
                                       Set<String> objFields, Map<String, Domain> domains,
                                       Map<String, ObjectType> objects,
                                       boolean inHandler, boolean inMethod, boolean canRaise) {
-        genBlockStmts(o, stmts, indent, declared, stateFields, objFields, domains, objects, inHandler, false, inMethod, canRaise);
+        genBlockStmts(o, stmts, indent, declared, stateFields, objFields, domains,
+                objects, inHandler, false, inMethod, canRaise, Collections.emptyMap());
     }
 
     private static void genBlockStmts(StringBuilder o, List<Stmt> stmts, String indent,
@@ -1344,6 +1353,16 @@ public class NativeGenerator {
                                       Set<String> objFields, Map<String, Domain> domains,
                                       Map<String, ObjectType> objects,
                                       boolean inHandler, boolean inFailureArm, boolean inMethod, boolean canRaise) {
+        genBlockStmts(o, stmts, indent, declared, stateFields, objFields, domains,
+                objects, inHandler, inFailureArm, inMethod, canRaise, Collections.emptyMap());
+    }
+
+    private static void genBlockStmts(StringBuilder o, List<Stmt> stmts, String indent,
+                                      Set<String> declared, Set<String> stateFields,
+                                      Set<String> objFields, Map<String, Domain> domains,
+                                      Map<String, ObjectType> objects,
+                                      boolean inHandler, boolean inFailureArm, boolean inMethod,
+                                      boolean canRaise, Map<String, String> failureCaptureTypes) {
         if (stmts == null) return;
         Deque<Integer> blockIndents = new ArrayDeque<>();
         Deque<Boolean> blockIsMatch = new ArrayDeque<>();
@@ -1495,9 +1514,12 @@ public class NativeGenerator {
                 String raised = enumVal != null ? enumVal : lowerExpr(val, stateFields, objFields, domains, objects);
                 o.append(indent).append("let mut __moss_raised = __moss_raise(\"").append(raised).append("\");\n");
                 if (inHandler) {
-                    for (String dVar : declared) {
-                        if (!objFields.contains(dVar) && !dVar.equals("self")) {
-                            o.append(indent).append("__moss_raised.captures.insert(\"").append(dVar).append("\".to_string(), ").append(dVar).append(".to_string());\n");
+                    for (String dVar : failureCaptureTypes.keySet()) {
+                        if (declared.contains(dVar) && !stateFields.contains(dVar)
+                                && !objFields.contains(dVar) && !dVar.equals("self")) {
+                            o.append(indent).append("__moss_raised.captures.insert(\"")
+                             .append(dVar).append("\".to_string(), Box::new(")
+                             .append(dVar).append(".clone()));\n");
                         }
                     }
                 }
@@ -2109,17 +2131,38 @@ public class NativeGenerator {
         return captured;
     }
 
-    private static Set<String> stringLocalsUsedByFailureArms(Handler handler, Set<String> declared) {
-        Set<String> strings = new LinkedHashSet<>();
+    private static Map<String, String> handlerFailureCaptureTypes(
+            Handler handler, Set<String> initiallyDeclared, Set<String> stateFields) {
+        Map<String, String> availableTypes = new LinkedHashMap<>();
+        Set<String> candidates = new LinkedHashSet<>(initiallyDeclared);
+        for (Param parameter : handler.params) {
+            if (parameter.name != null && !parameter.name.isEmpty()) {
+                candidates.add(parameter.name);
+                availableTypes.put(parameter.name, parameter.type);
+            }
+        }
         for (Stmt statement : handler.body) {
             if (statement.kind != Stmt.Kind.Assign && statement.kind != Stmt.Kind.Let
                     && statement.kind != Stmt.Kind.Var) continue;
             String name = statement.a != null ? statement.a.trim() : "";
-            String value = statement.b != null ? statement.b.trim() : "";
-            if (declared.contains(name) && (value.startsWith("\"") || "string".equalsIgnoreCase(statement.semanticType)
-                    || "MossStr".equalsIgnoreCase(statement.semanticType))) strings.add(name);
+            if (name.isEmpty()) continue;
+            candidates.add(name);
+            String type = statement.semanticType;
+            if ((type == null || type.isEmpty()) && statement.b != null
+                    && statement.b.trim().startsWith("\"")) type = "string";
+            if (type != null && !type.isEmpty()) availableTypes.put(name, type);
         }
-        return strings;
+        Set<String> captured = new LinkedHashSet<>();
+        for (FailureArm arm : handler.failureArms) {
+            captured.addAll(failureArmLocalUses(arm, candidates));
+        }
+        Map<String, String> result = new LinkedHashMap<>();
+        for (String name : captured) {
+            if (stateFields.contains(name)) continue;
+            String type = availableTypes.get(name);
+            if (type != null && !type.isEmpty()) result.put(name, type);
+        }
+        return result;
     }
 
     private static Set<String> failureArmLocalUses(FailureArm arm, Set<String> declared) {

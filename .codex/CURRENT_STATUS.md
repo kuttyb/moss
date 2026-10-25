@@ -12994,3 +12994,19 @@ classes pass. `git diff --check` passes. State consumption is still emitted as
 empty, nested effect precision is incomplete, and local failure-capture metadata
 still contains Run/Join-specific names; the Margo source-free/native path remains
 unverified. No Rust/native, SDK, or full acceptance gate ran.
+
+### Phase 25.3 continuation — preserve typed Java-generated on_fail captures
+
+The Java handler checker now stores resolved local declaration types on handler
+statements. Native generation derives the locals used by on_fail arms, stores
+those values in the raised-error carrier through a cloneable `Any`-backed typed
+capture interface, and reconstructs each capture with its Moss-derived Rust
+type. This replaces display-string capture storage for the exercised `String`
+and `Int` cases.
+
+Validation: a focused `SemanticCheckerTest` checks generated capture storage and
+restoration for `MossStr` and `i64`. Staged ABI-v10 and default ABI-v9 builds
+and all ten Java test classes pass; feedback validation and `git diff --check`
+pass. No Rust compilation or native execution ran. The Java checker still lacks
+a complete exceptional-edge definite-initialization and ownership proof, and
+the Margo source-free capture writer remains incomplete.

@@ -94,10 +94,23 @@ impl __MossExecutor {
 """;
 
     public static final String HANDLER_RUNTIME = """
+pub trait __MossCloneCapture: std::fmt::Debug + Send + Sync {
+    fn clone_capture(&self) -> Box<dyn __MossCloneCapture>;
+    fn as_any(&self) -> &dyn std::any::Any;
+}
+impl<T> __MossCloneCapture for T
+where T: Clone + std::fmt::Debug + Send + Sync + 'static {
+    fn clone_capture(&self) -> Box<dyn __MossCloneCapture> { Box::new(self.clone()) }
+    fn as_any(&self) -> &dyn std::any::Any { self }
+}
+impl Clone for Box<dyn __MossCloneCapture> {
+    fn clone(&self) -> Self { self.clone_capture() }
+}
+
 #[derive(Clone, Debug)]
 pub struct __MossRaised {
     pub message: String,
-    pub captures: std::collections::BTreeMap<String, String>,
+    pub captures: std::collections::BTreeMap<String, Box<dyn __MossCloneCapture>>,
 }
 impl __MossRaised {
     pub fn get_code(&self) -> i64 {
@@ -109,8 +122,11 @@ impl __MossRaised {
     pub fn get_string(&self) -> String {
         self.message.clone()
     }
-    pub fn get_capture(&self, name: &str) -> String {
-        self.captures.get(name).cloned().unwrap_or_else(|| self.message.clone())
+    pub fn get_capture<T: Clone + 'static>(&self, name: &str) -> T {
+        self.captures.get(name)
+            .and_then(|value| value.as_any().downcast_ref::<T>())
+            .cloned()
+            .unwrap_or_else(|| std::process::abort())
     }
 }
 #[inline]
