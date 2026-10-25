@@ -13545,3 +13545,17 @@ Validation: clean Java build and all ten Java unit-test classes pass in default
 ABI-v9 and staged ABI-v10 modes. Feedback validation and `git diff --check`
 pass. Native Rust compile/run, Margo provider-consumer build, SDK gate, and full
 `make check` remain deferred; Phase 25.3 remains in progress.
+
+### Phase 25.3 continuation — project inferred empty-vector bodies in ABI-v10
+
+The ABI-v10 producer now emits the canonical one-variable summary and typed
+checked body for a zero-argument exported function whose only statement is
+`return []`. The source-free loader projects only the exact empty vector
+literal shape into an imported generic `Vector[T]` callable. The producer and
+source-free consumer regression strips legacy generic body rows and checks
+that the same import specializes as both `Vector[Int]` and `Vector[Bool]`.
+
+Validation: clean Java build and all ten Java unit-test classes pass in default
+ABI-v9 and staged ABI-v10 modes. Feedback validation and `git diff --check`
+are pending. Native Rust compile/run, Margo provider-consumer build, SDK gate,
+and full `make check` remain deferred; Phase 25.3 remains in progress.

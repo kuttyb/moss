@@ -1642,6 +1642,17 @@ public class Main {
                     && "string".equalsIgnoreCase(resultType.name())
                     && statement.expr.literalValue.matches("[^\"\\\\\\r\\n]*")) {
                 returnedLiteral = "\"" + statement.expr.literalValue + "\"";
+            } else if (statement.expr.kind == org.mosslang.compiler.abi.CheckedExprKind.VectorLiteral
+                    && statement.expr.operands.isEmpty() && parameterTypes.isEmpty()
+                    && summary.variableCount == 1
+                    && resultType.kind() == org.mosslang.compiler.types.TypeKind.Builtin
+                    && "vector".equalsIgnoreCase(resultType.name())
+                    && resultType.typeArgs().size() == 1
+                    && resultType.typeArgs().get(0).kind()
+                            == org.mosslang.compiler.types.TypeKind.InferenceVar
+                    && resultType.typeArgs().get(0).varId().equals(
+                            new org.mosslang.compiler.types.TypeVarId(0, 0, 0))) {
+                returnedLiteral = "[]";
             } else if (resultType.kind() == org.mosslang.compiler.types.TypeKind.Primitive
                     && "int".equalsIgnoreCase(resultType.name())
                     && parameterTypes.stream().allMatch(type -> type.kind()

@@ -1480,6 +1480,7 @@ public class ProjectBuilder {
                     AbiV10Records.Summary summary = v10DirectReturnSummary(
                             fn, modId, provenanceRecords);
                     CheckedExpr constantReturn = null;
+                    CheckedExpr emptyVectorReturn = null;
                     CheckedExpr arithmeticReturn = null;
                     List<CheckedStmt> numericLocalBody = null;
                     List<CheckedStmt> branchReturnBody = null;
@@ -1490,6 +1491,13 @@ public class ProjectBuilder {
                         if (constantReturn != null) {
                             summary = v10ZeroArgLiteralSummary(
                                     fn, constantReturn, modId, provenanceRecords);
+                        }
+                    }
+                    if (summary == null) {
+                        emptyVectorReturn = v10OpenEmptyVectorReturn(fn);
+                        if (emptyVectorReturn != null) {
+                            summary = v10OpenEmptyVectorSummary(
+                                    fn, emptyVectorReturn, modId, provenanceRecords);
                         }
                     }
                     if (summary == null) {
@@ -1531,6 +1539,8 @@ public class ProjectBuilder {
                         callableSummaryRecords.add(summary.record());
                         AbiV10Records.CheckedBodyRecord body = constantReturn != null
                                 ? v10SimpleExpressionBody(summary, constantReturn)
+                                : emptyVectorReturn != null
+                                        ? v10SimpleExpressionBody(summary, emptyVectorReturn)
                                 : arithmeticReturn != null
                                         ? v10SimpleExpressionBody(summary, arithmeticReturn)
                                         : numericLocalBody != null
@@ -1717,6 +1727,51 @@ public class ProjectBuilder {
             if ("false".equals(expression)) return CheckedExpr.boolLiteral(false, resultType);
         }
         return null;
+    }
+
+    private static CheckedExpr v10OpenEmptyVectorReturn(Function function) {
+        if (!function.params.isEmpty() || function.returnTypeRef == null
+                || function.returnTypeRef.kind() != org.mosslang.compiler.types.TypeKind.Builtin
+                || !"vector".equalsIgnoreCase(function.returnTypeRef.name())
+                || function.returnTypeRef.typeArgs().size() != 1
+                || function.returnTypeRef.typeArgs().get(0).kind()
+                        != org.mosslang.compiler.types.TypeKind.InferenceVar
+                || function.body.size() != 1 || function.body.get(0).kind != Stmt.Kind.Return) return null;
+        Stmt statement = function.body.get(0);
+        String expression = statement.a != null && !statement.a.isBlank()
+                ? statement.a.trim() : "";
+        if (expression.isEmpty() && statement.text != null
+                && statement.text.trim().startsWith("return ")) {
+            expression = statement.text.trim().substring(7).trim();
+        }
+        if (!"[]".equals(expression)) return null;
+        Map<org.mosslang.compiler.types.TypeVarId, Integer> ordinals = new LinkedHashMap<>();
+        collectV10SummaryVariables(function.returnTypeRef, ordinals);
+        if (ordinals.size() != 1) return null;
+        CheckedExpr emptyVector = new CheckedExpr();
+        emptyVector.kind = org.mosslang.compiler.abi.CheckedExprKind.VectorLiteral;
+        emptyVector.type = canonicalV10SummaryType(function.returnTypeRef, ordinals);
+        return emptyVector;
+    }
+
+    private static AbiV10Records.Summary v10OpenEmptyVectorSummary(
+            Function function, CheckedExpr expression, String moduleId,
+            List<AbiV10Records.SourceProvenance> provenanceRecords) {
+        Map<org.mosslang.compiler.types.TypeVarId, Integer> ordinals = new LinkedHashMap<>();
+        collectV10SummaryVariables(function.returnTypeRef, ordinals);
+        if (ordinals.size() != 1 || !isV10SummaryTypeRepresentable(function.returnTypeRef)) return null;
+        AbiV10Records.Summary summary = new AbiV10Records.Summary();
+        summary.callableId = function.semanticCallableId;
+        summary.variableCount = ordinals.size();
+        summary.result = AbiV10Records.fromTypeRef(function.returnTypeRef, ordinals);
+        String bodyBytes = CheckedBodyCodec.encodeCheckedBodyV1(List.of(
+                CheckedStmt.returnStmt(expression)));
+        summary.bodySemanticHash = "body-semantic-v1:sha256:" + CheckedBodyCodec.sha256Hex(bodyBytes);
+        AbiV10Records.SourceProvenance provenance = AbiV10Records.SourceProvenance.create(
+                moduleId, summary.callableId, function.sourceFile, function.line);
+        summary.provenanceId = provenance.provenanceId();
+        provenanceRecords.add(provenance);
+        return summary;
     }
 
     private static AbiV10Records.Summary v10ZeroArgLiteralSummary(

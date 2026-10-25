@@ -556,7 +556,9 @@ public final class ProjectBuilderMetadataTest {
                 + "export fn is_warm(value: Float) -> Bool:\n"
                 + "  return value > 0.0 and value < 100.0\n"
                 + "export fn greeting() -> String:\n"
-                + "  return \"hello\"\n", "identity-provider.moss");
+                + "  return \"hello\"\n"
+                + "export fn fresh():\n"
+                + "  return []\n", "identity-provider.moss");
         new org.mosslang.compiler.semantics.CheckedProgram(identityProgram).run();
         identityProgram.functions.forEach(function -> {
             String name = function.name;
@@ -589,6 +591,32 @@ public final class ProjectBuilderMetadataTest {
                 || identitySummary.result.ordinal != 0
                 || !identitySummary.bodySemanticHash.equals(identityBody.semanticHash)) {
             throw new AssertionError("ABI-v10 identity summary/body did not retain its checked type relation");
+        }
+        AbiV10Records.Summary freshSummary = identityInterface.binaryContract.stream()
+                .filter(record -> record.payloadBytes().length > 0
+                        && (record.payloadBytes()[0] == 3 || record.payloadBytes()[0] == 4))
+                .map(AbiV10Records.Summary::decode)
+                .filter(summary -> summary.callableId.endsWith(":fn:fresh"))
+                .findFirst().orElseThrow(() -> new AssertionError(
+                        "ABI-v10 producer omitted the inferred empty-vector summary"));
+        AbiV10Records.CheckedBodyRecord freshBody = identityInterface.privateSemanticDependencies.stream()
+                .filter(record -> record.id.startsWith("checked-body-v1:"))
+                .map(AbiV10Records.CheckedBodyRecord::decode)
+                .filter(body -> body.callableId.endsWith(":fn:fresh"))
+                .findFirst().orElseThrow(() -> new AssertionError(
+                        "ABI-v10 producer omitted the inferred empty-vector body"));
+        List<org.mosslang.compiler.abi.CheckedStmt> freshStatements =
+                CheckedBodyCodec.decodeCheckedBody(freshBody.checkedIrBytes);
+        if (freshSummary.variableCount != 1 || !freshSummary.parameters.isEmpty()
+                || freshSummary.result.kind != AbiV10Records.WireTypeKind.Builtin
+                || !"vector".equals(freshSummary.result.identity)
+                || freshSummary.result.arguments.size() != 1
+                || freshSummary.result.arguments.get(0).kind != AbiV10Records.WireTypeKind.BoundVar
+                || freshSummary.result.arguments.get(0).ordinal != 0
+                || freshStatements.size() != 1
+                || freshStatements.get(0).expr.kind != org.mosslang.compiler.abi.CheckedExprKind.VectorLiteral
+                || !freshSummary.bodySemanticHash.equals(freshBody.semanticHash)) {
+            throw new AssertionError("ABI-v10 inferred empty-vector summary/body is incomplete");
         }
         AbiV10Records.Summary secondSummary = identityInterface.binaryContract.stream()
                 .filter(record -> record.payloadBytes().length > 0
@@ -1027,6 +1055,10 @@ public final class ProjectBuilderMetadataTest {
                     + "  return provider__negative_ratio()\n"
                     + "fn use_greeting() -> String:\n"
                     + "  return provider__greeting()\n"
+                    + "fn use_fresh_int() -> Vector[Int]:\n"
+                    + "  return provider__fresh()\n"
+                    + "fn use_fresh_bool() -> Vector[Bool]:\n"
+                    + "  return provider__fresh()\n"
                     + "fn use_weighted() -> Float:\n"
                     + "  return provider__weighted(2.0, 4.0)\n"
                     + "fn use_adjust_ratio() -> Float:\n"

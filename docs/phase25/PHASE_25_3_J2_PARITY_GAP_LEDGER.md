@@ -65,3 +65,14 @@ source-free execution or general private helper closure.
 Validation: clean Java build and all ten Java unit-test classes pass in default
 ABI-v9 and staged ABI-v10. Native Rust execution, Margo provider-consumer
 integration, SDK gates, and full release acceptance remain unverified.
+
+## Phase 25.3 continuation — ABI-v10 inferred empty-vector body
+
+The Java ABI-v10 producer now emits a canonical typed checked body and generic
+summary for the restricted zero-argument `return []` callable shape. The
+source-free loader validates and projects that exact body shape; the metadata
+regression removes legacy generic-body rows and checks consumer specialization
+as both `Vector[Int]` and `Vector[Bool]`. This is a bounded source-free profile,
+not general collection-body or helper-call support. Clean Java build and all
+ten Java unit-test classes pass in ABI-v9 and staged ABI-v10 modes. Native,
+Margo, SDK, and full acceptance gates remain unrun.
