@@ -45,6 +45,8 @@ public class SemanticCheckerTest {
         testObjectMethodWriteParameterLowersMutably();
         testNestedObjectFieldWriteLowersMutableReceiver();
         testUniformDomainHandlerInferenceFromMainCalls();
+        testPerInstanceDomainLayoutSpecialization();
+        testConflictingDomainInstanceTypesAreRejected();
         testValueHandlerRepliesOnEveryNormalPath();
         testUnsupportedCollectionsAreRejectedAsForIterablesAtLoopSite();
         testRangeForRequiresPositiveNonzeroLiteralStep();
@@ -1032,6 +1034,64 @@ public class SemanticCheckerTest {
             throw new AssertionError("main call types did not close the uniform domain layout: field="
                     + fieldType + ", parameter=" + parameterType + ", reply=" + replyType);
         }
+    }
+
+    private static void testPerInstanceDomainLayoutSpecialization() {
+        Program program = Parser.parseSource(""
+                + "fn normalize(value):\n"
+                + "  return value\n"
+                + "domain Box:\n"
+                + "  value\n"
+                + "  fn Set(item):\n"
+                + "    value = normalize(item)\n"
+                + "  fn Get():\n"
+                + "    reply value\n"
+                + "fn main():\n"
+                + "  intBox = Box()\n"
+                + "  floatBox = Box()\n"
+                + "  message intBox.Set(10)\n"
+                + "  message floatBox.Set(3.5)\n"
+                + "  intValue = message intBox.Get()\n"
+                + "  floatValue = message floatBox.Get()\n"
+                + "  echo intValue\n"
+                + "  echo floatValue\n", "per-instance-domain-specialization.moss");
+        new SemanticChecker(program).run();
+        Domain integer = program.domains.stream().filter(domain -> domain.name.equals("Box"))
+                .findFirst().orElseThrow();
+        Domain floating = program.domains.stream().filter(domain -> domain.name.equals("Box__floatBox"))
+                .findFirst().orElseThrow();
+        Handler integerGet = integer.handlers.stream().filter(handler -> handler.name.equals("Get"))
+                .findFirst().orElseThrow();
+        Handler floatSet = floating.handlers.stream().filter(handler -> handler.name.equals("Set"))
+                .findFirst().orElseThrow();
+        Handler floatGet = floating.handlers.stream().filter(handler -> handler.name.equals("Get"))
+                .findFirst().orElseThrow();
+        if (!"int".equals(integer.state.get(0).type)
+                || !"float".equals(floating.state.get(0).type)
+                || !"float".equals(floatSet.params.get(0).type)
+                || !"int".equals(integerGet.replyType)
+                || !"float".equals(floatGet.replyType)) {
+            throw new AssertionError("domain instances did not retain their concrete layouts");
+        }
+        String rust = NativeGenerator.generate(program, false);
+        if (!rust.contains("construct_Box__floatBox")
+                || !rust.contains("__moss_body_Box__floatBox_Set")
+                || !rust.contains("x: f64") && !rust.contains("item: f64")) {
+            throw new AssertionError("native generation omitted the float domain specialization");
+        }
+    }
+
+    private static void testConflictingDomainInstanceTypesAreRejected() {
+        Program program = Parser.parseSource(""
+                + "domain Pair:\n"
+                + "  fn Set(a, b):\n"
+                + "    echo a\n"
+                + "fn main():\n"
+                + "  pair = Pair()\n"
+                + "  message pair.Set(10, 3.5)\n"
+                + "  message pair.Set(20, 7)\n", "conflicting-domain-instance.moss");
+        expectCompileError(program, "MOSS_COMPILE_ERROR",
+                "one domain instance cannot receive conflicting inferred handler parameter types");
     }
 
     private static void testNestedFieldReadInBranchConditionKeepsReceiverReadOnly() {

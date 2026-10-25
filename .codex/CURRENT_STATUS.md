@@ -16138,3 +16138,32 @@ staged ABI-v10; standalone packaging succeeds and packaged bootstrap reports
 `moss-0.1`; `git diff --check` passes. No native Rust compilation, execution,
 or release acceptance gate was run. Generated-Rust textual parity remains
 parked. The implementation is uncommitted at the time of this status entry.
+
+### Phase 25.3 continuation — direct-main inferred domain instances
+
+The Java checker now materializes distinct concrete domain declarations for
+closed, route-free, non-exported instances constructed directly in the root
+`main` composition. It infers each instance's handler parameter, state, and
+reply types; keeps the first layout on the source declaration; adds renamed
+concrete declarations for differing later layouts; and rewrites those
+instances' constructors. Same-instance type conflicts now report a domain
+specialization conflict instead of being accepted or failing later with an
+unresolved incoming-payload ownership diagnostic. Name collisions prevent the
+specialization rewrite from starting.
+
+Both `implicit_domain_specialization` and
+`implicit_domain_specialization_message` now pass Java checking, and C++/Java
+Fast Debug outputs match (`10`, `3.5` for the first; no output for the second).
+The 50-file check-only screen now reports C++ 49 accepted and Java 49 accepted,
+with no acceptance mismatches. Four existing negative conflict fixtures reject
+in both compilers with `MOSS_COMPILE_ERROR`. Generated Rust was inspected and
+contains separate `i64` and `f64` handler/layout declarations; it was not
+compiled. The check-only screen and Fast Debug do not establish native parity.
+
+Validation on the current tree: all twelve Java test classes pass in ABI-v9
+and staged ABI-v10, including a new semantic/backend specialization test;
+feedback validation and `git diff --check` pass. Standalone packaging must be
+revalidated after this specialization change. Remaining domain coverage
+includes routed or initialized domains, exported/module instances, non-root or
+control-flow message sites, and source-free specialization. No native,
+full-suite, SDK, or multi-crate gate was run. The code change is uncommitted.

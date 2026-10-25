@@ -149,6 +149,7 @@ public class SemanticChecker {
             checkEnums();
             checkObjects();
             checkTraits();
+            inferPerInstanceDomainSpecializations();
             inferUniformDomainHandlerParameters();
             inferUniformDomainStateFields();
             checkDomains();
@@ -523,6 +524,381 @@ public class SemanticChecker {
             if (type == null) type = canonical;
             else if (!type.equals(canonical)) consistent = false;
         }
+    }
+
+    private static final class InferredDomainInstance {
+        final String name;
+        final String sourceFile;
+        final Domain source;
+        final TypeSolver solver;
+        final ExpressionTyper typer;
+        final Map<String, TypeRef> stateTypes = new LinkedHashMap<>();
+        final Map<String, Map<Integer, TypeRef>> parameterTypes = new LinkedHashMap<>();
+        final Map<String, TypeRef> replyTypes = new LinkedHashMap<>();
+        final Map<String, Integer> parameterSites = new LinkedHashMap<>();
+        final Map<String, Integer> stateSites = new LinkedHashMap<>();
+        boolean consistent = true;
+
+        InferredDomainInstance(String name, String sourceFile, Domain source, Program program, TypeContext typeContext,
+                               Map<String, Function> functions, Map<String, Domain> domains,
+                               Map<String, ObjectType> objects, Map<String, EnumType> enums,
+                               Map<String, Trait> traits, int solverId, String module) {
+            this.name = name;
+            this.sourceFile = sourceFile == null ? "" : sourceFile;
+            this.source = source;
+            this.solver = new TypeSolver(solverId);
+            this.typer = new ExpressionTyper(program, typeContext, solver, functions,
+                    domains, objects, enums, traits);
+            this.typer.currentCallingModule = module;
+            for (Field field : source.state) {
+                TypeRef type = field.typeRef != null ? field.typeRef
+                        : (field.type == null || field.type.isEmpty() ? null
+                                : TypeParser.parseCanonical(field.type));
+                if (type == null) type = solver.fresh(0);
+                stateTypes.put(field.name, type);
+            }
+        }
+
+        void inferMessage(Stmt message, TypeEnv mainEnv) {
+            Handler handler = source.handlers.stream()
+                    .filter(candidate -> candidate.name.equals(message.b)).findFirst().orElse(null);
+            if (handler == null || message.args.size() != handler.params.size()) return;
+            List<TypeRef> actuals = new ArrayList<>();
+            try {
+                for (String argument : message.args)
+                    actuals.add(typer.infer(argument, message.line, mainEnv));
+            } catch (CompileError ignored) {
+                consistent = false;
+                return;
+            }
+            Map<Integer, TypeRef> parameters = parameterTypes.computeIfAbsent(
+                    handler.name, ignored -> new LinkedHashMap<>());
+            TypeEnv env = new TypeEnv();
+            env.put("self", TypeRef.domain(source.name));
+            for (Map.Entry<String, TypeRef> state : stateTypes.entrySet())
+                env.put(state.getKey(), state.getValue());
+            for (DomainRoute route : source.routes)
+                env.put(route.name, TypeRef.domain(route.type));
+            for (int index = 0; index < handler.params.size(); index++) {
+                Param parameter = handler.params.get(index);
+                TypeRef type = parameter.typeRef != null ? parameter.typeRef
+                        : (parameter.type == null || parameter.type.isEmpty() ? null
+                                : TypeParser.parseCanonical(parameter.type));
+                if (parameter.inferred && type == null) {
+                    TypeRef prior = parameters.get(index);
+                    if (prior == null) {
+                        prior = solver.fresh(0);
+                        parameters.put(index, prior);
+                    }
+                    TypeRef existing = solver.resolve(prior);
+                    TypeRef incoming = solver.resolve(actuals.get(index));
+                    if (!solver.unify(prior, actuals.get(index))) {
+                        Field conflictField = source.state.stream().filter(field -> field.inferred)
+                                .filter(field -> {
+                                    TypeRef state = solver.resolve(stateTypes.get(field.name));
+                                    return state != null && state.isClosed() && incoming != null
+                                            && incoming.isClosed()
+                                            && !state.toCanonicalString().equals(incoming.toCanonicalString());
+                                }).findFirst().orElse(null);
+                        if (conflictField != null) {
+                            reportConflict("field '" + conflictField.name + "'",
+                                    solver.resolve(stateTypes.get(conflictField.name)), incoming,
+                                    stateSites.getOrDefault(conflictField.name, message.line), message.line);
+                        }
+                        reportConflict("handler '" + handler.name + "' parameter " + index,
+                                existing, incoming,
+                                parameterSites.getOrDefault(handler.name + ":" + index, message.line),
+                                message.line);
+                    } else {
+                        parameterSites.putIfAbsent(handler.name + ":" + index, message.line);
+                    }
+                    type = prior;
+                }
+                if (type == null) type = actuals.get(index);
+                env.put(parameter.name, type);
+            }
+            for (int index = 0; index < handler.body.size(); index++) {
+                Stmt statement = handler.body.get(index);
+                if (statement.kind == Stmt.Kind.Assign || statement.kind == Stmt.Kind.Let
+                        || statement.kind == Stmt.Kind.Var) {
+                    String name = statement.a == null ? "" : statement.a.trim();
+                    String expression = statement.b == null ? "" : statement.b.trim();
+                    if (name.isEmpty() || expression.isEmpty()) continue;
+                    try {
+                        TypeRef inferred = typer.infer(expression, statement.line, env);
+                        TypeRef field = stateTypes.get(name);
+                        if (field != null) {
+                            TypeRef existing = solver.resolve(field);
+                            TypeRef incoming = solver.resolve(inferred);
+                            if (!solver.unify(field, inferred)) {
+                                if (source.state.stream().anyMatch(candidate -> candidate.name.equals(name)
+                                        && candidate.inferred))
+                                    reportConflict("field '" + name + "'", existing, incoming,
+                                            stateSites.getOrDefault(name, message.line), message.line);
+                                consistent = false;
+                            } else if (source.state.stream().anyMatch(candidate -> candidate.name.equals(name)
+                                    && candidate.inferred) && existing != null && !existing.isClosed()) {
+                                TypeRef resolved = solver.resolve(field);
+                                if (resolved != null && resolved.isClosed()) stateSites.putIfAbsent(name, message.line);
+                            }
+                        } else {
+                            env.put(name, inferred);
+                        }
+                    } catch (CompileError ignored) {
+                        consistent = false;
+                    }
+                } else if (statement.kind == Stmt.Kind.Reply && statement.a != null
+                        && !statement.a.isEmpty()) {
+                    try {
+                        TypeRef inferred = typer.infer(statement.a, statement.line, env);
+                        TypeRef prior = replyTypes.get(handler.name);
+                        if (prior == null) replyTypes.put(handler.name, inferred);
+                        else if (!solver.unify(prior, inferred)) consistent = false;
+                    } catch (CompileError ignored) {
+                        consistent = false;
+                    }
+                }
+            }
+            if (message.messageResult != null && !message.messageResult.isEmpty()) {
+                TypeRef reply = replyTypes.get(handler.name);
+                if (reply != null) {
+                    mainEnv.put(message.messageResult, solver.resolve(reply));
+                }
+            }
+        }
+
+        private void reportConflict(String member, TypeRef existing, TypeRef incoming,
+                                    int priorLine, int incomingLine) {
+            String priorType = existing == null ? "<unknown>" : existing.toCanonicalString();
+            String incomingType = incoming == null ? "<unknown>" : incoming.toCanonicalString();
+            throw new CompileError(incomingLine,
+                    "conflicting domain specialization for instance '" + name + "'\n\n"
+                            + member + " inferred as:\n  " + priorType + " from line " + priorLine
+                            + "\n  " + incomingType + " from line " + incomingLine
+                            + "\n\neach declared domain instance must have one concrete state layout",
+                    "MOSS_COMPILE_ERROR", sourceFile);
+        }
+    }
+
+    /**
+     * Materialize separate domain declarations for simple, closed main-scope
+     * instances whose inferred layouts differ. The source declaration serves
+     * the first instance; later instances receive cloned, concrete layouts.
+     */
+    private void inferPerInstanceDomainSpecializations() {
+        if (program.main == null) return;
+        TypeEnv mainEnv = new TypeEnv();
+        int rootIndent = program.main.body.stream().mapToInt(statement -> statement.indent)
+                .min().orElse(0);
+        Map<String, InferredDomainInstance> instances = new LinkedHashMap<>();
+        for (Stmt statement : program.main.body) {
+            if (statement.indent != rootIndent) continue;
+            if ((statement.kind == Stmt.Kind.Assign || statement.kind == Stmt.Kind.Let
+                    || statement.kind == Stmt.Kind.Var) && statement.a != null && statement.b != null) {
+                String expression = statement.b.trim();
+                int open = expression.indexOf('(');
+                Domain source = open > 0 && expression.endsWith(")")
+                        ? domains.get(expression.substring(0, open).trim()) : null;
+                if (source != null && hasInferredDomainLayout(source)) {
+                    instances.put(statement.a.trim(), new InferredDomainInstance(statement.a.trim(),
+                            program.main.sourceFile, source,
+                            program, typeContext, functions, domains, objects, enums, traits,
+                            sessionCounter++, program.moduleName));
+                    mainEnv.put(statement.a.trim(), TypeRef.domain(source.name));
+                } else if (!expression.isEmpty()) {
+                    try {
+                        ExpressionTyper typer = new ExpressionTyper(program, typeContext,
+                                new TypeSolver(sessionCounter++), functions, domains, objects, enums, traits);
+                        mainEnv.put(statement.a.trim(), typer.infer(expression, statement.line, mainEnv));
+                    } catch (CompileError ignored) {
+                        // Leave unknown bindings for the normal checker.
+                    }
+                }
+                continue;
+            }
+            if (statement.kind == Stmt.Kind.Message) {
+                InferredDomainInstance instance = instances.get(statement.a == null ? "" : statement.a.trim());
+                if (instance != null) instance.inferMessage(statement, mainEnv);
+                continue;
+            }
+            if (statement.kind == Stmt.Kind.Assign && statement.messageResult != null
+                    && !statement.messageResult.isEmpty()) continue;
+        }
+
+        Map<Domain, List<InferredDomainInstance>> bySource = new LinkedHashMap<>();
+        for (InferredDomainInstance instance : instances.values())
+            bySource.computeIfAbsent(instance.source, ignored -> new ArrayList<>()).add(instance);
+        Set<String> declaredNames = new HashSet<>(domains.keySet());
+        for (ObjectType object : program.objects) declaredNames.add(object.name);
+        for (EnumType enumeration : program.enums) declaredNames.add(enumeration.name);
+        for (Trait trait : program.traits) declaredNames.add(trait.name);
+        for (Map.Entry<Domain, List<InferredDomainInstance>> entry : bySource.entrySet()) {
+            Domain source = entry.getKey();
+            List<InferredDomainInstance> group = entry.getValue();
+            if (group.size() < 2 || source.exported || !source.routes.isEmpty()
+                    || source.state.stream().anyMatch(field -> field.init != null && !field.init.isEmpty()))
+                continue;
+            boolean ready = group.stream().allMatch(this::hasClosedDomainLayout);
+            if (!ready) continue;
+            Set<String> layouts = new HashSet<>();
+            for (InferredDomainInstance instance : group) layouts.add(domainLayoutKey(instance));
+            if (layouts.size() < 2) continue;
+            List<String> cloneNames = new ArrayList<>();
+            boolean namesAvailable = true;
+            for (int index = 1; index < group.size(); index++) {
+                String cloneName = source.name + "__" + group.get(index).name;
+                if (!cloneName.matches("[A-Za-z_][A-Za-z0-9_]*") || declaredNames.contains(cloneName)) {
+                    namesAvailable = false;
+                    break;
+                }
+                cloneNames.add(cloneName);
+            }
+            if (!namesAvailable) continue;
+            InferredDomainInstance first = group.get(0);
+            applyDomainLayout(source, first);
+            for (int index = 1; index < group.size(); index++) {
+                InferredDomainInstance instance = group.get(index);
+                String cloneName = cloneNames.get(index - 1);
+                declaredNames.add(cloneName);
+                Domain clone = cloneDomain(source, cloneName);
+                applyDomainLayout(clone, instance);
+                program.domains.add(clone);
+                domains.put(cloneName, clone);
+                for (Stmt statement : program.main.body) {
+                    if ((statement.kind == Stmt.Kind.Assign || statement.kind == Stmt.Kind.Let
+                            || statement.kind == Stmt.Kind.Var) && instance.name.equals(statement.a.trim())) {
+                        int open = statement.b.indexOf('(');
+                        if (open > 0) statement.b = cloneName + statement.b.substring(open);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    private boolean hasInferredDomainLayout(Domain domain) {
+        return domain.state.stream().anyMatch(field -> field.inferred)
+                || domain.handlers.stream().anyMatch(handler ->
+                        handler.params.stream().anyMatch(parameter -> parameter.inferred));
+    }
+
+    private boolean hasClosedDomainLayout(InferredDomainInstance instance) {
+        if (!instance.consistent) return false;
+        for (Field field : instance.source.state) {
+            TypeRef type = instance.solver.resolve(instance.stateTypes.get(field.name));
+            if (type == null || !type.isClosed()) return false;
+        }
+        for (Handler handler : instance.source.handlers) {
+            for (int index = 0; index < handler.params.size(); index++) {
+                Param parameter = handler.params.get(index);
+                if (!parameter.inferred) continue;
+                TypeRef type = instance.solver.resolve(instance.parameterTypes
+                        .getOrDefault(handler.name, Collections.emptyMap()).get(index));
+                if (type == null || !type.isClosed()) return false;
+            }
+            boolean hasReply = handler.body.stream().anyMatch(statement ->
+                    statement.kind == Stmt.Kind.Reply && statement.a != null && !statement.a.isEmpty());
+            if (hasReply && (handler.replyType == null || handler.replyType.isEmpty())) {
+                TypeRef reply = instance.solver.resolve(instance.replyTypes.get(handler.name));
+                if (reply == null || !reply.isClosed()) return false;
+            }
+        }
+        return true;
+    }
+
+    private String domainLayoutKey(InferredDomainInstance instance) {
+        StringBuilder key = new StringBuilder();
+        for (Field field : instance.source.state)
+            key.append(instance.solver.resolve(instance.stateTypes.get(field.name)).toCanonicalString()).append(';');
+        for (Handler handler : instance.source.handlers) {
+            for (int index = 0; index < handler.params.size(); index++) {
+                Param parameter = handler.params.get(index);
+                TypeRef type = parameter.inferred
+                        ? instance.parameterTypes.getOrDefault(handler.name, Collections.emptyMap()).get(index)
+                        : (parameter.typeRef != null ? parameter.typeRef
+                                : TypeParser.parseCanonical(parameter.type));
+                if (type != null) key.append(instance.solver.resolve(type).toCanonicalString());
+                key.append(';');
+            }
+            TypeRef reply = handler.replyTypeRef != null ? handler.replyTypeRef
+                    : instance.replyTypes.get(handler.name);
+            if (reply != null) key.append(instance.solver.resolve(reply).toCanonicalString());
+            key.append('|');
+        }
+        return key.toString();
+    }
+
+    private void applyDomainLayout(Domain domain, InferredDomainInstance instance) {
+        for (Field field : domain.state) {
+            if (field.inferred) field.bindType(instance.solver.resolve(instance.stateTypes.get(field.name)));
+        }
+        for (Handler handler : domain.handlers) {
+            Map<Integer, TypeRef> parameters = instance.parameterTypes.getOrDefault(
+                    handler.name, Collections.emptyMap());
+            for (int index = 0; index < handler.params.size(); index++) {
+                Param parameter = handler.params.get(index);
+                if (parameter.inferred && parameters.containsKey(index))
+                    parameter.bindType(instance.solver.resolve(parameters.get(index)));
+            }
+            if ((handler.replyType == null || handler.replyType.isEmpty())
+                    && instance.replyTypes.containsKey(handler.name))
+                handler.bindReplyType(instance.solver.resolve(instance.replyTypes.get(handler.name)));
+        }
+    }
+
+    private Domain cloneDomain(Domain source, String name) {
+        Domain clone = new Domain(name, source.header, source.line, source.sourceFile, source.exported);
+        clone.definingModule = source.definingModule;
+        clone.declarationName = source.declarationName;
+        clone.sourceFree = source.sourceFree;
+        for (Field field : source.state) {
+            Field copy = new Field(field.name, field.type, field.init, field.header, field.line,
+                    field.sourceFile, field.inferred, field.exported);
+            if (field.typeRef != null) copy.bindType(field.typeRef);
+            clone.state.add(copy);
+        }
+        for (DomainRoute route : source.routes) {
+            DomainRoute copy = new DomainRoute();
+            copy.name = route.name;
+            copy.type = route.type;
+            copy.line = route.line;
+            copy.sourceFile = route.sourceFile;
+            clone.routes.add(copy);
+        }
+        for (Handler handler : source.handlers) {
+            Handler copy = new Handler(handler.name, handler.header, handler.line, handler.sourceFile);
+            boolean declaredReplyType = handler.header != null && handler.header.contains("->");
+            copy.replyType = declaredReplyType ? handler.replyType : null;
+            copy.replyTypeRef = declaredReplyType ? handler.replyTypeRef : null;
+            copy.sourceFreeMayRaise = handler.sourceFreeMayRaise;
+            for (Param parameter : handler.params) {
+                Param parameterCopy = new Param(parameter.name, parameter.type, parameter.inferred);
+                if (parameter.typeRef != null) parameterCopy.bindType(parameter.typeRef);
+                copy.params.add(parameterCopy);
+            }
+            for (Stmt statement : handler.body) copy.body.add(cloneStatement(statement));
+            for (FailureArm arm : handler.failureArms) {
+                FailureArm armCopy = new FailureArm(arm.line, arm.sourceFile);
+                armCopy.patterns.addAll(arm.patterns);
+                armCopy.binding = arm.binding;
+                armCopy.checkedCaptures.putAll(arm.checkedCaptures);
+                for (Stmt statement : arm.body) armCopy.body.add(cloneStatement(statement));
+                copy.failureArms.add(armCopy);
+            }
+            clone.handlers.add(copy);
+        }
+        return clone;
+    }
+
+    private Stmt cloneStatement(Stmt source) {
+        Stmt copy = new Stmt(source.kind, source.line, source.indent, source.text, source.sourceFile);
+        copy.a = source.a;
+        copy.b = source.b;
+        copy.args.addAll(source.args);
+        copy.messageResult = source.messageResult;
+        copy.semanticType = source.semanticType;
+        copy.continuationLines.addAll(source.continuationLines);
+        return copy;
     }
 
     private void inferUniformDomainHandlerParameters() {
