@@ -233,37 +233,21 @@ public class SemanticQueryEngine {
                 Function f = queriedFunction != null ? queriedFunction
                         : program.functions.stream().filter(fn -> fn.name.equals(itemName)).findFirst().orElse(null);
                 if (f != null) {
-                    Set<String> called = new HashSet<>();
-                    for (Stmt s : f.body) {
-                        if (s.text != null && s.text.contains("assert(")) mayPanic = true;
-                        if (s.kind == Stmt.Kind.Echo || (s.text != null && s.text.trim().startsWith("echo "))) externalIo = true;
-                        for (Function other : program.functions) {
-                            if (s.text != null && s.text.contains(other.name + "(")) called.add(other.name);
-                        }
-                    }
-                    if (f.resultExpression != null) {
-                        if (f.resultExpression.contains("assert(")) mayPanic = true;
-                        if (f.resultExpression.trim().startsWith("echo ")) externalIo = true;
-                        for (Function other : program.functions) {
-                            if (f.resultExpression.contains(other.name + "(")) called.add(other.name);
-                        }
-                    }
-                    for (String calleeName : called) {
-                        Function callee = program.functions.stream().filter(fn -> fn.name.equals(calleeName)).findFirst().orElse(null);
-                        if (callee != null) {
-                            if (callee.resultExpression != null && callee.resultExpression.contains("assert(")) mayPanic = true;
-                            for (Stmt s : callee.body) {
-                                if (s.text != null && s.text.contains("assert(")) mayPanic = true;
-                                if (s.kind == Stmt.Kind.Echo || (s.text != null && s.text.trim().startsWith("echo "))) externalIo = true;
-                            }
-                        }
-                    }
+                    externalIo |= callableHasEffect(f.body, f.resultExpression, program,
+                            new HashSet<>(), EffectKind.EXTERNAL_IO);
+                    mayPanic |= callableHasEffect(f.body, f.resultExpression, program,
+                            new HashSet<>(), EffectKind.MAY_PANIC);
                 }
             }
+            if (queriedMethod != null) {
+                externalIo |= callableHasEffect(queriedMethod.body, queriedMethod.resultExpression, program,
+                        new HashSet<>(), EffectKind.EXTERNAL_IO);
+                mayPanic |= callableHasEffect(queriedMethod.body, queriedMethod.resultExpression, program,
+                        new HashSet<>(), EffectKind.MAY_PANIC);
+            }
             if (queriedHandler != null) {
-                Set<String> visitedEffects = new HashSet<>();
                 externalIo |= callableHasEffect(queriedHandler.body, null, program,
-                        visitedEffects, EffectKind.EXTERNAL_IO);
+                        new HashSet<>(), EffectKind.EXTERNAL_IO);
                 mayPanic |= callableHasEffect(queriedHandler.body, null, program,
                         new HashSet<>(), EffectKind.MAY_PANIC);
             }

@@ -13,6 +13,7 @@ public final class SemanticQueryEngineTest {
         effectsQueryUsesResolvedFunctionFacts();
         effectsQueryDoesNotInferPanicFromNames();
         effectsQueryCollectsDirectRaisesForArbitraryNames();
+        effectsQueryFollowsNestedFunctionEffects();
         effectsQueryFollowsHandlerHelperEffects();
         effectsQueryFollowsOrdinaryFunctionRaises();
         effectsQueryFollowsLocalObjectMethodRaises();
@@ -122,6 +123,22 @@ public final class SemanticQueryEngineTest {
                     "effects-query-handler-helper.moss", true, null, null, stream);
         }
         assertContains(output.toString(StandardCharsets.UTF_8), "\"external_io\": true");
+    }
+
+    private static void effectsQueryFollowsNestedFunctionEffects() {
+        String source = ""
+                + "fn emit():\n"
+                + "  echo \"x\"\n"
+                + "fn relay():\n"
+                + "  emit()\n"
+                + "fn calculate():\n"
+                + "  relay()\n"
+                + "fn main():\n"
+                + "  calculate()\n";
+        Program program = Parser.parseSource(source, "effects-query-nested-helper.moss");
+        new SemanticChecker(program).run();
+        String result = queryEffects(program, "calculate");
+        assertContains(result, "\"external_io\": true");
     }
 
     private static void effectsQueryExcludesRecoveredDirectRaises() {

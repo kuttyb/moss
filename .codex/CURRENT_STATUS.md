@@ -14838,3 +14838,15 @@ reports `external_io: true`, matching C++.
 Validation: all eleven Java unit-test classes pass in ABI-v9 and staged
 ABI-v10. Handler helper effects through methods, fields, and source-free
 summaries remain unverified.
+
+### Phase 25.3 continuation — recurse through effect-query helper chains
+
+Function effects queries previously inspected ordinary callees only one level
+deep. The shared source walker now follows nested ordinary function calls for
+`external_io` and `may_panic` on queried functions, methods, and handlers, with
+cycle protection. A two-helper chain (`calculate` -> `relay` -> `emit`) now
+reports `external_io: true`, matching C++.
+
+Validation: all eleven Java unit-test classes pass in ABI-v9 and staged
+ABI-v10. This remains a source walk; object-method call chains, module imports,
+and checker-retained complete effect summaries remain open.
