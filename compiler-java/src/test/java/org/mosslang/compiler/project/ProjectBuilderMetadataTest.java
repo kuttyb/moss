@@ -170,6 +170,10 @@ public final class ProjectBuilderMetadataTest {
                 + "module provider\n"
                 + "export fn harmless():\n"
                 + "  echo \"panic() [index] /\"\n"
+                + "export fn assert_failure():\n"
+                + "  assert(false)\n"
+                + "export fn delegated_failure():\n"
+                + "  assert_failure()\n"
                 + "fn main():\n"
                 + "  pass\n", "panic-text-effect.moss");
         new org.mosslang.compiler.semantics.CheckedProgram(program).run();
@@ -183,6 +187,18 @@ public final class ProjectBuilderMetadataTest {
         if (!text.contains("fn harmless kind=concrete return=unit")
                 || !text.contains("may_panic=0")) {
             throw new AssertionError("quoted panic-like text changed the exported panic effect: " + text);
+        }
+        String delegated = text.lines().filter(line -> line.contains("delegated_failure ")
+                        && line.contains("may_panic="))
+                .findFirst().orElse("");
+        String direct = text.lines().filter(line -> line.contains("assert_failure ")
+                        && line.contains("may_panic="))
+                .findFirst().orElse("");
+        if (!direct.contains("may_panic=1")) {
+            throw new AssertionError("exported panic effect omitted a direct result-expression panic: " + direct);
+        }
+        if (!delegated.contains("may_panic=1")) {
+            throw new AssertionError("exported panic effect omitted an asserting helper: " + delegated);
         }
     }
 

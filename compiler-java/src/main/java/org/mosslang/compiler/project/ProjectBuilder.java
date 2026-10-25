@@ -1415,7 +1415,7 @@ public class ProjectBuilder {
             String raiseIdent = raisedFunctionIdentities(module, fn, prog);
             boolean raises = !raiseIdent.equals("-");
             String eff = "effects=local_capture_read=0;local_mutation=0;domain_read=0;domain_write=0;message=0;external_io=0;fileio=0;fileio_unknown=0;may_panic="
-                    + (mayPanic(fn.body) ? "1" : "0")
+                    + (mayPanic(fn, prog, module, new HashSet<>()) ? "1" : "0")
                     + ";raise_set=" + (raises ? raiseIdent : "-")
                     + ";may_diverge=0;unresolved=0";
             appendV9FunctionRecord(contractBuf, fn, fnName, eff, false);
@@ -1530,7 +1530,7 @@ public class ProjectBuilder {
                 String raiseIdent = raisedFunctionIdentities(module, fn, prog);
                 boolean raises = !raiseIdent.equals("-");
                 String effects = "effects=local_capture_read=0;local_mutation=0;domain_read=0;domain_write=0;message=0;external_io=0;fileio=0;fileio_unknown=0;may_panic="
-                        + (mayPanic(fn.body) ? "1" : "0")
+                        + (mayPanic(fn, prog, module, new HashSet<>()) ? "1" : "0")
                         + ";raise_set=" + (raises ? raiseIdent : "-")
                         + ";may_diverge=0;unresolved=0";
                 StringBuilder binaryFunction = new StringBuilder();
@@ -2540,6 +2540,47 @@ public class ProjectBuilder {
                     && (rightHandSide.contains("/") || rightHandSide.contains("%"))) return true;
         }
         return false;
+    }
+
+    private static boolean mayPanic(Function function, Program program, String module,
+                                    Set<String> callPath) {
+        if (function == null || program == null || !callPath.add(function.name)) return false;
+        if (mayPanic(function.body)) return true;
+        if (mayPanicExpression(function.resultExpression)) return true;
+        List<String> expressions = new ArrayList<>();
+        for (Stmt statement : function.body) {
+            if (statement == null) continue;
+            expressions.add(statement.text);
+            expressions.add(statement.a);
+            expressions.add(statement.b);
+            if (statement.args != null) expressions.addAll(statement.args);
+        }
+        expressions.add(function.resultExpression);
+        for (String expression : expressions) {
+            if (expression == null || expression.isBlank()) continue;
+            for (Function called : program.functions) {
+                if (called.definingModule != null && !called.definingModule.isEmpty()
+                        && !called.definingModule.equals(module)) continue;
+                String shortName = called.name;
+                int separator = shortName.lastIndexOf("__");
+                if (separator >= 0) shortName = shortName.substring(separator + 2);
+                boolean invokes = org.mosslang.compiler.semantics.SemanticChecker
+                        .containsFunctionCall(expression, called.name)
+                        || org.mosslang.compiler.semantics.SemanticChecker
+                        .containsFunctionCall(expression, called.declarationName)
+                        || org.mosslang.compiler.semantics.SemanticChecker
+                        .containsFunctionCall(expression, shortName);
+                if (invokes && mayPanic(called, program, module, new HashSet<>(callPath))) return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean mayPanicExpression(String expression) {
+        if (expression == null || expression.isBlank()) return false;
+        String code = maskStringLiterals(expression);
+        return code.matches("(?s).*\\b(assert|panic|unwrap)\\s*\\(.*")
+                || code.matches("(?s).*\\[[^]]+\\].*");
     }
 
     private static String maskStringLiterals(String expression) {

@@ -15531,3 +15531,17 @@ All twelve Java unit-test classes pass under ABI-v9 defaults and staged
 ABI-v10; feedback and diff checks are pending for this checkpoint. This covers
 local typed receiver calls and source-free summary loading, not native provider
 execution or all receiver inference forms.
+
+
+### Phase 25.3 continuation — retain panic effects through function results and calls
+
+Exported function panic metadata now examines `resultExpression` and propagates
+panic indicators through ordinary local function calls. This fixes two false
+zero cases: a direct result-expression `assert(false)` and a non-panicking
+wrapper that calls that helper. The existing quoted-text fixture still verifies
+that string contents such as `"panic() [index] /"` do not set the effect.
+
+All twelve Java unit-test classes pass under ABI-v9 defaults and staged
+ABI-v10. Feedback and diff checks are pending for this checkpoint. This is a
+bounded syntactic panic scan for local function closure; imported panic effects,
+method closure, and complete panic inference remain open.
