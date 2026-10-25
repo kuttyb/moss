@@ -13027,3 +13027,9 @@ model exceptional edges from raising calls, binding identities across branches,
 or complete exceptional control flow; generated Rust/native acceptance remains
 open. This is a bounded explicit-raise correction, not full Java ownership
 parity.
+
+Post-checkpoint regression note: after pushing the explicit raise-edge fix at
+`f47dcb50ec42458ba6e9b7fa719d2e0066634b12`, the complete Java unit-test script
+`./scripts/java/test.sh` passed all ten test classes, including the updated
+SemanticCheckerTest. No native Rust, SDK, or full repository acceptance gates
+were run.
