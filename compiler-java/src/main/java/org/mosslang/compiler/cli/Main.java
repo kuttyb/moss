@@ -1640,7 +1640,7 @@ public class Main {
             } else if (statement.expr.kind == org.mosslang.compiler.abi.CheckedExprKind.StringLiteral
                     && parameterTypes.isEmpty() && resultType.kind() == org.mosslang.compiler.types.TypeKind.Primitive
                     && "string".equalsIgnoreCase(resultType.name())
-                    && statement.expr.literalValue.matches("[^\"\\\\\\r\\n]*")) {
+                    && sourceFreeStringPayloadSupported(statement.expr.literalValue)) {
                 returnedLiteral = "\"" + statement.expr.literalValue + "\"";
             } else if (statement.expr.kind == org.mosslang.compiler.abi.CheckedExprKind.VectorLiteral
                     && !statement.expr.operands.isEmpty() && parameterTypes.isEmpty()
@@ -1921,7 +1921,7 @@ public class Main {
                 source = element.literalValue;
             } else if (stringType.equals(elementType)
                     && element.kind == org.mosslang.compiler.abi.CheckedExprKind.StringLiteral
-                    && element.literalValue.matches("[^\"\\\\\\r\\n]*")) {
+                    && sourceFreeStringPayloadSupported(element.literalValue)) {
                 source = "\"" + element.literalValue + "\"";
             } else {
                 return null;
@@ -1943,6 +1943,23 @@ public class Main {
                 && "vector".equalsIgnoreCase(type.name())
                 && type.typeArgs().size() == 1
                 && sourceFreeClosedVectorElementSupported(type.typeArgs().get(0), depth + 1);
+    }
+
+    private static boolean sourceFreeStringPayloadSupported(String payload) {
+        if (payload == null) return false;
+        for (int index = 0; index < payload.length();) {
+            char current = payload.charAt(index);
+            if (current == '"' || current == '\r' || current == '\n') return false;
+            if (current == '\\') {
+                int next = org.mosslang.compiler.parser.ParserSupport
+                        .parseRustEscape(payload, index, new int[1]);
+                if (next < 0) return false;
+                index = next;
+            } else {
+                index += Character.charCount(payload.codePointAt(index));
+            }
+        }
+        return true;
     }
 
     private static String sourceFreeClosedIntExpression(

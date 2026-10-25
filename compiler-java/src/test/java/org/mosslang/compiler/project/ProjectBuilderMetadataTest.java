@@ -570,7 +570,9 @@ public final class ProjectBuilderMetadataTest {
                 + "export fn names() -> Vector[String]:\n"
                 + "  return [\"one\", \"two\", \"three\"]\n"
                 + "export fn matrix() -> Vector[Vector[Int]]:\n"
-                + "  return [[1, 2], [3], []]\n", "identity-provider.moss");
+                + "  return [[1, 2], [3], []]\n"
+                + "export fn escaped_names() -> Vector[String]:\n"
+                + "  return [\"line\\nbreak\", \"quote: \\\"value\\\"\"]\n", "identity-provider.moss");
         new org.mosslang.compiler.semantics.CheckedProgram(identityProgram).run();
         identityProgram.functions.forEach(function -> {
             String name = function.name;
@@ -691,6 +693,15 @@ public final class ProjectBuilderMetadataTest {
                 || matrixStatements.get(0).expr.operands.get(1).operands.size() != 1
                 || !matrixStatements.get(0).expr.operands.get(2).operands.isEmpty()) {
             throw new AssertionError("ABI-v10 nested-vector checked body is incomplete");
+        }
+        AbiV10Records.CheckedBodyRecord escapedNamesBody = identityInterface.privateSemanticDependencies.stream()
+                .filter(record -> record.id.startsWith("checked-body-v1:"))
+                .map(AbiV10Records.CheckedBodyRecord::decode)
+                .filter(body -> body.callableId.endsWith(":fn:escaped_names"))
+                .findFirst().orElseThrow(() -> new AssertionError(
+                        "ABI-v10 producer omitted escaped String vector body"));
+        if (CheckedBodyCodec.decodeCheckedBody(escapedNamesBody.checkedIrBytes).get(0).expr.operands.size() != 2) {
+            throw new AssertionError("ABI-v10 escaped String vector body is incomplete");
         }
         AbiV10Records.Summary secondSummary = identityInterface.binaryContract.stream()
                 .filter(record -> record.payloadBytes().length > 0
@@ -1146,6 +1157,9 @@ public final class ProjectBuilderMetadataTest {
                     + "fn use_matrix_element() -> Int:\n"
                     + "  matrix = provider__matrix()\n"
                     + "  return matrix[1][0]\n"
+                    + "fn use_escaped_names_length() -> Int:\n"
+                    + "  names = provider__escaped_names()\n"
+                    + "  return names[0].length() + names[1].length()\n"
                     + "fn use_weighted() -> Float:\n"
                     + "  return provider__weighted(2.0, 4.0)\n"
                     + "fn use_adjust_ratio() -> Float:\n"
@@ -1187,7 +1201,8 @@ public final class ProjectBuilderMetadataTest {
                     + "fn use_negated() -> Int:\n"
                     + "  return provider__negated(3)\n"
                     + "fn main():\n"
-                    + "  echo use_matrix_element()\n", "identity-consumer.moss");
+                    + "  echo use_matrix_element()\n"
+                    + "  echo use_escaped_names_length()\n", "identity-consumer.moss");
             org.mosslang.compiler.cli.Main.loadMossiFunctions(identityMossi, "provider", consumer);
             Function importedBranch = consumer.functions.stream()
                     .filter(function -> function.name.equals("provider.abs_value"))
@@ -1244,7 +1259,7 @@ public final class ProjectBuilderMetadataTest {
             java.io.ByteArrayOutputStream output = new java.io.ByteArrayOutputStream();
             new org.mosslang.compiler.interpreter.FastInterpreter(consumer, false,
                     new java.io.PrintStream(output), new java.io.PrintStream(new java.io.ByteArrayOutputStream())).run();
-            if (!"3\n".equals(output.toString(java.nio.charset.StandardCharsets.UTF_8))) {
+            if (!"3\n24\n".equals(output.toString(java.nio.charset.StandardCharsets.UTF_8))) {
                 throw new AssertionError("source-free nested vector did not execute through indexed access: " + output);
             }
         } catch (java.io.IOException error) {

@@ -14583,3 +14583,14 @@ The nested-vector regression now includes an empty inner vector (`[]`) and
 checks that the producer emits an empty `VectorLiteral` child and the
 source-free consumer retains the full matrix. The importer executes a separate
 indexed element read successfully. Both ABI test modes pass all eleven classes.
+
+### Phase 25.3 continuation — preserve escaped strings in source-free vectors
+
+The closed-vector ABI-v10 producer and loader now accept valid Moss escape
+sequences in StringLiteral payloads while still rejecting raw quote and
+line-break characters. Escape validation uses the Moss parser's escape parser.
+The source-free provider-consumer regression carries a newline escape and
+escaped quotes through `Vector[String]`, strips legacy generic rows, and
+executes string-length checks after import. All eleven Java unit-test classes
+pass under ABI-v9 and staged ABI-v10. This remains a closed literal profile;
+full logical ABI-v10 compatibility and native/SDK linkage are open.

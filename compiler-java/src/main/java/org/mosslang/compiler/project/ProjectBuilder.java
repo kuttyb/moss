@@ -1716,9 +1716,10 @@ public class ProjectBuilder {
             expression = statement.text.trim().substring(7).trim();
         }
         TypeRef resultType = canonicalV10SummaryType(function.returnTypeRef, Map.of());
+        String stringPayload = v10StringLiteralPayload(expression);
         if ("string".equalsIgnoreCase(function.returnTypeRef.name())
-                && expression.matches("\"[^\"\\\\\\r\\n]*\"")) {
-            return CheckedExpr.stringLiteral(expression.substring(1, expression.length() - 1), resultType);
+                && stringPayload != null) {
+            return CheckedExpr.stringLiteral(stringPayload, resultType);
         }
         if ("float".equalsIgnoreCase(function.returnTypeRef.name())
                 && expression.matches("[-+]?(?:[0-9]+\\.[0-9]+|[0-9]+[eE][+-]?[0-9]+|[0-9]+\\.[0-9]+[eE][+-]?[0-9]+)")) {
@@ -1829,8 +1830,9 @@ public class ProjectBuilder {
                         : "false".equals(element.trim()) ? CheckedExpr.boolLiteral(false, elementType) : null;
             } else if (TypeRef.primitive("string").equals(elementType)) {
                 String literal = element.trim();
-                child = literal.matches("\"[^\"\\\\\\r\\n]*\"")
-                        ? CheckedExpr.stringLiteral(literal.substring(1, literal.length() - 1), elementType)
+                String payload = v10StringLiteralPayload(literal);
+                child = payload != null
+                        ? CheckedExpr.stringLiteral(payload, elementType)
                         : null;
             } else {
                 child = null;
@@ -1839,6 +1841,25 @@ public class ProjectBuilder {
             vector.operands.add(child);
         }
         return vector;
+    }
+
+    private static String v10StringLiteralPayload(String literal) {
+        if (literal == null || literal.length() < 2 || literal.charAt(0) != '"'
+                || literal.charAt(literal.length() - 1) != '"') return null;
+        String payload = literal.substring(1, literal.length() - 1);
+        for (int index = 0; index < payload.length();) {
+            char current = payload.charAt(index);
+            if (current == '"' || current == '\r' || current == '\n') return null;
+            if (current == '\\') {
+                int next = org.mosslang.compiler.parser.ParserSupport
+                        .parseRustEscape(payload, index, new int[1]);
+                if (next < 0) return null;
+                index = next;
+            } else {
+                index += Character.charCount(payload.codePointAt(index));
+            }
+        }
+        return payload;
     }
 
     private static AbiV10Records.Summary v10EmptyVectorSummary(
