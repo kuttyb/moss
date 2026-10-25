@@ -15397,3 +15397,17 @@ and broader exceptional-edge validation remain open.
 The focused `ProjectBuilderMetadataTest` passes in the full default ABI-v9 and
 staged ABI-v10 Java unit runs; all eleven classes pass in both configurations.
 No native or SDK gate was run.
+
+
+### Phase 25.3 continuation — lock in real Margo test and benchmark behavior
+
+Added an isolated temporary project test that drives `ProjectBuilder.test`
+and `ProjectBuilder.bench`. It verifies a passing Moss assertion returns 0, a
+failed assertion returns 1 with `TEST_ASSERTION_FAILED`, and a declared
+benchmark executes its body and reports 31 measured samples. This protects
+the real Fast Debug execution path from reverting to fabricated success
+records.
+
+All twelve Java unit-test classes pass under ABI-v9 defaults and staged
+ABI-v10; `git diff --check` passes. These are Fast Debug project-driver checks,
+not native project acceptance.
