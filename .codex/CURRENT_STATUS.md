@@ -13979,3 +13979,10 @@ outer recovery to run. `phase21_on_fail_root_nested.moss` prints `8` then `9`
 in both compilers. A focused FastInterpreterTest asserts both direct and nested
 message results and recovery trace presence. ABI-v9 and staged ABI-v10 suites
 pass.
+
+`phase21_capture_slot_combined.moss` was rejected by Java because a move in a
+literal `if false` branch contaminated the reachable branch's ownership state.
+The checker now selects the known literal branch after type-checking the
+alternatives. The fixture is accepted and Fast Debug returns `seven`, matching
+C++; a focused SemanticCheckerTest locks down the ownership case. ABI-v9 and
+staged ABI-v10 suites pass.

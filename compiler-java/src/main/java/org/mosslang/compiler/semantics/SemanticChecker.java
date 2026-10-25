@@ -1633,10 +1633,14 @@ public class SemanticChecker {
                     OwnershipEnv elseEnv = env.copy();
                     elseEnv = checkBlock(stmts, elseStart, elseEnd, elseEnv, typer, solver, insideHandler, enclosingName, expectedType);
 
-                    env = mergeEnvs(ifStmt.line, thenEnv, elseEnv, solver);
+                    String condition = ifStmt.a == null ? "" : ifStmt.a.trim();
+                    if ("true".equals(condition)) env = thenEnv;
+                    else if ("false".equals(condition)) env = elseEnv;
+                    else env = mergeEnvs(ifStmt.line, thenEnv, elseEnv, solver);
                     i = elseEnd;
                 } else {
-                    env = mergeEnvs(ifStmt.line, thenEnv, env, solver);
+                    String condition = ifStmt.a == null ? "" : ifStmt.a.trim();
+                    env = "true".equals(condition) ? thenEnv : mergeEnvs(ifStmt.line, thenEnv, env, solver);
                     i = thenEnd;
                 }
                 continue;

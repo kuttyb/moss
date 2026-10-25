@@ -37,6 +37,7 @@ public class SemanticCheckerTest {
         testOnFailCaptureUsesArgumentEvaluationRaiseEdge();
         testOnFailCannotConsumeDomainState();
         testOnFailRejectsDistinctBranchBindings();
+        testConstantFalseBranchDoesNotConsumeReachableLocal();
         System.out.println("SemanticCheckerTest PASSED.");
     }
 
@@ -366,6 +367,33 @@ public class SemanticCheckerTest {
                         + error.getCode(), error);
             }
         }
+    }
+
+    private static void testConstantFalseBranchDoesNotConsumeReachableLocal() {
+        Program program = Parser.parseSource(""
+                + "enum Failure:\n"
+                + "  Bad\n"
+                + "  Other\n"
+                + "fn take(data: String) -> String:\n"
+                + "  return data\n"
+                + "domain Worker:\n"
+                + "  fn Run() -> String:\n"
+                + "    var item = \"before\"\n"
+                + "    try:\n"
+                + "      if false:\n"
+                + "        discarded = take(item)\n"
+                + "        raise Failure.Bad\n"
+                + "      else:\n"
+                + "        raise Failure.Other\n"
+                + "    recover Failure.Other:\n"
+                + "      echo item.length()\n"
+                + "    reply \"ok\"\n"
+                + "  on_fail Failure.Bad:\n"
+                + "    reply \"bad\"\n"
+                + "fn main():\n"
+                + "  worker = Worker()\n"
+                + "  echo message worker.Run()\n", "constant-branch-ownership.moss");
+        new SemanticChecker(program).run();
     }
 
     private static void testSameTraitConstraintCanBeForwarded() {
