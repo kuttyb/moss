@@ -240,6 +240,7 @@ public class Parser {
             Param p = new Param();
             if (c == -1) {
                 p.name = trim(part);
+                p.inferred = true;
             } else {
                 p.name = trim(part.substring(0, c));
                 p.setType(canonicalTypeName(trim(part.substring(c + 1))));
@@ -569,6 +570,7 @@ public class Parser {
         } else {
             f.name = trim(rest);
         }
+        f.inferred = colon == -1;
         if (!plainIdentifier(f.name)) {
             fail(L, "state declaration must be 'name = value' or 'name: type = value'");
         }

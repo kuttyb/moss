@@ -2,6 +2,8 @@ package org.mosslang.compiler.semantics;
 
 import org.mosslang.compiler.ast.Program;
 import org.mosslang.compiler.ast.Function;
+import org.mosslang.compiler.ast.Domain;
+import org.mosslang.compiler.ast.Handler;
 import org.mosslang.compiler.backend.NativeGenerator;
 import org.mosslang.compiler.diagnostics.CompileError;
 import org.mosslang.compiler.parser.Parser;
@@ -42,6 +44,7 @@ public class SemanticCheckerTest {
         testConsumedObjectParameterLowersByValue();
         testObjectMethodWriteParameterLowersMutably();
         testNestedObjectFieldWriteLowersMutableReceiver();
+        testUniformDomainHandlerInferenceFromMainCalls();
         testValueHandlerRepliesOnEveryNormalPath();
         testUnsupportedCollectionsAreRejectedAsForIterablesAtLoopSite();
         testRangeForRequiresPositiveNonzeroLiteralStep();
@@ -999,6 +1002,36 @@ public class SemanticCheckerTest {
                 + "    else:\n"
                 + "      raise Failure.Bad\n", "handler-reply-or-raise.moss");
         new SemanticChecker(complete).run();
+    }
+
+    private static void testUniformDomainHandlerInferenceFromMainCalls() {
+        Program program = Parser.parseSource(""
+                + "fn normalize(value):\n"
+                + "  return value\n"
+                + "domain Box:\n"
+                + "  value\n"
+                + "  fn Set(item):\n"
+                + "    value = normalize(item)\n"
+                + "  fn Get():\n"
+                + "    reply value\n"
+                + "fn main():\n"
+                + "  box = Box()\n"
+                + "  message box.Set(41)\n"
+                + "  echo message box.Get()\n", "uniform-domain-specialization.moss");
+        new SemanticChecker(program).run();
+        Domain box = program.domains.stream().filter(domain -> domain.name.equals("Box"))
+                .findFirst().orElseThrow();
+        Handler set = box.handlers.stream().filter(handler -> handler.name.equals("Set"))
+                .findFirst().orElseThrow();
+        Handler get = box.handlers.stream().filter(handler -> handler.name.equals("Get"))
+                .findFirst().orElseThrow();
+        String fieldType = box.state.get(0).typeRef == null ? null : box.state.get(0).typeRef.toCanonicalString();
+        String parameterType = set.params.get(0).typeRef == null ? null : set.params.get(0).typeRef.toCanonicalString();
+        String replyType = get.replyTypeRef == null ? null : get.replyTypeRef.toCanonicalString();
+        if (!"int".equals(fieldType) || !"int".equals(parameterType) || !"int".equals(replyType)) {
+            throw new AssertionError("main call types did not close the uniform domain layout: field="
+                    + fieldType + ", parameter=" + parameterType + ", reply=" + replyType);
+        }
     }
 
     private static void testNestedFieldReadInBranchConditionKeepsReceiverReadOnly() {

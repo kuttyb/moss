@@ -149,6 +149,8 @@ public class SemanticChecker {
             checkEnums();
             checkObjects();
             checkTraits();
+            inferUniformDomainHandlerParameters();
+            inferUniformDomainStateFields();
             checkDomains();
             // Resolve inferred object method signatures before generic function
             // bodies check concrete values against structural trait contracts.
@@ -502,6 +504,166 @@ public class SemanticChecker {
                     throw new CompileError(h.line, "duplicate handler '" + h.name + "' in domain '" + d.name + "'", "DUPLICATE_HANDLER");
                 }
                 checkHandlerBody(d, h);
+            }
+        }
+    }
+
+    private static final class DomainParameterInference {
+        String type;
+        boolean consistent = true;
+        int observations;
+
+        void observe(TypeRef inferred) {
+            observations++;
+            if (inferred == null || !inferred.isClosed()) {
+                consistent = false;
+                return;
+            }
+            String canonical = inferred.toCanonicalString();
+            if (type == null) type = canonical;
+            else if (!type.equals(canonical)) consistent = false;
+        }
+    }
+
+    private void inferUniformDomainHandlerParameters() {
+        if (program.main == null) return;
+        TypeSolver solver = new TypeSolver(sessionCounter++);
+        ExpressionTyper typer = new ExpressionTyper(program, typeContext, solver,
+                functions, domains, objects, enums, traits);
+        typer.currentCallingModule = program.moduleName;
+        TypeEnv mainEnv = new TypeEnv();
+        int rootIndent = program.main.body.stream().mapToInt(statement -> statement.indent)
+                .min().orElse(0);
+        Map<String, DomainParameterInference> inferredTypes = new LinkedHashMap<>();
+        Map<String, Handler> handlersByKey = new HashMap<>();
+        for (Stmt statement : program.main.body) {
+            if (statement.indent != rootIndent) continue;
+            if (statement.kind == Stmt.Kind.Message) {
+                TypeRef receiverType = mainEnv.get(statement.a == null ? "" : statement.a.trim());
+                Domain domain = receiverType == null || receiverType.kind() != TypeKind.Domain
+                        ? null : domains.get(receiverType.name());
+                Handler handler = domain == null ? null : domain.handlers.stream()
+                        .filter(candidate -> candidate.name.equals(statement.b)).findFirst().orElse(null);
+                if (domain != null && !domain.sourceFree && handler != null) {
+                    String handlerKey = domain.name + "\n" + handler.name;
+                    handlersByKey.put(handlerKey, handler);
+                    for (int index = 0; index < handler.params.size() && index < statement.args.size(); index++) {
+                        Param parameter = handler.params.get(index);
+                        if (!parameter.inferred || (parameter.type != null && !parameter.type.isEmpty())) continue;
+                        String key = handlerKey + "\n" + index;
+                        DomainParameterInference inference = inferredTypes.computeIfAbsent(
+                                key, ignored -> new DomainParameterInference());
+                        try {
+                            inference.observe(typer.infer(statement.args.get(index), statement.line, mainEnv));
+                        } catch (CompileError ignored) {
+                            inference.observe(null);
+                        }
+                    }
+                    if (statement.messageResult != null && !statement.messageResult.isEmpty()) {
+                        try {
+                            TypeRef reply = typer.inferMessageCall(statement.a + "." + statement.b
+                                    + "(" + String.join(", ", statement.args) + ")",
+                                    statement.line, mainEnv);
+                            mainEnv.put(statement.messageResult, solver.resolve(reply));
+                        } catch (CompileError ignored) {
+                            // The main checker will issue the authoritative diagnostic.
+                        }
+                    }
+                }
+                continue;
+            }
+            if (statement.kind != Stmt.Kind.Assign && statement.kind != Stmt.Kind.Let
+                    && statement.kind != Stmt.Kind.Var) continue;
+            String name = statement.a == null ? "" : statement.a.trim();
+            String expression = statement.b == null ? "" : statement.b.trim();
+            if (name.isEmpty() || expression.isEmpty()) continue;
+            try {
+                TypeRef inferred = typer.infer(expression, statement.line, mainEnv);
+                mainEnv.put(name, solver.resolve(inferred));
+            } catch (CompileError ignored) {
+                // Leave the binding unknown; normal checking reports source errors.
+            }
+        }
+        for (Map.Entry<String, DomainParameterInference> entry : inferredTypes.entrySet()) {
+            DomainParameterInference inference = entry.getValue();
+            if (!inference.consistent || inference.observations == 0 || inference.type == null) continue;
+            String[] parts = entry.getKey().split("\\n", -1);
+            if (parts.length != 3) continue;
+            Handler handler = handlersByKey.get(parts[0] + "\n" + parts[1]);
+            int parameterIndex;
+            try {
+                parameterIndex = Integer.parseInt(parts[2]);
+            } catch (NumberFormatException ignored) {
+                continue;
+            }
+            if (handler == null || parameterIndex < 0 || parameterIndex >= handler.params.size()) continue;
+            Param parameter = handler.params.get(parameterIndex);
+            if (parameter.inferred && (parameter.type == null || parameter.type.isEmpty()))
+                parameter.setType(inference.type);
+        }
+    }
+
+    private void inferUniformDomainStateFields() {
+        for (Domain domain : program.domains) {
+            if (domain.sourceFree) continue;
+            TypeSolver solver = new TypeSolver(sessionCounter++);
+            ExpressionTyper typer = new ExpressionTyper(program, typeContext, solver,
+                    functions, domains, objects, enums, traits);
+            typer.currentCallingModule = domain.definingModule != null && !domain.definingModule.isEmpty()
+                    ? domain.definingModule : program.moduleName;
+            Map<String, TypeRef> fieldTypes = new LinkedHashMap<>();
+            Set<String> inferredFields = new LinkedHashSet<>();
+            Set<String> invalidFields = new HashSet<>();
+            for (Field field : domain.state) {
+                TypeRef type = field.typeRef != null ? field.typeRef
+                        : (field.type != null && !field.type.isEmpty()
+                                ? TypeParser.parseCanonical(field.type) : null);
+                if (type == null) {
+                    type = solver.fresh(0);
+                    if (field.inferred && (field.init == null || field.init.isEmpty()))
+                        inferredFields.add(field.name);
+                }
+                fieldTypes.put(field.name, type);
+            }
+            for (Handler handler : domain.handlers) {
+                TypeEnv env = new TypeEnv();
+                for (Field field : domain.state) env.put(field.name, fieldTypes.get(field.name));
+                for (DomainRoute route : domain.routes) env.put(route.name, TypeRef.domain(route.type));
+                for (Param parameter : handler.params) {
+                    TypeRef type = parameter.typeRef != null ? parameter.typeRef
+                            : (parameter.type != null && !parameter.type.isEmpty()
+                                    ? TypeParser.parseCanonical(parameter.type) : null);
+                    env.put(parameter.name, type != null ? type : solver.fresh(0));
+                }
+                for (Stmt statement : handler.body) {
+                    if (statement.kind != Stmt.Kind.Let && statement.kind != Stmt.Kind.Var
+                            && statement.kind != Stmt.Kind.Assign) continue;
+                    String name = statement.a == null ? "" : statement.a.trim();
+                    String expression = statement.b == null ? "" : statement.b.trim();
+                    if (name.isEmpty() || expression.isEmpty()) continue;
+                    TypeRef actual;
+                    try {
+                        actual = typer.infer(expression, statement.line, env);
+                    } catch (CompileError ignored) {
+                        if (inferredFields.contains(name)) invalidFields.add(name);
+                        continue;
+                    }
+                    if (fieldTypes.containsKey(name)) {
+                        if (!solver.unify(fieldTypes.get(name), actual) && inferredFields.contains(name))
+                            invalidFields.add(name);
+                    } else {
+                        env.put(name, solver.resolve(actual));
+                    }
+                }
+            }
+            for (String name : inferredFields) {
+                if (invalidFields.contains(name)) continue;
+                TypeRef resolved = solver.resolve(fieldTypes.get(name));
+                if (resolved != null && resolved.isClosed()) {
+                    Field field = domain.state.stream().filter(candidate -> candidate.name.equals(name))
+                            .findFirst().orElse(null);
+                    if (field != null) field.bindType(resolved);
+                }
             }
         }
     }

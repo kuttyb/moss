@@ -16112,3 +16112,29 @@ mismatches from the 50-file screen are untyped handler payload/domain-
 specialization cases. C++ and Java Fast Debug also produce identical output on
 the branch-confined fixture (`1`, `outer`, `after`, `1`, `done`). No native
 acceptance gate was run.
+
+### Phase 25.3 continuation — uniform untyped domain inference
+
+The Java parser now marks untyped handler parameters and uninitialized state
+fields as inferred. Before domain checking, Java infers an untyped handler
+parameter only when all direct root-level `main` message sites establish the
+same closed type, then infers untyped state fields from handler assignments.
+This closes uniform layouts without assigning one declaration-wide type when
+instance call sites disagree.
+
+A refreshed check-only comparison of the first 50 sorted top-level
+`tests/*.moss` files gives C++ 49 accepted and Java 47 accepted. The three
+previously mismatching uniform cases now agree on checking and Fast Debug:
+`domain_name_collision_routes`, `implicit_domain_parameter_specialization`,
+and `implicit_domain_specialization_same_instance`. Two C++-accepted cases
+remain Java-rejected: `implicit_domain_specialization` and
+`implicit_domain_specialization_message`; both need distinct inferred layouts
+for separate instances of one source domain. This requires per-instance domain
+specialization through semantic checking and backend materialization, and is
+still open.
+
+Validation on this tree: all twelve Java test classes pass under ABI-v9 and
+staged ABI-v10; standalone packaging succeeds and packaged bootstrap reports
+`moss-0.1`; `git diff --check` passes. No native Rust compilation, execution,
+or release acceptance gate was run. Generated-Rust textual parity remains
+parked. The implementation is uncommitted at the time of this status entry.
