@@ -12276,3 +12276,20 @@ Accumulator method resolution, Surface ExprEval diagnostic ordering, and
 Run/Join-specific Margo failure-capture metadata remain known gaps. The 1,021
 file run's complete divergence count was truncated in tool output and is not
 reported as a verified total.
+
+### Phase 25.3 continuation — object method body checking
+
+Semantic checking now visits object method bodies using declared object fields,
+parameters, and a typed `self` binding. Bare calls to methods on the current
+object are resolved against the object's method table, so body checking can
+validate their arguments rather than checking only a method signature at the
+call site. The bounded 41-file structured acceptance set remains green, and
+the six Java test classes pass after this addition.
+
+The Julia Accumulator reproducer remains divergent. Java's project-aware CLI
+reports an unknown unqualified method call at line 17 while C++ reports a
+no-matching-method error at line 27; direct AST/checker execution does not
+reproduce the same context. This needs a focused project-context diagnosis and
+is not closed by the object-body checking change. Do not claim method-body
+parity yet. All source-free ABI, native backend, SDK, and frozen-candidate gates
+remain open.

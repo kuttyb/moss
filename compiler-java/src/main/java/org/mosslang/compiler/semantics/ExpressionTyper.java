@@ -19,6 +19,7 @@ public class ExpressionTyper {
     private Map<String, String> currentCallableBindings = new HashMap<>();
     public String currentCallingModule = null;
     public String currentCallingFunction = "main";
+    public String currentCallingObject = null;
     public String currentCallerSpecializationKey = null;
     public TypeRef currentExpectedType = null;
 
@@ -714,6 +715,13 @@ public class ExpressionTyper {
                         infer(arg, line, env);
                     }
                     return solver.fresh(0);
+                }
+
+                if (currentCallingObject != null) {
+                    ObjectType owner = objects.get(currentCallingObject);
+                    if (owner != null && owner.methods.stream().anyMatch(method -> method.name.equals(callee))) {
+                        return inferMethodCall("self", callee, argExprs, line, env);
+                    }
                 }
 
                 throw new CompileError(line, "unknown function or constructor '" + callee + "'", "UNKNOWN_SYMBOL_OR_TYPE");

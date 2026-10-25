@@ -95,6 +95,7 @@ public class SemanticChecker {
             checkTraits();
             checkDomains();
             checkFunctions();
+            checkObjectMethods();
             checkRecursiveFunctions();
             checkMain();
             checkTests();
@@ -607,6 +608,57 @@ public class SemanticChecker {
                 int bLine = env.bindingLines.getOrDefault(entry.getKey(), f.line);
                 program.localBindingTypes.computeIfAbsent(f.name, k -> new HashMap<>()).put(entry.getKey(), resolved);
                 program.localBindingLines.computeIfAbsent(f.name, k -> new HashMap<>()).put(entry.getKey(), bLine);
+            }
+        }
+    }
+
+    private void checkObjectMethods() {
+        for (ObjectType object : program.objects) {
+            for (Method method : object.methods) {
+                currentSemanticIdentity = "method:" + object.name + "." + method.name + "@" + method.line;
+                TypeSolver solver = new TypeSolver(sessionCounter++);
+                ExpressionTyper typer = new ExpressionTyper(program, typeContext, solver, functions,
+                        domains, objects, enums, traits);
+                typer.currentCallingModule = object.definingModule != null && !object.definingModule.isEmpty()
+                        ? object.definingModule : program.moduleName;
+                typer.currentCallingFunction = object.name + "." + method.name;
+                typer.currentCallingObject = object.name;
+                OwnershipEnv env = new OwnershipEnv();
+                for (Field field : object.fields) {
+                    TypeRef type = field.type != null && !field.type.isEmpty()
+                            ? TypeParser.parseCanonical(field.type) : null;
+                    if (type == null && field.init != null && !field.init.isEmpty()) {
+                        type = typer.infer(field.init, field.line, env.typeEnv);
+                    }
+                    env.put(field.name, type != null ? type : solver.fresh(0), field.line);
+                }
+                env.put("self", TypeRef.nominal(object.name, Collections.emptyList()), object.line);
+                for (Param param : method.params) {
+                    TypeRef type = param.typeRef != null ? param.typeRef
+                            : (param.type != null && !param.type.isEmpty()
+                                    ? TypeParser.parseCanonical(param.type) : solver.fresh(0));
+                    env.put(param.name, type != null ? type : solver.fresh(0), method.line);
+                }
+                TypeRef expectedReturn = method.returnTypeRef != null ? method.returnTypeRef
+                        : (method.returnType != null && !method.returnType.isEmpty()
+                                ? TypeParser.parseCanonical(method.returnType) : solver.fresh(0));
+                env = checkBlock(method.body, 0, method.body.size(), env, typer, solver,
+                        false, object.name + "." + method.name, expectedReturn);
+                if (method.resultExpression != null && !method.resultExpression.isEmpty()) {
+                    TypeRef actual = typer.infer(method.resultExpression,
+                            method.resultLine != 0 ? method.resultLine : method.line, env.typeEnv);
+                    if (!solver.unify(expectedReturn, actual)) {
+                        throw new CompileError(method.resultLine != 0 ? method.resultLine : method.line,
+                                "method '" + object.name + "." + method.name + "' has incompatible result type",
+                                "TYPE_MISMATCH");
+                    }
+                }
+                TypeRef resolved = solver.resolve(expectedReturn);
+                if (resolved.kind() == TypeKind.InferenceVar) {
+                    solver.unify(expectedReturn, TypeRef.unit());
+                    resolved = TypeRef.unit();
+                }
+                if (resolved.isClosed()) method.bindReturnType(resolved);
             }
         }
     }
