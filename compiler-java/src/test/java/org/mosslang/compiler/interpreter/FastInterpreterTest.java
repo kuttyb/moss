@@ -25,6 +25,7 @@ public final class FastInterpreterTest {
         testRaiseRecoverTraceCarriesErrorIdentity();
         testObjectMethodTraceCarriesCallContext();
         testBorrowedDomainObjectTraceKeepsStatePath();
+        testNestedDomainStatePathTracesOnlyAtLeaf();
         testIndexedDomainStateTraceKeepsFullPath();
         testDomainReplyCopiesNestedObjectValue();
         testObjectMethodUpdatesScalarField();
@@ -443,6 +444,37 @@ public final class FastInterpreterTest {
                 || !events.substring(methodFieldRead).contains("\"path\":\"value.title\"")
                 || !"borrowed\n".equals(stdout.toString(StandardCharsets.UTF_8))) {
             throw new AssertionError("borrowed domain object trace lost its state path: " + events);
+        }
+    }
+
+    private static void testNestedDomainStatePathTracesOnlyAtLeaf() {
+        var program = Parser.parseSource(""
+                + "type Profile:\n"
+                + "  name: String\n"
+                + "type Record:\n"
+                + "  profile: Profile\n"
+                + "domain Store:\n"
+                + "  record: Record\n"
+                + "  fn Read() -> String:\n"
+                + "    reply record.profile.name\n"
+                + "fn main():\n"
+                + "  store = Store(record: Record(profile: Profile(name: \"nested\")))\n"
+                + "  echo message store.Read()\n",
+                "fast-interpreter-nested-domain-state-path-trace.moss");
+        new CheckedProgram(program).run();
+
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+        ByteArrayOutputStream trace = new ByteArrayOutputStream();
+        new FastInterpreter(program, true,
+                new PrintStream(stdout, true, StandardCharsets.UTF_8),
+                new PrintStream(trace, true, StandardCharsets.UTF_8)).run();
+        String events = trace.toString(StandardCharsets.UTF_8);
+        if (!events.contains("\"event\":\"state_read\"")
+                || !events.contains("\"path\":\"record.profile.name\"")
+                || events.contains("\"path\":\"record\"")
+                || events.contains("\"path\":\"record.profile\"")
+                || !"nested\n".equals(stdout.toString(StandardCharsets.UTF_8))) {
+            throw new AssertionError("nested state path should emit one full-path read: " + events);
         }
     }
 

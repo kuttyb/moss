@@ -415,6 +415,19 @@ public class FastInterpreter {
         }
     }
 
+    private boolean isDomainStateRootedPath(String expression, Map<String, Value> locals,
+                                            DomainInstance currentDomain) {
+        if (expression == null || currentDomain == null) return false;
+        String path = expression.trim();
+        int separator = path.length();
+        int dot = path.indexOf('.');
+        int bracket = path.indexOf('[');
+        if (dot >= 0) separator = Math.min(separator, dot);
+        if (bracket >= 0) separator = Math.min(separator, bracket);
+        String root = path.substring(0, separator).trim();
+        return !root.isEmpty() && !locals.containsKey(root) && currentDomain.state.containsKey(root);
+    }
+
     private static Value withTraceStatePath(Value value, String path) {
         if (value == null) return null;
         Value borrowed = new Value(value.kind, value.raw, value.typeName);
@@ -2477,7 +2490,15 @@ public class FastInterpreter {
                     recvVal = locals.get(recvExpr);
                     traceValueRead(recvExpr, recvVal, fieldOrVariant);
                 } else {
-                    recvVal = evalExpr(recvExpr, locals, currentDomain);
+                    boolean deferReceiverStatePath = isDomainStateRootedPath(
+                            recvExpr, locals, currentDomain);
+                    boolean wasDeferringStateTrace = deferDomainStateTrace;
+                    if (deferReceiverStatePath) deferDomainStateTrace = true;
+                    try {
+                        recvVal = evalExpr(recvExpr, locals, currentDomain);
+                    } finally {
+                        deferDomainStateTrace = wasDeferringStateTrace;
+                    }
                     if (!deferDomainStateTrace && recvVal != null && recvVal.traceStatePath != null)
                         traceStateRead(recvVal.traceStatePath + "." + fieldOrVariant);
                 }

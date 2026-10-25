@@ -15824,3 +15824,20 @@ on C++/Java acceptance and diagnostic codes. The packaged launcher was built
 before this latest refinement and needs refresh after the next checkpoint.
 Native execution, source-free native compatibility, real Margo/SDK acceptance,
 and independent release review remain open.
+
+
+### Phase 25.3 continuation — keep branch-condition field reads read-only
+
+Fast Debug's remaining selected trace gap led to a semantic mismatch: Java
+inferred `WRITE` for an object method when an `if` condition read a nested
+receiver field. Receiver inference treated any statement's `a` expression as
+an assignment target, including `If`. It now recognizes receiver writes only
+on `Assign` statements. On `tests/phase106d1_borrowed_reads.moss`, both compilers
+report `Record.score` and `inspect_record(value)` as `READ`; the Java Fast Debug
+output and all 217 JSON trace events now match C++ byte-for-byte.
+
+Validation: all twelve Java unit-test classes pass under ABI-v9 and staged
+ABI-v10. The unit regression covers a nested field read in a branch condition.
+The standalone JAR was rebuilt after this source change; its version and
+`moss-0.1` bootstrap pass. Native/backend, source-free runtime, Margo/SDK
+acceptance, and independent review remain open.

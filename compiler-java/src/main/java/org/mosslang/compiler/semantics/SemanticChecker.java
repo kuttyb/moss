@@ -1071,7 +1071,8 @@ public class SemanticChecker {
                             method.receiverAccessMode = AccessMode.Consume;
                             break;
                         }
-                        if (isReceiverFieldWriteTarget(target, field.name)) {
+                        if (statement.kind == Stmt.Kind.Assign
+                                && isReceiverFieldWriteTarget(target, field.name)) {
                             if (method.receiverAccessMode != AccessMode.Consume)
                                 method.receiverAccessMode = AccessMode.Write;
                             break;

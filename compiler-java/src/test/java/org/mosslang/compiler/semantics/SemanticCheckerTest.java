@@ -29,6 +29,7 @@ public class SemanticCheckerTest {
         testGenericNumericOperationRetainsOpenTypeUntilSpecialization();
         testMixedIntFloatComparisons();
         testObjectMethodAccessModesAreRetained();
+        testNestedFieldReadInBranchConditionKeepsReceiverReadOnly();
         testMovingObjectFieldConsumesMethodReceiver();
         testSiblingMutatorReceiverModeAndUnitCodegen();
         testForLoopValuesCanFlowToObjectMethodArguments();
@@ -915,6 +916,38 @@ public class SemanticCheckerTest {
                 || method.parameterAccessModes.size() != 1
                 || method.parameterAccessModes.get(0) != AccessMode.Consume) {
             throw new AssertionError("object method receiver/parameter access modes were not retained");
+        }
+    }
+
+    private static void testNestedFieldReadInBranchConditionKeepsReceiverReadOnly() {
+        Program program = Parser.parseSource(""
+                + "type Profile:\n"
+                + "  name: String\n"
+                + "  fn score() -> Int:\n"
+                + "    if name == name:\n"
+                + "      return 1\n"
+                + "    return 0\n"
+                + "type Record:\n"
+                + "  profile: Profile\n"
+                + "  fn score() -> Int:\n"
+                + "    if profile.name == profile.name:\n"
+                + "      return 1\n"
+                + "    return 0\n"
+                + "fn inspect_record(value: Record) -> Int:\n"
+                + "  return value.score()\n"
+                + "fn main():\n"
+                + "  pass\n", "nested-field-read-branch-effects.moss");
+        new SemanticChecker(program).run();
+        var recordScore = program.objects.stream().filter(object -> object.name.equals("Record"))
+                .flatMap(object -> object.methods.stream())
+                .filter(method -> method.name.equals("score")).findFirst().orElseThrow();
+        Function inspectRecord = program.functions.stream()
+                .filter(function -> function.name.equals("inspect_record")).findFirst().orElseThrow();
+        if (recordScore.receiverAccessMode != AccessMode.Read
+                || inspectRecord.parameterAccessModes.size() != 1
+                || inspectRecord.parameterAccessModes.get(0) != AccessMode.Read) {
+            throw new AssertionError("nested field reads in branch conditions must keep receiver READ: method="
+                    + recordScore.receiverAccessMode + " function=" + inspectRecord.parameterAccessModes);
         }
     }
 
