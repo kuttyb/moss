@@ -1129,16 +1129,21 @@ public class ProjectBuilder {
             }
 
             for (Function fn : prog.functions) {
+                if (!fn.exported) continue;
                 String fnName = fn.name;
                 if (fnName.startsWith(module + "__")) fnName = fnName.substring(module.length() + 2);
-                boolean isGeneric = fn.generic ||
-                        fn.params.stream().anyMatch(p -> p.type == null || p.type.isEmpty()) ||
-                        (fn.returnType == null || fn.returnType.isEmpty()) && (fn.resultExpression == null || fn.resultExpression.contains("[]") || fn.resultExpression.contains("fresh"));
-                String eff = "effects=local_capture_read=0;local_mutation=0;domain_read=0;domain_write=0;message=0;external_io=0;fileio=0;fileio_unknown=0;may_panic=0;raise_set=-;may_diverge=0;unresolved=0";
-                String fnBody = fn.resultExpression != null ? fn.resultExpression : (fn.body != null ? fn.body.toString() : "");
-                String semHash = fnv1a64Hex(fn.name + ":" + fnBody);
-                binRecords.add(new String[]{"fn:" + fnName, "fn " + fnName + " kind=" + (isGeneric ? "generic" : "static") + " " + eff + "\n"});
-                semRecords.add(new String[]{"fn:" + fnName, "export fn " + fnName + " kind=" + (isGeneric ? "generic" : "static") + " semantic_hash=" + semHash + " " + eff + "\n"});
+                String raiseIdent = raisedErrorIdentity(module, fn.body);
+                boolean raises = !raiseIdent.equals("-");
+                String effects = "effects=local_capture_read=0;local_mutation=0;domain_read=0;domain_write=0;message=0;external_io=0;fileio=0;fileio_unknown=0;may_panic="
+                        + (mayPanic(fn.body) ? "1" : "0")
+                        + ";raise_set=" + (raises ? raiseIdent : "-")
+                        + ";may_diverge=0;unresolved=0";
+                StringBuilder binaryFunction = new StringBuilder();
+                StringBuilder semanticFunction = new StringBuilder();
+                appendV9FunctionRecord(binaryFunction, fn, fnName, effects, false);
+                appendV9FunctionRecord(semanticFunction, fn, fnName, effects, true);
+                binRecords.add(new String[]{"fn:" + fnName, binaryFunction.toString()});
+                semRecords.add(new String[]{"fn:" + fnName, semanticFunction.toString()});
             }
 
             binRecords.sort(Comparator.comparing(record -> record[0]));

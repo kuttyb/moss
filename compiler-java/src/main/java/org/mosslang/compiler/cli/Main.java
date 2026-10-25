@@ -765,6 +765,22 @@ public class Main {
     static void loadMossiFunctions(Path cand, String modName, Program program) throws CompileError {
         try {
             String text = Files.readString(cand, StandardCharsets.ISO_8859_1);
+            if (text.startsWith("moss-module-interface-v3\n")) {
+                org.mosslang.compiler.abi.MossiInterface v10 =
+                        org.mosslang.compiler.abi.CheckedBodyCodec.verifySourceFree(text);
+                StringBuilder legacyRecords = new StringBuilder("moss-module-interface-v2\n")
+                        .append("module_id ").append(v10.moduleId).append("\nimports\ncontract\n");
+                for (org.mosslang.compiler.abi.MossiRecord record : v10.binaryContract) {
+                    legacyRecords.append(record.payload);
+                    if (!record.payload.endsWith("\n")) legacyRecords.append('\n');
+                }
+                legacyRecords.append("semantic_exports\n");
+                for (org.mosslang.compiler.abi.MossiRecord record : v10.semanticContract) {
+                    legacyRecords.append(record.payload);
+                    if (!record.payload.endsWith("\n")) legacyRecords.append('\n');
+                }
+                text = legacyRecords.toString();
+            }
             String declared = "";
             String pkgVersion = "0.1.0";
             for (String line : text.split("\\R")) {

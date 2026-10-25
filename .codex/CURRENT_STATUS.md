@@ -12462,3 +12462,22 @@ examples. The classifications use the existing syntax-based ownership helpers;
 this does not establish complete effect/access inference. Function and method
 effect metadata, v10 record decoding, native/source-free integration, SDK
 compatibility, and frozen-candidate acceptance remain open.
+
+### Phase 25.3 continuation — import exported functions from ABI-v10 records
+
+The Java staged-v10 writer emitted function records without parameter or
+generic-body declarations, and `Main.loadMossiFunctions` stopped at the v10
+binary section. Exported function records now carry the complete existing
+v9 declaration payload in each framed v10 binary/semantic record. The loader
+verifies and decodes the v10 container, then imports the staged declaration
+payloads through the established function loader. A synthetic v10 provider
+test verifies generic dispatch, parameter type/access, call arguments, and
+result expression survive loading.
+
+Validation after this edit: `./scripts/java/build.sh && ./scripts/java/test.sh`
+passed; all nine Java test classes passed. This closes function record
+decoding for the current staged payload format only. It does not validate an
+end-to-end ABI-v10 Margo build, or establish imports for all nominal, method,
+domain, provenance, effect, and private dependency facts required for complete
+source-free compatibility. Rust/native, SDK, and frozen-candidate acceptance
+remain unrun.
