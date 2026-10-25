@@ -1112,31 +1112,62 @@ public final class ProjectBuilderMetadataTest {
                     .filter(record -> record.id.contains("answer") || record.payload.contains("fn answer")
                             || record.id.contains("increment") || record.payload.contains("fn increment")
                             || record.id.contains("enabled") || record.payload.contains("fn enabled")
-                            || record.id.contains("names") || record.payload.contains("fn names"))
+                            || record.id.contains("names") || record.payload.contains("fn names")
+                            || record.id.contains("identity") || record.payload.contains("fn identity"))
                     .toList();
             if (answerRows.isEmpty()) {
                 throw new AssertionError("could not isolate legacy callable declarations for ABI-v10-only import");
             }
+            List<MossiRecord> binaryLegacyRows = identityInterface.binaryContract.stream()
+                    .filter(record -> record.id.equals("fn:answer") || record.id.startsWith("fn:answer::")
+                            || record.id.equals("fn:increment") || record.id.startsWith("fn:increment::")
+                            || record.id.equals("fn:enabled") || record.id.startsWith("fn:enabled::")
+                            || record.id.equals("fn:names") || record.id.startsWith("fn:names::")
+                            || record.id.equals("fn:identity") || record.id.startsWith("fn:identity::"))
+                    .toList();
+            for (String functionName : List.of("answer", "increment", "enabled", "names", "identity")) {
+                String legacyPrefix = "fn:" + functionName;
+                if (answerRows.stream().noneMatch(record -> record.id.equals(legacyPrefix)
+                                || record.id.startsWith(legacyPrefix + "::"))
+                        || binaryLegacyRows.stream().noneMatch(record -> record.id.equals(legacyPrefix)
+                                || record.id.startsWith(legacyPrefix + "::"))) {
+                    throw new AssertionError("could not remove both legacy declaration copies for " + functionName);
+                }
+            }
             identityInterface.semanticContract.removeAll(answerRows);
+            identityInterface.binaryContract.removeAll(binaryLegacyRows);
+            if (identityInterface.semanticContract.stream().anyMatch(record ->
+                            record.id.startsWith("fn:answer") || record.id.startsWith("fn:increment")
+                                    || record.id.startsWith("fn:enabled") || record.id.startsWith("fn:names")
+                                    || record.id.startsWith("fn:identity"))
+                    || identityInterface.binaryContract.stream().anyMatch(record ->
+                            record.id.startsWith("fn:answer") || record.id.startsWith("fn:increment")
+                                    || record.id.startsWith("fn:enabled") || record.id.startsWith("fn:names")
+                                    || record.id.startsWith("fn:identity"))) {
+                throw new AssertionError("legacy callable declaration rows remain in the v10-only fixture");
+            }
             Files.write(identityMossi, CheckedBodyCodec.encodeMossiBytes(identityInterface));
             Program answerConsumer = Parser.parseSource(""
                     + "fn main():\n"
                     + "  echo provider__answer()\n"
                     + "  echo provider__increment(41)\n"
                     + "  echo provider__enabled()\n"
-                    + "  echo provider__names()[1]\n", "answer-consumer.moss");
+                    + "  echo provider__names()[1]\n"
+                    + "  echo provider__identity(7)\n"
+                    + "  echo provider__identity(\"seven\")\n", "answer-consumer.moss");
             org.mosslang.compiler.cli.Main.loadMossiFunctions(identityMossi, "provider", answerConsumer);
             new org.mosslang.compiler.semantics.SemanticChecker(answerConsumer).run();
             java.io.ByteArrayOutputStream answerOutput = new java.io.ByteArrayOutputStream();
             new org.mosslang.compiler.interpreter.FastInterpreter(answerConsumer, false,
                     new java.io.PrintStream(answerOutput),
                     new java.io.PrintStream(new java.io.ByteArrayOutputStream())).run();
-            if (!"42\n42\ntrue\ntwo\n".equals(answerOutput.toString(java.nio.charset.StandardCharsets.UTF_8))) {
-                throw new AssertionError("ABI-v10 closed scalar/vector summary bodies did not import without "
-                        + "their v9 declarations: "
+            if (!"42\n42\ntrue\ntwo\n7\nseven\n".equals(
+                    answerOutput.toString(java.nio.charset.StandardCharsets.UTF_8))) {
+                throw new AssertionError("ABI-v10 summary bodies did not import without their v9 declarations: "
                         + answerOutput);
             }
             identityInterface.semanticContract.addAll(answerRows);
+            identityInterface.binaryContract.addAll(binaryLegacyRows);
             for (int index = 0; index < identityInterface.semanticContract.size(); index++) {
                 MossiRecord record = identityInterface.semanticContract.get(index);
                 String withoutLegacyBody = record.payload.lines()

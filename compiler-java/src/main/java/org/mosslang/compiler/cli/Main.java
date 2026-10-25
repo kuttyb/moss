@@ -758,39 +758,51 @@ public class Main {
         };
     }
 
-    private static void seedV10ClosedFunctionDeclarations(
+    private static Set<String> seedV10ClosedFunctionDeclarations(
             Program program, String moduleName, String moduleId,
             Map<String, org.mosslang.compiler.abi.AbiV10Records.Summary> summaries,
             Map<String, org.mosslang.compiler.abi.AbiV10Records.CheckedBodyRecord> bodies,
             Path interfaceFile) {
+        Set<String> seededGenericCallables = new HashSet<>();
         String callablePrefix = "callable-v1:" + moduleId + ":fn:";
         for (Map.Entry<String, org.mosslang.compiler.abi.AbiV10Records.Summary> entry : summaries.entrySet()) {
             String callableId = entry.getKey();
             org.mosslang.compiler.abi.AbiV10Records.Summary summary = entry.getValue();
-            if (!callableId.startsWith(callablePrefix) || summary.variableCount != 0
+            boolean genericIdentity = summary.variableCount == 1
+                    && summary.parameters.size() == 1
+                    && summary.parameters.get(0).kind
+                            == org.mosslang.compiler.abi.AbiV10Records.WireTypeKind.BoundVar
+                    && summary.parameters.get(0).ordinal == 0
+                    && summary.result.kind
+                            == org.mosslang.compiler.abi.AbiV10Records.WireTypeKind.BoundVar
+                    && summary.result.ordinal == 0;
+            if (!callableId.startsWith(callablePrefix)
+                    || (summary.variableCount != 0 && !genericIdentity)
                     || summary.parameters.size() != summary.parameterAccess.size()
                     || !summary.requirements.isEmpty() || !summary.dependencies.isEmpty()
                     || summary.observableEffectBits != 0 || !summary.observableEffectTags.isEmpty()
                     || !bodies.containsKey(callableId)) continue;
             String functionName = callableId.substring(callablePrefix.length());
             if (!functionName.matches("[A-Za-z_][A-Za-z0-9_]*")) continue;
-            org.mosslang.compiler.types.TypeRef result = v10SimpleWireType(summary.result, 0);
+            org.mosslang.compiler.types.TypeRef result = v10SimpleWireType(summary.result, summary.variableCount);
             List<org.mosslang.compiler.types.TypeRef> parameters = new ArrayList<>();
             for (org.mosslang.compiler.abi.AbiV10Records.WireType wire : summary.parameters) {
-                org.mosslang.compiler.types.TypeRef parameter = v10SimpleWireType(wire, 0);
-                if (parameter == null || !parameter.isClosed()) {
+                org.mosslang.compiler.types.TypeRef parameter = v10SimpleWireType(wire, summary.variableCount);
+                if (parameter == null || (!genericIdentity && !parameter.isClosed())) {
                     parameters.clear();
                     break;
                 }
                 parameters.add(parameter);
             }
-            if (result == null || !result.isClosed() || parameters.size() != summary.parameters.size()) continue;
+            if (result == null || (!genericIdentity && !result.isClosed())
+                    || parameters.size() != summary.parameters.size()) continue;
 
             String qualifiedName = moduleName + "." + functionName;
             org.mosslang.compiler.ast.Function primary = program.functions.stream()
                     .filter(function -> callableId.equals(function.semanticCallableId)
                             || function.name.equals(qualifiedName))
                     .findFirst().orElse(null);
+            if (genericIdentity && primary != null) continue;
             if (primary == null) {
                 primary = new org.mosslang.compiler.ast.Function(
                         qualifiedName, "fn " + functionName + "()", 1, interfaceFile.toString(), true);
@@ -807,16 +819,23 @@ public class Main {
                 alias.exported = true;
                 alias.sourceFreeAbiVersion = 10;
                 program.functions.add(alias);
+                if (genericIdentity) seededGenericCallables.add(callableId);
             }
             List<org.mosslang.compiler.ast.Function> matches = program.functions.stream()
                     .filter(function -> callableId.equals(function.semanticCallableId)).toList();
             for (org.mosslang.compiler.ast.Function function : matches) {
                 if (!function.params.isEmpty() && function.params.size() != parameters.size()) continue;
-                for (int index = 0; index < parameters.size(); index++) {
-                    if (function.params.size() <= index) {
-                        function.params.add(new org.mosslang.compiler.ast.Param("arg" + index, parameters.get(index)));
-                    } else {
-                        function.params.get(index).bindType(parameters.get(index));
+                if (genericIdentity) {
+                    if (function.params.isEmpty()) {
+                        function.params.add(new org.mosslang.compiler.ast.Param("arg0", ""));
+                    }
+                } else {
+                    for (int index = 0; index < parameters.size(); index++) {
+                        if (function.params.size() <= index) {
+                            function.params.add(new org.mosslang.compiler.ast.Param("arg" + index, parameters.get(index)));
+                        } else {
+                            function.params.get(index).bindType(parameters.get(index));
+                        }
                     }
                 }
                 function.parameterAccessModes.clear();
@@ -827,10 +846,18 @@ public class Main {
                         case Consume -> org.mosslang.compiler.types.AccessMode.Consume;
                     });
                 }
-                function.bindReturnType(result);
+                if (genericIdentity) {
+                    function.returnType = "";
+                    function.returnTypeRef = null;
+                    function.generic = true;
+                    function.staticDispatch = true;
+                } else {
+                    function.bindReturnType(result);
+                }
                 function.sourceFreeAbiVersion = 10;
             }
         }
+        return seededGenericCallables;
     }
 
     private static void rejectUnavailableSourceFreeV10Calls(Program program, String consumerFile)
@@ -1546,9 +1573,10 @@ public class Main {
                     currentFn = null;
                 }
             }
-            seedV10ClosedFunctionDeclarations(program, modName, moduleId,
+            Set<String> seededGenericCallables = seedV10ClosedFunctionDeclarations(program, modName, moduleId,
                     typedV10Summaries, typedV10Bodies, cand);
-            projectV10DirectReturnCallables(program, cand, typedV10Summaries, typedV10Bodies);
+            projectV10DirectReturnCallables(program, cand, typedV10Summaries, typedV10Bodies,
+                    seededGenericCallables);
             restoreSourceFreeFailureArms(sourceFreeContractLines, program, modName, cand);
         } catch (CompileError error) {
             throw error;
@@ -1563,7 +1591,8 @@ public class Main {
     private static void projectV10DirectReturnCallables(
             Program program, Path interfaceFile,
             Map<String, org.mosslang.compiler.abi.AbiV10Records.Summary> summaries,
-            Map<String, org.mosslang.compiler.abi.AbiV10Records.CheckedBodyRecord> bodies) {
+            Map<String, org.mosslang.compiler.abi.AbiV10Records.CheckedBodyRecord> bodies,
+            Set<String> seededGenericCallables) {
         for (Map.Entry<String, org.mosslang.compiler.abi.AbiV10Records.Summary> entry : summaries.entrySet()) {
             String callableId = entry.getKey();
             org.mosslang.compiler.abi.AbiV10Records.Summary summary = entry.getValue();
@@ -1758,6 +1787,42 @@ public class Main {
                 closedFloatExpression = sourceFreeClosedFloatExpression(statement.expr, parameterTypes, 0);
                 if (closedFloatExpression == null) continue;
             } else {
+                continue;
+            }
+
+            if (seededGenericCallables.contains(callableId) && summary.variableCount == 1
+                    && parameterTypes.size() == 1
+                    && summary.parameters.get(0).kind
+                            == org.mosslang.compiler.abi.AbiV10Records.WireTypeKind.BoundVar
+                    && summary.parameters.get(0).ordinal == 0
+                    && summary.result.kind
+                            == org.mosslang.compiler.abi.AbiV10Records.WireTypeKind.BoundVar
+                    && summary.result.ordinal == 0
+                    && returnedParameter == 0) {
+                List<org.mosslang.compiler.ast.Function> identityMatches = program.functions.stream()
+                        .filter(function -> callableId.equals(function.semanticCallableId)).toList();
+                if (identityMatches.isEmpty() || identityMatches.stream()
+                        .anyMatch(function -> function.params.size() != 1)) continue;
+                for (org.mosslang.compiler.ast.Function function : identityMatches) {
+                    function.params.get(0).bindType(null);
+                    function.returnType = "";
+                    function.returnTypeRef = null;
+                    function.generic = true;
+                    function.staticDispatch = true;
+                    function.parameterAccessModes.clear();
+                    function.parameterAccessModes.add(org.mosslang.compiler.types.AccessMode.Read);
+                    function.body.clear();
+                    String parameterName = function.params.get(0).name;
+                    org.mosslang.compiler.ast.Stmt projected = new org.mosslang.compiler.ast.Stmt(
+                            org.mosslang.compiler.ast.Stmt.Kind.Return, 1, 1,
+                            "return " + parameterName, parameterName, "");
+                    projected.sourceFile = interfaceFile.toString();
+                    function.body.add(projected);
+                    function.resultExpression = parameterName;
+                    function.resultLine = 1;
+                    function.sourceFreeAbiVersion = 10;
+                    function.sourceFreeCheckedBodyAvailable = true;
+                }
                 continue;
             }
 
