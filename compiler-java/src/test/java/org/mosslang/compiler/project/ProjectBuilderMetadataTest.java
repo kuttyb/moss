@@ -56,6 +56,7 @@ public final class ProjectBuilderMetadataTest {
         testCanonicalNominalTemplateWirePayload();
         testCheckedOnFailCaptureAbiRows();
         testFunctionRaiseSetExportsEveryVariant();
+        testPanicEffectIgnoresStringContents();
         testExplicitModuleBuildChecksSemantics();
         testV9FunctionParameterAccessSerialization();
         testExportedObjectFieldSerialization();
@@ -136,6 +137,27 @@ public final class ProjectBuilderMetadataTest {
             }
         } finally {
             Files.deleteIfExists(interfaceFile);
+        }
+    }
+
+    private static void testPanicEffectIgnoresStringContents() {
+        Program program = Parser.parseSource(""
+                + "module provider\n"
+                + "export fn harmless():\n"
+                + "  echo \"panic() [index] /\"\n"
+                + "fn main():\n"
+                + "  pass\n", "panic-text-effect.moss");
+        new org.mosslang.compiler.semantics.CheckedProgram(program).run();
+        ProjectManifest manifest = new ProjectManifest(Path.of("tmp"), Path.of("tmp", "moss.toml"),
+                "sample", "1.0.0", Path.of("src"));
+        BackendToolchain toolchain = new BackendToolchain("rustc", "rustc 1.80.0 (test)\n",
+                "dev", java.util.List.of(), "panic-text-test");
+        String text = new String(ProjectBuilder.generateMossiInterface(manifest, "provider",
+                program, toolchain, java.util.List.of(), Path.of("tmp"), java.util.Map.of()),
+                java.nio.charset.StandardCharsets.UTF_8);
+        if (!text.contains("fn harmless kind=concrete return=unit")
+                || !text.contains("may_panic=0")) {
+            throw new AssertionError("quoted panic-like text changed the exported panic effect: " + text);
         }
     }
 

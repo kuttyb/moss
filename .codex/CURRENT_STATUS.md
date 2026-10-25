@@ -15472,3 +15472,16 @@ remains non-raising after semantic checking and Rust generation.
 All twelve Java unit-test classes pass under ABI-v9 defaults and staged
 ABI-v10; `git diff --check` passes. No native Rust compilation or execution was
 run.
+
+
+### Phase 25.3 continuation — ignore quoted text in panic effects
+
+The source-free provider writer's `mayPanic` scan examined raw statement text,
+so panic-like calls, indexing brackets, or division symbols inside a string
+could set an exported function's panic effect. It now masks quoted literals
+before the bounded panic/division scan. A provider writer regression exports
+`echo "panic() [index] /"` as non-panicking metadata.
+
+All twelve Java unit-test classes pass under ABI-v9 defaults and staged
+ABI-v10; `git diff --check` passes. Other panic inference remains a limited
+syntax scan and is not complete effect parity evidence.

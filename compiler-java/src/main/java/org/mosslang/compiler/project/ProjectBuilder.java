@@ -2529,15 +2529,38 @@ public class ProjectBuilder {
 
     private static boolean mayPanic(List<Stmt> body) {
         for (Stmt statement : body) {
-            String text = (statement.text == null ? "" : statement.text) + " "
+            String text = maskStringLiterals((statement.text == null ? "" : statement.text) + " "
                     + (statement.a == null ? "" : statement.a) + " "
-                    + (statement.b == null ? "" : statement.b);
+                    + (statement.b == null ? "" : statement.b));
+            String rightHandSide = maskStringLiterals(statement.b == null ? "" : statement.b);
             if (text.matches("(?s).*\\b(assert|panic|unwrap)\\s*\\(.*")
                     || text.matches("(?s).*\\[[^]]+\\].*")) return true;
-            if (statement.kind == Stmt.Kind.Assign && statement.b != null
-                    && (statement.b.contains("/") || statement.b.contains("%"))) return true;
+            if (statement.kind == Stmt.Kind.Assign
+                    && (rightHandSide.contains("/") || rightHandSide.contains("%"))) return true;
         }
         return false;
+    }
+
+    private static String maskStringLiterals(String expression) {
+        StringBuilder masked = new StringBuilder(expression.length());
+        char quote = 0;
+        boolean escaped = false;
+        for (int index = 0; index < expression.length(); index++) {
+            char value = expression.charAt(index);
+            if (quote != 0) {
+                masked.append(' ');
+                if (escaped) escaped = false;
+                else if (value == '\\') escaped = true;
+                else if (value == quote) quote = 0;
+            } else if (value == '"' || value == '\'') {
+                quote = value;
+                escaped = false;
+                masked.append(' ');
+            } else {
+                masked.append(value);
+            }
+        }
+        return masked.toString();
     }
 
     private static void appendStateEffects(StringBuilder out, String handler,
