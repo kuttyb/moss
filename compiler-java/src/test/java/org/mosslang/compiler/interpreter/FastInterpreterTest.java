@@ -13,6 +13,7 @@ public final class FastInterpreterTest {
         testIeeeAndMixedNumericEquality();
         testWhileLoopRepeatsCheckedBody();
         testLocalWriteTraceIsStructuredAndEscaped();
+        testMossStringEscapeDecoding();
         System.out.println("FastInterpreterTest PASSED.");
     }
 
@@ -108,6 +109,25 @@ public final class FastInterpreterTest {
                 || !event.contains("\"line\":3")
                 || !"say \"hello\"\n".equals(stdout.toString(StandardCharsets.UTF_8))) {
             throw new AssertionError("Fast Debug trace omitted or malformed the local write: " + event);
+        }
+    }
+
+    private static void testMossStringEscapeDecoding() {
+        var program = Parser.parseSource(""
+                + "fn main():\n"
+                + "  echo \"a\\nb\"\n"
+                + "  echo \"\\x41\"\n"
+                + "  echo \"\\u{1F642}\"\n"
+                + "  echo \"\\\\\"\n", "fast-interpreter-string-escapes.moss");
+        new CheckedProgram(program).run();
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+        new FastInterpreter(program, false,
+                new PrintStream(stdout, true, StandardCharsets.UTF_8),
+                new PrintStream(new ByteArrayOutputStream())).run();
+        String expected = "a\nb\nA\n🙂\n\\\n";
+        String actual = stdout.toString(StandardCharsets.UTF_8);
+        if (!expected.equals(actual)) {
+            throw new AssertionError("Moss string escapes were decoded incorrectly: " + actual);
         }
     }
 }

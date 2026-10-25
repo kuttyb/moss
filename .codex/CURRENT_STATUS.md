@@ -13649,3 +13649,8 @@ Validation: clean Java build and all eleven Java unit-test classes pass in
 ABI-v9 and staged ABI-v10 modes. Focused C++/Java local trace fields and stdout
 match, including a quoted string. Native/Margo/SDK and full acceptance gates
 remain deferred.
+
+String escape coverage was broadened after the local trace checkpoint: the
+FastInterpreter regression and a direct C++/Java probe now cover newline,
+ASCII hex, Unicode scalar, and backslash escapes. Outputs match; all eleven Java
+test classes pass in both default ABI-v9 and staged ABI-v10 modes.
