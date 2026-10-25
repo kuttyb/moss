@@ -48,6 +48,7 @@ public final class ProjectBuilderMetadataTest {
         testV10Utf8InterfaceValidation();
         testV10RecordFramingUsesUtf8Bytes();
         testCanonicalNominalTemplateWirePayload();
+        testExplicitModuleBuildChecksSemantics();
         testV9FunctionParameterAccessSerialization();
         testExportedObjectFieldSerialization();
         testExportedObjectMethodSerialization();
@@ -55,6 +56,34 @@ public final class ProjectBuilderMetadataTest {
             testV10ProjectProducerRoundTrip();
         }
         System.out.println("ProjectBuilderMetadataTest PASSED.");
+    }
+
+    private static void testExplicitModuleBuildChecksSemantics() throws Exception {
+        Path root = Files.createTempDirectory(Path.of("tmp"), "java-module-check-");
+        Path source = root.resolve("src");
+        Files.createDirectories(source);
+        Files.writeString(source.resolve("provider.moss"), ""
+                + "module provider\n"
+                + "export fn value() -> Int:\n"
+                + "  return 1\n");
+        Files.writeString(source.resolve("app.moss"), ""
+                + "module app\n"
+                + "import provider\n"
+                + "fn bad() -> Int:\n"
+                + "  return \"wrong\"\n"
+                + "fn main():\n"
+                + "  pass\n");
+        ProjectManifest manifest = new ProjectManifest(root, root.resolve("moss.toml"),
+                "sample", "1.0.0", Path.of("src"));
+        try {
+            ProjectBuilder.build(manifest, false, false);
+            throw new AssertionError("explicit module project must be semantically checked before codegen");
+        } catch (CompileError error) {
+            if (!"TYPE_MISMATCH".equals(error.getCode())
+                    && !"MOSS_COMPILE_ERROR".equals(error.getCode())) {
+                throw new AssertionError("expected semantic type diagnostic, got " + error.getCode(), error);
+            }
+        }
     }
 
     private static void testV9FunctionParameterAccessSerialization() {

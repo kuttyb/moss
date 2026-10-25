@@ -13059,3 +13059,18 @@ or native gate was run.
 The raising-call regression now exercises a two-hop call chain and confirms a
 string literal containing `failer()` does not create a false raising effect.
 The focused SemanticCheckerTest and Java build pass with this coverage.
+
+### Phase 25.3 continuation — semantic checking for explicit local modules
+
+The explicit-module `ProjectBuilder.build` path previously emitted `.mossi` and
+Rust without running `CheckedProgram`. It now checks each module whose imports
+are available as local source by combining that module with its transitive local
+dependency declarations. Repeated built-in declarations are deduplicated by
+rewritten symbol identity. The focused project-build regression creates a
+provider/importing consumer pair with a return type mismatch and confirms the
+semantic error occurs before native compilation.
+
+Validation: Java build, all ten Java unit-test classes, and `git diff --check`
+pass. Modules with external imports are still skipped because ABI declarations
+have not yet been materialized into the checker view. External source-free
+project checking and native project acceptance remain open.

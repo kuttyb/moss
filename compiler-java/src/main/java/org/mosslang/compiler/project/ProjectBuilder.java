@@ -541,6 +541,34 @@ public class ProjectBuilder {
                 rewriteProgramSymbols(prog, mod, moduleImports.getOrDefault(mod, Collections.emptyList()));
             }
 
+            // Explicit module builds previously reached interface/Rust
+            // emission without running the semantic checker. Check modules
+            // whose local dependency declarations are available by assembling
+            // a module-scoped view of the current module and its local imports.
+            for (String mod : moduleOrder) {
+                List<String> imports = moduleImports.getOrDefault(mod, Collections.emptyList());
+                if (imports.stream().anyMatch(dependency -> !localModules.containsKey(dependency))) {
+                    // External ABI declarations still need to be materialized
+                    // into the Java checker before this consumer can be checked.
+                    continue;
+                }
+                Program checkView = projectCopy(parsedPrograms.get(mod));
+                Set<String> included = new LinkedHashSet<>();
+                for (String dependency : imports) {
+                    collectLocalModuleDependencies(dependency, moduleImports, localModules, included);
+                }
+                included.remove(mod);
+                for (String dependency : included) {
+                    Program declarations = parsedPrograms.get(dependency);
+                    appendUniqueDeclarations(checkView.functions, declarations.functions, fn -> fn.name);
+                    appendUniqueDeclarations(checkView.traits, declarations.traits, trait -> trait.name);
+                    appendUniqueDeclarations(checkView.objects, declarations.objects, object -> object.name);
+                    appendUniqueDeclarations(checkView.enums, declarations.enums, enumeration -> enumeration.name);
+                    appendUniqueDeclarations(checkView.domains, declarations.domains, domain -> domain.name);
+                }
+                new CheckedProgram(checkView).run();
+            }
+
             for (String mod : moduleOrder) {
                 Path srcFile = localModules.get(mod);
                 Program prog = parsedPrograms.get(mod);
@@ -739,6 +767,25 @@ public class ProjectBuilder {
         visiting.remove(mod);
         visited.add(mod);
         order.add(mod);
+    }
+
+    private static void collectLocalModuleDependencies(String module,
+                                                       Map<String, List<String>> moduleImports,
+                                                       Map<String, Path> localModules,
+                                                       Set<String> result) {
+        if (!localModules.containsKey(module) || !result.add(module)) return;
+        for (String dependency : moduleImports.getOrDefault(module, Collections.emptyList())) {
+            collectLocalModuleDependencies(dependency, moduleImports, localModules, result);
+        }
+    }
+
+    private static <T> void appendUniqueDeclarations(List<T> target, List<T> source,
+                                                      java.util.function.Function<T, String> name) {
+        Set<String> names = new HashSet<>();
+        for (T declaration : target) names.add(name.apply(declaration));
+        for (T declaration : source) {
+            if (names.add(name.apply(declaration))) target.add(declaration);
+        }
     }
 
     private static void addExternalDependencyPaths(List<String> cmd) {
