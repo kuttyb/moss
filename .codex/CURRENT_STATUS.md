@@ -14216,3 +14216,24 @@ matching C++'s acceptance and warning set. A SemanticCheckerTest regression
 covers the same path. Both ABI Java suites pass all 11 classes; the refreshed
 91-file checker screen reports 6 C++-only, 0 Java-only, 55 both accepted, and
 30 both rejected. Phase 25.3 remains incomplete.
+
+### Phase 25.3 continuation — Range indexing and function/main recovery edges
+
+`Range[index]` now type-checks as a byte-valued `Int` access with an `Int`
+index, matching the live `source_surface` contract and fixing
+`phase21_unary_not_speculation.moss`. The try/recover ownership-edge snapshot
+collection is now active outside domain handlers as well, so ordinary function
+and `main` recovery arms are checked against the selected raise-site state.
+This resolves the use-after-consume false rejection in
+`phase21_string_method_variant.moss`; the existing handler path retains its
+nested save/restore behavior.
+
+Both Java test runs pass all 11 classes under default ABI-v9 and staged ABI-v10.
+The refreshed sequential checker screen over 91 standalone `phase21_*.moss`
+fixtures reports 4 C++-only, 0 Java-only, 57 accepted by both, and 30 rejected
+by both. Remaining C++-only fixtures are three FileIO/close-related cases,
+`phase21_iterator_next_panic.moss` (typed-raising custom iterator limitation),
+and `phase21_peer_speculation.moss` (loop-variable shadow scope currently
+leaks its type after the loop). The last two are clear follow-up candidates;
+no parity claim is made. The checker screen is in disposable
+`tmp/phase253_phase21_acceptance_current.json`.

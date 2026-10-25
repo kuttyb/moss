@@ -286,6 +286,12 @@ public class ExpressionTyper {
                     }
                     return TypeRef.primitive("char");
                 }
+                if ("Range".equalsIgnoreCase(baseType.name())) {
+                    if (!solver.unify(indexType, TypeRef.primitive("int"))) {
+                        throw new CompileError(line, "range index must be int", "TYPE_MISMATCH");
+                    }
+                    return TypeRef.primitive("int");
+                }
                 // If baseType is open inference var, constrain to vector
                 if (baseType.kind() == TypeKind.InferenceVar) {
                     TypeRef elem = solver.fresh(0);

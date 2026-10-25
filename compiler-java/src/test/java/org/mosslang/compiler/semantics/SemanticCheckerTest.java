@@ -49,6 +49,7 @@ public class SemanticCheckerTest {
         testRecoverUsesVectorElementRaiseOrder();
         testRecoverUsesPipelineStageRaiseOrder();
         testRecoverBindingInfersRaisesThroughScalarCalls();
+        testRangeIndexHasByteType();
         System.out.println("SemanticCheckerTest PASSED.");
     }
 
@@ -978,6 +979,15 @@ public class SemanticCheckerTest {
                 "RECOVER_UNREACHABLE_VARIANT".equals(warning.code()))) {
             throw new AssertionError("raised enum from scalar call was omitted from recovery reachability");
         }
+    }
+
+    private static void testRangeIndexHasByteType() {
+        Program program = Parser.parseSource(""
+                + "fn first_byte(chunk: Range) -> Int:\n"
+                + "  return chunk[0]\n"
+                + "fn main():\n"
+                + "  pass\n", "range-byte-index-type.moss");
+        new SemanticChecker(program).run();
     }
 
     private static void assertCompileError(String source, String code) {

@@ -18,7 +18,7 @@ public class SemanticChecker {
     private final TypeContext typeContext = new TypeContext();
     private String currentSemanticIdentity = null;
     private Set<String> currentMessagePayloads = Collections.emptySet();
-    private List<RaiseSnapshot> currentHandlerRaises;
+    private List<RaiseSnapshot> currentHandlerRaises = new ArrayList<>();
     private Set<String> currentHandlerStateFields = Collections.emptySet();
     private int sessionCounter = 1;
     private int activeRecoverDepth;
