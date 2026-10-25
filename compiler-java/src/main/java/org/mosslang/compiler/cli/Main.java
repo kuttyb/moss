@@ -15,6 +15,8 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -413,11 +415,36 @@ public class Main {
                     try {
                         org.mosslang.compiler.project.ProjectManifest depManifest =
                                 org.mosslang.compiler.project.ProjectManifest.load(Paths.get(rootStr));
+                        Set<String> requiredModules = new HashSet<>();
+                        for (org.mosslang.compiler.ast.ModuleImport imp : program.imports) requiredModules.add(imp.name);
+                        Map<String, Program> localModules = new LinkedHashMap<>();
+                        for (Path depSrc : depManifest.findSourceFiles()) {
+                            if (depSrc.toFile().getAbsolutePath().equals(absPath)) continue;
+                            String depContent = Files.readString(depSrc, StandardCharsets.UTF_8);
+                            Program depProg = Parser.parseSource(depContent, depSrc.toFile().getAbsolutePath());
+                            if (depProg.moduleName != null && !depProg.moduleName.isEmpty()) {
+                                localModules.put(depProg.moduleName, depProg);
+                            }
+                        }
+                        boolean addedModule;
+                        do {
+                            addedModule = false;
+                            for (String required : new ArrayList<>(requiredModules)) {
+                                Program dependency = localModules.get(required);
+                                if (dependency == null) continue;
+                                for (org.mosslang.compiler.ast.ModuleImport transitive : dependency.imports) {
+                                    if (localModules.containsKey(transitive.name) && requiredModules.add(transitive.name)) {
+                                        addedModule = true;
+                                    }
+                                }
+                            }
+                        } while (addedModule);
                         for (Path depSrc : depManifest.findSourceFiles()) {
                             if (depSrc.toFile().getAbsolutePath().equals(absPath)) continue;
                             String depContent = Files.readString(depSrc, StandardCharsets.UTF_8);
                             Program depProg = Parser.parseSource(depContent, depSrc.toFile().getAbsolutePath());
                             String modName = depProg.moduleName != null && !depProg.moduleName.isEmpty() ? depProg.moduleName : null;
+                            if (modName != null && !requiredModules.contains(modName)) continue;
                             for (org.mosslang.compiler.ast.Function f : depProg.functions) {
                                 if (modName != null) {
                                     f.definingModule = modName;

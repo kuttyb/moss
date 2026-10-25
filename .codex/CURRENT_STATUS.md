@@ -12243,3 +12243,36 @@ open. `ProjectBuilder` still has a Run/Join-specific failure-capture metadata
 path; remove or replace it with checked capture facts before claiming Margo
 source-free compatibility. The candidate has not been frozen or architect
 reviewed.
+
+### Phase 25.3 continuation — focused semantic parity gaps
+
+A recursive `check_json` command using `examples` and `tests/differential/corpus`
+expanded to 1,021 files. This exceeded the intended bounded sample; it is
+recorded as exploratory evidence and will not be repeated. It found under-checked
+negative programs: overlapping WRITE/READ actuals, consuming/rebinding/writing
+incoming message payloads, ordinary recursive calls, and concrete domain-route
+cycles. Checker fixes now reject those forms, including object field mutation
+through an incoming payload. A bounded comparison of only `examples/*.moss` and
+`tests/differential/corpus/*.moss` passes 41/41. Six targeted `examples/errors`
+fixtures pass 6/6. The phase10 module source files pass 2/2 after CLI project
+source loading was restricted to the transitive local import closure.
+
+Additional source checks closed two small acceptance gaps: `Vector [Int]()`
+spacing is normalized for typed collection constructors, and object method
+inference handles bare no-value `return`. Python HashMap and deque examples then
+pass 2/2. The Julia Accumulator example still diverges because Java accepts a
+method call that C++ rejects; Julia RungeKutta still disagrees on an open-result
+specialization diagnostic; Surface ExprEval still reports the right mismatch
+class at a later line. Do not claim full semantic parity from the 41-file set.
+
+Validation on the current working tree: Java build, all six Java unit test
+classes, 41/41 bounded structured acceptance comparisons, 6/6 targeted negative
+fixtures, 2/2 phase10 module files, 2/2 HashMap/deque files, feedback validation,
+and `git diff --check` pass. A focused try/on_fail capture fixture generates
+outer binding/capture/reconstruction code. Rust compilation/native execution,
+Margo native project build, source-free ABI-v9/v10, SDK, full root-package, and
+frozen-candidate acceptance gates remain open. RungeKutta generic inference,
+Accumulator method resolution, Surface ExprEval diagnostic ordering, and
+Run/Join-specific Margo failure-capture metadata remain known gaps. The 1,021
+file run's complete divergence count was truncated in tool output and is not
+reported as a verified total.

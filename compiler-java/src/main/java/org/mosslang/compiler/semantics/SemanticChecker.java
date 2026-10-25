@@ -17,6 +17,7 @@ public class SemanticChecker {
     private final Map<String, Trait> traits = new HashMap<>();
     private final TypeContext typeContext = new TypeContext();
     private String currentSemanticIdentity = null;
+    private Set<String> currentMessagePayloads = Collections.emptySet();
     private int sessionCounter = 1;
 
     public static class MoveInfo {
@@ -94,6 +95,7 @@ public class SemanticChecker {
             checkTraits();
             checkDomains();
             checkFunctions();
+            checkRecursiveFunctions();
             checkMain();
             checkTests();
             if (deferredEchoError != null) {
@@ -446,6 +448,8 @@ public class SemanticChecker {
         ExpressionTyper typer = new ExpressionTyper(program, typeContext, solver, functions, domains, objects, enums, traits);
         typer.currentCallingModule = domain.definingModule != null && !domain.definingModule.isEmpty() ? domain.definingModule : program.moduleName;
         OwnershipEnv env = new OwnershipEnv();
+        Set<String> previousPayloads = currentMessagePayloads;
+        Set<String> payloads = new HashSet<>();
 
         for (Field f : domain.state) {
             TypeRef t = (f.type != null && !f.type.isEmpty()) ? TypeParser.parseCanonical(f.type) : null;
@@ -461,7 +465,9 @@ public class SemanticChecker {
             TypeRef t = p.typeRef != null ? p.typeRef :
                     (p.type != null && !p.type.isEmpty() ? TypeParser.parseCanonical(p.type) : solver.fresh(0));
             env.put(p.name, t != null ? t : solver.fresh(0));
+            payloads.add(p.name);
         }
+        currentMessagePayloads = payloads;
 
         TypeRef expectedReply = handler.replyTypeRef != null ? handler.replyTypeRef :
                 (handler.replyType != null && !handler.replyType.isEmpty() ? TypeParser.parseCanonical(handler.replyType) : solver.fresh(0));
@@ -495,6 +501,7 @@ public class SemanticChecker {
             resolvedReply = TypeRef.unit();
         }
         handler.replyTypeRef = resolvedReply;
+        currentMessagePayloads = previousPayloads;
     }
 
     private void checkFunctions() {
@@ -604,6 +611,165 @@ public class SemanticChecker {
         }
     }
 
+    private void checkRecursiveFunctions() {
+        Map<String, List<CallSite>> graph = new LinkedHashMap<>();
+        for (Function function : program.functions) {
+            List<CallSite> edges = new ArrayList<>();
+            List<Stmt> statements = new ArrayList<>(function.body);
+            for (Stmt statement : statements) {
+                String[] expressions = {statement.text, statement.a, statement.b};
+                for (String expression : expressions) {
+                    if (expression == null) continue;
+                    for (Function target : program.functions) {
+                        if (containsCallTo(expression, target.name)) edges.add(new CallSite(target.name, statement.line));
+                    }
+                }
+                if (statement.args != null) {
+                    for (String expression : statement.args) {
+                        for (Function target : program.functions) {
+                            if (containsCallTo(expression, target.name)) edges.add(new CallSite(target.name, statement.line));
+                        }
+                    }
+                }
+            }
+            if (function.resultExpression != null) {
+                for (Function target : program.functions) {
+                    if (containsCallTo(function.resultExpression, target.name)) edges.add(new CallSite(target.name, function.resultLine));
+                }
+            }
+            graph.put(function.name, edges);
+        }
+        Set<String> complete = new HashSet<>();
+        List<String> path = new ArrayList<>();
+        for (Function function : program.functions) {
+            findRecursiveCycle(function.name, graph, complete, path);
+        }
+    }
+
+    private static final class CallSite {
+        final String target;
+        final int line;
+        CallSite(String target, int line) { this.target = target; this.line = line; }
+    }
+
+    private static boolean containsCallTo(String expression, String name) {
+        if (expression == null || name == null || name.isEmpty()) return false;
+        return java.util.regex.Pattern.compile("(?<![A-Za-z0-9_.])" + java.util.regex.Pattern.quote(name)
+                + "\\s*\\(").matcher(expression).find();
+    }
+
+    private static void findRecursiveCycle(String name, Map<String, List<CallSite>> graph,
+                                           Set<String> complete, List<String> path) {
+        if (complete.contains(name)) return;
+        path.add(name);
+        for (CallSite edge : graph.getOrDefault(name, Collections.emptyList())) {
+            int cycleStart = path.indexOf(edge.target);
+            if (cycleStart >= 0) {
+                List<String> cycle = new ArrayList<>(path.subList(cycleStart, path.size()));
+                cycle.add(edge.target);
+                String witness = String.join(" -> ", cycle);
+                throw new CompileError(edge.line,
+                        "recursive local call cycle: " + witness + "; recursion is not supported in Phase 2",
+                        "RECURSION_CYCLE");
+            }
+            findRecursiveCycle(edge.target, graph, complete, path);
+        }
+        path.remove(path.size() - 1);
+        complete.add(name);
+    }
+
+    private static final class DomainInstance {
+        final String name;
+        final Domain domain;
+        final int line;
+        final Map<String, String> routeTargets = new LinkedHashMap<>();
+        DomainInstance(String name, Domain domain, int line) {
+            this.name = name;
+            this.domain = domain;
+            this.line = line;
+        }
+    }
+
+    private static final class RouteEdge {
+        final DomainInstance from;
+        final DomainInstance to;
+        final String route;
+        final int line;
+        RouteEdge(DomainInstance from, DomainInstance to, String route, int line) {
+            this.from = from;
+            this.to = to;
+            this.route = route;
+            this.line = line;
+        }
+    }
+
+    private void checkConcreteDomainRouteCycles(List<Stmt> mainBody) {
+        Map<String, DomainInstance> instances = new LinkedHashMap<>();
+        for (Stmt statement : mainBody) {
+            if (statement.kind != Stmt.Kind.Assign || statement.a == null || statement.b == null) continue;
+            String expression = statement.b.trim();
+            int open = expression.indexOf('(');
+            if (open <= 0 || !expression.endsWith(")")) continue;
+            Domain domain = domains.get(expression.substring(0, open).trim());
+            if (domain == null) continue;
+            DomainInstance instance = new DomainInstance(statement.a.trim(), domain, statement.line);
+            for (String argument : ExpressionTyper.parseArguments(expression.substring(open + 1, expression.length() - 1))) {
+                int colon = argument.indexOf(':');
+                if (colon > 0) instance.routeTargets.put(argument.substring(0, colon).trim(), argument.substring(colon + 1).trim());
+            }
+            instances.put(instance.name, instance);
+        }
+        Map<String, List<RouteEdge>> graph = new LinkedHashMap<>();
+        for (DomainInstance instance : instances.values()) {
+            List<RouteEdge> edges = new ArrayList<>();
+            for (DomainRoute route : instance.domain.routes) {
+                String targetName = instance.routeTargets.get(route.name);
+                DomainInstance target = targetName == null ? null : instances.get(targetName);
+                if (target != null && (target.domain.name.equals(route.type)
+                        || target.domain.name.endsWith("__" + route.type))) {
+                    edges.add(new RouteEdge(instance, target, route.name, instance.line));
+                }
+            }
+            graph.put(instance.name, edges);
+        }
+        List<DomainInstance> pathNodes = new ArrayList<>();
+        List<RouteEdge> pathEdges = new ArrayList<>();
+        Set<String> complete = new HashSet<>();
+        for (DomainInstance instance : instances.values()) {
+            findDomainRouteCycle(instance, graph, pathNodes, pathEdges, complete);
+        }
+    }
+
+    private void findDomainRouteCycle(DomainInstance instance, Map<String, List<RouteEdge>> graph,
+                                      List<DomainInstance> pathNodes, List<RouteEdge> pathEdges,
+                                      Set<String> complete) {
+        if (complete.contains(instance.name)) return;
+        pathNodes.add(instance);
+        for (RouteEdge edge : graph.getOrDefault(instance.name, Collections.emptyList())) {
+            int cycleStart = -1;
+            for (int i = 0; i < pathNodes.size(); i++) {
+                if (pathNodes.get(i).name.equals(edge.to.name)) { cycleStart = i; break; }
+            }
+            if (cycleStart >= 0) {
+                List<RouteEdge> cycle = new ArrayList<>(pathEdges.subList(cycleStart, pathEdges.size()));
+                cycle.add(edge);
+                StringBuilder message = new StringBuilder("concrete domain route cycle detected");
+                for (RouteEdge part : cycle) {
+                    message.append("\n  main::").append(part.from.name).append(" --").append(part.route)
+                           .append("--> main::").append(part.to.name).append(" at ")
+                           .append(program.sourceFile == null ? "" : program.sourceFile)
+                           .append(":").append(part.line);
+                }
+                throw new CompileError(cycle.get(0).line, message.toString(), "MOSS_COMPILE_ERROR");
+            }
+            pathEdges.add(edge);
+            findDomainRouteCycle(edge.to, graph, pathNodes, pathEdges, complete);
+            pathEdges.remove(pathEdges.size() - 1);
+        }
+        pathNodes.remove(pathNodes.size() - 1);
+        complete.add(instance.name);
+    }
+
     private void checkMain() {
         if (program.main != null) {
             currentSemanticIdentity = "main@" + program.main.line;
@@ -649,6 +815,7 @@ public class SemanticChecker {
                 }
             }
             env = checkBlock(program.main.body, 0, program.main.body.size(), env, typer, solver, false, "main", TypeRef.unit());
+            checkConcreteDomainRouteCycles(program.main.body);
             for (Stmt s : program.main.body) {
                 if ((s.kind == Stmt.Kind.Let || s.kind == Stmt.Kind.Var || s.kind == Stmt.Kind.Assign) && s.a != null) {
                     String v = s.a.trim();
@@ -878,6 +1045,9 @@ public class SemanticChecker {
         }
         for (Stmt s : fn.body) {
             String t = s.text != null ? s.text.trim() : "";
+            String target = s.a != null ? s.a.trim() : "";
+            if (s.kind == Stmt.Kind.Assign && (target.equals(pName)
+                    || target.startsWith(pName + ".") || target.startsWith(pName + "["))) return true;
             if (t.startsWith(pName + ".push(") || t.startsWith(pName + ".pop(") || t.startsWith(pName + ".delete(")
                     || t.startsWith(pName + ".append(") || t.startsWith(pName + ".reserve(")
                     || t.startsWith(pName + " =") || t.startsWith(pName + "=") || t.startsWith(pName + "[")) {
@@ -902,6 +1072,31 @@ public class SemanticChecker {
             int colon = arg.indexOf(':');
             if (colon >= 0) arg = arg.substring(colon + 1).trim();
             if (doesFunctionMutateParam(fn, i) && expressionUses(arg, binding)) return true;
+        }
+        return false;
+    }
+
+    private boolean payloadMethodMutatesReceiver(String expression, String payload, TypeRef payloadType) {
+        if (expression == null || payloadType == null) return false;
+        String prefix = payload + ".";
+        String text = expression.trim();
+        if (!text.startsWith(prefix)) return false;
+        int open = text.indexOf('(', prefix.length());
+        if (open < 0) return false;
+        String methodName = text.substring(prefix.length(), open).trim();
+        String typeName = payloadType.name();
+        for (ObjectType object : program.objects) {
+            if (typeName == null || !(object.name.equals(typeName) || typeName.endsWith("__" + object.name))) continue;
+            Set<String> fields = new HashSet<>();
+            for (Field field : object.fields) fields.add(field.name);
+            for (Method method : object.methods) {
+                if (!method.name.equals(methodName)) continue;
+                for (Stmt statement : method.body) {
+                    if (statement.kind == Stmt.Kind.Assign && fields.contains(statement.a != null ? statement.a.trim() : "")) {
+                        return true;
+                    }
+                }
+            }
         }
         return false;
     }
@@ -948,6 +1143,11 @@ public class SemanticChecker {
                     a = a.substring(a.indexOf(':') + 1).trim();
                 }
                 if (env.containsKey(a) && transferType(env.get(a))) {
+                    if (currentMessagePayloads.contains(a) && fn != null && doesFunctionConsumeParam(fn, i)) {
+                        throw new CompileError(line,
+                                "cannot CONSUME incoming message payload '" + a + "'; message payloads may only be read or forwarded",
+                                "MOSS_COMPILE_ERROR");
+                    }
                     if (isObjCtor || (fn != null && doesFunctionConsumeParam(fn, i))) {
                         consumeBinding(line, a, env, fallbackDest != null ? fallbackDest : callee);
                     }
@@ -1177,6 +1377,16 @@ public class SemanticChecker {
             case Assign -> {
                 String varName = s.a != null ? s.a.trim() : "";
                 String expr = s.b != null ? s.b.trim() : "";
+                String targetRoot = varName;
+                int targetSeparator = targetRoot.indexOf('.');
+                int targetBracket = targetRoot.indexOf('[');
+                if (targetBracket >= 0 && (targetSeparator < 0 || targetBracket < targetSeparator)) targetSeparator = targetBracket;
+                if (targetSeparator >= 0) targetRoot = targetRoot.substring(0, targetSeparator).trim();
+                if (currentMessagePayloads.contains(targetRoot)) {
+                    throw new CompileError(s.line,
+                            "cannot WRITE incoming message payload '" + targetRoot + "'; message payloads are immutable snapshots",
+                            "MOSS_COMPILE_ERROR");
+                }
                 if (env.immutables.contains(varName)) {
                     throw new CompileError(s.line, "cannot mutate immutable variable '" + varName + "' introduced with let (IMMUTABLE_LOCAL_MUTATION)", "IMMUTABLE_LOCAL_MUTATION");
                 }
@@ -1329,13 +1539,13 @@ public class SemanticChecker {
                 }
             }
             case Return -> {
-                requireAvailable(s.line, s.text, env);
                 String retExpr = s.a != null && !s.a.isEmpty() ? s.a.trim() : s.text.trim();
                 if (retExpr.equals("return")) {
                     retExpr = "";
                 } else if (retExpr.startsWith("return ")) {
                     retExpr = retExpr.substring(7).trim();
                 }
+                requireAvailable(s.line, retExpr, env);
                 TypeRef inferred = retExpr.isEmpty() ? TypeRef.unit() : typer.infer(retExpr, s.line, env.typeEnv);
                 if (expectedType != null && !solver.unify(inferred, expectedType)) {
                     Function f = functions.get(enclosingName);
@@ -1417,6 +1627,15 @@ public class SemanticChecker {
                 String callExpr = s.text != null ? s.text.trim() : "";
                 if (!callExpr.isEmpty()) {
                     typer.infer(callExpr, s.line, env.typeEnv);
+                    for (String payload : currentMessagePayloads) {
+                        if (expressionContainsWriteCall(callExpr, payload)
+                                || (env.containsKey(payload) && payloadMethodMutatesReceiver(callExpr, payload,
+                                        solver.resolve(env.get(payload))))) {
+                            throw new CompileError(s.line,
+                                    "cannot WRITE incoming message payload '" + payload + "'; message payloads are immutable snapshots",
+                                    "MOSS_COMPILE_ERROR");
+                        }
+                    }
                     consumeCallArguments(s.line, callExpr, env, null);
                 }
             }

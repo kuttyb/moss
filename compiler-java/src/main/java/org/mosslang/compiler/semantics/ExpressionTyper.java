@@ -282,7 +282,7 @@ public class ExpressionTyper {
         if (e.endsWith(")")) {
             int openParen = findMatchingOpenParen(e, e.length() - 1);
             if (openParen > 0) {
-                String callee = e.substring(0, openParen).trim();
+                String callee = e.substring(0, openParen).trim().replaceAll("\\s*\\[", "[");
                 String argsString = e.substring(openParen + 1, e.length() - 1).trim();
                 List<String> argExprs = parseArguments(argsString);
 
@@ -1185,6 +1185,10 @@ public class ExpressionTyper {
             Trait tr = traits.get(targetType.name());
             for (TraitMethod m : tr.methods) {
                 if (m.name.equals(member)) {
+                    if (argExprs.size() != m.params.size()) {
+                        throw new CompileError(line, "no matching method '" + targetType.name() + "." + member
+                                + "' for supplied arguments", "MOSS_COMPILE_ERROR");
+                    }
                     TypeRef ret = m.returnTypeRef != null ? m.returnTypeRef :
                             (m.returnType != null && !m.returnType.isEmpty() ? TypeParser.parseCanonical(m.returnType) : TypeRef.unit());
                     return ret != null ? ret : TypeRef.unit();
@@ -1227,7 +1231,8 @@ public class ExpressionTyper {
                     for (Stmt s : m.body) {
                         if (s.kind == Stmt.Kind.Return) {
                             String retExpr = s.a != null && !s.a.isEmpty() ? s.a.trim() : s.text.trim();
-                            if (retExpr.startsWith("return ")) retExpr = retExpr.substring(7).trim();
+                            if (retExpr.equals("return")) retExpr = "";
+                            else if (retExpr.startsWith("return ")) retExpr = retExpr.substring(7).trim();
                             if (!retExpr.isEmpty()) {
                                 return infer(retExpr, s.line, methodEnv);
                             }
@@ -1489,8 +1494,11 @@ public class ExpressionTyper {
 
     public static int findMatchingOpenBracket(String s, int closeIndex) {
         int sq = 0;
+        boolean inString = false;
         for (int i = closeIndex; i >= 0; i--) {
             char c = s.charAt(i);
+            if (c == '"' && !isEscapedQuote(s, i)) { inString = !inString; continue; }
+            if (inString) continue;
             if (c == ']') sq++;
             else if (c == '[') {
                 sq--;
@@ -1502,8 +1510,11 @@ public class ExpressionTyper {
 
     public static int findMatchingOpenParen(String s, int closeIndex) {
         int par = 0;
+        boolean inString = false;
         for (int i = closeIndex; i >= 0; i--) {
             char c = s.charAt(i);
+            if (c == '"' && !isEscapedQuote(s, i)) { inString = !inString; continue; }
+            if (inString) continue;
             if (c == ')') par++;
             else if (c == '(') {
                 par--;
@@ -1511,6 +1522,12 @@ public class ExpressionTyper {
             }
         }
         return -1;
+    }
+
+    private static boolean isEscapedQuote(String text, int quoteIndex) {
+        int backslashes = 0;
+        for (int i = quoteIndex - 1; i >= 0 && text.charAt(i) == '\\'; i--) backslashes++;
+        return (backslashes & 1) != 0;
     }
 
     private static String stripNamedArgPrefix(String aExpr) {
