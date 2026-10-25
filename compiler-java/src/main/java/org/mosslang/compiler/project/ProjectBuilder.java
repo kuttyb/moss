@@ -2507,98 +2507,13 @@ public class ProjectBuilder {
         };
     }
 
-    private static String raisedErrorIdentity(String module, List<Stmt> body) {
-        Set<String> variants = new java.util.LinkedHashSet<>();
-        for (int statementIndex = 0; statementIndex < body.size(); statementIndex++) {
-            Stmt statement = body.get(statementIndex);
-            if (statement.kind != Stmt.Kind.Raise
-                    && (statement.text == null || !statement.text.trim().startsWith("raise "))) continue;
-            String value = statement.a != null ? statement.a.trim() : "";
-            if (value.isEmpty() && statement.text != null && statement.text.trim().startsWith("raise ")) {
-                value = statement.text.trim().substring(6).trim();
-            }
-            if (org.mosslang.compiler.semantics.SemanticChecker.isRaiseHandled(
-                    body, statementIndex, value)) continue;
-            int paren = value.indexOf('(');
-            if (paren >= 0) value = value.substring(0, paren).trim();
-            int dot = value.lastIndexOf('.');
-            if (dot > 0 && dot + 1 < value.length()) {
-                String type = value.substring(0, dot).replace('.', '_');
-                String variant = value.substring(dot + 1).trim();
-                if (!type.contains("__")) type = module + "__" + type;
-                variants.add("enum:" + type + ":" + variant);
-                continue;
-            }
-            variants.add("enum:" + module + "__Fault:" + value);
-        }
-        return variants.isEmpty() ? "-" : String.join(",", variants);
-    }
-
     private static String raisedFunctionIdentities(String module, Function function, Program program) {
-        Set<String> raised = collectFunctionRaiseIdentities(module, function, program, new HashSet<>());
         Set<String> variants = new java.util.LinkedHashSet<>();
-        for (String variant : raised) variants.add(normalizeRaisedIdentity(module, variant));
+        for (String variant : org.mosslang.compiler.semantics.SemanticChecker
+                .functionRaiseVariants(program, function)) {
+            variants.add(normalizeRaisedIdentity(module, variant));
+        }
         return variants.isEmpty() ? "-" : String.join(",", variants);
-    }
-
-    private static Set<String> collectFunctionRaiseIdentities(
-            String module, Function function, Program program, Set<String> callPath) {
-        Set<String> variants = new java.util.LinkedHashSet<>();
-        if (function == null || program == null || !callPath.add(function.name)) return variants;
-        for (String importedRaise : function.sourceFreeRaiseVariants) {
-            variants.add(importedRaise);
-        }
-        for (int statementIndex = 0; statementIndex < function.body.size(); statementIndex++) {
-            Stmt statement = function.body.get(statementIndex);
-            if (statement == null) continue;
-            if (statement.kind == Stmt.Kind.Raise || (statement.text != null
-                    && statement.text.trim().startsWith("raise "))) {
-                String raised = statement.a == null ? "" : statement.a.trim();
-                if (raised.isEmpty() && statement.text != null
-                        && statement.text.trim().startsWith("raise ")) {
-                    raised = statement.text.trim().substring(6).trim();
-                }
-                int payload = raised.indexOf('(');
-                if (payload >= 0) raised = raised.substring(0, payload).trim();
-                if (!raised.isEmpty() && !org.mosslang.compiler.semantics.SemanticChecker
-                        .isRaiseHandled(function.body, statementIndex, raised)) {
-                    variants.add(raised);
-                }
-            }
-            List<String> expressions = new ArrayList<>();
-            expressions.add(statement.text);
-            expressions.add(statement.a);
-            expressions.add(statement.b);
-            if (statement.args != null) expressions.addAll(statement.args);
-            for (String expression : expressions) {
-                if (expression == null || expression.isBlank()) continue;
-                for (Function called : program.functions) {
-                    if (!org.mosslang.compiler.semantics.SemanticChecker
-                            .containsFunctionCall(expression, called.name)) continue;
-                    for (String raised : collectFunctionRaiseIdentities(
-                            module, called, program, new HashSet<>(callPath))) {
-                        if (!org.mosslang.compiler.semantics.SemanticChecker
-                                .isRaiseHandled(function.body, statementIndex, raised)) {
-                            variants.add(raised);
-                        }
-                    }
-                }
-            }
-        }
-        if (function.resultExpression != null) {
-            for (Function called : program.functions) {
-                if (!org.mosslang.compiler.semantics.SemanticChecker
-                        .containsFunctionCall(function.resultExpression, called.name)) continue;
-                for (String raised : collectFunctionRaiseIdentities(
-                        module, called, program, new HashSet<>(callPath))) {
-                    if (!org.mosslang.compiler.semantics.SemanticChecker
-                            .isRaiseHandled(function.body, function.body.size(), raised)) {
-                        variants.add(raised);
-                    }
-                }
-            }
-        }
-        return variants;
     }
 
     private static String normalizeRaisedIdentity(String module, String raised) {

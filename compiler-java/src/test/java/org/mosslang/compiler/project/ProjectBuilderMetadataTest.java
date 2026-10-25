@@ -201,6 +201,8 @@ public final class ProjectBuilderMetadataTest {
                 + "      self.signal()\n"
                 + "    recover Failure.Bad:\n"
                 + "      pass\n"
+                + "export fn route(point: Point):\n"
+                + "  point.signal()\n"
                 + "fn main():\n"
                 + "  pass\n", "method-raise-export.moss");
         new org.mosslang.compiler.semantics.CheckedProgram(program).run();
@@ -222,6 +224,12 @@ public final class ProjectBuilderMetadataTest {
         if (!safe.contains("raise_set=-")) {
             throw new AssertionError("method recover did not remove a handled transitive raise: " + safe);
         }
+        String route = text.lines().filter(line -> line.contains("route ")
+                        && line.contains("raise_set="))
+                .findFirst().orElse("");
+        if (!route.contains("raise_set=enum:provider__Failure:Bad")) {
+            throw new AssertionError("exported function metadata omitted a raising method call: " + route);
+        }
         Path scratch = Path.of("tmp");
         try {
             Files.createDirectories(scratch);
@@ -238,6 +246,13 @@ public final class ProjectBuilderMetadataTest {
                 if (!imported.sourceFreeRaiseVariants.contains("provider__Failure.Bad")) {
                     throw new AssertionError("source-free loader omitted transitive method raise variant: "
                             + imported.sourceFreeRaiseVariants);
+                }
+                org.mosslang.compiler.ast.Function importedRoute = consumer.functions.stream()
+                        .filter(candidate -> candidate.name.equals("provider.route"))
+                        .findFirst().orElseThrow(() -> new AssertionError("route function was not imported"));
+                if (!importedRoute.sourceFreeRaiseVariants.contains("provider__Failure.Bad")) {
+                    throw new AssertionError("source-free loader omitted method-call raise variant: "
+                            + importedRoute.sourceFreeRaiseVariants);
                 }
             } finally {
                 Files.deleteIfExists(interfaceFile);

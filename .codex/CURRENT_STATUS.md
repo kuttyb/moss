@@ -15516,3 +15516,18 @@ ABI-v10; diff and feedback checks are pending before checkpoint. The test
 covers same-object self calls and exact recover coverage; typed object
 parameters/fields, native provider execution, and broader raise inference
 remain open.
+
+
+### Phase 25.3 continuation — share checked raise closure with exported functions
+
+Exported function summaries now consume the semantic checker's closure, covering
+ordinary function calls and typed object method calls. This replaces the
+metadata writer's narrower call scan. A source-free provider regression
+round-trips a function that calls `point.signal()` and confirms its raise set
+contains the method's escaping `Failure.Bad` variant. The same fixture also
+checks object-method forwarding and exact recovery from the previous slice.
+
+All twelve Java unit-test classes pass under ABI-v9 defaults and staged
+ABI-v10; feedback and diff checks are pending for this checkpoint. This covers
+local typed receiver calls and source-free summary loading, not native provider
+execution or all receiver inference forms.

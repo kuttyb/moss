@@ -1690,6 +1690,14 @@ public class SemanticChecker {
         return variants;
     }
 
+    /** Return escaping raises for an exported function, including called functions and methods. */
+    public static Set<String> functionRaiseVariants(Program program, Function function) {
+        SemanticChecker checker = new SemanticChecker(program);
+        checker.collectDeclarations();
+        return Collections.unmodifiableSet(
+                checker.collectFunctionRaiseVariants(function, new HashSet<>()));
+    }
+
     private void collectFunctionMethodRaiseVariants(String expression, Function caller,
                                                     int callIndex, Set<String> visited,
                                                     Set<String> variants) {
