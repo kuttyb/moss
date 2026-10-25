@@ -1481,7 +1481,7 @@ public class ProjectBuilder {
                             fn, modId, provenanceRecords);
                     CheckedExpr constantReturn = null;
                     CheckedExpr emptyVectorReturn = null;
-                    CheckedExpr intVectorReturn = null;
+                    CheckedExpr closedVectorReturn = null;
                     CheckedExpr arithmeticReturn = null;
                     List<CheckedStmt> numericLocalBody = null;
                     List<CheckedStmt> branchReturnBody = null;
@@ -1502,10 +1502,10 @@ public class ProjectBuilder {
                         }
                     }
                     if (summary == null) {
-                        intVectorReturn = v10ClosedIntVectorReturn(fn);
-                        if (intVectorReturn != null) {
+                        closedVectorReturn = v10ClosedPrimitiveVectorReturn(fn);
+                        if (closedVectorReturn != null) {
                             summary = v10EmptyVectorSummary(
-                                    fn, intVectorReturn, modId, provenanceRecords);
+                                    fn, closedVectorReturn, modId, provenanceRecords);
                         }
                     }
                     if (summary == null) {
@@ -1549,8 +1549,8 @@ public class ProjectBuilder {
                                 ? v10SimpleExpressionBody(summary, constantReturn)
                                 : emptyVectorReturn != null
                                         ? v10SimpleExpressionBody(summary, emptyVectorReturn)
-                                : intVectorReturn != null
-                                        ? v10SimpleExpressionBody(summary, intVectorReturn)
+                                : closedVectorReturn != null
+                                        ? v10SimpleExpressionBody(summary, closedVectorReturn)
                                 : arithmeticReturn != null
                                         ? v10SimpleExpressionBody(summary, arithmeticReturn)
                                         : numericLocalBody != null
@@ -1763,10 +1763,13 @@ public class ProjectBuilder {
         return emptyVector;
     }
 
-    private static CheckedExpr v10ClosedIntVectorReturn(Function function) {
+    private static CheckedExpr v10ClosedPrimitiveVectorReturn(Function function) {
         if (!function.params.isEmpty() || function.returnTypeRef == null
-                || !TypeRef.builtin("vector", List.of(TypeRef.primitive("int")))
-                        .equals(function.returnTypeRef)
+                || function.returnTypeRef.kind() != org.mosslang.compiler.types.TypeKind.Builtin
+                || !"vector".equalsIgnoreCase(function.returnTypeRef.name())
+                || function.returnTypeRef.typeArgs().size() != 1
+                || !Set.of("int", "float", "bool").contains(
+                        function.returnTypeRef.typeArgs().get(0).name().toLowerCase(Locale.ROOT))
                 || function.body.size() != 1 || function.body.get(0).kind != Stmt.Kind.Return) return null;
         Stmt statement = function.body.get(0);
         String expression = statement.a != null && !statement.a.isBlank()
@@ -1783,8 +1786,19 @@ public class ProjectBuilder {
         CheckedExpr vector = new CheckedExpr();
         vector.kind = org.mosslang.compiler.abi.CheckedExprKind.VectorLiteral;
         vector.type = function.returnTypeRef;
+        TypeRef elementType = function.returnTypeRef.typeArgs().get(0);
         for (String element : elements) {
-            CheckedExpr child = v10LowerClosedIntExpression(element, function, 0);
+            CheckedExpr child;
+            if (TypeRef.primitive("int").equals(elementType)) {
+                child = v10LowerClosedIntExpression(element, function, 0);
+            } else if (TypeRef.primitive("float").equals(elementType)) {
+                child = v10LowerClosedFloatExpression(element, function, 0);
+            } else if (TypeRef.primitive("bool").equals(elementType)) {
+                child = "true".equals(element.trim()) ? CheckedExpr.boolLiteral(true, elementType)
+                        : "false".equals(element.trim()) ? CheckedExpr.boolLiteral(false, elementType) : null;
+            } else {
+                child = null;
+            }
             if (child == null) return null;
             vector.operands.add(child);
         }

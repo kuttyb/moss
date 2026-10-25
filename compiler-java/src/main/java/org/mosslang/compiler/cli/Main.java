@@ -1645,9 +1645,13 @@ public class Main {
             } else if (statement.expr.kind == org.mosslang.compiler.abi.CheckedExprKind.VectorLiteral
                     && !statement.expr.operands.isEmpty() && parameterTypes.isEmpty()
                     && summary.variableCount == 0
-                    && resultType.equals(org.mosslang.compiler.types.TypeRef.builtin("vector",
-                            List.of(org.mosslang.compiler.types.TypeRef.primitive("int"))))) {
-                returnedLiteral = sourceFreeClosedIntVectorLiteral(statement.expr, parameterTypes);
+                    && resultType.kind() == org.mosslang.compiler.types.TypeKind.Builtin
+                    && "vector".equalsIgnoreCase(resultType.name())
+                    && resultType.typeArgs().size() == 1
+                    && Set.of("int", "float", "bool").contains(
+                            resultType.typeArgs().get(0).name().toLowerCase(java.util.Locale.ROOT))) {
+                returnedLiteral = sourceFreeClosedIntVectorLiteral(statement.expr, parameterTypes,
+                        resultType.typeArgs().get(0));
                 if (returnedLiteral == null) continue;
             } else if (statement.expr.kind == org.mosslang.compiler.abi.CheckedExprKind.VectorLiteral
                     && statement.expr.operands.isEmpty() && parameterTypes.isEmpty()
@@ -1886,14 +1890,30 @@ public class Main {
 
     private static String sourceFreeClosedIntVectorLiteral(
             org.mosslang.compiler.abi.CheckedExpr expression,
-            List<org.mosslang.compiler.types.TypeRef> parameterTypes) {
+            List<org.mosslang.compiler.types.TypeRef> parameterTypes,
+            org.mosslang.compiler.types.TypeRef elementType) {
         if (expression.operands.isEmpty()) return null;
         List<String> elements = new ArrayList<>();
         org.mosslang.compiler.types.TypeRef intType =
                 org.mosslang.compiler.types.TypeRef.primitive("int");
+        org.mosslang.compiler.types.TypeRef floatType =
+                org.mosslang.compiler.types.TypeRef.primitive("float");
+        org.mosslang.compiler.types.TypeRef boolType =
+                org.mosslang.compiler.types.TypeRef.primitive("bool");
         for (org.mosslang.compiler.abi.CheckedExpr element : expression.operands) {
-            if (!intType.equals(element.type)) return null;
-            String source = sourceFreeClosedIntExpression(element, parameterTypes, 0);
+            if (!elementType.equals(element.type)) return null;
+            String source;
+            if (intType.equals(elementType)) {
+                source = sourceFreeClosedIntExpression(element, parameterTypes, 0);
+            } else if (floatType.equals(elementType)) {
+                source = sourceFreeClosedFloatExpression(element, parameterTypes, 0);
+            } else if (boolType.equals(elementType)
+                    && element.kind == org.mosslang.compiler.abi.CheckedExprKind.BoolLiteral
+                    && ("true".equals(element.literalValue) || "false".equals(element.literalValue))) {
+                source = element.literalValue;
+            } else {
+                return null;
+            }
             if (source == null) return null;
             elements.add(source);
         }

@@ -14438,3 +14438,17 @@ consumer returning the imported vector.
 The focused `ProjectBuilderMetadataTest` passes under staged ABI-v10. Full Java
 ABI suites, native Rust compilation/execution, Margo provider-consumer linkage,
 SDK gates, and the full release acceptance gates remain outstanding.
+
+### Phase 25.3 continuation — extend source-free primitive vector literals
+
+Extended the bounded ABI-v10 checked-body vector path to also handle closed
+`Vector[Bool]` literals and closed `Vector[Float]` literals built from checked
+Float expressions. The producer emits BoolLiteral or closed Float expression
+children; the source-free loader reconstructs only when every operand matches
+the concrete element type. Provider-consumer regressions remove legacy generic
+body rows for all three closed primitive vector types.
+
+All eleven Java unit-test classes pass under ABI-v9 and staged ABI-v10;
+feedback validation and `git diff --check` pass. String vectors, nested or
+generic element shapes, native compilation, Margo provider-consumer linkage,
+SDK integration, and release gates remain open.

@@ -562,7 +562,11 @@ public final class ProjectBuilderMetadataTest {
                 + "export fn empty_int() -> Vector[Int]:\n"
                 + "  return []\n"
                 + "export fn numbers() -> Vector[Int]:\n"
-                + "  return [1, 2, -3 + 5]\n", "identity-provider.moss");
+                + "  return [1, 2, -3 + 5]\n"
+                + "export fn flags() -> Vector[Bool]:\n"
+                + "  return [true, false, true]\n"
+                + "export fn ratios() -> Vector[Float]:\n"
+                + "  return [1.5, -2.0, 3.0 / 2.0]\n", "identity-provider.moss");
         new org.mosslang.compiler.semantics.CheckedProgram(identityProgram).run();
         identityProgram.functions.forEach(function -> {
             String name = function.name;
@@ -651,6 +655,22 @@ public final class ProjectBuilderMetadataTest {
                 || numbersStatements.get(0).expr.operands.get(2).kind
                         != org.mosslang.compiler.abi.CheckedExprKind.Binary) {
             throw new AssertionError("ABI-v10 closed Int vector literal body is incomplete");
+        }
+        for (String callable : List.of("flags", "ratios")) {
+            AbiV10Records.CheckedBodyRecord vectorBody = identityInterface.privateSemanticDependencies.stream()
+                    .filter(record -> record.id.startsWith("checked-body-v1:"))
+                    .map(AbiV10Records.CheckedBodyRecord::decode)
+                    .filter(body -> body.callableId.endsWith(":fn:" + callable))
+                    .findFirst().orElseThrow(() -> new AssertionError(
+                            "ABI-v10 producer omitted the closed primitive vector body for " + callable));
+            java.util.List<org.mosslang.compiler.abi.CheckedStmt> vectorStatements =
+                    CheckedBodyCodec.decodeCheckedBody(vectorBody.checkedIrBytes);
+            if (vectorStatements.size() != 1
+                    || vectorStatements.get(0).expr.kind
+                            != org.mosslang.compiler.abi.CheckedExprKind.VectorLiteral
+                    || vectorStatements.get(0).expr.operands.size() != 3) {
+                throw new AssertionError("ABI-v10 closed primitive vector body is incomplete for " + callable);
+            }
         }
         AbiV10Records.Summary secondSummary = identityInterface.binaryContract.stream()
                 .filter(record -> record.payloadBytes().length > 0
@@ -1097,6 +1117,10 @@ public final class ProjectBuilderMetadataTest {
                     + "  return provider__empty_int()\n"
                     + "fn use_numbers() -> Vector[Int]:\n"
                     + "  return provider__numbers()\n"
+                    + "fn use_flags() -> Vector[Bool]:\n"
+                    + "  return provider__flags()\n"
+                    + "fn use_ratios() -> Vector[Float]:\n"
+                    + "  return provider__ratios()\n"
                     + "fn use_weighted() -> Float:\n"
                     + "  return provider__weighted(2.0, 4.0)\n"
                     + "fn use_adjust_ratio() -> Float:\n"
