@@ -55,6 +55,7 @@ public final class ProjectBuilderMetadataTest {
         }
         testCanonicalNominalTemplateWirePayload();
         testCheckedOnFailCaptureAbiRows();
+        testFunctionRaiseSetExportsEveryVariant();
         testExplicitModuleBuildChecksSemantics();
         testV9FunctionParameterAccessSerialization();
         testExportedObjectFieldSerialization();
@@ -90,6 +91,51 @@ public final class ProjectBuilderMetadataTest {
                 || !text.contains("handler_failure_arm \"Work\" 0 \"Failure.Bad\" ")
                 || !text.contains("handler_failure_capture \"Work\" 0 \"captured_value\" \"int\" \"captured_value\" 1 1 \"0:3:int:0:\"\n")) {
             throw new AssertionError("project producer did not serialize checker-proved on_fail captures: " + text);
+        }
+    }
+
+    private static void testFunctionRaiseSetExportsEveryVariant() throws Exception {
+        Program program = Parser.parseSource(""
+                + "module provider\n"
+                + "enum Failure:\n"
+                + "  Bad\n"
+                + "  Other\n"
+                + "export fn signal(enabled: Bool):\n"
+                + "  if enabled:\n"
+                + "    raise Failure.Bad\n"
+                + "  else:\n"
+                + "    raise Failure.Other\n"
+                + "fn main():\n"
+                + "  pass\n", "multi-raise-export.moss");
+        new org.mosslang.compiler.semantics.CheckedProgram(program).run();
+        ProjectManifest manifest = new ProjectManifest(Path.of("tmp"), Path.of("tmp", "moss.toml"),
+                "sample", "1.0.0", Path.of("src"));
+        BackendToolchain toolchain = new BackendToolchain("rustc", "rustc 1.80.0 (test)\n",
+                "dev", java.util.List.of(), "multi-raise-test");
+        byte[] interfaceBytes = ProjectBuilder.generateMossiInterface(manifest, "provider",
+                program, toolchain, java.util.List.of(), Path.of("tmp"), java.util.Map.of());
+        String text = new String(interfaceBytes, java.nio.charset.StandardCharsets.UTF_8);
+        String raiseSet = "raise_set=enum:provider__Failure:Bad,enum:provider__Failure:Other";
+        if (!text.contains(raiseSet)) {
+            throw new AssertionError("source-free function metadata omitted a raised variant: " + text);
+        }
+        Path scratch = Path.of("tmp");
+        Files.createDirectories(scratch);
+        Path interfaceFile = Files.createTempFile(scratch, "java-multi-raise-", ".mossi");
+        try {
+            Files.write(interfaceFile, interfaceBytes);
+            Program consumer = new Program();
+            org.mosslang.compiler.cli.Main.loadMossiFunctions(interfaceFile, "provider", consumer);
+            org.mosslang.compiler.ast.Function imported = consumer.functions.stream()
+                    .filter(function -> function.name.equals("provider.signal"))
+                    .findFirst().orElseThrow(() -> new AssertionError("multi-raise function was not imported"));
+            if (!imported.sourceFreeRaiseVariants.contains("provider__Failure.Bad")
+                    || !imported.sourceFreeRaiseVariants.contains("provider__Failure.Other")) {
+                throw new AssertionError("source-free loader did not restore every raise variant: "
+                        + imported.sourceFreeRaiseVariants);
+            }
+        } finally {
+            Files.deleteIfExists(interfaceFile);
         }
     }
 

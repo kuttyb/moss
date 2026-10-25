@@ -2504,6 +2504,7 @@ public class ProjectBuilder {
     }
 
     private static String raisedErrorIdentity(String module, List<Stmt> body) {
+        Set<String> variants = new java.util.LinkedHashSet<>();
         for (Stmt statement : body) {
             if (statement.kind != Stmt.Kind.Raise
                     && (statement.text == null || !statement.text.trim().startsWith("raise "))) continue;
@@ -2518,11 +2519,12 @@ public class ProjectBuilder {
                 String type = value.substring(0, dot).replace('.', '_');
                 String variant = value.substring(dot + 1).trim();
                 if (!type.contains("__")) type = module + "__" + type;
-                return "enum:" + type + ":" + variant;
+                variants.add("enum:" + type + ":" + variant);
+                continue;
             }
-            return "enum:" + module + "__Fault:" + value;
+            variants.add("enum:" + module + "__Fault:" + value);
         }
-        return "-";
+        return variants.isEmpty() ? "-" : String.join(",", variants);
     }
 
     private static boolean mayPanic(List<Stmt> body) {

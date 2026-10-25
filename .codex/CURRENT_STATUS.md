@@ -15444,3 +15444,18 @@ Eclipse JDT executable is available: `--start` reports that cleanly,
 `--status`/`--stop` report no daemon, and `scripts/java/dev-build.sh --full`
 successfully uses the standalone javac build. Actual Eclipse startup and
 incremental builds remain environment-dependent and unverified.
+
+
+### Phase 25.3 continuation — preserve multiple function raise variants
+
+`ProjectBuilder.raisedErrorIdentity` returned after the first direct `raise`,
+so exported function metadata could omit later enum variants. The writer now
+collects distinct direct raise identities in source order and serializes the
+comma-separated `raise_set`. A provider fixture raises `Failure.Bad` and
+`Failure.Other` from separate branches; its generated ABI metadata contains
+both variants, and the source-free loader restores both on the imported
+function.
+
+All twelve Java unit classes pass under ABI-v9 defaults and staged ABI-v10.
+This covers direct raises in a simple branch fixture; checked/caught raise
+projection and native source-free execution remain open.
