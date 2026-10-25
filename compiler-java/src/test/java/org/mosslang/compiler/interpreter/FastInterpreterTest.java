@@ -23,6 +23,7 @@ public final class FastInterpreterTest {
         testRaiseRecoverTraceCarriesErrorIdentity();
         testObjectMethodTraceCarriesCallContext();
         testBuiltinMethodReceiverReadIsTraced();
+        testEnumLocalWriteUsesCompactTypeSummary();
         testExceptionalFunctionTraceUnwindsCallContext();
         testDomainConstructionTraceIsStructured();
         testDomainMessageTraceCarriesHandlerContext();
@@ -377,6 +378,25 @@ public final class FastInterpreterTest {
                 || !lines[1].contains("\"detail\":\"text\"")
                 || !"3\n".equals(stdout.toString(StandardCharsets.UTF_8))) {
             throw new AssertionError("builtin method receiver read was not traced: " + events);
+        }
+    }
+
+    private static void testEnumLocalWriteUsesCompactTypeSummary() {
+        var program = Parser.parseSource(""
+                + "enum Data:\n"
+                + "  Have(value: String)\n"
+                + "fn main():\n"
+                + "  data = Data.Have(value: \"hello\")\n",
+                "fast-interpreter-enum-write-summary.moss");
+        new CheckedProgram(program).run();
+        ByteArrayOutputStream trace = new ByteArrayOutputStream();
+        new FastInterpreter(program, true,
+                new PrintStream(new ByteArrayOutputStream(), true, StandardCharsets.UTF_8),
+                new PrintStream(trace, true, StandardCharsets.UTF_8)).run();
+        String events = trace.toString(StandardCharsets.UTF_8);
+        if (!events.contains("\"event\":\"LocalWrite\"")
+                || !events.contains("\"after\":\"Data\"")) {
+            throw new AssertionError("enum LocalWrite should use its compact type summary: " + events);
         }
     }
 

@@ -308,6 +308,11 @@ public class FastInterpreter {
         };
     }
 
+    private static String traceWriteValueSummary(Value value) {
+        if (value.kind == Value.Kind.ENUM && value.typeName != null) return value.typeName;
+        return traceValueSummary(value);
+    }
+
     private static String raisedTraceIdentity(Value value, String fallback) {
         if (value != null && value.raw instanceof EnumValue enumValue)
             return "enum:" + enumValue.enumName + ":" + enumValue.variant;
@@ -323,8 +328,8 @@ public class FastInterpreter {
                 + "\",\"semantic_identity\":\"" + jsonEscape(traceIdentity()) + "\",\"line\":"
                 + statement.line + traceContextFields() + ",\"depth\":" + depth + ",\"detail\":\""
                 + jsonEscape(name) + "\"" + traceDomainFields()
-                + (before == null ? "" : ",\"before\":\"" + jsonEscape(traceValueSummary(before)) + "\"")
-                + ",\"after\":\"" + jsonEscape(traceValueSummary(value)) + "\"}");
+                + (before == null ? "" : ",\"before\":\"" + jsonEscape(traceWriteValueSummary(before)) + "\"")
+                + ",\"after\":\"" + jsonEscape(traceWriteValueSummary(value)) + "\"}");
     }
 
     private void traceLocalRead(String name) {
@@ -355,6 +360,18 @@ public class FastInterpreter {
                 + ",\"detail\":\"" + jsonEscape(detail) + "\"" + traceDomainFields() + "}");
         traceParentStack.push(controlEventId);
         traceControlStack.push(controlEventId);
+    }
+
+    private void traceBranchSelection(Stmt statement, String function,
+                                      String detail, int depth) {
+        if (!trace) return;
+        setTraceContext(statement, function, depth);
+        eventId++;
+        traceEvent("{\"event_id\":" + eventId + ",\"event\":\"BranchTaken\",\"function\":\""
+                + jsonEscape(function) + "\",\"source_file\":\"" + jsonEscape(traceSourceFile)
+                + "\",\"semantic_identity\":\"" + jsonEscape(traceIdentity()) + "\",\"line\":"
+                + statement.line + traceContextFields() + ",\"depth\":" + depth
+                + ",\"detail\":\"" + jsonEscape(detail) + "\"" + traceDomainFields() + "}");
     }
 
     private void traceSimpleEvent(Stmt statement, String function, String event,
@@ -714,7 +731,7 @@ public class FastInterpreter {
                         String pat = cs.a != null ? cs.a.trim() : "";
                         if (!matched && enumValue != null && enumValue.variant.equals(pat)) {
                             matched = true;
-                            traceControlEvent(cs, funcName, "BranchTaken", pat, depth);
+                            traceBranchSelection(cs, funcName, pat, depth);
                             Map<String, Value> branchLocals = new HashMap<>(locals);
                             for (String binder : cs.args) {
                                 Value field = enumValue.fields.get(binder);
@@ -724,12 +741,8 @@ public class FastInterpreter {
                                 }
                                 branchLocals.put(binder, field);
                             }
-                            try {
-                                lastVal = evalScopedBlock(stmts, caseBodyStart, caseBodyEnd, branchLocals,
-                                        currentDomain, funcName, depth, Set.copyOf(cs.args));
-                            } finally {
-                                endTraceLoopIteration();
-                            }
+                            lastVal = evalScopedBlock(stmts, caseBodyStart, caseBodyEnd, branchLocals,
+                                    currentDomain, funcName, depth, Set.copyOf(cs.args));
                             for (Map.Entry<String, Value> entry : branchLocals.entrySet()) {
                                 if (locals.containsKey(entry.getKey())) {
                                     locals.put(entry.getKey(), entry.getValue());

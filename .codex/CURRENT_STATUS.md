@@ -14340,3 +14340,17 @@ remaining trace-only difference is the enum summary (`Data` in C++ versus
 `Data.Have{value=hello}` in Java) on one `LocalWrite`. The state-borrow case
 fails in both interpreters and its traces match. This is bounded evidence, not
 complete Fast Debug parity.
+
+### Phase 25.3 continuation — enum write summaries and match trace context
+
+Enum values in Java `LocalWrite` before/after fields now use the enum type
+summary, matching C++. Match-case `BranchTaken` events are emitted as
+selections without opening a nested control context; if/else and loop control
+scopes retain their existing behavior. This removes the final trace delta in
+`phase21_capture_owned_payload.moss`.
+
+The bounded nine-fixture capture screen now has exact stdout and complete trace
+matches on all nine; `phase21_capture_state_borrow.moss` exits unsuccessfully
+in both interpreters. The complete `phase21_recovery_semantics.moss` trace also
+matches. Both ABI Java suites pass. This is evidence for these selected Fast
+Debug paths, not a full parity claim.
