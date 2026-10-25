@@ -7,6 +7,7 @@ import os
 import sys
 import time
 import socket
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -20,6 +21,15 @@ CONFIG_DIR = COMPILER_JAVA / "jdt" / "configuration"
 LOG_FILE = COMPILER_JAVA / "jdt" / "daemon.log"
 
 JDT_PORT = 45290
+BUILD_SCRIPT = REPO_ROOT / "scripts" / "java" / "build.sh"
+
+def find_eclipse():
+    configured = os.environ.get("MOSS_JDT_EXECUTABLE")
+    candidates = [configured] if configured else ["/opt/eclipse-jdt/eclipse", shutil.which("eclipse")]
+    for candidate in candidates:
+        if candidate and os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+            return candidate
+    return None
 
 def is_daemon_running(port=JDT_PORT):
     try:
@@ -32,10 +42,13 @@ def is_daemon_running(port=JDT_PORT):
         return False
 
 def start_daemon(port=JDT_PORT):
+    eclipse = find_eclipse()
+    if eclipse is None:
+        raise RuntimeError("Eclipse JDT executable not found")
     WORKSPACE_DIR.mkdir(parents=True, exist_ok=True)
     BIN_DIR.mkdir(parents=True, exist_ok=True)
     cmd = [
-        "/opt/eclipse-jdt/eclipse",
+        eclipse,
         "-nosplash",
         "-data", str(WORKSPACE_DIR),
         "-configuration", str(CONFIG_DIR),
@@ -96,6 +109,10 @@ def main():
             return
 
     if not is_daemon_running():
+        if find_eclipse() is None:
+            print("Eclipse JDT is unavailable; using the standalone javac build.")
+            fallback_args = ["--clean"] if action == "BUILD_CLEAN" else []
+            return subprocess.call([str(BUILD_SCRIPT), *fallback_args])
         start_daemon()
 
     # Always refresh to ensure file modifications on disk are observed

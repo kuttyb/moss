@@ -12481,3 +12481,19 @@ end-to-end ABI-v10 Margo build, or establish imports for all nominal, method,
 domain, provenance, effect, and private dependency facts required for complete
 source-free compatibility. Rust/native, SDK, and frozen-candidate acceptance
 remain unrun.
+
+### Phase 25.3 continuation — keep the persistent JDT daemon optional
+
+The `scripts/java/dev-build.sh` path depended on one hardcoded Eclipse
+installation at `/opt/eclipse-jdt/eclipse`; without it, the optional daemon
+path failed rather than using the supported standalone javac build. The client
+now accepts `MOSS_JDT_EXECUTABLE`, checks the existing conventional locations,
+and falls back to `scripts/java/build.sh` when no daemon executable is
+available. The `--stop` lifecycle path still only contacts an already-running
+daemon.
+
+Validation: `python3 -m py_compile scripts/java/jdt_client.py` passed. A
+focused in-process check forced the executable to be absent, verified the
+full-javac fallback command selection without launching another build, and
+passed. Actual Eclipse daemon startup/shutdown remains environment-dependent
+and unverified here.
