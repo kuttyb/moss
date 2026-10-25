@@ -88,6 +88,19 @@ public final class FastInterpreterTest {
         if (!expected.equals(actual)) {
             throw new AssertionError("while loop did not reevaluate its checked body: " + actual);
         }
+        ByteArrayOutputStream trace = new ByteArrayOutputStream();
+        new FastInterpreter(program, true,
+                new PrintStream(new ByteArrayOutputStream()),
+                new PrintStream(trace, true, StandardCharsets.UTF_8)).run();
+        String events = trace.toString(StandardCharsets.UTF_8);
+        if (events.split("\\\"event\\\":\\\"LoopIteration\\\"", -1).length != 4
+                || !events.contains("\"detail\":\"1\"")
+                || !events.contains("\"detail\":\"2\"")
+                || !events.contains("\"detail\":\"3\"")
+                || !events.contains("\"parent_event_id\":3,\"control_event_id\":3")
+                || !events.contains("\"line\":4,\"parent_event_id\":3,\"control_event_id\":3,\"depth\":1")) {
+            throw new AssertionError("while-loop trace omitted iteration context: " + events);
+        }
     }
 
     private static void testLocalWriteTraceIsStructuredAndEscaped() {

@@ -157,3 +157,14 @@ payload field (or the single payload) and restores any shadowed outer local
 when leaving the recovery body. A checked `Failure.Bad(code: 2)` probe prints
 `2` in recovery and `1` after it in both interpreters. All eleven Java test
 classes pass in ABI-v9 and staged ABI-v10.
+
+## Phase 25.3 continuation — Java Fast Debug while-loop tracing
+
+The focused loop trace exposed missing `LoopIteration` events, incorrect body
+depth and control-parent links, missing reassignment `before` values, and stale
+condition source lines in Java. Java now records each while iteration, nests
+body local events under the iteration, includes write before/after values, and
+restores the loop header context before reevaluating the condition. A small
+while trace compares equal to C++ event-for-event and stdout-for-stdout. All
+eleven Java test classes pass in ABI-v9 and staged ABI-v10. Other branch/for/
+message/state trace paths remain open.

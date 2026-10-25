@@ -191,9 +191,25 @@ public class FastInterpreter {
     private String traceSourceFile = "";
     private int traceLine = 1;
     private int traceDepth = 0;
+    private final Deque<Integer> traceParentStack = new ArrayDeque<>();
+    private final Deque<Integer> traceControlStack = new ArrayDeque<>();
 
     private String traceIdentity() {
         return "main".equals(traceFunction) ? "main@1" : traceFunction;
+    }
+
+    private void setTraceContext(Stmt statement, String function, int depth) {
+        traceFunction = function;
+        traceSourceFile = statement.sourceFile == null ? "" : statement.sourceFile;
+        traceLine = statement.line;
+        traceDepth = depth;
+    }
+
+    private String traceContextFields() {
+        StringBuilder fields = new StringBuilder();
+        if (!traceParentStack.isEmpty()) fields.append(",\"parent_event_id\":").append(traceParentStack.peek());
+        if (!traceControlStack.isEmpty()) fields.append(",\"control_event_id\":").append(traceControlStack.peek());
+        return fields.toString();
     }
 
     public FastInterpreter(Program program, boolean trace) {
@@ -234,15 +250,17 @@ public class FastInterpreter {
         return escaped.toString();
     }
 
-    private void traceLocalWrite(Stmt statement, String name, Value value,
+    private void traceLocalWrite(Stmt statement, String name, Value value, Value before,
                                  String function, int depth) {
         if (!trace) return;
         eventId++;
         traceEvent("{\"event_id\":" + eventId + ",\"event\":\"LocalWrite\",\"function\":\""
                 + jsonEscape(function) + "\",\"source_file\":\"" + jsonEscape(statement.sourceFile)
                 + "\",\"semantic_identity\":\"" + jsonEscape(traceIdentity()) + "\",\"line\":"
-                + statement.line + ",\"depth\":" + depth + ",\"detail\":\""
-                + jsonEscape(name) + "\",\"after\":\"" + jsonEscape(value.toString()) + "\"}");
+                + statement.line + traceContextFields() + ",\"depth\":" + depth + ",\"detail\":\""
+                + jsonEscape(name) + "\""
+                + (before == null ? "" : ",\"before\":\"" + jsonEscape(before.toString()) + "\"")
+                + ",\"after\":\"" + jsonEscape(value.toString()) + "\"}");
     }
 
     private void traceLocalRead(String name) {
@@ -251,8 +269,28 @@ public class FastInterpreter {
         traceEvent("{\"event_id\":" + eventId + ",\"event\":\"LocalRead\",\"function\":\""
                 + jsonEscape(traceFunction) + "\",\"source_file\":\"" + jsonEscape(traceSourceFile)
                 + "\",\"semantic_identity\":\"" + jsonEscape(traceIdentity()) + "\",\"line\":"
-                + traceLine + ",\"depth\":" + traceDepth + ",\"detail\":\""
+                + traceLine + traceContextFields() + ",\"depth\":" + traceDepth + ",\"detail\":\""
                 + jsonEscape(name) + "\"}");
+    }
+
+    private void traceLoopIteration(Stmt statement, String function, int iteration, int depth) {
+        if (!trace) return;
+        setTraceContext(statement, function, depth);
+        eventId++;
+        int loopEventId = eventId;
+        traceEvent("{\"event_id\":" + loopEventId + ",\"event\":\"LoopIteration\",\"function\":\""
+                + jsonEscape(function) + "\",\"source_file\":\"" + jsonEscape(traceSourceFile)
+                + "\",\"semantic_identity\":\"" + jsonEscape(traceIdentity()) + "\",\"line\":"
+                + statement.line + traceContextFields() + ",\"depth\":" + depth
+                + ",\"detail\":\"" + iteration + "\"}");
+        traceParentStack.push(loopEventId);
+        traceControlStack.push(loopEventId);
+    }
+
+    private void endTraceLoopIteration() {
+        if (!trace) return;
+        traceParentStack.pop();
+        traceControlStack.pop();
     }
 
     private Value currentRaisedValue = null;
@@ -297,10 +335,7 @@ public class FastInterpreter {
                 i++;
                 continue;
             }
-            traceFunction = funcName;
-            traceSourceFile = s.sourceFile == null ? "" : s.sourceFile;
-            traceLine = s.line;
-            traceDepth = depth;
+            setTraceContext(s, funcName, depth);
             if (s.kind == Stmt.Kind.If) {
                 int baseInd = s.indent;
                 int thenEnd = i + 1;
@@ -332,9 +367,17 @@ public class FastInterpreter {
                 while (bodyEnd < endIdx && stmts.get(bodyEnd).indent > baseInd) {
                     bodyEnd++;
                 }
-                while (evalExpr(s.a, locals, currentDomain).asBool()) {
-                    lastVal = evalScopedBlock(stmts, i + 1, bodyEnd, locals,
-                            currentDomain, funcName, depth, Set.of());
+                int iterations = 0;
+                while (true) {
+                    setTraceContext(s, funcName, depth);
+                    if (!evalExpr(s.a, locals, currentDomain).asBool()) break;
+                    traceLoopIteration(s, funcName, ++iterations, depth);
+                    try {
+                        lastVal = evalScopedBlock(stmts, i + 1, bodyEnd, locals,
+                                currentDomain, funcName, depth + 1, Set.of());
+                    } finally {
+                        endTraceLoopIteration();
+                    }
                 }
                 i = bodyEnd;
                 continue;
@@ -683,8 +726,9 @@ public class FastInterpreter {
                             "\",\"source_file\":\"" + s.sourceFile + "\",\"line\":" + s.line +
                             ",\"depth\":" + depth + ",\"path\":\"" + varName + "\",\"before\":\"" + before + "\",\"after\":\"" + val + "\"}");
                 } else {
+                    Value before = s.kind == Stmt.Kind.Assign ? locals.get(varName) : null;
                     locals.put(varName, val);
-                    traceLocalWrite(s, varName, val, funcName, depth);
+                    traceLocalWrite(s, varName, val, before, funcName, depth);
                 }
                 return Value.ofUnit();
             }

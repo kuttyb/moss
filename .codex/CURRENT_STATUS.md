@@ -13679,3 +13679,16 @@ named payload. Java now scopes the recovery binder, projects the matching named
 field (or the single payload field), and restores a shadowed outer binding.
 `Failure.Bad(code: 2)` now prints `2` inside recovery and restores outer `code`
 value `1` afterward, matching C++.
+
+### Phase 25.3 continuation — emit Fast Debug loop iteration traces
+
+The loop trace comparison found Java omitted `LoopIteration`, loop-body depth,
+parent/control event IDs, and reassignment `before` values; repeated while
+condition reads also inherited the last body line. Java now emits checked loop
+iteration events with nested trace context and restores the header location for
+each condition evaluation. A complete small while trace (all event objects and
+stdout) matches C++ exactly.
+
+Validation: all eleven Java unit-test classes pass in default ABI-v9 and staged
+ABI-v10 modes; focused C++/Java while trace JSON objects compare equal.
+Broader branch/for/message/state trace parity and release gates remain open.
