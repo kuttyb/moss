@@ -16604,3 +16604,15 @@ regression retains the concrete method's CONSUME requirement. This mismatch is
 recorded in the phase ledger; native Rust compilation has not been run, so no
 claim about the final generated program is made. It needs frozen-candidate
 review/acceptance evidence before calling the checker verdicts reconciled.
+
+### Phase 25.3 continuation — real Margo project smoke
+
+A temporary single-package Moss project under `tmp/phase25-3-margo-smoke/`
+was driven through the actual `scripts/java/margo test --interp --json` path.
+Its declared assertion ran and passed under both default ABI-v9 and staged
+ABI-v10. The same project’s declared benchmark body ran through
+`scripts/java/moss bench --json`, producing 31 samples after five warmups and
+100 iterations per sample. The Margo `bench --interp` path is explicitly
+unsupported; `margo bench` itself builds the package graph first, so native
+benchmark execution remains deferred to the frozen-candidate acceptance gate.
+No performance conclusion is drawn from this small smoke workload.
