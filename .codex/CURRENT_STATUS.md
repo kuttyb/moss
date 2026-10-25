@@ -15175,6 +15175,20 @@ The regression also declares the forwarding helper before the consuming helper
 to ensure closure does not depend on declaration order.
 
 
+### Phase 25.3 continuation — summarize consuming method arguments
+
+`relay(value, box) -> box.accept(value)` failed to mark `relay`'s first
+parameter CONSUME even when `Box.accept` consumes and returns that argument.
+Function ownership summaries now inspect typed method receivers and their
+checked parameter access modes, then propagate the consumed argument through
+the function summary fixed point. The C++ and Java reproducers now both reject
+the caller's later use of `value`.
+
+The method-argument forwarding repro is included in the semantic regression.
+All eleven Java test classes pass under ABI-v9 and staged ABI-v10; generic
+receiver substitutions and imported method summaries remain open.
+
+
 ### Phase 25.3 continuation — source-free ABI-v10 consuming receivers
 
 Extended `SourceFreeObjectMetadataTest` to round-trip a method template with

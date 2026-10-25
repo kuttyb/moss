@@ -824,6 +824,20 @@ public class SemanticCheckerTest {
                 + "  box = Box(payload=Payload(value=\"x\"))\n"
                 + "  payload = box.take_payload()\n"
                 + "  echo box.payload.value\n", "OWNERSHIP_USE_AFTER_CONSUME");
+
+        assertCompileError(""
+                + "type Payload:\n"
+                + "  value: String\n"
+                + "type Box:\n"
+                + "  fn accept(value: Payload) -> Payload:\n"
+                + "    return value\n"
+                + "fn relay(value: Payload, box: Box) -> Payload:\n"
+                + "  return box.accept(value)\n"
+                + "fn main():\n"
+                + "  box = Box()\n"
+                + "  value = Payload(value=\"x\")\n"
+                + "  moved = relay(value, box)\n"
+                + "  echo value.value\n", "OWNERSHIP_USE_AFTER_CONSUME");
     }
 
     private static void testForLoopValuesCanFlowToObjectMethodArguments() {

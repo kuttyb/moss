@@ -2136,6 +2136,54 @@ public class SemanticChecker {
                 }
             }
         }
+        Map<String, TypeRef> bindings = new HashMap<>();
+        if (program.localBindingTypes != null)
+            bindings.putAll(program.localBindingTypes.getOrDefault(caller.name, Map.of()));
+        for (Param parameter : caller.params) {
+            TypeRef type = parameter.typeRef != null ? parameter.typeRef
+                    : (parameter.type != null && !parameter.type.isEmpty()
+                            ? TypeParser.parseCanonical(parameter.type) : null);
+            if (type != null) bindings.putIfAbsent(parameter.name, type);
+        }
+        for (ObjectType object : program.objects) {
+            for (Method method : object.methods) {
+                if (method.parameterAccessModes.stream().noneMatch(mode -> mode == AccessMode.Consume)) continue;
+                java.util.regex.Pattern callPattern = java.util.regex.Pattern.compile(
+                        "(?<![A-Za-z0-9_])([A-Za-z_][A-Za-z0-9_]*(?:\\s*\\.\\s*[A-Za-z_][A-Za-z0-9_]*)*)"
+                                + "\\s*\\.\\s*" + java.util.regex.Pattern.quote(method.name)
+                                + "\\s*\\(");
+                for (String expression : expressions) {
+                    java.util.regex.Matcher call = callPattern.matcher(expression);
+                    while (call.find()) {
+                        String receiverType = resolveFunctionReceiverType(call.group(1), bindings);
+                        if (!matchesObjectTypeName(receiverType, object.name)) continue;
+                        int open = expression.indexOf('(', call.start());
+                        int close = -1;
+                        for (int cursor = open + 1; cursor < expression.length(); cursor++) {
+                            if (expression.charAt(cursor) == ')'
+                                    && ExpressionTyper.findMatchingOpenParen(expression, cursor) == open) {
+                                close = cursor;
+                                break;
+                            }
+                        }
+                        if (close < 0) continue;
+                        List<String> args = ExpressionTyper.parseArguments(
+                                expression.substring(open + 1, close));
+                        for (int index = 0; index < args.size()
+                                && index < method.parameterAccessModes.size(); index++) {
+                            if (method.parameterAccessModes.get(index) != AccessMode.Consume) continue;
+                            String argument = args.get(index).trim();
+                            int colon = argument.indexOf(':');
+                            if (colon >= 0) argument = argument.substring(colon + 1).trim();
+                            if (argument.equals(paramName) && parameterType != null
+                                    && transferType(parameterType)) return true;
+                            if (transferType(resolveReceiverPathType(parameterType, argument, paramName)))
+                                return true;
+                        }
+                    }
+                }
+            }
+        }
         return false;
     }
 

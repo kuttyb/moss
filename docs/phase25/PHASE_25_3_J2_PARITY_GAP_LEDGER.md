@@ -516,6 +516,19 @@ The regression declares the forwarding helper before its consuming callee to
 verify the fixed-point result is independent of function declaration order.
 
 
+### Follow-up — summarize consuming method arguments
+
+For `relay(value, box) -> box.accept(value)`, C++ inferred that `relay`
+consumes its first parameter when `Box.accept` consumes and returns the
+argument. Java previously left the parameter in READ mode. Function consume
+summaries now resolve typed method receivers and inspect checked method
+parameter modes before closing ordinary function summaries.
+
+The focused Java regression and C++/Java diagnostic pair cover the case.
+All eleven Java test classes pass under ABI-v9 and staged ABI-v10. Generic
+receiver substitutions and imported method summaries remain open.
+
+
 ### Follow-up — source-free ABI-v10 consuming receiver metadata
 
 The source-free object test now encodes and imports an ABI-v10 method template
