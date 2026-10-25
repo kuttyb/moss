@@ -184,3 +184,34 @@ branch body events under that control event with incremented depth. A probe
 covering both choices compares exactly with C++ event-for-event and stdout.
 All eleven Java unit-test classes pass in ABI-v9 and staged ABI-v10; other
 control, message, and state tracing remain open.
+
+## Phase 25.3 continuation — v10-only callable declaration seeding
+
+At pushed source checkpoint `391bfb8ae9835343b53f8fcf4d645cc3b242edcc`,
+Java source-free loading can seed callable declarations from ABI-v10 summaries
+when both legacy declaration copies are absent. The bounded profiles cover
+closed scalar and collection returns, nested `Vector[Vector[Int]]` literals,
+escaped `Vector[String]`, direct generic parameter pass-through for `(T) -> T`
+and `(T, U) -> U`, and zero-argument empty `Vector[T]` specialized as Int or
+Bool. Checked bodies and summaries are retained; requirements, dependencies,
+and effects must be absent for seeded profiles. Generic synthetic parameters
+remain unannotated so each direct pass-through call infers independently, while
+summary access modes are preserved.
+
+The source-free metadata regression removes corresponding legacy rows from both
+`binary_contract` and `semantic_contract`, then semantically checks and runs the
+consumer in Fast Debug. The latest test checkpoint is
+`150641efd7ec178c7ec26933f7da126bd80e96c1`. All eleven Java unit-test classes
+pass in staged ABI-v10 and default ABI-v9; the standalone JAR and launcher
+bootstrap were also checked. Native Rust provider-consumer linkage, SDK
+integration, complete generic relations, method-body import, and complete
+logical ABI-v10 parity remain open. This does not establish full parity or
+release readiness.
+
+## Phase 25.3 continuation — refreshed Fast Debug capture trace sample
+
+At `fc499c1741f74f89c1f060b21152bbd199231b66`, a fresh interpreter comparison
+of all eleven positive `phase21_capture_*` fixtures produced identical stdout
+and complete JSON traces under C++ and Java. This supersedes earlier localized
+trace differences for selected fixtures; it is a focused sample and not full
+Fast Debug trace parity. No native compilation or execution was run.
