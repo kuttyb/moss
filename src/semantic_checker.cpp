@@ -547,62 +547,66 @@ class Checker {
         }
       }
     }
-    { CompilerStageTimer timer("effects"); infer_effects(); infer_observable_effects(); }
-    validate_imported_h3_summary_closure(p_);
-    for (auto& function : p_.functions)
-      if (function.open_summary) {
-        function.open_summary->observable_effects = function.observable_effects;
-        for (const auto effect : function.parameter_effects)
-          function.open_summary->parameter_access.push_back(
-              effect == Effect::Consume ? moss::AccessMode::Consume :
-              effect == Effect::Write ? moss::AccessMode::Write :
-                                        moss::AccessMode::Read);
-      }
-    // Discard early summaries together so dependencies cannot reuse another
-    // instance's pre-fixed-point effects while these are rebuilt.
-    for (auto& function : p_.functions)
-      for (auto& specialization : function.specializations)
-        specialization.parameter_effects.clear();
-    for (auto& function : p_.functions)
-      for (auto& specialization : function.specializations) {
-        specialization.parameter_effects = concrete_function_effects(
-            function, specialization.parameter_types, &specialization.parameter_mutations);
-      }
-    final_parameter_effects_ready_ = true;
-    validate_borrowed_view_write_effects();
+    {
+      CompilerStageTimer timer("effects");
+      infer_effects();
+      infer_observable_effects();
+      validate_imported_h3_summary_closure(p_);
+      for (auto& function : p_.functions)
+        if (function.open_summary) {
+          function.open_summary->observable_effects = function.observable_effects;
+          for (const auto effect : function.parameter_effects)
+            function.open_summary->parameter_access.push_back(
+                effect == Effect::Consume ? moss::AccessMode::Consume :
+                effect == Effect::Write ? moss::AccessMode::Write :
+                                          moss::AccessMode::Read);
+        }
+      // Discard early summaries together so dependencies cannot reuse another
+      // instance's pre-fixed-point effects while these are rebuilt.
+      for (auto& function : p_.functions)
+        for (auto& specialization : function.specializations)
+          specialization.parameter_effects.clear();
+      for (auto& function : p_.functions)
+        for (auto& specialization : function.specializations) {
+          specialization.parameter_effects = concrete_function_effects(
+              function, specialization.parameter_types, &specialization.parameter_mutations);
+        }
+      final_parameter_effects_ready_ = true;
+      validate_borrowed_view_write_effects();
+    }
     { CompilerStageTimer timer("concrete_graph"); build_concrete_domain_graph(); }
     {
       CompilerStageTimer timer("specialization_checking");
       check_method_ownership();
       for (const auto& f : p_.functions) check_function(f);
+      refresh_open_nominal_constructor_results_from_checked_types();
+      refresh_open_arithmetic_summaries_from_checked_types();
+      refresh_open_collection_summaries_from_checked_types();
+      refresh_open_pipeline_map_summaries_from_checked_types();
+      refresh_open_map_mutation_summaries_from_checked_types();
+      refresh_open_for_summaries_from_checked_types();
+      refresh_open_exceptional_summaries_from_checked_types();
+      refresh_open_callback_effect_dependencies_from_checked_types();
+      if (staged_abi_v10() && p_.explicit_module)
+        for (const auto& function : p_.functions) {
+          if (!function.exported || compiled_interface_file(function.source_file) ||
+              !std::any_of(function.constraints.begin(), function.constraints.end(),
+                           [](const Constraint& constraint) {
+                return constraint.kind == ConstraintKind::Callable;
+              })) continue;
+          if (!function.open_summary ||
+              !function.open_summary->scheme_complete ||
+              function.open_summary->observable_effects.unresolved)
+            err(function.source_file, function.line,
+                "exported callable '" + function.name +
+                    "' has unresolved callback effects in its open ABI-v10 summary",
+                "SOURCE_FREE_CALLABLE_EFFECTS_UNRESOLVED");
+        }
+      for (const auto& d : p_.domains) check_domain(d);
+      if (p_.main) check_main(*p_.main);
+      check_test_and_benchmark_declarations();
+      validate_staged_nominal_map_key_proofs();
     }
-    refresh_open_nominal_constructor_results_from_checked_types();
-    refresh_open_arithmetic_summaries_from_checked_types();
-    refresh_open_collection_summaries_from_checked_types();
-    refresh_open_pipeline_map_summaries_from_checked_types();
-    refresh_open_map_mutation_summaries_from_checked_types();
-    refresh_open_for_summaries_from_checked_types();
-    refresh_open_exceptional_summaries_from_checked_types();
-    refresh_open_callback_effect_dependencies_from_checked_types();
-    if (staged_abi_v10() && p_.explicit_module)
-      for (const auto& function : p_.functions) {
-        if (!function.exported || compiled_interface_file(function.source_file) ||
-            !std::any_of(function.constraints.begin(), function.constraints.end(),
-                         [](const Constraint& constraint) {
-              return constraint.kind == ConstraintKind::Callable;
-            })) continue;
-        if (!function.open_summary ||
-            !function.open_summary->scheme_complete ||
-            function.open_summary->observable_effects.unresolved)
-          err(function.source_file, function.line,
-              "exported callable '" + function.name +
-                  "' has unresolved callback effects in its open ABI-v10 summary",
-              "SOURCE_FREE_CALLABLE_EFFECTS_UNRESOLVED");
-      }
-    for (const auto& d : p_.domains) check_domain(d);
-    if (p_.main) check_main(*p_.main);
-    check_test_and_benchmark_declarations();
-    validate_staged_nominal_map_key_proofs();
     p_.concrete_domain_graph.closed = true;
     std::ostringstream graph_material;
     for (const auto& instance : p_.concrete_domain_graph.instances)
@@ -613,22 +617,27 @@ class Checker {
                      << std::quoted(edge.target_instance);
     p_.concrete_domain_graph.identity = "domain-graph:" + stable_hash(graph_material.str());
     build_functional_ir();
-    for (auto& function : p_.functions)
-      for (auto& specialization : function.specializations)
-        specialization.observable_effects =
-            concrete_function_observable_effects(
-                function, specialization.parameter_types);
-    for (const auto& function : p_.functions)
-      for (const auto& specialization : function.specializations) {
-        const auto rechecked = concrete_function_observable_effects(
-            function, specialization.parameter_types);
-        if (!same_observable_effects(specialization.observable_effects,
-                                     rechecked))
-          err(function.line,
-              "static specialization has inconsistent observable effects for one key",
-              "SOURCE_FREE_SPECIALIZATION_MISMATCH");
-      }
-    // Ownership checking runs after expression/statement occurrence capture.
+    {
+      CompilerStageTimer timer("specialization_effects");
+      for (auto& function : p_.functions)
+        for (auto& specialization : function.specializations)
+          specialization.observable_effects =
+              concrete_function_observable_effects(
+                  function, specialization.parameter_types);
+      for (const auto& function : p_.functions)
+        for (const auto& specialization : function.specializations) {
+          const auto rechecked = concrete_function_observable_effects(
+              function, specialization.parameter_types);
+          if (!same_observable_effects(specialization.observable_effects,
+                                       rechecked))
+            err(function.line,
+                "static specialization has inconsistent observable effects for one key",
+                "SOURCE_FREE_SPECIALIZATION_MISMATCH");
+        }
+    }
+    {
+      CompilerStageTimer timer("occurrence_and_summary_projection");
+      // Ownership checking runs after expression/statement occurrence capture.
     // Reconcile assignment targets only now, when BindingFact has the final
     // pre-write and post-write identities from the ownership walk.
     for (auto& [body_key, state_ptr] : checked_body_states_) {
@@ -1550,41 +1559,47 @@ class Checker {
                   unavailable_body + "')",
               "SOURCE_FREE_CHECKED_BODY_UNAVAILABLE");
       }
+    }
     { CompilerStageTimer timer("synchronization_plan"); build_synchronization_plan(p_.concrete_domain_graph); }
-    warn_fileio_blocking_with_shared_write();
-    retain_checked_type_uses();
-    std::sort(p_.semantic_uses.begin(), p_.semantic_uses.end(),
-              [](const SemanticUse& left, const SemanticUse& right) {
-                return std::tie(left.target_identity, left.kind,
-                                left.source_file, left.line,
-                                left.enclosing_identity,
-                                left.call_site_identity) <
-                    std::tie(right.target_identity, right.kind,
-                             right.source_file, right.line,
-                             right.enclosing_identity,
-                             right.call_site_identity);
-              });
-    p_.semantic_uses.erase(
-        std::unique(p_.semantic_uses.begin(), p_.semantic_uses.end(),
-                    [](const SemanticUse& left, const SemanticUse& right) {
-                      return left.target_identity == right.target_identity &&
-                          left.kind == right.kind &&
-                          left.source_file == right.source_file &&
-                          left.line == right.line &&
-                          left.enclosing_identity == right.enclosing_identity &&
-                          left.call_site_identity == right.call_site_identity;
-                    }),
-        p_.semantic_uses.end());
-    if (deferred_echo_display_error_) throw *deferred_echo_display_error_;
-    // Retain the typed compiler-facing handoff from the facts just checked.
-    // This pass neither infers types nor parses diagnostic/display strings.
-    p_.typed_semantics = std::make_shared<moss::TypedSemanticModuleV1>(
-        moss::project_typed_semantics_v1(p_));
-    p_.assert_declaration_type_consistency();
+    {
+      CompilerStageTimer timer("typed_semantics_export");
+      warn_fileio_blocking_with_shared_write();
+      retain_checked_type_uses();
+      std::sort(p_.semantic_uses.begin(), p_.semantic_uses.end(),
+                [](const SemanticUse& left, const SemanticUse& right) {
+                  return std::tie(left.target_identity, left.kind,
+                                  left.source_file, left.line,
+                                  left.enclosing_identity,
+                                  left.call_site_identity) <
+                      std::tie(right.target_identity, right.kind,
+                               right.source_file, right.line,
+                               right.enclosing_identity,
+                               right.call_site_identity);
+                });
+      p_.semantic_uses.erase(
+          std::unique(p_.semantic_uses.begin(), p_.semantic_uses.end(),
+                      [](const SemanticUse& left, const SemanticUse& right) {
+                        return left.target_identity == right.target_identity &&
+                            left.kind == right.kind &&
+                            left.source_file == right.source_file &&
+                            left.line == right.line &&
+                            left.enclosing_identity == right.enclosing_identity &&
+                            left.call_site_identity == right.call_site_identity;
+                      }),
+          p_.semantic_uses.end());
+      if (deferred_echo_display_error_) throw *deferred_echo_display_error_;
+      // Retain the typed compiler-facing handoff from the facts just checked.
+      // This pass neither infers types nor parses diagnostic/display strings.
+      p_.typed_semantics = std::make_shared<moss::TypedSemanticModuleV1>(
+          moss::project_typed_semantics_v1(p_));
+      p_.assert_declaration_type_consistency();
+    }
     if (std::getenv("MOSS_PROFILE_COMPILER") != nullptr) {
       size_t total_specs = 0;
       for (const auto& f : p_.functions) total_specs += f.specializations.size();
+      std::cerr << "MOSS_PROFILE|specialization_requests|" << specialization_requests_ << '\n';
       std::cerr << "MOSS_PROFILE|checked_specializations|" << total_specs << '\n';
+      std::cerr << "MOSS_PROFILE|specialization_body_checking|" << specialization_body_checking_ns_ << '\n';
     }
   }
 
@@ -1642,6 +1657,8 @@ class Checker {
   // Rechecks during the final body pass compare against effects computed after
   // inference reaches its fixed point, never against early registration facts.
   bool final_parameter_effects_ready_ = false;
+  uint64_t specialization_requests_ = 0;
+  uint64_t specialization_body_checking_ns_ = 0;
   std::unique_ptr<moss::TypeContext::Scope> type_scope_;
   mutable vector<bool>* parameter_mutation_capture_ = nullptr;
   mutable string current_source_file_;
@@ -21660,6 +21677,9 @@ class Checker {
                                           moss::TypeRef>>& open_result_bindings = {},
                                       const std::optional<moss::TypeRef>&
                                           closed_result_type = std::nullopt) {
+    if (std::getenv("MOSS_PROFILE_COMPILER") != nullptr) {
+      ++specialization_requests_;
+    }
     if (!function.static_dispatch) return;
     require_staged_v10_callable_body(line, function);
     if (parameter_types.size() != function.params.size() ||
@@ -21839,6 +21859,9 @@ class Checker {
       specialized_env[function.params[index].name] = canonical_types[index];
     FunctionSpecialization* previous = checking_specialization_;
     const string call_source = current_source_file_;
+    const bool profile_spec = std::getenv("MOSS_PROFILE_COMPILER") != nullptr;
+    const auto spec_body_start = profile_spec ? std::chrono::steady_clock::now()
+                                              : std::chrono::time_point<std::chrono::steady_clock>();
     try {
     checking_specialization_ = &function.specializations.back();
     SourceFileScope function_source(current_source_file_, function.source_file);
@@ -21877,9 +21900,17 @@ class Checker {
                        *function.result_expression, specialized_env);
     }
     } catch (CompileError& error) {
+      if (profile_spec) {
+        specialization_body_checking_ns_ += std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now() - spec_body_start).count();
+      }
       checking_specialization_ = previous;
       annotate_specialization_failure(error, function, line, call_source);
       throw;
+    }
+    if (profile_spec) {
+      specialization_body_checking_ns_ += std::chrono::duration_cast<std::chrono::nanoseconds>(
+          std::chrono::steady_clock::now() - spec_body_start).count();
     }
     checking_specialization_ = previous;
   }
