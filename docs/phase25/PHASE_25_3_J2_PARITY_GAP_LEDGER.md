@@ -118,3 +118,12 @@ by matching keys, object fields with nominal type identity, and enum payloads
 structurally. Nested Int and Float Vector comparisons now match C++. Clean Java
 build and all eleven unit-test classes pass in ABI-v9. Broader collection/map
 and full interpreter/native parity remain unverified.
+
+## Phase 25.3 continuation — Fast Debug while-loop execution
+
+Inspection found that the Java Fast Debug statement dispatcher did not handle
+`Stmt.Kind.While`, so a body could be visited once without reevaluating its
+condition. The interpreter now executes the checked body repeatedly under the
+condition. A checked counter-loop emits `0`, `1`, `2` and matches the C++
+interpreter. Clean build and all eleven Java unit-test classes pass in ABI-v9;
+staged ABI-v10, native, Margo, and SDK gates remain open.

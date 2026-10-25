@@ -11,6 +11,7 @@ public final class FastInterpreterTest {
     public static void main(String[] args) {
         testFractionalAndMixedNumericComparisons();
         testIeeeAndMixedNumericEquality();
+        testWhileLoopRepeatsCheckedBody();
         System.out.println("FastInterpreterTest PASSED.");
     }
 
@@ -61,6 +62,27 @@ public final class FastInterpreterTest {
         String expected = "true\nfalse\ntrue\nfalse\nfalse\ntrue\ntrue\ntrue\ntrue\n";
         if (!expected.equals(actual)) {
             throw new AssertionError("IEEE/mixed numeric equality was incorrect: " + actual);
+        }
+    }
+
+    private static void testWhileLoopRepeatsCheckedBody() {
+        var program = Parser.parseSource(""
+                + "fn main():\n"
+                + "  count = 0\n"
+                + "  while count < 3:\n"
+                + "    echo count\n"
+                + "    count = count + 1\n", "fast-interpreter-while.moss");
+        new CheckedProgram(program).run();
+
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+        try (PrintStream captured = new PrintStream(stdout, true, StandardCharsets.UTF_8)) {
+            new FastInterpreter(program, false, captured,
+                    new PrintStream(new ByteArrayOutputStream())).run();
+        }
+        String actual = stdout.toString(StandardCharsets.UTF_8);
+        String expected = "0\n1\n2\n";
+        if (!expected.equals(actual)) {
+            throw new AssertionError("while loop did not reevaluate its checked body: " + actual);
         }
     }
 }

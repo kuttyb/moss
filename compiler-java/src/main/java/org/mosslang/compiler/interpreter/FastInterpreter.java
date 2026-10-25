@@ -270,6 +270,18 @@ public class FastInterpreter {
                 }
                 i = elseEnd;
                 continue;
+            } else if (s.kind == Stmt.Kind.While) {
+                int baseInd = s.indent;
+                int bodyEnd = i + 1;
+                while (bodyEnd < endIdx && stmts.get(bodyEnd).indent > baseInd) {
+                    bodyEnd++;
+                }
+                while (evalExpr(s.a, locals, currentDomain).asBool()) {
+                    lastVal = evalBlock(stmts, i + 1, bodyEnd, locals,
+                            currentDomain, funcName, depth);
+                }
+                i = bodyEnd;
+                continue;
             } else if (s.kind == Stmt.Kind.For) {
                 int baseInd = s.indent;
                 int forEnd = i + 1;

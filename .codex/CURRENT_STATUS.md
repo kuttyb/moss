@@ -13613,3 +13613,14 @@ Validation: clean Java build and all eleven Java unit-test classes pass in
 default ABI-v9 and staged ABI-v10 modes. A focused C++/Java probe over scalar,
 nested, and Float Vectors matches exactly. Native Rust, Margo, SDK, and full
 acceptance checks remain deferred; Phase 25.3 remains in progress.
+
+### Phase 25.3 continuation — execute while loops in Fast Debug
+
+The Java interpreter lacked handling for checked `while` statements, causing a
+loop body to run once as ordinary following statements. `evalBlock` now locates
+the while body and reevaluates its condition before each iteration. A checked
+counter-loop regression emits `0`, `1`, `2`, matching C++ Fast Debug.
+
+Validation: clean Java build and all eleven Java unit-test classes pass in
+default ABI-v9 and staged ABI-v10 modes; focused Java/C++ while-loop output
+matches. Native, Margo, SDK, and full acceptance gates remain deferred.
