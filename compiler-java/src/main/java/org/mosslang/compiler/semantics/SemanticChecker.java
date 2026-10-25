@@ -2007,20 +2007,26 @@ public class SemanticChecker {
                 for (String expression : expressions) {
                     if (expression == null) continue;
                     for (Function target : program.functions) {
-                        if (containsCallTo(expression, target.name)) edges.add(new CallSite(target.name, statement.line));
+                        if (containsCallTo(expression, target.name)
+                                || containsCallbackReference(expression, target.name))
+                            edges.add(new CallSite(target.name, statement.line));
                     }
                 }
                 if (statement.args != null) {
                     for (String expression : statement.args) {
                         for (Function target : program.functions) {
-                            if (containsCallTo(expression, target.name)) edges.add(new CallSite(target.name, statement.line));
+                            if (containsCallTo(expression, target.name)
+                                    || containsCallbackReference(expression, target.name))
+                                edges.add(new CallSite(target.name, statement.line));
                         }
                     }
                 }
             }
             if (function.resultExpression != null) {
                 for (Function target : program.functions) {
-                    if (containsCallTo(function.resultExpression, target.name)) edges.add(new CallSite(target.name, function.resultLine));
+                    if (containsCallTo(function.resultExpression, target.name)
+                            || containsCallbackReference(function.resultExpression, target.name))
+                        edges.add(new CallSite(target.name, function.resultLine));
                 }
             }
             graph.put(function.name, edges);
@@ -2042,6 +2048,69 @@ public class SemanticChecker {
         if (expression == null || name == null || name.isEmpty()) return false;
         return java.util.regex.Pattern.compile("(?<![A-Za-z0-9_.])" + java.util.regex.Pattern.quote(name)
                 + "\\s*\\(").matcher(expression).find();
+    }
+
+    private boolean containsCallbackReference(String expression, String functionName) {
+        if (expression == null || functionName == null || functionName.isEmpty()) return false;
+        String code = maskStringLiterals(expression);
+        String escapedName = java.util.regex.Pattern.quote(functionName);
+        if (java.util.regex.Pattern.compile("(?:\\|>\\s*)?(?:map|filter|any|all)\\s*\\(\\s*"
+                + escapedName + "\\s*\\)").matcher(code).find()) return true;
+
+        for (int open = 0; open < code.length(); open++) {
+            if (code.charAt(open) != '(') continue;
+            int start = open - 1;
+            while (start >= 0 && Character.isWhitespace(code.charAt(start))) start--;
+            int end = start + 1;
+            while (start >= 0 && (Character.isLetterOrDigit(code.charAt(start))
+                    || code.charAt(start) == '_' || code.charAt(start) == '.')) start--;
+            if (start + 1 == end) continue;
+            String calleeName = code.substring(start + 1, end);
+            Function callee = findFunction(calleeName);
+            if (callee == null) continue;
+            int close = matchingCloseParen(code, open);
+            if (close < 0) continue;
+            List<String> arguments = ExpressionTyper.parseArguments(code.substring(open + 1, close));
+            for (int index = 0; index < arguments.size() && index < callee.params.size(); index++) {
+                if (!arguments.get(index).trim().equals(functionName)) continue;
+                if (parameterIsUsedAsCallback(callee, callee.params.get(index).name)) return true;
+            }
+            open = close;
+        }
+        return false;
+    }
+
+    private Function findFunction(String name) {
+        Function exact = functions.get(name);
+        if (exact != null) return exact;
+        int separator = Math.max(name.lastIndexOf('.'), name.lastIndexOf("__"));
+        String shortName = separator < 0 ? name
+                : name.substring(separator + (name.charAt(separator) == '.' ? 1 : 2));
+        return program.functions.stream().filter(function -> function.name.equals(shortName))
+                .findFirst().orElse(null);
+    }
+
+    private boolean parameterIsUsedAsCallback(Function function, String parameter) {
+        String escaped = java.util.regex.Pattern.quote(parameter);
+        java.util.regex.Pattern pipelineUse = java.util.regex.Pattern.compile(
+                "(?:\\|>\\s*)?(?:map|filter|any|all|reduce)\\s*\\([^)]*\\b"
+                        + escaped + "\\b[^)]*\\)");
+        java.util.regex.Pattern directUse = java.util.regex.Pattern.compile(
+                "(?<![A-Za-z0-9_.])" + escaped + "\\s*\\(");
+        List<String> expressions = new ArrayList<>();
+        expressions.add(function.resultExpression);
+        for (Stmt statement : function.body) {
+            expressions.add(statement.text);
+            expressions.add(statement.a);
+            expressions.add(statement.b);
+            expressions.addAll(statement.args);
+        }
+        for (String expression : expressions) {
+            if (expression == null) continue;
+            String code = maskStringLiterals(expression);
+            if (pipelineUse.matcher(code).find() || directUse.matcher(code).find()) return true;
+        }
+        return false;
     }
 
     private static void findRecursiveCycle(String name, Map<String, List<CallSite>> graph,

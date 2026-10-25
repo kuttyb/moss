@@ -48,6 +48,7 @@ public class SemanticCheckerTest {
         testPerInstanceDomainLayoutSpecialization();
         testConflictingDomainInstanceTypesAreRejected();
         testDomainHandlersRequireMessageSyntax();
+        testRecursionThroughFunctionalCallbacksIsRejected();
         testDirectVectorSumTypeAndLowering();
         testValueHandlerRepliesOnEveryNormalPath();
         testUnsupportedCollectionsAreRejectedAsForIterablesAtLoopSite();
@@ -1134,6 +1135,29 @@ public class SemanticCheckerTest {
                 + "  worker = Worker()\n"
                 + "  message worker.Ping()\n", "messaged-domain-handler.moss");
         new SemanticChecker(valid).run();
+    }
+
+    private static void testRecursionThroughFunctionalCallbacksIsRejected() {
+        Program direct = Parser.parseSource(""
+                + "fn recurse(value: Int) -> Int:\n"
+                + "  values = [value]\n"
+                + "  return values |> map(recurse) |> sum\n"
+                + "fn main():\n"
+                + "  echo recurse(1)\n", "recursive-map-callback.moss");
+        expectCompileError(direct, "RECURSION_CYCLE",
+                "direct functional callback recursion must be rejected");
+
+        Program forwarded = Parser.parseSource(""
+                + "fn apply(values, callable):\n"
+                + "  return values |> map(callable)\n"
+                + "fn recurse(value: Int) -> Int:\n"
+                + "  values = [value]\n"
+                + "  transformed = apply(values, recurse)\n"
+                + "  return transformed[0]\n"
+                + "fn main():\n"
+                + "  echo recurse(1)\n", "recursive-hof-callback.moss");
+        expectCompileError(forwarded, "RECURSION_CYCLE",
+                "forwarded functional callback recursion must be rejected");
     }
 
     private static void testNestedFieldReadInBranchConditionKeepsReceiverReadOnly() {

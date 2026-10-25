@@ -16213,3 +16213,19 @@ Focused `SemanticCheckerTest` and the historical naked-call fixture pass the
 expected reject/accept behavior. All twelve Java test classes under ABI-v9 and
 staged ABI-v10, packaging/bootstrap, feedback validation, and final diff checks
 are pending for this checkpoint. No native or expensive acceptance gate ran.
+
+### Phase 25.3 continuation — functional callback recursion
+
+Java's recursion graph now includes direct function values used as callbacks in
+`map`/`filter`/`any`/`all`, plus callback values forwarded through a helper
+whose parameter is invoked as a callback. This closes the false acceptance for
+`functional_recursion.moss` and `functional_hof_recursion.moss`; both now reject
+with `RECURSION_CYCLE`, while `examples/functional_objects.moss` remains
+accepted as a nonrecursive functional control.
+
+The regression test covers direct and forwarded callbacks. All twelve Java
+test classes pass under ABI-v9 and staged ABI-v10. Feedback validation and
+`git diff --check` pass. This does not resolve the broader functional callback
+and ownership gaps found in the sampled negative corpus. No native Rust
+compilation or release acceptance gate ran. Packaging is being revalidated for
+this checkpoint.
