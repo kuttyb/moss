@@ -15364,11 +15364,11 @@ generator now resolves qualified source-free function calls through the
 definitions for concrete source-free functions. Generic source-free functions
 with locally lowered bodies remain eligible for macro lowering.
 
-The ABI-v9 regression checks the provider path, error bridge, and absence of
-the invalid dotted stub. All eleven Java test classes pass under ABI-v9
-defaults and staged ABI-v10; `git diff --check` passes. Provider-crate Rust
-compilation and native linkage remain unverified and are still final-gate
-items.
+The ABI-v9 regressions check both ordinary and raising provider paths, helper
+raise propagation, and absence of invalid dotted stubs. All eleven Java test
+classes pass under ABI-v9 defaults and staged ABI-v10; `git diff --check`
+passes. Provider-crate Rust compilation and native linkage remain unverified
+and are still final-gate items.
 
 
 ### Phase 25.3 continuation — summarize imported method access through helpers

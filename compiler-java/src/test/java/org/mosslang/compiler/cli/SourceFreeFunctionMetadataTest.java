@@ -32,6 +32,7 @@ public final class SourceFreeFunctionMetadataTest {
                     fn consume kind=concrete return=unit effects=local_capture_read=0;local_mutation=0;domain_read=0;domain_write=0;message=0;external_io=0;fileio=0;fileio_unknown=0;may_panic=0;raise_set=-;may_diverge=0;unresolved=0 symbol=moss__function__service__consume__abcd
                       param 0 string mode=CONSUME name="value"
                     fn signal kind=concrete return=unit effects=local_capture_read=0;local_mutation=0;domain_read=0;domain_write=0;message=0;external_io=0;fileio=0;fileio_unknown=0;may_panic=0;raise_set=enum:Fault:Bad;may_diverge=0;unresolved=0 symbol=moss__function__service__signal__abcd
+                    fn ping kind=concrete return=unit effects=local_capture_read=0;local_mutation=0;domain_read=0;domain_write=0;message=0;external_io=0;fileio=0;fileio_unknown=0;may_panic=0;raise_set=-;may_diverge=0;unresolved=0 symbol=moss__function__service__ping__abcd
                     semantic_exports
                     export fn map kind=generic semantic_hash=0123456789abcdef return=vector effects=local_capture_read=0;local_mutation=0;domain_read=0;domain_write=0;message=0;external_io=0;fileio=0;fileio_unknown=0;may_panic=0;raise_set=-;may_diverge=0;unresolved=0
                       param 0 vector mode=WRITE name="values"
@@ -43,6 +44,7 @@ public final class SourceFreeFunctionMetadataTest {
                     export fn consume semantic_hash=0123456789abcdef return=unit effects=local_capture_read=0;local_mutation=0;domain_read=0;domain_write=0;message=0;external_io=0;fileio=0;fileio_unknown=0;may_panic=0;raise_set=-;may_diverge=0;unresolved=0
                       param 0 string mode=CONSUME name="value"
                     export fn signal semantic_hash=0123456789abcdef return=unit effects=local_capture_read=0;local_mutation=0;domain_read=0;domain_write=0;message=0;external_io=0;fileio=0;fileio_unknown=0;may_panic=0;raise_set=enum:Fault:Bad;may_diverge=0;unresolved=0
+                    export fn ping semantic_hash=0123456789abcdef return=unit effects=local_capture_read=0;local_mutation=0;domain_read=0;domain_write=0;message=0;external_io=0;fileio=0;fileio_unknown=0;may_panic=0;raise_set=-;may_diverge=0;unresolved=0
                     """);
 
             Program program = new Program();
@@ -111,6 +113,22 @@ public final class SourceFreeFunctionMetadataTest {
             }
             if (handledRaiseRust.contains("pub fn service.signal()")) {
                 throw new AssertionError("source-free function was emitted as an invalid local Rust stub");
+            }
+            Program plainSourceFreeCall = Parser.parseSource(""
+                    + "import service\n"
+                    + "fn main():\n"
+                    + "  service.ping()\n", "source-free-plain-function-call.moss");
+            Main.loadMossiFunctions(interfaceFile, "service", plainSourceFreeCall);
+            plainSourceFreeCall.functions.removeIf(function -> !function.name.equals("main")
+                    && !function.name.equals("service.ping")
+                    && !function.name.equals("service__ping"));
+            new SemanticChecker(plainSourceFreeCall).run();
+            String plainSourceFreeRust = org.mosslang.compiler.backend.NativeGenerator.generate(
+                    plainSourceFreeCall, false);
+            if (!plainSourceFreeRust.contains("moss_service::ping()")
+                    || plainSourceFreeRust.contains("pub fn service.ping()")) {
+                throw new AssertionError("ordinary source-free function did not use its provider path: "
+                        + plainSourceFreeRust);
             }
             Program v9Consumer = Parser.parseSource(""
                     + "fn main():\n"
