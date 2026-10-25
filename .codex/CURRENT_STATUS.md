@@ -14275,3 +14275,22 @@ Both ABI Java suites pass. The refreshed 91-file checker screen reports 2
 C++-only, 0 Java-only, 59 accepted by both, and 30 rejected by both; the two
 remaining acceptance mismatches are FileIO-related. No broad parity claim is
 made.
+
+### Phase 25.3 continuation — FileIO checker surface and capability captures
+
+Java expression typing now recognizes the existing FileIO operations used by
+the accepted fixtures: `read` returns `Range` or `RangeBatch`, `write`,
+`sync`, and `close` return unit, `chunks` returns a vector of ranges, and
+`create` is accepted as an open mode. `RangeBatch.length()` is recognized.
+On-fail arms now pass through block checking, preserving nested recover scope;
+capability values (`FileIO`, `Range`, `RangeBatch`, `Executor`, and domain
+handles) are rejected as captures.
+
+Both FileIO acceptance fixtures now check successfully, while
+`phase21_capture_fileio.moss` rejects with the same capability-capture
+diagnostic as C++. ABI-v9 and staged ABI-v10 Java suites pass. The refreshed
+91-file checker screen reports 0 C++-only, 0 Java-only, 61 both accepted, and
+30 both rejected. One warning mismatch remains: Java reports the explicit
+`FileError.IO` recovery in `phase21_fileio_close_full.moss` as unreachable,
+while C++ emits no warning. This result is acceptance alignment for the
+sample, not full FileIO semantic parity.

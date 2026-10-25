@@ -1083,6 +1083,32 @@ public class ExpressionTyper {
         TypeRef targetType = infer(target, line, env);
         targetType = solver.resolve(targetType);
 
+        if ("FileIO".equals(targetType.name())) {
+            if ("open".equals(member)) {
+                for (int index = 0; index < argExprs.size(); index++) {
+                    String argument = argExprs.get(index).trim();
+                    if (index == 1 && ("ro".equals(argument) || "rw".equals(argument)
+                            || "create".equals(argument) || "_".equals(argument))) continue;
+                    infer(argument, line, env);
+                }
+                return TypeRef.primitive("FileIO");
+            }
+            if ("read".equals(member)) {
+                if (!argExprs.isEmpty() && argExprs.get(0).trim().startsWith("["))
+                    return TypeRef.primitive("RangeBatch");
+                for (String argument : argExprs) infer(argument, line, env);
+                return TypeRef.primitive("Range");
+            }
+            if ("write".equals(member) || "sync".equals(member) || "close".equals(member)) {
+                for (String argument : argExprs) infer(argument, line, env);
+                return TypeRef.unit();
+            }
+            if ("chunks".equals(member)) {
+                for (String argument : argExprs) infer(argument, line, env);
+                return TypeRef.builtin("vector", List.of(TypeRef.primitive("Range")));
+            }
+        }
+
         if (targetType.kind() == TypeKind.Builtin && "vector".equals(targetType.name())) {
             if ("len".equals(member) || "size".equals(member) || "count".equals(member)) {
                 return TypeRef.primitive("int");
@@ -1354,7 +1380,9 @@ public class ExpressionTyper {
         }
 
         if (targetType.kind() == TypeKind.Domain || targetType.kind() == TypeKind.NominalInstance || targetType.kind() == TypeKind.InferenceVar
-                || "FileIO".equals(target) || "Range".equalsIgnoreCase(targetType.name()) || "Executor".equals(targetType.name()) || "file".equals(target) || "executor".equals(target)) {
+                || "FileIO".equals(target) || "Range".equalsIgnoreCase(targetType.name())
+                || "RangeBatch".equals(targetType.name()) || "Executor".equals(targetType.name())
+                || "file".equals(target) || "executor".equals(target)) {
             for (String arg : argExprs) {
                 if (!arg.equals("ro") && !arg.equals("rw") && !arg.equals("_")) {
                     infer(arg, line, env);

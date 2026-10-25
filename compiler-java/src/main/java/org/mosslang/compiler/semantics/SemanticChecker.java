@@ -643,9 +643,8 @@ public class SemanticChecker {
                     if (availableOnEveryEdge) armEnv.moved.remove(name);
                 }
                 validateFailureArmCaptures(domain, handler, arm, env, solver, raiseEnvironments);
-                for (Stmt s : arm.body) {
-                    checkStatement(s, armEnv, typer, solver, true, handler.name, expectedReply);
-                }
+                checkBlock(arm.body, 0, arm.body.size(), armEnv, typer, solver,
+                        true, handler.name, expectedReply);
             }
         }
         currentHandlerRaises = previousRaises;
@@ -740,6 +739,13 @@ public class SemanticChecker {
                 }
                 if (bindingLine != null) expectedBindingLine = bindingLine;
                 TypeRef resolved = solver.resolve(actual);
+                String capturedTypeName = resolved.name();
+                if (resolved.kind() == TypeKind.Domain || "FileIO".equals(capturedTypeName)
+                        || "Range".equals(capturedTypeName) || "RangeBatch".equals(capturedTypeName)
+                        || "Executor".equals(capturedTypeName)) {
+                    throw new CompileError(arm.line, "on_fail capture '" + name
+                            + "' must be an owned non-capability value", "ON_FAIL_CAPTURE_NOT_OWNED");
+                }
                 if (expected != null && !expected.toCanonicalString().equals(resolved.toCanonicalString())) {
                     throw new CompileError(arm.line, "on_fail capture '" + name
                             + "' has different types on explicit raise paths",
