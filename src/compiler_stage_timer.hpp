@@ -43,6 +43,11 @@ class CompilerTraceRecorder {
     std::unordered_set<std::string> distinct_keys;
   };
   std::map<std::string, OperationMetric> operations_;
+  struct StageMetric {
+    uint64_t total_ns{0};
+    uint64_t count{0};
+  };
+  std::map<std::string, StageMetric> stage_totals_;
   bool flushed_{false};
   uint32_t pid_{1};
 
@@ -125,6 +130,18 @@ class CompilerTraceRecorder {
   std::map<std::string, OperationMetric> all_operations() {
     std::lock_guard<std::mutex> lock(mutex_);
     return operations_;
+  }
+
+  void record_stage(const std::string& name, uint64_t dur_ns) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto& m = stage_totals_[name];
+    m.count++;
+    m.total_ns += dur_ns;
+  }
+
+  std::map<std::string, StageMetric> all_stage_totals() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return stage_totals_;
   }
 
   void dump_hotspot_report() {
@@ -225,11 +242,33 @@ class CompilerTraceRecorder {
       out << "        \"avg_us\": " << avg_us << "\n";
       out << "      }";
     }
+    out << "\n    },\n";
+
+    out << "    \"stage_totals\": {\n";
+    bool first_st = true;
+    for (const auto& [name, st] : stage_totals_) {
+      if (!first_st) out << ",\n";
+      first_st = false;
+      double total_ms = static_cast<double>(st.total_ns) / 1000000.0;
+      out << "      \"" << name << "\": {\n";
+      out << "        \"calls\": " << st.count << ",\n";
+      out << "        \"total_ms\": " << total_ms << ",\n";
+      out << "        \"total_ns\": " << st.total_ns << "\n";
+      out << "      }";
+    }
     out << "\n    }\n  }\n}\n";
   }
 
   ~CompilerTraceRecorder() {
     flush_trace();
+    if (std::getenv("MOSS_PROFILE_COMPILER") != nullptr) {
+      auto process_dur_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+          std::chrono::steady_clock::now() - start_time_).count();
+      std::cerr << "MOSS_PROFILE_TOTAL|process_total|" << process_dur_ns << "|1\n";
+      for (const auto& [stage, m] : stage_totals_) {
+        std::cerr << "MOSS_PROFILE_TOTAL|" << stage << '|' << m.total_ns << '|' << m.count << '\n';
+      }
+    }
     if (std::getenv("MOSS_PROFILE_HOTSPOTS") != nullptr) {
       dump_hotspot_report();
     }
@@ -279,6 +318,7 @@ class CompilerStageTimer {
     if (!enabled_) return;
     auto end = std::chrono::steady_clock::now();
     auto duration_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin_).count();
+    CompilerTraceRecorder::instance().record_stage(stage_, duration_ns);
     if (std::getenv("MOSS_PROFILE_COMPILER") != nullptr) {
       std::cerr << "MOSS_PROFILE|" << stage_ << '|' << duration_ns << '\n';
     }

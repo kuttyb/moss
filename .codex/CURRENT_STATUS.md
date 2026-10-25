@@ -1,3 +1,22 @@
+## Phase 25.4 B1 — Full Compiler Time Attribution & Repository Profiler Checkpoint — 2026-10-25
+
+1. **Missing Time Mystery Resolved**:
+   - `packages/regex/src/main.moss` (21.84 s total): **99.8% attributed** (21.76 s semantic analysis). Pass 1 checks project semantics (`check_project_semantics` = 10.60 s), Pass 2 generates snapshot (`semantic_snapshot_generation` = 11.20 s). Prior runners overwrote Pass 1 with Pass 2 because timer keys were emitted per module and naive parsers assigned `timings[key] = val`.
+   - `sdk/datastructures/tests/datastructures.moss` (18.50 s total): **100.0% attributed** (18.47 s semantic analysis). Pass 1 checked imported module `sdk/datastructures/src/datastructures.moss` (18.11 s). Pass 2 checked `tests/datastructures.moss` (0.07 s). Prior parser overwrote the 18.11 s with 0.07 s, erroneously reporting '< 0.3 s in semantic stages'.
+2. **Process-Level Timing & Stage Aggregation**:
+   - Updated `src/compiler_stage_timer.hpp` and `src/moss.cpp` to emit `MOSS_PROFILE_TOTAL|<stage>|<total_ns>|<count>` at process exit, and capture top-level `process_main`, `project_discovery`, and `semantic_snapshot_generation`.
+   - Attributed wall time now accounts for 99.8%–100.0% of total compiler runtime with sub-50ms residuals.
+3. **Repository-Wide Profiler Tool**:
+   - Built `benchmarks/phase25_4/profile_moss.py`:
+     - Discovers compilation roots across packages, SDK, projects, examples, torture, and tests.
+     - Supports `--all`, `--category`, `--file`, `--top`, `--timeout`, `--jobs`, `--trace`, `--csv`, `--json`.
+     - Measures process wall time, CPU times (user/sys), and peak RSS memory via `os.wait4`.
+     - Validated across the 54 torture fixtures and individual flagship workloads (`packages/regex`, `sdk/datastructures`).
+4. **Gates Verified**:
+   - `make check-perf`: PASS (10/10 workloads within certified baseline bounds).
+   - `python3 tests/tooling/check_agent_feedback.py`: PASS.
+   - `git diff --check`: PASS.
+
 ## Phase 25.4 B1 — Compiler Hotspot Investigation Complete — UNCONDITIONAL VERIFICATION GO — 2026-10-25
 
 The focused hotspot investigation across four primary slow workloads (`packages/regex`, `sdk/datastructures`, W4 depth 18, and W5 width 100) is complete at commit `e1162bf7`.

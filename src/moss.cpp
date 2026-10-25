@@ -19618,6 +19618,7 @@ static bool path_within(const std::filesystem::path& path,
 
 static SourceCompilationContext analyze_source_context(
     const std::filesystem::path& requested) {
+  CompilerStageTimer discovery_timer("project_discovery");
   SourceCompilationContext context;
   context.requested_source = std::filesystem::absolute(requested)
                                  .lexically_normal();
@@ -23211,6 +23212,7 @@ static int run_debug_query_command(int argc, char** argv) {
 }
 
 int main(int argc, char** argv) {
+  moss::CompilerStageTimer process_timer("process_main");
   string diagnostic_source = "moss";
   string active_command = "compile";
   string active_input;
@@ -23661,6 +23663,7 @@ int main(int argc, char** argv) {
           std::filesystem::path(active_input));
       if (project_root) {
         try {
+          moss::CompilerStageTimer snapshot_timer("semantic_snapshot_generation");
           moss::ProjectManifest manifest = moss::load_project_manifest(
               std::filesystem::path(*project_root));
           std::filesystem::path source_path =
