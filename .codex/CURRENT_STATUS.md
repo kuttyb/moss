@@ -16595,3 +16595,12 @@ control. Feedback validation and `git diff --check` pass. Alias propagation is
 bounded to straight-line local assignments; branch-sensitive and nested-field
 alias flows, native/backend acceptance, Margo/SDK gates, and the frozen
 candidate review remain outstanding.
+
+Open baseline discrepancy found while extending alias coverage: with `alias =
+item` assigned on both branches, then `alias.accept(value)` for a concrete
+consuming Mover, C++ accepts later reuse and reports the generic helper's value
+parameter as READ with unresolved effects. Java rejects reuse. The Java
+regression retains the concrete method's CONSUME requirement. This mismatch is
+recorded in the phase ledger; native Rust compilation has not been run, so no
+claim about the final generated program is made. It needs frozen-candidate
+review/acceptance evidence before calling the checker verdicts reconciled.

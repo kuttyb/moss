@@ -974,6 +974,22 @@ public class SemanticCheckerTest {
                 + "  payload = Payload(value=\"move\")\n"
                 + "  relay(payload, Mover())\n"
                 + "  echo payload.value\n", "OWNERSHIP_USE_AFTER_CONSUME");
+        assertCompileError(""
+                + "type Payload:\n"
+                + "  value: String\n"
+                + "type Mover:\n"
+                + "  fn accept(value: Payload) -> Payload:\n"
+                + "    return value\n"
+                + "fn relay(value, item, flag: Bool):\n"
+                + "  if flag:\n"
+                + "    alias = item\n"
+                + "  else:\n"
+                + "    alias = item\n"
+                + "  alias.accept(value)\n"
+                + "fn main():\n"
+                + "  payload = Payload(value=\"move\")\n"
+                + "  relay(payload, Mover(), true)\n"
+                + "  echo payload.value\n", "OWNERSHIP_USE_AFTER_CONSUME");
 
         Program readOnly = Parser.parseSource(declarations
                 + "fn main():\n"

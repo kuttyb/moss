@@ -718,3 +718,16 @@ All 12 Java test classes pass under ABI-v9 and staged ABI-v10. The rebuilt
 standalone compiler rejects the Mover alias callsite and accepts the Reader
 alias control. This is checker/package evidence only; native execution and
 broader ownership acceptance remain open.
+
+
+### Open discrepancy — C++ effect closure for a branch-assigned receiver alias
+
+A minimized generic helper assigns `alias = item` in both sides of an `if`,
+then calls `alias.accept(value)`. With only the consuming `Mover.accept`
+implementation, C++ accepts subsequent reuse of `value`; its `effects relay`
+query reports `value: READ` and `unresolved: true`. Java rejects the reuse with
+`OWNERSHIP_USE_AFTER_CONSUME`, using the selected receiver method's CONSUME
+mode. The Java result follows the concrete selected method, but the C++ baseline
+verdict/effect closure disagrees. No generated Rust compilation or native run
+was performed, so this remains an unresolved acceptance discrepancy rather
+than a parity claim.
