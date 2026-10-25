@@ -666,6 +666,7 @@ An ABI-v9 imported function or object method with
 `raise_set=enum:Fault:Bad` was accepted in `main` without recovery because
 there was no body from which to infer raises. Java now retains source-free
 enum variants for both callables and includes them in root raise closure.
-Regressions reject unhandled calls and accept exact `recover Fault.Bad` arms.
+Regressions reject unhandled direct and helper-forwarded calls and accept exact
+`recover Fault.Bad` arms.
 All eleven Java test classes pass under ABI-v9 and staged ABI-v10. Multi-variant
 ABI encoding and source-free native execution remain open.

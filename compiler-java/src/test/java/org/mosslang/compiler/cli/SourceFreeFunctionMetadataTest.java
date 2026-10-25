@@ -69,10 +69,13 @@ public final class SourceFreeFunctionMetadataTest {
             Program v9RaiseConsumer = Parser.parseSource(""
                     + "enum Fault:\n"
                     + "  Bad\n"
+                    + "fn forward():\n"
+                    + "  service.fail()\n"
                     + "fn main():\n"
-                    + "  service.fail()\n", "source-free-v9-raise-consumer.moss");
+                    + "  forward()\n", "source-free-v9-raise-consumer.moss");
             Main.loadMossiFunctions(interfaceFile, "service", v9RaiseConsumer);
             v9RaiseConsumer.functions.removeIf(function -> !function.name.equals("main")
+                    && !function.name.equals("forward")
                     && !function.name.equals("service.fail")
                     && !function.name.equals("service__fail"));
             try {
@@ -84,13 +87,16 @@ public final class SourceFreeFunctionMetadataTest {
             Program handledRaiseConsumer = Parser.parseSource(""
                     + "enum Fault:\n"
                     + "  Bad\n"
+                    + "fn forward():\n"
+                    + "  service.fail()\n"
                     + "fn main():\n"
                     + "  try:\n"
-                    + "    service.fail()\n"
+                    + "    forward()\n"
                     + "  recover Fault.Bad:\n"
                     + "    pass\n", "source-free-v9-handled-raise-consumer.moss");
             Main.loadMossiFunctions(interfaceFile, "service", handledRaiseConsumer);
             handledRaiseConsumer.functions.removeIf(function -> !function.name.equals("main")
+                    && !function.name.equals("forward")
                     && !function.name.equals("service.fail")
                     && !function.name.equals("service__fail"));
             new SemanticChecker(handledRaiseConsumer).run();
