@@ -3216,6 +3216,11 @@ public class NativeGenerator {
                     return callStr + ".unwrap_or_default()";
                 }
                 String loweredRecv = lowerExpr(recv, stateFields, domains, objects);
+                if (methodName.equals("codepoint") && rawArgs.isEmpty()
+                        && ("char".equals(bindingTypeName(recv))
+                        || recv.matches("'(?:[^'\\\\]|\\\\.)*'"))) {
+                    return "((" + loweredRecv + ") as u32 as i64)";
+                }
                 if (methodName.equals("push") && rawArgs.size() == 1) {
                     String itemExpr = lowerExpr(rawArgs.get(0).trim(), stateFields, domains, objects);
                     if (rawArgs.get(0).trim().matches("^[A-Za-z_][A-Za-z0-9_]*$")) {

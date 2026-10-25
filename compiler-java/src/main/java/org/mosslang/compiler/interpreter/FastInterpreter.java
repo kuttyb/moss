@@ -2416,6 +2416,8 @@ public class FastInterpreter {
                         }
                     } else if (recvVal.kind == Value.Kind.CHAR && methodName.equals("to_string")) {
                         return Value.ofString(recvVal.toString());
+                    } else if (recvVal.kind == Value.Kind.CHAR && methodName.equals("codepoint")) {
+                        return Value.ofInt(((Number) recvVal.raw).longValue());
                     } else if (recvVal.kind == Value.Kind.VECTOR && recvVal.raw instanceof List<?> lst) {
                         @SuppressWarnings("unchecked")
                         List<Value> l = (List<Value>) lst;

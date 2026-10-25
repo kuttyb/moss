@@ -50,6 +50,7 @@ public final class FastInterpreterTest {
         testFilterPipelineUsesPlaceholder();
         testGeneralPipelineCallbacksAndTerminals();
         testSortAndReverseRuntimeSemantics();
+        testCharCodepointMethod();
         testTypedVectorFunctionTraceIncludesElementSpecialization();
         testFunctionTraceIncludesSelectedSpecialization();
         testNestedDomainFailurePropagatesToCallerRecovery();
@@ -1207,6 +1208,22 @@ public final class FastInterpreterTest {
         if (!expected.equals(actual)) {
             throw new AssertionError("sort/reverse produced unexpected output: " + actual);
         }
+    }
+
+    private static void testCharCodepointMethod() {
+        var program = Parser.parseSource(""
+                + "fn main():\n"
+                + "  let letter = '\\x41'\n"
+                + "  echo letter.codepoint()\n"
+                + "  echo '\\x2C'.codepoint()\n", "fast-interpreter-char-codepoint.moss");
+        new CheckedProgram(program).run();
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+        new FastInterpreter(program, false, new PrintStream(stdout),
+                new PrintStream(new ByteArrayOutputStream())).run();
+        String expected = "65\n44\n";
+        String actual = stdout.toString(StandardCharsets.UTF_8);
+        if (!expected.equals(actual))
+            throw new AssertionError("Char.codepoint() returned unexpected values: " + actual);
     }
 
     private static void testTypedVectorFunctionTraceIncludesElementSpecialization() {

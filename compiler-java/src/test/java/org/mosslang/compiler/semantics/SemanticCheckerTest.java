@@ -44,6 +44,7 @@ public class SemanticCheckerTest {
         testUnsupportedCollectionsAreRejectedAsForIterablesAtLoopSite();
         testRangeForRequiresPositiveNonzeroLiteralStep();
         testSortSemanticContractAndWriteEffects();
+        testCharCodepointMethod();
         testTypedOnFailLocalCaptureLowering();
         testOnFailRejectsLocalInitializedAfterRaise();
         testOnFailCaptureUsesMatchingRaisedVariant();
@@ -1836,6 +1837,17 @@ public class SemanticCheckerTest {
         } catch (CompileError error) {
             if (!"IMMUTABLE_LOCAL_MUTATION".equals(error.getCode())) throw error;
         }
+    }
+
+    private static void testCharCodepointMethod() {
+        Program valid = Parser.parseSource(""
+                + "fn main():\n"
+                + "  let letter = '\\x41'\n"
+                + "  echo letter.codepoint()\n"
+                + "  echo '\\x2C'.codepoint()\n", "char-codepoint-valid.moss");
+        new SemanticChecker(valid).run();
+        assertCompileError("fn main():\n  let letter = 'A'\n  echo letter.codepoint(1)\n",
+                "TYPE_MISMATCH");
     }
 
     private static void assertNotIterable(String source) {

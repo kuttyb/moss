@@ -18,6 +18,7 @@ public class DebugMapGeneratorTest {
         testStableHashAndToolingSymbols();
         testDebugMapGeneration();
         testUserSortFunctionShadowsBuiltinLowering();
+        testCharCodepointRustLowering();
         testCliFlagsDebugMap();
 
         System.out.println("DebugMapGeneratorTest PASSED: All tests passed successfully.");
@@ -184,6 +185,22 @@ public class DebugMapGeneratorTest {
                 "untyped String sort key receives its specialized owned value");
         assertTrue(genericKeyRust.contains("__moss_fn_loose!((*__moss_b).clone())"),
                 "both untyped sort-key operands receive owned values");
+    }
+
+    private static void testCharCodepointRustLowering() {
+        String source = """
+                fn main():
+                  let letter = '\\x41'
+                  echo letter.codepoint()
+                  echo '\\x2C'.codepoint()
+                """;
+        Program program = Parser.parseSource(source, "char-codepoint.moss");
+        new CheckedProgram(program).run();
+        String rust = NativeGenerator.generate(program, false, false);
+        assertTrue(rust.contains("((letter) as u32 as i64)"),
+                "Char.codepoint lowers the named receiver to its Unicode scalar value");
+        assertTrue(rust.contains("(('\\u{2C}') as u32 as i64)"),
+                "Char.codepoint lowers a literal receiver to its Unicode scalar value");
     }
 
     private static void testCliFlagsDebugMap() throws Exception {

@@ -1379,6 +1379,11 @@ public class ExpressionTyper {
             }
         }
 
+        if (targetType.sameHead(TypeRef.primitive("char")) && "codepoint".equals(member)) {
+            requireArgumentCount(line, "Char.codepoint", argExprs, 0, 0);
+            return TypeRef.primitive("int");
+        }
+
         if (targetType.sameHead(TypeRef.primitive("string"))) {
             if ("len".equals(member) || "size".equals(member) || "length".equals(member)) {
                 if (!argExprs.isEmpty()) {

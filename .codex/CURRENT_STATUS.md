@@ -16021,3 +16021,16 @@ call with no `.sort_by`. The untyped-key generated Rust uses
 Generated Rust was inspected only; native compilation remains deferred to the
 frozen-candidate acceptance gate. The broader backend and full release gates
 remain open.
+
+### Phase 25.3 continuation — Char.codepoint support
+
+A C++/Java probe found that C++ accepts `Char.codepoint()` while Java reported
+`METHOD_NOT_FOUND`. Java now checks this zero-argument Char method as returning
+Int, evaluates it in Fast Debug, and lowers named and literal receivers to their
+Unicode scalar value in Rust. `Char.codepoint(1)` remains rejected.
+
+Validation: all twelve Java test classes pass under ABI-v9 and staged ABI-v10.
+The escaped Char probe returns `65` and `44` in both C++ and Java Fast Debug;
+Java-generated Rust contains the expected `as u32 as i64` conversions. Invalid
+arity is rejected by both checkers. Rust was inspected, not compiled; native and
+broader release acceptance remain open.
