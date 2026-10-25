@@ -15334,3 +15334,20 @@ Regressions reject unhandled direct and helper-forwarded calls and accept exact
 `recover Fault.Bad` arms.
 All eleven Java test classes pass under ABI-v9 and staged ABI-v10. Multi-variant
 ABI encoding and source-free native execution remain open.
+
+
+### Phase 25.3 continuation — bridge source-free method raises in Rust lowering
+
+The source-free `signal()` method's raise metadata was reaching semantic
+checking, but generated Rust still emitted a bare `point.signal()` inside a
+`try` block. It therefore discarded the imported method's `Result` instead of
+converting the error into the Moss recover carrier. NativeGenerator now marks
+functions that call raising source-free methods as raising, propagates that
+fact through function calls, and emits the error bridge for calls in `try`.
+The regression covers both a directly handled call and a helper function that
+forwards the raise.
+
+All eleven Java test classes pass with ABI-v9 defaults and with
+`MOSS_STAGED_ABI=v10`; `git diff --check` passes. This verifies generated-Rust
+shape and helper raise closure only. Rust compilation and source-free native
+execution remain reserved for the frozen-candidate acceptance gate.

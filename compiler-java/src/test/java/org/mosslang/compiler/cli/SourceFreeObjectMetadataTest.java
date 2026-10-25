@@ -45,7 +45,7 @@ public final class SourceFreeObjectMetadataTest {
                 + "  object_method replace return=unit receiver=WRITE "
                 + "effects=local_capture_read=0;local_mutation=0;domain_read=0;domain_write=0;message=0;external_io=0;fileio=0;fileio_unknown=0;may_panic=0;raise_set=-;may_diverge=0;unresolved=0 "
                 + "params=1 \"next\" \"Vector[Int]\" CONSUME\n"
-                + "  object_method fail return=unit receiver=READ "
+                + "  object_method signal return=unit receiver=READ "
                 + "effects=local_capture_read=0;local_mutation=0;domain_read=0;domain_write=0;message=0;external_io=0;fileio=0;fileio_unknown=0;may_panic=0;raise_set=enum:Fault:Bad;may_diverge=0;unresolved=0 "
                 + "params=0\n";
         Files.writeString(interfaceFile, content);
@@ -113,7 +113,7 @@ public final class SourceFreeObjectMetadataTest {
                         != org.mosslang.compiler.types.AccessMode.Consume) {
             throw new AssertionError("source-free method signature was not restored");
         }
-        if (!"fail".equals(imported.methods.get(2).name)
+        if (!"signal".equals(imported.methods.get(2).name)
                 || !imported.methods.get(2).sourceFreeRaiseVariants.contains("Fault.Bad")) {
             throw new AssertionError("source-free method raise facts were not restored");
         }
@@ -152,7 +152,7 @@ public final class SourceFreeObjectMetadataTest {
                 + "  Bad\n"
                 + "fn main():\n"
                 + "  point = provider__Point(x=0.0, label=\"x\")\n"
-                + "  point.fail()\n", "source-free-method-raise.moss");
+                + "  point.signal()\n", "source-free-method-raise.moss");
         Main.loadMossiFunctions(interfaceFile, "provider", unhandledMethodRaise);
         try {
             new SemanticChecker(unhandledMethodRaise).run();
@@ -166,11 +166,35 @@ public final class SourceFreeObjectMetadataTest {
                 + "fn main():\n"
                 + "  point = provider__Point(x=0.0, label=\"x\")\n"
                 + "  try:\n"
-                + "    point.fail()\n"
+                + "    point.signal()\n"
                 + "  recover Fault.Bad:\n"
                 + "    pass\n", "source-free-method-raise-handled.moss");
         Main.loadMossiFunctions(interfaceFile, "provider", handledMethodRaise);
         new SemanticChecker(handledMethodRaise).run();
+        String handledMethodRust = NativeGenerator.generate(handledMethodRaise, false);
+        if (!handledMethodRust.contains("point.signal().map_err(|e| __moss_raise(format!(\"{:?}\", e)))?")) {
+            throw new AssertionError("source-free raising method error was not bridged into recover: "
+                    + handledMethodRust);
+        }
+        Program helperMethodRaise = Parser.parseSource(""
+                + "import provider\n"
+                + "enum Fault:\n"
+                + "  Bad\n"
+                + "fn relay(point: provider__Point):\n"
+                + "  point.signal()\n"
+                + "fn main():\n"
+                + "  point = provider__Point(x=0.0, label=\"x\")\n"
+                + "  try:\n"
+                + "    relay(point)\n"
+                + "  recover Fault.Bad:\n"
+                + "    pass\n", "source-free-method-raise-helper.moss");
+        Main.loadMossiFunctions(interfaceFile, "provider", helperMethodRaise);
+        new SemanticChecker(helperMethodRaise).run();
+        String helperMethodRust = NativeGenerator.generate(helperMethodRaise, false);
+        if (!helperMethodRust.contains("fn relay(")
+                || !helperMethodRust.contains("point.signal().map_err(|e| __moss_raise(format!(\"{:?}\", e)))?")) {
+            throw new AssertionError("helper did not propagate source-free method error: " + helperMethodRust);
+        }
         Program consumingConsumer = Parser.parseSource(""
                 + "fn use_point(point: provider__Point, values: Vector[Int]) -> Vector[Int]:\n"
                 + "  point.replace(values)\n"
