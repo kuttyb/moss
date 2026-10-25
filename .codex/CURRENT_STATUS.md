@@ -13119,3 +13119,22 @@ Follow-up validation after the initial focused run: all ten Java unit-test
 classes pass in both default ABI-v9 and staged ABI-v10 modes; the parser check
 accepts the three quoted fields in each failure-arm record. Feedback validation
 and `git diff --check` pass. No native or SDK gate ran.
+
+### Phase 25.3 audit — remaining ABI-v10 callable body gap
+
+The current ProjectBuilder ABI-v10 path still projects generic callable bodies
+through legacy text records (`generic_stmt`/`generic_result`); it does not emit
+canonical callable summary or checked-body records. `Main` consequently still
+contains source-specific `Provider.relay` and `Provider.outer` checks for
+unavailable source-free generic facts. These are evidence of an incomplete
+general source-free callable contract, not parity evidence. The next compiler
+implementation slice is to carry general callable summary/body facts through
+canonical ABI-v10 records and the loader, then replace those special cases with
+fact-based admission and checking. No parity or release claim is made for this
+area.
+
+Evidence inspected: `ProjectBuilder.generateMossiInterface` serializes generic
+body text via `appendV9FunctionRecord` in ABI-v10 semantic exports and adds no
+callable summary/checked-body records; `Main.loadMossiFunctions` only has
+canonical nominal/method-template decoding, while its source-free call guards
+name the two fixture callables. No additional gate was run for this audit.
