@@ -2572,6 +2572,55 @@ public class ProjectBuilder {
                         .containsFunctionCall(expression, shortName);
                 if (invokes && mayPanic(called, program, module, new HashSet<>(callPath))) return true;
             }
+            for (ObjectType object : program.objects) {
+                if (object.definingModule != null && !object.definingModule.isEmpty()
+                        && !object.definingModule.equals(module)) continue;
+                for (Method method : object.methods) {
+                    if (callsTypedMethod(expression, function, object, method, program)
+                            && mayPanic(method, program, module, new HashSet<>())) return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static boolean callsTypedMethod(String expression, Function caller, ObjectType object,
+                                            Method method, Program program) {
+        String pattern = "(?<![A-Za-z0-9_])([A-Za-z_][A-Za-z0-9_]*(?:\\s*\\.\\s*[A-Za-z_][A-Za-z0-9_]*)*)\\s*\\.\\s*"
+                + java.util.regex.Pattern.quote(method.name) + "\\s*\\(";
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile(pattern)
+                .matcher(maskStringLiterals(expression));
+        Map<String, org.mosslang.compiler.types.TypeRef> bindings = program.localBindingTypes == null
+                ? java.util.Map.of() : program.localBindingTypes.getOrDefault(caller.name, java.util.Map.of());
+        while (matcher.find()) {
+            String[] path = matcher.group(1).replaceAll("\\s", "").split("\\.");
+            org.mosslang.compiler.types.TypeRef root = bindings.get(path[0]);
+            String typeName = root == null ? null : root.name();
+            for (int index = 1; typeName != null && index < path.length; index++) {
+                ObjectType owner = null;
+                for (ObjectType candidate : program.objects) {
+                    if (candidate.name.equals(typeName) || candidate.name.endsWith("__" + typeName)) {
+                        owner = candidate;
+                        break;
+                    }
+                }
+                if (owner == null) {
+                    typeName = null;
+                    break;
+                }
+                String fieldName = path[index];
+                Field field = owner.fields.stream().filter(candidate -> candidate.name.equals(fieldName))
+                        .findFirst().orElse(null);
+                if (field == null) {
+                    typeName = null;
+                    break;
+                }
+                org.mosslang.compiler.types.TypeRef fieldType = field.typeRef != null ? field.typeRef
+                        : org.mosslang.compiler.types.TypeParser.parseCanonical(field.type);
+                typeName = fieldType == null ? field.type : fieldType.name();
+            }
+            if (typeName != null && (typeName.equals(object.name)
+                    || typeName.endsWith("__" + object.name))) return true;
         }
         return false;
     }

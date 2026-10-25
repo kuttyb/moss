@@ -179,6 +179,8 @@ public final class ProjectBuilderMetadataTest {
                 + "    assert(false)\n"
                 + "  fn crash_forward():\n"
                 + "    self.crash()\n"
+                + "export fn method_failure(box: Box):\n"
+                + "  box.crash()\n"
                 + "fn main():\n"
                 + "  pass\n", "panic-text-effect.moss");
         new org.mosslang.compiler.semantics.CheckedProgram(program).run();
@@ -210,6 +212,13 @@ public final class ProjectBuilderMetadataTest {
         if (!methodForward.contains("may_panic=1")) {
             throw new AssertionError("exported method panic effect omitted a nested asserting method: "
                     + methodForward);
+        }
+        String methodCaller = text.lines().filter(line -> line.contains("method_failure ")
+                        && line.contains("may_panic="))
+                .findFirst().orElse("");
+        if (!methodCaller.contains("may_panic=1")) {
+            throw new AssertionError("exported function panic effect omitted its typed method call: "
+                    + methodCaller);
         }
     }
 

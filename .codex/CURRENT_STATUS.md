@@ -15558,3 +15558,16 @@ remain open.
 
 All twelve Java unit-test classes pass in default ABI-v9 and staged ABI-v10;
 feedback and diff checks are pending for the checkpoint.
+
+
+### Phase 25.3 continuation — carry method panic effects into typed function callers
+
+The bounded exported-function panic scan now checks typed method calls using
+checker-retained function binding types and nominal field paths. A producer
+regression verifies `method_failure(box: Box)` inherits `may_panic=1` from
+`box.crash()`. The earlier direct/result-expression, local function, and
+same-owner self-method cases remain covered. Imported method panic summaries
+and complete effect inference remain open.
+
+All twelve Java unit-test classes pass in default ABI-v9 and staged ABI-v10;
+feedback and diff checks are pending for this checkpoint.
