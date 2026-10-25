@@ -15841,3 +15841,14 @@ ABI-v10. The unit regression covers a nested field read in a branch condition.
 The standalone JAR was rebuilt after this source change; its version and
 `moss-0.1` bootstrap pass. Native/backend, source-free runtime, Margo/SDK
 acceptance, and independent review remain open.
+
+
+### Phase 25.3 continuation — revalidate focused Fast Debug traces after effect correction
+
+After the branch-condition WRITE inference fix, focused C++/Java runs still
+produce byte-identical stdout and full JSON traces on
+`tests/phase106d1_borrowed_reads.moss` (217 events),
+`tests/phase106d1_read_projection.moss` (137 events), and
+`tests/phase5_tooling.moss` (57 events). The six JDT client lifecycle tests
+also pass; live Eclipse JDT startup remains unavailable in this environment.
+These samples do not establish complete trace parity or live daemon readiness.
