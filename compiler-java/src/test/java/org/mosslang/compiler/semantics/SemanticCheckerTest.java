@@ -18,6 +18,7 @@ public class SemanticCheckerTest {
         testInferredMethodReturnMustMatchStructuralTrait();
         testFunctionParameterAccessModesAreRetained();
         testInferredGenericConsumeSummaryUsesCheckedParameterType();
+        testFunctionConsumeSummaryIncludesNestedFieldMoves();
         testFunctionWriteSummaryPropagatesThroughHelperCalls();
         testFunctionWriteModePropagatesThroughNestedMethodReceiver();
         testFunctionWriteModePropagatesThroughMethodArguments();
@@ -677,6 +678,34 @@ public class SemanticCheckerTest {
                 + "fn main():\n"
                 + "  value = identity(1)\n"
                 + "  echo value\n", "inferred-generic-copy-value.moss");
+        new SemanticChecker(copyProgram).run();
+    }
+
+    private static void testFunctionConsumeSummaryIncludesNestedFieldMoves() {
+        assertCompileError(""
+                + "type Sink:\n"
+                + "  value: Int\n"
+                + "  fn bump():\n"
+                + "    self.value = self.value + 1\n"
+                + "type Box:\n"
+                + "  sink: Sink\n"
+                + "fn relay(box: Box):\n"
+                + "  target = box.sink\n"
+                + "  target.bump()\n"
+                + "fn main():\n"
+                + "  box = Box(sink=Sink(value=0))\n"
+                + "  relay(box)\n"
+                + "  echo box.sink.value\n", "OWNERSHIP_USE_AFTER_CONSUME");
+
+        Program copyProgram = Parser.parseSource(""
+                + "type Box:\n"
+                + "  count: Int\n"
+                + "fn observe(box: Box):\n"
+                + "  count = box.count\n"
+                + "fn main():\n"
+                + "  box = Box(count=1)\n"
+                + "  observe(box)\n"
+                + "  echo box.count\n", "function-copy-field-read.moss");
         new SemanticChecker(copyProgram).run();
     }
 

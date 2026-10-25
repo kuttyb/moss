@@ -15262,3 +15262,16 @@ function parameter. Focused C++/Java effects queries agree.
 The semantic regression covers this method argument path. All eleven Java
 test classes pass under ABI-v9 and staged ABI-v10; imported and generic method
 argument summaries remain open.
+
+
+### Phase 25.3 continuation — summarize nested field moves from parameters
+
+For `relay(box)` assigning `target = box.sink` and then mutating `target`, C++
+rejected later use of the caller's `box` while Java accepted it. Function
+consume inference now resolves nested field paths in assignment, return, and
+implicit result expressions and checks the moved field's transfer type. The
+focused C++/Java diagnostics now agree.
+
+The semantic regression also confirms reading a Copy `Int` field does not
+consume its owning object. All eleven Java test classes pass under ABI-v9 and
+staged ABI-v10; alias and branch-sensitive field moves remain open.

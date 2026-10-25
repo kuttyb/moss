@@ -2037,6 +2037,9 @@ public class SemanticChecker {
         if (fn == null || paramIdx < 0 || paramIdx >= fn.params.size()) return false;
         String pName = fn.params.get(paramIdx).name;
         TypeRef parameterType = functionParameterType(fn.params.get(paramIdx));
+        if (fn.resultExpression != null
+                && transferType(resolveReceiverPathType(parameterType,
+                        fn.resultExpression.trim(), pName))) return true;
         if (fn.resultExpression != null && fn.resultExpression.trim().equals(pName)) {
             return true;
         }
@@ -2074,6 +2077,12 @@ public class SemanticChecker {
                 continue;
             }
             boolean shadowed = caseScopes.stream().anyMatch(scope -> scope.getValue().contains(pName));
+            String movedExpression = s.kind == Stmt.Kind.Return
+                    ? statementResultExpression(s)
+                    : ((s.kind == Stmt.Kind.Let || s.kind == Stmt.Kind.Var
+                            || s.kind == Stmt.Kind.Assign) && s.b != null ? s.b.trim() : "");
+            if (!shadowed && transferType(resolveReceiverPathType(
+                    parameterType, movedExpression, pName))) return true;
             if (s.kind == Stmt.Kind.Return) {
                 String ret = s.a != null && !s.a.isEmpty() ? s.a.trim() : (s.text != null ? s.text.trim() : "");
                 if (ret.startsWith("return ")) ret = ret.substring(7).trim();
