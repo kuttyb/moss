@@ -15155,3 +15155,17 @@ the caller's later use consistently.
 The helper-call path is included in the semantic regression. All eleven Java
 test classes pass under ABI-v9 and staged ABI-v10; indirect multi-helper
 closure, generic field substitution, and branch-sensitive moves remain open.
+
+
+### Phase 25.3 continuation — close function consume summaries transitively
+
+`relay(value) -> take(value)` was initially inferred as READ because function
+parameter consume modes were only derived from direct syntax during each
+function's first check. A bounded fixed-point now propagates CONSUME through
+ordinary function arguments before methods infer receiver modes, and again
+after method summaries are available. The `Box.take_payload → relay → take`
+reproducer now agrees with C++ on use-after-consume rejection.
+
+The semantic regression covers the two-helper chain. All eleven Java test
+classes pass under ABI-v9 and staged ABI-v10; calls through generic/imported
+functions and branch-sensitive argument aliases remain open.

@@ -144,9 +144,11 @@ public class SemanticChecker {
             // bodies check concrete values against structural trait contracts.
             checkObjectMethods();
             checkFunctions();
+            closeFunctionConsumeModes();
             // Recheck with function summaries available for methods that call
             // ordinary functions in their bodies.
             checkObjectMethods();
+            closeFunctionConsumeModes();
             checkRecursiveFunctions();
             checkMain();
             checkTests();
@@ -2063,6 +2065,7 @@ public class SemanticChecker {
                 }
             }
         }
+        if (functionCallConsumesParam(fn, paramIdx, pName, parameterType)) return true;
         Deque<Map.Entry<Integer, Set<String>>> caseScopes = new ArrayDeque<>();
         for (Stmt s : fn.body) {
             while (!caseScopes.isEmpty() && s.indent <= caseScopes.peek().getKey()) {
@@ -2083,6 +2086,72 @@ public class SemanticChecker {
             }
         }
         return false;
+    }
+
+    private boolean functionCallConsumesParam(Function caller, int paramIdx, String paramName,
+                                              TypeRef parameterType) {
+        List<String> expressions = new ArrayList<>();
+        for (Stmt statement : caller.body) expressions.add(statementExpressionText(statement));
+        if (caller.resultExpression != null) expressions.add(caller.resultExpression);
+        for (Function callee : functions.values()) {
+            if (callee == caller) continue;
+            java.util.regex.Pattern callPattern = java.util.regex.Pattern.compile(
+                    "(?<![A-Za-z0-9_.])" + java.util.regex.Pattern.quote(callee.name)
+                            + "\\s*\\(");
+            for (String expression : expressions) {
+                java.util.regex.Matcher call = callPattern.matcher(expression);
+                while (call.find()) {
+                    int open = expression.indexOf('(', call.start());
+                    int close = -1;
+                    for (int cursor = open + 1; cursor < expression.length(); cursor++) {
+                        if (expression.charAt(cursor) == ')'
+                                && ExpressionTyper.findMatchingOpenParen(expression, cursor) == open) {
+                            close = cursor;
+                            break;
+                        }
+                    }
+                    if (close < 0) continue;
+                    List<String> args = ExpressionTyper.parseArguments(
+                            expression.substring(open + 1, close));
+                    for (int index = 0; index < args.size() && index < callee.params.size(); index++) {
+                        if (index >= callee.parameterAccessModes.size()
+                                || callee.parameterAccessModes.get(index) != AccessMode.Consume) continue;
+                        String argument = args.get(index).trim();
+                        int colon = argument.indexOf(':');
+                        if (colon >= 0) argument = argument.substring(colon + 1).trim();
+                        if (argument.equals(paramName) && parameterType != null
+                                && transferType(parameterType)) return true;
+                        TypeRef movedType = resolveReceiverPathType(parameterType, argument, paramName);
+                        if (transferType(movedType)) return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    private void closeFunctionConsumeModes() {
+        int maxPasses = functions.values().stream().mapToInt(function -> function.params.size()).sum() + 1;
+        for (int pass = 0; pass < maxPasses; pass++) {
+            boolean changed = false;
+            for (Function function : functions.values()) {
+                while (function.parameterAccessModes.size() < function.params.size())
+                    function.parameterAccessModes.add(AccessMode.Read);
+                for (int index = 0; index < function.params.size(); index++) {
+                    TypeRef type = function.params.get(index).typeRef != null
+                            ? function.params.get(index).typeRef
+                            : (function.params.get(index).type != null
+                                    && !function.params.get(index).type.isEmpty()
+                                            ? TypeParser.parseCanonical(function.params.get(index).type) : null);
+                    if (type != null && transferType(type) && doesFunctionConsumeParam(function, index)
+                            && function.parameterAccessModes.get(index) != AccessMode.Consume) {
+                        function.parameterAccessModes.set(index, AccessMode.Consume);
+                        changed = true;
+                    }
+                }
+            }
+            if (!changed) return;
+        }
     }
 
     private boolean doesFunctionMutateParam(Function fn, int paramIdx) {

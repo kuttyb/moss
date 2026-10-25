@@ -497,3 +497,16 @@ The semantic test covers the helper call. C++/Java focused diagnostics agree,
 and all eleven Java test classes pass under ABI-v9 and staged ABI-v10.
 Indirect helper closure, generic field substitutions, and branch-sensitive
 moves remain open.
+
+
+### Follow-up — close ordinary function consume summaries transitively
+
+For `Box.take_payload → relay → take`, where `relay(value)` forwards its
+owned parameter to a consuming helper, C++ rejected a later use of the caller
+while Java previously accepted it. Java now iterates function parameter
+consume modes to a fixed point and uses the resulting summaries before
+receiver mode inference.
+
+The semantic test covers the two-helper chain. Focused C++/Java diagnostics
+agree, and all eleven Java test classes pass under ABI-v9 and staged ABI-v10.
+Generic/imported function summaries and branch-sensitive aliases remain open.
