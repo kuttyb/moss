@@ -900,7 +900,9 @@ public class SemanticCheckerTest {
                 + "  fn fail():\n"
                 + "    raise Trouble.Bad\n"
                 + "type Box:\n"
-                + "  sink: Sink\n";
+                + "  sink: Sink\n"
+                + "  fn relay():\n"
+                + "    self.sink.fail()\n";
         assertCompileError(methodPrefix
                 + "fn main():\n"
                 + "  box = Box(sink=Sink())\n"
@@ -913,6 +915,18 @@ public class SemanticCheckerTest {
                 + "  recover Trouble.Bad:\n"
                 + "    pass\n", "main-handles-method-raised-variant.moss");
         new SemanticChecker(methodHandled).run();
+        assertCompileError(methodPrefix
+                + "fn main():\n"
+                + "  box = Box(sink=Sink())\n"
+                + "  box.relay()\n", "MOSS_COMPILE_ERROR");
+        Program nestedMethodHandled = Parser.parseSource(methodPrefix
+                + "fn main():\n"
+                + "  box = Box(sink=Sink())\n"
+                + "  try:\n"
+                + "    box.relay()\n"
+                + "  recover Trouble.Bad:\n"
+                + "    pass\n", "main-handles-nested-method-raised-variant.moss");
+        new SemanticChecker(nestedMethodHandled).run();
     }
 
     private static void testExecutorRootRequiresRaiseHandling() {

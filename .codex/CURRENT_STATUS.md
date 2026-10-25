@@ -14943,3 +14943,17 @@ matching C++.
 Validation: both compilers agree on the uncaught and handled field-chain
 reproductions; all eleven Java unit-test classes pass. Nested method-to-method,
 generic, imported, and full transitive raise closure remain open.
+
+
+### Phase 25.3 continuation — follow nested field methods from main
+
+The main root check now follows statically resolved method calls through
+`self` field paths before deciding whether a direct method call can raise. A
+`Box.relay()` call whose body invokes `self.sink.fail()` now surfaces the
+`Trouble.Bad` raise from `Sink.fail`; the root rejects it when uncaught and
+accepts it when the matching recover encloses the call.
+
+Validation: uncaught and recovered method-chain reproductions agree with C++;
+all eleven Java unit-test classes pass. Method-local calls through local aliases,
+generic substitutions, imported methods, and full transitive raise closure
+remain open.

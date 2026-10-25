@@ -1463,7 +1463,7 @@ public class SemanticChecker {
                     while (matcher.find()) {
                         String receiverType = resolveMainReceiverType(matcher.group(1), env, solver);
                         if (!matchesObjectTypeName(receiverType, object.name)) continue;
-                        for (String variant : collectDirectMethodRaiseVariants(method, new HashSet<>())) {
+                        for (String variant : collectMethodRaiseVariants(method, new HashSet<>())) {
                             if (!isMainRaiseHandled(statements, statementIndex, variant)) {
                                 throw new CompileError(program.main.line,
                                         "main may not let typed errors escape; handle every raised variant with try/recover",
@@ -1476,19 +1476,58 @@ public class SemanticChecker {
         }
     }
 
-    private Set<String> collectDirectMethodRaiseVariants(Method method, Set<String> visited) {
+    private Set<String> collectMethodRaiseVariants(Method method, Set<String> visited) {
         Set<String> variants = new LinkedHashSet<>();
         if (method == null || !visited.add(method.owner + "." + method.name)) return variants;
         for (int index = 0; index < method.body.size(); index++) {
             Stmt statement = method.body.get(index);
-            if (statement == null || statement.kind != Stmt.Kind.Raise
-                    || statement.a == null || statement.a.isBlank()) continue;
-            String variant = statement.a.trim();
-            int payload = variant.indexOf('(');
-            if (payload >= 0) variant = variant.substring(0, payload).trim();
-            if (!isMainRaiseHandled(method.body, index, variant)) variants.add(variant);
+            if (statement == null) continue;
+            if (statement.kind == Stmt.Kind.Raise && statement.a != null && !statement.a.isBlank()) {
+                String variant = statement.a.trim();
+                int payload = variant.indexOf('(');
+                if (payload >= 0) variant = variant.substring(0, payload).trim();
+                if (!isMainRaiseHandled(method.body, index, variant)) variants.add(variant);
+            }
+            String expression = statementExpressionText(statement);
+            collectNestedMethodRaiseVariants(expression, method, visited, variants);
         }
+        if (method.resultExpression != null)
+            collectNestedMethodRaiseVariants(method.resultExpression, method, visited, variants);
         return variants;
+    }
+
+    private void collectNestedMethodRaiseVariants(String expression, Method ownerMethod,
+                                                  Set<String> visited, Set<String> variants) {
+        for (ObjectType object : program.objects) {
+            for (Method candidate : object.methods) {
+                String pattern = "(?<![A-Za-z0-9_])((?:self|[A-Za-z_][A-Za-z0-9_]*)(?:\\s*\\.\\s*[A-Za-z_][A-Za-z0-9_]*)*)\\s*\\.\\s*"
+                        + java.util.regex.Pattern.quote(candidate.name) + "\\s*\\(";
+                java.util.regex.Matcher matcher = java.util.regex.Pattern.compile(pattern).matcher(expression);
+                while (matcher.find()) {
+                    String receiverType = resolveMethodReceiverType(matcher.group(1), ownerMethod);
+                    if (!matchesObjectTypeName(receiverType, object.name)) continue;
+                    variants.addAll(collectMethodRaiseVariants(candidate, visited));
+                }
+            }
+        }
+    }
+
+    private String resolveMethodReceiverType(String receiverPath, Method ownerMethod) {
+        String[] path = receiverPath.replaceAll("\\s", "").split("\\.");
+        if (path.length == 0 || !"self".equals(path[0])) return null;
+        String typeName = ownerMethod.owner;
+        for (int index = 1; index < path.length; index++) {
+            ObjectType owner = findObjectType(typeName);
+            if (owner == null) return null;
+            String fieldName = path[index];
+            Field field = owner.fields.stream().filter(candidate -> candidate.name.equals(fieldName))
+                    .findFirst().orElse(null);
+            if (field == null) return null;
+            TypeRef fieldType = field.typeRef != null ? field.typeRef : TypeParser.parseCanonical(field.type);
+            typeName = fieldType != null ? fieldType.name() : field.type;
+            if (typeName == null || typeName.isBlank()) return null;
+        }
+        return typeName;
     }
 
     private String resolveMainReceiverType(String receiverPath, OwnershipEnv env, TypeSolver solver) {
