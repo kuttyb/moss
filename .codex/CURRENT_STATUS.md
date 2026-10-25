@@ -15351,3 +15351,21 @@ All eleven Java test classes pass with ABI-v9 defaults and with
 `MOSS_STAGED_ABI=v10`; `git diff --check` passes. This verifies generated-Rust
 shape and helper raise closure only. Rust compilation and source-free native
 execution remain reserved for the frozen-candidate acceptance gate.
+
+
+### Phase 25.3 continuation — route concrete source-free functions to providers
+
+The source-free function raise reproducer exposed linked lowering errors:
+`service.signal()` was emitted as a Rust dotted function call, helper raise
+closure depended on the reserved `fail` spelling, and imported concrete
+source-free function records were emitted as local Rust stubs. The
+generator now resolves qualified source-free function calls through the
+`moss_<module>` provider path, applies the raise bridge, and skips local
+definitions for concrete source-free functions. Generic source-free functions
+with locally lowered bodies remain eligible for macro lowering.
+
+The ABI-v9 regression checks the provider path, error bridge, and absence of
+the invalid dotted stub. All eleven Java test classes pass under ABI-v9
+defaults and staged ABI-v10; `git diff --check` passes. Provider-crate Rust
+compilation and native linkage remain unverified and are still final-gate
+items.

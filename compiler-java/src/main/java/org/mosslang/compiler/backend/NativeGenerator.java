@@ -1070,7 +1070,7 @@ public class NativeGenerator {
 
         // Functions
         for (Function fn : program.functions) {
-            if (genericFunctions.contains(fn.name)) {
+            if (genericFunctions.contains(fn.name) || isExternalSourceFreeFunction(fn, genericFunctions)) {
                 continue;
             }
             String fnIdentity;
@@ -1195,6 +1195,13 @@ public class NativeGenerator {
 
     private static boolean expressionCallsRaisingFunction(String expression, Set<String> raisingFunctions) {
         if (expression == null || expression.isEmpty() || raisingFunctions.isEmpty()) return false;
+        for (String callable : raisingFunctions) {
+            if (!callable.contains(".")) continue;
+            if (java.util.regex.Pattern.compile("(?<![A-Za-z0-9_])"
+                    + java.util.regex.Pattern.quote(callable) + "\\s*\\(").matcher(expression).find()) {
+                return true;
+            }
+        }
         for (int i = 0; i < expression.length();) {
             char ch = expression.charAt(i);
             if (ch == '"' || ch == '\'') {
@@ -1420,6 +1427,39 @@ public class NativeGenerator {
             return "moss_" + domain.definingModule + "::" + domain.declarationName;
         }
         return mossType;
+    }
+
+    private static boolean isExternalSourceFreeFunction(Function function,
+                                                        Set<String> genericFunctions) {
+        return function.sourceFreeAbiVersion > 0 && !genericFunctions.contains(function.name);
+    }
+
+    private static String sourceFreeFunctionRustPath(Function function, String fallbackName,
+                                                     Set<String> genericFunctions) {
+        if (function == null || !isExternalSourceFreeFunction(function, genericFunctions)) {
+            return fallbackName;
+        }
+        String module = function.definingModule;
+        String declaration = function.declarationName;
+        if (module == null || module.isBlank()) {
+            int separator = function.name.indexOf('.');
+            if (separator < 0) separator = function.name.indexOf("__");
+            if (separator > 0) module = function.name.substring(0, separator);
+        }
+        if (declaration == null || declaration.isBlank()) {
+            String prefix = module == null ? "" : module + ".";
+            if (!prefix.isEmpty() && function.name.startsWith(prefix)) {
+                declaration = function.name.substring(prefix.length());
+            } else {
+                prefix = module == null ? "" : module + "__";
+                declaration = !prefix.isEmpty() && function.name.startsWith(prefix)
+                        ? function.name.substring(prefix.length()) : function.name;
+            }
+        }
+        if (module == null || module.isBlank() || declaration == null || declaration.isBlank()) {
+            return fallbackName;
+        }
+        return "moss_" + module + "::" + declaration;
     }
 
     private static void genBlockStmts(StringBuilder o, List<Stmt> stmts, String indent,
@@ -2965,6 +3005,23 @@ public class NativeGenerator {
                     for (String ra : rawArgs) {
                         callArgs.add(lowerExpr(ra.trim(), stateFields, domains, objects));
                     }
+                    Program callProgram = currentProgram.get();
+                    Function qualifiedSourceFreeFunction = callProgram == null ? null
+                            : callProgram.functions.stream()
+                                    .filter(function -> function.name.equals(recv + "." + methodName)
+                                            && function.sourceFreeAbiVersion > 0
+                                            && !currentGenericFunctions.get().contains(function.name))
+                                    .findFirst().orElse(null);
+                    if (qualifiedSourceFreeFunction != null) {
+                        String rustPath = sourceFreeFunctionRustPath(qualifiedSourceFreeFunction,
+                                qualifiedSourceFreeFunction.name, currentGenericFunctions.get());
+                        String qualifiedCall = rustPath + "(" + String.join(", ", callArgs) + ")";
+                        if (currentInTry.get()) {
+                            return qualifiedCall
+                                    + ".map_err(|e| __moss_raise(format!(\"{:?}\", e)))?";
+                        }
+                        return qualifiedCall + ".unwrap_or_default()";
+                    }
                     String callStr = recv + "." + methodName + "(" + String.join(", ", callArgs) + ")";
                     if (currentInTry.get()) {
                         return callStr + ".map_err(|e| __moss_raise(format!(\"{:?}\", e)))?";
@@ -3025,6 +3082,26 @@ public class NativeGenerator {
                         + "(" + String.join(", ", callArgs) + ")";
                 Method resolvedMethod = resolveObjectMethod(recv, methodName, rawArgs.size(),
                         currentEnclosingFunctionName());
+                Program callProgram = currentProgram.get();
+                Function qualifiedSourceFreeFunction = callProgram == null ? null
+                        : callProgram.functions.stream()
+                                .filter(function -> function.name.equals(recv + "." + methodName)
+                                        && function.sourceFreeAbiVersion > 0
+                                        && !currentGenericFunctions.get().contains(function.name))
+                                .findFirst().orElse(null);
+                if (resolvedMethod == null && qualifiedSourceFreeFunction != null) {
+                    String rustPath = sourceFreeFunctionRustPath(qualifiedSourceFreeFunction,
+                            qualifiedSourceFreeFunction.name, currentGenericFunctions.get());
+                    String qualifiedCall = rustPath + "(" + String.join(", ", callArgs) + ")";
+                    if (!qualifiedSourceFreeFunction.sourceFreeRaiseVariants.isEmpty()) {
+                        if (currentInTry.get()) {
+                            return qualifiedCall
+                                    + ".map_err(|e| __moss_raise(format!(\"{:?}\", e)))?";
+                        }
+                        return qualifiedCall + ".unwrap_or_default()";
+                    }
+                    return qualifiedCall;
+                }
                 if (methodMayRaise(resolvedMethod)) {
                     if (currentInTry.get()) {
                         if (resolvedMethod.sourceFree) {
@@ -3199,7 +3276,9 @@ public class NativeGenerator {
                 }
                 boolean calleeRaises = currentRaisingFunctions.get().contains(callee)
                         || simpleName.equals("fail");
-                String callStr = callee + "(" + String.join(", ", argList) + ")";
+                    String rustCallee = sourceFreeFunctionRustPath(calleeFunction, callee,
+                            currentGenericFunctions.get());
+                    String callStr = rustCallee + "(" + String.join(", ", argList) + ")";
                 if (calleeRaises) {
                     if (currentInTry.get()) {
                         // Same-crate Moss callables use the shared __MossRaised
