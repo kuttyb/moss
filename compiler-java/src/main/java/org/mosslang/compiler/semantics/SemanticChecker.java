@@ -2034,9 +2034,14 @@ public class SemanticChecker {
     }
 
     private boolean doesFunctionConsumeParam(Function fn, int paramIdx) {
+        TypeRef parameterType = fn != null && paramIdx >= 0 && paramIdx < fn.params.size()
+                ? functionParameterType(fn.params.get(paramIdx)) : null;
+        return doesFunctionConsumeParam(fn, paramIdx, parameterType);
+    }
+
+    private boolean doesFunctionConsumeParam(Function fn, int paramIdx, TypeRef parameterType) {
         if (fn == null || paramIdx < 0 || paramIdx >= fn.params.size()) return false;
         String pName = fn.params.get(paramIdx).name;
-        TypeRef parameterType = functionParameterType(fn.params.get(paramIdx));
         if (fn.resultExpression != null
                 && transferType(resolveReceiverPathType(parameterType,
                         fn.resultExpression.trim(), pName))) return true;
@@ -2658,7 +2663,8 @@ public class SemanticChecker {
                 // then proceed to the next argument from that new state.
                 if (currentHandlerRaises != null) recordDirectCallRaises(a, env);
                 if (env.containsKey(a) && transferType(env.get(a))) {
-                    boolean consumesArgument = fn != null ? doesFunctionConsumeParam(fn, i)
+                    boolean consumesArgument = fn != null
+                            ? doesFunctionConsumeParam(fn, i, env.get(a))
                             : method != null && i < method.parameterAccessModes.size()
                                     && method.parameterAccessModes.get(i) == AccessMode.Consume;
                     if (currentMessagePayloads.contains(a) && consumesArgument) {

@@ -810,6 +810,22 @@ public class SemanticCheckerTest {
                 + "  relay(item)\n"
                 + "  echo item.payload\n", "inferred-function-receiver-collision.moss");
         new SemanticChecker(collisionProgram).run();
+
+        assertCompileError(""
+                + "type Mover:\n"
+                + "  payload: String\n"
+                + "  fn touch() -> String:\n"
+                + "    return self.payload\n"
+                + "type Reader:\n"
+                + "  payload: String\n"
+                + "  fn touch():\n"
+                + "    echo self.payload\n"
+                + "fn relay(item):\n"
+                + "  item.touch()\n"
+                + "fn main():\n"
+                + "  item = Mover(payload=\"move\")\n"
+                + "  relay(item)\n"
+                + "  echo item.payload\n", "OWNERSHIP_USE_AFTER_CONSUME");
     }
 
     private static void testFunctionWriteModePropagatesThroughMethodArguments() {

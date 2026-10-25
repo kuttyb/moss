@@ -627,3 +627,14 @@ receiver types remain an area for focused coverage. C++'s standalone `effects`
 query still labels the unresolved `relay(box)` parameter READ even though its
 caller-use check rejects reuse after `box.take()`; the diagnostic behavior
 agrees, but the query discrepancy remains open.
+
+
+### Follow-up — specialize inferred CONSUME at callsites
+
+Generic receiver methods sharing a name can have different access modes.
+Java now checks the actual argument TypeRef for each call: a `Mover` whose
+method consumes is consumed, while a same-name read-only `Reader` remains
+reusable. The focused caller diagnostics match C++ for both cases. All eleven
+Java test classes pass under ABI-v9 and staged ABI-v10. Cross-module method
+resolution remains open; the C++ standalone `effects` query's READ summary
+discrepancy remains recorded above.
