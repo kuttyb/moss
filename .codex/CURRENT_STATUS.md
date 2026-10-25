@@ -16390,3 +16390,15 @@ uses `UNKNOWN_SYMBOL_OR_TYPE`; C++ uses its message-handler-specific
 Executor capability argument and transitive message-payload write cases remain
 Java-only accepts in targeted checks. This is not a refreshed 50-file sample.
 Native and release acceptance gates remain unrun.
+
+### Phase 25.3 continuation — transitive writes to message payloads
+
+Domain handlers are initially checked before ordinary function WRITE summaries
+are closed. Java now performs a focused post-summary pass over handler call
+statements so a helper with a WRITE parameter effect cannot mutate an incoming
+message payload indirectly. The regression
+`phase26_payload_transitive_write.moss` now rejects in both Java and C++ with
+`MOSS_COMPILE_ERROR`. This supplements the existing direct payload-write
+checks; broader nested and callback paths remain unverified. The bounded
+50-file negative slice has not yet been rerun. Native and release gates remain
+unrun.

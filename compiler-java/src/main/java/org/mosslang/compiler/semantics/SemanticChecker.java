@@ -164,6 +164,7 @@ public class SemanticChecker {
             // ordinary functions in their bodies.
             checkObjectMethods();
             closeFunctionAccessModes();
+            validateTransitiveDomainPayloadWrites();
             checkRecursiveFunctions();
             checkMain();
             checkTests();
@@ -3472,6 +3473,32 @@ public class SemanticChecker {
             if (doesFunctionMutateParam(fn, i) && expressionUses(arg, binding)) return true;
         }
         return false;
+    }
+
+    private void validateTransitiveDomainPayloadWrites() {
+        for (Domain domain : program.domains) {
+            for (Handler handler : domain.handlers) {
+                for (Param parameter : handler.params) {
+                    String payload = parameter.name;
+                    TypeRef payloadType = functionParameterType(parameter);
+                    for (Stmt statement : handler.body) {
+                        if (statement.kind != Stmt.Kind.Call || statement.text == null) continue;
+                        if (expressionContainsWriteCall(statement.text, payload)) {
+                            throw new CompileError(statement.line,
+                                    "cannot WRITE incoming message payload '" + payload
+                                            + "'; message payloads are immutable snapshots",
+                                    "MOSS_COMPILE_ERROR", program.sourceFile);
+                        }
+                        if (payloadMethodMutatesReceiver(statement.text, payload, payloadType)) {
+                            throw new CompileError(statement.line,
+                                    "cannot WRITE incoming message payload '" + payload
+                                            + "'; message payloads are immutable snapshots",
+                                    "MOSS_COMPILE_ERROR", program.sourceFile);
+                        }
+                    }
+                }
+            }
+        }
     }
 
     private boolean payloadMethodMutatesReceiver(String expression, String payload, TypeRef payloadType) {

@@ -49,6 +49,7 @@ public class SemanticCheckerTest {
         testConflictingDomainInstanceTypesAreRejected();
         testDomainHandlersRequireMessageSyntax();
         testDomainRoutesCannotBeReassigned();
+        testTransitiveMessagePayloadWritesAreRejected();
         testRecursionThroughFunctionalCallbacksIsRejected();
         testFilterRequiresBooleanPredicate();
         testReduceCallbackResultMatchesAccumulator();
@@ -1185,6 +1186,24 @@ public class SemanticCheckerTest {
                 + "  message router.Reset()\n", "domain-route-reassignment.moss");
         expectCompileError(invalid, "IMMUTABLE_LOCAL_MUTATION",
                 "a statically bound domain route cannot be reassigned");
+    }
+
+    private static void testTransitiveMessagePayloadWritesAreRejected() {
+        Program invalid = Parser.parseSource(""
+                + "type Buffer:\n"
+                + "  value: Int\n"
+                + "  fn clear():\n"
+                + "    value = 0\n"
+                + "fn mutate(buffer: Buffer):\n"
+                + "  buffer.clear()\n"
+                + "domain Worker:\n"
+                + "  fn Process(payload: Buffer):\n"
+                + "    mutate(payload)\n"
+                + "fn main():\n"
+                + "  worker = Worker()\n"
+                + "  message worker.Process(Buffer(value = 1))\n", "transitive-message-payload-write.moss");
+        expectCompileError(invalid, "MOSS_COMPILE_ERROR",
+                "a helper that writes an incoming payload must be rejected");
     }
 
     private static void testRecursionThroughFunctionalCallbacksIsRejected() {
