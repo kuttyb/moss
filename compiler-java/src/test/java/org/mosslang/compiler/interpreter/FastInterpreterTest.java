@@ -26,6 +26,7 @@ public final class FastInterpreterTest {
         testDomainConstructionTraceIsStructured();
         testDomainMessageTraceCarriesHandlerContext();
         testLocalArgumentTraceOccursInsideCallee();
+        testNamedDomainStateAndNestedRoutes();
         System.out.println("FastInterpreterTest PASSED.");
     }
 
@@ -469,6 +470,41 @@ public final class FastInterpreterTest {
         if (!expected.equals(trace.toString(StandardCharsets.UTF_8))
                 || !"3\n".equals(stdout.toString(StandardCharsets.UTF_8))) {
             throw new AssertionError("direct call argument generated an extra trace read: " + trace);
+        }
+    }
+
+    private static void testNamedDomainStateAndNestedRoutes() {
+        var program = Parser.parseSource(""
+                + "domain Ledger:\n"
+                + "  balance: Int = 10\n"
+                + "\n"
+                + "  fn Read() -> Int:\n"
+                + "    reply balance\n"
+                + "domain Inventory:\n"
+                + "  domainroutes(ledger: Ledger)\n"
+                + "\n"
+                + "  fn Available() -> Int:\n"
+                + "    reply message ledger.Read()\n"
+                + "fn main():\n"
+                + "  ledger = Ledger(balance: 42)\n"
+                + "  inventory = Inventory(ledger: ledger)\n"
+                + "  echo message inventory.Available()\n",
+                "fast-interpreter-nested-domain-route.moss");
+        new CheckedProgram(program).run();
+
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+        ByteArrayOutputStream trace = new ByteArrayOutputStream();
+        new FastInterpreter(program, true,
+                new PrintStream(stdout, true, StandardCharsets.UTF_8),
+                new PrintStream(trace, true, StandardCharsets.UTF_8)).run();
+        String events = trace.toString(StandardCharsets.UTF_8);
+        if (!"42\n".equals(stdout.toString(StandardCharsets.UTF_8))
+                || !events.contains("\"path\":\"balance\"")
+                || !events.contains("\"event\":\"message_call\",\"function\":\"Inventory.Available\"")
+                || !events.contains("\"call_event_id\":5,\"message_event_id\":6,\"handler_event_id\":5")
+                || !events.contains("\"detail\":\"42\"")) {
+            throw new AssertionError("named domain state or nested route was not preserved: " + events
+                    + " stdout=" + stdout);
         }
     }
 }

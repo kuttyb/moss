@@ -13833,3 +13833,17 @@ by their Moss type. The complete example trace and stdout now match C++ exactly.
 Validation: clean Java build and all eleven unit-test classes pass in ABI-v9
 and staged ABI-v10; `git diff --check` passes. Other nested domain and ownership
 cases and final acceptance remain open.
+
+### Phase 25.3 continuation — initialize domain state and nested routes
+
+`examples/phase106b_static_composition.moss` revealed a real Fast Debug value
+bug: Java ignored the named `balance: 42` argument to `Ledger` and used its
+field default of 10, making the two-hop Ledger→Inventory route return 10 while
+C++ returned 42. Java now binds named constructor arguments to declared domain
+state fields as well as routes. Message expressions synthesized inside handler
+replies also inherit the active source location and caller context. The example
+now returns 42 and its full trace matches C++ exactly.
+
+Validation: clean Java build and all eleven unit-test classes pass in ABI-v9
+and staged ABI-v10; C++/Java stdout and trace comparisons pass for the routed
+composition. Broader route/state profiles and final acceptance remain open.

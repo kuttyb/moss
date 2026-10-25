@@ -905,7 +905,7 @@ public class FastInterpreter {
                 traceEvent("{\"event_id\":" + handlerEnterId + ",\"event\":\"handler_enter\",\"function\":\""
                         + jsonEscape(handlerFunction) + "\",\"source_file\":\"" + jsonEscape(handler.sourceFile)
                         + "\",\"semantic_identity\":\"" + jsonEscape(handlerIdentity) + "\",\"line\":" + handler.line
-                        + ",\"parent_event_id\":" + msgCallId + ",\"message_event_id\":" + msgCallId
+                        + traceContextFields()
                         + ",\"depth\":" + (depth + 1) + ",\"instance\":\"" + jsonEscape(targetDomain.name)
                         + "\",\"specialization\":\"domain-specialization:" + jsonEscape(targetDomain.domain.name)
                         + ":" + jsonEscape(targetDomain.name.substring(targetDomain.name.lastIndexOf("::") + 2))
@@ -954,7 +954,6 @@ public class FastInterpreter {
                         + "\",\"handler\":\"" + jsonEscape(handlerName) + "\"}");
                 traceCallStack.pop();
                 traceParentStack.pop();
-                traceHandlerStack.pop();
                 traceFunction = oldFunction;
                 traceSourceFile = oldSource;
                 traceSemanticIdentity = oldIdentity;
@@ -968,14 +967,14 @@ public class FastInterpreter {
                 traceEvent("{\"event_id\":" + eventId + ",\"event\":\"message_return\",\"function\":\""
                         + jsonEscape(funcName) + "\",\"source_file\":\"" + jsonEscape(s.sourceFile)
                         + "\",\"semantic_identity\":\"" + jsonEscape(oldIdentity) + "\",\"line\":" + s.line
-                        + ",\"parent_event_id\":" + msgCallId + ",\"message_event_id\":" + msgCallId
-                        + ",\"handler_event_id\":" + handlerEnterId + ",\"depth\":" + (depth + 1)
+                        + traceContextFields() + ",\"depth\":" + (depth + 1)
                         + ",\"detail\":\"" + jsonEscape(traceValueSummary(retVal)) + "\",\"instance\":\""
                         + jsonEscape(targetDomain.name) + "\",\"specialization\":\"domain-specialization:"
                         + jsonEscape(targetDomain.domain.name) + ":" + jsonEscape(targetDomain.name.substring(targetDomain.name.lastIndexOf("::") + 2))
                         + "\",\"handler\":\"" + jsonEscape(handlerName) + "\"}");
                 traceParentStack.pop();
                 traceMessageStack.pop();
+                traceHandlerStack.pop();
 
                 if (s.messageResult != null && !s.messageResult.isEmpty()) {
                     Value before = locals.get(s.messageResult);
@@ -1445,12 +1444,12 @@ public class FastInterpreter {
             int openP = inner.indexOf('(');
             int dot = inner.indexOf('.');
             if (dot > 0 && openP > dot && inner.endsWith(")")) {
-                Stmt msgStmt = new Stmt(Stmt.Kind.Message, 0, 0, expr, "");
+                Stmt msgStmt = new Stmt(Stmt.Kind.Message, traceLine, traceDepth, expr, traceSourceFile);
                 msgStmt.a = inner.substring(0, dot).trim();
                 msgStmt.b = inner.substring(dot + 1, openP).trim();
                 String argsStr = inner.substring(openP + 1, inner.length() - 1).trim();
                 msgStmt.args.addAll(splitArgs(argsStr));
-                return evalStmt(msgStmt, locals, currentDomain, "main", 0);
+                return evalStmt(msgStmt, locals, currentDomain, traceFunction, traceDepth);
             }
         }
 
@@ -1516,6 +1515,8 @@ public class FastInterpreter {
         }
         if (p > 0 && expr.endsWith(")")) {
             String callee = expr.substring(0, p).trim();
+            boolean domainConstructor = program.domains.stream().anyMatch(d -> d.name.equals(callee)
+                    || d.name.endsWith("__" + callee) || callee.endsWith("." + d.name));
             boolean sourceCallable = program.functions.stream().anyMatch(f -> f.name.equals(callee)
                     || f.name.endsWith("__" + callee) || callee.endsWith("." + f.name))
                     || program.objects.stream().flatMap(obj -> obj.methods.stream())
@@ -1551,7 +1552,8 @@ public class FastInterpreter {
                     if (colIdx > 0) {
                         a = a.substring(colIdx + 1).trim();
                     }
-                    if (sourceCallable && a.matches("[A-Za-z_][A-Za-z0-9_]*") && locals.containsKey(a))
+                    if ((sourceCallable || domainConstructor)
+                            && a.matches("[A-Za-z_][A-Za-z0-9_]*") && locals.containsKey(a))
                         evaluatedArgs.add(locals.get(a));
                     else
                         evaluatedArgs.add(evalExpr(a, locals, currentDomain));
@@ -1589,7 +1591,8 @@ public class FastInterpreter {
                         if (separator < 0) separator = rawArg.indexOf('=');
                         if (separator <= 0) continue;
                         String routeName = rawArg.substring(0, separator).trim();
-                        if (d.routes.stream().anyMatch(route -> route.name.equals(routeName))) {
+                        if (d.routes.stream().anyMatch(route -> route.name.equals(routeName))
+                                || d.state.stream().anyMatch(field -> field.name.equals(routeName))) {
                             inst.state.put(routeName, evaluatedArgs.get(i));
                         }
                     }
