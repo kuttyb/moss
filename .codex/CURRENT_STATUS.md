@@ -15634,3 +15634,15 @@ not yet cover inferred local aliases or all imported receiver paths.
 
 All twelve Java unit-test classes pass under ABI-v9 defaults and staged
 ABI-v10; feedback and diff checks are pending for the checkpoint.
+
+
+### Phase 25.3 continuation — follow inferred method-local object aliases
+
+Method panic propagation now records local object types from method parameters,
+constructor initializers, and direct object-field aliases before following
+nested method calls. A fixture verifies `let other = Box(); other.crash()`
+contributes `may_panic=1`, alongside parameter, field, and self receiver cases.
+
+All twelve Java unit-test classes pass under ABI-v9 defaults and staged
+ABI-v10; feedback and diff checks are pending for the checkpoint. More complex
+branch-dependent aliasing and generic receiver inference remain open.

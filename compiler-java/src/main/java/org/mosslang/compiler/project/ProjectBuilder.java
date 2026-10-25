@@ -2634,6 +2634,53 @@ public class ProjectBuilder {
         if (method == null || program == null || !callPath.add(method.owner + "." + method.name)) return false;
         if (method.sourceFree && method.sourceFreeMayPanic) return true;
         if (mayPanic(method.body) || mayPanicExpression(method.resultExpression)) return true;
+        Map<String, String> localTypes = new java.util.HashMap<>();
+        for (Param parameter : method.params) {
+            if (parameter.type != null && !parameter.type.isBlank()) {
+                localTypes.put(parameter.name, parameter.type);
+            }
+        }
+        for (Stmt statement : method.body) {
+            if (statement == null || statement.a == null || statement.b == null
+                    || !statement.a.trim().matches("[A-Za-z_][A-Za-z0-9_]*")) continue;
+            String initializer = statement.b.trim();
+            String inferred = localTypes.get(initializer);
+            if (inferred == null && initializer.matches("(?:[A-Za-z_][A-Za-z0-9_]*[.]|[A-Za-z_][A-Za-z0-9_]*__)?[A-Za-z_][A-Za-z0-9_]*\\s*\\(.*")) {
+                int open = initializer.indexOf('(');
+                String constructorName = initializer.substring(0, open).trim();
+                for (ObjectType object : program.objects) {
+                    if (object.name.equals(constructorName) || object.name.endsWith("__" + constructorName)
+                            || object.name.endsWith("." + constructorName)) {
+                        inferred = object.name;
+                        break;
+                    }
+                }
+            }
+            if (inferred == null && initializer.startsWith("self.")) {
+                String fieldName = initializer.substring("self.".length()).trim();
+                ObjectType owner = program.objects.stream()
+                        .filter(candidate -> candidate.name.equals(method.owner)
+                                || candidate.name.endsWith("__" + method.owner))
+                        .findFirst().orElse(null);
+                if (owner != null) {
+                    Field field = owner.fields.stream().filter(candidate -> candidate.name.equals(fieldName))
+                            .findFirst().orElse(null);
+                    if (field != null) inferred = field.type;
+                }
+            }
+            if (inferred == null) {
+                ObjectType owner = program.objects.stream()
+                        .filter(candidate -> candidate.name.equals(method.owner)
+                                || candidate.name.endsWith("__" + method.owner))
+                        .findFirst().orElse(null);
+                if (owner != null) {
+                    Field field = owner.fields.stream().filter(candidate -> candidate.name.equals(initializer))
+                            .findFirst().orElse(null);
+                    if (field != null) inferred = field.type;
+                }
+            }
+            if (inferred != null) localTypes.put(statement.a.trim(), inferred);
+        }
         List<String> expressions = new ArrayList<>();
         for (Stmt statement : method.body) {
             if (statement == null) continue;
@@ -2655,7 +2702,7 @@ public class ProjectBuilder {
             }
             for (ObjectType object : program.objects) {
                 for (Method called : object.methods) {
-                    if (callsTypedMethod(expression, method, object, called, program)
+                    if (callsTypedMethod(expression, method, object, called, program, localTypes)
                             && mayPanic(called, program, module, new HashSet<>(callPath))) return true;
                 }
             }
@@ -2664,7 +2711,7 @@ public class ProjectBuilder {
     }
 
     private static boolean callsTypedMethod(String expression, Method caller, ObjectType object,
-                                            Method method, Program program) {
+                                            Method method, Program program, Map<String, String> localTypes) {
         String pattern = "(?<![A-Za-z0-9_])((?:self|[A-Za-z_][A-Za-z0-9_]*)(?:\\s*\\.\\s*[A-Za-z_][A-Za-z0-9_]*)*)\\s*\\.\\s*"
                 + java.util.regex.Pattern.quote(method.name) + "\\s*\\(";
         java.util.regex.Matcher matcher = java.util.regex.Pattern.compile(pattern)
@@ -2675,11 +2722,13 @@ public class ProjectBuilder {
             if ("self".equals(path[0])) {
                 typeName = caller.owner;
             } else {
-                Param parameter = caller.params.stream().filter(candidate -> candidate.name.equals(path[0]))
-                        .findFirst().orElse(null);
-                if (parameter != null) {
-                    typeName = parameter.type;
-                } else {
+                typeName = localTypes.get(path[0]);
+                if (typeName == null) {
+                    Param parameter = caller.params.stream().filter(candidate -> candidate.name.equals(path[0]))
+                            .findFirst().orElse(null);
+                    if (parameter != null) typeName = parameter.type;
+                }
+                if (typeName == null) {
                     ObjectType callerOwner = null;
                     for (ObjectType candidate : program.objects) {
                         if (candidate.name.equals(caller.owner)

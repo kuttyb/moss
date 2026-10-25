@@ -183,6 +183,9 @@ public final class ProjectBuilderMetadataTest {
                 + "    self.crash()\n"
                 + "  fn crash_parameter(other: Box):\n"
                 + "    other.crash()\n"
+                + "  fn crash_alias():\n"
+                + "    let other = Box()\n"
+                + "    other.crash()\n"
                 + "type Holder:\n"
                 + "  child: Box\n"
                 + "  fn crash_child():\n"
@@ -234,7 +237,7 @@ public final class ProjectBuilderMetadataTest {
             throw new AssertionError("exported function panic effect omitted its typed method call: "
                     + methodCaller);
         }
-        for (String methodName : List.of("crash_parameter", "crash_child")) {
+        for (String methodName : List.of("crash_parameter", "crash_alias", "crash_child")) {
             String methodRecord = text.lines().filter(line -> line.contains("object_method "
                             + methodName + " "))
                     .findFirst().orElse("");
