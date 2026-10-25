@@ -785,7 +785,7 @@ public class Main {
 
     static void loadMossiFunctions(Path cand, String modName, Program program) throws CompileError {
         try {
-            String text = Files.readString(cand, StandardCharsets.ISO_8859_1);
+            String text = Files.readString(cand, StandardCharsets.UTF_8);
             if (text.startsWith("moss-module-interface-v3\n")) {
                 org.mosslang.compiler.abi.MossiInterface v10 =
                         org.mosslang.compiler.abi.CheckedBodyCodec.verifySourceFree(text);

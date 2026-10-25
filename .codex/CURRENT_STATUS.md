@@ -12756,3 +12756,17 @@ Validation: `python3 scripts/java/test_jdt_client.py` passes all five mocked
 lifecycle/discovery tests; Python bytecode compilation and `git diff --check`
 pass. The live Eclipse daemon was not launched, so its actual socket handshake
 and stop behavior remain unverified.
+
+### Phase 25.3 continuation — read source-free ABI as UTF-8
+
+`Main.loadMossiFunctions` read `.mossi` data as ISO-8859-1, although ABI-v10
+serialization and its provider digest use UTF-8. A source-free ABI-v10 fixture
+with non-ASCII compiler metadata now verifies and loads through the production
+loader after switching the read to UTF-8. The standalone `java -cp
+compiler-java/bin` invocation was not a valid test launch because it omitted the
+Eclipse Collections runtime dependencies; the repository Java test script
+provides the supported classpath.
+
+Validation: Java build and all ten Java unit-test classes pass. No native,
+Rust-compilation, SDK, or full regression gate was run. ABI-v9 compatibility
+after the encoding correction remains covered only by existing Java tests.

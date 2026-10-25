@@ -126,6 +126,7 @@ public final class SourceFreeObjectMetadataTest {
             }
         }
         MossiInterface v10 = new MossiInterface("module-v1:sample@0.1.0::provider");
+        v10.compiler = "moss-java-é";
         v10.binaryContract.add(new MossiRecord("type:Point", "type Point nominal\n"));
         v10.semanticContract.add(new MossiRecord("type:Point", ""
                 + "export type Point nominal\n"
