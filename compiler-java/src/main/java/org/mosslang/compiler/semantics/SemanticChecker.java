@@ -1052,7 +1052,9 @@ public class SemanticChecker {
                                     ? objects.get(fieldType.name()) : null;
                     for (Stmt statement : method.body) {
                         String target = statement.a != null ? statement.a.trim() : "";
-                        String rhs = statement.b != null ? statement.b.trim() : "";
+                        String rhs = statement.kind == Stmt.Kind.Return
+                                ? statementResultExpression(statement)
+                                : (statement.b != null ? statement.b.trim() : "");
                         TypeRef movedFieldType = receiverFieldValueType(object, field.name, rhs);
                         if (transferType(movedFieldType)) {
                             method.receiverAccessMode = AccessMode.Consume;
@@ -1173,6 +1175,13 @@ public class SemanticChecker {
                     : (nestedField.type != null ? TypeParser.parseCanonical(nestedField.type) : null);
         }
         return type;
+    }
+
+    private String statementResultExpression(Stmt statement) {
+        if (statement == null) return "";
+        String value = statement.a != null ? statement.a.trim() : "";
+        if (value.isEmpty() && statement.text != null) value = statement.text.trim();
+        return value.startsWith("return ") ? value.substring("return ".length()).trim() : value;
     }
 
     private AccessMode strongerAccessMode(AccessMode current, AccessMode candidate) {

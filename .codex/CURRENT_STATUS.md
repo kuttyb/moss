@@ -15127,3 +15127,17 @@ This third direct-field extraction profile is included in the receiver
 ownership regression. All eleven Java test classes pass under ABI-v9 and
 staged ABI-v10; Rust compilation was not run. Generic substitutions, indexed
 field paths, and branch-sensitive moves remain open.
+
+
+### Phase 25.3 continuation — infer consumption from explicit field returns
+
+A method written with `return self.payload` bypassed receiver consumption
+inference because the existing move scan only read assignment RHS values and
+the method's implicit result expression. The scan now inspects explicit
+`Return` expressions and applies the same nested field-path transfer check.
+The C++ and Java minimal reproducers now both reject use of the caller after
+the method returns the owned field.
+
+The explicit-return path is added to the semantic regression. All eleven Java
+test classes pass under ABI-v9 and staged ABI-v10; generic field substitutions
+and branch-sensitive moves remain open.

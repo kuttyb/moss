@@ -471,3 +471,15 @@ The semantic test covers this nested extraction. The C++/Java focused
 diagnostic agrees, and all eleven Java test classes pass under ABI-v9 and
 staged ABI-v10. Generic substitutions, indexed paths, and branch-sensitive
 moves remain open.
+
+
+### Follow-up — infer receiver consumption from explicit field returns
+
+For a method `return self.payload`, C++ rejected later use of the owning
+caller while Java previously accepted it. Java now inspects explicit Return
+expressions during receiver move inference and checks the full declared field
+path's transfer type.
+
+The semantic test covers the return form. C++/Java focused diagnostics agree,
+and all eleven Java test classes pass under ABI-v9 and staged ABI-v10. Generic
+substitutions and branch-sensitive moves remain open.
