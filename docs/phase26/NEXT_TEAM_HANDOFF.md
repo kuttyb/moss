@@ -1,4 +1,21 @@
-# Phase 26 handoff after Team W2
+# Phase 26 handoff after W2 closeout and W3 effects
+
+## Current continuation status
+
+The W2 closeout follow-up and W3 implementation are in progress on
+`phase26-w2-inference`; `.codex/CURRENT_STATUS.md` has the current exact
+worktree state. Read `W2_RESULTS.md` and `W3_RESULTS.md` for evidence and
+`MossPhase26.md` for the final stop decision. W2's per-wave project counters,
+legacy full-loop oracle, three extra convergence exits, W3 memoization, and W5
+timer-key fix are present. W4 type-spelling interning is dropped. Final local
+repository gates, feedback validation, exact-SHA Architect review, commit,
+push, and hosted CI are the remaining delivery steps. PR #18 is not merged.
+
+The Team is two actual agents: Coordinator/implementer/reviewer and the
+independent adversarial Architect. There were no leaf implementation workers.
+The Architect was asked to review at the frozen final integration checkpoint,
+not on individual edits. Record unknown usage values as unknown in the team
+closeout; do not infer agent counts or metrics.
 
 ## Current ownership and branch
 
@@ -15,11 +32,12 @@ eight-workload Callgrind attribution completed; details and the disclosed W4
 wall-time regression are in `docs/phase26/W2_RESULTS.md`. Read `.codex/CURRENT_STATUS.md`,
 `docs/phase26/W2_RESULTS.md`, and this handoff before continuing.
 
-The W2 caller worklist owns only signature inference in
-`src/semantic_checker.cpp`, the B1 counter display, its regression tests, and
-Phase 26 workflow routing/performance gate. Keep the checker-file single-writer
-lease. W3 effects memoization, W4 type interning, and W5 timer-key work remain
-out of scope for W2.
+The checker file has a single-writer lease. W2 closeout's counter/oracle and
+loop-audit additions are in `src/semantic_checker.cpp` and
+`tests/tooling/check_phase26_w2_inference_worklist.py`. W3 memoization is also
+in that file. W5's timer-key constructor fix is in
+`src/compiler_stage_timer.hpp` and is folded into this delivery. Do not start
+W4: the post-W3 attribution leaves type spelling below 15% on all workloads.
 
 ## W2 implementation and evidence
 
@@ -51,17 +69,16 @@ PR #18 is ready for review and remains unmerged. See
 `docs/phase26/W2_RESULTS.md` for validation scope and limitations. PR #17/W1
 remains separate and has no main merge implied here.
 
-## Next workstream: W3
+## W3 results and next work
 
-After W2 passes its gates and is accepted into the Phase 26 integration branch,
-start W3 from that integrated head. W3 owns effects-analysis memoization in
-`src/semantic_checker.cpp`; coordinate the single-writer lease and do not mix
-W4/W5 changes into that work. Follow `docs/phase26/MossPhase26.md` for target,
-contract, and measurement scope. W3 must key cached effects by function and
-concrete specialization, invalidate when inference results change, and expose
-computed/cache-hit counters. Re-run relevant correctness and performance gates
-on the W2 integration head. Keep the final Phase 26 attribution question
-separate until all planned workstreams finish.
+W3's mechanism was chosen from measured D18 counts: 2,621,451 baseline calls
+for 37 distinct keys, with effects fixed point at 1/60 rounds. The memoized
+candidate reports 38 computations for 19 distinct inputs across the two
+independent passes and lowers D18 Callgrind Ir by 72.5%. The eight-workload
+attribution and small-fixture latency are in `W3_RESULTS.md`. The decision is
+to stop Phase 26 after this work, drop W4, retain the discipline rules, and
+move the next effort to Graph DSL. Follow the repository PR gates; do not merge
+directly to `main`.
 
 ## Prior W1 references
 

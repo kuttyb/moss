@@ -319,7 +319,12 @@ bool fileio_typed(const TypeEnv& env, const string& name) {
 
 class Checker {
  public:
-  explicit Checker(Program& p) : p_(p) {
+  explicit Checker(Program& p, bool legacy_signature_inference = false)
+      : p_(p), legacy_signature_inference_(legacy_signature_inference),
+        profile_concrete_effect_work_(
+            std::getenv("MOSS_PROFILE_COMPILER") != nullptr ||
+            std::getenv("MOSS_PROFILE_TRACE") != nullptr ||
+            std::getenv("MOSS_PROFILE_HOTSPOTS") != nullptr) {
     CompilerStageTimer decl_timer("declaration_and_symbol_analysis");
     CompilerTraceRecorder::instance().set_counter("functions_analyzed", p_.functions.size());
     CompilerTraceRecorder::instance().set_counter("types_analyzed",
@@ -572,8 +577,12 @@ class Checker {
     }
     {
       CompilerStageTimer timer("effects");
+      invalidate_concrete_effect_cache();
+      concrete_effect_cache_enabled_ = true;
       infer_effects();
       infer_observable_effects();
+      invalidate_concrete_effect_cache();
+      concrete_effect_cache_enabled_ = true;
       validate_imported_h3_summary_closure(p_);
       for (auto& function : p_.functions)
         if (function.open_summary) {
@@ -595,6 +604,8 @@ class Checker {
               function, specialization.parameter_types, &specialization.parameter_mutations);
         }
       final_parameter_effects_ready_ = true;
+      invalidate_concrete_effect_cache();
+      concrete_effect_cache_enabled_ = true;
       validate_borrowed_view_write_effects();
     }
     { CompilerStageTimer timer("concrete_graph"); build_concrete_domain_graph(); }
@@ -610,6 +621,7 @@ class Checker {
       refresh_open_for_summaries_from_checked_types();
       refresh_open_exceptional_summaries_from_checked_types();
       refresh_open_callback_effect_dependencies_from_checked_types();
+      invalidate_concrete_effect_cache();
       if (staged_abi_v10() && p_.explicit_module)
         for (const auto& function : p_.functions) {
           if (!function.exported || compiled_interface_file(function.source_file) ||
@@ -642,6 +654,12 @@ class Checker {
     build_functional_ir();
     {
       CompilerStageTimer timer("specialization_effects");
+      const uint64_t evaluations_before = concrete_effect_evaluations_;
+      const uint64_t cache_hits_before = concrete_effect_cache_hits_;
+      specialization_effect_input_keys_.clear();
+      specialization_effect_profile_active_ = profile_concrete_effect_work_;
+      invalidate_concrete_effect_cache();
+      concrete_effect_cache_enabled_ = true;
       {
         ScopedOpTimer t_pass1("spec_effects_pass1");
         for (auto& function : p_.functions)
@@ -650,6 +668,10 @@ class Checker {
                 concrete_function_observable_effects(
                     function, specialization.parameter_types);
       }
+      // The second pass is an independent consistency oracle. Reuse is valid
+      // within each pass, but pass two must recompute every cache key at least
+      // once rather than reading pass one's result.
+      invalidate_concrete_effect_cache();
       {
         ScopedOpTimer t_pass2("spec_effects_pass2_recheck");
         for (const auto& function : p_.functions)
@@ -663,6 +685,12 @@ class Checker {
                   "SOURCE_FREE_SPECIALIZATION_MISMATCH");
           }
       }
+      concrete_effect_cache_enabled_ = false;
+      specialization_effect_function_evaluations_ =
+          concrete_effect_evaluations_ - evaluations_before;
+      specialization_effect_cache_hits_ =
+          concrete_effect_cache_hits_ - cache_hits_before;
+      specialization_effect_profile_active_ = false;
     }
     {
       CompilerStageTimer timer("occurrence_and_summary_projection");
@@ -1659,6 +1687,20 @@ class Checker {
           std::cerr << "MOSS_PROFILE|" << visited_key << '|' << visited << '\n';
           std::cerr << "MOSS_PROFILE|" << changed_key << '|' << changed << '\n';
         }
+        for (const auto& [invocation, begin, end] :
+             inference_signature_invocation_wave_ranges_) {
+          for (size_t wave = begin; wave < end; ++wave) {
+            const auto [visited, changed] =
+                inference_signature_wave_counts_[wave];
+            const string prefix = "inference_signature_invocation_" +
+                std::to_string(invocation) + "_wave_" +
+                std::to_string(wave - begin);
+            std::cerr << "MOSS_PROFILE|" << prefix << "_visited|"
+                      << visited << '\n';
+            std::cerr << "MOSS_PROFILE|" << prefix << "_changed|"
+                      << changed << '\n';
+          }
+        }
         recorder.set_counter("inference_reinferred_functions", reinferred_functions);
         recorder.set_counter("inference_changed_functions", changed_functions);
         std::cerr << "MOSS_PROFILE|inference_reinferred_functions|"
@@ -1667,6 +1709,45 @@ class Checker {
                   << changed_functions << '\n';
         std::cerr << "MOSS_PROFILE|parse_cache_hits|" << parse_cache_hits_ << '\n';
         std::cerr << "MOSS_PROFILE|parse_cache_misses|" << parse_cache_misses_ << '\n';
+        std::cerr << "MOSS_PROFILE|concrete_effect_evaluations|"
+                  << concrete_effect_evaluations_ << '\n';
+        std::cerr << "MOSS_PROFILE|observable_effects_function_evaluations|"
+                  << observable_effects_function_evaluations_ << '\n';
+        std::cerr << "MOSS_PROFILE|specialization_effect_function_evaluations|"
+                  << specialization_effect_function_evaluations_ << '\n';
+        std::cerr << "MOSS_PROFILE|specialization_effect_cache_hits|"
+                  << specialization_effect_cache_hits_ << '\n';
+        std::cerr << "MOSS_PROFILE|specialization_effect_computations|"
+                  << specialization_effect_function_evaluations_ -
+                      specialization_effect_cache_hits_ << '\n';
+        std::cerr << "MOSS_PROFILE|specialization_effect_distinct_inputs|"
+                  << specialization_effect_input_keys_.size() << '\n';
+        std::cerr << "MOSS_PROFILE|concrete_effect_computations|"
+                  << concrete_effect_computations_ << '\n';
+        std::cerr << "MOSS_PROFILE|concrete_effect_cache_hits|"
+                  << concrete_effect_cache_hits_ << '\n';
+        std::cerr << "MOSS_PROFILE|concrete_effect_cache_enabled_calls|"
+                  << concrete_effect_cache_enabled_calls_ << '\n';
+        std::cerr << "MOSS_PROFILE|concrete_effect_cache_disabled_calls|"
+                  << concrete_effect_cache_disabled_calls_ << '\n';
+        std::cerr << "MOSS_PROFILE|concrete_effect_cache_entries|"
+                  << concrete_effect_cache_.size() << '\n';
+        std::cerr << "MOSS_PROFILE|concrete_effect_distinct_inputs|"
+                  << concrete_effect_input_keys_.size() << '\n';
+        std::cerr << "MOSS_PROFILE|concrete_effect_max_depth|"
+                  << concrete_effect_max_depth_ << '\n';
+        std::cerr << "MOSS_PROFILE|effects_fixed_point_rounds|"
+                  << observable_effect_fixed_point_rounds_ << '\n';
+        std::cerr << "MOSS_PROFILE|effects_fixed_point_changed_rounds|"
+                  << observable_effect_fixed_point_changed_rounds_ << '\n';
+        std::cerr << "MOSS_PROFILE|effects_fixed_point_limit|"
+                  << observable_effect_fixed_point_limit_ << '\n';
+        std::cerr << "MOSS_PROFILE|infer_object_fields_rounds|"
+                  << infer_object_fields_rounds_ << '\n';
+        std::cerr << "MOSS_PROFILE|infer_domain_state_fields_rounds|"
+                  << infer_domain_state_fields_rounds_ << '\n';
+        std::cerr << "MOSS_PROFILE|infer_handler_reply_types_rounds|"
+                  << infer_handler_reply_types_rounds_ << '\n';
       }
     }
   }
@@ -1713,6 +1794,7 @@ class Checker {
   mutable uint64_t parse_cache_misses_ = 0;
 
   Program& p_;
+  bool legacy_signature_inference_ = false;
   std::unordered_map<string, Function*> functions_;
   std::unordered_map<string, Function*> callable_id_to_function_;
   std::unordered_map<const Function*, size_t> signature_function_indices_;
@@ -1721,6 +1803,32 @@ class Checker {
   std::set<size_t> signature_unresolved_consumers_;
   bool signature_dependency_graph_changed_ = false;
   vector<std::pair<size_t, size_t>> inference_signature_wave_counts_;
+  size_t inference_signature_invocations_ = 0;
+  vector<std::tuple<size_t, size_t, size_t>>
+      inference_signature_invocation_wave_ranges_;
+  mutable uint64_t concrete_effect_evaluations_ = 0;
+  mutable uint64_t concrete_effect_computations_ = 0;
+  mutable uint64_t concrete_effect_cache_hits_ = 0;
+  mutable uint64_t concrete_effect_cache_enabled_calls_ = 0;
+  mutable uint64_t concrete_effect_cache_disabled_calls_ = 0;
+  mutable std::set<string> concrete_effect_input_keys_;
+  mutable std::set<string> specialization_effect_input_keys_;
+  mutable std::unordered_map<string, ObservableEffects> concrete_effect_cache_;
+  mutable bool concrete_effect_cache_enabled_ = false;
+  mutable size_t concrete_effect_cache_epoch_ = 0;
+  mutable size_t concrete_effect_active_depth_ = 0;
+  mutable size_t concrete_effect_max_depth_ = 0;
+  bool profile_concrete_effect_work_ = false;
+  bool specialization_effect_profile_active_ = false;
+  uint64_t observable_effects_function_evaluations_ = 0;
+  uint64_t specialization_effect_function_evaluations_ = 0;
+  uint64_t specialization_effect_cache_hits_ = 0;
+  size_t observable_effect_fixed_point_rounds_ = 0;
+  size_t observable_effect_fixed_point_changed_rounds_ = 0;
+  size_t observable_effect_fixed_point_limit_ = 0;
+  size_t infer_object_fields_rounds_ = 0;
+  size_t infer_domain_state_fields_rounds_ = 0;
+  size_t infer_handler_reply_types_rounds_ = 0;
 
   Function* find_function_by_callable_id(const string& id) {
     if (id.empty()) return nullptr;
@@ -13241,8 +13349,10 @@ class Checker {
   }
 
   void infer_object_fields() {
+    size_t rounds_run = 0;
     for (size_t round = 0;
          round <= p_.objects.size() + p_.functions.size() + p_.domains.size() + 2; ++round) {
+      const string before = inferred_checker_signature();
       for (const auto& function : p_.functions) {
         SourceFileScope function_source(current_source_file_, function.source_file);
         TypeEnv env;
@@ -13294,7 +13404,10 @@ class Checker {
         TypeEnv env;
         infer_statement_expressions(benchmark.body, env);
       }
+      ++rounds_run;
+      if (before == inferred_checker_signature()) break;
     }
+    infer_object_fields_rounds_ += rounds_run;
     for (const auto& object : p_.objects) {
       bool is_generic = std::any_of(object.fields.begin(), object.fields.end(),
           [](const Field& f) { return f.inferred; });
@@ -13592,8 +13705,10 @@ class Checker {
 
   void infer_domain_state_fields(bool finalize) {
     ScopedOpTimer t_dom("infer_domain_state_fields");
+    size_t rounds_run = 0;
     for (size_t round = 0;
          round <= p_.domains.size() * 3 + p_.objects.size() + 3; ++round) {
+      const string before = inferred_checker_signature();
       for (auto& domain : p_.domains) {
         SourceFileScope domain_source(current_source_file_, domain.source_file);
         TypeEnv initializer_env;
@@ -13705,7 +13820,10 @@ class Checker {
           }
         }
       }
+      ++rounds_run;
+      if (before == inferred_checker_signature()) break;
     }
+    infer_domain_state_fields_rounds_ += rounds_run;
     if (!finalize) return;
     for (const auto& domain : p_.domains) {
       for (const auto& field : domain.state) {
@@ -13721,8 +13839,10 @@ class Checker {
 
   void infer_handler_reply_types(bool finalize) {
     ScopedOpTimer t_rep("infer_handler_reply_types");
+    size_t rounds_run = 0;
     for (size_t round = 0;
          round <= p_.domains.size() * 3 + p_.functions.size() + 3; ++round) {
+      const string before = inferred_checker_signature();
       for (auto& domain : p_.domains) {
         for (auto& handler : domain.handlers) {
           string handler_source = handler.source_file.empty()
@@ -13784,7 +13904,10 @@ class Checker {
           }
         }
       }
+      ++rounds_run;
+      if (before == inferred_checker_signature()) break;
     }
+    infer_handler_reply_types_rounds_ += rounds_run;
     if (!finalize) return;
     for (const auto& domain : p_.domains) {
       for (const auto& handler : domain.handlers) {
@@ -13885,7 +14008,50 @@ class Checker {
     return out.str();
   }
 
+  string inferred_all_function_signatures() const {
+    std::ostringstream out;
+    for (const auto& function : p_.functions) {
+      const string signature = inferred_function_signature(function);
+      out << signature.size() << ':' << signature;
+    }
+    return out.str();
+  }
+
+  string inferred_checker_signature() const {
+    return inferred_all_function_signatures() + inferred_shared_signature();
+  }
+
   void infer_function_signatures(bool finalize) {
+    const size_t invocation_index = inference_signature_invocations_++;
+    const size_t invocation_wave_begin = inference_signature_wave_counts_.size();
+    string legacy_projection;
+    if (!legacy_signature_inference_ &&
+        std::getenv("MOSS_VERIFY_SIGNATURE_WORKLIST") != nullptr) {
+      auto legacy_program = std::make_unique<Program>(p_);
+      // The copied Program shares these pointers by default. The shadow must
+      // construct its own declaration context and must not mutate a checked
+      // semantic projection owned by the live Program.
+      legacy_program->type_context.reset();
+      legacy_program->typed_semantics.reset();
+      auto legacy_checker =
+          std::make_unique<Checker>(*legacy_program, true);
+      legacy_checker->infer_function_signatures(finalize);
+      legacy_projection = legacy_checker->inferred_all_function_signatures() +
+          legacy_checker->inferred_shared_signature();
+      // Destroy the nested TypeContext::Scope before running the worklist so
+      // TypeContext::current() resolves to the live Program again.
+      legacy_checker.reset();
+      legacy_program.reset();
+    }
+    auto verify_legacy_result = [&]() {
+      if (legacy_projection.empty()) return;
+      const string new_projection = inferred_all_function_signatures() +
+          inferred_shared_signature();
+      if (legacy_projection != new_projection)
+        throw std::logic_error(
+            "MOSS_VERIFY_SIGNATURE_WORKLIST mismatch after invocation " +
+            std::to_string(invocation_index) + ": function/shared signatures");
+    };
     {
       ScopedOpTimer t_prelude("sig_infer_prelude_constraints");
       for (auto& function : p_.functions) {
@@ -14131,9 +14297,13 @@ class Checker {
     const size_t max_rounds = p_.functions.size() * 3 + 4;
     for (size_t round = 0;
          round < max_rounds &&
-             (round == 0 || !scheduled_functions.empty() ||
-              shared_signature_dirty);
+             (legacy_signature_inference_ || round == 0 ||
+              !scheduled_functions.empty() || shared_signature_dirty);
          ++round) {
+      if (legacy_signature_inference_) {
+        scheduled_functions.resize(p_.functions.size());
+        std::iota(scheduled_functions.begin(), scheduled_functions.end(), 0);
+      }
       // Match the old bounded loop's final full scan if convergence has not
       // quiesced by its last permitted iteration.
       if (round + 1 == max_rounds) {
@@ -14141,7 +14311,8 @@ class Checker {
         std::iota(scheduled_functions.begin(), scheduled_functions.end(), 0);
       }
       ScopedOpTimer t_round("sig_infer_round_body");
-      if (CompilerTraceRecorder::instance().is_enabled())
+      if (CompilerTraceRecorder::instance().is_enabled() &&
+          !legacy_signature_inference_)
         CompilerTraceRecorder::instance().increment_counter("sig_infer_outer_rounds", 1);
       vector<string> signatures_before;
       signatures_before.reserve(p_.functions.size());
@@ -14351,7 +14522,8 @@ class Checker {
           scheduled_functions.size(), changed_functions.size());
 
       std::set<size_t> next_functions;
-      if (signature_dependency_graph_changed_ || shared_signature_changed) {
+      if (legacy_signature_inference_ || signature_dependency_graph_changed_ ||
+          shared_signature_changed) {
         for (size_t index = 0; index < p_.functions.size(); ++index)
           next_functions.insert(index);
         shared_signature_dirty = shared_signature_changed;
@@ -14365,7 +14537,13 @@ class Checker {
       }
       scheduled_functions.assign(next_functions.begin(), next_functions.end());
     }
-    if (!finalize) return;
+    if (!finalize) {
+      inference_signature_invocation_wave_ranges_.emplace_back(
+          invocation_index, invocation_wave_begin,
+          inference_signature_wave_counts_.size());
+      verify_legacy_result();
+      return;
+    }
     for (auto& function : p_.functions) {
       SourceFileScope function_source(current_source_file_, function.source_file);
       if (function.generic && !function.static_dispatch &&
@@ -14458,6 +14636,10 @@ class Checker {
         }
       }
     }
+    inference_signature_invocation_wave_ranges_.emplace_back(
+        invocation_index, invocation_wave_begin,
+        inference_signature_wave_counts_.size());
+    verify_legacy_result();
   }
 
   static Effect join_effect(Effect left, Effect right) {
@@ -18669,19 +18851,74 @@ class Checker {
 
   ObservableEffects concrete_function_observable_effects(
       const Function& function, const vector<string>& argument_types) const {
+    if (profile_concrete_effect_work_) {
+      ++concrete_effect_evaluations_;
+      if (concrete_effect_cache_enabled_)
+        ++concrete_effect_cache_enabled_calls_;
+      else
+        ++concrete_effect_cache_disabled_calls_;
+      string canonical_key = function.semantic_callable_id.empty()
+          ? function.name : function.semantic_callable_id;
+      canonical_key += "(";
+      for (const auto& type : argument_types)
+        canonical_key += std::to_string(type.size()) + ":" + type;
+      canonical_key += ")";
+      concrete_effect_input_keys_.insert(std::move(canonical_key));
+      if (specialization_effect_profile_active_) {
+        string key = function.semantic_callable_id.empty()
+            ? function.name : function.semantic_callable_id;
+        key += "(";
+        for (const auto& type : argument_types) {
+          const string canonical = canonical_type_name(type);
+          key += std::to_string(canonical.size()) + ":" + canonical;
+        }
+        key += ")";
+        specialization_effect_input_keys_.insert(std::move(key));
+      }
+      ++concrete_effect_active_depth_;
+      concrete_effect_max_depth_ = std::max(concrete_effect_max_depth_,
+                                             concrete_effect_active_depth_);
+    }
+    struct EffectsDepthGuard {
+      size_t* depth;
+      ~EffectsDepthGuard() { if (depth) --*depth; }
+    } depth_guard{profile_concrete_effect_work_
+                      ? &concrete_effect_active_depth_ : nullptr};
     string spec_key;
     if (CompilerTraceRecorder::instance().is_enabled()) {
       spec_key = function.name + "(" + join_arguments(argument_types) + ")";
     }
     ScopedOpTimer t_obs("concrete_function_observable_effects", spec_key);
     ObservableEffects summary = function.observable_effects;
+    string cache_key;
+    if (concrete_effect_cache_enabled_) {
+      cache_key = std::to_string(concrete_effect_cache_epoch_) + ":" +
+          (function.semantic_callable_id.empty()
+              ? function.name : function.semantic_callable_id) + "(";
+      for (const auto& type : argument_types) {
+        const string canonical = canonical_type_name(type);
+        cache_key += std::to_string(canonical.size()) + ":" + canonical;
+      }
+      cache_key += ")";
+    }
+    if (concrete_effect_cache_enabled_) {
+      auto cached = concrete_effect_cache_.find(cache_key);
+      if (cached != concrete_effect_cache_.end()) {
+        if (profile_concrete_effect_work_) ++concrete_effect_cache_hits_;
+        return cached->second;
+      }
+    }
+    if (profile_concrete_effect_work_) ++concrete_effect_computations_;
     if (!function.static_dispatch ||
         argument_types.size() != function.params.size() ||
         std::any_of(argument_types.begin(), argument_types.end(),
                     [&](const string& type) {
                       return unresolved_semantic_type(type);
-                    }))
+                    })) {
+      if (concrete_effect_cache_enabled_)
+        concrete_effect_cache_.emplace(std::move(cache_key), summary);
       return summary;
+    }
 
     // Legacy specialization parameter spellings may still be `callable:name`.
     // Resolve them through the same exact callable IDs used by the key before
@@ -18806,7 +19043,14 @@ class Checker {
         concrete.merge(summary);
         break;
       }
+    if (concrete_effect_cache_enabled_)
+      concrete_effect_cache_.emplace(std::move(cache_key), concrete);
     return concrete;
+  }
+
+  void invalidate_concrete_effect_cache() {
+    ++concrete_effect_cache_epoch_;
+    concrete_effect_cache_.clear();
   }
 
   void phase21_validate_failure_arms(const Domain& domain, Handler& handler) {
@@ -19669,6 +19913,9 @@ class Checker {
 
   void infer_observable_effects() {
     phase21_warnings_enabled_ = false;
+    const uint64_t evaluations_before = concrete_effect_evaluations_;
+    invalidate_concrete_effect_cache();
+    concrete_effect_cache_enabled_ = true;
     auto imported = [&](const string& name) {
       for (const auto& module : p_.external_modules)
         if (starts_with(name, module + "__")) return true;
@@ -19689,10 +19936,12 @@ class Checker {
     size_t entities = p_.functions.size();
     for (const auto& object : p_.objects) entities += object.methods.size();
     for (const auto& domain : p_.domains) entities += domain.handlers.size();
+    observable_effect_fixed_point_limit_ = entities * 3 + 3;
     // Local call cycles were rejected before this pass. Repeated rounds make
     // the declaration order irrelevant while propagating the finite summaries
     // bottom-up through that acyclic graph.
-    for (size_t round = 0; round < entities * 3 + 3; ++round) {
+    for (size_t round = 0; round < observable_effect_fixed_point_limit_; ++round) {
+      ++observable_effect_fixed_point_rounds_;
       if (CompilerTraceRecorder::instance().is_enabled())
         CompilerTraceRecorder::instance().increment_counter("effects_fixed_point_rounds", 1);
       bool changed = false;
@@ -19728,6 +19977,7 @@ class Checker {
         if (!same_observable_effects(inferred, function.observable_effects)) {
           function.observable_effects = inferred;
           changed = true;
+          invalidate_concrete_effect_cache();
         }
       }
       for (auto& object : p_.objects) {
@@ -19753,6 +20003,7 @@ class Checker {
           if (!same_observable_effects(inferred, method.observable_effects)) {
             method.observable_effects = inferred;
             changed = true;
+            invalidate_concrete_effect_cache();
           }
         }
       }
@@ -19782,12 +20033,17 @@ class Checker {
                                        handler.observable_effects)) {
             handler.observable_effects = inferred;
             changed = true;
+            invalidate_concrete_effect_cache();
           }
         }
       }
       if (!changed) break;
+      ++observable_effect_fixed_point_changed_rounds_;
     }
     phase21_warnings_enabled_ = true;
+    concrete_effect_cache_enabled_ = false;
+    observable_effects_function_evaluations_ =
+        concrete_effect_evaluations_ - evaluations_before;
 
     // Re-run the exceptional walk once over the fixed-point summaries.  This
     // is the authoritative annotation/diagnostic pass: emitting warnings in

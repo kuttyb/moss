@@ -59,3 +59,28 @@ Total `Ir` fell on all eight workloads. The named parse-helper share rises on re
 - Architect checkpoint 2.1 reviewed the pre-final candidate and returned conditional GO, with no remaining confirmed blocker. The suggested zero-function assertion was added before this implementation checkpoint.
 - Final Architect review: GO for exact implementation SHA `44b86de3af469c750ba0601389dee82291d83561`; no remaining confirmed architectural defect. The Architect independently checked the convergence fallbacks/cap, corpus parity, B1 metadata/results, and eight-workload Callgrind summary.
 - PR #18 is ready for review against `phase26-moss-speedup`; no merge to `main` is requested. Hosted run #8 passed all three applicable jobs. Documentation-head run #9 passed on `7ea8fa1afba3c8d0cfdfeda96b88368c03014992`; corrected head `5d1cd6b62a6dd213c15e1e032537a33e56f81b4c` passed run #10. Final hosted run #11 passed all applicable jobs on head `7e40f007fb74efec5b42127475a795714473bfa2`. PR #18 is ready for review; no merge to `main` is requested.
+
+## W2 closeout follow-up
+
+The additional project counters show per-invocation visits and changes for both
+checker passes. Regex has 49 functions: the initial invocation visits 49 and
+changes 4 signatures, then visits 49 with no changes; the other four
+invocations each use one 49-visit wave. Datastructures has 112 functions: the
+initial invocation visits 112 and changes 2 signatures, then visits 112 with
+no changes; the other four invocations each use one 112-visit wave. Since
+these large projects need a complete initial wave and a complete quiet wave,
+the selective caller worklist stays; W5 W100 remains the case where subsequent
+waves avoid repeated visits.
+
+With `MOSS_VERIFY_SIGNATURE_WORKLIST=1`, the checker now runs the legacy
+bounded full-scan loop as a shadow oracle at each signature-inference boundary
+and compares ordered function/shared signatures. The shadow Checker and its
+TypeContext are destroyed before the worklist executes. The optimized corpus
+run completed 2,064 tracked sources (1,325 accepted) without a mismatch.
+
+The checker audit found three additional size-bounded whole-program loops
+without a quiescence exit: object-field, domain-state, and handler-reply type
+inference. Each now exits when the ordered function/shared inference signature
+stops changing. Other audited effects and recovery loops already have explicit
+change-based exits. D18's observable-effects fixed point runs 1 of its 60
+maximum rounds.

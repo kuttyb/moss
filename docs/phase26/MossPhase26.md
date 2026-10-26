@@ -22,7 +22,7 @@ The B1 report's slowest cases are algorithmic, not parsing: W4 d18 spends 36.6 s
 
 ## Workstreams in priority order
 
-Each workstream lands as its own change with its own before/after numbers, so a regression or a non-win is attributable.
+Each workstream lands as its own change with its own before/after numbers, so a regression or a non-win is attributable. W2 closeout extended the project counters and added an opt-in legacy-loop oracle; W3 then selected memoization from measured call/key counts. The post-W3 decision drops W4 and folds W5 into the W3 delivery.
 
 | # | Workstream | Where | What it attacks | Risk |
 | --- | --- | --- | --- | --- |
@@ -85,11 +85,12 @@ One consequence to accept: with Fast Debug no longer a full peer, the native-vs-
 
 Phase 26 is done when every merged workstream shows a measured reduction on its target workload with all correctness gates green.
 
-- [ ] W1–W5 each merged with before/after benchmark numbers, or reverted for no gain
-- [ ] Expression-text parsing share re-measured on the 8 baseline workloads
-- [ ] B1 hotspots re-timed: W5 w100 inference, W4 d18 effects, regex, datastructures, time
-- [ ] Final attribution published next to the baseline
+- [x] W1–W3 measured; W4 dropped because type spelling stays below 15%; W5 timer-key fix folded into W3
+- [x] Expression-text/type spelling/map shares re-measured on the 8 baseline workloads
+- [x] B1 hotspots re-attributed, including W5 W100, W4 D18, regex, datastructures, rolling window, and checkout
+- [x] Final attribution and small-fixture latency published in `W3_RESULTS.md`
+- [ ] Repository integration gates and hosted PR checks pass; deliver through the Phase 26 integration branch
 
-**Decision point.** Re-run the attribution after W5. If string-type handling and string-keyed maps are still a large share, that measured number is the case for further representation work in a later phase. If they are small, we stop and live with the current architecture under the discipline rules.
+**Decision point after W3.** The measured type-spelling direct share is below 15% on every workload, while total Callgrind Ir fell on all eight. Stop Phase 26 after W3, retain the discipline rules, keep the expression representation refactor parked, and move to Graph DSL. W4 is dropped. Reopen representation work only if later attribution shows a material share.
 
 Open question: what share counts as "large"? Proposed threshold: 15% of compiler instructions on any baseline workload.

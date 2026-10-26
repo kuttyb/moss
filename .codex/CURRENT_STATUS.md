@@ -1,3 +1,33 @@
+# Phase 26 W2 closeout and W3 effects — delivery gates pending — 2026-10-26
+
+- Branch: `phase26-w2-inference`; PR #18 remains open and unmerged. Current
+  source/test edits and durable reports are uncommitted. Do not merge directly
+  to `main`.
+- W2 closeout counters: regex's initial invocation visits 49 functions, changes
+  4, then has a full 49-visit quiet wave; datastructures visits 112, changes 2,
+  then has a 112-visit quiet wave. Four remaining invocations per project each
+  use one full wave. Keep the selective worklist because W5 W100 avoids repeat
+  waves. The opt-in legacy loop oracle passed across 2,064 tracked sources /
+  1,325 accepted, without a mismatch.
+- The checker loop audit fixed three bounded loops lacking quiescence exits:
+  object fields, domain-state fields, handler reply types. D18 observable
+  effects converge in 1/60 rounds.
+- W3 was selected from baseline counts (2,621,451 effects calls / 37 keys,
+  max depth 19). Candidate D18 reports 110 specialization evaluations, 38
+  computations, 72 hits, 19 keys across two independent passes; D18 Callgrind
+  Ir fell 72.5%, and all eight workload totals fell. Full tables and caveats:
+  `docs/phase26/W3_RESULTS.md`.
+- W4 is dropped: type spelling remains below 15% direct share on all workloads.
+  W5 timer-key optimization is folded in. Ten-run small-fixture medians after
+  that change: rolling window 0.0944 s; checkout 0.0033 s. No paired baseline
+  claim is made.
+- `moss-dev`/`moss-opt` builds and W2/W3 focused regressions passed; optimized
+  and normal full corpus runs each completed 2,064 sources / 1,325 accepted.
+  Remaining: run full repository gates and feedback validator, receive final
+  Architect audit, commit/push, and wait for hosted PR checks. Team closeout and
+  agent handoff are in `docs/phase26/agent-patterns/team-w3-effects.md` and
+  `docs/phase26/NEXT_TEAM_HANDOFF.md`.
+
 ## Phase 26 W2 inference worklist — complete — 2026-10-26
 
 - Branch `phase26-w2-inference`, implementation SHA `44b86de3af469c750ba0601389dee82291d83561`, current delivery head `7e40f007fb74efec5b42127475a795714473bfa2`; PR #18 is ready for review against `phase26-moss-speedup`. W2 only.
