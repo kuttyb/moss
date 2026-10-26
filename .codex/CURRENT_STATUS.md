@@ -16958,3 +16958,12 @@ scan now marks every top-level Raise independently (nested Try bodies remain
 nested AST statements). A regression checks the generated signature. All 12
 Java unit classes pass under ABI-v9 and staged ABI-v10. No Rust compilation or
 native execution was performed.
+
+### Phase 25.3 packaging recheck — backend fixes included
+
+Rebuilt the standalone `compiler-java/dist/moss.jar` after the raising-method
+and escaping-raise codegen fixes. The packaged launcher reports Java compiler
+`0.1.0-java` / language `moss-0.1` and generates the expected
+`Result<i64, __MossRaised>` signature for the raise-after-recover reproducer.
+The package output is ignored; no release packaging claim is made for native
+Rust or SDK behavior.
