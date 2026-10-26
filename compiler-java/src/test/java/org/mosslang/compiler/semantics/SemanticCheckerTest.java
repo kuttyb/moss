@@ -49,6 +49,7 @@ public class SemanticCheckerTest {
         testNestedObjectFieldWriteLowersMutableReceiver();
         testUniformDomainHandlerInferenceFromMainCalls();
         testPerInstanceDomainLayoutSpecialization();
+        testSpecializedDomainRoutesUseClosedHandle();
         testConflictingDomainInstanceTypesAreRejected();
         testDomainHandlersRequireMessageSyntax();
         testDomainRoutesCannotBeReassigned();
@@ -1211,6 +1212,37 @@ public class SemanticCheckerTest {
                 || !rust.contains("__moss_body_Box__floatBox_Set")
                 || !rust.contains("x: f64") && !rust.contains("item: f64")) {
             throw new AssertionError("native generation omitted the float domain specialization");
+        }
+    }
+
+    private static void testSpecializedDomainRoutesUseClosedHandle() {
+        Program program = Parser.parseSource(""
+                + "domain Worker:\n"
+                + "  payload\n"
+                + "  fn Set(item):\n"
+                + "    payload = item\n"
+                + "  fn Run() -> Int:\n"
+                + "    reply 1\n"
+                + "domain Coordinator:\n"
+                + "  domainroutes(left: Worker, right: Worker)\n"
+                + "  fn Ping():\n"
+                + "    ignored = message left.Run()\n"
+                + "    ignored_again = message right.Run()\n"
+                + "fn main():\n"
+                + "  intWorker = Worker()\n"
+                + "  floatWorker = Worker()\n"
+                + "  coordinator = Coordinator(left: intWorker, right: floatWorker)\n"
+                + "  message intWorker.Set(10)\n"
+                + "  message floatWorker.Set(3.5)\n"
+                + "  message coordinator.Ping()\n", "specialized-domain-routes.moss");
+        new SemanticChecker(program).run();
+        String rust = NativeGenerator.generate(program, false);
+        if (!rust.contains("pub left: WorkerHandle")
+                || !rust.contains("pub right: WorkerHandle")
+                || !rust.contains("impl From<Worker__floatWorkerRef> for WorkerHandle")
+                || !rust.contains("WorkerHandleRoute::Specialized_1(inner) => inner.Run_root()")
+                || !rust.contains("construct_Coordinator(intWorker.clone().into(), floatWorker.clone().into())")) {
+            throw new AssertionError("specialized route targets were not represented by a closed handle:\n" + rust);
         }
     }
 

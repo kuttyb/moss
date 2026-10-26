@@ -928,6 +928,7 @@ public class SemanticChecker {
                 String cloneName = cloneNames.get(index - 1);
                 declaredNames.add(cloneName);
                 Domain clone = cloneDomain(source, cloneName);
+                clone.specializationSourceName = source.name;
                 applyDomainLayout(clone, instance);
                 program.domains.add(clone);
                 domains.put(cloneName, clone);

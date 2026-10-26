@@ -1048,3 +1048,20 @@ Validation: all 12 Java test classes pass under ABI-v9 and staged ABI-v10;
 `tests/differential/run_differential.py --mode check_json
 tests/differential/corpus` passes all 8 files; Phase 22.3 semantic-query and
 Phase 6A agent API checks pass. Native and SDK acceptance remain deferred.
+
+### Follow-up — statically closed handles for inferred domain specializations
+
+The accepted `specialized_domain_routes.moss` case exposed a native codegen gap:
+Java materialized per-instance inferred domain layouts but left route fields
+pointing at the unspecialized `WorkerRef`, while the specialized instance had a
+distinct ref type. Java now records the source declaration for each
+materialized specialization and emits a closed `WorkerHandle` enum/struct for a
+nominal routed domain with specialized variants. Constructor route values are
+converted into that handle, and compatible handler root calls dispatch across
+the statically known variants. The focused regression covers an Int base
+instance and Float specialization routed through one coordinator.
+
+Validation: all 12 Java unit classes pass under ABI-v9 and staged ABI-v10.
+Generated Rust has the expected typed route fields, conversions, and compatible
+handler dispatch. Rust compilation/native execution remain deferred; the
+frozen-candidate gate is still required.

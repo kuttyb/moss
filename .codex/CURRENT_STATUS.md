@@ -16967,3 +16967,18 @@ and escaping-raise codegen fixes. The packaged launcher reports Java compiler
 `Result<i64, __MossRaised>` signature for the raise-after-recover reproducer.
 The package output is ignored; no release packaging claim is made for native
 Rust or SDK behavior.
+
+### Phase 25.3 correction — routed per-instance domain specialization handles
+
+The accepted `tests/specialized_domain_routes.moss` fixture generated distinct
+`WorkerRef` and `Worker__w2Ref` values in Java, but a `Coordinator` route field
+was still emitted as `WorkerRef`; its constructor and message calls could not
+represent both concrete targets. C++ emits a closed nominal `WorkerHandle` for
+this case. Java now marks materialized domain specializations in AST metadata,
+uses a generated `WorkerHandle` for route fields when variants exist, converts
+constructor route arguments into the handle, and forwards root calls only for
+handlers with compatible signatures across every variant. A focused
+`SemanticCheckerTest` checks a base and Float specialization routed through one
+coordinator. All 12 Java test classes pass under ABI-v9 and staged ABI-v10.
+Generated Rust was inspected structurally; rustc/native validation remains
+reserved for the frozen-candidate acceptance gate.

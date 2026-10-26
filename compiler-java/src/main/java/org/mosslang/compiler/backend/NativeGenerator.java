@@ -704,7 +704,7 @@ public class NativeGenerator {
             o.append("pub struct ").append(d.name).append("Ref {\n");
             o.append("    pub state: std::sync::Arc<").append(d.name).append("Runtime>,\n");
             for (DomainRoute r : d.routes) {
-                o.append("    pub ").append(r.name).append(": ").append(routeRustType(r.type, domains)).append("Ref,\n");
+                o.append("    pub ").append(r.name).append(": ").append(routeRustType(r.type, domains)).append(",\n");
             }
             o.append("}\n\n");
 
@@ -725,7 +725,7 @@ public class NativeGenerator {
                      .append(isWrite ? "mut " : "").append(rustFieldType(f)).append(",\n");
                 }
                 for (DomainRoute r : d.routes) {
-                    o.append("    pub ").append(r.name).append(": &'a ").append(routeRustType(r.type, domains)).append("Ref,\n");
+                    o.append("    pub ").append(r.name).append(": &'a ").append(routeRustType(r.type, domains)).append(",\n");
                 }
                 o.append("    pub __lifetime: std::marker::PhantomData<&'a ()>,\n");
                 o.append("}\n\n");
@@ -783,7 +783,7 @@ public class NativeGenerator {
                         o.append("    pub ").append(f.name).append(": &'a mut ").append(rustFieldType(f)).append(",\n");
                     }
                     for (DomainRoute r : d.routes) {
-                        o.append("    pub ").append(r.name).append(": &'a ").append(routeRustType(r.type, domains)).append("Ref,\n");
+                        o.append("    pub ").append(r.name).append(": &'a ").append(routeRustType(r.type, domains)).append(",\n");
                     }
                     o.append("    pub __lifetime: std::marker::PhantomData<&'a ()>,\n");
                     o.append("}\n\n");
@@ -1010,7 +1010,7 @@ public class NativeGenerator {
             int pCount = 0;
             for (DomainRoute r : d.routes) {
                 if (pCount++ > 0) o.append(", ");
-                o.append(r.name).append(": ").append(routeRustType(r.type, domains)).append("Ref");
+                o.append(r.name).append(": ").append(routeRustType(r.type, domains));
             }
             for (Field f : d.state) {
                 if (pCount++ > 0) o.append(", ");
@@ -1031,7 +1031,7 @@ public class NativeGenerator {
             pCount = 0;
             for (DomainRoute r : d.routes) {
                 if (pCount++ > 0) o.append(", ");
-                o.append(r.name).append(": ").append(routeRustType(r.type, domains)).append("Ref");
+                o.append(r.name).append(": ").append(routeRustType(r.type, domains));
             }
             for (Field f : d.state) {
                 if (pCount++ > 0) o.append(", ");
@@ -1058,6 +1058,8 @@ public class NativeGenerator {
             o.append("    }\n");
             o.append("}\n\n");
         }
+
+        emitDomainSpecializedHandles(o, program);
 
         // Functions
         for (Function fn : program.functions) {
@@ -1760,22 +1762,118 @@ public class NativeGenerator {
         String t = type.trim();
         if (domains.containsKey(t)) {
             Domain domain = domains.get(t);
-            return domain.sourceFree ? sourceFreeRustName(t, currentProgram.get()) : t;
+            if (domain.sourceFree) return sourceFreeRustName(t, currentProgram.get()) + "Ref";
+            return hasDomainSpecializations(t, currentProgram.get()) ? t + "Handle" : t + "Ref";
         }
         String canonical = t.replace(".", "__");
         if (domains.containsKey(canonical)) {
             Domain domain = domains.get(canonical);
-            return domain.sourceFree
-                    ? sourceFreeRustName(canonical, currentProgram.get()) : canonical;
+            if (domain.sourceFree) return sourceFreeRustName(canonical, currentProgram.get()) + "Ref";
+            return hasDomainSpecializations(canonical, currentProgram.get())
+                    ? canonical + "Handle" : canonical + "Ref";
         }
         for (String k : domains.keySet()) {
             if (k.endsWith("__" + t)) {
                 Domain domain = domains.get(k);
-                return domain != null && domain.sourceFree
-                        ? sourceFreeRustName(k, currentProgram.get()) : k;
+                if (domain != null && domain.sourceFree)
+                    return sourceFreeRustName(k, currentProgram.get()) + "Ref";
+                return hasDomainSpecializations(k, currentProgram.get()) ? k + "Handle" : k + "Ref";
             }
         }
-        return t.contains(".") ? canonical : t;
+        return (t.contains(".") ? canonical : t) + "Ref";
+    }
+
+    private static boolean hasDomainSpecializations(String sourceName, Program program) {
+        if (sourceName == null || sourceName.isBlank() || program == null) return false;
+        return program.domains.stream().anyMatch(domain ->
+                sourceName.equals(domain.specializationSourceName));
+    }
+
+    private static void emitDomainSpecializedHandles(StringBuilder out, Program program) {
+        for (Domain source : program.domains) {
+            if (source.sourceFree) continue;
+            List<Domain> routes = new ArrayList<>();
+            routes.add(source);
+            for (Domain candidate : program.domains) {
+                if (source.name.equals(candidate.specializationSourceName)) routes.add(candidate);
+            }
+            if (routes.size() < 2) continue;
+            String handle = source.name + "Handle";
+            String routeEnum = handle + "Route";
+            out.append("#[derive(Clone)]\nenum ").append(routeEnum).append(" {\n")
+                    .append("    Base(").append(source.name).append("Ref),\n");
+            for (int index = 1; index < routes.size(); index++)
+                out.append("    Specialized_").append(index).append("(")
+                        .append(routes.get(index).name).append("Ref),\n");
+            out.append("}\n#[derive(Clone)]\nstruct ").append(handle)
+                    .append(" { route: ").append(routeEnum).append(" }\n");
+            out.append("impl From<").append(source.name).append("Ref> for ").append(handle)
+                    .append(" { fn from(value: ").append(source.name).append("Ref) -> Self { Self { route: ")
+                    .append(routeEnum).append("::Base(value) } } }\n");
+            for (int index = 1; index < routes.size(); index++) {
+                Domain specialized = routes.get(index);
+                out.append("impl From<").append(specialized.name).append("Ref> for ").append(handle)
+                        .append(" { fn from(value: ").append(specialized.name).append("Ref) -> Self { Self { route: ")
+                        .append(routeEnum).append("::Specialized_").append(index).append("(value) } } }\n");
+            }
+            out.append("impl ").append(handle).append(" {\n");
+            for (Handler handler : source.handlers) {
+                List<Handler> variants = new ArrayList<>();
+                variants.add(handler);
+                boolean compatible = true;
+                for (int index = 1; index < routes.size(); index++) {
+                    Handler variant = routes.get(index).handlers.stream()
+                            .filter(candidate -> candidate.name.equals(handler.name)).findFirst().orElse(null);
+                    if (variant == null || variant.params.size() != handler.params.size()
+                            || !sameRouteHandlerSignature(handler, variant)) {
+                        compatible = false;
+                        break;
+                    }
+                    variants.add(variant);
+                }
+                if (!compatible) continue;
+                String replyType = handler.replyType == null || handler.replyType.isBlank()
+                        ? (handler.replyTypeRef == null ? "()" : rustType(handler.replyTypeRef.toCanonicalString()))
+                        : rustType(handler.replyType);
+                out.append("    fn ").append(handler.name).append("_root(&self");
+                for (Param param : handler.params)
+                    out.append(", ").append(param.name).append(": ").append(rustType(param.type));
+                out.append(") -> ").append(replyType).append(" {\n        match &self.route {\n")
+                        .append("            ").append(routeEnum).append("::Base(inner) => inner.")
+                        .append(handler.name).append("_root(");
+                appendParamNames(out, handler.params);
+                out.append("),\n");
+                for (int index = 1; index < routes.size(); index++) {
+                    out.append("            ").append(routeEnum).append("::Specialized_").append(index)
+                            .append("(inner) => inner.").append(handler.name).append("_root(");
+                    appendParamNames(out, handler.params);
+                    out.append("),\n");
+                }
+                out.append("        }\n    }\n");
+            }
+            out.append("}\n\n");
+        }
+    }
+
+    private static void appendParamNames(StringBuilder out, List<Param> params) {
+        for (int index = 0; index < params.size(); index++) {
+            if (index > 0) out.append(", ");
+            out.append(params.get(index).name);
+        }
+    }
+
+    private static boolean sameRouteHandlerSignature(Handler left, Handler right) {
+        for (int index = 0; index < left.params.size(); index++) {
+            if (!rustType(left.params.get(index).type).equals(rustType(right.params.get(index).type)))
+                return false;
+        }
+        String leftReply = left.replyType == null || left.replyType.isBlank()
+                ? (left.replyTypeRef == null ? "()" : rustType(left.replyTypeRef.toCanonicalString()))
+                : rustType(left.replyType);
+        String rightReply = right.replyType == null || right.replyType.isBlank()
+                ? (right.replyTypeRef == null ? "()" : rustType(right.replyTypeRef.toCanonicalString()))
+                : rustType(right.replyType);
+        return leftReply.equals(rightReply);
     }
 
     private static String lowerEnumExpr(String expr, Set<String> stateFields, Map<String, Domain> domains,
@@ -3087,6 +3185,7 @@ public class NativeGenerator {
                 String args = expr.substring(openParen + 1, expr.length() - 1).trim();
                 List<String> argList = new ArrayList<>();
                 if (!args.isEmpty()) {
+                    int argumentIndex = 0;
                     for (String part : splitTopLevel(args, ',')) {
                         part = part.trim();
                         int colonIdx = -1;
@@ -3104,10 +3203,24 @@ public class NativeGenerator {
                                 }
                             }
                         }
+                        String routeName = colonIdx > 0
+                                ? part.substring(0, colonIdx).trim()
+                                : (argumentIndex < d.routes.size()
+                                        ? d.routes.get(argumentIndex).name : "");
+                        String sourceArgument = colonIdx > 0
+                                ? part.substring(colonIdx + 1).trim() : part;
                         if (colonIdx > 0) {
-                            part = part.substring(colonIdx + 1).trim();
+                            part = sourceArgument;
                         }
-                        argList.add(cloneIfIdent(part, lowerExpr(part, stateFields, domains, objects)));
+                        String loweredArgument = cloneIfIdent(part,
+                                lowerExpr(part, stateFields, domains, objects));
+                        DomainRoute route = d.routes.stream()
+                                .filter(candidate -> candidate.name.equals(routeName))
+                                .findFirst().orElse(null);
+                        if (route != null && hasDomainSpecializations(route.type, currentProgram.get()))
+                            loweredArgument += ".into()";
+                        argList.add(loweredArgument);
+                        argumentIndex++;
                     }
                 }
                 int expectedCount = d.routes.size() + d.state.size();

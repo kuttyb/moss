@@ -15,6 +15,8 @@ public class Domain {
     public String definingModule = "";
     public String declarationName = "";
     public boolean sourceFree = false;
+    /** Source declaration for a concrete per-instance inferred specialization. */
+    public String specializationSourceName = "";
 
     public Domain() {}
 
