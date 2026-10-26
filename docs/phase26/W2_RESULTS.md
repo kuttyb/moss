@@ -21,7 +21,7 @@ Hosted same-runner performance also passed on run #8: W1 9.5943 s, W2 0.3287 s m
 
 ### Full B1 run
 
-The B1 runner completed all 77 fixtures in timing and profiling modes, one repetition per mode, for both W1 and W2: 154/154 successful trials on each binary, zero timeouts. Runs were sequential on the same host, with isolated W1/W2 source worktrees and per-worktree report outputs. W1 binary SHA-256 was `b50d5afff67fc6f4c83264fb19bd42ea6ee2e22d214500fe67d1080d4d3b5501`; W2 used implementation SHA `44b86de3af469c750ba0601389dee82291d83561`, binary SHA-256 `6f297d555e213f8c2334e0d5d3e5b6dc9a6255f2ad60a4d178e548d6022ed74f`.
+The B1 runner completed all 77 fixtures in timing and profiling modes, one repetition per mode, for both W1 and W2: 154/154 successful trials on each binary, zero timeouts. Runs were sequential on the same host, with isolated W1/W2 source worktrees and per-worktree report outputs. W1 binary SHA-256 was `b50d5afff67fc6f4c83264fb19bd42ea6ee2e22d214500fe67d1080d4d3b5501`; W2 used implementation SHA `44b86de3af469c750ba0601389dee82291d83561`, binary SHA-256 `6f297d555e213f8c2334e0d4d5e3b6dc9a6255f2ad60a4d178e548d6022ed74f`.
 
 | Workload | W1 timing | W2 timing | Change |
 | --- | ---: | ---: | ---: |
@@ -34,7 +34,7 @@ The B1 runner completed all 77 fixtures in timing and profiling modes, one repet
 | Rolling window | 0.138 s | 0.109 s | 21.3% lower |
 | Checkout example | 0.011 s | 0.011 s | 7.4% lower |
 
-The one-repetition sum across all 77 timing fixtures fell from 89.554 s to 40.144 s. W2 was faster or equal on 67 fixtures; 10 were slower, with the largest absolute increase 0.555 ms (nested collection K1). The W4 D18 increase was 0.648 s and is disclosed here; W2's target W5 W100 and the two large packages improved substantially. One-repetition per-fixture figures are directional and not a confidence interval.
+The one-repetition sum across all 77 timing fixtures fell from 89.554 s to 40.144 s. W2 was faster or equal on 67 fixtures; 10 were slower. Excluding W4 D18, the other nine slower fixtures had a largest absolute increase of 0.555 ms (nested collection K1). W4 D18 increased by 0.648 s and is disclosed separately; W2's target W5 W100 and the two large packages improved substantially. One-repetition per-fixture figures are directional and not a confidence interval.
 
 ### Callgrind attribution
 
@@ -57,4 +57,5 @@ Total `Ir` fell on all eight workloads. The named parse-helper share rises on re
 
 - Implementation checkpoint: `44b86de3af469c750ba0601389dee82291d83561`.
 - Architect checkpoint 2.1 reviewed the pre-final candidate and returned conditional GO, with no remaining confirmed blocker. The suggested zero-function assertion was added before this implementation checkpoint.
-- Draft PR #18 targets `phase26-moss-speedup`; no merge to `main` is requested. Hosted run #8 passed all three applicable jobs. The Architect final exact-SHA review is pending.
+- Final Architect review: GO for exact implementation SHA `44b86de3af469c750ba0601389dee82291d83561`; no remaining confirmed architectural defect. The Architect independently checked the convergence fallbacks/cap, corpus parity, B1 metadata/results, and eight-workload Callgrind summary.
+- Draft PR #18 targets `phase26-moss-speedup`; no merge to `main` is requested. Hosted run #8 passed all three applicable jobs. Documentation-head run #9 also passed on `7ea8fa1afba3c8d0cfdfeda96b88368c03014992`; a final docs-only accuracy correction will be validated on the next PR head.
