@@ -1,9 +1,12 @@
-# Phase 26.0.1 integration — C1 and C2 merged locally — 2026-10-26
+# Phase 26.0.1 integration — C1–C3 merged locally — 2026-10-26
 
-- Integration is on `phase26-0-1-integration`, based on main `274f848`. C1 and C2 are now merged locally; C3 and C4 remain to integrate, followed by local combined gates, Architect review, and a main push with hosted CI skipped at the user's request.
-- C1 implementation SHA `807d491e8c0e1a1a6701c96d4b5db270705dd837`; Architect GO. Local C1 gates: 2,064-source full-hash corpus differential with zero changes, Fast Debug parity, `make check` 140/140, and compiler-perf with no noise-floor slowdown. D18 improved 7,152.46 ms to 28.92 ms.
-- C2 code/test SHA `ba859c04d01688aeb14653668dd710242117f804`; Architect GO. It removes only the repeated snapshot checker for a one-source Application check without overrides. Local C2 gates: full corpus differential, Fast Debug, `make check` 140/140, byte-identical snapshot checks, and a 77-fixture five-repetition compiler-perf run with no noise-floor slowdown. The C2 checker inventory is `docs/phase26.0.1/C2-checker-inventory.md`.
+- Integration is on `phase26-0-1-integration`, based on main `274f848`. C1–C3 are merged locally; C4 report-only closeout remains, followed by the combined local gates, Architect review, and push to main with GitHub CI skipped as requested.
+- C1 implementation SHA `807d491e8c0e1a1a6701c96d4b5db270705dd837`; Architect GO. Local gates: full 2,064-source full-hash differential with zero changes, Fast Debug parity, `make check` 140/140, and compiler-perf with no noise-floor slowdown. D18 improved 7,152.46 ms to 28.92 ms.
+- C2 code/test SHA `ba859c04d01688aeb14653668dd710242117f804`; Architect GO. It removes the duplicate snapshot checker only for a one-source Application check without overrides. Local full-corpus, Fast Debug, `make check` 140/140, snapshot-byte parity, and five-repetition 77-fixture performance gates passed. See `docs/phase26.0.1/C2-checker-inventory.md`.
+- C3 implementation SHA `fdeb72b16faa82a8dfefd04a1db90e9d87fe4cf9`; Architect GO. Local full-corpus, Fast Debug, `make check` 141/141, and compiler-perf gates passed. D18 parse misses fell from 17,866,873 to 898; D18 timing improved 5.0%, aggregate 57-fixture median sum improved 3.6%. See `docs/phase26.0.1/C3-parse-cache.md`.
 - User directed local regression execution only; do not start GitHub-hosted regression jobs.
+
+---
 
 ---
 

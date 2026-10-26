@@ -46,5 +46,6 @@ bool checker_unit_test_deferred_unary_invalid_type_rejected();
 bool checker_unit_test_builtin_index_occurrence_fact();
 bool checker_unit_test_vector_literal_operand_occurrences();
 bool checker_unit_test_statement_call_occurrence_roles();
+bool checker_unit_test_negative_parse_cache_replay();
 
 }
