@@ -89,7 +89,7 @@ Phase 26 is done when every merged workstream shows a measured reduction on its 
 - [x] Expression-text/type spelling/map shares re-measured on the 8 baseline workloads
 - [x] B1 hotspots re-attributed, including W5 W100, W4 D18, regex, datastructures, rolling window, and checkout
 - [x] Final attribution and small-fixture latency published in `W3_RESULTS.md`
-- [x] Local repository gates, feedback validation, exact-SHA Architect review, and hosted PR checks pass; PR #18 awaits integration-branch merge
+- [x] W2/W3 merged into the Phase 26 integration branch; PR #17 to main passed core regressions, optimized examples, and compiler performance
 
 **Decision point after W3.** The measured type-spelling direct share is below 15% on every workload, while total Callgrind Ir fell on all eight. Stop Phase 26 after W3, retain the discipline rules, keep the expression representation refactor parked, and move to Graph DSL. W4 is dropped. Reopen representation work only if later attribution shows a material share.
 

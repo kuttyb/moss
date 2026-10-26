@@ -47,6 +47,11 @@ workload remains below the Phase 26 plan's 15% threshold. W4 type-spelling
 interning is therefore dropped. The timer key change is folded into this
 delivery.
 
+For additional main-relative performance evidence, hosted PR #17 measured W3
+repeated N32 at 4.1563 s on main and 1.7534 s on the full Phase 26 candidate
+(57.8% lower), and W5 W100 at 18.9773 s on main and 0.2250 s on the candidate
+(98.8% lower).
+
 Small-fixture check latency after the timer change, using ten optimized
 `check --json` runs per fixture: rolling window median 0.0944 s (range
 0.0909–0.0997 s), checkout median 0.0033 s (range 0.0032–0.0045 s). These
@@ -56,11 +61,14 @@ before/after claim.
 The signature-worklist corpus oracle completed 2,064 tracked sources, with
 1,325 accepted and no mismatch against the legacy full-scan signature loop.
 A normal corpus pass after adding convergence exits also completed 2,064
-sources / 1,325 accepted. Local `make check` passed all 140 jobs. Hosted PR run #15 passed
+sources / 1,325 accepted. Local `make check` passed all 140 jobs. Hosted PR run #16 passed
 `core-regressions`, `optimized-examples`, and `w2-inference-performance`. The
+combined Phase 26 PR to main run #17 passed core regressions, optimized examples,
+and compiler performance. The
 hosted same-runner W5 median was 19.2254 s on W1 and 0.2663 s on the candidate
-(98.6% lower), with identical check JSON. The PR remains open and unmerged into
-`phase26-moss-speedup`.
+(98.6% lower), with identical check JSON. PR #18 merged into `phase26-moss-speedup` as
+`5595b8e7d66f90284b03805ad647e3a1251d7890`; PR #17 is the W1–W3 delivery to
+`main`.
 
 ## Decision after W3
 
