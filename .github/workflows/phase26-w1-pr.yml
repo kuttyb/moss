@@ -1,0 +1,102 @@
+name: Phase 26 workstream PR gates
+
+on:
+  pull_request:
+    branches: [main, phase26-moss-speedup]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+# GitHub-hosted runners do not provide mold. The Makefile documents this
+# override for ordinary linker selection; local benchmark builds use mold.
+env:
+  MOSS_LDFLAGS: ""
+
+concurrency:
+  group: phase26-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  core-regressions:
+    if: (github.head_ref == 'phase26-moss-speedup' && github.base_ref == 'main') || (github.head_ref == 'phase26-w2-inference' && github.base_ref == 'phase26-moss-speedup')
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Build development and optimized compilers with available cores
+        run: make --jobs="$(nproc)" moss-dev moss-opt
+      - name: Full repository regressions
+        run: |
+          mkdir -p tmp
+          # The legacy gate compares against fixed absolute timings from a
+          # different machine. The compiler-performance job below runs the
+          # W1 targets against main on this same runner instead.
+          TMPDIR="$PWD/tmp" python3 tests/run_parallel.py \
+            --jobs "$(nproc)" \
+            --compiler-dev build/compiler/moss-dev \
+            --compiler-opt build/compiler/moss-opt \
+            --exclude-job check_phase25_4_performance_baseline
+
+  optimized-examples:
+    if: (github.head_ref == 'phase26-moss-speedup' && github.base_ref == 'main') || (github.head_ref == 'phase26-w2-inference' && github.base_ref == 'phase26-moss-speedup')
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Build with available cores
+        run: make --jobs="$(nproc)"
+      - name: Build optimized examples
+        run: |
+          mkdir -p tmp
+          TMPDIR="$PWD/tmp" make --jobs="$(nproc)" examples-optimized
+
+  compiler-performance:
+    if: github.head_ref == 'phase26-moss-speedup' && github.base_ref == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Build W1 compiler
+        run: make --jobs="$(nproc)" moss-opt
+      - name: Build and preserve main baseline compiler
+        run: |
+          mkdir -p tmp
+          git fetch origin main
+          git worktree add --detach tmp/phase26-main origin/main
+          make --jobs="$(nproc)" -C tmp/phase26-main moss-opt
+          cp tmp/phase26-main/build/compiler/moss-opt tmp/phase26-main-moss-opt
+      - name: Verify W1 behavior and same-runner performance
+        run: |
+          make --jobs="$(nproc)" moss-opt
+          TMPDIR="$PWD/tmp" python3 tests/tooling/check_phase26_w1_parse_cache.py build/compiler/moss-opt
+          TMPDIR="$PWD/tmp" python3 tests/tooling/check_phase26_w1_performance.py tmp/phase26-main-moss-opt build/compiler/moss-opt
+
+  w2-inference-performance:
+    if: github.head_ref == 'phase26-w2-inference' && github.base_ref == 'phase26-moss-speedup'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Build W2 compiler
+        run: make --jobs="$(nproc)" moss-opt
+      - name: Build and preserve W1 baseline compiler
+        run: |
+          mkdir -p tmp
+          git fetch origin phase26-moss-speedup
+          git worktree add --detach tmp/phase26-w1 origin/phase26-moss-speedup
+          make --jobs="$(nproc)" -C tmp/phase26-w1 moss-opt
+          cp tmp/phase26-w1/build/compiler/moss-opt tmp/phase26-w1-moss-opt
+      - name: Verify worklist behavior and same-runner W5 gain
+        run: |
+          make --jobs="$(nproc)" moss-opt
+          TMPDIR="$PWD/tmp" python3 tests/tooling/check_phase26_w2_inference_worklist.py build/compiler/moss-opt
+          TMPDIR="$PWD/tmp" python3 tests/tooling/check_phase26_w2_performance.py tmp/phase26-w1-moss-opt build/compiler/moss-opt

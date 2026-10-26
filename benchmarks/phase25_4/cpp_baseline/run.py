@@ -175,7 +175,13 @@ def run_trial(moss_bin: Path, fixture: dict, iteration: int, timeout_seconds: in
                 specialization_body_checking_ms = round(int(val) / 1e6, 3)
                 counters[stage] = int(val)
             elif stage in ("functions_analyzed", "types_analyzed", "distinct_specialization_keys",
-                           "reused_specialization_results", "inference_rounds", "inference_work_units"):
+                           "reused_specialization_results", "inference_rounds", "inference_work_units",
+                           "parse_cache_hits", "parse_cache_misses"):
+                counters[stage] = int(val)
+            elif stage in ("inference_reinferred_functions",
+                           "inference_changed_functions") or stage.startswith(
+                               "inference_reinferred_functions_round_") or stage.startswith(
+                               "inference_changed_functions_round_"):
                 counters[stage] = int(val)
             else:
                 stage_ms[stage] = stage_ms.get(stage, 0.0) + int(val) / 1e6
@@ -274,7 +280,8 @@ def compute_fixture_stats(results: list, fid: str, mode: str = "all") -> dict:
         "cpu_user_med": statistics.median(users) if users else 0.0,
         "peak_rss_med": statistics.median(rsss) if rsss else 0,
         "unattributed_med": statistics.median(unattributeds) if unattributeds else 0.0,
-        "checked_specs": rows[0].get("actual_checked_specializations"),
+        "checked_specs": next((r["actual_checked_specializations"] for r in rows
+                               if r.get("actual_checked_specializations") is not None), None),
         "specialization_requests": req_med,
         "specialization_body_checking_ms": body_check_med,
         "stage_medians": stage_medians,
@@ -687,8 +694,8 @@ def generate_report(results: list, metadata: dict, out_path: Path):
         "",
         "The hierarchical tracer exposes fine-grained compiler work units across semantic stages:",
         "",
-        "| Workload | Functions Analyzed | Types Analyzed | Specialization Requests | Distinct Spec Keys | Actual Spec Checks | Reused Spec Results | Inference Rounds | Inference Work Units |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|"
+        "| Workload | Functions Analyzed | Types Analyzed | Specialization Requests | Distinct Spec Keys | Actual Spec Checks | Reused Spec Results | Inference Rounds | Inference Work Units | Signature Functions Re-inferred | Signature Functions Changed |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|"
     ])
 
     for fid in ("w2_spec_distinct_n016", "w3_spec_repeated_n016", "w4_infer_deep_d010", "w5_infer_wide_w025", "w6_types_count_t050", "w8_traits_dispatch_c050"):
@@ -702,7 +709,9 @@ def generate_report(results: list, metadata: dict, out_path: Path):
         reused = c.get("reused_specialization_results", max(0, (s_req or 0) - (act_chk or 0)))
         inf_r = c.get("inference_rounds", 5)
         inf_u = c.get("inference_work_units", 34)
-        lines.append(f"| `{fid}` | {fn_a} | {ty_a} | {s_req} | {d_keys} | {act_chk} | {reused} | {inf_r} | {inf_u} |")
+        reinferred = c.get("inference_reinferred_functions", "n/a")
+        changed = c.get("inference_changed_functions", "n/a")
+        lines.append(f"| `{fid}` | {fn_a} | {ty_a} | {s_req} | {d_keys} | {act_chk} | {reused} | {inf_r} | {inf_u} | {reinferred} | {changed} |")
 
     lines.extend([
         "",
@@ -713,6 +722,7 @@ def generate_report(results: list, metadata: dict, out_path: Path):
         "- **`actual_specialization_checks`**: Bodies compiled through `infer_statement_expressions` and `check_stmts`.",
         "- **`reused_specialization_results`**: Call sites satisfied by cache lookup without re-checking.",
         "- **`inference_rounds` / `inference_work_units`**: Fixed-point signature loops and atomic callable inference evaluations.",
+        "- **`inference_reinferred_functions` / `inference_changed_functions`**: Total function bodies visited by signature-inference worklists and total function signatures changed. Per-wave detail is retained in `counters_json` as `inference_reinferred_functions_round_N` and `inference_changed_functions_round_N`.",
         "",
         "---",
         "",
@@ -734,6 +744,28 @@ def generate_report(results: list, metadata: dict, out_path: Path):
             limit = base * 1.5 + 10.0
             status = "**PASS**" if curr <= limit else "**REGRESSION**"
             lines.append(f"| `{fid}` | {s.get('category')} | {base:.2f} | {curr:.2f} | {delta:+.1f}% | {limit:.1f} | {status} |")
+
+    if any("parse_cache_hits" in s.get("counters", {}) for s in stats_map.values()):
+        lines.extend([
+            "",
+            "## 13. Phase 26 W1 Parse Cache Counters",
+            "",
+            "These are checker parse-cache lookups from profiling-mode trials; misses include failed call parses and entries skipped after the per-checker cap.",
+            "",
+            "| Fixture ID | Hits | Misses | Hit share |",
+            "|---|---:|---:|---:|",
+        ])
+        for fid in ("w2_spec_distinct_n032", "w3_spec_repeated_n032",
+                    "w4_infer_deep_d018", "w5_infer_wide_w100",
+                    "rw_packages_regex", "rw_sdk_datastructures"):
+            counters = stats_map.get(fid, {}).get("counters", {})
+            hits = counters.get("parse_cache_hits")
+            misses = counters.get("parse_cache_misses")
+            if hits is None or misses is None:
+                continue
+            total = hits + misses
+            share = 100.0 * hits / total if total else 0.0
+            lines.append(f"| `{fid}` | {hits:,.0f} | {misses:,.0f} | {share:.1f}% |")
 
     report_text = "\n".join(lines) + "\n"
     out_path.write_text(report_text, encoding="utf-8")

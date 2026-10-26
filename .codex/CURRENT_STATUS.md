@@ -1,3 +1,55 @@
+# Phase 26 W1–W3 closeout — main PR checks pending — 2026-10-26
+
+- W2/W3 implementation is complete. PR #18 merged into `phase26-moss-speedup`
+  as `5595b8e7d66f90284b03805ad647e3a1251d7890`; PR #17 now carries W1–W3 to
+  `main`. Hosted run #17 passed core regressions, optimized examples, and
+  compiler performance. PR #17 is ready to merge; no direct push to `main`.
+- Architect GO is exact for implementation SHA
+  `c4048d8cf8d743e101e8adcdaf46cc976bc60c3e`. The W3 docs-only successor is
+  `11a1f8ba88ab8342076721f5650aaea48011ec4b`; integration commit `5595b8e` has
+  the same source/test tree plus the docs-only closeout.
+- W2 project counters: regex's initial invocation visits 49 functions, changes
+  4, then has a 49-visit quiet wave; datastructures visits 112, changes 2,
+  then has a 112-visit quiet wave. Four remaining invocations per project each
+  use one full wave. Keep the selective worklist because W5 W100 avoids repeat
+  waves. The opt-in legacy loop oracle passed 2,064 sources / 1,325 accepted,
+  without a mismatch.
+- The checker loop audit fixed three bounded loops lacking quiescence exits:
+  object fields, domain-state fields, and handler reply types. D18 observable
+  effects converge in 1/60 rounds.
+- W3 was chosen from baseline counts (2,621,451 effects calls / 37 keys, depth
+  19). Candidate D18 reports 110 specialization evaluations, 38 computations,
+  72 hits, and 19 keys across two independent passes; D18 Callgrind Ir fell
+  72.5%. Summed eight-workload Ir fell about 65% W2→W3. W4 was dropped because
+  type spelling is below 15% on every workload. W5 timer-key optimization is
+  folded in. Small-fixture check medians: rolling window 0.0944 s and checkout
+  0.0033 s.
+- Local `make check` passed 140/140; feedback validation and diff check passed.
+  Hosted PR #18 run #16 passed all applicable jobs, including core regressions,
+  optimized examples, and W2 performance. Hosted W5 was 19.2254 s vs 0.2663 s
+  (98.6% lower), identical JSON. On the main PR, hosted W3 repeated N32 fell
+  57.8% and W5 W100 fell 98.8% from main. The PR #17 core job remains pending.
+- Detailed results and next-team directions: `docs/phase26/W2_RESULTS.md`,
+  `docs/phase26/W3_RESULTS.md`, and `docs/phase26/NEXT_TEAM_HANDOFF.md`.
+
+## Phase 26 W2 inference worklist — complete — 2026-10-26
+
+- Branch `phase26-w2-inference`, implementation SHA `44b86de3af469c750ba0601389dee82291d83561`, current delivery head `7e40f007fb74efec5b42127475a795714473bfa2`; PR #18 is ready for review against `phase26-moss-speedup`. W2 only.
+- W2 implementation uses source-ordered initial inference and caller waves, with conservative full-wave fallback for shared-signature changes, dependency graph changes, and unresolved local callable sites. New aggregate/per-wave inference counters are included.
+- Validation at this checkpoint: `moss-dev`/`moss-opt` built; W2 regression passed on both; 2,060-source differential passed with 1,322 accepted and zero verdict/diagnostic/generated-Rust hash changes; W5 W100 three-pair median improved 10.9169s to 0.3834s (96.5%), exact check JSON equal.
+- Architect checkpoint 2.1: conditional GO, no remaining confirmed blocker. The recommended `functions_analyzed == 0` domain-only assertion was added before commit. Hosted PR runs #8, #9, #10, and #11 passed core regressions, optimized examples, and W2 performance on their applicable heads. Full B1 passed 154/154 trials for W1 and W2 (one rep per timing/profiling mode); W5 W100 fell 9.906s→0.315s, and the 77-fixture timing sum fell 89.554s→40.144s. Eight-workload Callgrind completed; total Ir fell on all eight, W5 by 96.6%. Final Architect review: GO for implementation SHA `44b86de3af469c750ba0601389dee82291d83561`; Hosted run #11 passed all applicable jobs on final PR head `7e40f007fb74efec5b42127475a795714473bfa2`. PR #18 is ready for review, not merged. The latest commit is documentation/status only; implementation SHA `44b86de3af469c750ba0601389dee82291d83561` is unchanged.
+- Full details and next-team instructions: `docs/phase26/W2_RESULTS.md` and `docs/phase26/NEXT_TEAM_HANDOFF.md`. Efficiency and feedback records: `docs/phase26/agent-patterns/team-w2-inference.md` and `agent-feedback/phase26/team-w2-inference/benchmark/observations.jsonl`.
+
+## Phase 26 W1 continuation — 2026-10-25
+
+- Final PR-head Actions run #6 (`40276122512`, head `d6edcfaafdfca83b50914a70ea984930310357aa`) is still in progress: `optimized-examples` and `compiler-performance` passed; `core-regressions` is still executing `Full repository regressions` with no failure reported. This is the only outstanding check; poll before treating the PR-head run as complete.
+- Branch `phase26-moss-speedup`; implementation SHA `f6c07e69742620119863aed0a335f93f1c4f8e8e` is pushed and unchanged since CI run #4.
+- GitHub Actions run [#4](https://github.com/kuttyb/moss/actions/runs/40271463458): `core-regressions`, `optimized-examples`, and `compiler-performance` all passed. Core job explicitly excludes the legacy fixed-machine Phase 25.4 timing threshold; W1 has its own same-runner comparison.
+- W1 correctness: B1 77-fixture timing/profiling suite passed 154/154 trials per compiler; isolated baseline/W1 differential passed all 1,633 tracked `.moss` files, with 1,007 accepted Rust outputs byte-identical and 626 rejected diagnostics matching. Five Fast Debug corpus files matched. W1 regression passed positive/cache-counter, interpreter output, and negative diagnostic checks.
+- Callgrind 3.22.0 `Ir` profiles are complete for all eight plan workloads, main and W1. Total `Ir` and selected named parse-helper direct cost fell on all eight; see `docs/phase26/W1_RESULTS.md` for category definitions and map/type tradeoffs. Raw profiles are disposable under `tmp/phase26-w1/callgrind/`.
+- Architect measured and final reviews at this SHA returned GO with no actionable defect; the W3 map-cost increase is acceptable against parse-helper and total-`Ir` reductions.
+- W1 closeout records are in `docs/phase26/W1_RESULTS.md`, `docs/phase26/NEXT_TEAM_HANDOFF.md`, and `docs/phase26/agent-patterns/team-w1-parse-cache.md`. The only changes after implementation SHA `f6c07e69742620119863aed0a335f93f1c4f8e8e` are documentation, feedback, and status records. PR #17 is the W1 review submission; no merge to `main` has occurred. W2 is the next workstream.
+
 ## Phase 25.4 B1 — Moss Compiler Time Attribution & Repository Profiling Complete — UNCONDITIONAL GO — 2026-10-25
 
 The complete Phase 25.4 B1 Compiler Time Attribution and Repository-Wide Profiling deliverable is finished:
@@ -12200,3 +12252,70 @@ passes all ten workloads (specialization counts, status, latency, and RSS).
 tests/tooling/check_retired_syntax.py` and `git diff --check` pass. A full
 `make --jobs="$(nproc)" check` was started but interrupted at the user's request;
 no aggregate result is claimed. No full-suite rerun is planned unless requested.
+## Phase 26 W1 parse cache — active checkpoint — 2026-10-25
+
+Branch: `phase26-moss-speedup`. User assigned W1 only and requested a two-agent
+team: Coordinator/implementer plus one independent adversarial Architect. The
+Architect's initial checkpoint identified operator-list ordering and failed
+call-parse output mutation as high-risk contracts. The Coordinator is the only
+code writer. No direct merge to `main`.
+
+The first W1 candidate adds per-Checker, bounded syntax caches for
+`split_binary` (exact expression plus ordered operator list), successful
+`parse_simple_call` and `parse_member_call`, `split_top_level` (exact text plus
+delimiter), and `strip_redundant_outer_parentheses`. Failed call parses still use
+the shared parser to preserve their output-argument side effects. Static helper
+sites continue to use the shared parser. `MOSS_PROFILE_COMPILER` emits aggregate
+`parse_cache_hits` and `parse_cache_misses` counters. `trim` has not been cached;
+its short-string work and hash overhead need evidence before changing it.
+
+Baseline `moss-opt` from the pre-edit main-equivalent compiler was saved under
+`tmp/phase26-w1/moss-opt-main`. A single same-machine timing pass on eight
+representative check workloads is in disposable `tmp/phase26-w1/baseline.json`
+and `candidate.json`; all eight check exit codes and exact stdout/stderr hashes
+match. The W3 repeated-specialization run emitted 9,350,195 cache hits and
+1,782,615 misses under `MOSS_PROFILE_COMPILER=1`. These are preliminary
+measurements; paired timings, full correctness gates, benchmark gate, Rust and
+Fast Debug parity, final Architect review, and closeout remain pending. Do not
+claim W1 complete from this checkpoint. Callgrind is not installed locally;
+record its attribution gate honestly if still unavailable at closeout.
+
+Second checkpoint: the B1 benchmark runner completed all 77 fixtures in both
+timing and profiling modes on baseline and W1 (154/154 successful trials for
+each, one repetition per mode). Untraced W3 N32 fell 2.353 s to 1.760 s,
+W5 W100 10.763 s to 8.980 s, regex 19.655 s to 18.803 s, and
+datastructures 21.375 s to 19.681 s. Full details and limitations are in
+`docs/phase26/W1_RESULTS.md`. The B1 report generator initially failed after
+all main trials due to a preexisting null specialization-count aggregation;
+the runner fix and report-only regeneration passed. The new W1 production
+regression test passes, including Fast Debug and a negative diagnostic.
+The Architect's intermediate review of exact SHA
+`1252eaa6afbfcf9c917ac71ab93a3785790d9a63` found no confirmed
+semantic defect. Full corpus parity, complete suites and final exact-SHA
+review remain pending.
+
+Third checkpoint: draft PR #17 targets `main` from `phase26-moss-speedup`.
+The branch was pushed through `60f6f7d0c7aabb4d14065f2374fbda45b7cfce9d`.
+An initial Phase 26 PR CI run failed before tests because GitHub's runner lacks
+the default mold linker. Workflow commit `60f6f7d0` sets the documented
+`MOSS_LDFLAGS` override to use the runner's available linker; its replacement
+run is pending. Full corpus parity was restarted in a disposable worktree
+after the first direct run wrote three tracked example semantic-cache
+snapshots. Those three generated changes were restored, and the active
+checkout was clean before the isolated rerun. The final parity result is
+pending. `docs/phase26/NEXT_TEAM_HANDOFF.md` gives the next team the W2
+ownership and acceptance context.
+
+The isolated differential now passes on 1,633 tracked Moss sources under
+`examples/` and `tests/`: all check results match, 626 rejected sources match,
+and all 1,007 accepted sources emit byte-identical Rust. Fast Debug also
+matches baseline on all five tracked Moss test files under `tests/`. A direct
+three-pair local timing check passes: W3 N32 is 2.3703 s vs 1.7422 s and W5
+W100 is 10.8333 s vs 8.9391 s. The W1 CI regression and optimized-example
+jobs passed; the legacy absolute performance threshold failed on the hosted
+runner and core had four environment/history failures. The workflow is being
+updated to fetch complete history, condition mold-specific invalidation on the
+selected linker, omit that unrelated absolute threshold, and replace it with
+a same-runner main/W1 comparison on both target workloads. The revised CI and
+final Architect review are pending. Callgrind attribution remains blocked
+because it is unavailable locally.
