@@ -6,7 +6,7 @@ Phase 26's work-counter CSV reports these candidate-side checker records:
 
 | Workload | Functions/types | Record 1 rounds | Record 2 rounds | Reported aggregate |
 |---|---:|---:|---:|---:|
-| Five-line example (`example_checkout` counter fixture) | 0 / 3 | 5 | — | 5 |
+| Five-line example (`example_functional_pipeline`) | 1 / 0 | 5 | — | 5 |
 | Regex | 49 / 4 | 5 | 10 | 15 |
 | Datastructures | 112 / 11 | 5 | 10 | 15 |
 
