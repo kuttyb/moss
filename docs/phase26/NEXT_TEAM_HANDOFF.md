@@ -7,10 +7,9 @@ W2 implementation is on `phase26-w2-inference`, checkpoint
 [PR #18](https://github.com/kuttyb/moss/pull/18) targets
 `phase26-moss-speedup`, currently at W1 base
 `b8871297619cf51187457b1fc3e55d833d661146`. Do not merge directly to `main`.
-Corrected delivery head `5d1cd6b62a6dd213c15e1e032537a33e56f81b4c` passed
-hosted run #10: core regressions, optimized examples, and W2 same-runner
-performance. A final session-status-only commit is being prepared and needs
-its own hosted validation before PR #18 is marked ready. The full 77-fixture
+Final delivery head `7e40f007fb74efec5b42127475a795714473bfa2` passed hosted
+run #11: core regressions, optimized examples, and W2 same-runner performance.
+PR #18 is ready for review and remains unmerged. The full 77-fixture
 B1 timing/profiling suite passed 154/154 trials for W1 and W2, and the
 eight-workload Callgrind attribution completed; details and the disclosed W4
 wall-time regression are in `docs/phase26/W2_RESULTS.md`. Read `.codex/CURRENT_STATUS.md`,
@@ -48,8 +47,7 @@ Local gates at checkpoint `44b86de3af469c750ba0601389dee82291d83561`:
   `44b86de3af469c750ba0601389dee82291d83561`.
 
 The PR #18 automated checks are green on corrected delivery head `5d1cd6b6`;
-the remaining status-only commit is pending its own hosted gates. Once green,
-mark PR #18 ready for review without merging it. See
+PR #18 is ready for review and remains unmerged. See
 `docs/phase26/W2_RESULTS.md` for validation scope and limitations. PR #17/W1
 remains separate and has no main merge implied here.
 
