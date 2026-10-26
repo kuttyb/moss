@@ -2956,6 +2956,27 @@ public class SemanticCheckerTest {
                 + "fn main():\n"
                 + "  source = FileIO.open(\"input\", ro)\n"
                 + "  source.close(1)\n", "TYPE_MISMATCH");
+        Program dataOnlySync = Parser.parseSource(""
+                + "enum FileError:\n"
+                + "  NotFound\n  PermissionDenied\n  NotRegularFile\n  InUse\n  Full\n  IO\n"
+                + "fn main():\n"
+                + "  try:\n"
+                + "    file = FileIO.open(\"output\", rw)\n"
+                + "    file.sync(dataonly)\n"
+                + "    file.close()\n"
+                + "  recover:\n"
+                + "    pass\n", "fileio-dataonly-sync.moss");
+        new SemanticChecker(dataOnlySync).run();
+        assertCompileError(""
+                + "enum FileError:\n"
+                + "  NotFound\n  PermissionDenied\n  NotRegularFile\n  InUse\n  Full\n  IO\n"
+                + "fn main():\n"
+                + "  try:\n"
+                + "    file = FileIO.open(\"output\", create)\n"
+                + "    file.write(0, [65, 66])\n"
+                + "    file.close()\n"
+                + "  recover:\n"
+                + "    pass\n", "FILEIO_INVALID_PAYLOAD");
     }
 
     private static void testNamedFileIoBatchRequiresBoundedRequestVector() {

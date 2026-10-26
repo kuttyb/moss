@@ -928,7 +928,8 @@ public class ExpressionTyper {
             Function fn = functions.get(e);
             return TypeRef.builtin("callable", Collections.emptyList());
         }
-        if ("FileIO".equals(e) || "ro".equals(e) || "rw".equals(e) || "_".equals(e)) {
+        if ("FileIO".equals(e) || "ro".equals(e) || "rw".equals(e)
+                || "dataonly".equals(e) || "_".equals(e)) {
             return TypeRef.primitive(e);
         }
 
@@ -1583,12 +1584,27 @@ public class ExpressionTyper {
             }
             if ("write".equals(member)) {
                 requireArgumentCount(line, "FileIO.write", argExprs, 2, 2);
-                for (String argument : argExprs) infer(argument, line, env);
+                TypeRef offset = solver.resolve(infer(argExprs.get(0), line, env));
+                if (offset == null || !"int".equals(offset.name()))
+                    throw new CompileError(line, "FileIO.write offset must be Int", "FILEIO_INVALID_OPERATION");
+                String payloadExpression = argExprs.get(1).trim();
+                TypeRef payload = solver.resolve(infer(payloadExpression, line, env));
+                if (payload != null && "Range".equals(payload.name())) return TypeRef.unit();
+                if (payload == null || !"string".equals(payload.name()))
+                    throw new CompileError(line,
+                            "FileIO.write payload must be String or Range", "FILEIO_INVALID_PAYLOAD");
+                boolean literalString = payloadExpression.length() >= 2
+                        && payloadExpression.startsWith("\"") && payloadExpression.endsWith("\"");
+                if (!literalString)
+                    throw new CompileError(line,
+                            "FileIO.write String payload requires a compiler-proven finite bound",
+                            "FILEIO_UNBOUNDED_REQUEST");
                 return TypeRef.unit();
             }
             if ("sync".equals(member)) {
                 requireArgumentCount(line, "FileIO.sync", argExprs, 0, 1);
-                for (String argument : argExprs) infer(argument, line, env);
+                for (String argument : argExprs)
+                    if (!"dataonly".equals(argument.trim())) infer(argument, line, env);
                 return TypeRef.unit();
             }
             if ("close".equals(member)) {
@@ -1916,6 +1932,15 @@ public class ExpressionTyper {
                     || "RangeBatch".equals(targetType.name()))) {
                 requireArgumentCount(line, targetType.toCanonicalString() + ".length", argExprs, 0, 0);
                 return TypeRef.primitive("int");
+            }
+            if ("slice".equals(member) && "Range".equalsIgnoreCase(targetType.name())) {
+                requireArgumentCount(line, "Range.slice", argExprs, 2, 2);
+                for (String argument : argExprs) {
+                    TypeRef actual = solver.resolve(infer(argument, line, env));
+                    if (actual == null || !"int".equals(actual.name()))
+                        throw new CompileError(line, "Range.slice arguments must be Int", "TYPE_MISMATCH");
+                }
+                return TypeRef.primitive("Range");
             }
             if ("threads".equals(member) || "start".equals(member)) return TypeRef.primitive("Executor");
             if ("open".equals(member)) return TypeRef.primitive("FileIO");

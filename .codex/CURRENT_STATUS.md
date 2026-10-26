@@ -17306,3 +17306,18 @@ is accepted, while a partial close rejects later use as
 compilers with `FILEIO_PINNED_OWNERSHIP`; Java now reports the ownership error
 at the alias assignment. More complex ownership transformations remain open.
 This does not validate native Rust behavior.
+
+### Phase 25.3 continuation — FileIO payload and Range surface checks
+
+Java now recognizes the `dataonly` sync marker, enforces Int write offsets,
+restricts write payloads to finite String literals or Range values, rejects
+other payload types, and types `Range.slice(start, length)` as Range with Int
+arguments. The Phase 20 FileIO semantic harness now advances through these
+cases, including byte-vector and unbounded String payload rejection. C++ passes
+the full harness; Java currently stops later at missing
+`FILEIO_BLOCKING_WITH_SHARED_WRITE` warnings for the direct and helper domain
+read cases.
+
+ABI-v9 and staged ABI-v10 Java suites each pass all 12 classes. This harness
+run is partial and is not a full FileIO parity claim. Domain effect warnings,
+native runtime acceptance, and the other Phase 25.3 release gates remain open.
