@@ -3,8 +3,9 @@
 - C1 is implemented on its separate branch and PR #21 is open; see its worktree
   and handoff. C2 is implemented in PR #22 (`phase26-0-1-c2`), based on main
   `274f848`, with code/test commit `ba859c04d01688aeb14653668dd710242117f804`
-  and documentation closeout being finalized. Architect GO is recorded for the
-  code/test SHA. Hosted PR gates are pending.
+  and documentation closeout complete. Architect GO is recorded for the
+  code/test SHA. Hosted PR run #35 passed core regressions, optimized examples,
+  and local performance smoke. PR #22 is ready and remains unmerged.
 - C2 removes the repeated snapshot checker only for the exact one-source
   Application check without overrides. Baseline/candidate snapshot bytes match
   in default and `-O` modes; full corpus, Fast Debug, local `make check` 140/140,
