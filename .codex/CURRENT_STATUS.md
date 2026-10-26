@@ -21,10 +21,13 @@
   requested baseline/full-corpus/three-repetition settings; certification now
   enforces those inputs. User-requested non-overlap threshold retains a 2 ms
   absolute floor. Final Architect review is pending on the repaired commit.
-- Hosted PR #20 run #24 (`40376734795`) was in progress at this checkpoint.
-  `py_compile`, feedback validation, diff checks, the result artifact commit,
-  and the final exact-SHA review remain outstanding. PR remains open; no merge
-  to main has occurred. Team closeout:
+- Hosted PR #20 run #24 (`40376734795`) completed successfully for core
+  regressions, optimized examples, and local compiler perf smoke on prior SHA
+  `6817b59a`; it predates the certification-argument guard and certified data
+  commit. A new exact-head workflow run is pending. `py_compile`, feedback
+  validation, diff check, and partial-certification rejection probe passed.
+  Final Architect review remains pending. PR remains open; no merge to main has
+  occurred. Team closeout:
   `docs/phase26/agent-patterns/team-local-perf-suite.md`.
 
 - W2/W3 implementation is complete. PR #18 merged into `phase26-moss-speedup`

@@ -110,5 +110,13 @@ records the candidate's dirty status. This is a
 benchmark/tooling change and makes no compiler behavior change. See
 `docs/phase25/PERMANENT_COMPILER_PERFORMANCE_REGRESSION_TARGET.md` for details.
 
+Certification mode additionally requires `MOSS_PERF_BASELINE=c66fb76c`, the
+full 77-fixture corpus, and exactly three timing repetitions. The certified
+Phase 26 run on 2026-10-26 is recorded in `MossPhase26.md`, with the full report,
+candidate medians, work counters, and host/commit metadata under
+`benchmarks/phase25_4/cpp_baseline/results/`. Historical baseline work counters
+are sparse because pre-Phase 26 revisions do not emit the complete structured
+counter set; missing entries mean unavailable, not zero.
+
 Worklist complexity debt: simplify to a plain convergence check unless a real
 package shows partial waves.
