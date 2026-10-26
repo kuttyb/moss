@@ -332,6 +332,8 @@ def generate_report(results: list, metadata: dict, out_path: Path):
     lines = [
         "# Phase 25.4 B1 — Moss Compiler Performance Baseline",
         "",
+        "> **Interpretation correction (2026-10-25):** This is an **unchanged, reproducible historical C++ ECT performance baseline**. Stage timings measure *when* time is billed, not *what* CPU instructions execute. Expression-text reparsing and string-type work inside `type_inference`/`effects` were not separately measured. Therefore do **not** infer that TypeSolver work dominates or adopt the proposed algorithmic speedups as guarantees. See [B1 merge-readiness note](../../../docs/phase25/PHASE_25_4_B1_MERGE_READINESS.md).",
+        "",
         f"**Compiler Executable:** `{metadata['moss_binary']}`  ",
         f"**Compiler Git SHA:** `{metadata['git_sha']}`  ",
         f"**Binary SHA256:** `{metadata['binary_sha256']}`  ",
