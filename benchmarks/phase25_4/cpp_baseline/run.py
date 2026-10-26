@@ -418,7 +418,10 @@ def generate_report(results: list, metadata: dict, out_path: Path):
         f"- The net difference between W2 and W3 is **{w2_n32.get('wall_med', 0.0) - w3_n32.get('wall_med', 0.0):.2f} ms**.",
         "",
         "#### Derived Estimates",
-        f"- Checking each distinct concrete function specialization in W2 incurs an estimated amortized cost of **~{(w2_n32.get('wall_med', 0.0) - w3_n32.get('wall_med', 0.0)) / (w2_n32.get('checked_specs', 1056) - w3_n32.get('checked_specs', 6)) * 1000.0:.1f} microseconds** per specialization.",
+        (f"- Checking each distinct concrete function specialization in W2 incurs an estimated amortized cost of **~{(w2_n32.get('wall_med', 0.0) - w3_n32.get('wall_med', 0.0)) / (w2_n32['checked_specs'] - w3_n32['checked_specs']) * 1000.0:.1f} microseconds** per specialization."
+         if w2_n32.get("checked_specs") is not None and w3_n32.get("checked_specs") is not None
+         and w2_n32["checked_specs"] != w3_n32["checked_specs"]
+         else "- Per-specialization estimate unavailable (profiling counters were not collected)."),
         "",
         "#### Hypotheses & Workload Analysis",
         "- **Reachability Confound Note:** In W3, all $N$ concrete sensor types are defined, parsed, and checked during object layout and method signature passes; however, only `Sensor000` and `Sensor001` are instantiated in `main()`. Because unused types were fully checked in the frontend, the measured differential between W2 and W3 cleanly isolates the marginal cost of concrete function specialization body checking from general nominal type definition.",
@@ -782,8 +785,16 @@ def main():
     parser.add_argument("--suite", choices=["torture", "real_world", "all"], default="all",
                         help="Workload suite to run (torture, real_world, or all)")
     parser.add_argument("--categories", help="Comma-separated category filter (e.g. specialization,inference)")
+    parser.add_argument("--fixture-ids", help="Comma-separated fixture ID filter")
+    parser.add_argument("--results-dir", type=Path, help="Write run artifacts to this directory")
     parser.add_argument("--report-only", action="store_true", help="Regenerate REPORT.md from results.csv without running trials")
     args = parser.parse_args()
+
+    global RESULTS_DIR, REPORT_PATH, TRACES_DIR
+    if args.results_dir:
+        RESULTS_DIR = args.results_dir.resolve()
+        REPORT_PATH = RESULTS_DIR / "REPORT.md"
+        TRACES_DIR = RESULTS_DIR / "traces"
 
     # Always verify corpus integrity first
     if not verify_corpus_integrity():
@@ -808,7 +819,8 @@ def main():
             r["success"] = (r.get("success") == "True" or r.get("success") is True)
         metadata = json.loads(meta_path.read_text())
         generate_report(results, metadata, REPORT_PATH)
-        shutil.copy2(REPORT_PATH, RESULTS_DIR / "REPORT.md")
+        if REPORT_PATH.resolve() != (RESULTS_DIR / "REPORT.md").resolve():
+            shutil.copy2(REPORT_PATH, RESULTS_DIR / "REPORT.md")
         sys.exit(0)
 
     # Resolve compiler
@@ -837,6 +849,12 @@ def main():
     if args.categories:
         allowed = set(args.categories.split(","))
         fixtures = [f for f in fixtures if f["category"] in allowed]
+    if args.fixture_ids:
+        allowed_ids = set(args.fixture_ids.split(","))
+        fixtures = [f for f in fixtures if f["id"] in allowed_ids]
+        missing_ids = allowed_ids - {f["id"] for f in fixtures}
+        if missing_ids:
+            sys.exit(f"Unknown fixture IDs: {', '.join(sorted(missing_ids))}")
 
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     git_sha = get_git_sha()
@@ -889,7 +907,8 @@ def main():
 
     # Generate final report
     generate_report(results, metadata, REPORT_PATH)
-    shutil.copy2(REPORT_PATH, RESULTS_DIR / "REPORT.md")
+    if REPORT_PATH.resolve() != (RESULTS_DIR / "REPORT.md").resolve():
+        shutil.copy2(REPORT_PATH, RESULTS_DIR / "REPORT.md")
     print(f"\nBaseline execution complete! {len(results)} total trials recorded.")
 
 

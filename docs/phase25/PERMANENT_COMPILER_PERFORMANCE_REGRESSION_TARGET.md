@@ -38,6 +38,35 @@ make compiler-perf
 make bench-torture
 ```
 
+`make compiler-perf` is the local repeatable timing suite: it runs the 54
+portable torture fixtures plus the eight named attribution workloads, with
+three untraced timing repetitions per fixture. Raw trials and
+`LOCAL_REPORT.md` go to a unique directory under `tmp/compiler-perf/`; the
+certified B1 reports are not overwritten. The report includes the sum of
+per-fixture medians, all eight attribution workloads, and fixtures whose
+median is over 5% slower. That threshold is informational; failed verdicts or
+incomplete trials fail the command.
+
+Set `MOSS_PERF_BASELINE` to compare a revision against the current checkout.
+The baseline is built in a temporary detached worktree and both revisions are
+measured sequentially on the same machine:
+
+```sh
+MOSS_PERF_BASELINE=c66fb76c make compiler-perf
+```
+
+To include all 23 curated repository Moss workloads, not just those selected
+for attribution, set `MOSS_PERF_INCLUDE_REAL_WORLD=1`:
+
+```sh
+MOSS_PERF_INCLUDE_REAL_WORLD=1 MOSS_PERF_BASELINE=c66fb76c make compiler-perf
+```
+
+`MOSS_PERF_REPS` overrides the default three repetitions. Without a baseline
+ref, the command records current-checkout timings only and makes no
+before/after claim. The direct historical B1 runner remains available below
+for the timing-plus-profiling report.
+
 ### B. Direct Runner Invocations
 
 ```bash

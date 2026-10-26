@@ -157,7 +157,7 @@ check-perf: moss-opt
 	python3 tests/tooling/check_phase25_4_performance_baseline.py $(MOSS_OPT)
 
 compiler-perf: moss-opt
-	python3 benchmarks/phase25_4/cpp_baseline/run.py --moss $(MOSS_OPT) --suite all --mode both
+	python3 benchmarks/phase25_4/cpp_baseline/local_suite.py
 
 bench-torture: moss-opt
 	python3 benchmarks/phase25_4/cpp_baseline/run.py --moss $(MOSS_OPT)

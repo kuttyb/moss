@@ -1,5 +1,22 @@
 # Phase 26 complete — W1–W3 merged to main — 2026-10-26
 
+## Local compiler-perf suite follow-up — implementation staged for review — 2026-10-26
+
+- Branch: `compiler-perf-local-suite`, based on `main` at `bdf973af`. No compiler
+  source changes. `make compiler-perf` now runs three timing repetitions over
+  the torture suite plus the eight attribution workloads, writing raw results
+  and reports under `tmp/compiler-perf/<run-id>/`. Set
+  `MOSS_PERF_BASELINE=<git-ref>` for a same-host detached-worktree comparison;
+  set `MOSS_PERF_INCLUDE_REAL_WORLD=1` for all 23 curated repository workloads.
+- Validation: default suite completed 171/171 successful trials (57 fixtures ×
+  3); paired smoke comparison against `HEAD` completed 57/57 trials per side
+  (one repetition) with matching fixture manifests and same-host metadata.
+  `py_compile`, comparison report formatting, `check_agent_feedback.py`, and
+  `git diff --check` passed. The 1-repetition pair is harness validation only,
+  not a performance claim. Existing historical B1 results remain unchanged.
+- Architect final review, commit/push/PR, and hosted gates are outstanding.
+  Team closeout: `docs/phase26/agent-patterns/team-local-perf-suite.md`.
+
 - W2/W3 implementation is complete. PR #18 merged into `phase26-moss-speedup`
   as `5595b8e7d66f90284b03805ad647e3a1251d7890`; PR #17 merged W1–W3 to `main` at
   `4f5788fd1176c22452ff3a8eb2893f3c62f571b0` after hosted run #18 passed core
