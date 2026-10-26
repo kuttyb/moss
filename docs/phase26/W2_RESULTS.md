@@ -84,3 +84,11 @@ inference. Each now exits when the ordered function/shared inference signature
 stops changing. Other audited effects and recovery loops already have explicit
 change-based exits. D18's observable-effects fixed point runs 1 of its 60
 maximum rounds.
+
+
+## Integration closeout
+
+PR #18 merged the W2 closeout and W3 effects work into `phase26-moss-speedup`
+at `5595b8e7d66f90284b03805ad647e3a1251d7890`. The combined W1–W3 Phase 26
+branch passed hosted run #18 and merged to `main` through PR #17 at
+`4f5788fd1176c22452ff3a8eb2893f3c62f571b0`.

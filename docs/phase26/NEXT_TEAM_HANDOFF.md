@@ -30,9 +30,10 @@ W2/W3 is integrated into `phase26-moss-speedup` at merge commit
 Architect-reviewed implementation SHA `c4048d8cf8d743e101e8adcdaf46cc976bc60c3e`.
 [PR #18](https://github.com/kuttyb/moss/pull/18) is merged.
 [PR #17](https://github.com/kuttyb/moss/pull/17) now carries W1–W3 to `main`.
-Hosted run #17 passed core regressions, optimized examples, and compiler
-performance. The next action is to merge PR #17 through the normal review path,
-then move to Graph DSL. See `W1_RESULTS.md`, `W2_RESULTS.md`, and
+Hosted PR #17 run #18 passed core regressions, optimized examples, and compiler
+performance. PR #17 merged to `main` at
+`4f5788fd1176c22452ff3a8eb2893f3c62f571b0`. Phase 26 is complete; move next to
+Graph DSL. See `W1_RESULTS.md`, `W2_RESULTS.md`, and
 `W3_RESULTS.md` for the complete measurements and caveats.
 
 The checker file has a single-writer lease. W2 closeout's counter/oracle and
@@ -82,7 +83,7 @@ attribution and small-fixture latency are in `W3_RESULTS.md`. The decision is
 to stop Phase 26 after this work, drop W4, retain the discipline rules, and
 move the next effort to Graph DSL. PR #17 is the integration path to `main`;
 its core regression, optimized-example, and compiler-performance gates are
-green; merge through PR #17 before moving to Graph DSL.
+green. It merged through PR #17; move to Graph DSL.
 
 ## Prior W1 references
 

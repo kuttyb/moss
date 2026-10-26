@@ -1,9 +1,10 @@
-# Phase 26 W1–W3 closeout — main PR checks pending — 2026-10-26
+# Phase 26 complete — W1–W3 merged to main — 2026-10-26
 
 - W2/W3 implementation is complete. PR #18 merged into `phase26-moss-speedup`
-  as `5595b8e7d66f90284b03805ad647e3a1251d7890`; PR #17 now carries W1–W3 to
-  `main`. Hosted run #17 passed core regressions, optimized examples, and
-  compiler performance. PR #17 is ready to merge; no direct push to `main`.
+  as `5595b8e7d66f90284b03805ad647e3a1251d7890`; PR #17 merged W1–W3 to `main` at
+  `4f5788fd1176c22452ff3a8eb2893f3c62f571b0` after hosted run #18 passed core
+  regressions, optimized examples, and compiler performance. Phase 26 is closed;
+  the next workstream is Graph DSL.
 - Architect GO is exact for implementation SHA
   `c4048d8cf8d743e101e8adcdaf46cc976bc60c3e`. The W3 docs-only successor is
   `11a1f8ba88ab8342076721f5650aaea48011ec4b`; integration commit `5595b8e` has
