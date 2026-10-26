@@ -1,6 +1,6 @@
 # Phase 26 complete — W1–W3 merged to main — 2026-10-26
 
-## Local compiler-perf suite follow-up — PR #20 review repairs — 2026-10-26
+## Local compiler-perf suite follow-up — PR #20 ready — 2026-10-26
 
 - Branch: `compiler-perf-local-suite`, based on `main` at `bdf973af`. No compiler
   source changes. `make compiler-perf` now runs three timing repetitions over
@@ -18,8 +18,11 @@
   `py_compile`, report assertions, feedback validation, and diff checks passed.
   The 1-repetition pair is harness validation only, not a performance claim.
   Existing historical B1 results remain unchanged.
-- Commit/push update, Architect final review, and hosted main-PR core,
-  optimized-example, and local performance gates remain outstanding.
+- Final code SHA `abe436d9036b6f81774b2c55df3cf36874c3d220` is pushed to
+  PR [#20](https://github.com/kuttyb/moss/pull/20). Architect final review is
+  GO for that exact SHA. Hosted run #21 (`40367091523`) passed core regressions,
+  optimized examples, and local compiler performance; Phase 26 W1/W2-specific
+  jobs were skipped by their branch conditions. PR remains open for integration.
   Team closeout: `docs/phase26/agent-patterns/team-local-perf-suite.md`.
 
 - W2/W3 implementation is complete. PR #18 merged into `phase26-moss-speedup`
