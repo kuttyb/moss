@@ -2,6 +2,7 @@
 """Exercise compiler object and depfile behavior in an isolated tiny project."""
 from __future__ import annotations
 
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -173,15 +174,21 @@ def main() -> None:
         assert_unchanged(before, after, [dev_object, opt_object],
                          "Clang relink after GCC override")
 
-        # A changed linker version relinks without recompiling compiler objects.
-        make(project, "moss-dev", "moss-opt", "MOLD_VERSION=mold-test-a")
-        before = snapshot([dev, opt, dev_object, opt_object])
-        time.sleep(0.02)
-        make(project, "moss-dev", "moss-opt", "MOLD_VERSION=mold-test-b")
-        after = snapshot([dev, opt, dev_object, opt_object])
-        assert_all_changed(before, after, [dev, opt], "linker version change")
-        assert_unchanged(before, after, [dev_object, opt_object],
-                         "linker version change")
+        # The Makefile includes MOLD_VERSION in link identity only when mold is
+        # selected. A hosted runner may intentionally set MOSS_LDFLAGS empty
+        # and use its system linker; in that configuration this mold-specific
+        # invalidation case does not apply.
+        if "mold" in os.environ.get("MOSS_LDFLAGS", "-fuse-ld=mold"):
+            make(project, "moss-dev", "moss-opt", "MOLD_VERSION=mold-test-a")
+            before = snapshot([dev, opt, dev_object, opt_object])
+            time.sleep(0.02)
+            make(project, "moss-dev", "moss-opt", "MOLD_VERSION=mold-test-b")
+            after = snapshot([dev, opt, dev_object, opt_object])
+            assert_all_changed(before, after, [dev, opt], "linker version change")
+            assert_unchanged(before, after, [dev_object, opt_object],
+                             "linker version change")
+        else:
+            print("Skipping mold-version invalidation: MOSS_LDFLAGS does not select mold")
 
         # Changing the stable PCH input rebuilds PCH-backed objects in both
         # profiles and relinks both executables.

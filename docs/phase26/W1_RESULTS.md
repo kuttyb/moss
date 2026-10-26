@@ -60,13 +60,27 @@ datastructures, rolling window and checkout. The W3 profiling run reported
 9,350,195 hits and 1,782,615 misses. These counters count checker cache
 lookups, including misses after the cap and failed call parses.
 
+The isolated full corpus differential covered all 1,633 tracked `.moss`
+files under `examples/` and `tests/`. Check exit status and exact stdout/stderr
+hashes matched for all 1,633 files. All 626 rejected sources had matching
+results; all 1,007 accepted sources emitted byte-identical Rust. The W1
+regression fixture also passed Fast Debug with output `7`, `8`, `9`, `2` and
+the negative `TYPE_MISMATCH` diagnostic. The five tracked Moss test files under
+`tests/` also produced identical Fast Debug exit codes, stdout and stderr
+hashes on baseline and W1.
+
 ## Gates and limitations
 
 The B1 runner's report-only pass succeeded after correcting a preexisting
-aggregation bug that read the specialization count from a timing row. The
-checker cache regression fixture passes with Fast Debug output and the expected
-negative diagnostic. Full corpus output parity, regression suites, optimized
-examples, ABI-v10 gates and final Architect review are in progress. Callgrind
-is unavailable on this machine; the eight-workload
-instruction attribution requested by the Phase 26 plan is currently blocked.
-No merge to `main` is authorized by this W1 record.
+aggregation bug that read the specialization count from a timing row.
+Optimized examples passed in hosted CI. The first complete CI run exposed
+environment-specific failures: the shallow checkout omitted historical refs
+needed by existing tests, the no-mold linker made a mold-version invalidation
+case inapplicable, and the fixed Phase 25.4 absolute performance threshold
+exceeded hosted-runner timings. The optimized-example job and W1 regression
+passed. The workflow now fetches full history, gates the mold-only case on the
+configured linker, runs the other regressions, and compares W1 against a main
+compiler built on the same runner. That revised CI run and final Architect
+review remain pending. Callgrind is unavailable locally; the Phase 26
+instruction-attribution gate remains blocked. No merge to `main` is authorized
+by this W1 record.

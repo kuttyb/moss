@@ -12241,3 +12241,29 @@ The Architect's intermediate review of exact SHA
 `1252eaa6afbfcf9c917ac71ab93a3785790d9a63` found no confirmed
 semantic defect. Full corpus parity, complete suites and final exact-SHA
 review remain pending.
+
+Third checkpoint: draft PR #17 targets `main` from `phase26-moss-speedup`.
+The branch was pushed through `60f6f7d0c7aabb4d14065f2374fbda45b7cfce9d`.
+An initial Phase 26 PR CI run failed before tests because GitHub's runner lacks
+the default mold linker. Workflow commit `60f6f7d0` sets the documented
+`MOSS_LDFLAGS` override to use the runner's available linker; its replacement
+run is pending. Full corpus parity was restarted in a disposable worktree
+after the first direct run wrote three tracked example semantic-cache
+snapshots. Those three generated changes were restored, and the active
+checkout was clean before the isolated rerun. The final parity result is
+pending. `docs/phase26/NEXT_TEAM_HANDOFF.md` gives the next team the W2
+ownership and acceptance context.
+
+The isolated differential now passes on 1,633 tracked Moss sources under
+`examples/` and `tests/`: all check results match, 626 rejected sources match,
+and all 1,007 accepted sources emit byte-identical Rust. Fast Debug also
+matches baseline on all five tracked Moss test files under `tests/`. A direct
+three-pair local timing check passes: W3 N32 is 2.3703 s vs 1.7422 s and W5
+W100 is 10.8333 s vs 8.9391 s. The W1 CI regression and optimized-example
+jobs passed; the legacy absolute performance threshold failed on the hosted
+runner and core had four environment/history failures. The workflow is being
+updated to fetch complete history, condition mold-specific invalidation on the
+selected linker, omit that unrelated absolute threshold, and replace it with
+a same-runner main/W1 comparison on both target workloads. The revised CI and
+final Architect review are pending. Callgrind attribution remains blocked
+because it is unavailable locally.

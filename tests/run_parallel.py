@@ -382,6 +382,12 @@ def main() -> int:
         help="Only run jobs whose names match this pattern (e.g. 'shard_*')",
     )
     parser.add_argument(
+        "--exclude-job",
+        action="append",
+        default=[],
+        help="Explicitly omit a named job; every omission is reported in the summary",
+    )
+    parser.add_argument(
         "--output-base",
         type=Path,
         default=REPO / "build" / "tests" / "parallel",
@@ -440,6 +446,14 @@ def main() -> int:
                     frontier.append(dependency)
         selected_jobs = [job for job in manifest if job.name in selected_names]
 
+    unknown_exclusions = sorted(set(args.exclude_job) - set(jobs_by_name))
+    if unknown_exclusions:
+        print(f"Unknown excluded job(s): {', '.join(unknown_exclusions)}", file=sys.stderr)
+        return 1
+    if args.exclude_job:
+        excluded_names = set(args.exclude_job)
+        selected_jobs = [job for job in selected_jobs if job.name not in excluded_names]
+
     args.output_base.mkdir(parents=True, exist_ok=True)
     (REPO / "tmp").mkdir(parents=True, exist_ok=True)
 
@@ -447,6 +461,8 @@ def main() -> int:
     print("MOSS PARALLEL REGRESSION SUITE")
     print(f"  Concurrency:   {args.jobs} worker threads")
     print(f"  Selected jobs: {len(selected_jobs)} of {len(manifest)}")
+    if args.exclude_job:
+        print(f"  Explicitly excluded: {', '.join(sorted(set(args.exclude_job)))}")
     print(f"  Dev compiler:  {compiler_dev.relative_to(REPO)}")
     print(f"  Opt compiler:  {compiler_opt.relative_to(REPO)}")
     print(f"  Output base:   {args.output_base.relative_to(REPO)}")
