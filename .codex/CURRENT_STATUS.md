@@ -12179,3 +12179,23 @@ examples, Clang optimized build, GCC development build/smoke and relevant
 ABI-v9/v10, SDK, source-free and hostile-artifact gates passed. Feedback validation, `git diff --check`, benchmark Python compile/help, fixture
 JSON parse, and the 21-row raw CSV checks all pass on the current closeout tree.
 Benchmark source code was measured at `b4bc3b7ec9ad74c535ece2aacbcac6fb144e8edd`; subsequent production C++ was unchanged. The independent Architect reviewed exact pushed candidate `480990e5526eb06b46d7cdd2a84a89b09eee3e84` and issued GO with no open P0/P1/P2 findings; the sole date P2 on the prior docs candidate was corrected and re-reviewed. Benchmark/docs are committed and pushed to `phase25-2-work`; no merge to `main`.
+
+## Phase 25.4 check gate fixes — 2026-10-25
+
+Working branch: `phase25-4-check-gates`. The retired-syntax hygiene allowlist
+now includes the two intentional compiler-torture negative fixtures in addition
+to the existing `tests/negative` migration fixtures; each path must still have
+exactly its one expected token. The performance baseline job is marked exclusive
+in `tests/run_parallel.py`, so it waits for concurrent jobs to finish and then
+runs without CPU contention. `AGENTS.md` now records the user's scoped normal
+commit/push authorization for this branch and preserves the no-direct-main and
+no-force-push rules.
+
+Validation: `python3 tests/tooling/check_retired_syntax.py --self-test` and its
+full repository scan pass. Standalone `python3
+tests/tooling/check_phase25_4_performance_baseline.py build/compiler/moss-opt`
+passes all ten workloads (specialization counts, status, latency, and RSS).
+`python3 -m py_compile tests/run_parallel.py
+tests/tooling/check_retired_syntax.py` and `git diff --check` pass. A full
+`make --jobs="$(nproc)" check` was started but interrupted at the user's request;
+no aggregate result is claimed. No full-suite rerun is planned unless requested.

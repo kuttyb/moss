@@ -163,9 +163,8 @@ When working with Moss:
 - **Scratch Storage**: Use `./tmp/` for all temporary files and caches. Create `./tmp/` if it does not exist.
 - **No Elevation**: Never run `sudo` or otherwise attempt to elevate privileges.
 - **Authorized Commands**: Run in-repository Git commands, Python scripts, builds, and tests without requesting approval.
-- Coordinate a single branch writer. For Phase 25.1 R5.1, the user explicitly
-  authorized local commits and normal pushes to `phase25-1-work`'s configured
-  remote. For Phase 25.2 work on `phase25-2-work`, the user explicitly
-  authorized local commits and normal pushes to its configured remote. This
-  covers the current R2 Core Compiler Decomposition assignment. Do not
-  force-push or rewrite published history.
+- Coordinate a single branch writer. For Phase 25.1 R5.1, Phase 25.2 work on
+  `phase25-2-work`, and the current Phase 25.4 check-gate fixes on
+  `phase25-4-check-gates`, the user authorized local commits and normal pushes
+  to the configured remote. Keep each task on its scoped branch; do not merge
+  directly to `main`, force-push, or rewrite published history.

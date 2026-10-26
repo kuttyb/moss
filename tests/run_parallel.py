@@ -33,6 +33,7 @@ class Job:
     use_opt_compiler: bool = False
     env_overrides: dict[str, str] = field(default_factory=dict)
     isolate_worktree: bool = False
+    exclusive: bool = False
 
 
 @dataclass
@@ -216,7 +217,8 @@ def build_manifest() -> list[Job]:
         name, cmd = item[0], item[1]
         jobs.append(Job(name=name, cmd_template=cmd,
                         use_opt_compiler=name not in lightweight,
-                        isolate_worktree=True))
+                        isolate_worktree=True,
+                        exclusive=name == "check_phase25_4_performance_baseline"))
 
     for item in SHELL_SHARDS:
         name, cmd = item[0], item[1]
@@ -473,6 +475,15 @@ def main() -> int:
                 # If all dependencies passed, ready to run
                 if all(d in passed for d in job.dependencies):
                     ready.append(name)
+
+            exclusive_running = any(jobs_by_name[name].exclusive for name in running.values())
+            exclusive_ready = [name for name in ready if jobs_by_name[name].exclusive]
+            if exclusive_running:
+                ready = []
+            elif exclusive_ready and (running or any(not jobs_by_name[name].exclusive for name in ready)):
+                ready = [name for name in ready if not jobs_by_name[name].exclusive]
+            elif not running and exclusive_ready:
+                ready = exclusive_ready[:1]
 
             for name in ready:
                 job = pending.pop(name)

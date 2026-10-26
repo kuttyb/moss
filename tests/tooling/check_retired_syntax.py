@@ -2,8 +2,9 @@
 """Keep the tracked/example Moss corpus on current source syntax.
 
 Scan source text (including comments) rather than historical Markdown or Rust.
-Build products and project caches are not source examples. The two exact
-migration fixtures must each contain exactly their one intentional keyword.
+Build products and project caches are not source examples. Exact migration
+fixtures and benchmark inputs for those retired forms may each contain their
+one intentional keyword.
 """
 from pathlib import Path
 import re
@@ -14,6 +15,8 @@ ROOT = Path(__file__).resolve().parents[2]
 MIGRATIONS = {
     "tests/negative/await_retired.moss": "await",
     "tests/negative/spawn_retired.moss": "spawn",
+    "benchmarks/compiler_torture/fixtures/negative/await_retired.moss": "await",
+    "benchmarks/compiler_torture/fixtures/negative/spawn_retired.moss": "spawn",
 }
 KEYWORDS = re.compile(r"\b(await|spawn)\b")
 ARTIFACT_DIRS = {"build", ".moss", ".git", "__pycache__"}
