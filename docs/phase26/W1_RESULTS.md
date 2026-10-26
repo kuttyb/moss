@@ -49,6 +49,9 @@ The sum of the 77 untraced workload timings was 94.172 s on main and
 an end-to-end elapsed time or an uncertainty interval. Twenty-one individual
 fixtures measured slower, mostly in the 1–6 ms range; the three-trial paired
 W3/W5 results above are the more reliable target-workload measurements.
+The timing-mode peak RSS changed from 13,900 to 16,112 KiB on W5, 25,160
+to 28,008 KiB on regex, and 21,728 to 23,604 KiB on datastructures. The
+cache trades a few MiB on these workloads for shorter checks.
 
 An earlier single pass across eight representative workloads returned
 identical exit codes and exact stdout/stderr SHA-256 hashes for baseline and

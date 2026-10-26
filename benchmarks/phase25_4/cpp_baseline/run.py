@@ -737,6 +737,28 @@ def generate_report(results: list, metadata: dict, out_path: Path):
             status = "**PASS**" if curr <= limit else "**REGRESSION**"
             lines.append(f"| `{fid}` | {s.get('category')} | {base:.2f} | {curr:.2f} | {delta:+.1f}% | {limit:.1f} | {status} |")
 
+    if any("parse_cache_hits" in s.get("counters", {}) for s in stats_map.values()):
+        lines.extend([
+            "",
+            "## 13. Phase 26 W1 Parse Cache Counters",
+            "",
+            "These are checker parse-cache lookups from profiling-mode trials; misses include failed call parses and entries skipped after the per-checker cap.",
+            "",
+            "| Fixture ID | Hits | Misses | Hit share |",
+            "|---|---:|---:|---:|",
+        ])
+        for fid in ("w2_spec_distinct_n032", "w3_spec_repeated_n032",
+                    "w4_infer_deep_d018", "w5_infer_wide_w100",
+                    "rw_packages_regex", "rw_sdk_datastructures"):
+            counters = stats_map.get(fid, {}).get("counters", {})
+            hits = counters.get("parse_cache_hits")
+            misses = counters.get("parse_cache_misses")
+            if hits is None or misses is None:
+                continue
+            total = hits + misses
+            share = 100.0 * hits / total if total else 0.0
+            lines.append(f"| `{fid}` | {hits:,.0f} | {misses:,.0f} | {share:.1f}% |")
+
     report_text = "\n".join(lines) + "\n"
     out_path.write_text(report_text, encoding="utf-8")
     print(f"Report generated: {out_path} ({len(lines)} lines)")
