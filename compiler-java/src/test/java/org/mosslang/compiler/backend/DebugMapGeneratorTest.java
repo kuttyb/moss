@@ -216,6 +216,8 @@ public class DebugMapGeneratorTest {
                     bytes = file.read(0, 1)
                     for byte in bytes:
                       echo byte
+                    for chunk in file.chunks(1):
+                      echo chunk.length()
                     file.close()
                   recover:
                     pass
@@ -231,6 +233,8 @@ public class DebugMapGeneratorTest {
         assertTrue(rust.contains(".read_checked(0_i64, 1_i64).map_err(__moss_raise_fileio)?"),
                 "read must use checked error propagation");
         assertTrue(rust.contains(".bytes() {"), "Range iteration must traverse bytes");
+        assertTrue(rust.contains("for chunk in file.chunks(1_i64) {"),
+                "FileIO chunk traversal must retain its borrowing iterator");
         assertTrue(!rust.contains("__MossFile"), "legacy length-only FileIO stub must not be emitted");
     }
 

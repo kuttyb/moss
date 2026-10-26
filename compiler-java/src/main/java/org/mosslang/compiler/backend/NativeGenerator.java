@@ -1626,6 +1626,9 @@ public class NativeGenerator {
                 } else if ("RangeBatch".equals(bindingTypeName(iterExpr))) {
                     o.append(indent).append("for ").append(loopVar).append(" in (")
                             .append(lowerExpr(iterExpr, stateFields, objFields, domains, objects)).append(").ranges() {\n");
+                } else if (iterExpr.contains(".chunks(")) {
+                    o.append(indent).append("for ").append(loopVar).append(" in ")
+                            .append(lowerExpr(iterExpr, stateFields, objFields, domains, objects)).append(" {\n");
                 } else {
                     o.append(indent).append("for ").append(loopVar).append(" in (").append(lowerExpr(iterExpr, stateFields, objFields, domains, objects)).append(").clone() {\n");
                 }
@@ -3637,6 +3640,9 @@ public class NativeGenerator {
                     }
                     if (methodName.equals("close") && rawArgs.isEmpty()) {
                         return loweredRecv + ".close_checked().map_err(__moss_raise_fileio)" + propagation;
+                    }
+                    if (methodName.equals("chunks") && rawArgs.size() == 1) {
+                        return loweredRecv + ".chunks(" + lowerExpr(rawArgs.get(0).trim(), stateFields, domains, objects) + ")";
                     }
                 }
                 String scalarType = scalarExpressionType(recv);

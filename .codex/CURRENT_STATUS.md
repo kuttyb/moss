@@ -17148,9 +17148,12 @@ output for `tests/tooling/fixtures/phase20_fileio_runtime_integration.moss`
 shows checked string write, read, inline two-request batch read, batch indexing
 and iteration, checked mode-aware open, sync, and close. This is generated-text
 and Java unit evidence only; generated Rust has not been compiled or executed.
-Remaining FileIO work includes named request-vector batch lowering, `chunks`
-lowering, and Executor Solo-hook wiring for the root runtime. Broad semantic
+Remaining FileIO work includes named request-vector batch lowering and Executor
+Solo-hook wiring for the root runtime. The `chunks(size)` call and direct loop
+source now lower to the borrowing `MossChunks` iterator; local-variable chunk
+iterator flow remains unverified. Broad semantic
 parity, SDK integration, source-free ABI verification, Fast Debug/tracing
 acceptance, daemon/package readiness, native acceptance, and independent
-Architect review remain open. No full `make check` or expensive acceptance
-suite was run.
+Architect review remain open. Both ABI-v9 and staged ABI-v10 Java suites pass all 12 test classes on the
+current chunk-lowering tree. No full `make check` or expensive acceptance suite
+was run.
