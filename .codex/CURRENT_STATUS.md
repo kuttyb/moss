@@ -16982,3 +16982,11 @@ handlers with compatible signatures across every variant. A focused
 coordinator. All 12 Java test classes pass under ABI-v9 and staged ABI-v10.
 Generated Rust was inspected structurally; rustc/native validation remains
 reserved for the frozen-candidate acceptance gate.
+
+### Phase 25.3 packaging recheck — specialized route handles included
+
+Rebuilt the standalone JAR after the routed-specialization backend correction.
+The packaged launcher generated `WorkerHandle` route fields, specialized
+`Run_root` dispatch, and `.into()` conversions for the Int/Float route targets
+in the focused source. This is a packaging/code-shape check only; generated Rust
+compilation, native execution, and SDK integration remain deferred.
