@@ -196,7 +196,7 @@ help:
 	@echo "  make check-parallel - Run tests concurrently with tests/run_parallel.py (TEST_JOBS=N)"
 	@echo "  make check-serial - Run original serial regression runner (tests/run.sh)"
 	@echo "  make check-perf   - Run Phase 25.4 B1 permanent compiler performance regression gate"
-	@echo "  make compiler-perf - Run comprehensive permanent performance baseline (Group A + Group B, timing + profiling)"
+	@echo "  make compiler-perf - Run local repeatable B1 timing suite (three reps; optional baseline comparison)"
 	@echo "  make bench-torture - Run full portable compiler torture benchmark suite"
 	@echo "  make examples     - Build and verify optimized examples"
 	@echo "  make clean        - Remove build artifacts and binaries"

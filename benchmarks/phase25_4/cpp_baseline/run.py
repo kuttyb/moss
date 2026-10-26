@@ -787,8 +787,12 @@ def main():
     parser.add_argument("--categories", help="Comma-separated category filter (e.g. specialization,inference)")
     parser.add_argument("--fixture-ids", help="Comma-separated fixture ID filter")
     parser.add_argument("--results-dir", type=Path, help="Write run artifacts to this directory")
+    parser.add_argument("--skip-report", action="store_true",
+                        help="Write raw trial data only; do not generate the historical B1 report")
     parser.add_argument("--report-only", action="store_true", help="Regenerate REPORT.md from results.csv without running trials")
     args = parser.parse_args()
+    if args.report_only and args.skip_report:
+        parser.error("--report-only and --skip-report cannot be combined")
 
     global RESULTS_DIR, REPORT_PATH, TRACES_DIR
     if args.results_dir:
@@ -818,9 +822,10 @@ def main():
             r["unattributed_ms"] = float(r["unattributed_ms"]) if r.get("unattributed_ms") else 0.0
             r["success"] = (r.get("success") == "True" or r.get("success") is True)
         metadata = json.loads(meta_path.read_text())
-        generate_report(results, metadata, REPORT_PATH)
-        if REPORT_PATH.resolve() != (RESULTS_DIR / "REPORT.md").resolve():
-            shutil.copy2(REPORT_PATH, RESULTS_DIR / "REPORT.md")
+        if not args.skip_report:
+            generate_report(results, metadata, REPORT_PATH)
+            if REPORT_PATH.resolve() != (RESULTS_DIR / "REPORT.md").resolve():
+                shutil.copy2(REPORT_PATH, RESULTS_DIR / "REPORT.md")
         sys.exit(0)
 
     # Resolve compiler
@@ -875,7 +880,7 @@ def main():
     }
     (RESULTS_DIR / "metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")
 
-    print(f"Starting Phase 25.4 B1 Compiler Performance Baseline ({len(fixtures)} fixtures across {args.suite})...")
+    print(f"Starting Phase 25.4 B1 Compiler Performance Suite ({len(fixtures)} fixtures across {args.suite})...")
     results = []
 
     # Determine execution modes to run
@@ -905,11 +910,11 @@ def main():
                     writer.writeheader()
                     writer.writerows(results)
 
-    # Generate final report
-    generate_report(results, metadata, REPORT_PATH)
-    if REPORT_PATH.resolve() != (RESULTS_DIR / "REPORT.md").resolve():
-        shutil.copy2(REPORT_PATH, RESULTS_DIR / "REPORT.md")
-    print(f"\nBaseline execution complete! {len(results)} total trials recorded.")
+    if not args.skip_report:
+        generate_report(results, metadata, REPORT_PATH)
+        if REPORT_PATH.resolve() != (RESULTS_DIR / "REPORT.md").resolve():
+            shutil.copy2(REPORT_PATH, RESULTS_DIR / "REPORT.md")
+    print(f"\nB1 execution complete! {len(results)} total trials recorded.")
 
 
 if __name__ == "__main__":

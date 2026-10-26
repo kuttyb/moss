@@ -1,6 +1,6 @@
 # Phase 26 complete — W1–W3 merged to main — 2026-10-26
 
-## Local compiler-perf suite follow-up — implementation staged for review — 2026-10-26
+## Local compiler-perf suite follow-up — PR #20 review repairs — 2026-10-26
 
 - Branch: `compiler-perf-local-suite`, based on `main` at `bdf973af`. No compiler
   source changes. `make compiler-perf` now runs three timing repetitions over
@@ -8,13 +8,18 @@
   and reports under `tmp/compiler-perf/<run-id>/`. Set
   `MOSS_PERF_BASELINE=<git-ref>` for a same-host detached-worktree comparison;
   set `MOSS_PERF_INCLUDE_REAL_WORLD=1` for all 23 curated repository workloads.
-- Validation: default suite completed 171/171 successful trials (57 fixtures ×
-  3); paired smoke comparison against `HEAD` completed 57/57 trials per side
-  (one repetition) with matching fixture manifests and same-host metadata.
-  `py_compile`, comparison report formatting, `check_agent_feedback.py`, and
-  `git diff --check` passed. The 1-repetition pair is harness validation only,
-  not a performance claim. Existing historical B1 results remain unchanged.
-- Architect final review, commit/push/PR, and hosted gates are outstanding.
+- Initial commit `a8016f14` was pushed and PR #20 opened. Architect returned
+  NO-GO on that exact SHA because the no-baseline report omitted attribution
+  workloads and local runs emitted misleading historical B1 reports. These
+  were repaired; Make help and team-record whitespace were also corrected.
+- Updated default suite completed 171/171 successful trials (57 fixtures × 3).
+  Updated paired smoke comparison against `HEAD` completed 57/57 trials per
+  side (one repetition), with same-host metadata and no nested B1 reports.
+  `py_compile`, report assertions, feedback validation, and diff checks passed.
+  The 1-repetition pair is harness validation only, not a performance claim.
+  Existing historical B1 results remain unchanged.
+- Commit/push update, Architect final review, and hosted main-PR core,
+  optimized-example, and local performance gates remain outstanding.
   Team closeout: `docs/phase26/agent-patterns/team-local-perf-suite.md`.
 
 - W2/W3 implementation is complete. PR #18 merged into `phase26-moss-speedup`

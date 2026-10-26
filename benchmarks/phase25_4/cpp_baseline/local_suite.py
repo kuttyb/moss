@@ -69,7 +69,7 @@ def run_suite(repo: Path, moss_bin: Path, out: Path, fixture_ids: list[str], rep
     cmd = [sys.executable, str(repo / "benchmarks/phase25_4/cpp_baseline/run.py"),
            "--moss", str(moss_bin), "--suite", "all", "--mode", "timing",
            "--reps", str(reps), "--fixture-ids", ",".join(fixture_ids),
-           "--results-dir", str(out)]
+           "--results-dir", str(out), "--skip-report"]
     log = out.parent / f"{out.name}.log"
     log.parent.mkdir(parents=True, exist_ok=True)
     with log.open("w") as log_handle:
@@ -121,7 +121,12 @@ def render_report(out: Path, baseline_label: str | None, baseline_sha: str | Non
     ]
     if base is None:
         lines += ["No baseline ref was supplied; this run records current-checkout measurements only.", "",
-                  "## Small-fixture check latency", "",
+                  "## Eight attribution workloads", "",
+                  "| Fixture | Candidate median |", "|---|---:|"]
+        for fid in sorted(ATTRIBUTION_IDS):
+            if fid in current:
+                lines.append(f"| `{fid}` | {current[fid]:.2f} ms |")
+        lines += ["", "## Small-fixture check latency", "",
                   "| Fixture | Candidate median |", "|---|---:|"]
         for fid in ("rw_projects_rolling_window", "example_checkout"):
             if fid in current:

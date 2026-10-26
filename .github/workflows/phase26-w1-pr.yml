@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   core-regressions:
-    if: (github.head_ref == 'phase26-moss-speedup' && github.base_ref == 'main') || (github.head_ref == 'phase26-w2-inference' && github.base_ref == 'phase26-moss-speedup')
+    if: github.base_ref == 'main' || (github.head_ref == 'phase26-w2-inference' && github.base_ref == 'phase26-moss-speedup')
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
@@ -41,7 +41,7 @@ jobs:
             --exclude-job check_phase25_4_performance_baseline
 
   optimized-examples:
-    if: (github.head_ref == 'phase26-moss-speedup' && github.base_ref == 'main') || (github.head_ref == 'phase26-w2-inference' && github.base_ref == 'phase26-moss-speedup')
+    if: github.base_ref == 'main' || (github.head_ref == 'phase26-w2-inference' && github.base_ref == 'phase26-moss-speedup')
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
@@ -54,6 +54,19 @@ jobs:
         run: |
           mkdir -p tmp
           TMPDIR="$PWD/tmp" make --jobs="$(nproc)" examples-optimized
+
+  local-compiler-perf:
+    if: github.base_ref == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Run the local B1 suite in one-repetition gate mode
+        run: |
+          mkdir -p tmp
+          MOSS_PERF_REPS=1 TMPDIR="$PWD/tmp" make --jobs="$(nproc)" compiler-perf
 
   compiler-performance:
     if: github.head_ref == 'phase26-moss-speedup' && github.base_ref == 'main'
