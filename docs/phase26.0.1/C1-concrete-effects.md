@@ -41,6 +41,36 @@ growth and no cache-disabled evaluations:
 | W4 D18 | 201 | 37 | 0 | 108 | 46,207 |
 
 The D18 evaluation count fell 99.96% (524,451 to 201), and parse misses fell
-99.74% (17,866,873 to 46,207). The fixed-point count remains one. This supports
-the selected cache-window fix; the timing result and all required parity gates
-are pending.
+99.74% (17,866,873 to 46,207). The fixed-point count remains one. Timing run
+`20261026-132734`, using `MOSS_PERF_BASELINE=274f848 make compiler-perf`,
+confirmed the targeted gain on the same host:
+
+| Fixture | Baseline median | Candidate median | Change |
+|---|---:|---:|---:|
+| W4 D5 | 6.34 ms | 6.34 ms | -0.1% |
+| W4 D10 | 39.99 ms | 12.28 ms | -69.3% |
+| W4 D15 | 910.04 ms | 20.79 ms | -97.7% |
+| W4 D18 | 7,152.46 ms | 28.92 ms | -99.6% |
+
+The complete default suite measured 57 fixtures (54 torture plus the selected
+curated workloads). Sum of per-fixture medians fell from 14.660 s to 6.435 s
+(-56.1%). None of the 57 fixtures crossed the slowdown noise floor. Seven
+fixtures were more than 5% slower but below the floor; their median increases
+were 0.12–5.18 ms.
+
+| Attribution workload | Baseline median | Candidate median | Change |
+|---|---:|---:|---:|
+| Checkout | 3.66 ms | 3.63 ms | -0.8% |
+| Regex | 1,484.71 ms | 1,488.78 ms | +0.3% |
+| Rolling window | 96.48 ms | 95.59 ms | -0.9% |
+| Datastructures | 584.91 ms | 562.97 ms | -3.8% |
+| W2 N32 | 1,916.21 ms | 1,859.70 ms | -2.9% |
+| W3 N32 | 991.59 ms | 926.15 ms | -6.6% |
+| W4 D18 | 7,152.46 ms | 28.92 ms | -99.6% |
+| W5 W100 | 132.80 ms | 129.04 ms | -2.8% |
+
+The `274f848` corpus differential checked all 2,064 tracked `.moss` sources:
+1,325 accepted and 739 rejected on both compilers, with zero verdict,
+diagnostic-code, or full SHA-256 generated-Rust-hash changes. The Fast Debug
+parity shard passed, including project closure and native/Margo parity checks.
+`make check` passed all 140 jobs with zero failures.
