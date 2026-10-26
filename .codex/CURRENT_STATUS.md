@@ -1,3 +1,12 @@
+## Phase 26 W1 continuation — 2026-10-25
+
+- Branch `phase26-moss-speedup`; implementation SHA `f6c07e69742620119863aed0a335f93f1c4f8e8e` is pushed and unchanged since CI run #4.
+- GitHub Actions run [#4](https://github.com/kuttyb/moss/actions/runs/40271463458): `core-regressions`, `optimized-examples`, and `compiler-performance` all passed. Core job explicitly excludes the legacy fixed-machine Phase 25.4 timing threshold; W1 has its own same-runner comparison.
+- W1 correctness: B1 77-fixture timing/profiling suite passed 154/154 trials per compiler; isolated baseline/W1 differential passed all 1,633 tracked `.moss` files, with 1,007 accepted Rust outputs byte-identical and 626 rejected diagnostics matching. Five Fast Debug corpus files matched. W1 regression passed positive/cache-counter, interpreter output, and negative diagnostic checks.
+- Callgrind 3.22.0 `Ir` profiles are complete for all eight plan workloads, main and W1. Total `Ir` and selected named parse-helper direct cost fell on all eight; see `docs/phase26/W1_RESULTS.md` for category definitions and map/type tradeoffs. Raw profiles are disposable under `tmp/phase26-w1/callgrind/`.
+- Architect measured and final reviews at this SHA returned GO with no actionable defect; the W3 map-cost increase is acceptable against parse-helper and total-`Ir` reductions.
+- W1 closeout records are in `docs/phase26/W1_RESULTS.md`, `docs/phase26/NEXT_TEAM_HANDOFF.md`, and `docs/phase26/agent-patterns/team-w1-parse-cache.md`. The only changes after implementation SHA `f6c07e69742620119863aed0a335f93f1c4f8e8e` are documentation, feedback, and status records. PR #17 is the W1 review submission; no merge to `main` has occurred. W2 is the next workstream.
+
 ## Phase 25.4 B1 — Moss Compiler Time Attribution & Repository Profiling Complete — UNCONDITIONAL GO — 2026-10-25
 
 The complete Phase 25.4 B1 Compiler Time Attribution and Repository-Wide Profiling deliverable is finished:

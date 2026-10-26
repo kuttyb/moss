@@ -2,13 +2,20 @@
 
 ## Current branch and ownership
 
-Team W1 works on `phase26-moss-speedup` with draft [PR #17](https://github.com/kuttyb/moss/pull/17)
+Team W1 works on `phase26-moss-speedup` with [PR #17](https://github.com/kuttyb/moss/pull/17)
 against `main`. The Coordinator is the sole writer for
 `src/semantic_checker.cpp` and `src/fileio_semantics.inc`; the second agent
 is an independent adversarial Architect. Do not merge directly to `main`.
 Read `.codex/CURRENT_STATUS.md` and `docs/phase26/W1_RESULTS.md` for the
 latest exact SHA, validation and known limits. The Phase 26 plan is
 `docs/phase26/MossPhase26.md`.
+
+W1 implementation SHA `f6c07e69742620119863aed0a335f93f1c4f8e8e` is complete
+and pushed. Hosted Actions run #4 passed core regressions, optimized examples,
+and same-runner W1 performance. All eight Callgrind baseline/W1 pairs are
+complete. The Coordinator and Architect reviews found no actionable defect;
+the Architect's final verdict is GO. The PR readiness transition follows the
+documentation-only closeout push; do not merge directly to `main`.
 
 W1 caches context-free checker syntax only. Its `split_binary` key includes
 the ordered operator list; `split_top_level` includes the delimiter.
@@ -31,25 +38,28 @@ Rust. Fast Debug exit status and output matched on all five Moss test files
 under `tests/`.
 
 PR #17's Phase 26 workflow has independent regression, optimized-example and
-same-runner performance jobs on separate checkouts. The regression job
+same-runner performance jobs on separate checkouts. All three passed on
+implementation SHA `f6c07e69742620119863aed0a335f93f1c4f8e8e` in run #4. The regression job
 explicitly omits the legacy fixed-machine timing threshold; the performance
 job builds `main` and W1 on one runner and requires gains on W3 N32 and W5
 W100. The Make incremental test now runs its mold-version invalidation case
 only when mold is selected. The initial hosted run failed at link because the
 runner lacks mold; the workflow uses the Makefile's empty `MOSS_LDFLAGS`
-override. A later run must prove this revised workflow.
+override.
 
-The local machine lacks callgrind, so W1's requested eight-workload
-instruction attribution is blocked here. Wall-clock timing and stage timers
-cannot establish the instruction-share categories in the plan. A receiving
-team with an instruction profiler should run that gate on the same eight
-baseline workloads before claiming full W1 acceptance.
+Callgrind completed on W2 N32, W3 N32, W4 D18, W5 W100, regex,
+datastructures, rolling window, and checkout. Total `Ir` references and the
+direct named parse-helper category fell on all eight. Direct string-keyed map
+references rose as expected from cache lookups, especially on W4, while total
+references and wall time still fell. `W1_RESULTS.md` documents category
+definitions, exact totals/shares and attribution limitations. Raw profiles
+are disposable under `tmp/phase26-w1/callgrind/` and are not durable evidence.
 
 ## Next workstream
 
-W2 is the next independent Phase 26 change. Start it from W1's accepted
-integration SHA after PR #17's required gates and final Architect verdict,
-or preserve a separate branch while W1 remains pending. W2 owns the
+W2 is the next independent Phase 26 change. Start it from W1 implementation
+SHA `f6c07e69742620119863aed0a335f93f1c4f8e8e` on a scoped branch after PR #17
+is reviewed; do not merge directly to `main`. W2 owns the
 signature-inference convergence loop in `src/semantic_checker.cpp`: re-infer
 a caller when a callee's inferred signature changes, preserve the existing
 result order and diagnostics, and expose functions changed per round alongside
