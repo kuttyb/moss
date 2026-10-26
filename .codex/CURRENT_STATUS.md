@@ -16898,3 +16898,26 @@ structured `QUERY_SOURCE_REQUIRED` error. Pipeline direct effects now include
 an exact `effect_summary`. `tests/tooling/check_semantic_queries.py` also passes.
 These are the exercised profiles only; broad semantic-query schema parity and
 native/backend validation remain open.
+
+
+### Phase 25.3 investigation — branch-joined receiver ownership baseline delta
+
+Revalidated the branch-joined generic receiver alias case with only a consuming
+`Mover.accept(value: Payload) -> Payload`. C++ accepts later reuse and reports
+the helper parameter as READ with `unresolved: true`; Java infers CONSUME and
+rejects the reuse as `OWNERSHIP_USE_AFTER_CONSUME`. Adding an unused `Reader`
+implementation changes receiver resolution and both compilers accept the
+control. The single-implementation result is consistent with the selected
+by-value consuming method, so Java's check is retained pending native evidence;
+this remains a C++/Java acceptance delta, not a confirmed Java false positive.
+No native compilation or execution was run.
+
+
+### Phase 25.3 validation — packaged query API and focused diagnostics corpus
+
+Rebuilt the standalone `compiler-java/dist/moss.jar`; its launcher reports
+`moss-0.1` and compiler version `0.1.0`. The packaged launcher passes the Phase
+6A agent API and Phase 22.3 semantic-query scripts. The focused
+`tests/differential/corpus` check-json run passes all 8 files with no divergence
+or C++ oracle failures. Java unit tests passed all 12 classes immediately
+before packaging. These checks do not replace native/SDK acceptance.

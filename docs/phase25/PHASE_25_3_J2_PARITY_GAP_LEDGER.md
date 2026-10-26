@@ -1014,3 +1014,18 @@ optimizer decision logic. This demonstrates the tested query paths, not complete
 semantic-query schema or language parity. The Java suite passes all 12 test
 classes against these changes; native/backend and SDK acceptance remain
 deferred.
+
+
+### Clarification — branch-joined receiver ownership baseline delta
+
+The branch-alias case with one `Mover.accept(value: Payload) -> Payload`
+implementation still has a C++/Java acceptance difference. Current C++ accepts
+later reuse and reports the helper parameter as READ with an unresolved effect
+summary. Java reports CONSUME and rejects the later use as
+`OWNERSHIP_USE_AFTER_CONSUME`. An unused `Reader.accept` implementation changes
+overload resolution and both compilers accept that control. The selected
+Mover method takes an owned Payload by value, so the Java result is consistent
+with consuming semantics; the C++ unresolved summary suggests its result may be
+an under-inference. Keep this as an unresolved baseline delta until native
+behavior is checked at the frozen-candidate gate; do not weaken Java's ownership
+check based solely on this C++ acceptance.
