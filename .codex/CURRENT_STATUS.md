@@ -1,5 +1,30 @@
 # Phase 26 complete — W1–W3 merged to main — 2026-10-26
 
+## Local compiler-perf suite follow-up — certified rerun and review complete — 2026-10-26
+
+- Branch `compiler-perf-local-suite`, PR #20, compiler source identical to
+  `origin/main` at `bdf973af651deb2d3a4deac2b6c4bcc60893a776`; no compiler
+  source changes. The suite supports `MOSS_PERF_BASELINE`, optional full
+  curated workloads, and `MOSS_PERF_CERTIFY=1` to require clean-tree/source
+  certification. Certification now also requires baseline `c66fb76c`, all 77
+  fixtures, and exactly three timing repetitions. Ordinary runs accept any
+  revision and metadata records dirty state.
+- Certified run `20261026-115031` completed on `DESKTOP-0T772KP` (WSL2, 16
+  logical CPUs): 77 fixtures; 231 timing plus 77 profile samples per compiler;
+  all succeeded; clean tree; baseline `c66fb76ca0012b8125d70d404adbff13daa1cf4e`.
+  Sum of fixture wall medians: 98.437 s baseline, 15.071 s candidate (-84.7%).
+  CPU/RSS were captured for all 77 timing and 77 profiling samples per side.
+  Negative-fixture work counters are now n/a. No fixture exceeded the slowdown
+  threshold. The report, CSVs and metadata are committed.
+- Architect review at `93ed4bddd826eea03b7baaacebdff18353c6b3bb` was NO-GO on
+  resource/counter report accuracy; GNU time's failure preamble parser and n/a
+  rendering are fixed, and the full certification run was repeated.
+- Hosted run #27 (`40382863032`) passed core regressions, optimized examples,
+  and local performance smoke on PR head `bf3ff5f`. Architect gave GO for that
+  exact implementation and artifact head. The subsequent closeout is docs-only.
+  PR #20 remains open and unmerged; no merge to main has occurred. Team closeout:
+  `docs/phase26/agent-patterns/team-local-perf-suite.md`.
+
 - W2/W3 implementation is complete. PR #18 merged into `phase26-moss-speedup`
   as `5595b8e7d66f90284b03805ad647e3a1251d7890`; PR #17 merged W1–W3 to `main` at
   `4f5788fd1176c22452ff3a8eb2893f3c62f571b0` after hosted run #18 passed core

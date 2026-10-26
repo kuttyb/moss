@@ -38,6 +38,43 @@ make compiler-perf
 make bench-torture
 ```
 
+`make compiler-perf` is the local repeatable B1 suite: it runs three untraced
+timing repetitions and one separate profiling sample per fixture. The default
+workload includes the torture suite and the eight attribution workloads; set
+`MOSS_PERF_INCLUDE_REAL_WORLD=1` to include all 23 curated checkout workloads.
+When a baseline is supplied, baseline and candidate timing trials run adjacent
+to one another per fixture, with first-side order flipped across fixtures and
+repetitions. Profiling data is collected in a separate pass and never enters
+timing comparisons. Raw trials and `LOCAL_REPORT.md` go to a unique directory
+under `tmp/compiler-perf/`; certified B1 reports are not overwritten.
+
+The report includes the sum of per-fixture medians, eight attribution
+workloads, CPU time, peak RSS, and per-fixture work counters. A slowdown is
+flagged when the candidate median is over 5% slower and either the absolute
+increase exceeds 20 ms or the three-sample timing ranges do not overlap. The
+non-overlap condition is a noise heuristic, not a statistical significance
+claim. Failed verdicts or incomplete trials fail the command.
+
+Set `MOSS_PERF_BASELINE` to compare a revision against the current checkout.
+The baseline is built in a temporary detached worktree and both revisions are
+measured sequentially on the same machine:
+
+```sh
+MOSS_PERF_BASELINE=c66fb76c make compiler-perf
+```
+
+To include all 23 curated repository Moss workloads, not just those selected
+for attribution, set `MOSS_PERF_INCLUDE_REAL_WORLD=1`:
+
+```sh
+MOSS_PERF_INCLUDE_REAL_WORLD=1 MOSS_PERF_BASELINE=c66fb76c make compiler-perf
+```
+
+`MOSS_PERF_REPS` overrides the default three repetitions. Without a baseline
+ref, the command records current-checkout timings only and makes no
+before/after claim. The direct historical B1 runner remains available below
+for the timing-plus-profiling report.
+
 ### B. Direct Runner Invocations
 
 ```bash

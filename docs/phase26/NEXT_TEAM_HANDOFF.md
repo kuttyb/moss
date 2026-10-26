@@ -92,3 +92,31 @@ W1 implementation and measurements are recorded in
 result. W1's expression caches
 are per-Checker, bounded, syntax-only, and preserve parser output-argument side
 effects. Keep those contracts intact when working on W2 and later workstreams.
+
+## Local compiler performance runner follow-up
+
+`make compiler-perf` runs three untraced timing repetitions plus one separate
+profiling sample per fixture, writing isolated artifacts under
+`tmp/compiler-perf/<run-id>/`. With a baseline, its three timing samples are
+interleaved adjacent per fixture and the first side alternates across fixtures
+and repetitions. Set `MOSS_PERF_BASELINE=<git-ref>` to compare; set
+`MOSS_PERF_INCLUDE_REAL_WORLD=1` to include the full 77-fixture set (54 torture
+plus 23 curated real-world workloads). The report includes wall medians, CPU time, peak RSS, all
+eight attribution workloads, per-fixture work counters, and slowdowns exceeding
+5% plus either 20 ms absolute or non-overlapping timing ranges with a >2 ms
+absolute increase. Set `MOSS_PERF_CERTIFY=1` to require a clean working tree and
+compiler sources matching `origin/main`; default runs accept any revision. Metadata
+records the candidate's dirty status. This is a
+benchmark/tooling change and makes no compiler behavior change. See
+`docs/phase25/PERMANENT_COMPILER_PERFORMANCE_REGRESSION_TARGET.md` for details.
+
+Certification mode additionally requires `MOSS_PERF_BASELINE=c66fb76c`, the
+full 77-fixture corpus, and exactly three timing repetitions. The certified
+Phase 26 run on 2026-10-26 is recorded in `MossPhase26.md`, with the full report,
+candidate medians, work counters, and host/commit metadata under
+`benchmarks/phase25_4/cpp_baseline/results/`. Historical baseline work counters
+are sparse because pre-Phase 26 revisions do not emit the complete structured
+counter set; missing entries mean unavailable, not zero.
+
+Worklist complexity debt: simplify to a plain convergence check unless a real
+package shows partial waves.

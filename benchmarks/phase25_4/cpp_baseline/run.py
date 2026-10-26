@@ -38,6 +38,30 @@ import time
 from typing import Any, Dict, List, Optional, Tuple
 
 STAGE_TIMER_RE = re.compile(r"^MOSS_PROFILE\|([^|]+)\|([0-9]+)$", re.M)
+PROFILE_COUNTER_KEYS = {
+    "functions_analyzed", "types_analyzed", "specialization_requests",
+    "distinct_specialization_keys", "actual_specialization_checks",
+    "checked_specializations", "reused_specialization_results",
+    "specialization_body_checking", "inference_rounds", "inference_work_units",
+    "inference_reinferred_functions", "inference_changed_functions",
+    "parse_cache_hits", "parse_cache_misses", "concrete_effect_evaluations",
+    "observable_effects_function_evaluations",
+    "specialization_effect_function_evaluations", "specialization_effect_cache_hits",
+    "specialization_effect_computations", "specialization_effect_distinct_inputs",
+    "concrete_effect_computations", "concrete_effect_cache_hits",
+    "concrete_effect_cache_enabled_calls", "concrete_effect_cache_disabled_calls",
+    "concrete_effect_cache_entries", "concrete_effect_distinct_inputs",
+    "concrete_effect_max_depth", "effects_fixed_point_rounds",
+    "effects_fixed_point_changed_rounds", "effects_fixed_point_limit",
+    "infer_object_fields_rounds", "infer_domain_state_fields_rounds",
+    "infer_handler_reply_types_rounds",
+}
+PROFILE_COUNTER_PATTERN = re.compile(
+    r"^(?:inference_reinferred_functions_round_\d+|"
+    r"inference_changed_functions_round_\d+|"
+    r"inference_signature_invocation_\d+_wave_\d+_(?:visited|changed))$")
+PROFILE_COUNTER_MAX_KEYS = {"concrete_effect_max_depth", "effects_fixed_point_limit"}
+RESOURCE_STATS_PATTERN = re.compile(r"^\s*(\d+(?:\.\d*)?|\.\d+)\|(\d+(?:\.\d*)?|\.\d+)\|(\d+)\s*$")
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 TORTURE_ROOT = REPO_ROOT / "benchmarks" / "compiler_torture"
@@ -147,42 +171,48 @@ def run_trial(moss_bin: Path, fixture: dict, iteration: int, timeout_seconds: in
         cpu_sys_ms = None
         peak_rss_kib = None
         if stats_file.exists():
-            parts = stats_file.read_text().strip().split("|")
-            if len(parts) == 3:
-                try:
-                    cpu_user_ms = round(float(parts[0]) * 1000.0, 3)
-                    cpu_sys_ms = round(float(parts[1]) * 1000.0, 3)
-                    peak_rss_kib = int(parts[2])
-                except ValueError:
-                    pass
+            # GNU time writes a non-zero-exit preamble before the formatted
+            # resource row for expected-negative compiler checks. Find the
+            # formatted row instead of treating the whole file as one row.
+            for line in reversed(stats_file.read_text().splitlines()):
+                match = RESOURCE_STATS_PATTERN.match(line)
+                if match:
+                    parts = match.groups()
+                    try:
+                        cpu_user_ms = round(float(parts[0]) * 1000.0, 3)
+                        cpu_sys_ms = round(float(parts[1]) * 1000.0, 3)
+                        peak_rss_kib = int(parts[2])
+                    except ValueError:
+                        pass
+                    break
 
     # Extract profiling timers and counters
     stage_ms = {}
     counters = {}
+    counter_records = []
+    checker_index = -1
     actual_specializations = None
     specialization_requests = None
     specialization_body_checking_ms = None
 
     if mode == "profiling":
         for stage, val in STAGE_TIMER_RE.findall(stderr):
-            if stage in ("checked_specializations", "actual_specialization_checks"):
-                actual_specializations = int(val)
-                counters[stage] = int(val)
-            elif stage == "specialization_requests":
-                specialization_requests = int(val)
-                counters[stage] = int(val)
-            elif stage == "specialization_body_checking":
-                specialization_body_checking_ms = round(int(val) / 1e6, 3)
-                counters[stage] = int(val)
-            elif stage in ("functions_analyzed", "types_analyzed", "distinct_specialization_keys",
-                           "reused_specialization_results", "inference_rounds", "inference_work_units",
-                           "parse_cache_hits", "parse_cache_misses"):
-                counters[stage] = int(val)
-            elif stage in ("inference_reinferred_functions",
-                           "inference_changed_functions") or stage.startswith(
-                               "inference_reinferred_functions_round_") or stage.startswith(
-                               "inference_changed_functions_round_"):
-                counters[stage] = int(val)
+            is_counter = stage in PROFILE_COUNTER_KEYS or PROFILE_COUNTER_PATTERN.match(stage)
+            if is_counter:
+                value = int(val)
+                if stage == "functions_analyzed" or checker_index < 0:
+                    checker_index += 1
+                counter_records.append({"checker": checker_index, "key": stage, "value": value})
+                if stage in PROFILE_COUNTER_MAX_KEYS:
+                    counters[stage] = max(counters.get(stage, value), value)
+                else:
+                    counters[stage] = counters.get(stage, 0) + value
+                if stage in ("checked_specializations", "actual_specialization_checks"):
+                    actual_specializations = counters[stage]
+                elif stage == "specialization_requests":
+                    specialization_requests = counters[stage]
+                elif stage == "specialization_body_checking":
+                    specialization_body_checking_ms = round(counters[stage] / 1e6, 3)
             else:
                 stage_ms[stage] = stage_ms.get(stage, 0.0) + int(val) / 1e6
 
@@ -219,6 +249,7 @@ def run_trial(moss_bin: Path, fixture: dict, iteration: int, timeout_seconds: in
         "specialization_body_checking_ms": specialization_body_checking_ms,
         "unattributed_ms": unattributed_ms,
         "counters_json": json.dumps(counters, sort_keys=True),
+        "counter_records_json": json.dumps(counter_records, sort_keys=True),
         "success": success,
         "timed_out": timed_out,
         "exit_code": p.returncode,
@@ -418,7 +449,10 @@ def generate_report(results: list, metadata: dict, out_path: Path):
         f"- The net difference between W2 and W3 is **{w2_n32.get('wall_med', 0.0) - w3_n32.get('wall_med', 0.0):.2f} ms**.",
         "",
         "#### Derived Estimates",
-        f"- Checking each distinct concrete function specialization in W2 incurs an estimated amortized cost of **~{(w2_n32.get('wall_med', 0.0) - w3_n32.get('wall_med', 0.0)) / (w2_n32.get('checked_specs', 1056) - w3_n32.get('checked_specs', 6)) * 1000.0:.1f} microseconds** per specialization.",
+        (f"- Checking each distinct concrete function specialization in W2 incurs an estimated amortized cost of **~{(w2_n32.get('wall_med', 0.0) - w3_n32.get('wall_med', 0.0)) / (w2_n32['checked_specs'] - w3_n32['checked_specs']) * 1000.0:.1f} microseconds** per specialization."
+         if w2_n32.get("checked_specs") is not None and w3_n32.get("checked_specs") is not None
+         and w2_n32["checked_specs"] != w3_n32["checked_specs"]
+         else "- Per-specialization estimate unavailable (profiling counters were not collected)."),
         "",
         "#### Hypotheses & Workload Analysis",
         "- **Reachability Confound Note:** In W3, all $N$ concrete sensor types are defined, parsed, and checked during object layout and method signature passes; however, only `Sensor000` and `Sensor001` are instantiated in `main()`. Because unused types were fully checked in the frontend, the measured differential between W2 and W3 cleanly isolates the marginal cost of concrete function specialization body checking from general nominal type definition.",
@@ -782,8 +816,20 @@ def main():
     parser.add_argument("--suite", choices=["torture", "real_world", "all"], default="all",
                         help="Workload suite to run (torture, real_world, or all)")
     parser.add_argument("--categories", help="Comma-separated category filter (e.g. specialization,inference)")
+    parser.add_argument("--fixture-ids", help="Comma-separated fixture ID filter")
+    parser.add_argument("--results-dir", type=Path, help="Write run artifacts to this directory")
+    parser.add_argument("--skip-report", action="store_true",
+                        help="Write raw trial data only; do not generate the historical B1 report")
     parser.add_argument("--report-only", action="store_true", help="Regenerate REPORT.md from results.csv without running trials")
     args = parser.parse_args()
+    if args.report_only and args.skip_report:
+        parser.error("--report-only and --skip-report cannot be combined")
+
+    global RESULTS_DIR, REPORT_PATH, TRACES_DIR
+    if args.results_dir:
+        RESULTS_DIR = args.results_dir.resolve()
+        REPORT_PATH = RESULTS_DIR / "REPORT.md"
+        TRACES_DIR = RESULTS_DIR / "traces"
 
     # Always verify corpus integrity first
     if not verify_corpus_integrity():
@@ -807,8 +853,10 @@ def main():
             r["unattributed_ms"] = float(r["unattributed_ms"]) if r.get("unattributed_ms") else 0.0
             r["success"] = (r.get("success") == "True" or r.get("success") is True)
         metadata = json.loads(meta_path.read_text())
-        generate_report(results, metadata, REPORT_PATH)
-        shutil.copy2(REPORT_PATH, RESULTS_DIR / "REPORT.md")
+        if not args.skip_report:
+            generate_report(results, metadata, REPORT_PATH)
+            if REPORT_PATH.resolve() != (RESULTS_DIR / "REPORT.md").resolve():
+                shutil.copy2(REPORT_PATH, RESULTS_DIR / "REPORT.md")
         sys.exit(0)
 
     # Resolve compiler
@@ -837,6 +885,12 @@ def main():
     if args.categories:
         allowed = set(args.categories.split(","))
         fixtures = [f for f in fixtures if f["category"] in allowed]
+    if args.fixture_ids:
+        allowed_ids = set(args.fixture_ids.split(","))
+        fixtures = [f for f in fixtures if f["id"] in allowed_ids]
+        missing_ids = allowed_ids - {f["id"] for f in fixtures}
+        if missing_ids:
+            sys.exit(f"Unknown fixture IDs: {', '.join(sorted(missing_ids))}")
 
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     git_sha = get_git_sha()
@@ -857,7 +911,7 @@ def main():
     }
     (RESULTS_DIR / "metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")
 
-    print(f"Starting Phase 25.4 B1 Compiler Performance Baseline ({len(fixtures)} fixtures across {args.suite})...")
+    print(f"Starting Phase 25.4 B1 Compiler Performance Suite ({len(fixtures)} fixtures across {args.suite})...")
     results = []
 
     # Determine execution modes to run
@@ -887,10 +941,11 @@ def main():
                     writer.writeheader()
                     writer.writerows(results)
 
-    # Generate final report
-    generate_report(results, metadata, REPORT_PATH)
-    shutil.copy2(REPORT_PATH, RESULTS_DIR / "REPORT.md")
-    print(f"\nBaseline execution complete! {len(results)} total trials recorded.")
+    if not args.skip_report:
+        generate_report(results, metadata, REPORT_PATH)
+        if REPORT_PATH.resolve() != (RESULTS_DIR / "REPORT.md").resolve():
+            shutil.copy2(REPORT_PATH, RESULTS_DIR / "REPORT.md")
+    print(f"\nB1 execution complete! {len(results)} total trials recorded.")
 
 
 if __name__ == "__main__":
