@@ -7,7 +7,13 @@ W2 implementation is on `phase26-w2-inference`, checkpoint
 [PR #18](https://github.com/kuttyb/moss/pull/18) targets
 `phase26-moss-speedup`, currently at W1 base
 `b8871297619cf51187457b1fc3e55d833d661146`. Do not merge directly to `main`.
-PR run #8 passed its three applicable jobs: core regressions, optimized examples, and W2 same-runner performance. The full 77-fixture B1 timing/profiling suite passed 154/154 trials for W1 and W2, and the eight-workload Callgrind attribution completed; details and the disclosed W4 wall-time regression are in `docs/phase26/W2_RESULTS.md`. Read `.codex/CURRENT_STATUS.md`,
+Corrected delivery head `5d1cd6b62a6dd213c15e1e032537a33e56f81b4c` passed
+hosted run #10: core regressions, optimized examples, and W2 same-runner
+performance. A final session-status-only commit is being prepared and needs
+its own hosted validation before PR #18 is marked ready. The full 77-fixture
+B1 timing/profiling suite passed 154/154 trials for W1 and W2, and the
+eight-workload Callgrind attribution completed; details and the disclosed W4
+wall-time regression are in `docs/phase26/W2_RESULTS.md`. Read `.codex/CURRENT_STATUS.md`,
 `docs/phase26/W2_RESULTS.md`, and this handoff before continuing.
 
 The W2 caller worklist owns only signature inference in
@@ -38,10 +44,12 @@ Local gates at checkpoint `44b86de3af469c750ba0601389dee82291d83561`:
 - Three alternating W5 W100 optimized timing pairs: W1 10.9169 s, W2 0.3834 s
   median (96.5% lower); exact check JSON matched.
 - Architect checkpoint 2.1 returned conditional GO with no remaining confirmed
-  blocker. Final review of the committed exact SHA is pending.
+  blocker. Final Architect review is GO for implementation SHA
+  `44b86de3af469c750ba0601389dee82291d83561`.
 
-The PR #18 automated checks are green on the implementation checkpoint. Obtain
-exact-SHA final Architect review before marking it ready. See
+The PR #18 automated checks are green on corrected delivery head `5d1cd6b6`;
+the remaining status-only commit is pending its own hosted gates. Once green,
+mark PR #18 ready for review without merging it. See
 `docs/phase26/W2_RESULTS.md` for validation scope and limitations. PR #17/W1
 remains separate and has no main merge implied here.
 
