@@ -1131,3 +1131,19 @@ byte-identical full trace in C++ and Java, with `RUSTC` pointed at a nonexistent
 path to confirm this stayed on the interpreter path. `git diff --check` passes.
 This closes the tested imported-function trace naming case only; broad Fast
 Debug and native/backend parity remain open.
+
+### Correction — apply Executor affinity and priority hints
+
+The Java generated Executor runtime retained validated `affinity` and
+`priority` settings but did not apply them to worker threads. It now applies
+the C++ runtime's best-effort Linux CPU affinity and scheduling-priority hints
+at worker startup, warns when Linux refuses them, and warns that they are
+unsupported on non-Linux targets. The hints are cloned into each worker, so
+every worker receives the configured policy.
+
+Validation: all 12 Java test classes pass under ABI-v9 and staged ABI-v10; the
+Executor generation regression checks configuration capture, worker startup,
+Linux calls, and fallback warning code. `git diff --check` passes. Generated
+Rust has not been compiled or executed, so platform-specific behavior remains
+unverified until the frozen-candidate backend gate. Blocking compensation and
+Root identity/context gaps are still open.

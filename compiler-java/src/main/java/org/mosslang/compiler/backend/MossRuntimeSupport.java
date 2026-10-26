@@ -170,6 +170,40 @@ fn __moss_executor_positive_usize(name: &str, value: i64) -> usize {
         }
     }
 }
+fn __moss_executor_apply_affinity_and_priority(
+    cores: std::option::Option<&std::vec::Vec<usize>>,
+    priority: std::option::Option<i32>,
+) {
+    #[cfg(target_os = "linux")]
+    {
+        if let Some(cores) = cores {
+            let mut set: [u8; 128] = [0; 128];
+            for &core in cores {
+                if core < 1024 { set[core / 8] |= 1 << (core % 8); }
+            }
+            extern "C" {
+                fn sched_setaffinity(pid: i32, cpusetsize: usize, mask: *const u8) -> i32;
+            }
+            // SAFETY: set is a valid cpu_set_t-sized bit mask for sched_setaffinity.
+            let result = unsafe { sched_setaffinity(0, std::mem::size_of_val(&set), set.as_ptr()) };
+            if result != 0 { eprintln!("moss executor warning: sched_setaffinity refused"); }
+        }
+        if let Some(level) = priority {
+            extern "C" {
+                fn setpriority(which: i32, who: i32, prio: i32) -> i32;
+            }
+            // SAFETY: PRIO_PROCESS with who=0 targets the calling thread on Linux.
+            let result = unsafe { setpriority(0, 0, level) };
+            if result != 0 { eprintln!("moss executor warning: setpriority refused"); }
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        if cores.is_some() || priority.is_some() {
+            eprintln!("moss executor warning: affinity/priority not supported on this platform");
+        }
+    }
+}
 pub struct __MossExecutor {
     threads: std::option::Option<usize>,
     max_threads: std::option::Option<usize>,
@@ -245,9 +279,15 @@ impl __MossExecutor {
         }
         for worker_id in 0..threads.min(max_threads) {
             let worker_shared = std::sync::Arc::clone(&shared);
+            let worker_affinity = self.affinity.clone();
+            let worker_priority = self.priority;
             let worker = std::thread::Builder::new()
                 .name(format!("moss-executor-{}", worker_id))
-                .spawn(move || __moss_executor_worker(worker_shared))
+                .spawn(move || {
+                    __moss_executor_apply_affinity_and_priority(
+                        worker_affinity.as_ref(), worker_priority);
+                    __moss_executor_worker(worker_shared)
+                })
                 .unwrap_or_else(|error| {
                     eprintln!("moss executor: failed to start worker: {}", error);
                     std::process::abort();

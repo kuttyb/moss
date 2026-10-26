@@ -17060,3 +17060,38 @@ including the three-module source closure, and the real `phase7_demo` Margo
 debug command prints `42`. All 12 Java classes pass under ABI-v9 and staged
 ABI-v10. Cross-package/source-free Fast Debug limitations remain, and no
 native compilation or execution was run.
+
+### Phase 25.3 correction — canonical imported function names in Fast Debug traces
+
+The trace correction maps loader-qualified callable names such as
+`graphpkg.double` to canonical `graphpkg__double` in function event fields,
+semantic identities, and function-body trace context. The focused regression
+uses a loader-shaped qualified provider declaration; the previous manually
+merged unqualified AST fixture failed because it did not model real project
+loading.
+
+Validation on this tree: `scripts/java/test.sh` and
+`MOSS_STAGED_ABI=v10 scripts/java/test.sh` both pass all 12 Java test classes.
+For `tests/tooling/fixtures/phase15_8/pkg_main` with the package dependency
+source root and a deliberately unavailable `RUSTC`, C++ and Java both exit 0;
+stdout and full trace files are byte-identical. `git diff --check` passes.
+This validates the covered trace identity only. Native Rust execution,
+source-free Fast Debug, broader semantic parity, SDK acceptance, and the
+frozen-candidate gates remain unfinished. The correction was committed and
+pushed as `6d88eae9`.
+
+### Phase 25.3 correction — apply Executor affinity and priority hints
+
+Java's emitted Executor runtime now applies configured affinity and priority
+to each worker using the documented best-effort policy: Linux requests are
+applied with warning on refusal; unsupported platforms warn and continue. The
+existing Executor generation regression now verifies the emitted helper and
+worker policy capture.
+
+Validation on the current worktree: `scripts/java/test.sh` and
+`MOSS_STAGED_ABI=v10 scripts/java/test.sh` both pass all 12 Java test classes;
+`git diff --check` passes. Rust compilation/native execution was intentionally
+not run before the frozen-candidate acceptance gate. Blocking worker
+compensation, Root identity/context, native runtime semantics, broader checker
+parity, SDK integration, and final release review remain unfinished. This
+slice is uncommitted at the time of this status entry.
