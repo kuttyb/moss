@@ -17044,3 +17044,8 @@ and full structured trace now compare byte-for-byte with C++. All 12 Java test
 classes pass under ABI-v9 and staged ABI-v10. FileIO remains an intentional
 Fast Debug limitation; native Executor behavior is still deferred to the
 frozen-candidate gate.
+
+A second focused probe mutates an argument local after the first `invoke`;
+both interpreters retain the submitted value, return `18`, and emit identical
+stdout and trace files. This specifically validates submit-time value
+snapshotting in the deterministic Fast Debug schedule.

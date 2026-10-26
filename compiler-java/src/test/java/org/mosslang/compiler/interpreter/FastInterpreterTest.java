@@ -1099,8 +1099,10 @@ public final class FastInterpreterTest {
                 + "fn main():\n"
                 + "  counter = Counter()\n"
                 + "  executor = Executor().threads(2).max_threads(4).queue_capacity(8).start()\n"
-                + "  executor.invoke(counter.Add(1))\n"
-                + "  executor.invoke(counter.Add(2))\n"
+                + "  amount = 1\n"
+                + "  executor.invoke(counter.Add(amount))\n"
+                + "  amount = 10\n"
+                + "  executor.invoke(counter.Add(amount))\n"
                 + "  executor.invoke(counter.Add(3))\n"
                 + "  executor.invoke(counter.Add(4))\n"
                 + "  executor.join()\n"
@@ -1117,8 +1119,11 @@ public final class FastInterpreterTest {
         int lastRootReturn = events.lastIndexOf("\"detail\":\"()\"");
         int postJoinMessage = joinEvent < 0 ? -1
                 : events.indexOf("\"event\":\"message_call\"", joinEvent);
-        if (!"10\n".equals(stdout.toString(StandardCharsets.UTF_8))
+        if (!"18\n".equals(stdout.toString(StandardCharsets.UTF_8))
                 || events.split("\\\"event\\\":\\\"root_submit\\\"", -1).length != 5
+                || !events.contains("\"event\":\"message_call\",\"function\":\"main\"")
+                || !events.contains("\"detail\":\"1\",\"instance\":\"main::counter\"")
+                || !events.contains("\"detail\":\"10\",\"instance\":\"main::counter\"")
                 || joinEvent <= lastRootReturn || postJoinMessage <= joinEvent) {
             throw new AssertionError("Executor Fast Debug must submit roots and drain them at join: " + events);
         }

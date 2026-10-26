@@ -1097,3 +1097,8 @@ events. The existing Phase 20 fixture produces output `10`, and its structured
 trace compares byte-for-byte with C++ including state events. All 12 Java test
 classes pass under ABI-v9 and staged ABI-v10. This is deterministic
 interpreter behavior only; native Executor execution remains unverified.
+
+A focused second probe changes a local after its first submission. Both
+interpreters preserve the first value, return `18`, and emit identical
+stdout/trace files, confirming submit-time argument snapshots as well as
+submission-order execution.
