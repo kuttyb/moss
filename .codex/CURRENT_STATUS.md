@@ -17272,3 +17272,19 @@ may be read-only also preserves that restriction.
 ABI-v9 and staged ABI-v10 Java suites each pass all 12 test classes. Dynamic
 mode-flow equivalence, helper-managed handles, and domain-field lifecycle are
 not yet verified.
+
+### Phase 25.3 continuation — helper-local FileIO owner leak
+
+Java now runs the bounded FileIO lifecycle walk over ordinary function bodies
+and includes a function's terminal result expression in that walk. This catches
+a helper that opens and reads a local FileIO owner, then returns without
+closing it. The terminal-expression handling was necessary because Moss may
+store a final call such as `file.close()` outside the ordinary statement list.
+The focused helper leak reproducer is rejected by both `./moss --check` and
+`scripts/java/run.sh --check` with `FILEIO_MUST_CLOSE`. A matching helper that
+closes its local is covered by the Java semantic unit test.
+
+`scripts/java/test.sh` and `MOSS_STAGED_ABI=v10 scripts/java/test.sh` each pass
+all 12 test classes, and `git diff --check` passes. The full function helper
+control-flow model and transfer of close effects from helpers to caller-owned
+handles remain open; no native Rust gate was run.

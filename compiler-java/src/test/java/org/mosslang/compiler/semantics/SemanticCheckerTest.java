@@ -3069,6 +3069,28 @@ public class SemanticCheckerTest {
                 + "    file.close()\n"
                 + "  recover FileError.IO:\n"
                 + "    pass\n", "MOSS_COMPILE_ERROR");
+        assertCompileError(variants
+                + "fn opened():\n"
+                + "  file = FileIO.open(\"input\", ro)\n"
+                + "  data = file.read(0, 4)\n"
+                + "  echo data.length()\n"
+                + "fn main():\n"
+                + "  try:\n"
+                + "    opened()\n"
+                + "  recover:\n"
+                + "    pass\n", "FILEIO_MUST_CLOSE");
+        Program helperClosesLocal = Parser.parseSource(variants
+                + "fn opened():\n"
+                + "  file = FileIO.open(\"input\", ro)\n"
+                + "  data = file.read(0, 4)\n"
+                + "  echo data.length()\n"
+                + "  file.close()\n"
+                + "fn main():\n"
+                + "  try:\n"
+                + "    opened()\n"
+                + "  recover:\n"
+                + "    pass\n", "fileio-helper-local-close.moss");
+        new SemanticChecker(helperClosesLocal).run();
     }
 
     private static void testHandledFileIoHelperDoesNotRaiseIntoMain() {

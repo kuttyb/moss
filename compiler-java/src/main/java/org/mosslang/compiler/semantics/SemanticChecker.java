@@ -1735,6 +1735,7 @@ public class SemanticChecker {
                 }
             }
             env = checkBlock(f.body, 0, f.body.size(), env, typer, solver, false, f.name, expectedReturn);
+            validateFunctionFileIoLifecycle(f);
             for (Stmt s : f.body) {
                 if ((s.kind == Stmt.Kind.Let || s.kind == Stmt.Kind.Var || s.kind == Stmt.Kind.Assign) && s.a != null) {
                     String v = s.a.trim();
@@ -2696,6 +2697,27 @@ public class SemanticChecker {
                         "FILEIO_MUST_CLOSE");
             }
         }
+    }
+
+    private void validateFunctionFileIoLifecycle(Function function) {
+        List<Stmt> statements = new ArrayList<>(function.body);
+        if (function.resultExpression != null && !function.resultExpression.isBlank()) {
+            Stmt result = new Stmt(Stmt.Kind.Call, function.resultLine != 0 ? function.resultLine : function.line,
+                    statements.isEmpty() ? 0 : statements.get(0).indent,
+                    function.resultExpression, function.sourceFile);
+            statements.add(result);
+        }
+        Map<String, Integer> borrowedOwners = new LinkedHashMap<>();
+        for (Param parameter : function.params) {
+            TypeRef type = parameter.typeRef != null ? parameter.typeRef
+                    : (parameter.type != null && !parameter.type.isEmpty()
+                            ? TypeParser.parseCanonical(parameter.type) : null);
+            if (type != null && "FileIO".equals(type.toCanonicalString()))
+                borrowedOwners.put(parameter.name, 1);
+        }
+        int baseIndent = statements.isEmpty() ? 0 : statements.get(0).indent;
+        fileIoLifecycleBlock(statements, 0, statements.size(), baseIndent,
+                borrowedOwners, true);
     }
 
     private Map<String, Integer> fileIoLifecycleBlock(List<Stmt> statements, int start, int end,
