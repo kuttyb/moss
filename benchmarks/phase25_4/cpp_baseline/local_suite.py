@@ -43,6 +43,14 @@ TIMEOUT_SECONDS = 120
 CERTIFIED_BASELINE_SHA = "c66fb76ca0012b8125d70d404adbff13daa1cf4e"
 
 
+def format_ms(value: float | None) -> str:
+    return "n/a" if value is None else f"{value:.2f} ms"
+
+
+def format_rss(value: int | None) -> str:
+    return "n/a" if value is None else f"{value} KiB"
+
+
 def run(cmd: list[str], *, cwd: Path = ROOT, log: Path | None = None) -> str:
     result = subprocess.run(cmd, cwd=cwd, text=True, stdout=subprocess.PIPE,
                            stderr=subprocess.STDOUT)
@@ -138,17 +146,17 @@ def summarize(rows: list[dict]) -> dict[str, dict]:
     summaries = {}
     for fid, samples in grouped.items():
         wall = [float(row["wall_ms"]) for row in samples]
-        cpu = [float(row["cpu_user_ms"] or 0) + float(row["cpu_sys_ms"] or 0)
-               for row in samples]
-        rss = [int(row["peak_rss_kib"] or 0) for row in samples]
+        cpu = [float(row["cpu_user_ms"]) + float(row["cpu_sys_ms"])
+               for row in samples if row["cpu_user_ms"] is not None and row["cpu_sys_ms"] is not None]
+        rss = [int(row["peak_rss_kib"]) for row in samples if row["peak_rss_kib"] is not None]
         summaries[fid] = {
             "wall_median_ms": statistics.median(wall),
             "wall_min_ms": min(wall),
             "wall_max_ms": max(wall),
             "wall_samples_ms": wall,
-            "cpu_median_ms": statistics.median(cpu),
+            "cpu_median_ms": statistics.median(cpu) if cpu else None,
             "cpu_samples_ms": cpu,
-            "peak_rss_kib_max": max(rss),
+            "peak_rss_kib_max": max(rss) if rss else None,
             "peak_rss_samples_kib": rss,
         }
     return summaries
@@ -212,12 +220,15 @@ def write_phase26_data(out: Path, fixtures: list[dict], baseline_rows: list[dict
 
 def report_counters(profiles: dict[str, dict], fixture_ids: list[str]) -> list[str]:
     lines = ["", "## Profiling work counters", "",
-             "One separate profiling sample per fixture. This table shows candidate totals. Counter totals aggregate across checker instances; the CSV includes baseline and candidate plus each checker's individual records.", "",
+             "One separate profiling sample per fixture. This table shows candidate totals. Counter totals aggregate across checker instances; the CSV includes baseline and candidate plus each checker's individual records. Expected-negative fixtures can fail before any checker counters are emitted; those entries are n/a.", "",
              "| Fixture | " + " | ".join(COUNTER_REPORT_KEYS) + " |",
              "|---|" + "---:|" * len(COUNTER_REPORT_KEYS)]
     for fid in fixture_ids:
-        counters = profiles.get(fid, {}).get("aggregated", {})
-        vals = " | ".join(str(counters.get(key, 0)) for key in COUNTER_REPORT_KEYS)
+        profile = profiles.get(fid, {})
+        counters = profile.get("aggregated", {})
+        vals = (" | ".join(str(counters.get(key, 0)) for key in COUNTER_REPORT_KEYS)
+                if profile.get("checker_records")
+                else " | ".join("n/a" for _ in COUNTER_REPORT_KEYS))
         lines.append(f"| `{fid}` | {vals} |")
     lines += ["", "Full per-fixture, per-checker records: `phase26_work_counters.csv`.", ""]
     return lines
@@ -259,16 +270,16 @@ def render_report(out: Path, baseline_label: str | None, baseline_sha: str | Non
                   "| Fixture | Candidate wall median | CPU median | Peak RSS max |", "|---|---:|---:|---:|"]
         for fid in sorted(ATTRIBUTION_IDS):
             c = cand[fid]
-            lines.append(f"| `{fid}` | {c['wall_median_ms']:.2f} ms | {c['cpu_median_ms']:.2f} ms | {c['peak_rss_kib_max']} KiB |")
+            lines.append(f"| `{fid}` | {c['wall_median_ms']:.2f} ms | {format_ms(c['cpu_median_ms'])} | {format_rss(c['peak_rss_kib_max'])} |")
         lines += ["", "## Small-fixture latency", "", "| Fixture | Wall median | CPU median | Peak RSS max |", "|---|---:|---:|---:|"]
         for fid in ("rw_projects_rolling_window", "example_checkout"):
             c = cand[fid]
-            lines.append(f"| `{fid}` | {c['wall_median_ms']:.2f} ms | {c['cpu_median_ms']:.2f} ms | {c['peak_rss_kib_max']} KiB |")
+            lines.append(f"| `{fid}` | {c['wall_median_ms']:.2f} ms | {format_ms(c['cpu_median_ms'])} | {format_rss(c['peak_rss_kib_max'])} |")
         lines += ["", "## All fixture medians and resource use", "",
                   "| Fixture | Wall median | CPU median | Peak RSS max |", "|---|---:|---:|---:|"]
         for fid in fixture_ids:
             c = cand[fid]
-            lines.append(f"| `{fid}` | {c['wall_median_ms']:.2f} ms | {c['cpu_median_ms']:.2f} ms | {c['peak_rss_kib_max']} KiB |")
+            lines.append(f"| `{fid}` | {c['wall_median_ms']:.2f} ms | {format_ms(c['cpu_median_ms'])} | {format_rss(c['peak_rss_kib_max'])} |")
     else:
         base_total = sum(value["wall_median_ms"] for value in base.values())
         candidate_total = sum(value["wall_median_ms"] for value in cand.values())
@@ -283,19 +294,19 @@ def render_report(out: Path, baseline_label: str | None, baseline_sha: str | Non
         for fid in sorted(ATTRIBUTION_IDS):
             b, c = base[fid], cand[fid]
             delta = c["wall_median_ms"] / b["wall_median_ms"] - 1 if b["wall_median_ms"] else 0.0
-            lines.append(f"| `{fid}` | {b['wall_median_ms']:.2f} ms | {c['wall_median_ms']:.2f} ms | {delta:+.1%} | {b['cpu_median_ms']:.2f} ms | {c['cpu_median_ms']:.2f} ms | {b['peak_rss_kib_max']} KiB | {c['peak_rss_kib_max']} KiB |")
+            lines.append(f"| `{fid}` | {b['wall_median_ms']:.2f} ms | {c['wall_median_ms']:.2f} ms | {delta:+.1%} | {format_ms(b['cpu_median_ms'])} | {format_ms(c['cpu_median_ms'])} | {format_rss(b['peak_rss_kib_max'])} | {format_rss(c['peak_rss_kib_max'])} |")
         lines += ["", "## All fixture medians and resource use", "",
                   "| Fixture | Baseline wall median | Candidate wall median | Change | Baseline CPU median | Candidate CPU median | Baseline peak RSS max | Candidate peak RSS max |", "|---|---:|---:|---:|---:|---:|---:|---:|"]
         for fid in fixture_ids:
             b, c = base[fid], cand[fid]
             delta = c["wall_median_ms"] / b["wall_median_ms"] - 1 if b["wall_median_ms"] else 0.0
-            lines.append(f"| `{fid}` | {b['wall_median_ms']:.2f} ms | {c['wall_median_ms']:.2f} ms | {delta:+.1%} | {b['cpu_median_ms']:.2f} ms | {c['cpu_median_ms']:.2f} ms | {b['peak_rss_kib_max']} KiB | {c['peak_rss_kib_max']} KiB |")
+            lines.append(f"| `{fid}` | {b['wall_median_ms']:.2f} ms | {c['wall_median_ms']:.2f} ms | {delta:+.1%} | {format_ms(b['cpu_median_ms'])} | {format_ms(c['cpu_median_ms'])} | {format_rss(b['peak_rss_kib_max'])} | {format_rss(c['peak_rss_kib_max'])} |")
         lines += ["", "## Small-fixture latency", "",
                   "| Fixture | Baseline wall median | Candidate wall median | Change | Baseline CPU median | Candidate CPU median | Baseline peak RSS max | Candidate peak RSS max |", "|---|---:|---:|---:|---:|---:|---:|---:|"]
         for fid in ("rw_projects_rolling_window", "example_checkout"):
             b, c = base[fid], cand[fid]
             delta = c["wall_median_ms"] / b["wall_median_ms"] - 1 if b["wall_median_ms"] else 0.0
-            lines.append(f"| `{fid}` | {b['wall_median_ms']:.2f} ms | {c['wall_median_ms']:.2f} ms | {delta:+.1%} | {b['cpu_median_ms']:.2f} ms | {c['cpu_median_ms']:.2f} ms | {b['peak_rss_kib_max']} KiB | {c['peak_rss_kib_max']} KiB |")
+            lines.append(f"| `{fid}` | {b['wall_median_ms']:.2f} ms | {c['wall_median_ms']:.2f} ms | {delta:+.1%} | {format_ms(b['cpu_median_ms'])} | {format_ms(c['cpu_median_ms'])} | {format_rss(b['peak_rss_kib_max'])} | {format_rss(c['peak_rss_kib_max'])} |")
 
         slow = []
         noisy = []
@@ -318,7 +329,7 @@ def render_report(out: Path, baseline_label: str | None, baseline_sha: str | Non
         if slow:
             lines += ["| Fixture | Baseline median [min–max] | Candidate median [min–max] | Increase | Change | CPU median | Peak RSS max |", "|---|---:|---:|---:|---:|---:|---:|"]
             for fid, b, c, delta, pct, disjoint in sorted(slow, key=lambda item: item[4], reverse=True):
-                lines.append(f"| `{fid}` | {b['wall_median_ms']:.2f} [{b['wall_min_ms']:.2f}–{b['wall_max_ms']:.2f}] ms | {c['wall_median_ms']:.2f} [{c['wall_min_ms']:.2f}–{c['wall_max_ms']:.2f}] ms | +{delta:.2f} ms | +{pct:.1f}% | {c['cpu_median_ms']:.2f} ms | {c['peak_rss_kib_max']} KiB |")
+                lines.append(f"| `{fid}` | {b['wall_median_ms']:.2f} [{b['wall_min_ms']:.2f}–{b['wall_max_ms']:.2f}] ms | {c['wall_median_ms']:.2f} [{c['wall_min_ms']:.2f}–{c['wall_max_ms']:.2f}] ms | +{delta:.2f} ms | +{pct:.1f}% | {format_ms(c['cpu_median_ms'])} | {format_rss(c['peak_rss_kib_max'])} |")
         else:
             lines.append("None.")
         lines += ["", "## Above 5% but below the noise floor", ""]

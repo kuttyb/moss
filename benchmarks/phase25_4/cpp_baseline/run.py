@@ -61,6 +61,7 @@ PROFILE_COUNTER_PATTERN = re.compile(
     r"inference_changed_functions_round_\d+|"
     r"inference_signature_invocation_\d+_wave_\d+_(?:visited|changed))$")
 PROFILE_COUNTER_MAX_KEYS = {"concrete_effect_max_depth", "effects_fixed_point_limit"}
+RESOURCE_STATS_PATTERN = re.compile(r"^\s*(\d+(?:\.\d*)?|\.\d+)\|(\d+(?:\.\d*)?|\.\d+)\|(\d+)\s*$")
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 TORTURE_ROOT = REPO_ROOT / "benchmarks" / "compiler_torture"
@@ -170,14 +171,20 @@ def run_trial(moss_bin: Path, fixture: dict, iteration: int, timeout_seconds: in
         cpu_sys_ms = None
         peak_rss_kib = None
         if stats_file.exists():
-            parts = stats_file.read_text().strip().split("|")
-            if len(parts) == 3:
-                try:
-                    cpu_user_ms = round(float(parts[0]) * 1000.0, 3)
-                    cpu_sys_ms = round(float(parts[1]) * 1000.0, 3)
-                    peak_rss_kib = int(parts[2])
-                except ValueError:
-                    pass
+            # GNU time writes a non-zero-exit preamble before the formatted
+            # resource row for expected-negative compiler checks. Find the
+            # formatted row instead of treating the whole file as one row.
+            for line in reversed(stats_file.read_text().splitlines()):
+                match = RESOURCE_STATS_PATTERN.match(line)
+                if match:
+                    parts = match.groups()
+                    try:
+                        cpu_user_ms = round(float(parts[0]) * 1000.0, 3)
+                        cpu_sys_ms = round(float(parts[1]) * 1000.0, 3)
+                        peak_rss_kib = int(parts[2])
+                    except ValueError:
+                        pass
+                    break
 
     # Extract profiling timers and counters
     stage_ms = {}

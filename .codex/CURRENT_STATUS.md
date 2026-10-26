@@ -1,6 +1,6 @@
 # Phase 26 complete — W1–W3 merged to main — 2026-10-26
 
-## Local compiler-perf suite follow-up — certification evidence captured; final gates pending — 2026-10-26
+## Local compiler-perf suite follow-up — resource report repair in progress — 2026-10-26
 
 - Branch `compiler-perf-local-suite`, PR #20, compiler source identical to
   `origin/main` at `bdf973af651deb2d3a4deac2b6c4bcc60893a776`; no compiler
@@ -13,21 +13,21 @@
   logical CPUs): 77 fixtures; 231 timing plus 77 profile samples per compiler;
   all succeeded; clean tree; baseline `c66fb76ca0012b8125d70d404adbff13daa1cf4e`.
   Sum of fixture wall medians: 97.078 s baseline, 14.877 s candidate (-84.7%).
-  Report, medians, work counters, and metadata are saved under
-  `benchmarks/phase25_4/cpp_baseline/results/` and summarized in
-  `docs/phase26/MossPhase26.md`. Pre-Phase 26 baseline counters are sparse.
-- Architect checkpoint review on `6817b59ab37711fd4e1ec8c942e07652a25d5b23`
-  was NO-GO: certification allowed partial runs. The run itself used the exact
-  requested baseline/full-corpus/three-repetition settings; certification now
-  enforces those inputs. User-requested non-overlap threshold retains a 2 ms
-  absolute floor. Final Architect review is pending on the repaired commit.
-- Hosted PR #20 run #24 (`40376734795`) completed successfully for core
-  regressions, optimized examples, and local compiler perf smoke on prior SHA
-  `6817b59a`; it predates the certification-argument guard and certified data
-  commit. A new exact-head workflow run is pending. `py_compile`, feedback
-  validation, diff check, and partial-certification rejection probe passed.
-  Final Architect review remains pending. PR remains open; no merge to main has
-  occurred. Team closeout:
+  Wall-time measurements remain valid, but Architect found expected-negative
+  fixtures had empty CPU/RSS parsed as zero and empty candidate counters
+  rendered as zero. The current local edits fix GNU time's non-zero-exit
+  preamble parsing and render missing counters/resources as n/a. Re-run the full
+  certification command before treating the committed result artifacts as final.
+- Architect review at `93ed4bddd826eea03b7baaacebdff18353c6b3bb` was NO-GO on
+  resource/counter report accuracy. It verified the certification safeguards,
+  full 77-fixture coverage, wall-time arithmetic, and hosted gates. Fix and
+  replacement run are in progress.
+- Hosted PR #20 run #25 (`40378555429`) passed core regressions, optimized
+  examples, and local perf smoke on prior SHA `93ed4bdd`; its workstream-only
+  jobs were skipped by their branch conditions. After the current resource
+  parser fix, rerun `py_compile`, feedback validation, diff check, and the full
+  certification command; hosted gates and exact-SHA Architect review remain
+  pending. PR stays open; no merge to main has occurred. Team closeout:
   `docs/phase26/agent-patterns/team-local-perf-suite.md`.
 
 - W2/W3 implementation is complete. PR #18 merged into `phase26-moss-speedup`
