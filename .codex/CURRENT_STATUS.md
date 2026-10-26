@@ -1,8 +1,9 @@
-# Phase 26 W2 closeout and W3 effects — delivery gates pending — 2026-10-26
+# Phase 26 W2 closeout and W3 effects — gates green, PR merge pending — 2026-10-26
 
-- Branch: `phase26-w2-inference`; PR #18 remains open and unmerged. Current
-  source/test edits and durable reports are uncommitted. Do not merge directly
-  to `main`.
+- Branch: `phase26-w2-inference`; implementation and reports are committed at
+  `c4048d8cf8d743e101e8adcdaf46cc976bc60c3e` and pushed. PR #18 remains open
+  and unmerged, targeting `phase26-moss-speedup`. No direct main-branch merge
+  has occurred.
 - W2 closeout counters: regex's initial invocation visits 49 functions, changes
   4, then has a full 49-visit quiet wave; datastructures visits 112, changes 2,
   then has a 112-visit quiet wave. Four remaining invocations per project each
@@ -23,8 +24,11 @@
   claim is made.
 - `moss-dev`/`moss-opt` builds and W2/W3 focused regressions passed; optimized
   and normal full corpus runs each completed 2,064 sources / 1,325 accepted.
-  Remaining: run full repository gates and feedback validator, receive final
-  Architect audit, commit/push, and wait for hosted PR checks. Team closeout and
+  `make check` passed all 140 jobs; feedback validation and diff check passed.
+  Hosted run #15 passed core regressions, optimized examples, and W2 performance;
+  hosted W5 was 19.2254 s vs 0.2663 s (98.6% lower). Architect GO is exact for
+  implementation SHA c4048d8cf8d743e101e8adcdaf46cc976bc60c3e. Remaining: merge
+  PR #18 through its integration branch after review policy. Team closeout and
   agent handoff are in `docs/phase26/agent-patterns/team-w3-effects.md` and
   `docs/phase26/NEXT_TEAM_HANDOFF.md`.
 

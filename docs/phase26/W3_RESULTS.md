@@ -56,8 +56,11 @@ before/after claim.
 The signature-worklist corpus oracle completed 2,064 tracked sources, with
 1,325 accepted and no mismatch against the legacy full-scan signature loop.
 A normal corpus pass after adding convergence exits also completed 2,064
-sources / 1,325 accepted. The full repository CI gates remain the integration
-authority.
+sources / 1,325 accepted. Local `make check` passed all 140 jobs. Hosted PR run #15 passed
+`core-regressions`, `optimized-examples`, and `w2-inference-performance`. The
+hosted same-runner W5 median was 19.2254 s on W1 and 0.2663 s on the candidate
+(98.6% lower), with identical check JSON. The PR remains open and unmerged into
+`phase26-moss-speedup`.
 
 ## Decision after W3
 

@@ -2,17 +2,21 @@
 
 ## Current continuation status
 
-The W2 closeout follow-up and W3 implementation are in progress on
-`phase26-w2-inference`; `.codex/CURRENT_STATUS.md` has the current exact
-worktree state. Read `W2_RESULTS.md` and `W3_RESULTS.md` for evidence and
+W2 closeout and W3 implementation are committed and pushed on
+`phase26-w2-inference` at `c4048d8cf8d743e101e8adcdaf46cc976bc60c3e`;
+`.codex/CURRENT_STATUS.md` has the current delivery state. Read `W2_RESULTS.md` and `W3_RESULTS.md` for evidence and
 `MossPhase26.md` for the final stop decision. W2's per-wave project counters,
 legacy full-loop oracle, three extra convergence exits, W3 memoization, and W5
-timer-key fix are present. W4 type-spelling interning is dropped. Final local
-repository gates, feedback validation, exact-SHA Architect review, commit,
-push, and hosted CI are the remaining delivery steps. PR #18 is not merged.
+timer-key fix are present. W4 type-spelling interning is dropped. Local repository gates, feedback validation, exact-SHA Architect review, and
+hosted run #15 all passed. PR #18 remains open and unmerged; it targets
+`phase26-moss-speedup`. Its implementation SHA has Architect GO. The next
+integration action is merging the PR into that Phase 26 branch under the normal
+review policy; do not bypass this with a direct main-branch merge.
 
 The Team is two actual agents: Coordinator/implementer/reviewer and the
-independent adversarial Architect. There were no leaf implementation workers.
+independent adversarial Architect. Architect GO is for exact implementation SHA
+`c4048d8cf8d743e101e8adcdaf46cc976bc60c3e`; the documentation-only closeout
+commit may advance the delivery head without changing the reviewed implementation. There were no leaf implementation workers.
 The Architect was asked to review at the frozen final integration checkpoint,
 not on individual edits. Record unknown usage values as unknown in the team
 closeout; do not infer agent counts or metrics.
