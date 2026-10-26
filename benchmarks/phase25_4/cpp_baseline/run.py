@@ -178,6 +178,11 @@ def run_trial(moss_bin: Path, fixture: dict, iteration: int, timeout_seconds: in
                            "reused_specialization_results", "inference_rounds", "inference_work_units",
                            "parse_cache_hits", "parse_cache_misses"):
                 counters[stage] = int(val)
+            elif stage in ("inference_reinferred_functions",
+                           "inference_changed_functions") or stage.startswith(
+                               "inference_reinferred_functions_round_") or stage.startswith(
+                               "inference_changed_functions_round_"):
+                counters[stage] = int(val)
             else:
                 stage_ms[stage] = stage_ms.get(stage, 0.0) + int(val) / 1e6
 
@@ -689,8 +694,8 @@ def generate_report(results: list, metadata: dict, out_path: Path):
         "",
         "The hierarchical tracer exposes fine-grained compiler work units across semantic stages:",
         "",
-        "| Workload | Functions Analyzed | Types Analyzed | Specialization Requests | Distinct Spec Keys | Actual Spec Checks | Reused Spec Results | Inference Rounds | Inference Work Units |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|"
+        "| Workload | Functions Analyzed | Types Analyzed | Specialization Requests | Distinct Spec Keys | Actual Spec Checks | Reused Spec Results | Inference Rounds | Inference Work Units | Signature Functions Re-inferred | Signature Functions Changed |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|"
     ])
 
     for fid in ("w2_spec_distinct_n016", "w3_spec_repeated_n016", "w4_infer_deep_d010", "w5_infer_wide_w025", "w6_types_count_t050", "w8_traits_dispatch_c050"):
@@ -704,7 +709,9 @@ def generate_report(results: list, metadata: dict, out_path: Path):
         reused = c.get("reused_specialization_results", max(0, (s_req or 0) - (act_chk or 0)))
         inf_r = c.get("inference_rounds", 5)
         inf_u = c.get("inference_work_units", 34)
-        lines.append(f"| `{fid}` | {fn_a} | {ty_a} | {s_req} | {d_keys} | {act_chk} | {reused} | {inf_r} | {inf_u} |")
+        reinferred = c.get("inference_reinferred_functions", "n/a")
+        changed = c.get("inference_changed_functions", "n/a")
+        lines.append(f"| `{fid}` | {fn_a} | {ty_a} | {s_req} | {d_keys} | {act_chk} | {reused} | {inf_r} | {inf_u} | {reinferred} | {changed} |")
 
     lines.extend([
         "",
@@ -715,6 +722,7 @@ def generate_report(results: list, metadata: dict, out_path: Path):
         "- **`actual_specialization_checks`**: Bodies compiled through `infer_statement_expressions` and `check_stmts`.",
         "- **`reused_specialization_results`**: Call sites satisfied by cache lookup without re-checking.",
         "- **`inference_rounds` / `inference_work_units`**: Fixed-point signature loops and atomic callable inference evaluations.",
+        "- **`inference_reinferred_functions` / `inference_changed_functions`**: Total function bodies visited by signature-inference worklists and total function signatures changed. Per-wave detail is retained in `counters_json` as `inference_reinferred_functions_round_N` and `inference_changed_functions_round_N`.",
         "",
         "---",
         "",

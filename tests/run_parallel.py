@@ -98,6 +98,7 @@ TOOLING_TESTS: list[tuple] = [
     ("check_phase24_bitwise_operations", [sys.executable, "tests/tooling/check_phase24_bitwise_operations.py", "{compiler}"]),
     ("check_phase25_recursive_layout", [sys.executable, "tests/tooling/check_phase25_recursive_layout.py", "{compiler}"]),
     ("check_phase26_w1_parse_cache", [sys.executable, "tests/tooling/check_phase26_w1_parse_cache.py", "{compiler}"]),
+    ("check_phase26_w2_inference_worklist", [sys.executable, "tests/tooling/check_phase26_w2_inference_worklist.py", "{compiler}"]),
     ("check_phase25_type_ir", [sys.executable, "tests/tooling/check_phase25_type_ir.py"]),
     ("check_phase25_a3_specialization", [sys.executable, "tests/tooling/check_phase25_a3_specialization.py", "{compiler}"]),
     ("check_phase25_conformance", [sys.executable, "tests/tooling/check_phase25_conformance.py", "{compiler}"]),

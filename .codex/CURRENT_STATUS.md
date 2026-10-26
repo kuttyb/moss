@@ -1,3 +1,45 @@
+# Phase 26 W2 closeout and W3 effects — gates green, PR merge pending — 2026-10-26
+
+- Branch: `phase26-w2-inference`; implementation and reports are committed at
+  `c4048d8cf8d743e101e8adcdaf46cc976bc60c3e` and pushed. PR #18 remains open
+  and unmerged, targeting `phase26-moss-speedup`. No direct main-branch merge
+  has occurred.
+- W2 closeout counters: regex's initial invocation visits 49 functions, changes
+  4, then has a full 49-visit quiet wave; datastructures visits 112, changes 2,
+  then has a 112-visit quiet wave. Four remaining invocations per project each
+  use one full wave. Keep the selective worklist because W5 W100 avoids repeat
+  waves. The opt-in legacy loop oracle passed across 2,064 tracked sources /
+  1,325 accepted, without a mismatch.
+- The checker loop audit fixed three bounded loops lacking quiescence exits:
+  object fields, domain-state fields, handler reply types. D18 observable
+  effects converge in 1/60 rounds.
+- W3 was selected from baseline counts (2,621,451 effects calls / 37 keys,
+  max depth 19). Candidate D18 reports 110 specialization evaluations, 38
+  computations, 72 hits, 19 keys across two independent passes; D18 Callgrind
+  Ir fell 72.5%, and all eight workload totals fell. Full tables and caveats:
+  `docs/phase26/W3_RESULTS.md`.
+- W4 is dropped: type spelling remains below 15% direct share on all workloads.
+  W5 timer-key optimization is folded in. Ten-run small-fixture medians after
+  that change: rolling window 0.0944 s; checkout 0.0033 s. No paired baseline
+  claim is made.
+- `moss-dev`/`moss-opt` builds and W2/W3 focused regressions passed; optimized
+  and normal full corpus runs each completed 2,064 sources / 1,325 accepted.
+  `make check` passed all 140 jobs; feedback validation and diff check passed.
+  Hosted run #15 passed core regressions, optimized examples, and W2 performance;
+  hosted W5 was 19.2254 s vs 0.2663 s (98.6% lower). Architect GO is exact for
+  implementation SHA c4048d8cf8d743e101e8adcdaf46cc976bc60c3e. Remaining: merge
+  PR #18 through its integration branch after review policy. Team closeout and
+  agent handoff are in `docs/phase26/agent-patterns/team-w3-effects.md` and
+  `docs/phase26/NEXT_TEAM_HANDOFF.md`.
+
+## Phase 26 W2 inference worklist — complete — 2026-10-26
+
+- Branch `phase26-w2-inference`, implementation SHA `44b86de3af469c750ba0601389dee82291d83561`, current delivery head `7e40f007fb74efec5b42127475a795714473bfa2`; PR #18 is ready for review against `phase26-moss-speedup`. W2 only.
+- W2 implementation uses source-ordered initial inference and caller waves, with conservative full-wave fallback for shared-signature changes, dependency graph changes, and unresolved local callable sites. New aggregate/per-wave inference counters are included.
+- Validation at this checkpoint: `moss-dev`/`moss-opt` built; W2 regression passed on both; 2,060-source differential passed with 1,322 accepted and zero verdict/diagnostic/generated-Rust hash changes; W5 W100 three-pair median improved 10.9169s to 0.3834s (96.5%), exact check JSON equal.
+- Architect checkpoint 2.1: conditional GO, no remaining confirmed blocker. The recommended `functions_analyzed == 0` domain-only assertion was added before commit. Hosted PR runs #8, #9, #10, and #11 passed core regressions, optimized examples, and W2 performance on their applicable heads. Full B1 passed 154/154 trials for W1 and W2 (one rep per timing/profiling mode); W5 W100 fell 9.906s→0.315s, and the 77-fixture timing sum fell 89.554s→40.144s. Eight-workload Callgrind completed; total Ir fell on all eight, W5 by 96.6%. Final Architect review: GO for implementation SHA `44b86de3af469c750ba0601389dee82291d83561`; Hosted run #11 passed all applicable jobs on final PR head `7e40f007fb74efec5b42127475a795714473bfa2`. PR #18 is ready for review, not merged. The latest commit is documentation/status only; implementation SHA `44b86de3af469c750ba0601389dee82291d83561` is unchanged.
+- Full details and next-team instructions: `docs/phase26/W2_RESULTS.md` and `docs/phase26/NEXT_TEAM_HANDOFF.md`. Efficiency and feedback records: `docs/phase26/agent-patterns/team-w2-inference.md` and `agent-feedback/phase26/team-w2-inference/benchmark/observations.jsonl`.
+
 ## Phase 26 W1 continuation — 2026-10-25
 
 - Final PR-head Actions run #6 (`40276122512`, head `d6edcfaafdfca83b50914a70ea984930310357aa`) is still in progress: `optimized-examples` and `compiler-performance` passed; `core-regressions` is still executing `Full repository regressions` with no failure reported. This is the only outstanding check; poll before treating the PR-head run as complete.

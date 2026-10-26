@@ -1,0 +1,7 @@
+fn increment(value):
+  return value + 1
+
+fn main():
+  values = [1, 2, 3]
+  mapped = values |> map(increment)
+  echo mapped

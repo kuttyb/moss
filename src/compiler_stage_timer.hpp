@@ -282,11 +282,26 @@ class ScopedOpTimer {
   std::chrono::steady_clock::time_point begin_;
 
  public:
-  explicit ScopedOpTimer(const char* name, std::string key = "")
+  explicit ScopedOpTimer(const char* name)
       : name_(name),
-        key_(std::move(key)),
         enabled_(CompilerTraceRecorder::instance().is_enabled()) {
     if (enabled_) begin_ = std::chrono::steady_clock::now();
+  }
+
+  ScopedOpTimer(const char* name, const std::string& key)
+      : name_(name),
+        enabled_(CompilerTraceRecorder::instance().is_enabled()) {
+    if (!enabled_) return;
+    key_ = key;
+    begin_ = std::chrono::steady_clock::now();
+  }
+
+  ScopedOpTimer(const char* name, std::string&& key)
+      : name_(name),
+        enabled_(CompilerTraceRecorder::instance().is_enabled()) {
+    if (!enabled_) return;
+    key_ = std::move(key);
+    begin_ = std::chrono::steady_clock::now();
   }
 
   ~ScopedOpTimer() {

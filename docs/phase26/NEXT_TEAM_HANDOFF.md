@@ -1,69 +1,92 @@
-# Phase 26 handoff after Team W1
+# Phase 26 handoff after W2 closeout and W3 effects
 
-## Current branch and ownership
+## Current continuation status
 
-Team W1 works on `phase26-moss-speedup` with [PR #17](https://github.com/kuttyb/moss/pull/17)
-against `main`. The Coordinator is the sole writer for
-`src/semantic_checker.cpp` and `src/fileio_semantics.inc`; the second agent
-is an independent adversarial Architect. Do not merge directly to `main`.
-Read `.codex/CURRENT_STATUS.md` and `docs/phase26/W1_RESULTS.md` for the
-latest exact SHA, validation and known limits. The Phase 26 plan is
-`docs/phase26/MossPhase26.md`.
+W2 closeout and W3 implementation are committed and pushed on
+`phase26-w2-inference` at `c4048d8cf8d743e101e8adcdaf46cc976bc60c3e`;
+`.codex/CURRENT_STATUS.md` has the current delivery state. Read `W2_RESULTS.md` and `W3_RESULTS.md` for evidence and
+`MossPhase26.md` for the final stop decision. W2's per-wave project counters,
+legacy full-loop oracle, three extra convergence exits, W3 memoization, and W5
+timer-key fix are present. W4 type-spelling interning is dropped. Local repository gates, feedback validation, exact-SHA Architect review, and
+hosted run #15 all passed. PR #18 remains open and unmerged; it targets
+`phase26-moss-speedup`. Its implementation SHA has Architect GO. The next
+integration action is merging the PR into that Phase 26 branch under the normal
+review policy; do not bypass this with a direct main-branch merge.
 
-W1 implementation SHA `f6c07e69742620119863aed0a335f93f1c4f8e8e` is complete
-and pushed. Hosted Actions run #4 passed core regressions, optimized examples,
-and same-runner W1 performance. All eight Callgrind baseline/W1 pairs are
-complete. The Coordinator and Architect reviews found no actionable defect;
-the Architect's final verdict is GO. The PR readiness transition follows the
-documentation-only closeout push; do not merge directly to `main`.
+The Team is two actual agents: Coordinator/implementer/reviewer and the
+independent adversarial Architect. Architect GO is for exact implementation SHA
+`c4048d8cf8d743e101e8adcdaf46cc976bc60c3e`; the documentation-only closeout
+commit may advance the delivery head without changing the reviewed implementation. There were no leaf implementation workers.
+The Architect was asked to review at the frozen final integration checkpoint,
+not on individual edits. Record unknown usage values as unknown in the team
+closeout; do not infer agent counts or metrics.
 
-W1 caches context-free checker syntax only. Its `split_binary` key includes
-the ordered operator list; `split_top_level` includes the delimiter.
-Successful call parses return copies, while failed call parses still use the
-shared parser because they may partially change output arguments. The cache
-belongs to one `Checker` and has a 32,768-entry cap. `trim` remains uncached
-pending a measured benefit. Keep those contracts when working on later
-workstreams. The new regression is
-`tests/tooling/check_phase26_w1_parse_cache.py`.
+## Current ownership and branch
 
-## W1 evidence that a receiving team should check
+W2 implementation is on `phase26-w2-inference`, checkpoint
+`44b86de3af469c750ba0601389dee82291d83561`, and pushed to `origin`. Draft
+[PR #18](https://github.com/kuttyb/moss/pull/18) targets
+`phase26-moss-speedup`, currently at W1 base
+`b8871297619cf51187457b1fc3e55d833d661146`. Do not merge directly to `main`.
+Final delivery head `7e40f007fb74efec5b42127475a795714473bfa2` passed hosted
+run #11: core regressions, optimized examples, and W2 same-runner performance.
+PR #18 is ready for review and remains unmerged. The full 77-fixture
+B1 timing/profiling suite passed 154/154 trials for W1 and W2, and the
+eight-workload Callgrind attribution completed; details and the disclosed W4
+wall-time regression are in `docs/phase26/W2_RESULTS.md`. Read `.codex/CURRENT_STATUS.md`,
+`docs/phase26/W2_RESULTS.md`, and this handoff before continuing.
 
-The B1 benchmark ran the same 77 fixtures in timing and profiling modes on
-main and W1, one repetition per mode; all 154 trials passed on each binary.
-Three alternating paired trials confirmed W3 N32 and W5 W100 time gains.
-`docs/phase26/W1_RESULTS.md` holds exact numbers, memory tradeoffs and the
-scope limit. Baseline/W1 differential passed all 1,633 tracked `.moss` files
-under examples and tests; the 1,007 accepted sources emitted byte-identical
-Rust. Fast Debug exit status and output matched on all five Moss test files
-under `tests/`.
+The checker file has a single-writer lease. W2 closeout's counter/oracle and
+loop-audit additions are in `src/semantic_checker.cpp` and
+`tests/tooling/check_phase26_w2_inference_worklist.py`. W3 memoization is also
+in that file. W5's timer-key constructor fix is in
+`src/compiler_stage_timer.hpp` and is folded into this delivery. Do not start
+W4: the post-W3 attribution leaves type spelling below 15% on all workloads.
 
-PR #17's Phase 26 workflow has independent regression, optimized-example and
-same-runner performance jobs on separate checkouts. All three passed on
-implementation SHA `f6c07e69742620119863aed0a335f93f1c4f8e8e` in run #4. The regression job
-explicitly omits the legacy fixed-machine timing threshold; the performance
-job builds `main` and W1 on one runner and requires gains on W3 N32 and W5
-W100. The Make incremental test now runs its mold-version invalidation case
-only when mold is selected. The initial hosted run failed at link because the
-runner lacks mold; the workflow uses the Makefile's empty `MOSS_LDFLAGS`
-override.
+## W2 implementation and evidence
 
-Callgrind completed on W2 N32, W3 N32, W4 D18, W5 W100, regex,
-datastructures, rolling window, and checkout. Total `Ir` references and the
-direct named parse-helper category fell on all eight. Direct string-keyed map
-references rose as expected from cache lookups, especially on W4, while total
-references and wall time still fell. `W1_RESULTS.md` documents category
-definitions, exact totals/shares and attribution limitations. Raw profiles
-are disposable under `tmp/phase26-w1/callgrind/` and are not durable evidence.
+The initial inference wave preserves source order; changed signatures schedule
+callers. Shared object/domain/handler state changes and call-graph changes force
+a conservative all-function wave. Unresolved local callable uses, pipeline
+callbacks, sort callbacks, and callable formals are handled conservatively.
+Zero-function source programs continue to converge on shared signature changes.
+The existing `inference_rounds` counts are preserved; separate aggregate and
+per-wave function-visit/signature-change counters show actual work.
 
-## Next workstream
+Local gates at checkpoint `44b86de3af469c750ba0601389dee82291d83561`:
 
-W2 is the next independent Phase 26 change. Start it from W1 implementation
-SHA `f6c07e69742620119863aed0a335f93f1c4f8e8e` on a scoped branch after PR #17
-is reviewed; do not merge directly to `main`. W2 owns the
-signature-inference convergence loop in `src/semantic_checker.cpp`: re-infer
-a caller when a callee's inferred signature changes, preserve the existing
-result order and diagnostics, and expose functions changed per round alongside
-`inference_rounds`. W5 wide inference W100 is the target workload. Keep W2
-performance and correctness evidence separate from W1 so each result can be
-attributed or reverted independently. Maintain one writer lease on the
-checker file, and leave W3–W5 outside W2's PR.
+- `moss-dev` and `moss-opt` build succeeded.
+- W2 regression passed on both builds: W5 output/counters, forward call,
+  domain-only shared signature (asserted to analyze zero functions), pipeline
+  callback, negative diagnostic.
+- Differential parity passed all 2,060 tracked `.moss` files against W1:
+  1,322 accepted; zero diagnostic/verdict changes; zero emitted-Rust hash
+  changes.
+- Three alternating W5 W100 optimized timing pairs: W1 10.9169 s, W2 0.3834 s
+  median (96.5% lower); exact check JSON matched.
+- Architect checkpoint 2.1 returned conditional GO with no remaining confirmed
+  blocker. Final Architect review is GO for implementation SHA
+  `44b86de3af469c750ba0601389dee82291d83561`.
+
+The PR #18 automated checks are green on corrected delivery head `5d1cd6b6`;
+PR #18 is ready for review and remains unmerged. See
+`docs/phase26/W2_RESULTS.md` for validation scope and limitations. PR #17/W1
+remains separate and has no main merge implied here.
+
+## W3 results and next work
+
+W3's mechanism was chosen from measured D18 counts: 2,621,451 baseline calls
+for 37 distinct keys, with effects fixed point at 1/60 rounds. The memoized
+candidate reports 38 computations for 19 distinct inputs across the two
+independent passes and lowers D18 Callgrind Ir by 72.5%. The eight-workload
+attribution and small-fixture latency are in `W3_RESULTS.md`. The decision is
+to stop Phase 26 after this work, drop W4, retain the discipline rules, and
+move the next effort to Graph DSL. Follow the repository PR gates; do not merge
+directly to `main`.
+
+## Prior W1 references
+
+W1 implementation and measurements are recorded in
+`docs/phase26/W1_RESULTS.md`; its PR #17 targets `main`. W1's expression caches
+are per-Checker, bounded, syntax-only, and preserve parser output-argument side
+effects. Keep those contracts intact when working on W2 and later workstreams.
