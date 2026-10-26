@@ -1,6 +1,6 @@
 # Phase 26 complete — W1–W3 merged to main — 2026-10-26
 
-## Local compiler-perf suite follow-up — resource report repair in progress — 2026-10-26
+## Local compiler-perf suite follow-up — certified rerun complete; final gates pending — 2026-10-26
 
 - Branch `compiler-perf-local-suite`, PR #20, compiler source identical to
   `origin/main` at `bdf973af651deb2d3a4deac2b6c4bcc60893a776`; no compiler
@@ -9,25 +9,21 @@
   certification. Certification now also requires baseline `c66fb76c`, all 77
   fixtures, and exactly three timing repetitions. Ordinary runs accept any
   revision and metadata records dirty state.
-- Certified run `20261026-111935` completed on `DESKTOP-0T772KP` (WSL2, 16
+- Certified run `20261026-115031` completed on `DESKTOP-0T772KP` (WSL2, 16
   logical CPUs): 77 fixtures; 231 timing plus 77 profile samples per compiler;
   all succeeded; clean tree; baseline `c66fb76ca0012b8125d70d404adbff13daa1cf4e`.
-  Sum of fixture wall medians: 97.078 s baseline, 14.877 s candidate (-84.7%).
-  Wall-time measurements remain valid, but Architect found expected-negative
-  fixtures had empty CPU/RSS parsed as zero and empty candidate counters
-  rendered as zero. The current local edits fix GNU time's non-zero-exit
-  preamble parsing and render missing counters/resources as n/a. Re-run the full
-  certification command before treating the committed result artifacts as final.
+  Sum of fixture wall medians: 98.437 s baseline, 15.071 s candidate (-84.7%).
+  CPU/RSS were captured for all 77 timing and 77 profiling samples per side.
+  Negative-fixture work counters are now n/a. No fixture exceeded the slowdown
+  threshold. Updated report, CSVs and metadata are ready for the result commit.
 - Architect review at `93ed4bddd826eea03b7baaacebdff18353c6b3bb` was NO-GO on
-  resource/counter report accuracy. It verified the certification safeguards,
-  full 77-fixture coverage, wall-time arithmetic, and hosted gates. Fix and
-  replacement run are in progress.
-- Hosted PR #20 run #25 (`40378555429`) passed core regressions, optimized
-  examples, and local perf smoke on prior SHA `93ed4bdd`; its workstream-only
-  jobs were skipped by their branch conditions. After the current resource
-  parser fix, rerun `py_compile`, feedback validation, diff check, and the full
-  certification command; hosted gates and exact-SHA Architect review remain
-  pending. PR stays open; no merge to main has occurred. Team closeout:
+  resource/counter report accuracy; GNU time's failure preamble parser and n/a
+  rendering are fixed, and the full certification run was repeated.
+- Hosted run #26 (`40381330194`) was running against code SHA `6deefa96` while
+  the new result artifacts were being prepared. After committing the refreshed
+  report, rerun `py_compile`, feedback validation, and diff check; final-head
+  hosted gates and Architect review remain pending. PR stays open; no merge to
+  main has occurred. Team closeout:
   `docs/phase26/agent-patterns/team-local-perf-suite.md`.
 
 - W2/W3 implementation is complete. PR #18 merged into `phase26-moss-speedup`

@@ -4,11 +4,11 @@
   "baseline_ref": "c66fb76c",
   "candidate_binary_sha256": "82027513646fc4339147a6cbefe0dda0332b92d4711564fc7c236f0f16dd2caf",
   "candidate_compiler_source_sha": "bdf973af651deb2d3a4deac2b6c4bcc60893a776",
-  "candidate_git_sha": "6817b59ab37711fd4e1ec8c942e07652a25d5b23",
+  "candidate_git_sha": "6deefa9677db4feb3f85de9ad389c5e6863412e4",
   "certification_mode": true,
   "cpu": "x86_64",
   "cpu_time_resolution_ms": 10,
-  "finished_utc": "2026-10-26T18:28:02.468614+00:00",
+  "finished_utc": "2026-10-26T18:59:04.945226+00:00",
   "fixture_count": 77,
   "fixture_sha256": {
     "example_checkout": "a746151d39c8663a7d8bde2bc9ce94dd1e3cbbff4e2b30c7ae8c0ed7ba480ba5",
@@ -92,14 +92,14 @@
   "host": "DESKTOP-0T772KP",
   "include_real_world": true,
   "load_average_after_profiling": [
-    1.00439453125,
-    0.908203125,
-    0.58740234375
+    1.00537109375,
+    0.9296875,
+    0.607421875
   ],
   "load_average_before_timing": [
-    1.42236328125,
-    0.44775390625,
-    0.28564453125
+    1.40576171875,
+    0.45947265625,
+    0.291015625
   ],
   "logical_cpus": 16,
   "order_strategy": "adjacent baseline/candidate per fixture; flip first side by (repetition + fixture-position) parity",
@@ -111,9 +111,9 @@
   "platform": "Linux-6.18.33.2-microsoft-standard-WSL2-x86_64-with-glibc2.39",
   "profile_mode": "separate traced run; excluded from timing/CPU/RSS summaries",
   "profiling_repetitions": 1,
-  "run_id": "20261026-111935",
+  "run_id": "20261026-115031",
   "slowdown_rule": "median >5% and (>20 ms absolute or non-overlapping sample ranges with >2 ms absolute increase)",
-  "started_utc": "2026-10-26T18:20:27.342392+00:00",
+  "started_utc": "2026-10-26T18:51:23.757738+00:00",
   "status": "complete",
   "timeout_seconds": 120,
   "timing_mode": "untraced",
