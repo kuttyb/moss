@@ -5572,8 +5572,10 @@ public class SemanticChecker {
                         elemType = iterType.typeArgs().get(0);
                     } else if ((iterType.kind() == TypeKind.Builtin && "range".equals(iterType.name()))
                             || (iterType.kind() == TypeKind.Primitive && "Range".equals(iterType.name()))
+                            || (iterType.kind() == TypeKind.Primitive && "RangeBatch".equals(iterType.name()))
                             || iterExpr.startsWith("range(")) {
-                        elemType = TypeRef.primitive("int");
+                        elemType = "RangeBatch".equals(iterType.name())
+                                ? TypeRef.primitive("Range") : TypeRef.primitive("int");
                     } else if (iterType.kind() == TypeKind.InferenceVar
                             || (iterType.kind() == TypeKind.Builtin && "vector".equals(iterType.name())
                                     && iterType.typeArgs().isEmpty())) {

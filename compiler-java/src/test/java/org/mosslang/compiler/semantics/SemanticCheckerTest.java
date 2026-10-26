@@ -105,6 +105,7 @@ public class SemanticCheckerTest {
         testRecoverUsesPipelineStageRaiseOrder();
         testRecoverBindingInfersRaisesThroughScalarCalls();
         testRangeIndexHasByteType();
+        testRangeBatchIndexHasRangeType();
         testFileIoReadMakesIoRecoveryReachable();
         testFileIoBuiltinArityIsChecked();
         System.out.println("SemanticCheckerTest PASSED.");
@@ -2878,6 +2879,28 @@ public class SemanticCheckerTest {
                 + "fn main():\n"
                 + "  pass\n", "range-byte-index-type.moss");
         new SemanticChecker(program).run();
+    }
+
+    private static void testRangeBatchIndexHasRangeType() {
+        Program program = Parser.parseSource(""
+                + "fn first_range(batch: RangeBatch) -> Int:\n"
+                + "  return batch[0].length()\n"
+                + "fn total_length(batch: RangeBatch) -> Int:\n"
+                + "  total = 0\n"
+                + "  for part in batch:\n"
+                + "    total = total + part.length()\n"
+                + "  return total\n"
+                + "fn main():\n"
+                + "  pass\n", "range-batch-index-type.moss");
+        new SemanticChecker(program).run();
+
+        Program wrongIndex = Parser.parseSource(""
+                + "fn first_range(batch: RangeBatch) -> Int:\n"
+                + "  return batch[true].length()\n"
+                + "fn main():\n"
+                + "  pass\n", "range-batch-index-type-error.moss");
+        expectCompileError(wrongIndex, "TYPE_MISMATCH",
+                "RangeBatch indexes must be Int");
     }
 
     private static void testFileIoReadMakesIoRecoveryReachable() {

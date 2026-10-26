@@ -17110,4 +17110,22 @@ Executor generation regression checks the emitted ID/TLS/wrapper/re-entry
 guards; `git diff --check` passes. Generated Rust has not been compiled or
 executed. Branch context, Root telemetry, blocking compensation, broad semantic
 parity, native/SDK acceptance, and Architect review remain open. Work is
-uncommitted at this status update.
+committed and pushed as `3afa5920`.
+
+### Phase 25.3 correction — RangeBatch checker profile; FileIO backend gap
+
+The positive Phase 20 FileIO integration fixture exposed Java-only checker
+rejections for RangeBatch indexing and iteration. Java now validates Int
+indices, gives an indexed batch entry type `Range`, and binds iteration values
+as `Range`. A focused test accepts the proper profile and rejects Bool index.
+
+After a fresh build, both `scripts/java/run.sh
+tests/tooling/fixtures/phase20_fileio_runtime_integration.moss --check` and the
+C++ `./moss ... --check` accept the fixture. ABI-v9 and staged ABI-v10 Java
+suites each pass all 12 test classes after the final for-loop clause edit.
+Codegen inspection confirms a
+larger P1 gap: Java still emits a length-only FileIO stub that drops the open
+mode and lacks writes, batch reads, and production root/runtime modules. This
+is not Fast Debug's intentional FileIO limitation; native FileIO support is
+unfinished and must be addressed before the frozen candidate. No Rust
+compilation or execution was run.

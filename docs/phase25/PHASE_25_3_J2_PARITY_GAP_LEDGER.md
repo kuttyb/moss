@@ -1161,3 +1161,19 @@ generated-runtime regression checks ID allocation, TLS context, wrapping for
 each ingress mode, and both re-entry guards. No generated Rust compilation or
 execution was run. This does not add branch context, Root telemetry, or bounded
 blocking compensation; those remain open runtime gaps for final acceptance.
+
+### Correction — RangeBatch index and iteration semantic coverage
+
+The positive Phase 20 FileIO integration fixture was accepted by C++ but Java
+rejected `RangeBatch` indexing and then `for` iteration. Java now requires an
+Int batch index and types `batch[index]` as `Range`; `for part in batch` binds
+`part` as `Range`. A focused regression also rejects a Bool index. After a
+fresh Java build, both C++ and Java `--check` accept
+`tests/tooling/fixtures/phase20_fileio_runtime_integration.moss`.
+
+This closes only the checker surface exercised by that fixture. Generated
+Java Rust still emits a length-only `__MossFile`/`__MossRange` stub: it drops
+the FileIO open mode, does not implement writes or batch reads, and does not
+emit the production `moss_fileio`/`moss_root_runtime` modules emitted by C++.
+The compiler therefore remains blocked on real native FileIO support; no Rust
+compilation or execution was run.
