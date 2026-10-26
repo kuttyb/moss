@@ -1,0 +1,8 @@
+fn calculate(value: Int) -> Int:
+  return value + 2 * 3
+
+fn main():
+  echo calculate(1)
+  echo calculate(2)
+  echo (1 + 2) * 3
+  echo "a,b".split(",") |> count

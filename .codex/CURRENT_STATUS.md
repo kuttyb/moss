@@ -12227,3 +12227,17 @@ measurements; paired timings, full correctness gates, benchmark gate, Rust and
 Fast Debug parity, final Architect review, and closeout remain pending. Do not
 claim W1 complete from this checkpoint. Callgrind is not installed locally;
 record its attribution gate honestly if still unavailable at closeout.
+
+Second checkpoint: the B1 benchmark runner completed all 77 fixtures in both
+timing and profiling modes on baseline and W1 (154/154 successful trials for
+each, one repetition per mode). Untraced W3 N32 fell 2.353 s to 1.760 s,
+W5 W100 10.763 s to 8.980 s, regex 19.655 s to 18.803 s, and
+datastructures 21.375 s to 19.681 s. Full details and limitations are in
+`docs/phase26/W1_RESULTS.md`. The B1 report generator initially failed after
+all main trials due to a preexisting null specialization-count aggregation;
+the runner fix and report-only regeneration passed. The new W1 production
+regression test passes, including Fast Debug and a negative diagnostic.
+The Architect's intermediate review of exact SHA
+`1252eaa6afbfcf9c917ac71ab93a3785790d9a63` found no confirmed
+semantic defect. Full corpus parity, complete suites and final exact-SHA
+review remain pending.

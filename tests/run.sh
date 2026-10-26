@@ -59,6 +59,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase24_imported_generic_e
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase24_same_module_type_resolution.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase24_bitwise_operations.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_recursive_layout.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase26_w1_parse_cache.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_type_ir.py
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_a3_specialization.py "$compiler"
 # ABI-v10 container unit validation is staged; compiled-only Moss proof is

@@ -175,7 +175,8 @@ def run_trial(moss_bin: Path, fixture: dict, iteration: int, timeout_seconds: in
                 specialization_body_checking_ms = round(int(val) / 1e6, 3)
                 counters[stage] = int(val)
             elif stage in ("functions_analyzed", "types_analyzed", "distinct_specialization_keys",
-                           "reused_specialization_results", "inference_rounds", "inference_work_units"):
+                           "reused_specialization_results", "inference_rounds", "inference_work_units",
+                           "parse_cache_hits", "parse_cache_misses"):
                 counters[stage] = int(val)
             else:
                 stage_ms[stage] = stage_ms.get(stage, 0.0) + int(val) / 1e6
@@ -274,7 +275,8 @@ def compute_fixture_stats(results: list, fid: str, mode: str = "all") -> dict:
         "cpu_user_med": statistics.median(users) if users else 0.0,
         "peak_rss_med": statistics.median(rsss) if rsss else 0,
         "unattributed_med": statistics.median(unattributeds) if unattributeds else 0.0,
-        "checked_specs": rows[0].get("actual_checked_specializations"),
+        "checked_specs": next((r["actual_checked_specializations"] for r in rows
+                               if r.get("actual_checked_specializations") is not None), None),
         "specialization_requests": req_med,
         "specialization_body_checking_ms": body_check_med,
         "stage_medians": stage_medians,
