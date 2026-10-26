@@ -1,0 +1,54 @@
+name: Phase 26 W1 PR gates
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: phase26-w1-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  core-regressions:
+    if: github.head_ref == 'phase26-moss-speedup'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build with available cores
+        run: make --jobs="$(nproc)"
+      - name: Full repository regressions
+        run: |
+          mkdir -p tmp
+          TMPDIR="$PWD/tmp" make --jobs="$(nproc)" check
+
+  optimized-examples:
+    if: github.head_ref == 'phase26-moss-speedup'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build with available cores
+        run: make --jobs="$(nproc)"
+      - name: Build optimized examples
+        run: |
+          mkdir -p tmp
+          TMPDIR="$PWD/tmp" make --jobs="$(nproc)" examples-optimized
+
+  compiler-performance:
+    if: github.head_ref == 'phase26-moss-speedup'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build optimized compiler with available cores
+        run: make --jobs="$(nproc)" moss-opt
+      - name: W1 production regression and B1 performance gate
+        run: |
+          mkdir -p tmp
+          TMPDIR="$PWD/tmp" python3 tests/tooling/check_phase26_w1_parse_cache.py build/compiler/moss-opt
+          TMPDIR="$PWD/tmp" make check-perf
