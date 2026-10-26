@@ -17178,3 +17178,22 @@ bound propagation, Executor Solo compensation integration, full language
 parity, packaging/daemon readiness, SDK/native acceptance, and frozen-candidate
 Architect review remain open. No full `make check` or expensive acceptance
 suite was run.
+
+### Phase 25.3 continuation — Java Executor FileIO Solo hooks
+
+The Java Executor runtime now identifies active worker threads, tracks nested
+FileIO Solo waits, and starts a compensating worker when runnable capacity falls
+below the configured base. Compensation stays under configured `max_threads`;
+excess workers retire when they are idle. FileIO-enabled generated `main`
+registers the callbacks with the production root runtime. Existing Executor
+codegen expectations were updated for the shared worker-handle manager.
+
+Validation: ABI-v9 and staged ABI-v10 Java suites each pass all 12 test classes.
+Generator assertions cover process-root hook registration and bounded worker
+logic. No generated Rust compile or native runtime execution was run; worker
+lifecycle and compensation semantics need native acceptance evidence at the
+frozen-candidate gate. Request-vector bound propagation remains conservative.
+Broader semantic parity, full FileIO error/lifecycle parity, ABI-v10 source-free
+integration, Fast Debug/tracing, JAR/launcher/daemon readiness, SDK acceptance,
+and independent Architect review remain open. No full `make check` or
+expensive acceptance suite was run.

@@ -234,6 +234,12 @@ public class DebugMapGeneratorTest {
         assertTrue(rust.contains("pub mod moss_fileio"), "production FileIO runtime must be bundled");
         assertTrue(rust.contains("fn __moss_raise_fileio(error: MossFileError)"),
                 "FileIO errors must enter Moss error propagation");
+        assertTrue(rust.contains("executor_fileio_solo_enter_callback()"),
+                "FileIO-enabled process roots must register Executor compensation hooks");
+        assertTrue(rust.contains("fn __moss_executor_solo_enter(reason: &str)"),
+                "Executor runtime must expose worker-aware Solo compensation");
+        assertTrue(rust.contains("state.live_workers < state.max_workers"),
+                "Solo compensation must respect configured maximum worker count");
         assertTrue(rust.contains("FileIO::open_checked(&(MossStr::from(\"input\")), \"ro\")"),
                 "open must pass its path and mode to the checked runtime");
         assertTrue(rust.contains(".read_checked(0_i64, 1_i64).map_err(__moss_raise_fileio)?"),

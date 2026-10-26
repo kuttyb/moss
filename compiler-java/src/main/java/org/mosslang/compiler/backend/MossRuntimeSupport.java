@@ -80,12 +80,25 @@ type __MossExecutorJob = Box<dyn FnOnce() + Send + 'static>;
 struct __MossExecutorQueueState {
     pending: std::collections::VecDeque<__MossExecutorJob>,
     shutdown: bool,
+    base_workers: usize,
+    max_workers: usize,
+    live_workers: usize,
+    next_worker_id: usize,
+    solo_blocked: std::collections::HashMap<usize, usize>,
 }
 struct __MossExecutorShared {
     state: std::sync::Mutex<__MossExecutorQueueState>,
     work_available: std::sync::Condvar,
     space_available: std::sync::Condvar,
     queue_capacity: usize,
+    affinity: std::option::Option<std::vec::Vec<usize>>,
+    priority: std::option::Option<i32>,
+    worker_handles: std::sync::Mutex<std::vec::Vec<std::thread::JoinHandle<()>>>,
+}
+thread_local! {
+    static __MOSS_CURRENT_EXECUTOR_WORKER: std::cell::RefCell<std::option::Option<(std::sync::Weak<__MossExecutorShared>, usize)>> = const {
+        std::cell::RefCell::new(None)
+    };
 }
 struct __MossExecutorIngress {
     shared: std::option::Option<std::sync::Weak<__MossExecutorShared>>,
@@ -148,14 +161,42 @@ fn __moss_executor_enqueue_shared(shared: &std::sync::Arc<__MossExecutorShared>,
     state.pending.push_back(work);
     shared.work_available.notify_one();
 }
-fn __moss_executor_worker(shared: std::sync::Arc<__MossExecutorShared>) {
+fn __moss_executor_spawn_worker(shared: &std::sync::Arc<__MossExecutorShared>, worker_id: usize) {
+    let worker_shared = std::sync::Arc::clone(shared);
+    let affinity = shared.affinity.clone();
+    let priority = shared.priority;
+    let worker = std::thread::Builder::new()
+        .name(format!("moss-executor-{}", worker_id))
+        .spawn(move || {
+            __moss_executor_apply_affinity_and_priority(affinity.as_ref(), priority);
+            __MOSS_CURRENT_EXECUTOR_WORKER.with(|current| {
+                *current.borrow_mut() = Some((std::sync::Arc::downgrade(&worker_shared), worker_id));
+            });
+            __moss_executor_worker(worker_shared, worker_id);
+            __MOSS_CURRENT_EXECUTOR_WORKER.with(|current| { current.borrow_mut().take(); });
+        })
+        .unwrap_or_else(|error| {
+            eprintln!("moss executor: failed to start worker: {}", error);
+            std::process::abort();
+        });
+    shared.worker_handles.lock().unwrap_or_else(|error| error.into_inner()).push(worker);
+}
+fn __moss_executor_worker(shared: std::sync::Arc<__MossExecutorShared>, worker_id: usize) {
     loop {
         let job = {
             let mut state = shared.state.lock().unwrap_or_else(|error| error.into_inner());
             while state.pending.is_empty() && !state.shutdown {
+                let blocked_workers = state.solo_blocked.values().filter(|depth| **depth > 0).count();
+                if state.live_workers.saturating_sub(blocked_workers) > state.base_workers {
+                    state.live_workers = state.live_workers.saturating_sub(1);
+                    return;
+                }
                 state = shared.work_available.wait(state).unwrap_or_else(|error| error.into_inner());
             }
-            if state.pending.is_empty() && state.shutdown { return; }
+            if state.pending.is_empty() && state.shutdown {
+                state.live_workers = state.live_workers.saturating_sub(1);
+                return;
+            }
             let job = state.pending.pop_front().unwrap_or_else(|| std::process::abort());
             shared.space_available.notify_one();
             job
@@ -165,6 +206,43 @@ fn __moss_executor_worker(shared: std::sync::Arc<__MossExecutorShared>) {
         }
     }
 }
+fn __moss_executor_solo_enter(reason: &str) {
+    let _ = reason;
+    let worker = __MOSS_CURRENT_EXECUTOR_WORKER.with(|current| current.borrow().clone());
+    let Some((weak, worker_id)) = worker else { return; };
+    let Some(shared) = weak.upgrade() else { return; };
+    let spawn_id = {
+        let mut state = shared.state.lock().unwrap_or_else(|error| error.into_inner());
+        let first_entry = {
+            let depth = state.solo_blocked.entry(worker_id).or_insert(0);
+            *depth += 1;
+            *depth == 1
+        };
+        let blocked_workers = state.solo_blocked.values().filter(|depth| **depth > 0).count();
+        if first_entry && state.live_workers.saturating_sub(blocked_workers) < state.base_workers
+                && state.live_workers < state.max_workers && !state.shutdown {
+            let id = state.next_worker_id;
+            state.next_worker_id += 1;
+            state.live_workers += 1;
+            Some(id)
+        } else { None }
+    };
+    if let Some(id) = spawn_id { __moss_executor_spawn_worker(&shared, id); }
+}
+fn __moss_executor_solo_leave(reason: &str) {
+    let _ = reason;
+    let worker = __MOSS_CURRENT_EXECUTOR_WORKER.with(|current| current.borrow().clone());
+    let Some((weak, worker_id)) = worker else { return; };
+    let Some(shared) = weak.upgrade() else { return; };
+    let mut state = shared.state.lock().unwrap_or_else(|error| error.into_inner());
+    if let Some(depth) = state.solo_blocked.get_mut(&worker_id) {
+        *depth = depth.saturating_sub(1);
+        if *depth == 0 { state.solo_blocked.remove(&worker_id); }
+    }
+    shared.work_available.notify_all();
+}
+pub fn executor_fileio_solo_enter_callback() -> fn(&str) { __moss_executor_solo_enter }
+pub fn executor_fileio_solo_leave_callback() -> fn(&str) { __moss_executor_solo_leave }
 fn __moss_executor_positive_usize(name: &str, value: i64) -> usize {
     match <usize as std::convert::TryFrom<i64>>::try_from(value) {
         Ok(converted) if converted > 0 => converted,
@@ -215,12 +293,11 @@ pub struct __MossExecutor {
     affinity: std::option::Option<std::vec::Vec<usize>>,
     priority: std::option::Option<i32>,
     shared: std::option::Option<std::sync::Arc<__MossExecutorShared>>,
-    workers: std::vec::Vec<std::thread::JoinHandle<()>>,
 }
 impl __MossExecutor {
     pub fn new() -> Self {
         Self { threads: None, max_threads: None, queue_capacity: None, affinity: None,
-            priority: None, shared: None, workers: std::vec::Vec::new() }
+            priority: None, shared: None }
     }
     pub fn threads(mut self, count: i64) -> Self {
         self.threads = Some(__moss_executor_positive_usize("threads", count)); self
@@ -260,10 +337,15 @@ impl __MossExecutor {
         let shared = std::sync::Arc::new(__MossExecutorShared {
             state: std::sync::Mutex::new(__MossExecutorQueueState {
                 pending: std::collections::VecDeque::new(), shutdown: false,
+                base_workers: threads.min(max_threads), max_workers, live_workers: 0,
+                next_worker_id: 0, solo_blocked: std::collections::HashMap::new(),
             }),
             work_available: std::sync::Condvar::new(),
             space_available: std::sync::Condvar::new(),
             queue_capacity,
+            affinity: self.affinity.clone(),
+            priority: self.priority,
+            worker_handles: std::sync::Mutex::new(std::vec::Vec::new()),
         });
         {
             let (ingress_lock, ingress_changed) = __moss_executor_ingress();
@@ -282,21 +364,12 @@ impl __MossExecutor {
             ingress_changed.notify_all();
         }
         for worker_id in 0..threads.min(max_threads) {
-            let worker_shared = std::sync::Arc::clone(&shared);
-            let worker_affinity = self.affinity.clone();
-            let worker_priority = self.priority;
-            let worker = std::thread::Builder::new()
-                .name(format!("moss-executor-{}", worker_id))
-                .spawn(move || {
-                    __moss_executor_apply_affinity_and_priority(
-                        worker_affinity.as_ref(), worker_priority);
-                    __moss_executor_worker(worker_shared)
-                })
-                .unwrap_or_else(|error| {
-                    eprintln!("moss executor: failed to start worker: {}", error);
-                    std::process::abort();
-                });
-            self.workers.push(worker);
+            {
+                let mut state = shared.state.lock().unwrap_or_else(|error| error.into_inner());
+                state.live_workers += 1;
+                state.next_worker_id = state.next_worker_id.max(worker_id + 1);
+            }
+            __moss_executor_spawn_worker(&shared, worker_id);
         }
         self.shared = Some(shared);
         self
@@ -332,7 +405,8 @@ impl __MossExecutor {
         shared.work_available.notify_all();
         shared.space_available.notify_all();
         drop(state);
-        for worker in self.workers.drain(..) {
+        let mut worker_handles = shared.worker_handles.lock().unwrap_or_else(|error| error.into_inner());
+        for worker in worker_handles.drain(..) {
             if worker.join().is_err() { std::process::abort(); }
         }
         {

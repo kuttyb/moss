@@ -1248,6 +1248,10 @@ public class NativeGenerator {
             if (debugBuild) o.append("#[inline(never)]\n");
             o.append("#[export_name = \"moss__main\"]\n");
             o.append("fn main() {\n");
+            if (programUsesFileIo(program)) {
+                o.append("    moss_set_solo_hooks(executor_fileio_solo_enter_callback(), ")
+                        .append("executor_fileio_solo_leave_callback());\n");
+            }
             Set<String> declared = new HashSet<>();
             currentEnclosingIdentity.set(mainIdentity);
             currentMainCodegen.set(true);
