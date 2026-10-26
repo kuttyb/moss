@@ -17094,4 +17094,4 @@ Validation on the current worktree: `scripts/java/test.sh` and
 not run before the frozen-candidate acceptance gate. Blocking worker
 compensation, Root identity/context, native runtime semantics, broader checker
 parity, SDK integration, and final release review remain unfinished. This
-slice is uncommitted at the time of this status entry.
+slice was committed and pushed as `711f50b5`.
