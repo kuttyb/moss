@@ -17197,3 +17197,14 @@ Broader semantic parity, full FileIO error/lifecycle parity, ABI-v10 source-free
 integration, Fast Debug/tracing, JAR/launcher/daemon readiness, SDK acceptance,
 and independent Architect review remain open. No full `make check` or
 expensive acceptance suite was run.
+
+### Phase 25.3 packaging check — standalone FileIO resources
+
+`scripts/java/package.sh` completed from the current Java sources and produced
+`compiler-java/dist/moss.jar`. The packaged `scripts/java/moss` launcher then
+generated Rust for the Phase 20 FileIO integration fixture. Inspection of that
+output confirms the JAR contains and emits the production FileIO runtime,
+Executor Solo callbacks, batch runtime API, and mode-aware FileIO open lowering.
+This verifies Java resource packaging and launcher selection only; it does not
+validate `rustc`, native behavior, source-free cross-crate linkage, or the live
+JDT daemon lifecycle.
