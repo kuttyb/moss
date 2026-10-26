@@ -1176,9 +1176,12 @@ public class NativeGenerator {
             Set<String> declared = new HashSet<>();
             currentEnclosingIdentity.set(mainIdentity);
             currentMainCodegen.set(true);
-            genBlockStmts(o, program.main.body, "    ", declared, Collections.emptySet(), Collections.emptySet(), domains, objects, false, false, false, false);
-            currentMainCodegen.set(false);
-            currentEnclosingIdentity.remove();
+            try {
+                genBlockStmts(o, program.main.body, "    ", declared, Collections.emptySet(), Collections.emptySet(), domains, objects, false, false, false, false);
+            } finally {
+                currentMainCodegen.remove();
+                currentEnclosingIdentity.remove();
+            }
             o.append("}\n");
             o.append("// Moss tooling end|").append(mainIdentity).append("\n");
         } else {

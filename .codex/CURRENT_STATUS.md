@@ -17012,6 +17012,11 @@ fail-closed inline panic cleanup, other concurrent root-admission paths, and
 native Rust behavior remain unverified Java runtime gaps for later feature
 completion and frozen-candidate acceptance.
 
+The main-codegen ThreadLocal context now restores in a `finally` block if
+generation throws, preventing a failed compile from contaminating a later
+compile on a reused JVM thread. All 12 Java test classes pass under ABI-v9 and
+staged ABI-v10 after this cleanup.
+
 The active-ingress regression also covers an imported ABI-v9 source-free
 domain: it verifies the bridge method is called through `runtime_invoke`
 between Executor start and join. `SourceFreeObjectMetadataTest` passes in
