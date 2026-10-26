@@ -1,5 +1,6 @@
 ## Phase 26 W1 continuation — 2026-10-25
 
+- Final PR-head Actions run #6 (`40276122512`, head `d6edcfaafdfca83b50914a70ea984930310357aa`) is still in progress: `optimized-examples` and `compiler-performance` passed; `core-regressions` is still executing `Full repository regressions` with no failure reported. This is the only outstanding check; poll before treating the PR-head run as complete.
 - Branch `phase26-moss-speedup`; implementation SHA `f6c07e69742620119863aed0a335f93f1c4f8e8e` is pushed and unchanged since CI run #4.
 - GitHub Actions run [#4](https://github.com/kuttyb/moss/actions/runs/40271463458): `core-regressions`, `optimized-examples`, and `compiler-performance` all passed. Core job explicitly excludes the legacy fixed-machine Phase 25.4 timing threshold; W1 has its own same-runner comparison.
 - W1 correctness: B1 77-fixture timing/profiling suite passed 154/154 trials per compiler; isolated baseline/W1 differential passed all 1,633 tracked `.moss` files, with 1,007 accepted Rust outputs byte-identical and 626 rejected diagnostics matching. Five Fast Debug corpus files matched. W1 regression passed positive/cache-counter, interpreter output, and negative diagnostic checks.
