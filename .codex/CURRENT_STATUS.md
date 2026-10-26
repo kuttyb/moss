@@ -17049,3 +17049,14 @@ A second focused probe mutates an argument local after the first `invoke`;
 both interpreters retain the submitted value, return `18`, and emit identical
 stdout and trace files. This specifically validates submit-time value
 snapshotting in the deterministic Fast Debug schedule.
+
+### Phase 25.3 correction — resolve project module targets for `moss debug`
+
+The Phase 10 Fast Debug closure script exposed that Java treated `moss debug
+app` as a filename, failing with `cannot open app`. The CLI now resolves a
+missing debug target by package source module name or filename stem. The
+existing `check_phase10_fast_debug_project.py` passes with the Java launcher,
+including the three-module source closure, and the real `phase7_demo` Margo
+debug command prints `42`. All 12 Java classes pass under ABI-v9 and staged
+ABI-v10. Cross-package/source-free Fast Debug limitations remain, and no
+native compilation or execution was run.

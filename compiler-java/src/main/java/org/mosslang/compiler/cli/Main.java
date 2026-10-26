@@ -410,6 +410,19 @@ public class Main {
                 }
             } catch (Exception ignored) {}
         }
+        if (interpMode && !file.exists()) {
+            try {
+                Path resolvedTarget = resolveProjectDebugTarget(sourcePath);
+                if (resolvedTarget != null) {
+                    sourcePath = resolvedTarget.toString();
+                    file = resolvedTarget.toFile();
+                }
+            } catch (Exception error) {
+                System.err.println("moss: could not resolve Fast Debug target '" + sourcePath + "': "
+                        + error.getMessage());
+                return 1;
+            }
+        }
         String absPath = file.getAbsolutePath();
         if (!file.exists()) {
             if (jsonOutput) {
@@ -2519,9 +2532,35 @@ public class Main {
         throw new IllegalArgumentException("unterminated quoted Mossi field");
     }
 
+    private static Path resolveProjectDebugTarget(String target) throws IOException {
+        Path root = Paths.get(".").toAbsolutePath().normalize();
+        org.mosslang.compiler.project.ProjectManifest manifest =
+                org.mosslang.compiler.project.ProjectManifest.load(root);
+        String moduleTarget = target.endsWith(".moss")
+                ? target.substring(0, target.length() - ".moss".length()) : target;
+        int separator = Math.max(moduleTarget.lastIndexOf('/'), moduleTarget.lastIndexOf('\\'));
+        if (separator >= 0) moduleTarget = moduleTarget.substring(separator + 1);
+        List<Path> matches = new ArrayList<>();
+        for (Path source : manifest.findSourceFiles()) {
+            String content = Files.readString(source, StandardCharsets.UTF_8);
+            Program candidate = Parser.parseSource(content, source.toAbsolutePath().toString());
+            String filename = source.getFileName().toString();
+            String stem = filename.endsWith(".moss") ? filename.substring(0, filename.length() - 5) : filename;
+            if (moduleTarget.equals(candidate.moduleName) || moduleTarget.equals(stem)) matches.add(source);
+        }
+        if (matches.size() > 1) {
+            List<Path> mainMatches = matches.stream()
+                    .filter(path -> path.getFileName().toString().equals("main.moss")).toList();
+            if (mainMatches.size() == 1) return mainMatches.get(0);
+            throw new IOException("target matches multiple source modules: " + matches);
+        }
+        return matches.isEmpty() ? null : matches.get(0);
+    }
+
     public static void usage() {
         System.err.println("usage: moss <source.moss> [-o output.rs] [--check] [--json]");
         System.err.println("       moss run --interp <source.moss> [--trace]");
+        System.err.println("       moss debug <project-directory|module-name|source.moss> [--trace]");
         System.err.println("       moss check [--json] <source.moss>");
     }
 }

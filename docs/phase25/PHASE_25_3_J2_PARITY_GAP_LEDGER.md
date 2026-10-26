@@ -1102,3 +1102,16 @@ A focused second probe changes a local after its first submission. Both
 interpreters preserve the first value, return `18`, and emit identical
 stdout/trace files, confirming submit-time argument snapshots as well as
 submission-order execution.
+
+### Correction — direct `moss debug` project-module targets
+
+The existing Phase 10 Fast Debug project-closure check failed for Java at
+`moss debug app`: Java treated `app` as a source filename and returned
+`cannot open app`, while the command contract resolves a project module target.
+Java now resolves a missing debug target against the current package's declared
+Moss sources by module name or source stem, then uses the same checked source
+closure and interpreter path. `check_phase10_fast_debug_project.py` passes
+with the Java launcher, covering both `debug app` and `run --interp` across a
+three-module closure. The actual `phase7_demo` Margo debug command also prints
+`42`. All 12 Java test classes pass under ABI-v9 and staged ABI-v10. Cross-
+package and source-free Fast Debug constraints remain as documented.
