@@ -1115,3 +1115,19 @@ with the Java launcher, covering both `debug app` and `run --interp` across a
 three-module closure. The actual `phase7_demo` Margo debug command also prints
 `42`. All 12 Java test classes pass under ABI-v9 and staged ABI-v10. Cross-
 package and source-free Fast Debug constraints remain as documented.
+
+### Correction — canonical imported function names in Fast Debug traces
+
+A package-resolved Fast Debug probe showed Java executing the imported function
+correctly but tracing its loader-qualified `graphpkg.double` name, while C++
+traced the canonical callable symbol `graphpkg__double`. Java now canonicalizes
+qualified function names for FunctionEnter/Exit, body events, and semantic
+identities. The unit test models the loader's qualified function record instead
+of merging an unqualified parsed provider function.
+
+Validation: all 12 Java test classes pass under ABI-v9 and staged ABI-v10. The
+`phase15_8/pkg_main` cross-package Fast Debug run returns the same stdout and
+byte-identical full trace in C++ and Java, with `RUSTC` pointed at a nonexistent
+path to confirm this stayed on the interpreter path. `git diff --check` passes.
+This closes the tested imported-function trace naming case only; broad Fast
+Debug and native/backend parity remain open.

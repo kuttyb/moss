@@ -47,6 +47,7 @@ public final class FastInterpreterTest {
         testDomainConstructionTraceUsesBindingName();
         testDomainMessageTraceCarriesHandlerContext();
         testExecutorFastDebugRunsQueuedRootsAtJoin();
+        testImportedFunctionTraceUsesCanonicalModuleSymbol();
         testLocalArgumentTraceOccursInsideCallee();
         testIndexedStringMapReadTraceRetainsSourceLiteral();
         testNamedDomainStateAndNestedRoutes();
@@ -1126,6 +1127,33 @@ public final class FastInterpreterTest {
                 || !events.contains("\"detail\":\"10\",\"instance\":\"main::counter\"")
                 || joinEvent <= lastRootReturn || postJoinMessage <= joinEvent) {
             throw new AssertionError("Executor Fast Debug must submit roots and drain them at join: " + events);
+        }
+    }
+
+    private static void testImportedFunctionTraceUsesCanonicalModuleSymbol() {
+        var provider = Parser.parseSource(""
+                + "module graphpkg\n"
+                + "export fn double(value: Int) -> Int:\n"
+                + "  return value * 2\n", "graphpkg.moss");
+        var consumer = Parser.parseSource(""
+                + "module app\n"
+                + "import graphpkg\n"
+                + "fn main():\n"
+                + "  echo graphpkg.double(21)\n", "app.moss");
+        var importedDouble = provider.functions.get(0);
+        importedDouble.name = "graphpkg.double";
+        consumer.functions.add(importedDouble);
+        new CheckedProgram(consumer).run();
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+        ByteArrayOutputStream trace = new ByteArrayOutputStream();
+        new FastInterpreter(consumer, true,
+                new PrintStream(stdout, true, StandardCharsets.UTF_8),
+                new PrintStream(trace, true, StandardCharsets.UTF_8)).run();
+        String events = trace.toString(StandardCharsets.UTF_8);
+        if (!"42\n".equals(stdout.toString(StandardCharsets.UTF_8))
+                || !events.contains("\"function\":\"graphpkg__double\"")
+                || !events.contains("\"semantic_identity\":\"fn:graphpkg__double@2\"")) {
+            throw new AssertionError("imported module trace must use the canonical callable symbol: " + events);
         }
     }
 

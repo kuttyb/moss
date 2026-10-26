@@ -729,13 +729,18 @@ public class FastInterpreter {
         return traceFunctionEvent(function, event, line, null);
     }
 
+    private static String traceFunctionName(Function function) {
+        return function.name == null ? "" : function.name.replace(".", "__");
+    }
+
     private int traceFunctionEvent(Function function, String event, int line, String detail) {
         if (!trace) return 0;
         eventId++;
         String source = function.sourceFile == null ? "" : function.sourceFile;
-        String identity = "fn:" + function.name + "@" + function.line;
+        String traceName = traceFunctionName(function);
+        String identity = "fn:" + traceName + "@" + function.line;
         traceEvent("{\"event_id\":" + eventId + ",\"event\":\"" + event
-                + "\",\"function\":\"" + jsonEscape(function.name)
+                + "\",\"function\":\"" + jsonEscape(traceName)
                 + "\",\"source_file\":\"" + jsonEscape(source)
                 + "\",\"semantic_identity\":\"" + jsonEscape(identity)
                 + "\",\"line\":" + line + traceContextFields()
@@ -2932,15 +2937,15 @@ public class FastInterpreter {
                         traceParentStack.push(enterId);
                         traceCallStack.push(enterId);
                     }
-                    traceFunction = f.name;
+                    traceFunction = traceFunctionName(f);
                     traceSourceFile = f.sourceFile == null ? "" : f.sourceFile;
-                    traceSemanticIdentity = "fn:" + f.name + "@" + f.line;
+                    traceSemanticIdentity = "fn:" + traceFunctionName(f) + "@" + f.line;
                     deferredSourceArgumentReads = 0;
                     traceLine = f.body.isEmpty() ? f.line : f.body.get(0).line;
                     boolean explicitReturn = false;
                     boolean completed = false;
                     try {
-                        res = evalBlock(f.body, 0, f.body.size(), fnLocals, null, f.name,
+                        res = evalBlock(f.body, 0, f.body.size(), fnLocals, null, traceFunctionName(f),
                                 trace && enterId != 0 ? traceParentStack.size() : 0);
                         if (f.resultExpression != null && !f.resultExpression.isEmpty()) {
                             traceLine = f.resultLine > 0 ? f.resultLine : f.line;
