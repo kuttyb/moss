@@ -23539,6 +23539,9 @@ int main(int argc, char** argv) {
     moss::OptimizationPlan plan;
     vector<moss::Warning> warnings;
     bool project_query = false;
+    std::optional<moss::ProgramGenerationMode> checked_project_mode;
+    std::vector<std::filesystem::path> checked_project_sources;
+    bool checked_project_has_overrides = false;
     bool completion_recovered = false;
     std::optional<string> recovered_completion_source;
     std::optional<string> query_overlay;
@@ -23593,6 +23596,11 @@ int main(int argc, char** argv) {
                     context.manifest, sources, optimize_shared_memory,
                     debug_build, context.mode, {}, nullptr,
                     overrides.empty() ? nullptr : &overrides);
+          if (check_only) {
+            checked_project_mode = context.mode;
+            checked_project_sources = sources;
+            checked_project_has_overrides = !overrides.empty();
+          }
           active_program = std::move(unit.program);
           plan = std::move(unit.plan);
           warnings = std::move(unit.warnings);
@@ -23672,10 +23680,33 @@ int main(int argc, char** argv) {
           std::filesystem::path relative =
               std::filesystem::relative(source_path, manifest.root,
                                          path_error);
-          if (!path_error && !relative.empty() && relative.native()[0] != '.')
-            moss::write_semantic_snapshot(
-                manifest, source_path,
-                moss::analyze_project_snapshot(manifest, source_path));
+          if (!path_error && !relative.empty() && relative.native()[0] != '.') {
+            moss::SemanticSnapshot snapshot;
+            const bool exact_single_source_check =
+                checked_project_mode == moss::ProgramGenerationMode::Application &&
+                !checked_project_has_overrides &&
+                checked_project_sources.size() == 1 &&
+                std::filesystem::absolute(checked_project_sources.front())
+                    .lexically_normal() == source_path;
+            if (exact_single_source_check) {
+              // The check already produced this exact one-source semantic
+              // program. Rebuild only the optimized snapshot projection; keep
+              // the native-lowering validation performed by the old snapshot
+              // analysis path before persisting it.
+              moss::Program snapshot_program = program;
+              if (!optimize_shared_memory)
+                moss::optimize_program(snapshot_program, true);
+              moss::OptimizationPlan snapshot_plan{true};
+              (void)moss::generate_native(
+                  snapshot_program, snapshot_plan, false,
+                  moss::ProgramGenerationMode::Application);
+              snapshot = moss::make_semantic_snapshot(
+                  manifest, source_path, snapshot_program, snapshot_plan);
+            } else {
+              snapshot = moss::analyze_project_snapshot(manifest, source_path);
+            }
+            moss::write_semantic_snapshot(manifest, source_path, snapshot);
+          }
         } catch (const std::exception&) {
           // Project snapshots are an accelerator, never part of language
           // validity.  The checked program and its diagnostics remain valid.

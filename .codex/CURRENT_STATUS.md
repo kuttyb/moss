@@ -1,23 +1,11 @@
-# Phase 26.0.1 active — C1 reviewed; C2–C5 pending — 2026-10-26
+# Phase 26.0.1 integration — C1 and C2 merged locally — 2026-10-26
 
-## C1: concrete-effect traversal
+- Integration is on `phase26-0-1-integration`, based on main `274f848`. C1 and C2 are now merged locally; C3 and C4 remain to integrate, followed by local combined gates, Architect review, and a main push with hosted CI skipped at the user's request.
+- C1 implementation SHA `807d491e8c0e1a1a6701c96d4b5db270705dd837`; Architect GO. Local C1 gates: 2,064-source full-hash corpus differential with zero changes, Fast Debug parity, `make check` 140/140, and compiler-perf with no noise-floor slowdown. D18 improved 7,152.46 ms to 28.92 ms.
+- C2 code/test SHA `ba859c04d01688aeb14653668dd710242117f804`; Architect GO. It removes only the repeated snapshot checker for a one-source Application check without overrides. Local C2 gates: full corpus differential, Fast Debug, `make check` 140/140, byte-identical snapshot checks, and a 77-fixture five-repetition compiler-perf run with no noise-floor slowdown. The C2 checker inventory is `docs/phase26.0.1/C2-checker-inventory.md`.
+- User directed local regression execution only; do not start GitHub-hosted regression jobs.
 
-- PR #21, branch `phase26-0-1-c1`. Implementation SHA
-  `807d491e8c0e1a1a6701c96d4b5db270705dd837`; Architect GO for that exact SHA.
-  Later PR head `2b862c160c2cd9ddf56d36b8e945f7787339c534` contains only the
-  C1 results documentation. The implementation and results are in
-  `docs/phase26.0.1/C1-concrete-effects.md`.
-- Baseline `274f848`: D18 524,451 concrete-effect evaluations, 37 distinct
-  inputs, 524,305 cache-disabled calls, and 17,866,873 parse misses. Candidate:
-  201 evaluations, 37 distinct inputs, zero cache-disabled calls, 46,207 parse
-  misses. D18 median: 7,152.46 ms to 28.92 ms (-99.6%).
-- Gates: 2,064-source corpus differential (1,325 accepted, 739 rejected), zero
-  verdict/diagnostic/full SHA-256 generated-Rust hash changes; Fast Debug parity
-  passed; `make check` 140/140; `MOSS_PERF_BASELINE=274f848 make compiler-perf`
-  completed with no noise-floor slowdowns; hosted run #30 passed. Agent feedback
-  validation passed. PR #21 is ready for review and remains unmerged.
-- Next: after C1 is integrated, count and implement C2. C3–C5 remain unstarted.
-  Do not combine the items; each needs its own PR and Architect review.
+---
 
 # Phase 26 complete — W1–W3 merged to main — 2026-10-26
 

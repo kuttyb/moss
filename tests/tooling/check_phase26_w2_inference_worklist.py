@@ -67,9 +67,10 @@ def check_project_wave_counts(compiler, source):
             checker_profiles.append({})
         if checker_profiles:
             checker_profiles[-1].setdefault(parts[1], []).append(int(parts[2]))
-    if len(checker_profiles) < 2:
+    if len(checker_profiles) != 1:
         raise AssertionError(
-            f"expected both project check passes for {source}, got {len(checker_profiles)}"
+            f"expected one checker for the exact single-source project check of "
+            f"{source}, got {len(checker_profiles)}"
         )
     checker_summaries = []
     for checker_index, records in enumerate(checker_profiles):
