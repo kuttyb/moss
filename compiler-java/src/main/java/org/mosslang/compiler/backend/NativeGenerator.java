@@ -15,6 +15,7 @@ public class NativeGenerator {
     private static final ThreadLocal<Set<String>> currentWriteParams = ThreadLocal.withInitial(HashSet::new);
     private static final ThreadLocal<Set<String>> currentGenericFunctions = ThreadLocal.withInitial(HashSet::new);
     private static final ThreadLocal<Boolean> currentInTry = ThreadLocal.withInitial(() -> false);
+    private static final ThreadLocal<Boolean> currentMainCodegen = ThreadLocal.withInitial(() -> false);
     private static final ThreadLocal<Program> currentProgram = new ThreadLocal<>();
     private static final ThreadLocal<String> currentEnclosingIdentity = new ThreadLocal<>();
 
@@ -1174,7 +1175,9 @@ public class NativeGenerator {
             o.append("fn main() {\n");
             Set<String> declared = new HashSet<>();
             currentEnclosingIdentity.set(mainIdentity);
+            currentMainCodegen.set(true);
             genBlockStmts(o, program.main.body, "    ", declared, Collections.emptySet(), Collections.emptySet(), domains, objects, false, false, false, false);
+            currentMainCodegen.set(false);
             currentEnclosingIdentity.remove();
             o.append("}\n");
             o.append("// Moss tooling end|").append(mainIdentity).append("\n");
@@ -1686,6 +1689,21 @@ public class NativeGenerator {
             } else if (s.kind == Stmt.Kind.Message) {
                 String receiver = s.a != null ? s.a.trim() : "";
                 String handler = s.b != null ? s.b.trim() : "";
+                if (isMainCodegen()) {
+                    List<String> rootArgs = new ArrayList<>();
+                    for (String argument : s.args) {
+                        rootArgs.add(lowerExpr(argument, stateFields, objFields, domains, objects));
+                    }
+                    String rootCall = lowerMainRootMessage(receiver, handler, rootArgs, domains);
+                    if (s.messageResult != null && !s.messageResult.isEmpty()) {
+                        if (declared.add(s.messageResult))
+                            o.append(indent).append("let mut ").append(s.messageResult)
+                                    .append(" = ").append(rootCall).append(";\n");
+                        else o.append(indent).append(s.messageResult).append(" = ")
+                                .append(rootCall).append(";\n");
+                    } else o.append(indent).append(rootCall).append(";\n");
+                    continue;
+                }
                 String target = receiver;
                 if (!stateFields.isEmpty() || domains.containsKey(receiver)) {
                     target = "state." + receiver;
@@ -2129,6 +2147,19 @@ public class NativeGenerator {
             case Message -> {
                 String receiver = s.a != null ? s.a.trim() : "";
                 String handler = s.b != null ? s.b.trim() : "";
+                if (isMainCodegen()) {
+                    String call = "message " + receiver + "." + handler + "("
+                            + String.join(", ", s.args) + ")";
+                    String lowered = lowerExpr(call, stateFields, domains, objects);
+                    if (s.messageResult != null && !s.messageResult.isEmpty()) {
+                        if (declared.add(s.messageResult))
+                            o.append(indent).append("let mut ").append(s.messageResult)
+                                    .append(" = ").append(lowered).append(";\n");
+                        else o.append(indent).append(s.messageResult).append(" = ")
+                                .append(lowered).append(";\n");
+                    } else o.append(indent).append(lowered).append(";\n");
+                    break;
+                }
                 String target = receiver;
                 if (!stateFields.isEmpty()) {
                     target = "state." + receiver;
@@ -3125,6 +3156,10 @@ public class NativeGenerator {
                         }
                     }
                 }
+                if (isMainCodegen()) {
+                    // Marker retained as generated provenance for this statement lowering path.
+                    return lowerMainRootMessage(receiver, handler, loweredArgs, domains);
+                }
                 String target = receiver;
                 if (!stateFields.isEmpty() || domains.containsKey(receiver)) {
                     target = "state." + receiver;
@@ -3807,6 +3842,45 @@ public class NativeGenerator {
         }
 
         return expr;
+    }
+
+    private static String lowerMainRootMessage(String receiver, String handlerName,
+                                               List<String> loweredArgs,
+                                               Map<String, Domain> domains) {
+        Program program = currentProgram.get();
+        TypeRef receiverType = program == null ? null
+                : program.localBindingTypes.getOrDefault("main", Map.of()).get(receiver);
+        Domain domain = receiverType == null ? null : domains.get(receiverType.name());
+        Handler handler = domain == null ? null : domain.handlers.stream()
+                .filter(candidate -> candidate.name.equals(handlerName)).findFirst().orElse(null);
+        if (domain == null || handler == null) {
+            // Some tooling APIs generate Rust from parsed, unchecked ASTs. Keep their legacy
+            // output shape; normal compilation has checked binding metadata and takes the
+            // Executor-admission path below.
+            return receiver + "." + handlerName + "_root(" + String.join(", ", loweredArgs) + ")";
+        }
+        StringBuilder invocation = new StringBuilder("{ let __moss_root_domain = ")
+                .append(receiver).append(".clone(); ");
+        List<String> snapshots = new ArrayList<>();
+        for (int index = 0; index < loweredArgs.size(); index++) {
+            String name = "__moss_root_arg_" + index;
+            String expression = loweredArgs.get(index);
+            String type = index < handler.params.size() ? handler.params.get(index).type : "";
+            if (!Set.of("int", "Int", "float", "Float", "bool", "Bool", "char", "Char")
+                    .contains(type)) expression = "(" + expression + ").clone()";
+            invocation.append("let ").append(name).append(" = ").append(expression).append("; ");
+            snapshots.add(name);
+        }
+        invocation.append("runtime_invoke(move || __moss_root_domain.")
+                .append(domain.sourceFree ? "__moss_message_" + handlerName : handlerName + "_root")
+                .append("(")
+                .append(String.join(", ", snapshots)).append(")) }");
+        return invocation.toString();
+    }
+
+    private static boolean isMainCodegen() {
+        String identity = currentEnclosingIdentity.get();
+        return currentMainCodegen.get() || (identity != null && identity.startsWith("main@"));
     }
 
     private static String lowerExecutorChain(String expression, Set<String> stateFields,

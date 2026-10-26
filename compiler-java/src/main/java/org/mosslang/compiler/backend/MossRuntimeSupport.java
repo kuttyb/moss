@@ -117,6 +117,20 @@ struct __MossExecutorShared {
     state: std::sync::Mutex<__MossExecutorQueueState>,
     work_available: std::sync::Condvar,
     space_available: std::sync::Condvar,
+    queue_capacity: usize,
+}
+fn __moss_executor_active_slot() -> &'static std::sync::Mutex<std::option::Option<std::sync::Weak<__MossExecutorShared>>> {
+    static ACTIVE: std::sync::OnceLock<std::sync::Mutex<std::option::Option<std::sync::Weak<__MossExecutorShared>>>> = std::sync::OnceLock::new();
+    ACTIVE.get_or_init(|| std::sync::Mutex::new(None))
+}
+fn __moss_executor_enqueue_shared(shared: &std::sync::Arc<__MossExecutorShared>, work: __MossExecutorJob) {
+    let mut state = shared.state.lock().unwrap_or_else(|error| error.into_inner());
+    while state.pending.len() >= shared.queue_capacity && !state.shutdown {
+        state = shared.space_available.wait(state).unwrap_or_else(|error| error.into_inner());
+    }
+    if state.shutdown { std::process::abort(); }
+    state.pending.push_back(work);
+    shared.work_available.notify_one();
 }
 fn __moss_executor_worker(shared: std::sync::Arc<__MossExecutorShared>) {
     loop {
@@ -199,6 +213,7 @@ impl __MossExecutor {
             }),
             work_available: std::sync::Condvar::new(),
             space_available: std::sync::Condvar::new(),
+            queue_capacity,
         });
         for worker_id in 0..threads.min(max_threads) {
             let worker_shared = std::sync::Arc::clone(&shared);
@@ -211,6 +226,15 @@ impl __MossExecutor {
                 });
             self.workers.push(worker);
         }
+        {
+            let mut active = __moss_executor_active_slot().lock()
+                .unwrap_or_else(|error| error.into_inner());
+            if active.as_ref().and_then(std::sync::Weak::upgrade).is_some() {
+                eprintln!("moss executor: another executor is already active");
+                std::process::abort();
+            }
+            *active = Some(std::sync::Arc::downgrade(&shared));
+        }
         self.shared = Some(shared);
         self
     }
@@ -219,17 +243,18 @@ impl __MossExecutor {
         let shared = self.shared.as_ref().unwrap_or_else(|| {
             eprintln!("moss executor: invoke before start"); std::process::abort();
         });
-        let capacity = self.queue_capacity.unwrap_or(1024);
-        let mut state = shared.state.lock().unwrap_or_else(|error| error.into_inner());
-        while state.pending.len() >= capacity && !state.shutdown {
-            state = shared.space_available.wait(state).unwrap_or_else(|error| error.into_inner());
-        }
-        if state.shutdown { std::process::abort(); }
-        state.pending.push_back(Box::new(work));
-        shared.work_available.notify_one();
+        __moss_executor_enqueue_shared(shared, Box::new(work));
     }
     pub fn join(&mut self) {
         let Some(shared) = self.shared.take() else { return; };
+        {
+            let mut active = __moss_executor_active_slot().lock()
+                .unwrap_or_else(|error| error.into_inner());
+            if active.as_ref().and_then(std::sync::Weak::upgrade)
+                    .map(|running| std::sync::Arc::ptr_eq(&running, &shared)).unwrap_or(false) {
+                *active = None;
+            }
+        }
         let mut state = shared.state.lock().unwrap_or_else(|error| error.into_inner());
         state.shutdown = true;
         shared.work_available.notify_all();
@@ -239,6 +264,19 @@ impl __MossExecutor {
             if worker.join().is_err() { std::process::abort(); }
         }
     }
+}
+pub fn runtime_invoke<R, F>(work: F) -> R
+where R: Send + 'static, F: FnOnce() -> R + Send + 'static {
+    let active = __moss_executor_active_slot().lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .as_ref().and_then(std::sync::Weak::upgrade);
+    let Some(shared) = active else { return work(); };
+    let (sender, receiver) = std::sync::mpsc::sync_channel(0);
+    __moss_executor_enqueue_shared(&shared, Box::new(move || {
+        let result = work();
+        if sender.send(result).is_err() { std::process::abort(); }
+    }));
+    receiver.recv().unwrap_or_else(|_| std::process::abort())
 }
 // ─── End Phase 20 Executor Runtime ───────────────────────────────────────
 """;

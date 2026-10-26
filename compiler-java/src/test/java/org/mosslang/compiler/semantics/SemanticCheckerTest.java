@@ -1491,6 +1491,22 @@ public class SemanticCheckerTest {
         if (!handledRust.contains("Process_root(__moss_executor_arg_")) {
             throw new AssertionError("Executor roots with on_fail arms must use the handler root wrapper");
         }
+
+        Program rootAdmission = Parser.parseSource(""
+                + "domain Counter:\n"
+                + "  value = 0\n"
+                + "  fn Read() -> Int:\n"
+                + "    reply value\n"
+                + "fn main():\n"
+                + "  counter = Counter()\n"
+                + "  result = message counter.Read()\n"
+                + "  echo result\n", "executor-root-admission.moss");
+        new SemanticChecker(rootAdmission).run();
+        String rootRust = NativeGenerator.generate(rootAdmission, false);
+        if (!rootRust.contains("runtime_invoke(move || __moss_root_domain.Read_root())")
+                || !rootRust.contains("pub fn runtime_invoke<R, F>")) {
+            throw new AssertionError("main root messages must pass through runtime_invoke");
+        }
     }
 
     private static void testRecursionThroughFunctionalCallbacksIsRejected() {

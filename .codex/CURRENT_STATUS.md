@@ -16990,3 +16990,19 @@ The packaged launcher generated `WorkerHandle` route fields, specialized
 `Run_root` dispatch, and `.into()` conversions for the Int/Float route targets
 in the focused source. This is a packaging/code-shape check only; generated Rust
 compilation, native execution, and SDK integration remain deferred.
+
+### Phase 25.3 continuation — synchronous main root admission checkpoint
+
+Java main-level `message` statements now lower through `runtime_invoke`, which
+runs inline when no Executor is active and otherwise enqueues a reply-bearing
+closure through the active Executor queue. Nested message statements retain
+their existing shared path. Added a generated-Rust regression for a replying
+main-level message. All 12 Java test classes pass under ABI-v9 and staged
+ABI-v10, and the focused multi-root fixture emits the expected
+`runtime_invoke(move || ...)` call. Rust compilation/native execution remains
+deferred.
+
+Scope note: this is evidence for the generated-main ingress path only. It does
+not establish C++ process-runtime parity for concurrent host ingress, fair
+admission tickets, or draining/restart races; those remain unverified Java
+runtime gaps for later feature completion and frozen-candidate acceptance.
