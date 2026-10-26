@@ -85,6 +85,22 @@ public final class SourceFreeObjectMetadataTest {
                 || !handledImportedRust.contains(".Work_root()))")) {
             throw new AssertionError("source-free handled Executor root did not use the provider root wrapper");
         }
+        Program importedSynchronousRoot = Parser.parseSource(""
+                + "import provider\n"
+                + "fn main():\n"
+                + "  worker = provider.Worker()\n"
+                + "  executor = Executor().threads(1).start()\n"
+                + "  message worker.Work()\n"
+                + "  executor.join()\n", "source-free-synchronous-root.moss");
+        Main.loadMossiFunctions(interfaceFile, "provider", importedSynchronousRoot);
+        new SemanticChecker(importedSynchronousRoot).run();
+        String importedSynchronousRust = NativeGenerator.generate(importedSynchronousRoot, false);
+        int importedStart = importedSynchronousRust.indexOf("__MossExecutor::new().threads(1_i64).start()");
+        int importedRoot = importedSynchronousRust.indexOf("runtime_invoke(move || __moss_root_domain.__moss_message_Work())");
+        int importedJoin = importedSynchronousRust.indexOf("executor.join();");
+        if (importedStart < 0 || importedRoot <= importedStart || importedJoin <= importedRoot) {
+            throw new AssertionError("source-free synchronous root must use its ABI bridge while Executor is active");
+        }
         Path raisingInterface = scratch.resolve("provider-raising-no-failure.mossi");
         Files.writeString(raisingInterface, withoutFailureArm);
         Program unhandledImportedHandler = Parser.parseSource(""
