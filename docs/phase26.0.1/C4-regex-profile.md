@@ -6,7 +6,7 @@ Main baseline is `274f848502df08f62b69c54c614ad9f05a90a3ec`. Its regex work-coun
 
 The C3 candidate (`fdeb72b16faa82a8dfefd04a1db90e9d87fe4cf9`) reports two Checker profiles over the same 49 analyzed functions: one with 5 inference rounds, one with 10. Each profile has 2,704,056 cache hits and 14,755 misses. Combined candidate lookups remain 5,437,622: C3 turns repeated failed parses into negative-cache hits but does not reduce the number of parse-helper lookups.
 
-Callgrind's parser-cache hit distribution across the two candidate profiles is:
+Derived helper-hit counts across both candidate profiles are:
 
 | Helper | Cache hits |
 |---|---:|
@@ -15,6 +15,8 @@ Callgrind's parser-cache hit distribution across the two candidate profiles is:
 | Simple call | 763,198 |
 | Member call | 568,932 |
 | Top-level split | 22,416 |
+
+These are not separate compiler counters: they are the Callgrind source-annotated execution counts of the five `++parse_cache_hits_` statements in `src/semantic_checker.cpp`, summed across the two Checker profiles. The total (5,408,112) matches twice the per-Checker aggregate counter (2,704,056).
 
 The largest repeated shape is therefore cached binary-expression splitting during repeated function-body walks, rather than repeated execution of the textual parse itself. `walk_type_environment_block` recursively processes structured `if`/`else`, loop, and match branches while visitors derive expression constraints and update `TypeEnv`/join facts. The same source functions are revisited in multiple inference/checker passes, which explains the cache lookups; the aggregate profile does not prove that any one such traversal can be removed safely.
 
