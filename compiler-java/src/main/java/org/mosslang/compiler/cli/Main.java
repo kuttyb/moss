@@ -147,7 +147,7 @@ public class Main {
             }
         }
 
-        if (Set.of("resolve", "inspect", "type", "effects", "ownership", "calls", "why", "fmt").contains(first)) {
+        if (Set.of("resolve", "inspect", "type", "effects", "ownership", "calls", "why", "references", "fmt").contains(first)) {
             String target = args.length > 1 ? args[1] : "";
             String src = null;
             String kind = null;
@@ -167,7 +167,24 @@ public class Main {
                 }
             }
             if (src == null) {
-                src = target;
+                Path targetPath = target.isEmpty() ? null : Paths.get(target);
+                if (targetPath != null && Files.isRegularFile(targetPath)) {
+                    src = target;
+                } else {
+                    if (json) {
+                        System.out.println("{\"protocol_version\":1,\"schema_version\":\"moss-agent-1\","
+                                + "\"compiler_version\":\"" + COMPILER_VERSION + "\",\"command\":\""
+                                + first + "\",\"ok\":false,\"error\":{\"code\":\"QUERY_SOURCE_REQUIRED\","
+                                + "\"severity\":\"error\",\"message\":\"semantic query requires --source <source.moss>\","
+                                + "\"source_file\":null,\"line\":0,\"column\":1,\"span\":null,"
+                                + "\"source\":null,\"semantic_identity\":null,\"symbol\":null,\"rule\":null,"
+                                + "\"cause\":null,\"related\":[],\"guidance\":null,\"details\":{},"
+                                + "\"fixes\":[],\"legal_alternatives\":[]}}");
+                    } else {
+                        System.err.println("moss: semantic query requires --source <source.moss>");
+                    }
+                    return 2;
+                }
             }
             try {
                 String content = Files.readString(Paths.get(src), StandardCharsets.UTF_8);

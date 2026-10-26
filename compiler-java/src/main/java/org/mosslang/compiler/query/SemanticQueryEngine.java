@@ -16,6 +16,13 @@ public class SemanticQueryEngine {
             out.print(program.sourceLines.stream().map(l -> l.text).reduce("", (a, b) -> a + b + "\n"));
             return true;
         }
+        if ("references".equals(command))
+            return referencesQuery(target, program, sourceFile, json, out);
+
+        if (("effects".equals(command) || "why".equals(command))
+                && pipelineExpressionAtLocation(target, program, sourceFile, command, json, out)) {
+            return true;
+        }
 
         String enc = (enclosingFilter != null && !enclosingFilter.isEmpty()) ? enclosingFilter : "main";
         java.util.Map<String, org.mosslang.compiler.types.TypeRef> encBindings = program.localBindingTypes.get(enc);
@@ -79,7 +86,7 @@ public class SemanticQueryEngine {
         if ("resolve".equals(command) && isSourceLocation(target)) {
             return resolveSourceLocation(target, program, sourceFile, kindFilter, json, out);
         }
-        if ("type".equals(command) && "binding".equals(kindFilter) && isSourceLocation(target)) {
+        if ("type".equals(command) && isSourceLocation(target)) {
             return typeBindingAtLocation(target, program, sourceFile, json, out);
         }
         if ("effects".equals(command) && isSourceLocation(target)
@@ -580,7 +587,7 @@ public class SemanticQueryEngine {
   "compiler_version": "0.1.0-java",
   "command": "%s",
   "ok": false,
-  "error": {"code": "UNKNOWN_SYMBOL_OR_TYPE", "severity": "error", "message": "unknown symbol '%s'", "source_file": "%s", "line": 0, "column": 1, "span": null, "source": {"file": "%s", "line": 0, "column": 1, "span": null}, "semantic_identity": null, "symbol": "%s", "rule": null, "cause": null, "related": [], "guidance": null, "details": {"ownership_expected": null, "ownership_actual": null, "consume_line": null, "recursion_witness": null, "resolution": %s}, "fixes": [], "legal_alternatives": ["rename the reference to an existing static symbol", "declare the missing symbol or concrete type"]}
+  "error": {"code": "QUERY_TARGET_NOT_FOUND", "severity": "error", "message": "query target '%s' was not found", "source_file": "%s", "line": 0, "column": 1, "span": null, "source": {"file": "%s", "line": 0, "column": 1, "span": null}, "semantic_identity": null, "symbol": "%s", "rule": null, "cause": null, "related": [], "guidance": null, "details": {"ownership_expected": null, "ownership_actual": null, "consume_line": null, "recursion_witness": null, "resolution": %s}, "fixes": [], "legal_alternatives": ["rename the reference to an existing static symbol", "declare the missing symbol or concrete type"]}
 }""".formatted(command, target, sourceFile, sourceFile, target, resolutionJson).trim());
             } else {
                 out.println("moss: error: unknown symbol '" + target + "'");
@@ -1076,7 +1083,7 @@ public class SemanticQueryEngine {
             out.println("{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n"
                     + "  \"compiler_version\": \"0.1.0-java\",\n  \"command\": \"type\",\n"
                     + "  \"ok\": true,\n  \"result\": {\n    \"status\": \"resolved\",\n"
-                    + "    \"target\": {\"id\": \"" + jsonString(candidate.id) + "\", \"kind\": \"binding\","
+                    + "    \"target\": {\"id\": \"" + jsonString(candidate.id) + "\", \"kind\": \"binding\", \"construct_kind\": \"binding\","
                     + " \"semantic_identity\": \"" + jsonString(candidate.semanticIdentity) + "\","
                     + " \"name\": \"" + jsonString(candidate.name) + "\", \"source\": {\"file\": \""
                     + jsonString(sourceFile) + "\", \"line\": " + line + ", \"column\": 1}, \"type\": \""
@@ -1136,6 +1143,145 @@ public class SemanticQueryEngine {
             out.println(bindingName + ": binding effects at " + sourceFile + ":" + line);
         }
         return true;
+    }
+
+    private static boolean pipelineExpressionAtLocation(String selector, Program program, String sourceFile,
+                                                        String command, boolean json, PrintStream out) {
+        java.util.regex.Matcher location = java.util.regex.Pattern
+                .compile("main@([0-9]+):expression:[0-9]+").matcher(selector);
+        if (!location.matches() || program == null || program.main == null) return false;
+        int line = Integer.parseInt(location.group(1));
+        Stmt found = program.main.body.stream().filter(statement -> statement.line == line).findFirst().orElse(null);
+        if (found == null) return false;
+        String expression = found.b;
+        if (expression == null || !expression.contains("|>")) {
+            expression = found.text != null ? found.text : "";
+            int assignment = expression.indexOf('=');
+            if (assignment >= 0) expression = expression.substring(assignment + 1).trim();
+        }
+        if (expression == null || !expression.contains("|>")) return false;
+
+        org.mosslang.compiler.optimizer.FunctionalPipeline pipeline =
+                new org.mosslang.compiler.optimizer.FunctionalPipeline();
+        pipeline.line = line;
+        pipeline.sourceFile = found.sourceFile != null && !found.sourceFile.isEmpty()
+                ? found.sourceFile : sourceFile;
+        pipeline.semanticIdentity = selector;
+        pipeline.expression = expression;
+        String[] stages = expression.split("\\|>");
+        if (stages.length < 2) return false;
+        pipeline.sourceExpression = stages[0].trim();
+        List<String> pipelineCallbacks = org.mosslang.compiler.parser.ParserSupport.pipelineCallbacks(expression);
+        org.mosslang.compiler.optimizer.FunctionalNode sourceNode =
+                new org.mosslang.compiler.optimizer.FunctionalNode(
+                        org.mosslang.compiler.optimizer.FunctionalNodeKind.Source, "source", pipeline.sourceExpression);
+        sourceNode.line = line;
+        sourceNode.sourceText = pipeline.sourceExpression;
+        pipeline.nodes.add(sourceNode);
+        boolean externalIo = false;
+        boolean supported = true;
+        for (int index = 1; index < stages.length; index++) {
+            String stageText = stages[index].trim();
+            java.util.regex.Matcher stage = java.util.regex.Pattern
+                    .compile("([A-Za-z_][A-Za-z0-9_]*)(?:\\s*\\((.*)\\))?").matcher(stageText);
+            if (!stage.matches()) { supported = false; break; }
+            org.mosslang.compiler.optimizer.FunctionalNodeKind kind;
+            try {
+                kind = org.mosslang.compiler.optimizer.FunctionalNodeKind.valueOf(
+                        stage.group(1).substring(0, 1).toUpperCase(Locale.ROOT) + stage.group(1).substring(1));
+            } catch (IllegalArgumentException unsupportedStage) {
+                supported = false;
+                break;
+            }
+            org.mosslang.compiler.optimizer.FunctionalNode node =
+                    new org.mosslang.compiler.optimizer.FunctionalNode(kind, stage.group(1),
+                            stage.group(2) != null ? stage.group(2).trim() : "");
+            node.line = line;
+            node.stage = index;
+            node.sourceText = stageText;
+            for (String callback : pipelineCallbacks) {
+                if (!node.argument.contains(callback)) continue;
+                org.mosslang.compiler.optimizer.ObservableEffects callbackEffects =
+                        callableObservableEffects(callback, program, new HashSet<>());
+                node.effects.merge(callbackEffects);
+            }
+            externalIo |= node.effects.externalIo;
+            if (!node.effects.isFusionSafe()) pipeline.fusionEligible = false;
+            pipeline.nodes.add(node);
+        }
+        if (!supported) return false;
+        org.mosslang.compiler.optimizer.FunctionalOptimizer.optimizePipeline(pipeline, true);
+        List<String> explanations = new ArrayList<>();
+        if (!pipeline.fusionEligible) {
+            String reason = externalIo ? "external/I/O effect" : "observable callback effect";
+            explanations.add("fusion stopped: " + reason);
+        }
+        explanations.addAll(pipeline.optimizationNotes);
+        String resultType = "unit";
+        Map<String, TypeRef> mainTypes = program.localBindingTypes.getOrDefault("main", Map.of());
+        TypeRef bindingType = mainTypes.get(found.a);
+        if (bindingType != null) resultType = bindingType.toCanonicalString();
+        if (json) {
+            String serializedExplanations = explanations.stream().map(value -> "\"" + jsonString(value) + "\"")
+                    .collect(java.util.stream.Collectors.joining(","));
+            if ("why".equals(command)) {
+                out.println("{\"protocol_version\":1,\"schema_version\":\"moss-agent-1\","
+                        + "\"compiler_version\":\"0.1.0-java\",\"command\":\"why\",\"ok\":true,"
+                        + "\"result\":{\"status\":\"resolved\",\"target\":{\"id\":\"entity-v1:expression:"
+                        + line + "\",\"kind\":\"expression\",\"construct_kind\":\"pipeline\","
+                        + "\"semantic_identity\":\"" + jsonString(selector) + "\",\"name\":\""
+                        + jsonString(expression) + "\",\"source\":{\"file\":\"" + jsonString(sourceFile)
+                        + "\",\"line\":" + line + ",\"column\":1},\"type\":\"" + jsonString(resultType)
+                        + "\"},\"explanations\":[" + serializedExplanations
+                        + "],\"reason\":{\"code\":\"FUNCTIONAL_PLAN_DECISION\",\"evidence\":["
+                        + explanations.stream().map(value -> "{\"kind\":\"compiler_decision\",\"detail\":\""
+                                + jsonString(value) + "\"}").collect(java.util.stream.Collectors.joining(","))
+                        + "]}}}");
+            } else {
+                out.println("{\"protocol_version\":1,\"schema_version\":\"moss-agent-1\","
+                        + "\"compiler_version\":\"0.1.0-java\",\"command\":\"effects\",\"ok\":true,"
+                        + "\"result\":{\"status\":\"resolved\",\"target\":{\"id\":\"entity-v1:expression:"
+                        + line + "\",\"kind\":\"expression\",\"construct_kind\":\"pipeline\","
+                        + "\"semantic_identity\":\"" + jsonString(selector) + "\",\"name\":\""
+                        + jsonString(expression) + "\",\"source\":{\"file\":\"" + jsonString(sourceFile)
+                        + "\",\"line\":" + line + ",\"column\":1},\"type\":\"" + jsonString(resultType)
+                        + "\"},\"observable_effects\":{\"local_capture_read\":false,\"local_mutation\":false,"
+                        + "\"domain_read\":false,\"domain_write\":false,\"message\":false,\"external_io\":"
+                        + externalIo + ",\"may_panic\":false,\"raise_set\":[],\"may_diverge\":false,\"unresolved\":false},"
+                        + "\"enclosing_callable_effects\":null,\"effect_summary\":{\"status\":\"available\","
+                        + "\"direct\":{\"local_capture_read\":false,\"local_mutation\":false,\"domain_read\":false,"
+                        + "\"domain_write\":false,\"message\":false,\"external_io\":" + externalIo
+                        + ",\"may_panic\":false,\"raise_set\":[],\"may_diverge\":false,\"unresolved\":false},"
+                        + "\"direct_status\":\"exact\"}}}");
+            }
+        } else {
+            out.println(String.join("\n", explanations));
+        }
+        return true;
+    }
+
+    private static org.mosslang.compiler.optimizer.ObservableEffects callableObservableEffects(
+            String callable, Program program, Set<String> visited) {
+        org.mosslang.compiler.optimizer.ObservableEffects effects =
+                new org.mosslang.compiler.optimizer.ObservableEffects();
+        String name = callable.trim();
+        if (!visited.add(name)) return effects;
+        int separator = name.lastIndexOf('.');
+        if (separator >= 0) name = name.substring(separator + 1);
+        for (Function function : program.functions) {
+            if (!function.name.equals(name) && !function.name.endsWith("__" + name)) continue;
+            for (Stmt statement : function.body) {
+                if (statement.kind == Stmt.Kind.Echo || (statement.text != null
+                        && statement.text.trim().startsWith("echo "))) effects.externalIo = true;
+            }
+            for (SemanticCallEdge edge : program.semanticCallEdges) {
+                if (edge.source.equals(function.name) || edge.source.equals("fn:" + function.name)) {
+                    String target = edge.target.startsWith("fn:") ? edge.target.substring(3) : edge.target;
+                    effects.merge(callableObservableEffects(target, program, visited));
+                }
+            }
+        }
+        return effects;
     }
 
     private static String functionResultType(Function function) {
@@ -1295,6 +1441,19 @@ public class SemanticQueryEngine {
                 candidate.sourceFile = function.sourceFile;
                 candidate.line = line;
                 candidates.add(candidate);
+                for (FunctionSpecialization specialization : function.specializations) {
+                    String specializationName = function.name + "<"
+                            + String.join(",", specialization.parameterTypes).toLowerCase(Locale.ROOT) + ">";
+                    ResolutionCandidate specialized = new ResolutionCandidate();
+                    specialized.kind = "specialization";
+                    specialized.name = specializationName;
+                    specialized.id = "entity-v1:specialization:" + specializationName;
+                    specialized.semanticIdentity = "specialization:" + specializationName;
+                    specialized.type = specialization.returnType;
+                    specialized.sourceFile = function.sourceFile;
+                    specialized.line = line;
+                    candidates.add(specialized);
+                }
             }
             for (ObjectType object : program.objects) {
                 for (Method method : object.methods) {
@@ -1330,6 +1489,47 @@ public class SemanticQueryEngine {
                 candidate.sourceFile = edge.sourceFile;
                 candidate.line = line;
                 candidates.add(candidate);
+            }
+        }
+        if (selector.startsWith("at:") && parts.length >= 3) {
+            int column = Integer.parseInt(parts[2]);
+            String sourceLine = sourceLineText(program, sourceFile, line);
+            String token = identifierAtColumn(sourceLine, column);
+            if (token != null) {
+                if (program != null) {
+                    for (Function function : program.functions) {
+                        for (Stmt statement : function.body) {
+                            if (!statement.continuationLines.contains(line)) continue;
+                            String expression = statement.a != null && !statement.a.isEmpty()
+                                    ? statement.a : statement.text;
+                            for (String callback : org.mosslang.compiler.parser.ParserSupport
+                                    .pipelineCallbacks(expression)) {
+                                String callbackName = callback.substring(callback.lastIndexOf('.') + 1);
+                                if (!callbackName.equals(token)) continue;
+                                ResolutionCandidate candidate = new ResolutionCandidate();
+                                candidate.kind = "function";
+                                candidate.name = callback;
+                                candidate.id = "entity-v1:function:" + callback;
+                                Function definition = program.functions.stream().filter(fn ->
+                                        fn.name.equals(callbackName) || fn.name.endsWith("__" + callbackName))
+                                        .findFirst().orElse(null);
+                                candidate.semanticIdentity = definition != null
+                                        ? "fn:" + definition.name + "@" + definition.line : "fn:" + callbackName;
+                                candidate.type = definition != null ? functionResultType(definition) : "unit";
+                                candidate.sourceFile = definition != null ? definition.sourceFile : sourceFile;
+                                candidate.line = definition != null ? definition.line : line;
+                                candidates.add(candidate);
+                            }
+                        }
+                    }
+                }
+                candidates.removeIf(candidate -> !candidate.name.equals(token)
+                        && !candidate.name.endsWith("." + token)
+                        && !candidate.name.endsWith("__" + token)
+                        && !candidate.name.startsWith(token + "<")
+                        && !candidate.name.startsWith("fn:" + token));
+                if (!"specialization".equals(kindFilter))
+                    candidates.removeIf(candidate -> "specialization".equals(candidate.kind));
             }
         }
         if (kindFilter != null && !kindFilter.isEmpty()) {
@@ -1379,6 +1579,87 @@ public class SemanticQueryEngine {
             out.println("moss: source location resolution is " + status);
         }
         return false;
+    }
+
+    private static String sourceLineText(Program program, String sourceFile, int line) {
+        if (program != null && program.sourceLines != null) {
+            for (Line sourceLine : program.sourceLines) {
+                if (sourceLine.no == line && sourceLine.text != null && !sourceLine.text.isEmpty())
+                    return sourceLine.text;
+            }
+        }
+        try {
+            List<String> lines = java.nio.file.Files.readAllLines(java.nio.file.Paths.get(sourceFile));
+            return line > 0 && line <= lines.size() ? lines.get(line - 1) : "";
+        } catch (Exception ignored) {
+            return "";
+        }
+    }
+
+    private static boolean referencesQuery(String selector, Program program, String sourceFile,
+                                           boolean json, PrintStream out) {
+        String name = selector.replaceFirst("^(entity-v1:function:|function:|fn:)", "");
+        Function function = program.functions.stream().filter(candidate -> candidate.name.equals(name)
+                || candidate.name.endsWith("__" + name)).findFirst().orElse(null);
+        if (function == null) return false;
+        String callableName = function.name;
+        List<String> references = new ArrayList<>();
+        for (SemanticCallEdge edge : program.semanticCallEdges) {
+            String target = edge.target.startsWith("fn:") ? edge.target.substring(3) : edge.target;
+            if (!target.equals(callableName) && !target.endsWith("__" + callableName)) continue;
+            references.add("{\"kind\":\"callable_reference\",\"source\":{\"file\":\""
+                    + jsonString(edge.sourceFile) + "\",\"line\":" + edge.line + ",\"column\":1},"
+                    + "\"enclosing_entity\":\"" + jsonString(edge.source) + "\"}");
+        }
+        for (Function caller : program.functions) {
+            for (Stmt statement : caller.body) {
+                String expression = statement.a != null && !statement.a.isEmpty()
+                        ? statement.a : statement.text;
+                if (expression == null || expression.isEmpty()) continue;
+                List<String> callbacks = org.mosslang.compiler.parser.ParserSupport.pipelineCallbacks(expression);
+                for (String callback : callbacks) {
+                    String callbackName = callback.substring(callback.lastIndexOf('.') + 1);
+                    if (!callbackName.equals(callableName) && !callbackName.endsWith("__" + callableName)) continue;
+                    int line = statement.line;
+                    for (int continuation : statement.continuationLines.toArray()) {
+                        String continuationText = sourceLineText(program, sourceFile, continuation);
+                        if (continuationText.contains(callbackName)) { line = continuation; break; }
+                    }
+                    references.add("{\"kind\":\"callable_reference\",\"source\":{\"file\":\""
+                            + jsonString(statement.sourceFile != null && !statement.sourceFile.isEmpty()
+                                    ? statement.sourceFile : sourceFile)
+                            + "\",\"line\":" + line + ",\"column\":1},\"enclosing_entity\":\"fn:"
+                            + jsonString(caller.name) + "\"}");
+                }
+            }
+        }
+        if (json) {
+            out.println("{\"protocol_version\":1,\"schema_version\":\"moss-agent-1\","
+                    + "\"compiler_version\":\"0.1.0-java\",\"command\":\"references\",\"ok\":true,"
+                    + "\"result\":{\"status\":\"resolved\",\"target\":{\"id\":\"entity-v1:function:"
+                    + jsonString(callableName) + "\",\"kind\":\"function\",\"name\":\""
+                    + jsonString(callableName) + "\",\"semantic_identity\":\"fn:" + jsonString(callableName)
+                    + "@" + function.line + "\"},\"definition\":{\"entity_id\":\"entity-v1:function:"
+                    + jsonString(callableName) + "\",\"kind\":\"definition\",\"source\":{\"file\":\""
+                    + jsonString(function.sourceFile) + "\",\"line\":" + function.line + ",\"column\":1}},"
+                    + "\"references\":[" + String.join(",", references) + "]}}");
+        } else {
+            out.println(callableName + ": " + references.size() + " references");
+        }
+        return true;
+    }
+
+    private static String identifierAtColumn(String sourceLine, int oneBasedColumn) {
+        if (sourceLine == null || oneBasedColumn <= 0 || oneBasedColumn > sourceLine.length()) return null;
+        int index = oneBasedColumn - 1;
+        if (!Character.isLetterOrDigit(sourceLine.charAt(index)) && sourceLine.charAt(index) != '_') return null;
+        int start = index;
+        int end = index + 1;
+        while (start > 0 && (Character.isLetterOrDigit(sourceLine.charAt(start - 1))
+                || sourceLine.charAt(start - 1) == '_')) start--;
+        while (end < sourceLine.length() && (Character.isLetterOrDigit(sourceLine.charAt(end))
+                || sourceLine.charAt(end) == '_')) end++;
+        return sourceLine.substring(start, end);
     }
 
     private static boolean sameSource(String candidateSource, String requestedSource) {

@@ -16884,3 +16884,17 @@ graph identity, instance ranks, and the route edge. All 12 Java test classes
 pass. The API regression now reaches optimized `why main@42:expression:0 -O`
 and exits 1 without output; that remains the next query gap. Native/backend
 validation remains deferred.
+
+
+### Phase 25.3 continuation — semantic query API regression coverage
+
+The Phase 6A agent API regression now passes end to end. In addition to the
+source-location effects and domain graph corrections, the Java CLI routes
+`references` queries; pipeline expression queries derive callback effects and
+optimizer decisions from parsed stages and the existing `FunctionalOptimizer`;
+source locations resolve declaration names, specializations, and callback
+references across continuation lines; and missing query sources return the
+structured `QUERY_SOURCE_REQUIRED` error. Pipeline direct effects now include
+an exact `effect_summary`. `tests/tooling/check_semantic_queries.py` also passes.
+These are the exercised profiles only; broad semantic-query schema parity and
+native/backend validation remain open.

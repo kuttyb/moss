@@ -998,3 +998,19 @@ graph identity, instance ranks, and the route edge. All 12 Java test classes
 pass. The full agent API script progresses through topology and currently fails
 at optimized `why main@42:expression:0 -O`, which exits 1 without output. The
 query implementation remains incomplete beyond this covered graph profile.
+
+
+### Correction — advertised semantic query regression paths
+
+The Phase 6A agent API regression now passes end to end, as does
+`tests/tooling/check_semantic_queries.py`. The fixes cover source-location
+binding effects and types, pipeline-local effects and optimizer explanations,
+continuation-line callable references, generic specialization location
+selection, structured missing-source errors, and callable ownership alias
+fields. Java now derives concrete domain graph instances and route edges; on the
+agent API fixture, its full graph JSON matches C++ including identity and rank
+values. Pipeline effects use callback summaries and the existing functional
+optimizer decision logic. This demonstrates the tested query paths, not complete
+semantic-query schema or language parity. The Java suite passes all 12 test
+classes against these changes; native/backend and SDK acceptance remain
+deferred.
