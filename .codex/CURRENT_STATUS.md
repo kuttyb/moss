@@ -1,3 +1,21 @@
+# Current work — Phase 26.0.1 checker cleanup (2026-10-26)
+
+- C1 is implemented on its separate branch and PR #21 is open; see its worktree
+  and handoff. C2 is implemented in PR #22 (`phase26-0-1-c2`), based on main
+  `274f848`, with code/test commit `ba859c04d01688aeb14653668dd710242117f804`
+  and documentation closeout being finalized. Architect GO is recorded for the
+  code/test SHA. Hosted PR gates are pending.
+- C2 removes the repeated snapshot checker only for the exact one-source
+  Application check without overrides. Baseline/candidate snapshot bytes match
+  in default and `-O` modes; full corpus, Fast Debug, local `make check` 140/140,
+  and five-repetition 77-fixture performance gates passed. Details:
+  `docs/phase26.0.1/C2-checker-inventory.md`.
+- Remaining Phase 26.0.1 items: C3 failed-parse/cache-cap counts, C4 regex
+  attribution if not already fixed by C1-C3, and optional C5 worklist debt.
+  Continue one item per PR and count before choosing a mechanism.
+
+---
+
 # Phase 26 complete — W1–W3 merged to main — 2026-10-26
 
 ## Local compiler-perf suite follow-up — certified rerun and review complete — 2026-10-26

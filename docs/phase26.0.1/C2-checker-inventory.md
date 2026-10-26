@@ -58,6 +58,9 @@ on the same 16-logical-CPU WSL2 host. Aggregate per-fixture wall medians were
 14.800 s baseline and 13.770 s candidate (-7.0%). No fixture crossed the
 suite's slowdown noise floor. `w6_types_count_t025` was +1.8% (17.29 vs 16.98
 ms), below the threshold; `example_checkout` was 3.90 vs 3.78 ms (-3.1%).
+The runner recorded the checkout SHA as `8c34ddfe` with a dirty worktree; the
+candidate binary was built from the C2 source/test tree later committed as
+`ba859c04`, with SHA-256 `1e099e7e7dc2cc20efcba74fe81ec4ab9dc661f12ad9ce23c4c1ee21b91a0f85`.
 
 | Attribution workload | Baseline | Candidate | Change |
 |---|---:|---:|---:|
