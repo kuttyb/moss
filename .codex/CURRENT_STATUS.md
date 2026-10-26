@@ -12200,3 +12200,30 @@ passes all ten workloads (specialization counts, status, latency, and RSS).
 tests/tooling/check_retired_syntax.py` and `git diff --check` pass. A full
 `make --jobs="$(nproc)" check` was started but interrupted at the user's request;
 no aggregate result is claimed. No full-suite rerun is planned unless requested.
+## Phase 26 W1 parse cache — active checkpoint — 2026-10-25
+
+Branch: `phase26-moss-speedup`. User assigned W1 only and requested a two-agent
+team: Coordinator/implementer plus one independent adversarial Architect. The
+Architect's initial checkpoint identified operator-list ordering and failed
+call-parse output mutation as high-risk contracts. The Coordinator is the only
+code writer. No direct merge to `main`.
+
+The first W1 candidate adds per-Checker, bounded syntax caches for
+`split_binary` (exact expression plus ordered operator list), successful
+`parse_simple_call` and `parse_member_call`, `split_top_level` (exact text plus
+delimiter), and `strip_redundant_outer_parentheses`. Failed call parses still use
+the shared parser to preserve their output-argument side effects. Static helper
+sites continue to use the shared parser. `MOSS_PROFILE_COMPILER` emits aggregate
+`parse_cache_hits` and `parse_cache_misses` counters. `trim` has not been cached;
+its short-string work and hash overhead need evidence before changing it.
+
+Baseline `moss-opt` from the pre-edit main-equivalent compiler was saved under
+`tmp/phase26-w1/moss-opt-main`. A single same-machine timing pass on eight
+representative check workloads is in disposable `tmp/phase26-w1/baseline.json`
+and `candidate.json`; all eight check exit codes and exact stdout/stderr hashes
+match. The W3 repeated-specialization run emitted 9,350,195 cache hits and
+1,782,615 misses under `MOSS_PROFILE_COMPILER=1`. These are preliminary
+measurements; paired timings, full correctness gates, benchmark gate, Rust and
+Fast Debug parity, final Architect review, and closeout remain pending. Do not
+claim W1 complete from this checkpoint. Callgrind is not installed locally;
+record its attribution gate honestly if still unavailable at closeout.

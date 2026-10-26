@@ -6,7 +6,7 @@
     string saved;
     FileIOOwnerScope(string& target, string value)
         : target(target), saved(target) {
-      target = strip_redundant_outer_parentheses(trim(value));
+      target = moss::strip_redundant_outer_parentheses(trim(value));
     }
     ~FileIOOwnerScope() { target = std::move(saved); }
   };

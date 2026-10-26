@@ -1643,6 +1643,8 @@ class Checker {
         std::cerr << "MOSS_PROFILE|specialization_body_checking|" << specialization_body_checking_ns_ << '\n';
         std::cerr << "MOSS_PROFILE|inference_rounds|" << recorder.get_counter("inference_rounds") << '\n';
         std::cerr << "MOSS_PROFILE|inference_work_units|" << recorder.get_counter("inference_work_units") << '\n';
+        std::cerr << "MOSS_PROFILE|parse_cache_hits|" << parse_cache_hits_ << '\n';
+        std::cerr << "MOSS_PROFILE|parse_cache_misses|" << parse_cache_misses_ << '\n';
       }
     }
   }
@@ -1662,6 +1664,32 @@ class Checker {
   }
 
  private:
+  // Syntax-only results live for one check. The cap prevents a large source
+  // file with mostly distinct expressions from retaining every spelling.
+  static constexpr size_t parse_cache_limit_ = 32768;
+  struct BinaryParseEntry {
+    vector<string> operators;
+    std::optional<std::pair<string, string>> result;
+  };
+  struct CallParseEntry {
+    string name;
+    vector<string> arguments;
+  };
+  struct MemberParseEntry {
+    string receiver;
+    string member;
+    vector<string> arguments;
+  };
+  mutable std::unordered_map<string, vector<BinaryParseEntry>> binary_parse_cache_;
+  mutable std::unordered_map<string, CallParseEntry> simple_call_parse_cache_;
+  mutable std::unordered_map<string, MemberParseEntry> member_call_parse_cache_;
+  mutable std::unordered_map<string, std::unordered_map<char, vector<string>>>
+      top_level_parse_cache_;
+  mutable std::unordered_map<string, string> outer_parentheses_parse_cache_;
+  mutable size_t parse_cache_entries_ = 0;
+  mutable uint64_t parse_cache_hits_ = 0;
+  mutable uint64_t parse_cache_misses_ = 0;
+
   Program& p_;
   std::unordered_map<string, Function*> functions_;
   std::unordered_map<string, Function*> callable_id_to_function_;
@@ -7984,7 +8012,7 @@ class Checker {
     auto bracket = type.find('[');
     if (bracket == string::npos || !ends_with(type, "]")) return false;
     string head = type.substr(0, bracket);
-    auto arguments = split_top_level(
+    auto arguments = moss::split_top_level(
         type.substr(bracket + 1, type.size() - bracket - 2), ',');
     if (!((head == "vector" || head == "queue") && arguments.size() == 1) &&
         !(head == "map" && arguments.size() == 2))
@@ -8104,7 +8132,7 @@ class Checker {
     if (type == "float") return true;
     auto bracket = type.find('[');
     if (bracket != string::npos && ends_with(type, "]"))
-      for (const auto& argument : split_top_level(
+      for (const auto& argument : moss::split_top_level(
                type.substr(bracket + 1, type.size() - bracket - 2), ','))
         if (contains_float_type(canonical_type_name(argument))) return true;
     return false;
@@ -10240,8 +10268,100 @@ class Checker {
     return !copy_type(type) && !domains_.count(canonical_type_name(type));
   }
 
-  static std::optional<std::pair<string,string>> split_binary(const string& expression,
-                                                               const vector<string>& operators) {
+  bool parse_simple_call(const string& text, string& callee,
+                         vector<string>& args) const {
+    auto found = simple_call_parse_cache_.find(text);
+    if (found != simple_call_parse_cache_.end()) {
+      ++parse_cache_hits_;
+      callee = found->second.name;
+      args = found->second.arguments;
+      return true;
+    }
+    ++parse_cache_misses_;
+    // A failed shared parse may leave outputs untouched or partially set them.
+    // Re-run failures rather than replaying a result dependent on their inputs.
+    if (!moss::parse_simple_call(text, callee, args)) return false;
+    if (parse_cache_entries_ < parse_cache_limit_) {
+      simple_call_parse_cache_.emplace(text, CallParseEntry{callee, args});
+      ++parse_cache_entries_;
+    }
+    return true;
+  }
+
+  bool parse_member_call(const string& text, string& receiver, string& member,
+                         vector<string>& args) const {
+    auto found = member_call_parse_cache_.find(text);
+    if (found != member_call_parse_cache_.end()) {
+      ++parse_cache_hits_;
+      receiver = found->second.receiver;
+      member = found->second.member;
+      args = found->second.arguments;
+      return true;
+    }
+    ++parse_cache_misses_;
+    if (!moss::parse_member_call(text, receiver, member, args)) return false;
+    if (parse_cache_entries_ < parse_cache_limit_) {
+      member_call_parse_cache_.emplace(text, MemberParseEntry{receiver, member, args});
+      ++parse_cache_entries_;
+    }
+    return true;
+  }
+
+  vector<string> split_top_level(const string& text, char delimiter) const {
+    auto found = top_level_parse_cache_.find(text);
+    if (found != top_level_parse_cache_.end()) {
+      auto split = found->second.find(delimiter);
+      if (split != found->second.end()) {
+        ++parse_cache_hits_;
+        return split->second;
+      }
+    }
+    ++parse_cache_misses_;
+    auto result = moss::split_top_level(text, delimiter);
+    if (parse_cache_entries_ < parse_cache_limit_) {
+      top_level_parse_cache_[text].emplace(delimiter, result);
+      ++parse_cache_entries_;
+    }
+    return result;
+  }
+
+  string strip_redundant_outer_parentheses(const string& text) const {
+    auto found = outer_parentheses_parse_cache_.find(text);
+    if (found != outer_parentheses_parse_cache_.end()) {
+      ++parse_cache_hits_;
+      return found->second;
+    }
+    ++parse_cache_misses_;
+    auto result = moss::strip_redundant_outer_parentheses(text);
+    if (parse_cache_entries_ < parse_cache_limit_) {
+      outer_parentheses_parse_cache_.emplace(text, result);
+      ++parse_cache_entries_;
+    }
+    return result;
+  }
+
+  std::optional<std::pair<string,string>> split_binary(const string& expression,
+                                                       const vector<string>& operators) const {
+    auto found = binary_parse_cache_.find(expression);
+    if (found != binary_parse_cache_.end()) {
+      for (const auto& entry : found->second) {
+        if (entry.operators == operators) {
+          ++parse_cache_hits_;
+          return entry.result;
+        }
+      }
+    }
+    ++parse_cache_misses_;
+    auto result = split_binary_uncached(expression, operators);
+    if (parse_cache_entries_ < parse_cache_limit_) {
+      binary_parse_cache_[expression].push_back({operators, result});
+      ++parse_cache_entries_;
+    }
+    return result;
+  }
+
+  static std::optional<std::pair<string,string>> split_binary_uncached(
+      const string& expression, const vector<string>& operators) {
     int par = 0, br = 0, sq = 0;
     bool in_str = false;
     for (size_t i = expression.size(); i-- > 0;) {
@@ -10314,9 +10434,9 @@ class Checker {
   }
 
   // The operator of `operators` at which split_binary split `expression`.
-  static string split_operator_at(const string& expression,
+  string split_operator_at(const string& expression,
                                   const std::pair<string, string>& split,
-                                  const vector<string>& operators) {
+                                  const vector<string>& operators) const {
     for (const auto& op : operators)
       if (auto candidate = split_binary(expression, {op}); candidate && *candidate == split)
         return op;
