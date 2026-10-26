@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """Phase 25.4 — Repository-Wide Moss Compiler Performance Profiler.
 
-Discovers, measures, and attributes compiler execution time and memory across
-all Moss programs in the repository using the optimized C++ compiler (moss-opt).
+Discovers and measures selected repository compilation roots using the
+optimized C++ compiler (moss-opt). Phase timings do not isolate expression-text
+reparsing or string-type processing inside semantic checking.
 
 Features:
 - Discovers standalone compilation roots across packages, sdk, projects, examples, torture, and tests.
 - Measures process wall time, CPU time (user/sys), peak RSS memory, and per-stage attributed times.
-- Solves multi-pass time attribution explaining >= 90-95% of total compilation wall time.
+- Aggregates multi-pass phase timing; hierarchical timings are NOT additive
+  and do not constitute internal CPU hotspot or root-cause attribution.
 - Supports filtering by category, single file, top N slowest, or all programs.
 - Emits sortable CSV, JSON, and terminal report summaries.
 - Opt-in Chrome Trace Event JSON generation linked per workload.
@@ -22,7 +24,9 @@ import os
 from pathlib import Path
 import resource
 import shutil
+import signal
 import subprocess
+import tempfile
 import sys
 import time
 from typing import Any, Dict, List, Optional, Tuple
@@ -201,30 +205,47 @@ def profile_single_program(
     peak_rss_kib = 0
 
     try:
-        proc = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            env=env,
-            cwd=REPO_ROOT,
-            text=True,
-        )
-        try:
-            # We use os.wait4 to get precise peak RSS and CPU times
-            pid, status, rusage = os.wait4(proc.pid, 0)
-            exit_code = os.waitstatus_to_exitcode(status)
-            stdout_text, stderr_text = proc.communicate()
+        # Redirect to files instead of PIPE: wait4() cannot drain a full pipe,
+        # and a child that fills stderr would otherwise deadlock the profiler.
+        with tempfile.TemporaryFile(mode="w+t", encoding="utf-8") as out_file, \
+             tempfile.TemporaryFile(mode="w+t", encoding="utf-8") as err_file:
+            proc = subprocess.Popen(
+                cmd,
+                stdout=out_file,
+                stderr=err_file,
+                env=env,
+                cwd=REPO_ROOT,
+                start_new_session=True,
+            )
+            deadline = time.monotonic() + timeout_s
+            timed_out = False
+            while True:
+                pid, status, rusage = os.wait4(proc.pid, os.WNOHANG)
+                if pid == proc.pid:
+                    break
+                if time.monotonic() >= deadline:
+                    timed_out = True
+                    try:
+                        os.killpg(proc.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                    pid, status, rusage = os.wait4(proc.pid, 0)
+                    break
+                time.sleep(min(0.025, max(0.0, deadline - time.monotonic())))
+
+            # wait4() has already reaped the child, so do not call wait() or
+            # communicate() a second time.
+            proc.returncode = os.waitstatus_to_exitcode(status)
+            exit_code = -1 if timed_out else proc.returncode
             user_cpu_s = rusage.ru_utime
             sys_cpu_s = rusage.ru_stime
             peak_rss_kib = rusage.ru_maxrss
-        except TimeoutError:
-            proc.kill()
-            stdout_text, stderr_text = proc.communicate()
-            outcome = "timeout"
-            exit_code = -1
-    except subprocess.TimeoutExpired:
-        outcome = "timeout"
-        exit_code = -1
+            out_file.seek(0)
+            err_file.seek(0)
+            stdout_text = out_file.read()
+            stderr_text = err_file.read()
+            if timed_out:
+                outcome = "timeout"
     except Exception as exc:
         outcome = "error"
         stderr_text = str(exc)
@@ -233,7 +254,7 @@ def profile_single_program(
     duration_ns = time.perf_counter_ns() - start_ns
     wall_time_ms = duration_ns / 1_000_000.0
 
-    if outcome != "timeout":
+    if outcome not in ("timeout", "error"):
         if exit_code == 0:
             outcome = "success"
         else:
