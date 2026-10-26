@@ -1,3 +1,12 @@
+# Phase 26.0.1 C3 — negative parse caching — in PR review
+
+- Base: `274f848502df08f62b69c54c614ad9f05a90a3ec`; implementation SHA `fdeb72b16faa82a8dfefd04a1db90e9d87fe4cf9`, pushed on `phase26-0-1-c3`. Architect GO recorded for this exact implementation SHA.
+- Baseline counts justified caching failed simple/member parse results; all targets stayed below the existing 32,768-entry cap. Detailed baseline/candidate partitions and compiler-perf report are in `docs/phase26.0.1/C3-parse-cache.md`.
+- Validated: full 2,064-source verdict/diagnostic/full-Rust-hash differential (0 changes); Fast Debug parity; `make check` 141/141; `MOSS_PERF_BASELINE=274f848 TMPDIR="$PWD/tmp" make compiler-perf` (57 fixtures, D18 -5.0%, aggregate -3.6%, no noise-floor regression).
+- Remaining delivery: hosted PR checks and final PR readiness. PR #23 is open as draft. C3 report, feedback, and team closeout are committed next as docs-only records. C4 is the next Phase 26.0.1 item; count the regex parse lookup shape before choosing a fix.
+
+---
+
 # Phase 26 complete — W1–W3 merged to main — 2026-10-26
 
 ## Local compiler-perf suite follow-up — certified rerun and review complete — 2026-10-26
