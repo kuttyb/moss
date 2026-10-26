@@ -1643,6 +1643,28 @@ class Checker {
         std::cerr << "MOSS_PROFILE|specialization_body_checking|" << specialization_body_checking_ns_ << '\n';
         std::cerr << "MOSS_PROFILE|inference_rounds|" << recorder.get_counter("inference_rounds") << '\n';
         std::cerr << "MOSS_PROFILE|inference_work_units|" << recorder.get_counter("inference_work_units") << '\n';
+        uint64_t reinferred_functions = 0;
+        uint64_t changed_functions = 0;
+        for (size_t index = 0;
+             index < inference_signature_wave_counts_.size(); ++index) {
+          const auto [visited, changed] = inference_signature_wave_counts_[index];
+          const string visited_key =
+              "inference_reinferred_functions_round_" + std::to_string(index);
+          const string changed_key =
+              "inference_changed_functions_round_" + std::to_string(index);
+          recorder.set_counter(visited_key, visited);
+          recorder.set_counter(changed_key, changed);
+          reinferred_functions += visited;
+          changed_functions += changed;
+          std::cerr << "MOSS_PROFILE|" << visited_key << '|' << visited << '\n';
+          std::cerr << "MOSS_PROFILE|" << changed_key << '|' << changed << '\n';
+        }
+        recorder.set_counter("inference_reinferred_functions", reinferred_functions);
+        recorder.set_counter("inference_changed_functions", changed_functions);
+        std::cerr << "MOSS_PROFILE|inference_reinferred_functions|"
+                  << reinferred_functions << '\n';
+        std::cerr << "MOSS_PROFILE|inference_changed_functions|"
+                  << changed_functions << '\n';
         std::cerr << "MOSS_PROFILE|parse_cache_hits|" << parse_cache_hits_ << '\n';
         std::cerr << "MOSS_PROFILE|parse_cache_misses|" << parse_cache_misses_ << '\n';
       }
@@ -1693,6 +1715,12 @@ class Checker {
   Program& p_;
   std::unordered_map<string, Function*> functions_;
   std::unordered_map<string, Function*> callable_id_to_function_;
+  std::unordered_map<const Function*, size_t> signature_function_indices_;
+  vector<std::set<size_t>> signature_callers_by_function_;
+  vector<std::set<size_t>> signature_callees_by_function_;
+  std::set<size_t> signature_unresolved_consumers_;
+  bool signature_dependency_graph_changed_ = false;
+  vector<std::pair<size_t, size_t>> inference_signature_wave_counts_;
 
   Function* find_function_by_callable_id(const string& id) {
     if (id.empty()) return nullptr;
@@ -13074,8 +13102,9 @@ class Checker {
     return env;
   }
 
-  void infer_statement_expressions(const vector<Stmt>& statements,
-                                   TypeEnv& env) {
+  void infer_statement_expressions(
+      const vector<Stmt>& statements, TypeEnv& env,
+      std::optional<size_t> signature_caller = std::nullopt) {
     TypeEnvVisitor infer_statement = [&](const Stmt& statement, const TypeEnv& current_env) {
       switch (statement.kind) {
         case Stmt::Kind::If:
@@ -13201,6 +13230,11 @@ class Checker {
         case Stmt::Kind::Try:
         case Stmt::Kind::Recover:
           break;
+      }
+      if (signature_caller) {
+        for (const auto& expression : statement_expressions(statement))
+          record_signature_call_dependencies(*signature_caller, statement.line,
+                                             expression, current_env);
       }
     };
     env = walk_type_environment(statements, env, infer_statement, false);
@@ -13767,6 +13801,90 @@ class Checker {
     }
   }
 
+  static string inferred_parameter_signature(const vector<Param>& params) {
+    std::ostringstream out;
+    auto append = [&](const string& value) {
+      out << value.size() << ':' << value;
+    };
+    for (const auto& parameter : params) {
+      append(parameter.name);
+      append(parameter.type);
+      append(parameter.type_ref
+          ? parameter.type_ref->to_canonical_string() : string());
+      append(parameter.inferred ? "1" : "0");
+    }
+    return out.str();
+  }
+
+  string inferred_function_signature(const Function& function) const {
+    std::ostringstream out;
+    auto append = [&](const string& value) {
+      out << value.size() << ':' << value;
+    };
+    append(inferred_parameter_signature(function.params));
+    append(function.return_type.value_or("<none>"));
+    append(function.return_type_ref
+        ? function.return_type_ref->to_canonical_string() : string());
+    append(function.generic ? "1" : "0");
+    append(function.static_dispatch ? "1" : "0");
+    vector<std::pair<string, string>> generic_results(
+        function.generic_results.begin(), function.generic_results.end());
+    std::sort(generic_results.begin(), generic_results.end());
+    for (const auto& [name, result] : generic_results) {
+      append(name);
+      append(result);
+    }
+    for (const auto& constraint : function.constraints) {
+      append(std::to_string(static_cast<int>(constraint.kind)));
+      append(constraint.subject);
+      append(constraint.detail);
+      append(constraint.result);
+      append(std::to_string(constraint.arity));
+      for (const auto& argument : constraint.arguments) append(argument);
+      for (const auto& expectation : constraint.result_expectations)
+        append(expectation);
+    }
+    return out.str();
+  }
+
+  string inferred_shared_signature() const {
+    std::ostringstream out;
+    auto append = [&](const string& value) {
+      out << value.size() << ':' << value;
+    };
+    for (const auto& object : p_.objects) {
+      append(object.name);
+      for (const auto& field : object.fields) {
+        append(field.name);
+        append(field.type);
+        append(field.inferred ? "1" : "0");
+      }
+      for (const auto& method : object.methods) {
+        append(method.name);
+        append(inferred_parameter_signature(method.params));
+        append(method.return_type.value_or("<none>"));
+        append(method.return_type_ref
+            ? method.return_type_ref->to_canonical_string() : string());
+      }
+    }
+    for (const auto& domain : p_.domains) {
+      append(domain.name);
+      for (const auto& field : domain.state) {
+        append(field.name);
+        append(field.type);
+        append(field.inferred ? "1" : "0");
+      }
+      for (const auto& handler : domain.handlers) {
+        append(handler.name);
+        append(inferred_parameter_signature(handler.params));
+        append(handler.reply_type.value_or("<none>"));
+        append(handler.reply_type_ref
+            ? handler.reply_type_ref->to_canonical_string() : string());
+      }
+    }
+    return out.str();
+  }
+
   void infer_function_signatures(bool finalize) {
     {
       ScopedOpTimer t_prelude("sig_infer_prelude_constraints");
@@ -13998,11 +14116,47 @@ class Checker {
           function.set_return_type(kv.first.rfind("element:", 0) == 0 ? "_element:" + kv.first : kv.first.rfind("field:", 0) == 0 ? "_field:" + kv.first : "_generic:" + kv.first);
     }
     }
-    for (size_t round = 0; round <= p_.functions.size() * 3 + 3; ++round) {
+    ensure_signature_dependency_storage();
+    for (size_t index = 0; index < p_.functions.size(); ++index)
+      if (std::any_of(p_.functions[index].constraints.begin(),
+                      p_.functions[index].constraints.end(),
+                      [](const Constraint& constraint) {
+                        return constraint.kind == ConstraintKind::Callable;
+                      }))
+        signature_unresolved_consumers_.insert(index);
+
+    vector<size_t> scheduled_functions(p_.functions.size());
+    std::iota(scheduled_functions.begin(), scheduled_functions.end(), 0);
+    bool shared_signature_dirty = false;
+    const size_t max_rounds = p_.functions.size() * 3 + 4;
+    for (size_t round = 0;
+         round < max_rounds &&
+             (round == 0 || !scheduled_functions.empty() ||
+              shared_signature_dirty);
+         ++round) {
+      // Match the old bounded loop's final full scan if convergence has not
+      // quiesced by its last permitted iteration.
+      if (round + 1 == max_rounds) {
+        scheduled_functions.resize(p_.functions.size());
+        std::iota(scheduled_functions.begin(), scheduled_functions.end(), 0);
+      }
       ScopedOpTimer t_round("sig_infer_round_body");
       if (CompilerTraceRecorder::instance().is_enabled())
         CompilerTraceRecorder::instance().increment_counter("sig_infer_outer_rounds", 1);
-      for (auto& function : p_.functions) {
+      vector<string> signatures_before;
+      signatures_before.reserve(p_.functions.size());
+      for (const auto& function : p_.functions)
+        signatures_before.push_back(inferred_function_signature(function));
+      const string shared_signature_before = inferred_shared_signature();
+      signature_dependency_graph_changed_ = false;
+      shared_signature_dirty = false;
+      for (size_t function_index : scheduled_functions) {
+        auto& function = p_.functions[function_index];
+        const auto previous_dependencies =
+            signature_callees_by_function_[function_index];
+        for (size_t callee : previous_dependencies)
+          signature_callers_by_function_[callee].erase(function_index);
+        signature_callees_by_function_[function_index].clear();
         SourceFileScope function_source(current_source_file_, function.source_file);
         TypeEnv env;
         for (const auto& parameter : function.params) {
@@ -14016,8 +14170,11 @@ class Checker {
         }
         {
           ScopedOpTimer t_infer("infer_statement_expressions", function.name);
-          infer_statement_expressions(function.body, env);
+          infer_statement_expressions(function.body, env, function_index);
         }
+        if (function.result_expression)
+          record_signature_call_dependencies(function_index,
+              function.result_line, *function.result_expression, env);
         BodyTypeState body_types;
         {
           ScopedOpTimer t_solve("solve_local_collection_types", function.name);
@@ -14148,6 +14305,9 @@ class Checker {
                   "' but another return path has type '" + *function.return_type + "'");
           }
         }
+        if (previous_dependencies !=
+            signature_callees_by_function_[function_index])
+          signature_dependency_graph_changed_ = true;
       }
       for (auto& domain : p_.domains) {
         for (auto& handler : domain.handlers) {
@@ -14179,6 +14339,31 @@ class Checker {
         TypeEnv env;
         infer_statement_expressions(benchmark.body, env);
       }
+
+      vector<size_t> changed_functions;
+      for (size_t index = 0; index < p_.functions.size(); ++index)
+        if (signatures_before[index] !=
+            inferred_function_signature(p_.functions[index]))
+          changed_functions.push_back(index);
+      const bool shared_signature_changed =
+          shared_signature_before != inferred_shared_signature();
+      inference_signature_wave_counts_.emplace_back(
+          scheduled_functions.size(), changed_functions.size());
+
+      std::set<size_t> next_functions;
+      if (signature_dependency_graph_changed_ || shared_signature_changed) {
+        for (size_t index = 0; index < p_.functions.size(); ++index)
+          next_functions.insert(index);
+        shared_signature_dirty = shared_signature_changed;
+      } else if (!changed_functions.empty()) {
+        for (size_t changed : changed_functions) {
+          const auto& callers = signature_callers_by_function_[changed];
+          next_functions.insert(callers.begin(), callers.end());
+        }
+        next_functions.insert(signature_unresolved_consumers_.begin(),
+                              signature_unresolved_consumers_.end());
+      }
+      scheduled_functions.assign(next_functions.begin(), next_functions.end());
     }
     if (!finalize) return;
     for (auto& function : p_.functions) {
@@ -17374,6 +17559,112 @@ class Checker {
     if (value.size() > 1 && (value.front() == '-' || value.front() == '+'))
       collect_local_call_sites(line, trim(value.substr(1)), env,
                                implicit_owner, calls);
+  }
+
+  void ensure_signature_dependency_storage() {
+    if (signature_function_indices_.size() == p_.functions.size() &&
+        signature_callers_by_function_.size() == p_.functions.size() &&
+        signature_callees_by_function_.size() == p_.functions.size())
+      return;
+    signature_function_indices_.clear();
+    signature_callers_by_function_.assign(p_.functions.size(), {});
+    signature_callees_by_function_.assign(p_.functions.size(), {});
+    for (size_t index = 0; index < p_.functions.size(); ++index)
+      signature_function_indices_.emplace(&p_.functions[index], index);
+  }
+
+  bool has_unresolved_local_callable_call(const string& expression,
+                                          const TypeEnv& env) const {
+    string value = trim(expression);
+    if (value.empty()) return false;
+    while (value.size() >= 2 && value.front() == '(' && value.back() == ')' &&
+           matching_paren(value, 0) == value.size() - 1)
+      value = trim(value.substr(1, value.size() - 2));
+    if (parse_functional_pipeline(value)) return true;
+    if (auto elements = parse_vector_literal(value))
+      return std::any_of(elements->begin(), elements->end(),
+          [&](const string& element) {
+            return has_unresolved_local_callable_call(element, env);
+          });
+    for (const auto& operators : vector<vector<string>>{
+             {" or "}, {" xor "}, {" and "},
+             {"==", "!=", "<=", ">=", "<", ">"},
+             {"|"}, {"^"}, {"&"}, {"<<", ">>"},
+             {"+", "-", "*", "/", "%"}})
+      if (auto binary = split_binary(value, operators))
+        return has_unresolved_local_callable_call(binary->first, env) ||
+            has_unresolved_local_callable_call(binary->second, env);
+    if (starts_with(value, "not "))
+      return has_unresolved_local_callable_call(trim(value.substr(4)), env);
+    if (!value.empty() && (value.front() == '-' || value.front() == '+' ||
+                           value.front() == '~'))
+      return has_unresolved_local_callable_call(trim(value.substr(1)), env);
+
+    string receiver, member;
+    vector<string> arguments;
+    if (parse_member_call(value, receiver, member, arguments)) {
+      if (has_unresolved_local_callable_call(receiver, env)) return true;
+      return std::any_of(arguments.begin(), arguments.end(),
+          [&](const string& argument) {
+            return has_unresolved_local_callable_call(argument, env);
+          });
+    }
+    string callee;
+    if (parse_simple_call(value, callee, arguments)) {
+      // A local call target can acquire its callable identity in a later
+      // inference pass. Keep this function on the conservative consumer list
+      // until the surrounding callable signatures have settled.
+      if (env.count(callee) && !functions_.count(callee)) return true;
+      return std::any_of(arguments.begin(), arguments.end(),
+          [&](const string& argument) {
+            string label, value_argument;
+            const string& nested = parse_named_argument(argument, label,
+                                                         value_argument)
+                ? value_argument : argument;
+            return has_unresolved_local_callable_call(nested, env);
+          });
+    }
+    string base, index;
+    return parse_index(value, base, index) &&
+        (has_unresolved_local_callable_call(base, env) ||
+         has_unresolved_local_callable_call(index, env));
+  }
+
+  void record_signature_call_dependencies(size_t caller, int line,
+                                          const string& expression,
+                                          const TypeEnv& env) {
+    if (caller >= p_.functions.size()) return;
+    if (has_unresolved_local_callable_call(expression, env))
+      signature_unresolved_consumers_.insert(caller);
+    string direct_callee;
+    vector<string> direct_arguments;
+    if (parse_simple_call(trim(expression), direct_callee, direct_arguments) &&
+        direct_callee == "sort" && direct_arguments.size() == 2) {
+      string label, callable;
+      if (parse_named_argument(direct_arguments[1], label, callable) &&
+          label == "by")
+        signature_unresolved_consumers_.insert(caller);
+    }
+
+    vector<LocalCallSite> call_sites;
+    collect_local_call_sites(line, expression, env, nullptr, call_sites);
+    for (const auto& call : call_sites) {
+      if (!starts_with(call.target, "fn:")) continue;
+      const string callee_name = call.target.substr(3);
+      auto callee = functions_.find(callee_name);
+      if (callee == functions_.end() || !callee->second) continue;
+      auto target = signature_function_indices_.find(callee->second);
+      if (target == signature_function_indices_.end()) continue;
+      if (signature_callees_by_function_[caller].insert(target->second).second) {
+        signature_callers_by_function_[target->second].insert(caller);
+      }
+      if (std::any_of(callee->second->constraints.begin(),
+                      callee->second->constraints.end(),
+                      [](const Constraint& constraint) {
+                        return constraint.kind == ConstraintKind::Callable;
+                      }))
+        signature_unresolved_consumers_.insert(caller);
+    }
   }
 
   vector<string> statement_expressions(const Stmt& statement) const {

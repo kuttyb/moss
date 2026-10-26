@@ -1,0 +1,8 @@
+fn caller(value):
+  return callee(value)
+
+fn callee(value):
+  return value + 1
+
+fn main():
+  echo caller(3)
