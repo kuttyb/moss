@@ -3050,6 +3050,14 @@ public class SemanticCheckerTest {
                 + "    pass\n", "FILEIO_UNKNOWN_STATE");
         assertCompileError(variants
                 + "fn main():\n"
+                + "  try:\n"
+                + "    file = FileIO.open(\"input\", ro)\n"
+                + "    file.write(0, \"x\")\n"
+                + "    file.close()\n"
+                + "  recover:\n"
+                + "    pass\n", "FILEIO_READ_ONLY");
+        assertCompileError(variants
+                + "fn main():\n"
                 + "  file = FileIO.open(\"input\", ro)\n"
                 + "  data = file.read(0, 4)\n"
                 + "  file.close()\n", "MOSS_COMPILE_ERROR");

@@ -2753,7 +2753,7 @@ public class SemanticChecker {
                 String target = statement.a == null ? "" : statement.a.trim();
                 String rhs = statement.b == null ? "" : statement.b;
                 if (!target.isEmpty() && rhs.matches("(?s).*\\bFileIO\\s*\\.\\s*open\\s*\\(.*"))
-                    state.put(target, 1);
+                    state.put(target, fileIoOpenState(rhs));
                 else if (!target.isEmpty() && state.containsKey(rhs.trim()))
                     state.put(target, state.get(rhs.trim()));
             }
@@ -2767,9 +2767,12 @@ public class SemanticChecker {
                     String operation = operations.group(1);
                     int ownerState = state.get(owner);
                     if (operation.equals("open")) {
-                        if (ownerState == 1) throw new CompileError(statement.line,
+                        if (ownerState == 1 || ownerState == 3 || ownerState == 4) throw new CompileError(statement.line,
                                 "FileIO '" + owner + "' is already open", "FILEIO_ALREADY_OPEN");
-                        state.put(owner, 1);
+                        int callOpen = expressions.indexOf('(', operations.start());
+                        int callClose = matchingCloseParen(expressions, callOpen);
+                        state.put(owner, fileIoOpenState(callOpen >= 0 && callClose > callOpen
+                                ? expressions.substring(operations.start(), callClose + 1) : ""));
                     } else {
                         if (ownerState == 0) throw new CompileError(statement.line,
                                 "FileIO '" + owner + "' is closed during " + operation,
@@ -2777,6 +2780,9 @@ public class SemanticChecker {
                         if (ownerState == 2) throw new CompileError(statement.line,
                                 "FileIO '" + owner + "' has no definite lifecycle state during " + operation,
                                 "FILEIO_UNKNOWN_STATE");
+                        if (operation.equals("write") && (ownerState == 3 || ownerState == 4))
+                            throw new CompileError(statement.line,
+                                    "read-only FileIO '" + owner + "' cannot be written", "FILEIO_READ_ONLY");
                         if (operation.equals("close")) state.put(owner, 0);
                     }
                 }
@@ -2807,9 +2813,32 @@ public class SemanticChecker {
             boolean same = true;
             for (Map<String, Integer> path : paths)
                 if (!Objects.equals(first, path.get(owner))) same = false;
-            joined.put(owner, same && first != null ? first : 2);
+            if (same && first != null) joined.put(owner, first);
+            else {
+                boolean everyPathOpen = paths.stream().allMatch(path -> {
+                    Integer value = path.get(owner);
+                    return value != null && (value == 1 || value == 3 || value == 4);
+                });
+                boolean mayReadOnly = paths.stream().anyMatch(path -> {
+                    Integer value = path.get(owner);
+                    return value != null && (value == 3 || value == 4);
+                });
+                joined.put(owner, everyPathOpen ? (mayReadOnly ? 4 : 1) : 2);
+            }
         }
         return joined;
+    }
+
+    private static int fileIoOpenState(String expression) {
+        int open = expression == null ? -1 : expression.indexOf('(');
+        int close = matchingCloseParen(expression, open);
+        List<String> arguments = open >= 0 && close > open
+                ? ExpressionTyper.parseArguments(expression.substring(open + 1, close)) : List.of();
+        if (arguments.size() < 2) return 4;
+        String mode = arguments.get(1).trim();
+        if (mode.equals("ro")) return 3;
+        if (mode.equals("rw") || mode.equals("create")) return 1;
+        return 4;
     }
 
     public static boolean isRaiseHandled(List<Stmt> statements, int raiseIndex, String variant) {

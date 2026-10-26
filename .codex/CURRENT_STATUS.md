@@ -17261,3 +17261,14 @@ The root-local flow now validates instance `open`, `read`, `write`, `sync`,
 Both ABI-v9 and staged ABI-v10 Java suites pass all 12 classes. Mode-state
 checks such as write-after-read-only-open, helper ownership/effect transfer,
 domain field lifecycle, and broader FileIO semantic parity remain open.
+
+### Correction — preserve FileIO open mode in lifecycle state
+
+Root-local lifecycle state now distinguishes read-only, writable, unknown-mode,
+and uncertain-open states. Java rejects writes through `FileIO.open(path, ro)`
+with `FILEIO_READ_ONLY`; focused C++ and Java probes agree. A branch join that
+may be read-only also preserves that restriction.
+
+ABI-v9 and staged ABI-v10 Java suites each pass all 12 test classes. Dynamic
+mode-flow equivalence, helper-managed handles, and domain-field lifecycle are
+not yet verified.
