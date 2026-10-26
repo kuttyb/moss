@@ -8,6 +8,11 @@ on:
 permissions:
   contents: read
 
+# GitHub-hosted runners do not provide mold. The Makefile documents this
+# override for ordinary linker selection; local benchmark builds use mold.
+env:
+  MOSS_LDFLAGS: ""
+
 concurrency:
   group: phase26-w1-${{ github.event.pull_request.number }}
   cancel-in-progress: true
