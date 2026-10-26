@@ -26,8 +26,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Build with available cores
-        run: make --jobs="$(nproc)"
+      - name: Build development and optimized compilers with available cores
+        run: make --jobs="$(nproc)" moss-dev moss-opt
       - name: Full repository regressions
         run: |
           mkdir -p tmp
