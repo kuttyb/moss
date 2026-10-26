@@ -1,13 +1,16 @@
 # Phase 25.4 B1 — Moss Compiler Time Attribution & Repository Profiling Report
 
+> **B1 scope correction (2026-10-25; applies to all analysis below):** This is a historical C++ `moss check --json` ECT benchmark/phase-timing record, **not a validated CPU root-cause breakdown**. `type_inference`, `effects`, and `specialization_*` include repeated parsing of expression strings and textual type handling inside the checker. The separate `parsing` timer measures initial source parsing only. Peer-reported Callgrind observations (expression-text parsing 42–58% of executed instructions in selected workloads; not independently reproduced here) make representation costs a material unmeasured confounder. Timers may be nested; percentages capped to process wall time do not establish disjoint internal cost. Earlier optimization priorities and speedup projections are **hypotheses, not accepted performance targets**. Preserve measurements and frozen benchmarks; reprofile Java ECT with expression-text parsing/type-text handling isolated before choosing optimizations. See [B1 merge-readiness note](PHASE_25_4_B1_MERGE_READINESS.md).
+
+
 **Commit SHA:** `f8f15823` (+ repository profiler & instrumentation)
 **Compiler Executable:** Optimized C++ Moss (`build/compiler/moss-opt`, `-O2`)
 **Scope:** Process-level instrumentation, missing-time resolution, repository-wide profiling across 343 Moss programs, and whole-corpus bottleneck inventory.
 **Durable Artifacts:**
-- Profiler CLI: [`benchmarks/phase25_4/profile_moss.py`](file:///home/owner/daji/code/moss2/benchmarks/phase25_4/profile_moss.py)
-- Full Corpus CSV: [`benchmarks/phase25_4/cpp_baseline/results/moss_inventory_perf.csv`](file:///home/owner/daji/code/moss2/benchmarks/phase25_4/cpp_baseline/results/moss_inventory_perf.csv)
-- Full Corpus JSON: [`benchmarks/phase25_4/cpp_baseline/results/moss_inventory_perf.json`](file:///home/owner/daji/code/moss2/benchmarks/phase25_4/cpp_baseline/results/moss_inventory_perf.json)
-- Per-Program Chrome Trace Event Traces: [`benchmarks/phase25_4/cpp_baseline/results/traces/*.json`](file:///home/owner/daji/code/moss2/benchmarks/phase25_4/cpp_baseline/results/traces/)
+- Profiler CLI: [`benchmarks/phase25_4/profile_moss.py`](https://github.com/kuttyb/moss/blob/phase25-4-cpp-torture-b1/benchmarks/phase25_4/profile_moss.py)
+- Full Corpus CSV: [`benchmarks/phase25_4/cpp_baseline/results/moss_inventory_perf.csv`](https://github.com/kuttyb/moss/blob/phase25-4-cpp-torture-b1/benchmarks/phase25_4/cpp_baseline/results/moss_inventory_perf.csv)
+- Full Corpus JSON: [`benchmarks/phase25_4/cpp_baseline/results/moss_inventory_perf.json`](https://github.com/kuttyb/moss/blob/phase25-4-cpp-torture-b1/benchmarks/phase25_4/cpp_baseline/results/moss_inventory_perf.json)
+- Per-Program Chrome Trace Event Traces: [`benchmarks/phase25_4/cpp_baseline/results/traces/*.json`](https://github.com/kuttyb/moss/tree/phase25-4-cpp-torture-b1/benchmarks/phase25_4/cpp_baseline/results/traces/)
 **Team Structure:** L6 Coordinator / Coder + L6 Independent Adversarial Architect
 
 ---
@@ -40,13 +43,13 @@ By instrumenting process-level lifecycle stages (`process_main`, `project_discov
 - **`sdk/datastructures/src/datastructures.moss` (27.71 s wall):** **100.0% attributed** (27.65 s semantic analysis, 12 ms residual).
 - **`sdk/datastructures/tests/datastructures.moss` (21.73 s wall):** **100.0% attributed** (21.70 s semantic analysis across provider and test passes, 30 ms residual).
 
-Every millisecond of compiler execution is now strictly accounted for.
+The gross multi-pass timer overwrite is resolved. These hierarchical phase timings do not identify the instructions executed inside the phases, and their non-overlapping wall-time coverage remains approximate.
 
 ---
 
 ## 2. Repository-Wide Moss Profiling (`profile_moss.py`)
 
-To evaluate compiler performance across the entire repository, we implemented [`benchmarks/phase25_4/profile_moss.py`](file:///home/owner/daji/code/moss2/benchmarks/phase25_4/profile_moss.py).
+To evaluate compiler performance across the entire repository, we implemented [`benchmarks/phase25_4/profile_moss.py`](https://github.com/kuttyb/moss/blob/phase25-4-cpp-torture-b1/benchmarks/phase25_4/profile_moss.py).
 
 ### A. Corpus Coverage
 The profiler discovered **343 valid compilation entry points** across 6 distinct categories:
@@ -137,7 +140,7 @@ Across all 343 programs in the repository, compiler execution time is heavily co
 
 ## 4. Concrete Recommendations for Phase 25.4 B2 Compiler Optimization
 
-Based on whole-repository profiling, three targeted optimizations will eliminate > 90% of all compiler latency across the entire test and package corpus:
+Based on whole-repository profiling, three **historical, unvalidated optimization hypotheses** were proposed. Their claimed magnitude is not supported until expression-text parsing and other checker-internal costs are separately measured:
 
 ### Recommendation 1: Dirty Tracking & Worklist-Driven Signature Inference (Top Priority)
 - **Target:** `infer_function_signatures` in `src/semantic_checker.cpp:13878`.
@@ -186,9 +189,9 @@ Based on whole-repository profiling, three targeted optimizations will eliminate
 **Auditor:** L6 Agent 2 — Independent Adversarial Architect
 **Audit Target SHA:** `f8f15823`
 **Artifacts Audited:**
-- [`benchmarks/phase25_4/profile_moss.py`](file:///home/owner/daji/code/moss2/benchmarks/phase25_4/profile_moss.py)
-- [`benchmarks/phase25_4/cpp_baseline/results/moss_inventory_perf.csv`](file:///home/owner/daji/code/moss2/benchmarks/phase25_4/cpp_baseline/results/moss_inventory_perf.csv)
-- [`benchmarks/phase25_4/cpp_baseline/results/moss_inventory_perf.json`](file:///home/owner/daji/code/moss2/benchmarks/phase25_4/cpp_baseline/results/moss_inventory_perf.json)
+- [`benchmarks/phase25_4/profile_moss.py`](https://github.com/kuttyb/moss/blob/phase25-4-cpp-torture-b1/benchmarks/phase25_4/profile_moss.py)
+- [`benchmarks/phase25_4/cpp_baseline/results/moss_inventory_perf.csv`](https://github.com/kuttyb/moss/blob/phase25-4-cpp-torture-b1/benchmarks/phase25_4/cpp_baseline/results/moss_inventory_perf.csv)
+- [`benchmarks/phase25_4/cpp_baseline/results/moss_inventory_perf.json`](https://github.com/kuttyb/moss/blob/phase25-4-cpp-torture-b1/benchmarks/phase25_4/cpp_baseline/results/moss_inventory_perf.json)
 - Stage timer implementation in [`src/compiler_stage_timer.hpp`](file:///home/owner/daji/code/moss2/src/compiler_stage_timer.hpp) and [`src/moss.cpp`](file:///home/owner/daji/code/moss2/src/moss.cpp)
 
 ### Verification Findings:
