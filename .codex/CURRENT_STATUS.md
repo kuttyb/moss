@@ -1,6 +1,6 @@
 # Phase 26 complete — W1–W3 merged to main — 2026-10-26
 
-## Local compiler-perf suite follow-up — certified rerun complete; final gates pending — 2026-10-26
+## Local compiler-perf suite follow-up — certified rerun and review complete — 2026-10-26
 
 - Branch `compiler-perf-local-suite`, PR #20, compiler source identical to
   `origin/main` at `bdf973af651deb2d3a4deac2b6c4bcc60893a776`; no compiler
@@ -15,15 +15,14 @@
   Sum of fixture wall medians: 98.437 s baseline, 15.071 s candidate (-84.7%).
   CPU/RSS were captured for all 77 timing and 77 profiling samples per side.
   Negative-fixture work counters are now n/a. No fixture exceeded the slowdown
-  threshold. Updated report, CSVs and metadata are ready for the result commit.
+  threshold. The report, CSVs and metadata are committed.
 - Architect review at `93ed4bddd826eea03b7baaacebdff18353c6b3bb` was NO-GO on
   resource/counter report accuracy; GNU time's failure preamble parser and n/a
   rendering are fixed, and the full certification run was repeated.
-- Hosted run #26 (`40381330194`) was running against code SHA `6deefa96` while
-  the new result artifacts were being prepared. After committing the refreshed
-  report, rerun `py_compile`, feedback validation, and diff check; final-head
-  hosted gates and Architect review remain pending. PR stays open; no merge to
-  main has occurred. Team closeout:
+- Hosted run #27 (`40382863032`) passed core regressions, optimized examples,
+  and local performance smoke on PR head `bf3ff5f`. Architect gave GO for that
+  exact implementation and artifact head. The subsequent closeout is docs-only.
+  PR #20 remains open and unmerged; no merge to main has occurred. Team closeout:
   `docs/phase26/agent-patterns/team-local-perf-suite.md`.
 
 - W2/W3 implementation is complete. PR #18 merged into `phase26-moss-speedup`
