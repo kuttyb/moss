@@ -141,6 +141,45 @@ public class SemanticChecker {
         return Collections.unmodifiableList(warnings);
     }
 
+    private OptionalLong staticPayloadSize(String rawType, Set<String> visiting) {
+        if (rawType == null || rawType.isEmpty()) return OptionalLong.empty();
+        String type = rawType.trim();
+        if (type.startsWith("std__")) type = type.substring(5);
+        if (type.equals("int") || type.equals("float")) return OptionalLong.of(8);
+        if (type.equals("bool")) return OptionalLong.of(1);
+        if (type.equals("unit")) return OptionalLong.of(0);
+        if (type.equals("string") || domains.containsKey(type)) return OptionalLong.empty();
+        if (type.startsWith("option[") && type.endsWith("]")) {
+            OptionalLong inner = staticPayloadSize(type.substring(7, type.length() - 1), visiting);
+            return inner.isPresent() ? OptionalLong.of(inner.getAsLong() + 1) : OptionalLong.empty();
+        }
+        ObjectType object = objects.get(type);
+        if (object == null || !visiting.add(type)) return OptionalLong.empty();
+        long total = 0;
+        for (Field field : object.fields) {
+            OptionalLong size = staticPayloadSize(field.type, visiting);
+            if (size.isEmpty()) {
+                visiting.remove(type);
+                return OptionalLong.empty();
+            }
+            total += size.getAsLong();
+        }
+        visiting.remove(type);
+        return OptionalLong.of(total);
+    }
+
+    private void warnLargeMessagePayload(int line, String sourceFile, String type, boolean materializes) {
+        if (!materializes) return;
+        OptionalLong size = staticPayloadSize(type, new HashSet<>());
+        if (size.isEmpty() || size.getAsLong() <= 1024) return;
+        String message = "message payload materializes " + size.getAsLong()
+                + " bytes at an owned domain boundary";
+        boolean duplicate = warnings.stream().anyMatch(warning -> warning.line() == line
+                && warning.message().equals(message));
+        if (!duplicate) warnings.add(new Warning(line, message, "MESSAGE_PAYLOAD_COPY_LARGE",
+                sourceFile != null ? sourceFile : program.sourceFile));
+    }
+
     private CompileError deferredEchoError = null;
 
     public void run() {
@@ -5380,6 +5419,15 @@ public class SemanticChecker {
                     Handler messageHandler = messageDomain.handlers.stream()
                             .filter(handler -> handler.name.equals(s.b)).findFirst().orElse(null);
                     if (messageHandler != null) {
+                        boolean materializes = messageDomain.exported;
+                        for (int index = 0; index < s.args.size() && index < messageHandler.params.size(); index++) {
+                            Param parameter = messageHandler.params.get(index);
+                            TypeRef parameterType = parameter.checkedTypeRef != null
+                                    ? solver.resolve(parameter.checkedTypeRef) : parameter.typeRef;
+                            String typeName = parameterType != null
+                                    ? parameterType.toCanonicalString() : parameter.type;
+                            warnLargeMessagePayload(s.line, s.sourceFile, typeName, materializes);
+                        }
                         SemanticCallEdge edge = new SemanticCallEdge();
                         edge.source = typer.currentCallingFunction != null
                                 ? typer.currentCallingFunction : "main";

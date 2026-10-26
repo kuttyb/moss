@@ -16857,3 +16857,15 @@ pass, including the existing specialized direct-call assertions.
 When a combined program has no retained `sourceLines`, the occurrence cap
 recovers the original statement text from the source callable as a fallback;
 the unit test clears `Program.sourceLines` to exercise this path.
+
+
+### Phase 25.3 continuation — large message payload warning
+
+The Java agent API checker previously found that `tests/large_payload_warning.moss`
+omitted the stable `MESSAGE_PAYLOAD_COPY_LARGE` warning. Java now estimates
+fixed-size payloads through object fields and `option`, and emits the warning
+for exported-domain message boundaries. `scripts/java/test.sh` passes all 12
+test classes. `check_agent_api.py scripts/java/run.sh` passed the warning
+assertion and then failed later at its statement-effects query because that
+result omitted `target.construct_kind`; the remaining API assertions were not
+reached. Native/backend validation remains deferred.

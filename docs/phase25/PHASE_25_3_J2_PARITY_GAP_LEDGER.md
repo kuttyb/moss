@@ -969,3 +969,16 @@ distinct. `SemanticQueryEngineTest` and
 When combined project programs do not retain `sourceLines`, the query derives
 the call count from the matching source callable's original statement text; a
 unit regression clears `Program.sourceLines` to cover that fallback.
+
+
+### Correction — stable warning for large owned message payloads
+
+Java previously omitted `MESSAGE_PAYLOAD_COPY_LARGE` for the existing large
+payload fixture. The semantic checker now estimates fixed-size payload size
+through nominal object fields and `option`, and emits the warning at exported
+domain message boundaries when the known payload exceeds 1024 bytes. All 12
+Java test classes pass. The agent API checker reached its later statement
+effects assertions after passing the payload-warning assertion, then failed
+because the statement target lacked `construct_kind`; this separate API-query
+gap remains open. Generated Rust and native behavior are not validated by this
+warning-only correction.
