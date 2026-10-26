@@ -17004,6 +17004,10 @@ semantic test passes under ABI-v9, and all 12 Java test classes pass under
 staged ABI-v10. Rust compilation/native execution remains deferred.
 
 Scope note: this is evidence for the generated-main ingress path only. It does
-not establish C++ process-runtime parity for concurrent host ingress, fair
-admission tickets, or draining/restart races; those remain unverified Java
-runtime gaps for later feature completion and frozen-candidate acceptance.
+not establish full C++ process-runtime parity. The runtime now uses FIFO
+tickets for synchronous `runtime_invoke` calls, reserves queue admissions
+against `join()`, and defers new ingress during draining until it can run
+inline. However, physical worker compensation, runtime Root identity/context,
+fail-closed inline panic cleanup, other concurrent root-admission paths, and
+native Rust behavior remain unverified Java runtime gaps for later feature
+completion and frozen-candidate acceptance.

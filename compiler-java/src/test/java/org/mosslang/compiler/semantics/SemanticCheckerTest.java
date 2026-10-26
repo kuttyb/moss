@@ -1507,6 +1507,10 @@ public class SemanticCheckerTest {
         String rootRust = NativeGenerator.generate(rootAdmission, false);
         if (!rootRust.contains("runtime_invoke(move || __moss_root_domain.Read_root())")
                 || !rootRust.contains("pub fn runtime_invoke<R, F>")
+                || !rootRust.contains("serving_ticket")
+                || !rootRust.contains("ingress.admissions > 0")
+                || !rootRust.contains("ingress.draining = true")
+                || !rootRust.contains("catch_unwind(std::panic::AssertUnwindSafe(|| inline_work()))")
                 || rootRust.indexOf("__MossExecutor::new().threads(1_i64).start()")
                         > rootRust.indexOf("let mut result = { let __moss_root_domain")
                 || rootRust.indexOf("executor.join();")

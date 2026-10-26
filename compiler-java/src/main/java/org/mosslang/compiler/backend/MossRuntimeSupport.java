@@ -119,9 +119,21 @@ struct __MossExecutorShared {
     space_available: std::sync::Condvar,
     queue_capacity: usize,
 }
-fn __moss_executor_active_slot() -> &'static std::sync::Mutex<std::option::Option<std::sync::Weak<__MossExecutorShared>>> {
-    static ACTIVE: std::sync::OnceLock<std::sync::Mutex<std::option::Option<std::sync::Weak<__MossExecutorShared>>>> = std::sync::OnceLock::new();
-    ACTIVE.get_or_init(|| std::sync::Mutex::new(None))
+struct __MossExecutorIngress {
+    shared: std::option::Option<std::sync::Weak<__MossExecutorShared>>,
+    accepting: bool,
+    draining: bool,
+    inline_running: bool,
+    admissions: usize,
+    next_ticket: u64,
+    serving_ticket: u64,
+}
+fn __moss_executor_ingress() -> &'static (std::sync::Mutex<__MossExecutorIngress>, std::sync::Condvar) {
+    static INGRESS: std::sync::OnceLock<(std::sync::Mutex<__MossExecutorIngress>, std::sync::Condvar)> = std::sync::OnceLock::new();
+    INGRESS.get_or_init(|| (std::sync::Mutex::new(__MossExecutorIngress {
+        shared: None, accepting: false, draining: false, inline_running: false,
+        admissions: 0, next_ticket: 0, serving_ticket: 0,
+    }), std::sync::Condvar::new()))
 }
 fn __moss_executor_enqueue_shared(shared: &std::sync::Arc<__MossExecutorShared>, work: __MossExecutorJob) {
     let mut state = shared.state.lock().unwrap_or_else(|error| error.into_inner());
@@ -215,6 +227,22 @@ impl __MossExecutor {
             space_available: std::sync::Condvar::new(),
             queue_capacity,
         });
+        {
+            let (ingress_lock, ingress_changed) = __moss_executor_ingress();
+            let mut ingress = ingress_lock.lock().unwrap_or_else(|error| error.into_inner());
+            if ingress.draining || ingress.shared.as_ref().and_then(std::sync::Weak::upgrade).is_some() {
+                eprintln!("moss executor: another executor is already active");
+                std::process::abort();
+            }
+            ingress.draining = true;
+            while ingress.inline_running {
+                ingress = ingress_changed.wait(ingress).unwrap_or_else(|error| error.into_inner());
+            }
+            ingress.shared = Some(std::sync::Arc::downgrade(&shared));
+            ingress.accepting = true;
+            ingress.draining = false;
+            ingress_changed.notify_all();
+        }
         for worker_id in 0..threads.min(max_threads) {
             let worker_shared = std::sync::Arc::clone(&shared);
             let worker = std::thread::Builder::new()
@@ -225,15 +253,6 @@ impl __MossExecutor {
                     std::process::abort();
                 });
             self.workers.push(worker);
-        }
-        {
-            let mut active = __moss_executor_active_slot().lock()
-                .unwrap_or_else(|error| error.into_inner());
-            if active.as_ref().and_then(std::sync::Weak::upgrade).is_some() {
-                eprintln!("moss executor: another executor is already active");
-                std::process::abort();
-            }
-            *active = Some(std::sync::Arc::downgrade(&shared));
         }
         self.shared = Some(shared);
         self
@@ -248,11 +267,15 @@ impl __MossExecutor {
     pub fn join(&mut self) {
         let Some(shared) = self.shared.take() else { return; };
         {
-            let mut active = __moss_executor_active_slot().lock()
-                .unwrap_or_else(|error| error.into_inner());
-            if active.as_ref().and_then(std::sync::Weak::upgrade)
+            let (ingress_lock, ingress_changed) = __moss_executor_ingress();
+            let mut ingress = ingress_lock.lock().unwrap_or_else(|error| error.into_inner());
+            if ingress.shared.as_ref().and_then(std::sync::Weak::upgrade)
                     .map(|running| std::sync::Arc::ptr_eq(&running, &shared)).unwrap_or(false) {
-                *active = None;
+                ingress.accepting = false;
+                ingress.draining = true;
+                while ingress.admissions > 0 {
+                    ingress = ingress_changed.wait(ingress).unwrap_or_else(|error| error.into_inner());
+                }
             }
         }
         let mut state = shared.state.lock().unwrap_or_else(|error| error.into_inner());
@@ -263,20 +286,69 @@ impl __MossExecutor {
         for worker in self.workers.drain(..) {
             if worker.join().is_err() { std::process::abort(); }
         }
+        {
+            let (ingress_lock, ingress_changed) = __moss_executor_ingress();
+            let mut ingress = ingress_lock.lock().unwrap_or_else(|error| error.into_inner());
+            if ingress.shared.as_ref().and_then(std::sync::Weak::upgrade)
+                    .map(|running| std::sync::Arc::ptr_eq(&running, &shared)).unwrap_or(false) {
+                ingress.shared = None;
+                ingress.draining = false;
+                ingress_changed.notify_all();
+            }
+        }
     }
 }
 pub fn runtime_invoke<R, F>(work: F) -> R
 where R: Send + 'static, F: FnOnce() -> R + Send + 'static {
-    let active = __moss_executor_active_slot().lock()
-        .unwrap_or_else(|error| error.into_inner())
-        .as_ref().and_then(std::sync::Weak::upgrade);
-    let Some(shared) = active else { return work(); };
-    let (sender, receiver) = std::sync::mpsc::sync_channel(0);
-    __moss_executor_enqueue_shared(&shared, Box::new(move || {
-        let result = work();
-        if sender.send(result).is_err() { std::process::abort(); }
-    }));
-    receiver.recv().unwrap_or_else(|_| std::process::abort())
+    let (ingress_lock, ingress_changed) = __moss_executor_ingress();
+    let mut work = Some(work);
+    let ticket = {
+        let mut ingress = ingress_lock.lock().unwrap_or_else(|error| error.into_inner());
+        let ticket = ingress.next_ticket;
+        ingress.next_ticket += 1;
+        ticket
+    };
+    loop {
+        let mut ingress = ingress_lock.lock().unwrap_or_else(|error| error.into_inner());
+        if ingress.draining {
+            ingress = ingress_changed.wait(ingress).unwrap_or_else(|error| error.into_inner());
+            drop(ingress);
+            continue;
+        }
+        if ingress.accepting && ticket == ingress.serving_ticket {
+            if let Some(shared) = ingress.shared.as_ref().and_then(std::sync::Weak::upgrade) {
+                ingress.admissions += 1;
+                drop(ingress);
+                let (sender, receiver) = std::sync::mpsc::sync_channel(0);
+                let root_work = work.take().unwrap_or_else(|| std::process::abort());
+                __moss_executor_enqueue_shared(&shared, Box::new(move || {
+                    let result = root_work();
+                    if sender.send(result).is_err() { std::process::abort(); }
+                }));
+                let mut ingress = ingress_lock.lock().unwrap_or_else(|error| error.into_inner());
+                ingress.admissions = ingress.admissions.saturating_sub(1);
+                ingress.serving_ticket += 1;
+                ingress_changed.notify_all();
+                drop(ingress);
+                return receiver.recv().unwrap_or_else(|_| std::process::abort());
+            }
+        }
+        if !ingress.accepting && ingress.shared.is_none()
+                && !ingress.inline_running && ticket == ingress.serving_ticket {
+            ingress.inline_running = true;
+            drop(ingress);
+            let inline_work = work.take().unwrap_or_else(|| std::process::abort());
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| inline_work()))
+                .unwrap_or_else(|_| std::process::abort());
+            let mut ingress = ingress_lock.lock().unwrap_or_else(|error| error.into_inner());
+            ingress.inline_running = false;
+            ingress.serving_ticket += 1;
+            ingress_changed.notify_all();
+            return result;
+        }
+        ingress = ingress_changed.wait(ingress).unwrap_or_else(|error| error.into_inner());
+        drop(ingress);
+    }
 }
 // ─── End Phase 20 Executor Runtime ───────────────────────────────────────
 """;
