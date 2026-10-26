@@ -1,3 +1,24 @@
+# Phase 26.0.1 active — C1 reviewed; C2–C5 pending — 2026-10-26
+
+## C1: concrete-effect traversal
+
+- PR #21, branch `phase26-0-1-c1`. Implementation SHA
+  `807d491e8c0e1a1a6701c96d4b5db270705dd837`; Architect GO for that exact SHA.
+  Later PR head `2b862c160c2cd9ddf56d36b8e945f7787339c534` contains only the
+  C1 results documentation. The implementation and results are in
+  `docs/phase26.0.1/C1-concrete-effects.md`.
+- Baseline `274f848`: D18 524,451 concrete-effect evaluations, 37 distinct
+  inputs, 524,305 cache-disabled calls, and 17,866,873 parse misses. Candidate:
+  201 evaluations, 37 distinct inputs, zero cache-disabled calls, 46,207 parse
+  misses. D18 median: 7,152.46 ms to 28.92 ms (-99.6%).
+- Gates: 2,064-source corpus differential (1,325 accepted, 739 rejected), zero
+  verdict/diagnostic/full SHA-256 generated-Rust hash changes; Fast Debug parity
+  passed; `make check` 140/140; `MOSS_PERF_BASELINE=274f848 make compiler-perf`
+  completed with no noise-floor slowdowns; hosted run #30 passed. Agent feedback
+  validation passed. PR #21 is ready for review and remains unmerged.
+- Next: after C1 is integrated, count and implement C2. C3–C5 remain unstarted.
+  Do not combine the items; each needs its own PR and Architect review.
+
 # Phase 26 complete — W1–W3 merged to main — 2026-10-26
 
 ## Local compiler-perf suite follow-up — certified rerun and review complete — 2026-10-26
@@ -22,7 +43,8 @@
 - Hosted run #27 (`40382863032`) passed core regressions, optimized examples,
   and local performance smoke on PR head `bf3ff5f`. Architect gave GO for that
   exact implementation and artifact head. The subsequent closeout is docs-only.
-  PR #20 remains open and unmerged; no merge to main has occurred. Team closeout:
+  PR #20 merged to main as `274f848502df08f62b69c54c614ad9f05a90a3ec` after
+  hosted run #28 passed. Team closeout:
   `docs/phase26/agent-patterns/team-local-perf-suite.md`.
 
 - W2/W3 implementation is complete. PR #18 merged into `phase26-moss-speedup`
