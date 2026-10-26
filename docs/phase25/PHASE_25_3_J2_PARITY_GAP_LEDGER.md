@@ -1147,3 +1147,17 @@ Linux calls, and fallback warning code. `git diff --check` passes. Generated
 Rust has not been compiled or executed, so platform-specific behavior remains
 unverified until the frozen-candidate backend gate. Blocking compensation and
 Root identity/context gaps are still open.
+
+### Correction — establish Java runtime Root identity for ingress
+
+The Java-emitted runtime now allocates process-wide monotonic Root IDs and
+installs/restores a thread-local current Root around Executor jobs and both
+active and inline `runtime_invoke` work. Executor enqueue and host ingress now
+fail closed before admission when called from an already active Root, matching
+the root-ingress invariant in `ROOT_RUNTIME_ABI.md`.
+
+Validation: all 12 Java test classes pass under ABI-v9 and staged ABI-v10. The
+generated-runtime regression checks ID allocation, TLS context, wrapping for
+each ingress mode, and both re-entry guards. No generated Rust compilation or
+execution was run. This does not add branch context, Root telemetry, or bounded
+blocking compensation; those remain open runtime gaps for final acceptance.

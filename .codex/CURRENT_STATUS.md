@@ -17095,3 +17095,19 @@ not run before the frozen-candidate acceptance gate. Blocking worker
 compensation, Root identity/context, native runtime semantics, broader checker
 parity, SDK integration, and final release review remain unfinished. This
 slice was committed and pushed as `711f50b5`.
+
+### Phase 25.3 correction — establish Java runtime Root identity for ingress
+
+The Java-emitted runtime allocates monotonic Root IDs, installs/restores a
+thread-local current Root around queued Executor jobs and active/inline
+`runtime_invoke` work, and fails closed on nested root ingress before admission.
+This implements the Root identity invariant needed to distinguish host ingress
+from execution already inside a Moss Root.
+
+Validation on the current tree: `scripts/java/test.sh` and
+`MOSS_STAGED_ABI=v10 scripts/java/test.sh` pass all 12 Java test classes. The
+Executor generation regression checks the emitted ID/TLS/wrapper/re-entry
+guards; `git diff --check` passes. Generated Rust has not been compiled or
+executed. Branch context, Root telemetry, blocking compensation, broad semantic
+parity, native/SDK acceptance, and Architect review remain open. Work is
+uncommitted at this status update.

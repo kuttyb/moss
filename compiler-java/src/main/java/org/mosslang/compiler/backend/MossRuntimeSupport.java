@@ -135,6 +135,42 @@ fn __moss_executor_ingress() -> &'static (std::sync::Mutex<__MossExecutorIngress
         admissions: 0, next_ticket: 0, serving_ticket: 0,
     }), std::sync::Condvar::new()))
 }
+static __MOSS_NEXT_ROOT_ID: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(1);
+thread_local! {
+    static __MOSS_CURRENT_ROOT_ID: std::cell::Cell<std::option::Option<u64>> = const {
+        std::cell::Cell::new(None)
+    };
+}
+fn __moss_next_root_id() -> u64 {
+    __MOSS_NEXT_ROOT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+}
+fn __moss_current_root_id() -> std::option::Option<u64> {
+    __MOSS_CURRENT_ROOT_ID.with(|current| current.get())
+}
+struct __MossRootContextGuard {
+    previous: std::option::Option<u64>,
+}
+impl __MossRootContextGuard {
+    fn enter(root_id: u64) -> Self {
+        let previous = __MOSS_CURRENT_ROOT_ID.with(|current| current.replace(Some(root_id)));
+        if previous.is_some() {
+            eprintln!("moss runtime: cannot enter a Root from inside an active Root");
+            std::process::abort();
+        }
+        Self { previous }
+    }
+}
+impl Drop for __MossRootContextGuard {
+    fn drop(&mut self) {
+        __MOSS_CURRENT_ROOT_ID.with(|current| current.set(self.previous));
+    }
+}
+fn __moss_run_root<R, F>(root_id: u64, work: F) -> R
+where F: FnOnce() -> R {
+    let _root = __MossRootContextGuard::enter(root_id);
+    work()
+}
 fn __moss_executor_enqueue_shared(shared: &std::sync::Arc<__MossExecutorShared>, work: __MossExecutorJob) {
     let mut state = shared.state.lock().unwrap_or_else(|error| error.into_inner());
     while state.pending.len() >= shared.queue_capacity && !state.shutdown {
@@ -299,10 +335,15 @@ impl __MossExecutor {
     }
     pub fn enqueue<F>(&mut self, work: F)
     where F: FnOnce() + Send + 'static {
+        if __moss_current_root_id().is_some() {
+            eprintln!("moss executor: cannot submit a Root from inside a running Root");
+            std::process::abort();
+        }
         let shared = self.shared.as_ref().unwrap_or_else(|| {
             eprintln!("moss executor: invoke before start"); std::process::abort();
         });
-        __moss_executor_enqueue_shared(shared, Box::new(work));
+        let root_id = __moss_next_root_id();
+        __moss_executor_enqueue_shared(shared, Box::new(move || __moss_run_root(root_id, work)));
     }
     pub fn join(&mut self) {
         let Some(shared) = self.shared.take() else { return; };
@@ -340,6 +381,10 @@ impl __MossExecutor {
 }
 pub fn runtime_invoke<R, F>(work: F) -> R
 where R: Send + 'static, F: FnOnce() -> R + Send + 'static {
+    if __moss_current_root_id().is_some() {
+        eprintln!("moss runtime: runtime_invoke cannot enter from inside a running Root");
+        std::process::abort();
+    }
     let (ingress_lock, ingress_changed) = __moss_executor_ingress();
     let mut work = Some(work);
     let ticket = {
@@ -360,9 +405,10 @@ where R: Send + 'static, F: FnOnce() -> R + Send + 'static {
                 ingress.admissions += 1;
                 drop(ingress);
                 let (sender, receiver) = std::sync::mpsc::sync_channel(0);
+                let root_id = __moss_next_root_id();
                 let root_work = work.take().unwrap_or_else(|| std::process::abort());
                 __moss_executor_enqueue_shared(&shared, Box::new(move || {
-                    let result = root_work();
+                    let result = __moss_run_root(root_id, root_work);
                     if sender.send(result).is_err() { std::process::abort(); }
                 }));
                 let mut ingress = ingress_lock.lock().unwrap_or_else(|error| error.into_inner());
@@ -377,8 +423,10 @@ where R: Send + 'static, F: FnOnce() -> R + Send + 'static {
                 && !ingress.inline_running && ticket == ingress.serving_ticket {
             ingress.inline_running = true;
             drop(ingress);
+            let root_id = __moss_next_root_id();
             let inline_work = work.take().unwrap_or_else(|| std::process::abort());
-            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| inline_work()))
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(||
+                __moss_run_root(root_id, inline_work)))
                 .unwrap_or_else(|_| std::process::abort());
             let mut ingress = ingress_lock.lock().unwrap_or_else(|error| error.into_inner());
             ingress.inline_running = false;
