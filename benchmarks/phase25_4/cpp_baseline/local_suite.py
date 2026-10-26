@@ -40,6 +40,7 @@ SLOWDOWN_ABS_FLOOR_MS = 20.0
 NONOVERLAP_ABS_FLOOR_MS = 2.0
 PROFILE_REPS = 1
 TIMEOUT_SECONDS = 120
+CERTIFIED_BASELINE_SHA = "c66fb76ca0012b8125d70d404adbff13daa1cf4e"
 
 
 def run(cmd: list[str], *, cwd: Path = ROOT, log: Path | None = None) -> str:
@@ -243,6 +244,7 @@ def render_report(out: Path, baseline_label: str | None, baseline_sha: str | Non
         f"- Candidate benchmark checkout SHA: `{candidate_sha}`",
         f"- Candidate compiler source SHA: `{candidate_source_sha}`",
         f"- Candidate binary SHA256: `{candidate_binary_sha}`",
+        f"- Certification mode: `{host_metadata.get('certification_mode', False)}`; working tree dirty at start: `{host_metadata.get('working_tree_dirty', 'unknown')}`.",
         f"- Timing repetitions: {timing_reps}, untraced and interleaved per fixture; order reverses across repetitions.",
         f"- Profiling repetitions: {PROFILE_REPS} separate traced sample per fixture; profiling data is not used in timing summaries.",
         f"- Fixtures: {len(fixtures)} (54 torture plus selected curated workloads; 77 when all are enabled).",
@@ -305,7 +307,7 @@ def render_report(out: Path, baseline_label: str | None, baseline_sha: str | Non
             if pct > SLOWDOWN_PCT_FLOOR:
                 ranges_disjoint = (len(c["wall_samples_ms"]) >= 2 and len(b["wall_samples_ms"]) >= 2
                                    and c["wall_min_ms"] > b["wall_max_ms"])
-                disjoint = ranges_disjoint and delta > NONOVERLAP_ABS_FLOOR_MS
+                disjoint = ranges_disjoint and delta >= NONOVERLAP_ABS_FLOOR_MS
                 item = (fid, b, c, delta, pct, disjoint)
                 if delta > SLOWDOWN_ABS_FLOOR_MS or disjoint:
                     slow.append(item)
@@ -365,6 +367,13 @@ def main() -> int:
     candidate_source_sha = origin_main_sha if certify else candidate_sha
     candidate_binary_sha = hashlib.sha256(candidate_binary.read_bytes()).hexdigest()
     fixtures = selected_fixtures(ROOT, include_real_world)
+    if certify:
+        if not baseline_ref:
+            raise RuntimeError("MOSS_PERF_CERTIFY=1 requires MOSS_PERF_BASELINE=c66fb76c")
+        if timing_reps != 3:
+            raise RuntimeError("MOSS_PERF_CERTIFY=1 requires exactly 3 timing repetitions")
+        if not include_real_world or len(fixtures) != 77:
+            raise RuntimeError("MOSS_PERF_CERTIFY=1 requires the full 77-fixture corpus; set MOSS_PERF_INCLUDE_REAL_WORLD=1")
     fixture_ids = [row["id"] for row in fixtures]
     print(f"Preparing {len(fixtures)} fixtures, {timing_reps} timing repetitions, {PROFILE_REPS} profiling sample")
 
@@ -373,6 +382,8 @@ def main() -> int:
     baseline_binary = None
     if baseline_ref:
         baseline_sha = run(["git", "rev-parse", f"{baseline_ref}^{{commit}}"])
+        if certify and baseline_sha != CERTIFIED_BASELINE_SHA:
+            raise RuntimeError(f"MOSS_PERF_CERTIFY=1 requires baseline {CERTIFIED_BASELINE_SHA}, got {baseline_sha}")
         run(["git", "worktree", "add", "--detach", str(worktree), baseline_sha])
     try:
         if baseline_ref:

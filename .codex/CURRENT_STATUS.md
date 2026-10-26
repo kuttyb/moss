@@ -1,37 +1,31 @@
 # Phase 26 complete — W1–W3 merged to main — 2026-10-26
 
-## Local compiler-perf suite follow-up — expanded validation pending — 2026-10-26
+## Local compiler-perf suite follow-up — certification evidence captured; final gates pending — 2026-10-26
 
-- Branch: `compiler-perf-local-suite`, based on `main` at `bdf973af`. No compiler
-  source changes. `make compiler-perf` now runs three timing repetitions over
-  the torture suite plus the eight attribution workloads, writing raw results
-  and reports under `tmp/compiler-perf/<run-id>/`. Set
-  `MOSS_PERF_BASELINE=<git-ref>` for a same-host detached-worktree comparison;
-  set `MOSS_PERF_INCLUDE_REAL_WORLD=1` for all 23 curated repository workloads.
-- Initial commit `a8016f14` was pushed and PR #20 opened. Architect returned
-  NO-GO on that exact SHA because the no-baseline report omitted attribution
-  workloads and local runs emitted misleading historical B1 reports. These
-  were repaired; Make help and team-record whitespace were also corrected.
-- Updated default suite completed 171/171 successful trials (57 fixtures × 3).
-  Updated paired smoke comparison against `HEAD` completed 57/57 trials per
-  side (one repetition), with same-host metadata and no nested B1 reports.
-  `py_compile`, report assertions, feedback validation, and diff checks passed.
-  The 1-repetition pair is harness validation only, not a performance claim.
-  Existing historical B1 results remain unchanged.
-- Final code SHA `abe436d9036b6f81774b2c55df3cf36874c3d220` is pushed to
-  PR [#20](https://github.com/kuttyb/moss/pull/20). Architect final review is
-  GO for that exact SHA. Hosted run #21 (`40367091523`) passed core regressions,
-  optimized examples, and local compiler performance; Phase 26 W1/W2-specific
-  jobs were skipped by their branch conditions. PR remains open for integration.
-  Team closeout: `docs/phase26/agent-patterns/team-local-perf-suite.md`.
-- Pre-merge follow-up requests are in progress: adjacent interleaving for each
-  baseline/candidate fixture pair; slowdown noise floor (>5% and >20 ms, or
-  non-overlapping ranges); profiling counters per fixture; CPU/RSS reporting;
-  and CI smoke-job rename. Next required measurement is the quiet-host 77-fixture
-  `c66fb76c` comparison (three timing reps plus a separate profile pass), then
-  publish the report in `MossPhase26.md` and candidate median dataset in
-  `benchmarks/phase25_4/cpp_baseline/results/`. Do not merge until that evidence
-  and the final Architect review are complete.
+- Branch `compiler-perf-local-suite`, PR #20, compiler source identical to
+  `origin/main` at `bdf973af651deb2d3a4deac2b6c4bcc60893a776`; no compiler
+  source changes. The suite supports `MOSS_PERF_BASELINE`, optional full
+  curated workloads, and `MOSS_PERF_CERTIFY=1` to require clean-tree/source
+  certification. Certification now also requires baseline `c66fb76c`, all 77
+  fixtures, and exactly three timing repetitions. Ordinary runs accept any
+  revision and metadata records dirty state.
+- Certified run `20261026-111935` completed on `DESKTOP-0T772KP` (WSL2, 16
+  logical CPUs): 77 fixtures; 231 timing plus 77 profile samples per compiler;
+  all succeeded; clean tree; baseline `c66fb76ca0012b8125d70d404adbff13daa1cf4e`.
+  Sum of fixture wall medians: 97.078 s baseline, 14.877 s candidate (-84.7%).
+  Report, medians, work counters, and metadata are saved under
+  `benchmarks/phase25_4/cpp_baseline/results/` and summarized in
+  `docs/phase26/MossPhase26.md`. Pre-Phase 26 baseline counters are sparse.
+- Architect checkpoint review on `6817b59ab37711fd4e1ec8c942e07652a25d5b23`
+  was NO-GO: certification allowed partial runs. The run itself used the exact
+  requested baseline/full-corpus/three-repetition settings; certification now
+  enforces those inputs. User-requested non-overlap threshold retains a 2 ms
+  absolute floor. Final Architect review is pending on the repaired commit.
+- Hosted PR #20 run #24 (`40376734795`) was in progress at this checkpoint.
+  `py_compile`, feedback validation, diff checks, the result artifact commit,
+  and the final exact-SHA review remain outstanding. PR remains open; no merge
+  to main has occurred. Team closeout:
+  `docs/phase26/agent-patterns/team-local-perf-suite.md`.
 
 - W2/W3 implementation is complete. PR #18 merged into `phase26-moss-speedup`
   as `5595b8e7d66f90284b03805ad647e3a1251d7890`; PR #17 merged W1–W3 to `main` at

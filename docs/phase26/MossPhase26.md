@@ -94,3 +94,24 @@ Phase 26 is complete: W1–W3 show measured gains, W4 was dropped by the profile
 **Decision point after W3.** The measured type-spelling direct share is below 15% on every workload, while total Callgrind Ir fell on all eight. Phase 26 is stopped after W3. The discipline rules remain, the expression representation refactor stays parked, and Graph DSL is next. Reopen representation work only if later attribution shows a material share.
 
 Open question: what share counts as "large"? Proposed threshold: 15% of compiler instructions on any baseline workload.
+
+## Certified full-corpus result — Phase 26.1 reference
+
+Run with `MOSS_PERF_CERTIFY=1 MOSS_PERF_INCLUDE_REAL_WORLD=1 MOSS_PERF_BASELINE=c66fb76c make compiler-perf` on 2026-10-26. The clean candidate checkout was `6817b59ab37711fd4e1ec8c942e07652a25d5b23`; its compiler source tree matched `origin/main` at `bdf973af651deb2d3a4deac2b6c4bcc60893a776`. The baseline resolved to `c66fb76ca0012b8125d70d404adbff13daa1cf4e`. Both compiler binaries were built on the same host.
+
+Host: `DESKTOP-0T772KP`, WSL2 Linux x86_64, 16 logical CPUs, Ubuntu clang 18.1.3. Load averages (1/5/15 minutes) were 1.42/0.45/0.29 before timing and 1.00/0.91/0.59 after profiling. The benchmark used 77 fixtures, three untraced timing repetitions per side interleaved by fixture, and one separate profiling sample per side. Corpus hashes matched on both sides. Every trial succeeded: 231 timing and 77 profiling samples per compiler. The candidate working tree was clean.
+
+The sum of per-fixture wall medians fell from **97.078 s to 14.877 s (-84.7%)**. None of the 77 fixtures exceeded the slowdown alert rule (>5% and either >20 ms absolute or non-overlapping ranges with at least a 2 ms increase). The everyday small-fixture checks also improved: rolling window 149.36 ms to 94.70 ms (-36.6%); checkout 10.71 ms to 3.54 ms (-66.9%). CPU time is measured by GNU `/usr/bin/time` at 10 ms resolution, so reported `0.00 ms` values are below the timer's resolution.
+
+| Attribution workload | Baseline wall median | Candidate wall median | Change |
+|---|---:|---:|---:|
+| Checkout example | 10.71 ms | 3.54 ms | -66.9% |
+| Regex | 20,234.58 ms | 1,477.17 ms | -92.7% |
+| Rolling window | 149.36 ms | 94.70 ms | -36.6% |
+| Datastructures | 22,228.29 ms | 552.00 ms | -97.5% |
+| W2 N32 | 3,446.13 ms | 1,925.03 ms | -44.1% |
+| W3 N32 | 2,434.48 ms | 986.68 ms | -59.5% |
+| W4 D18 | 26,688.92 ms | 7,248.72 ms | -72.8% |
+| W5 W100 | 11,280.27 ms | 126.74 ms | -98.9% |
+
+This run establishes the Phase 26.1 certified performance reference. The complete 77-fixture report, candidate medians, work counters, and run metadata are committed under [`benchmarks/phase25_4/cpp_baseline/results/`](../../benchmarks/phase25_4/cpp_baseline/results/). The baseline-side counters are sparse because the pre-Phase 26 revision does not emit the current structured counter set; missing baseline values are unavailable rather than zero. The candidate counters provide complete per-fixture counts.
