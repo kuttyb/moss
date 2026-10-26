@@ -3,6 +3,7 @@ package org.mosslang.compiler.semantics;
 import org.mosslang.compiler.ast.*;
 import org.mosslang.compiler.diagnostics.CompileError;
 import org.mosslang.compiler.diagnostics.Warning;
+import org.mosslang.compiler.parser.ParserSupport;
 import org.mosslang.compiler.types.*;
 
 import java.util.*;
@@ -15,6 +16,7 @@ public class SemanticChecker {
     private final Map<String, ObjectType> objects = new HashMap<>();
     private final Map<String, EnumType> enums = new HashMap<>();
     private final Map<String, Trait> traits = new HashMap<>();
+    private final Map<String, Map<String, Integer>> fileIoFunctionLifecycleSummaries = new HashMap<>();
     private final TypeContext typeContext = new TypeContext();
     private String currentSemanticIdentity = null;
     private Set<String> currentMessagePayloads = Collections.emptySet();
@@ -1735,7 +1737,6 @@ public class SemanticChecker {
                 }
             }
             env = checkBlock(f.body, 0, f.body.size(), env, typer, solver, false, f.name, expectedReturn);
-            validateFunctionFileIoLifecycle(f);
             for (Stmt s : f.body) {
                 if ((s.kind == Stmt.Kind.Let || s.kind == Stmt.Kind.Var || s.kind == Stmt.Kind.Assign) && s.a != null) {
                     String v = s.a.trim();
@@ -1812,6 +1813,8 @@ public class SemanticChecker {
                 program.localBindingLines.computeIfAbsent(f.name, k -> new HashMap<>()).put(entry.getKey(), bLine);
             }
         }
+        computeFileIoFunctionLifecycleSummaries();
+        for (Function function : program.functions) validateFunctionFileIoLifecycle(function);
         validateSharedInferredFunctionArguments();
     }
 
@@ -2699,25 +2702,70 @@ public class SemanticChecker {
         }
     }
 
-    private void validateFunctionFileIoLifecycle(Function function) {
+    private void computeFileIoFunctionLifecycleSummaries() {
+        int passes = Math.max(1, program.functions.size() + 1);
+        for (int pass = 0; pass < passes; pass++) {
+            boolean changed = false;
+            for (Function function : program.functions) {
+                List<Stmt> statements = fileIoLifecycleStatements(function);
+                Map<String, Integer> incoming = new LinkedHashMap<>();
+                for (Param parameter : function.params) {
+                    if (isFileIoLifecycleParameter(function, parameter))
+                        incoming.put(parameter.name, 1);
+                }
+                if (incoming.isEmpty()) continue;
+                int indent = statements.isEmpty() ? 0 : statements.get(0).indent;
+                Map<String, Integer> result = fileIoLifecycleBlock(statements, 0, statements.size(),
+                        indent, incoming, false);
+                Map<String, Integer> summary = new LinkedHashMap<>();
+                for (String parameter : incoming.keySet()) {
+                    int after = result.getOrDefault(parameter, 1);
+                    summary.put(parameter, after == 1 ? -1 : after); // -1 means no lifecycle change
+                }
+                if (!summary.equals(fileIoFunctionLifecycleSummaries.get(function.name))) {
+                    fileIoFunctionLifecycleSummaries.put(function.name, summary);
+                    changed = true;
+                }
+            }
+            if (!changed) break;
+        }
+    }
+
+    private List<Stmt> fileIoLifecycleStatements(Function function) {
         List<Stmt> statements = new ArrayList<>(function.body);
         if (function.resultExpression != null && !function.resultExpression.isBlank()) {
-            Stmt result = new Stmt(Stmt.Kind.Call, function.resultLine != 0 ? function.resultLine : function.line,
+            statements.add(new Stmt(Stmt.Kind.Call,
+                    function.resultLine != 0 ? function.resultLine : function.line,
                     statements.isEmpty() ? 0 : statements.get(0).indent,
-                    function.resultExpression, function.sourceFile);
-            statements.add(result);
+                    function.resultExpression, function.sourceFile));
         }
+        return statements;
+    }
+
+    private void validateFunctionFileIoLifecycle(Function function) {
+        List<Stmt> statements = fileIoLifecycleStatements(function);
         Map<String, Integer> borrowedOwners = new LinkedHashMap<>();
         for (Param parameter : function.params) {
-            TypeRef type = parameter.typeRef != null ? parameter.typeRef
-                    : (parameter.type != null && !parameter.type.isEmpty()
-                            ? TypeParser.parseCanonical(parameter.type) : null);
-            if (type != null && "FileIO".equals(type.toCanonicalString()))
+            if (isFileIoLifecycleParameter(function, parameter))
                 borrowedOwners.put(parameter.name, 1);
         }
         int baseIndent = statements.isEmpty() ? 0 : statements.get(0).indent;
         fileIoLifecycleBlock(statements, 0, statements.size(), baseIndent,
                 borrowedOwners, true);
+    }
+
+    private boolean isFileIoLifecycleParameter(Function function, Param parameter) {
+        TypeRef type = parameter.typeRef != null ? parameter.typeRef
+                : (parameter.type != null && !parameter.type.isEmpty()
+                        ? TypeParser.parseCanonical(parameter.type) : parameter.checkedTypeRef);
+        if (type != null && "FileIO".equals(type.toCanonicalString())) return true;
+        String owner = java.util.regex.Pattern.quote(parameter.name);
+        java.util.regex.Pattern operation = java.util.regex.Pattern.compile(
+                "(?s).*\\b" + owner + "\\s*\\.\\s*(open|read|write|sync|close|chunks)\\s*\\(.*");
+        for (Stmt statement : function.body)
+            if (operation.matcher(statementExpressions(statement)).matches()) return true;
+        return function.resultExpression != null
+                && operation.matcher(function.resultExpression).matches();
     }
 
     private Map<String, Integer> fileIoLifecycleBlock(List<Stmt> statements, int start, int end,
@@ -2809,6 +2857,7 @@ public class SemanticChecker {
                     }
                 }
             }
+            applyFileIoFunctionLifecycleSummary(statement, state);
             index++;
         }
         if (scoped) {
@@ -2825,6 +2874,27 @@ public class SemanticChecker {
             state.keySet().retainAll(outerOwners);
         }
         return state;
+    }
+
+    private void applyFileIoFunctionLifecycleSummary(Stmt statement, Map<String, Integer> state) {
+        if (statement.kind != Stmt.Kind.Call || statement.text == null) return;
+        String call = statement.text.trim();
+        int open = call.indexOf('(');
+        if (open <= 0) return;
+        String name = call.substring(0, open).trim();
+        Function function = functions.get(name);
+        Map<String, Integer> summary = fileIoFunctionLifecycleSummaries.get(name);
+        if (function == null || summary == null) return;
+        int close = matchingCloseParen(call, open);
+        if (close < 0) return;
+        List<String> arguments = ParserSupport.splitTopLevel(call.substring(open + 1, close), ',');
+        for (int index = 0; index < function.params.size() && index < arguments.size(); index++) {
+            Param parameter = function.params.get(index);
+            Integer after = summary.get(parameter.name);
+            String actual = arguments.get(index).trim();
+            if (after == null || after == -1 || !state.containsKey(actual)) continue;
+            state.put(actual, after);
+        }
     }
 
     private static Map<String, Integer> fileIoJoinLifecyclePaths(List<Map<String, Integer>> paths,

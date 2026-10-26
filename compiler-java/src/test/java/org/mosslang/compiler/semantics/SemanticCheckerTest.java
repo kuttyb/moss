@@ -3091,6 +3091,41 @@ public class SemanticCheckerTest {
                 + "  recover:\n"
                 + "    pass\n", "fileio-helper-local-close.moss");
         new SemanticChecker(helperClosesLocal).run();
+        Program helperClosesCaller = Parser.parseSource(variants
+                + "fn finish(file: FileIO):\n"
+                + "  file.close()\n"
+                + "fn finish2(file: FileIO):\n"
+                + "  finish(file)\n"
+                + "fn main():\n"
+                + "  try:\n"
+                + "    file = FileIO.open(\"input\", ro)\n"
+                + "    finish2(file)\n"
+                + "  recover:\n"
+                + "    pass\n", "fileio-helper-closes-caller.moss");
+        new SemanticChecker(helperClosesCaller).run();
+        Program inferredHelperClosesCaller = Parser.parseSource(variants
+                + "fn finish(file):\n"
+                + "  file.close()\n"
+                + "fn main():\n"
+                + "  try:\n"
+                + "    file = FileIO.open(\"input\", ro)\n"
+                + "    finish(file)\n"
+                + "  recover:\n"
+                + "    pass\n", "fileio-inferred-helper-closes-caller.moss");
+        new SemanticChecker(inferredHelperClosesCaller).run();
+        assertCompileError(variants
+                + "fn finish(file: FileIO):\n"
+                + "  file.close()\n"
+                + "fn noop(file: FileIO):\n"
+                + "  pass\n"
+                + "fn main():\n"
+                + "  try:\n"
+                + "    file = FileIO.open(\"input\", ro)\n"
+                + "    finish(file)\n"
+                + "    noop(file)\n"
+                + "    file.read(0, 4)\n"
+                + "  recover:\n"
+                + "    pass\n", "FILEIO_CLOSED_OPERATION");
     }
 
     private static void testHandledFileIoHelperDoesNotRaiseIntoMain() {

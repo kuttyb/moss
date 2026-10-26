@@ -17288,3 +17288,16 @@ closes its local is covered by the Java semantic unit test.
 all 12 test classes, and `git diff --check` passes. The full function helper
 control-flow model and transfer of close effects from helpers to caller-owned
 handles remain open; no native Rust gate was run.
+
+### Phase 25.3 continuation — helper close effects on caller-owned handles
+
+Java now computes bounded per-function FileIO parameter lifecycle summaries
+and propagates them through direct helper calls, including transitive helper
+chains. This allows a caller to rely on a helper closing its FileIO argument
+and rejects a later caller read from that closed handle. Focused C++/Java
+probes agree for direct and nested close helpers, including
+`FILEIO_CLOSED_OPERATION` after the helper returns.
+
+Both ABI-v9 and staged ABI-v10 Java suites pass all 12 classes. Conditional
+helper close paths, aliases and indirect/nested-expression call sites still
+need lifecycle coverage. This does not validate native Rust behavior.
