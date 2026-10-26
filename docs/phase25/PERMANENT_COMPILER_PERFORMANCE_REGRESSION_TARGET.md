@@ -1,5 +1,8 @@
 # Phase 25.4 B1 — Permanent Compiler Performance Regression Target
 
+> **Scope note (2026-10-25):** This certifies the **benchmark corpus, timing capture, regression infrastructure, and historical C++ ECT measurements**, not the accuracy of a fine-grained CPU-hotspot diagnosis. Expression-string reparsing and textual type conversion inside inference/effects were not isolated. Existing stage names and counters remain useful; future Java optimization decisions must use fresh internal CPU and allocation profiling. See [B1 merge-readiness note](PHASE_25_4_B1_MERGE_READINESS.md).
+
+
 **Scope:** Automated, permanent performance, attribution, tracing, and integrity regression target  
 **Baseline Certified Commit:** `199b9e6d17e7e98921a56043a34f8a508f77cd13`  
 **Torture Corpus Version:** `1.0.0` (54 frozen fixtures, manifest digest: `20261025`)  
