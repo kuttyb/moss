@@ -1,5 +1,8 @@
 # Phase 25.4 B1 — Moss Compiler Performance Baseline
 
+> **Interpretation correction (2026-10-25):** This is an **unchanged, reproducible historical C++ ECT performance baseline**. Stage timings measure *when* time is billed, not *what* CPU instructions execute. Expression-text reparsing and string-type work inside `type_inference`/`effects` were not separately measured. Therefore do **not** infer that TypeSolver work dominates or adopt the proposed algorithmic speedups as guarantees. See [B1 merge-readiness note](../../../docs/phase25/PHASE_25_4_B1_MERGE_READINESS.md).
+
+
 **Compiler Executable:** `/home/owner/daji/code/moss2/build/compiler/moss-opt`  
 **Compiler Git SHA:** `f0a46a1d3a43ec4af5bb6695971e4dddb47b6089`  
 **Binary SHA256:** `0e26c16a58bbe12d1946f160a5d75e7763b81fce000b4f42f5e88c987b24a6ad`  
