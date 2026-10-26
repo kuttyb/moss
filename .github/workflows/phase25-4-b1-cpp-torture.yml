@@ -20,6 +20,14 @@ jobs:
           nproc
           clang++ --version
           free -h
+      - name: Regression-test profiler timeout and output handling
+        run: |
+          python3 -m unittest discover -s benchmarks/phase25_4 -p 'test_profile_moss.py'
+      - name: Validate preserved benchmark reports
+        run: |
+          python3 benchmarks/compiler_torture/verify.py
+          python3 benchmarks/real_world/verify.py
+          python3 benchmarks/phase25_4/cpp_baseline/check_report_consistency.py
       - name: Build optimized C++ Moss compiler (-O2)
         run: make --jobs=2 MOSS_LDFLAGS= moss-opt
       - name: Validate portable torture suite
