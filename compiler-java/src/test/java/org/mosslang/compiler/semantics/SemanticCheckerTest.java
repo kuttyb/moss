@@ -3005,6 +3005,33 @@ public class SemanticCheckerTest {
                 + "  NotFound\n  PermissionDenied\n  NotRegularFile\n  InUse\n  Full\n  IO\n";
         assertCompileError(variants
                 + "fn main():\n"
+                + "  try:\n"
+                + "    file = FileIO.open(\"input\", ro)\n"
+                + "    data = file.read(0, 4)\n"
+                + "    echo data.length()\n"
+                + "  recover:\n"
+                + "    pass\n", "FILEIO_MUST_CLOSE");
+        assertCompileError(variants
+                + "fn main():\n"
+                + "  try:\n"
+                + "    file = FileIO.open(\"input\", ro)\n"
+                + "    if true:\n"
+                + "      file.close()\n"
+                + "  recover:\n"
+                + "    pass\n", "FILEIO_MUST_CLOSE");
+        Program allBranchesClose = Parser.parseSource(variants
+                + "fn main():\n"
+                + "  try:\n"
+                + "    file = FileIO.open(\"input\", ro)\n"
+                + "    if true:\n"
+                + "      file.close()\n"
+                + "    else:\n"
+                + "      file.close()\n"
+                + "  recover:\n"
+                + "    pass\n", "fileio-all-branches-close.moss");
+        new SemanticChecker(allBranchesClose).run();
+        assertCompileError(variants
+                + "fn main():\n"
                 + "  file = FileIO.open(\"input\", ro)\n"
                 + "  data = file.read(0, 4)\n"
                 + "  file.close()\n", "MOSS_COMPILE_ERROR");

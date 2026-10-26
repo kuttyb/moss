@@ -17235,3 +17235,18 @@ probes with `MOSS_COMPILE_ERROR`. Java ABI-v9 and staged ABI-v10 suites each
 pass all 12 test classes, including the internally handled helper case. Native
 error-carrier Rust compilation and execution remain outstanding; FileIO
 lifecycle/ownership parity and the wider acceptance gates remain open.
+
+### Phase 25.3 continuation — root-local FileIO close flow
+
+Java now tracks root-local `FileIO.open` owners through `if/else`,
+`try/recover`, and loops with zero-or-more iteration joins. It rejects owners
+left open at root or block exit and joins branch close states, so closing on
+only one reachable branch does not satisfy the lifecycle rule.
+
+Focused C++/Java checker probes agree: an unclosed owner and a partial branch
+close both fail with `FILEIO_MUST_CLOSE`; an all-branches close is accepted.
+ABI-v9 and staged ABI-v10 Java suites each pass all 12 test classes. This
+currently covers local roots and structured local control flow only. Helper-
+managed owners, domain FileIO fields, operation-state validation after close,
+and complete FileIO lifecycle parity remain open. Native Rust acceptance was
+not run.

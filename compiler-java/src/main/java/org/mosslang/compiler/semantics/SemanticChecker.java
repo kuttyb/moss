@@ -2444,6 +2444,7 @@ public class SemanticChecker {
             validateExecutorLifecycle(program.main.body);
             validateDirectMainRaises(program.main.body);
             validateMainFileIoRaises(program.main.body, env);
+            validateMainFileIoLifecycle(program.main.body);
             validateMainFunctionRaises(program.main.body);
             validateMainMethodRaises(program.main.body, env, solver);
             validateRootIngressRaiseTotality(program.main.body, env, solver);
@@ -2682,6 +2683,115 @@ public class SemanticChecker {
     private static List<String> fileIoErrorVariants() {
         return List.of("FileError.NotFound", "FileError.PermissionDenied",
                 "FileError.NotRegularFile", "FileError.InUse", "FileError.Full", "FileError.IO");
+    }
+
+    private void validateMainFileIoLifecycle(List<Stmt> statements) {
+        Map<String, Integer> result = fileIoLifecycleBlock(statements, 0, statements.size(), 0,
+                new LinkedHashMap<>(), false);
+        for (Map.Entry<String, Integer> owner : result.entrySet()) {
+            if (owner.getValue() != 0) {
+                throw new CompileError(statements.isEmpty() ? 1 : statements.get(0).line,
+                        "root-local FileIO '" + owner.getKey()
+                                + "' must be explicitly closed before normal exit",
+                        "FILEIO_MUST_CLOSE");
+            }
+        }
+    }
+
+    private Map<String, Integer> fileIoLifecycleBlock(List<Stmt> statements, int start, int end,
+                                                               int indent, Map<String, Integer> incoming,
+                                                               boolean scoped) {
+        Map<String, Integer> state = new LinkedHashMap<>(incoming);
+        Set<String> outerOwners = new HashSet<>(incoming.keySet());
+        int index = start;
+        while (index < end) {
+            Stmt statement = statements.get(index);
+            if (statement == null || statement.indent < indent) break;
+            if (statement.indent > indent) { index++; continue; }
+            if (statement.kind == Stmt.Kind.If || statement.kind == Stmt.Kind.While
+                    || statement.kind == Stmt.Kind.For || statement.kind == Stmt.Kind.Try) {
+                int bodyEnd = index + 1;
+                while (bodyEnd < end && statements.get(bodyEnd).indent > statement.indent) bodyEnd++;
+                Map<String, Integer> first = fileIoLifecycleBlock(statements, index + 1, bodyEnd,
+                        indent + 1, state, true);
+                List<Map<String, Integer>> paths = new ArrayList<>();
+                paths.add(first);
+                int after = bodyEnd;
+                boolean hadElse = false;
+                if (statement.kind == Stmt.Kind.If && after < end
+                        && statements.get(after).kind == Stmt.Kind.Else
+                        && statements.get(after).indent == indent) {
+                    hadElse = true;
+                    int elseEnd = after + 1;
+                    while (elseEnd < end && statements.get(elseEnd).indent > indent) elseEnd++;
+                    paths.add(fileIoLifecycleBlock(statements, after + 1, elseEnd,
+                            indent + 1, state, true));
+                    after = elseEnd;
+                } else if (statement.kind == Stmt.Kind.Try) {
+                    boolean recovered = false;
+                    while (after < end && statements.get(after).kind == Stmt.Kind.Recover
+                            && statements.get(after).indent == indent) {
+                        recovered = true;
+                        int recoverEnd = after + 1;
+                        while (recoverEnd < end && statements.get(recoverEnd).indent > indent) recoverEnd++;
+                        paths.add(fileIoLifecycleBlock(statements, after + 1, recoverEnd,
+                                indent + 1, state, true));
+                        after = recoverEnd;
+                    }
+                    if (!recovered) paths.add(new LinkedHashMap<>(state));
+                } else if (statement.kind == Stmt.Kind.While || statement.kind == Stmt.Kind.For) {
+                    paths.add(new LinkedHashMap<>(state)); // zero iterations are reachable
+                }
+                if (statement.kind == Stmt.Kind.If && !hadElse)
+                    paths.add(new LinkedHashMap<>(state));
+                state = fileIoJoinLifecyclePaths(paths, new HashSet<>(state.keySet()));
+                index = after;
+                continue;
+            }
+            if (statement.kind == Stmt.Kind.Assign || statement.kind == Stmt.Kind.Let
+                    || statement.kind == Stmt.Kind.Var) {
+                String target = statement.a == null ? "" : statement.a.trim();
+                String rhs = statement.b == null ? "" : statement.b;
+                if (!target.isEmpty() && rhs.matches("(?s).*\\bFileIO\\s*\\.\\s*open\\s*\\(.*"))
+                    state.put(target, 1);
+                else if (!target.isEmpty() && state.containsKey(rhs.trim()))
+                    state.put(target, state.get(rhs.trim()));
+            }
+            String expressions = statementExpressions(statement);
+            for (String owner : new ArrayList<>(state.keySet())) {
+                String quoted = java.util.regex.Pattern.quote(owner);
+                if (expressions.matches("(?s).*\\b" + quoted + "\\s*\\.\\s*close\\s*\\(\\s*\\).*"))
+                    state.put(owner, 0);
+            }
+            index++;
+        }
+        if (scoped) {
+            for (String owner : state.keySet()) {
+                if (outerOwners.contains(owner)) continue;
+                if (state.get(owner) != 0) {
+                    int line = start < end ? statements.get(start).line : 1;
+                    throw new CompileError(line,
+                            "root-local FileIO '" + owner
+                                    + "' must be explicitly closed before normal exit",
+                            "FILEIO_MUST_CLOSE");
+                }
+            }
+            state.keySet().retainAll(outerOwners);
+        }
+        return state;
+    }
+
+    private static Map<String, Integer> fileIoJoinLifecyclePaths(List<Map<String, Integer>> paths,
+                                                                  Set<String> outerOwners) {
+        Map<String, Integer> joined = new LinkedHashMap<>();
+        for (String owner : outerOwners) {
+            Integer first = paths.isEmpty() ? null : paths.get(0).get(owner);
+            boolean same = true;
+            for (Map<String, Integer> path : paths)
+                if (!Objects.equals(first, path.get(owner))) same = false;
+            joined.put(owner, same && first != null ? first : 2);
+        }
+        return joined;
     }
 
     public static boolean isRaiseHandled(List<Stmt> statements, int raiseIndex, String variant) {
