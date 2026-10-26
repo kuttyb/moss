@@ -5310,8 +5310,10 @@ public class SemanticChecker {
         String expression = source.toString();
         for (String name : env.typeEnv.boundedFileIoRequestNames()) {
             String escaped = java.util.regex.Pattern.quote(name);
+            boolean indexedWrite = statement.kind == Stmt.Kind.Assign && statement.a != null
+                    && statement.a.matches("(?s).*\\b" + escaped + "\\s*\\[.*");
             if (expression.matches("(?s).*\\b" + escaped + "\\s*\\.\\s*(?:push|pop|append|delete)\\s*\\(.*")
-                    || expression.matches("(?s).*\\b" + escaped + "\\s*\\[.*")
+                    || indexedWrite
                     || (expression.matches("(?s).*\\b[A-Za-z_][A-Za-z0-9_]*\\s*\\([^)]*\\b" + escaped + "\\b.*")
                     && !expression.matches("(?s).*\\.read\\s*\\(\\s*" + escaped + "\\s*\\).*"))) {
                 env.typeEnv.invalidateBoundedFileIoRequests();

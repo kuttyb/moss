@@ -2964,6 +2964,7 @@ public class SemanticCheckerTest {
                 + "fn read_known():\n"
                 + "  file = FileIO.open(\"input\", ro)\n"
                 + "  requests = [Request(offset = 0, size = 4), Request(offset = 4, size = 8)]\n"
+                + "  echo requests[0].size\n"
                 + "  batch = file.read(requests)\n"
                 + "  echo batch[0].length()\n"
                 + "  file.close()\n"

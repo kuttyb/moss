@@ -17208,3 +17208,15 @@ Executor Solo callbacks, batch runtime API, and mode-aware FileIO open lowering.
 This verifies Java resource packaging and launcher selection only; it does not
 validate `rustc`, native behavior, source-free cross-crate linkage, or the live
 JDT daemon lifecycle.
+
+### Correction — preserve finite FileIO batch proof across indexed reads
+
+The named request-vector invalidation check initially treated any indexed use as
+mutation. It now invalidates only indexed assignment targets, while direct
+indexed reads preserve the finite-vector proof. A semantic regression reads
+`requests[0].size` before the batch read and remains accepted; mutation,
+aliasing, and unknown-length parameter controls still reject.
+
+Validation: both ABI-v9 and staged ABI-v10 Java suites pass all 12 test classes.
+The correction only narrows local request-vector proof invalidation; it does not
+establish broader FileIO flow or native parity.
