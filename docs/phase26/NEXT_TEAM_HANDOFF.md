@@ -103,7 +103,10 @@ and repetitions. Set `MOSS_PERF_BASELINE=<git-ref>` to compare; set
 `MOSS_PERF_INCLUDE_REAL_WORLD=1` to include the full 77-fixture set (54 torture
 plus 23 curated real-world workloads). The report includes wall medians, CPU time, peak RSS, all
 eight attribution workloads, per-fixture work counters, and slowdowns exceeding
-5% plus either 20 ms or non-overlapping timing ranges. This is a
+5% plus either 20 ms absolute or non-overlapping timing ranges with a >2 ms
+absolute increase. Set `MOSS_PERF_CERTIFY=1` to require a clean working tree and
+compiler sources matching `origin/main`; default runs accept any revision. Metadata
+records the candidate's dirty status. This is a
 benchmark/tooling change and makes no compiler behavior change. See
 `docs/phase25/PERMANENT_COMPILER_PERFORMANCE_REGRESSION_TARGET.md` for details.
 

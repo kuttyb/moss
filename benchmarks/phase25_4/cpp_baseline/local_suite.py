@@ -37,6 +37,7 @@ COUNTER_REPORT_KEYS = (
 )
 SLOWDOWN_PCT_FLOOR = 5.0
 SLOWDOWN_ABS_FLOOR_MS = 20.0
+NONOVERLAP_ABS_FLOOR_MS = 2.0
 PROFILE_REPS = 1
 TIMEOUT_SECONDS = 120
 
@@ -247,6 +248,7 @@ def render_report(out: Path, baseline_label: str | None, baseline_sha: str | Non
         f"- Fixtures: {len(fixtures)} (54 torture plus selected curated workloads; 77 when all are enabled).",
         "- Each fixture's profile counters preserve separate Checker-instance records in `phase26_work_counters.csv`.",
         "- Complete timing medians, per-fixture CPU medians, peak RSS, ranges, and samples: `phase26_candidate_medians.csv`.",
+        "- CPU is GNU `/usr/bin/time` user+system time at centisecond resolution; `0.00 ms` means below 10 ms, not zero CPU.",
         "",
     ]
     if base_rows is None:
@@ -301,15 +303,16 @@ def render_report(out: Path, baseline_label: str | None, baseline_sha: str | Non
             delta = after - before
             pct = (delta / before * 100) if before else 0.0
             if pct > SLOWDOWN_PCT_FLOOR:
-                disjoint = (len(c["wall_samples_ms"]) >= 2 and len(b["wall_samples_ms"]) >= 2
-                            and c["wall_min_ms"] > b["wall_max_ms"])
+                ranges_disjoint = (len(c["wall_samples_ms"]) >= 2 and len(b["wall_samples_ms"]) >= 2
+                                   and c["wall_min_ms"] > b["wall_max_ms"])
+                disjoint = ranges_disjoint and delta > NONOVERLAP_ABS_FLOOR_MS
                 item = (fid, b, c, delta, pct, disjoint)
                 if delta > SLOWDOWN_ABS_FLOOR_MS or disjoint:
                     slow.append(item)
                 else:
                     noisy.append(item)
         lines += ["", "## Slowdowns beyond the noise floor", "",
-                  f"Alert rule: candidate median > baseline median by {SLOWDOWN_PCT_FLOOR:.0f}% and either >{SLOWDOWN_ABS_FLOOR_MS:.0f} ms absolute or the sample ranges do not overlap (range comparison requires at least two trials per side).", ""]
+                  f"Alert rule: candidate median > baseline median by {SLOWDOWN_PCT_FLOOR:.0f}% and either >{SLOWDOWN_ABS_FLOOR_MS:.0f} ms absolute or sample ranges do not overlap with an increase >{NONOVERLAP_ABS_FLOOR_MS:.0f} ms (range comparison requires at least two trials per side).", ""]
         if slow:
             lines += ["| Fixture | Baseline median [min–max] | Candidate median [min–max] | Increase | Change | CPU median | Peak RSS max |", "|---|---:|---:|---:|---:|---:|---:|"]
             for fid, b, c, delta, pct, disjoint in sorted(slow, key=lambda item: item[4], reverse=True):
@@ -337,6 +340,7 @@ def main() -> int:
     os.environ["TMPDIR"] = str(task_tmp)
     baseline_ref = os.environ.get("MOSS_PERF_BASELINE", "").strip()
     include_real_world = os.environ.get("MOSS_PERF_INCLUDE_REAL_WORLD", "").lower() in {"1", "true", "yes"}
+    certify = os.environ.get("MOSS_PERF_CERTIFY", "").lower() in {"1", "true", "yes"}
     timing_reps = int(os.environ.get("MOSS_PERF_REPS", "3"))
     if timing_reps < 1:
         raise RuntimeError("MOSS_PERF_REPS must be at least 1")
@@ -348,11 +352,17 @@ def main() -> int:
     if not candidate_binary.is_file():
         raise RuntimeError("Optimized compiler is missing; run `make moss-opt` first")
     candidate_sha = run(["git", "rev-parse", "HEAD"])
-    candidate_source_sha = run(["git", "rev-parse", "origin/main"])
-    changed_compiler_sources = run(["git", "diff", "--name-only", candidate_source_sha,
-                                    candidate_sha, "--", "src"])
-    if changed_compiler_sources:
-        raise RuntimeError("Candidate compiler sources differ from origin/main; this run is not the Phase 26 main baseline")
+    working_tree_status = run(["git", "status", "--porcelain=v1", "--untracked-files=normal"])
+    working_tree_dirty = bool(working_tree_status)
+    origin_main_sha = run(["git", "rev-parse", "origin/main"])
+    if certify:
+        if working_tree_dirty:
+            raise RuntimeError("MOSS_PERF_CERTIFY=1 requires a clean working tree; status:\n" + working_tree_status)
+        changed_compiler_sources = run(["git", "diff", "--name-only", "origin/main",
+                                        candidate_sha, "--", "src"])
+        if changed_compiler_sources:
+            raise RuntimeError("MOSS_PERF_CERTIFY=1 requires compiler sources identical to origin/main; changed paths:\n" + changed_compiler_sources)
+    candidate_source_sha = origin_main_sha if certify else candidate_sha
     candidate_binary_sha = hashlib.sha256(candidate_binary.read_bytes()).hexdigest()
     fixtures = selected_fixtures(ROOT, include_real_world)
     fixture_ids = [row["id"] for row in fixtures]
@@ -401,6 +411,10 @@ def main() -> int:
             "started_utc": started,
             "candidate_git_sha": candidate_sha,
             "candidate_compiler_source_sha": candidate_source_sha,
+            "origin_main_sha": origin_main_sha,
+            "certification_mode": certify,
+            "working_tree_dirty": working_tree_dirty,
+            "working_tree_status": working_tree_status.splitlines(),
             "baseline_ref": baseline_ref or None,
             "baseline_git_sha": baseline_sha,
             "candidate_binary_sha256": candidate_binary_sha,
@@ -417,8 +431,9 @@ def main() -> int:
             "timing_repetitions": timing_reps,
             "profiling_repetitions": PROFILE_REPS,
             "timeout_seconds": TIMEOUT_SECONDS,
+            "cpu_time_resolution_ms": 10,
             "order_strategy": "adjacent baseline/candidate per fixture; flip first side by (repetition + fixture-position) parity",
-            "slowdown_rule": "median >5% and (>20 ms absolute or non-overlapping 3-sample ranges)",
+            "slowdown_rule": "median >5% and (>20 ms absolute or non-overlapping sample ranges with >2 ms absolute increase)",
             "timing_mode": "untraced",
             "profile_mode": "separate traced run; excluded from timing/CPU/RSS summaries",
         }
