@@ -2443,6 +2443,7 @@ public class SemanticChecker {
             env = checkBlock(program.main.body, 0, program.main.body.size(), env, typer, solver, false, "main", TypeRef.unit());
             validateExecutorLifecycle(program.main.body);
             validateDirectMainRaises(program.main.body);
+            validateMainFileIoRaises(program.main.body, env);
             validateMainFunctionRaises(program.main.body);
             validateMainMethodRaises(program.main.body, env, solver);
             validateRootIngressRaiseTotality(program.main.body, env, solver);
@@ -2652,6 +2653,35 @@ public class SemanticChecker {
                         "MOSS_COMPILE_ERROR");
             }
         }
+    }
+
+    private void validateMainFileIoRaises(List<Stmt> statements, OwnershipEnv env) {
+        Set<String> fileIoLocals = new HashSet<>();
+        for (Map.Entry<String, TypeRef> entry : env.typeEnv.getBindings().entrySet()) {
+            TypeRef type = entry.getValue();
+            if (type != null && "FileIO".equals(type.name())) fileIoLocals.add(entry.getKey());
+        }
+        for (int index = 0; index < statements.size(); index++) {
+            Stmt statement = statements.get(index);
+            if (statement == null) continue;
+            String expressions = statementExpressions(statement);
+            if ((statement.kind == Stmt.Kind.Let || statement.kind == Stmt.Kind.Var
+                    || statement.kind == Stmt.Kind.Assign) && statement.a != null
+                    && expressions.contains("FileIO.open(")) fileIoLocals.add(statement.a.trim());
+            if (!callsFileIoOperation(expressions, fileIoLocals)) continue;
+            for (String variant : fileIoErrorVariants()) {
+                if (!isRaiseHandled(statements, index, variant)) {
+                    throw new CompileError(program.main.line,
+                            "main may not let typed errors escape; handle every raised variant with try/recover",
+                            "MOSS_COMPILE_ERROR");
+                }
+            }
+        }
+    }
+
+    private static List<String> fileIoErrorVariants() {
+        return List.of("FileError.NotFound", "FileError.PermissionDenied",
+                "FileError.NotRegularFile", "FileError.InUse", "FileError.Full", "FileError.IO");
     }
 
     public static boolean isRaiseHandled(List<Stmt> statements, int raiseIndex, String variant) {
@@ -5145,6 +5175,7 @@ public class SemanticChecker {
     }
 
     private boolean callsFileIoOperation(String expressions, Set<String> fileIoLocals) {
+        if (expressions.matches("(?s).*\\bFileIO\\s*\\.\\s*open\\s*\\(.*")) return true;
         for (String name : fileIoLocals) {
             if (expressions.matches("(?s).*\\b" + java.util.regex.Pattern.quote(name)
                     + "\\.(read|write|sync|close)\\s*\\(.*")) return true;
@@ -5155,7 +5186,19 @@ public class SemanticChecker {
     private void collectFunctionRaisedVariants(Function function, Set<String> variants, Set<String> visited) {
         if (function == null || !visited.add(function.name)) return;
         variants.addAll(function.sourceFreeRaiseVariants);
-        for (Stmt statement : function.body) {
+        Set<String> fileIoLocals = new HashSet<>();
+        for (Param parameter : function.params)
+            if ("FileIO".equals(parameter.type)) fileIoLocals.add(parameter.name);
+        for (int statementIndex = 0; statementIndex < function.body.size(); statementIndex++) {
+            Stmt statement = function.body.get(statementIndex);
+            String fileIoExpression = statementExpressions(statement);
+            if ((statement.kind == Stmt.Kind.Let || statement.kind == Stmt.Kind.Var
+                    || statement.kind == Stmt.Kind.Assign) && statement.a != null
+                    && fileIoExpression.contains("FileIO.open(")) fileIoLocals.add(statement.a.trim());
+            if (callsFileIoOperation(fileIoExpression, fileIoLocals)) {
+                for (String variant : fileIoErrorVariants())
+                    if (!isRaiseHandled(function.body, statementIndex, variant)) variants.add(variant);
+            }
             if (statement.kind == Stmt.Kind.Raise && statement.a != null) {
                 String raised = statement.a.trim();
                 int open = raised.indexOf('(');

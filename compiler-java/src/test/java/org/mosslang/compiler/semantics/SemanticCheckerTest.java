@@ -109,6 +109,8 @@ public class SemanticCheckerTest {
         testFileIoReadMakesIoRecoveryReachable();
         testFileIoBuiltinArityIsChecked();
         testNamedFileIoBatchRequiresBoundedRequestVector();
+        testMainMustHandleEveryFileIoErrorVariant();
+        testHandledFileIoHelperDoesNotRaiseIntoMain();
         System.out.println("SemanticCheckerTest PASSED.");
     }
 
@@ -2969,7 +2971,10 @@ public class SemanticCheckerTest {
                 + "  echo batch[0].length()\n"
                 + "  file.close()\n"
                 + "fn main():\n"
-                + "  read_known()\n", "bounded-fileio-request-vector.moss");
+                + "  try:\n"
+                + "    read_known()\n"
+                + "  recover:\n"
+                + "    pass\n", "bounded-fileio-request-vector.moss");
         new SemanticChecker(bounded).run();
 
         assertCompileError(""
@@ -2993,6 +2998,38 @@ public class SemanticCheckerTest {
                 + "  requests.push(Request(offset = 4, size = 4))\n"
                 + "  batch = file.read(requests)\n"
                 + "  file.close()\n", "FILEIO_UNBOUNDED_REQUEST");
+    }
+
+    private static void testMainMustHandleEveryFileIoErrorVariant() {
+        String variants = "enum FileError:\n"
+                + "  NotFound\n  PermissionDenied\n  NotRegularFile\n  InUse\n  Full\n  IO\n";
+        assertCompileError(variants
+                + "fn main():\n"
+                + "  file = FileIO.open(\"input\", ro)\n"
+                + "  data = file.read(0, 4)\n"
+                + "  file.close()\n", "MOSS_COMPILE_ERROR");
+        assertCompileError(variants
+                + "fn main():\n"
+                + "  try:\n"
+                + "    file = FileIO.open(\"input\", ro)\n"
+                + "    data = file.read(0, 4)\n"
+                + "    file.close()\n"
+                + "  recover FileError.IO:\n"
+                + "    pass\n", "MOSS_COMPILE_ERROR");
+    }
+
+    private static void testHandledFileIoHelperDoesNotRaiseIntoMain() {
+        String source = "enum FileError:\n"
+                + "  NotFound\n  PermissionDenied\n  NotRegularFile\n  InUse\n  Full\n  IO\n"
+                + "fn safely_open():\n"
+                + "  try:\n"
+                + "    file = FileIO.open(\"input\", ro)\n"
+                + "    file.close()\n"
+                + "  recover:\n"
+                + "    pass\n"
+                + "fn main():\n"
+                + "  safely_open()\n";
+        new SemanticChecker(Parser.parseSource(source, "handled-fileio-helper.moss")).run();
     }
 
     private static void assertCompileError(String source, String code) {

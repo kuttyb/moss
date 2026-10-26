@@ -17220,3 +17220,18 @@ aliasing, and unknown-length parameter controls still reject.
 Validation: both ABI-v9 and staged ABI-v10 Java suites pass all 12 test classes.
 The correction only narrows local request-vector proof invalidation; it does not
 establish broader FileIO flow or native parity.
+
+### Phase 25.3 continuation — FileIO typed errors must be handled at root
+
+A focused C++/Java checker comparison found Java accepted direct FileIO errors
+escaping `main` and accepted a partial `recover FileError.IO` arm, while C++
+rejected both. Java root validation now checks all six FileError variants for
+direct FileIO operations and helper calls. Function error collection subtracts
+variants handled by an inner `try/recover`, so a helper that catches all
+FileIO errors does not force redundant handling at its caller.
+
+Evidence: C++ and Java both reject the unclosed-root and IO-only-recovery
+probes with `MOSS_COMPILE_ERROR`. Java ABI-v9 and staged ABI-v10 suites each
+pass all 12 test classes, including the internally handled helper case. Native
+error-carrier Rust compilation and execution remain outstanding; FileIO
+lifecycle/ownership parity and the wider acceptance gates remain open.
