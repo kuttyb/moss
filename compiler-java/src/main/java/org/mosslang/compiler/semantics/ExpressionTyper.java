@@ -1557,8 +1557,26 @@ public class ExpressionTyper {
                 return TypeRef.primitive("FileIO");
             }
             if ("read".equals(member)) {
-                if (argExprs.size() == 1 && argExprs.get(0).trim().startsWith("["))
-                    return TypeRef.primitive("RangeBatch");
+                if (argExprs.size() == 1) {
+                    String requestExpression = argExprs.get(0).trim();
+                    if (requestExpression.startsWith("[")) return TypeRef.primitive("RangeBatch");
+                    TypeRef requests = solver.resolve(infer(requestExpression, line, env));
+                    if (env.isBoundedFileIoRequests(requestExpression)
+                            && requests.kind() == TypeKind.Builtin && "vector".equals(requests.name())
+                            && requests.typeArgs().size() == 1) {
+                        String requestType = solver.resolve(requests.typeArgs().get(0)).name();
+                        ObjectType request = objects.get(requestType);
+                        Field offset = request == null ? null : request.fields.stream()
+                                .filter(field -> "offset".equals(field.name)).findFirst().orElse(null);
+                        Field size = request == null ? null : request.fields.stream()
+                                .filter(field -> "size".equals(field.name)).findFirst().orElse(null);
+                        if (offset != null && size != null && isIntType(offset.type) && isIntType(size.type))
+                            return TypeRef.primitive("RangeBatch");
+                    }
+                    throw new CompileError(line,
+                            "FileIO.read(requests) requires a compiler-proven finite request vector",
+                            "FILEIO_UNBOUNDED_REQUEST");
+                }
                 requireArgumentCount(line, "FileIO.read", argExprs, 2, 2);
                 for (String argument : argExprs) infer(argument, line, env);
                 return TypeRef.primitive("Range");
@@ -1905,6 +1923,10 @@ public class ExpressionTyper {
         }
 
         throw new CompileError(line, "type '" + targetType.toCanonicalString() + "' has no method '" + member + "' (missing required method '" + member + "')", "METHOD_NOT_FOUND");
+    }
+
+    private static boolean isIntType(String type) {
+        return "Int".equals(type) || "int".equals(type) || "i64".equals(type);
     }
 
     private TypeRef inferExecutorMethod(String target, String member, List<String> args,

@@ -3628,6 +3628,30 @@ public class NativeGenerator {
                                     .append(String.join(", ", pairs)).append("]) }");
                             return "(" + batch + ").map_err(__moss_raise_fileio)" + propagation;
                         }
+                        org.mosslang.compiler.types.TypeRef requestType = bindingTypeRef(requests);
+                        String canonicalRequestType = requestType == null ? "" : requestType.toCanonicalString();
+                        if (canonicalRequestType.startsWith("vector[") && canonicalRequestType.endsWith("]")) {
+                            String recordName = canonicalRequestType.substring(7, canonicalRequestType.length() - 1);
+                            Program program = currentProgram.get();
+                            ObjectType record = program == null ? null : program.objects.stream()
+                                    .filter(candidate -> candidate.name.equals(recordName)
+                                            || candidate.name.endsWith("__" + recordName))
+                                    .findFirst().orElse(null);
+                            Field offsetField = record == null ? null : record.fields.stream()
+                                    .filter(field -> "offset".equals(field.name)).findFirst().orElse(null);
+                            Field sizeField = record == null ? null : record.fields.stream()
+                                    .filter(field -> "size".equals(field.name)).findFirst().orElse(null);
+                            if (offsetField != null && sizeField != null) {
+                                String loweredRequests = lowerExpr(requests, stateFields, domains, objects);
+                                return "{ let __moss_batch_file = &(" + loweredRecv + "); "
+                                        + "let __moss_batch_records = &(" + loweredRequests + "); "
+                                        + "let __moss_batch_pairs = __moss_batch_records.iter().map(|request| (request."
+                                        + offsetField.name + ", request." + sizeField.name
+                                        + ")).collect::<std::vec::Vec<_>>(); "
+                                        + "__moss_batch_file.read_batch_checked(&__moss_batch_pairs) }"
+                                        + ".map_err(__moss_raise_fileio)" + propagation;
+                            }
+                        }
                     }
                     if (methodName.equals("write") && rawArgs.size() == 2) {
                         return loweredRecv + ".write_checked(" + lowerExpr(rawArgs.get(0).trim(), stateFields, domains, objects)

@@ -108,6 +108,7 @@ public class SemanticCheckerTest {
         testRangeBatchIndexHasRangeType();
         testFileIoReadMakesIoRecoveryReachable();
         testFileIoBuiltinArityIsChecked();
+        testNamedFileIoBatchRequiresBoundedRequestVector();
         System.out.println("SemanticCheckerTest PASSED.");
     }
 
@@ -2953,6 +2954,44 @@ public class SemanticCheckerTest {
                 + "fn main():\n"
                 + "  source = FileIO.open(\"input\", ro)\n"
                 + "  source.close(1)\n", "TYPE_MISMATCH");
+    }
+
+    private static void testNamedFileIoBatchRequiresBoundedRequestVector() {
+        Program bounded = Parser.parseSource(""
+                + "type Request:\n"
+                + "  offset: Int\n"
+                + "  size: Int\n"
+                + "fn read_known():\n"
+                + "  file = FileIO.open(\"input\", ro)\n"
+                + "  requests = [Request(offset = 0, size = 4), Request(offset = 4, size = 8)]\n"
+                + "  batch = file.read(requests)\n"
+                + "  echo batch[0].length()\n"
+                + "  file.close()\n"
+                + "fn main():\n"
+                + "  read_known()\n", "bounded-fileio-request-vector.moss");
+        new SemanticChecker(bounded).run();
+
+        assertCompileError(""
+                + "type Request:\n"
+                + "  offset: Int\n"
+                + "  size: Int\n"
+                + "fn read_unknown(requests: Vector[Request]):\n"
+                + "  file = FileIO.open(\"input\", ro)\n"
+                + "  batch = file.read(requests)\n"
+                + "  file.close()\n"
+                + "fn main():\n"
+                + "  pass\n", "FILEIO_UNBOUNDED_REQUEST");
+
+        assertCompileError(""
+                + "type Request:\n"
+                + "  offset: Int\n"
+                + "  size: Int\n"
+                + "fn main():\n"
+                + "  file = FileIO.open(\"input\", ro)\n"
+                + "  var requests = [Request(offset = 0, size = 4)]\n"
+                + "  requests.push(Request(offset = 4, size = 4))\n"
+                + "  batch = file.read(requests)\n"
+                + "  file.close()\n", "FILEIO_UNBOUNDED_REQUEST");
     }
 
     private static void assertCompileError(String source, String code) {

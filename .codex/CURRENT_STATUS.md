@@ -17157,3 +17157,24 @@ acceptance, daemon/package readiness, native acceptance, and independent
 Architect review remain open. Both ABI-v9 and staged ABI-v10 Java suites pass all 12 test classes on the
 current chunk-lowering tree. No full `make check` or expensive acceptance suite
 was run.
+
+### Phase 25.3 continuation — bounded named FileIO request vectors
+
+Java `FileIO.read(requests)` now recognizes a named vector of request records
+only while the checker retains a local finite proof: the vector comes from a
+literal record list, each request has named `offset` and nonnegative literal
+`size` fields, and no later mutation, alias, or call receiving that vector has
+invalidated the proof. The checker verifies the request type has Int `offset`
+and `size` fields. Unbounded vector parameters and mutation-invalidated vectors
+fail with `FILEIO_UNBOUNDED_REQUEST`. The generator lowers accepted record
+vectors into checked `(offset, size)` pairs for `read_batch_checked`.
+
+Validation: ABI-v9 and staged ABI-v10 Java unit suites both pass all 12 test
+classes. The semantic tests cover a named bounded request vector, an unbounded
+parameter, and a vector mutation; generator coverage checks the named vector
+uses the production checked batch API. Generated Rust has not been compiled or
+executed. The proof is intentionally local and conservative; broader FileIO
+bound propagation, Executor Solo compensation integration, full language
+parity, packaging/daemon readiness, SDK/native acceptance, and frozen-candidate
+Architect review remain open. No full `make check` or expensive acceptance
+suite was run.

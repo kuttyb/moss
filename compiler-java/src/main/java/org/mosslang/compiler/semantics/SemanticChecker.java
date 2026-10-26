@@ -5262,10 +5262,79 @@ public class SemanticChecker {
         }
     }
 
+    private static boolean isBoundedFileIoRequestVector(String expression) {
+        if (expression == null) return false;
+        String source = expression.trim();
+        if (!source.startsWith("[") || !source.endsWith("]")) return false;
+        String entriesText = source.substring(1, source.length() - 1).trim();
+        if (entriesText.isEmpty()) return true;
+        List<String> entries = org.mosslang.compiler.parser.ParserSupport.splitTopLevel(entriesText, ',');
+        for (String entry : entries) {
+            String request = entry.trim();
+            int open = request.indexOf('(');
+            if (open <= 0 || !request.endsWith(")")
+                    || !request.substring(0, open).trim().matches("[A-Za-z_][A-Za-z0-9_.]*")) return false;
+            List<String> fields = org.mosslang.compiler.parser.ParserSupport.splitTopLevel(
+                    request.substring(open + 1, request.length() - 1), ',');
+            boolean offsetSeen = false;
+            boolean sizeSeen = false;
+            for (String field : fields) {
+                String value = field.trim();
+                int separator = value.indexOf('=');
+                if (separator < 0) separator = value.indexOf(':');
+                if (separator <= 0) continue;
+                String name = value.substring(0, separator).trim();
+                String fieldValue = value.substring(separator + 1).trim();
+                if (name.equals("offset")) offsetSeen = !fieldValue.isEmpty();
+                if (name.equals("size")) {
+                    if (!fieldValue.matches("[0-9](?:[0-9_]*[0-9])?")) return false;
+                    try {
+                        long bound = Long.parseLong(fieldValue.replace("_", ""));
+                        sizeSeen = bound >= 0;
+                    } catch (NumberFormatException ignored) {
+                        return false;
+                    }
+                }
+            }
+            if (!offsetSeen || !sizeSeen) return false;
+        }
+        return true;
+    }
+
+    private static void invalidateFileIoRequestBoundsForMutation(Stmt statement, OwnershipEnv env) {
+        StringBuilder source = new StringBuilder();
+        for (String part : List.of(statement.text == null ? "" : statement.text,
+                statement.a == null ? "" : statement.a, statement.b == null ? "" : statement.b))
+            source.append(part).append(' ');
+        if (statement.args != null) for (String argument : statement.args) source.append(argument).append(' ');
+        String expression = source.toString();
+        for (String name : env.typeEnv.boundedFileIoRequestNames()) {
+            String escaped = java.util.regex.Pattern.quote(name);
+            if (expression.matches("(?s).*\\b" + escaped + "\\s*\\.\\s*(?:push|pop|append|delete)\\s*\\(.*")
+                    || expression.matches("(?s).*\\b" + escaped + "\\s*\\[.*")
+                    || (expression.matches("(?s).*\\b[A-Za-z_][A-Za-z0-9_]*\\s*\\([^)]*\\b" + escaped + "\\b.*")
+                    && !expression.matches("(?s).*\\.read\\s*\\(\\s*" + escaped + "\\s*\\).*"))) {
+                env.typeEnv.invalidateBoundedFileIoRequests();
+                return;
+            }
+        }
+    }
+
+    private static void updateFileIoRequestBound(String name, String expression, OwnershipEnv env) {
+        if (isBoundedFileIoRequestVector(expression)) {
+            env.typeEnv.markBoundedFileIoRequests(name);
+        } else if (env.typeEnv.isBoundedFileIoRequests(expression)) {
+            env.typeEnv.invalidateBoundedFileIoRequests();
+        } else {
+            env.typeEnv.invalidateBoundedFileIoRequestsForName(name);
+        }
+    }
+
     private void checkStatement(Stmt s, OwnershipEnv env, ExpressionTyper typer, TypeSolver solver,
                                 boolean insideHandler, String enclosingName, TypeRef expectedType) {
         if (s == null) return;
         String text = s.text != null ? s.text.trim() : "";
+        invalidateFileIoRequestBoundsForMutation(s, env);
         rejectActiveForSourceMutation(s);
 
         // Keyword checks for retired syntax
@@ -5289,6 +5358,7 @@ public class SemanticChecker {
 
                 TypeRef inferred = typer.infer(expr, s.line, env.typeEnv);
                 env.put(varName, inferred, s.line);
+                updateFileIoRequestBound(varName, expr, env);
                 if (s.kind == Stmt.Kind.Let) {
                     env.immutables.add(varName);
                 }
@@ -5400,6 +5470,7 @@ public class SemanticChecker {
                 if (!env.containsKey(varName)) {
                     TypeRef inferred = typer.infer(expr, s.line, env.typeEnv);
                     env.put(varName, inferred, s.line);
+                    updateFileIoRequestBound(varName, expr, env);
                     if (env.containsKey(expr) && transferType(env.get(expr))) {
                         consumeBinding(s.line, expr, env, varName);
                     } else if (!consumeOwnedFieldProjection(s.line, expr, inferred, env, varName)) {
@@ -5414,6 +5485,7 @@ public class SemanticChecker {
                     throw new CompileError(s.line, "type mismatch in assignment to '" + varName + "': expected '" +
                             solver.resolve(targetType).toCanonicalString() + "', got '" + solver.resolve(inferred).toCanonicalString() + "'", "TYPE_MISMATCH");
                 }
+                updateFileIoRequestBound(varName, expr, env);
                 // A mutable local may be reinitialized after ownership transfer.
                 // Clear its consumed state before recording transfers in the RHS.
                 env.moved.remove(varName);

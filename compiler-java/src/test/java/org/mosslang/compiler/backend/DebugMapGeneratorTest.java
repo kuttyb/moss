@@ -210,9 +210,15 @@ public class DebugMapGeneratorTest {
         String source = """
                 enum FileError:
                   IO
+                type ReadRequest:
+                  offset: Int
+                  size: Int
                 fn main():
                   try:
                     file = FileIO.open("input", ro)
+                    requests = [ReadRequest(offset = 0, size = 1), ReadRequest(offset = 1, size = 1)]
+                    batch = file.read(requests)
+                    echo batch[0].length()
                     bytes = file.read(0, 1)
                     for byte in bytes:
                       echo byte
@@ -232,6 +238,8 @@ public class DebugMapGeneratorTest {
                 "open must pass its path and mode to the checked runtime");
         assertTrue(rust.contains(".read_checked(0_i64, 1_i64).map_err(__moss_raise_fileio)?"),
                 "read must use checked error propagation");
+        assertTrue(rust.contains("read_batch_checked(&__moss_batch_pairs)"),
+                "named request vectors must lower through the checked batch API");
         assertTrue(rust.contains(".bytes() {"), "Range iteration must traverse bytes");
         assertTrue(rust.contains("for chunk in file.chunks(1_i64) {"),
                 "FileIO chunk traversal must retain its borrowing iterator");
