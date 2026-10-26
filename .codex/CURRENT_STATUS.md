@@ -16869,3 +16869,18 @@ test classes. `check_agent_api.py scripts/java/run.sh` passed the warning
 assertion and then failed later at its statement-effects query because that
 result omitted `target.construct_kind`; the remaining API assertions were not
 reached. Native/backend validation remains deferred.
+
+
+### Phase 25.3 continuation — statement effects and concrete domain graph queries
+
+The Phase 6A agent API regression found that `effects line:50` was routed as a
+callable query and produced a fabricated function target. Java now resolves
+line-target bindings and separates statement effects from enclosing callable
+effects; callable effects results explicitly emit a null enclosing summary.
+The inspect query's hardcoded empty concrete graph is replaced with a graph
+built from main's concrete domain constructors and route bindings. For
+`tests/phase6_agent_api.moss`, Java and C++ graph JSON agree exactly, including
+graph identity, instance ranks, and the route edge. All 12 Java test classes
+pass. The API regression now reaches optimized `why main@42:expression:0 -O`
+and exits 1 without output; that remains the next query gap. Native/backend
+validation remains deferred.

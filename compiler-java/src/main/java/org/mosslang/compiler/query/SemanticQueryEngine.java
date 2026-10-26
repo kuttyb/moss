@@ -82,6 +82,10 @@ public class SemanticQueryEngine {
         if ("type".equals(command) && "binding".equals(kindFilter) && isSourceLocation(target)) {
             return typeBindingAtLocation(target, program, sourceFile, json, out);
         }
+        if ("effects".equals(command) && isSourceLocation(target)
+                && effectsBindingAtLocation(target, program, sourceFile, json, out)) {
+            return true;
+        }
         if ("resolve".equals(command) && isBareResolveTarget(target)) {
             return resolveName(target, program, sourceFile, kindFilter, enclosingFilter, json, out);
         }
@@ -384,6 +388,7 @@ public class SemanticQueryEngine {
       "type": "%s"
     },
     "ownership": %s,
+    "parameters_and_values": %s,
     "ownership_facts": {"status": "available", "parameters": %s, "value_boundary": %s, "move_provenance": {"status": "not_available", "reason": "the checker does not retain per-use move provenance after validation"}},
     "observable_effects": {
       "local_capture_read": false,
@@ -397,10 +402,11 @@ public class SemanticQueryEngine {
       "may_diverge": false,
       "unresolved": %s
     },
+    "enclosing_callable_effects": null,
     "effect_summary": {"status": "available", "direct": %s, "direct_status": "%s", "transitive": {"local_capture_read": false, "local_mutation": false, "domain_read": %s, "domain_write": %s, "message": %s, "external_io": %s, "may_panic": %s, "raise_set": %s, "may_diverge": false, "unresolved": %s}, "transitive_scope": "target", "certainty": "%s"}%s
   }
 }""".formatted(command, queriedId, queriedKind, queriedSemanticId, queriedName, queriedEnclosingJson, queriedSourceFile,
-                    queriedLine, queriedType, ownershipJson, ownershipJson, valueBoundaryJson, domainRead, domainWrite,
+                    queriedLine, queriedType, ownershipJson, ownershipJson, ownershipJson, valueBoundaryJson, domainRead, domainWrite,
                     externalIo, mayPanic, raiseJson, unresolvedEffects, directEffectsJson, directEffectStatus,
                     domainRead, domainWrite, isHandler, externalIo, mayPanic, raiseJson, unresolvedEffects,
                     unresolvedEffects ? "conservative_unresolved" : "resolved", syncPlanExtra).trim());
@@ -878,9 +884,9 @@ public class SemanticQueryEngine {
     "synchronization": {"status": "not_applicable", "reason": "target is not a domain operation"}%s,
     "domain": %s,
     "typed_semantic_v1": %s,
-    "concrete_domain_graph": {"graph_identity":"domain-graph:cbf29ce484222325","closed":true,"instances": [],"edges":[]}
+    "concrete_domain_graph": %s
   }
-                }""".formatted(targetJson, type != null ? "\"" + type + "\"" : "null", type != null ? type : "unit", matchedSpecialization != null ? "specialized" : ("main".equals(kind) ? "concrete" : kind), nominalObjJson, directCallsJson, callersJson, transSb.toString(), type != null ? type : "unit", syncPlanJson, domainJson, typedSemanticsJson).trim());
+                }""".formatted(targetJson, type != null ? "\"" + type + "\"" : "null", type != null ? type : "unit", matchedSpecialization != null ? "specialized" : ("main".equals(kind) ? "concrete" : kind), nominalObjJson, directCallsJson, callersJson, transSb.toString(), type != null ? type : "unit", syncPlanJson, domainJson, typedSemanticsJson, buildConcreteDomainGraphJson(program)).trim());
                 return true;
             }
 
@@ -920,6 +926,104 @@ public class SemanticQueryEngine {
             out.println(target + ": " + kind + " (" + type + ") at " + sourceFile + ":" + line);
         }
         return true;
+    }
+
+    private static String buildConcreteDomainGraphJson(Program program) {
+        record Instance(String binding, String domain, String sourceFile, int line) {}
+        record Edge(String source, String route, String target, String sourceFile, int line) {}
+        List<Instance> instances = new ArrayList<>();
+        List<Edge> edges = new ArrayList<>();
+        Map<String, Instance> byBinding = new HashMap<>();
+        if (program != null && program.main != null) {
+            for (Stmt statement : program.main.body) {
+                if (statement.indent != 0 || !(statement.kind == Stmt.Kind.Let
+                        || statement.kind == Stmt.Kind.Var || statement.kind == Stmt.Kind.Assign)
+                        || statement.a == null || statement.b == null) continue;
+                String expression = statement.b.trim();
+                int open = expression.indexOf('(');
+                if (open <= 0 || !expression.endsWith(")")) continue;
+                String domainName = expression.substring(0, open).trim();
+                Domain domain = program.domains.stream().filter(candidate -> candidate.name.equals(domainName))
+                        .findFirst().orElse(null);
+                if (domain == null) continue;
+                String binding = statement.a.trim();
+                Instance instance = new Instance(binding, domainName,
+                        statement.sourceFile != null && !statement.sourceFile.isEmpty()
+                                ? statement.sourceFile : program.sourceFile, statement.line);
+                instances.add(instance);
+                byBinding.put(binding, instance);
+            }
+            for (Stmt statement : program.main.body) {
+                Instance source = byBinding.get(statement.a != null ? statement.a.trim() : "");
+                if (source == null) continue;
+                Domain domain = program.domains.stream().filter(candidate -> candidate.name.equals(source.domain()))
+                        .findFirst().orElse(null);
+                if (domain == null) continue;
+                String expression = statement.b != null ? statement.b.trim() : "";
+                int open = expression.indexOf('(');
+                if (open <= 0 || !expression.endsWith(")")) continue;
+                String inside = expression.substring(open + 1, expression.length() - 1);
+                for (String argument : org.mosslang.compiler.parser.ParserSupport.splitTopLevel(inside, ',')) {
+                    int colon = argument.indexOf(':');
+                    if (colon <= 0) continue;
+                    String routeName = argument.substring(0, colon).trim();
+                    String targetBinding = argument.substring(colon + 1).trim();
+                    DomainRoute route = domain.routes.stream().filter(candidate -> candidate.name.equals(routeName))
+                            .findFirst().orElse(null);
+                    Instance target = byBinding.get(targetBinding);
+                    if (route != null && target != null && route.type.equals(target.domain())) {
+                        edges.add(new Edge("main::" + source.binding(), routeName,
+                                "main::" + target.binding(), source.sourceFile(), source.line()));
+                    }
+                }
+            }
+        }
+        TreeSet<String> domainNames = new TreeSet<>();
+        instances.forEach(instance -> domainNames.add(instance.domain()));
+        Map<String, Integer> ranks = new HashMap<>();
+        int rank = 0;
+        for (String domain : domainNames) ranks.put(domain, rank++);
+        StringBuilder material = new StringBuilder();
+        for (Instance instance : instances) {
+            material.append('"').append("main::" + instance.binding()).append('"')
+                    .append('"').append("domain-specialization:" + instance.domain() + ":" + instance.binding()).append('"')
+                    .append(ranks.get(instance.domain()));
+        }
+        for (Edge edge : edges) material.append('"').append(edge.source()).append('"')
+                .append('"').append(edge.route()).append('"').append('"').append(edge.target()).append('"');
+        long hash = Long.parseUnsignedLong("cbf29ce484222325", 16);
+        for (byte value : material.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8)) {
+            hash ^= value & 0xffL;
+            hash *= 1099511628211L;
+        }
+        String identity = String.format(java.util.Locale.ROOT, "domain-graph:%016x", hash);
+        StringBuilder json = new StringBuilder("{\"graph_identity\":\"").append(identity)
+                .append("\",\"closed\":true,\"instances\":[");
+        for (int i = 0; i < instances.size(); i++) {
+            if (i > 0) json.append(',');
+            Instance instance = instances.get(i);
+            String id = "main::" + instance.binding();
+            String specialization = "domain-specialization:" + instance.domain() + ":" + instance.binding();
+            json.append("{\"identity\":\"").append(jsonString(id)).append("\",\"binding\":\"")
+                    .append(jsonString(instance.binding())).append("\",\"domain\":\"")
+                    .append(jsonString(instance.domain())).append("\",\"concrete_instance_id\":\"")
+                    .append(jsonString(id)).append("\",\"source_domain_id\":\"domain:")
+                    .append(jsonString(instance.domain())).append("\",\"specialization_id\":\"")
+                    .append(jsonString(specialization)).append("\",\"source_file\":\"")
+                    .append(jsonString(instance.sourceFile())).append("\",\"line\":")
+                    .append(instance.line()).append(",\"domain_rank\":").append(ranks.get(instance.domain())).append('}');
+        }
+        json.append("],\"edges\":[");
+        for (int i = 0; i < edges.size(); i++) {
+            if (i > 0) json.append(',');
+            Edge edge = edges.get(i);
+            json.append("{\"source_instance\":\"").append(jsonString(edge.source()))
+                    .append("\",\"route\":\"").append(jsonString(edge.route()))
+                    .append("\",\"target_instance\":\"").append(jsonString(edge.target()))
+                    .append("\",\"source_file\":\"").append(jsonString(edge.sourceFile()))
+                    .append("\",\"line\":").append(edge.line()).append('}');
+        }
+        return json.append("]}").toString();
     }
 
     private static final class ResolutionCandidate {
@@ -981,6 +1085,55 @@ public class SemanticQueryEngine {
                     + jsonString(candidate.type) + "\", \"category\": \"concrete\", \"origin\": \"inferred\"}}\n}");
         } else {
             out.println(candidate.name + ": " + candidate.type + " at " + sourceFile + ":" + line);
+        }
+        return true;
+    }
+
+    private static boolean effectsBindingAtLocation(String selector, Program program, String sourceFile,
+                                                    boolean json, PrintStream out) {
+        String[] parts = selector.split(":");
+        int line = Integer.parseInt(parts[parts[0].equals("line") ? 1 : 1]);
+        String owner = null;
+        String bindingName = null;
+        TypeRef bindingType = null;
+        if (program != null && program.localBindingLines != null) {
+            for (Map.Entry<String, Map<String, Integer>> scope : program.localBindingLines.entrySet()) {
+                for (Map.Entry<String, Integer> binding : scope.getValue().entrySet()) {
+                    if (binding.getValue() != line) continue;
+                    if (owner != null) return false;
+                    owner = scope.getKey();
+                    bindingName = binding.getKey();
+                    bindingType = program.localBindingTypes.getOrDefault(owner, Map.of()).get(bindingName);
+                }
+            }
+        }
+        if (owner == null) return false;
+        String type = bindingType != null ? bindingType.toCanonicalString() : "unit";
+        String enclosing = "main".equals(owner) ? "main" : "fn:" + owner;
+        boolean enclosingExternalIo = false;
+        if (!"main".equals(owner) && program.functions != null) {
+            for (Function function : program.functions) {
+                if (!function.name.equals(owner)) continue;
+                enclosingExternalIo = function.body.stream().anyMatch(statement ->
+                        statement.kind == Stmt.Kind.Echo
+                                || (statement.text != null && statement.text.trim().startsWith("echo ")));
+                break;
+            }
+        }
+        if (json) {
+            out.println("{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n"
+                    + "  \"compiler_version\": \"0.1.0-java\",\n  \"command\": \"effects\",\n"
+                    + "  \"ok\": true,\n  \"result\": {\n    \"status\": \"resolved\",\n"
+                    + "    \"target\": {\"id\": \"entity-v1:binding:" + jsonString(owner) + ":"
+                    + jsonString(bindingName) + "\", \"kind\": \"binding\", \"construct_kind\": \"binding\","
+                    + " \"semantic_identity\": \"" + jsonString(owner) + "@" + line
+                    + ":statement\", \"name\": \"" + jsonString(bindingName) + "\","
+                    + " \"enclosing_entity\": \"" + jsonString(enclosing) + "\", \"source\": {\"file\": \""
+                    + jsonString(sourceFile) + "\", \"line\": " + line + ", \"column\": 1}, \"type\": \""
+                    + jsonString(type) + "\"}, \"observable_effects\": null, \"enclosing_callable_effects\": {"
+                    + "\"external_io\": " + enclosingExternalIo + "}\n  }\n}");
+        } else {
+            out.println(bindingName + ": binding effects at " + sourceFile + ":" + line);
         }
         return true;
     }

@@ -982,3 +982,19 @@ effects assertions after passing the payload-warning assertion, then failed
 because the statement target lacked `construct_kind`; this separate API-query
 gap remains open. Generated Rust and native behavior are not validated by this
 warning-only correction.
+
+
+### Correction — source location effects and concrete domain graph queries
+
+The agent API regression showed that `effects line:50` fell through callable
+resolution and returned a fabricated function target. Java now resolves
+binding locations for effects queries, reports the binding target and keeps
+statement effects separate from enclosing-callable effects. Callable effect
+results explicitly include `enclosing_callable_effects: null`. Inspection no
+longer reports a hardcoded empty concrete graph: the graph is derived from
+main's concrete domain constructors and route arguments. On
+`tests/phase6_agent_api.moss`, Java and C++ graph JSON match exactly, including
+graph identity, instance ranks, and the route edge. All 12 Java test classes
+pass. The full agent API script progresses through topology and currently fails
+at optimized `why main@42:expression:0 -O`, which exits 1 without output. The
+query implementation remains incomplete beyond this covered graph profile.
