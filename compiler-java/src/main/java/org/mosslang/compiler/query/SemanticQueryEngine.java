@@ -1,6 +1,7 @@
 package org.mosslang.compiler.query;
 
 import org.mosslang.compiler.ast.*;
+import org.mosslang.compiler.parser.ParserSupport;
 import org.mosslang.compiler.types.*;
 import java.io.PrintStream;
 import java.util.*;
@@ -2355,6 +2356,193 @@ public class SemanticQueryEngine {
         return result.append(']').toString();
     }
 
+    private static void appendFileIoSynchronizationPlan(Program program, Domain domain,
+                                                        StringBuilder json) {
+        String instance = domain.name.toLowerCase(Locale.ROOT);
+        if (program.main != null) {
+            for (Stmt statement : program.main.body) {
+                if (statement.kind != Stmt.Kind.Assign || statement.a == null || statement.b == null)
+                    continue;
+                if (statement.b.trim().startsWith(domain.name + "(")) {
+                    instance = statement.a.trim();
+                    break;
+                }
+            }
+        }
+        String prefix = "main::" + instance + "::sync:";
+        Map<String, String> classIds = new LinkedHashMap<>();
+        for (int index = 0; index < domain.state.size(); index++)
+            classIds.put(domain.state.get(index).name, prefix + index);
+
+        json.append("          \"concrete_instance_id\": \"main::")
+                .append(jsonString(instance)).append("\",\n")
+                .append("          \"sync_classes\": [\n");
+        for (int index = 0; index < domain.state.size(); index++) {
+            Field field = domain.state.get(index);
+            if (index > 0) json.append(",\n");
+            json.append("            {\"class_id\": \"").append(jsonString(prefix + index))
+                    .append("\", \"class_rank\": ").append(index)
+                    .append(", \"member_leaves\": [\"").append(jsonString(field.name)).append("\"]}");
+        }
+        json.append("\n          ],\n          \"handlers\": [\n");
+        List<Map<String, String>> effects = new ArrayList<>();
+        for (Handler handler : domain.handlers) effects.add(fileIoHandlerEffects(program, domain, handler));
+        for (int hi = 0; hi < domain.handlers.size(); hi++) {
+            Handler handler = domain.handlers.get(hi);
+            if (hi > 0) json.append(",\n");
+            Map<String, String> handlerEffects = effects.get(hi);
+            List<String> classes = new ArrayList<>();
+            List<String> writes = new ArrayList<>();
+            Map<String, String> modes = new LinkedHashMap<>();
+            boolean readOnly = true;
+            json.append("            {\"name\": \"").append(jsonString(handler.name))
+                    .append("\", \"normalized_effects\": {");
+            int effectIndex = 0;
+            for (Map.Entry<String, String> effect : handlerEffects.entrySet()) {
+                if (effectIndex++ > 0) json.append(", ");
+                json.append("\"").append(jsonString(effect.getKey())).append("\": \"")
+                        .append(effect.getValue()).append("\"");
+                String classId = classIds.get(effect.getKey());
+                if (classId != null && !classes.contains(classId)) classes.add(classId);
+                if ("WRITE".equals(effect.getValue())) {
+                    readOnly = false;
+                    writes.add(effect.getKey());
+                    modes.put(classId, "EXCLUSIVE");
+                } else if (classId != null) modes.putIfAbsent(classId, "SHARED");
+            }
+            json.append("}, \"read_only\": ").append(readOnly)
+                    .append(", \"class_modes\": {");
+            int modeIndex = 0;
+            for (Map.Entry<String, String> mode : modes.entrySet()) {
+                if (modeIndex++ > 0) json.append(", ");
+                json.append("\"").append(jsonString(mode.getKey())).append("\": \"")
+                        .append(mode.getValue()).append("\"");
+            }
+            json.append("}, \"class_set\": ").append(jsonStringArray(new LinkedHashSet<>(classes)))
+                    .append(", \"write_set\": ")
+                    .append(jsonStringArray(new LinkedHashSet<>(writes))).append("}");
+        }
+        json.append("\n          ],\n          \"conflicts\": [\n");
+        boolean firstConflict = true;
+        for (int left = 0; left < domain.handlers.size(); left++) {
+            for (int right = left; right < domain.handlers.size(); right++) {
+                Handler leftHandler = domain.handlers.get(left);
+                Handler rightHandler = domain.handlers.get(right);
+                Map<String, String> leftEffects = effects.get(left);
+                Map<String, String> rightEffects = effects.get(right);
+                List<String> shared = new ArrayList<>();
+                for (String field : leftEffects.keySet())
+                    if (rightEffects.containsKey(field)
+                            && ("WRITE".equals(leftEffects.get(field))
+                                || "WRITE".equals(rightEffects.get(field)))) shared.add(field);
+                if (shared.isEmpty()) continue;
+                if (!firstConflict) json.append(",\n");
+                firstConflict = false;
+                json.append("            {\"left\": \"domain-specialization:")
+                        .append(jsonString(domain.name)).append(":").append(jsonString(instance))
+                        .append("::handler:").append(jsonString(leftHandler.name))
+                        .append("\", \"right\": \"domain-specialization:")
+                        .append(jsonString(domain.name)).append(":").append(jsonString(instance))
+                        .append("::handler:").append(jsonString(rightHandler.name)).append("\"}");
+            }
+        }
+        json.append("\n          ]\n");
+    }
+
+    private static Map<String, String> fileIoHandlerEffects(Program program, Domain domain,
+                                                           Handler handler) {
+        Map<String, String> effects = new LinkedHashMap<>();
+        Map<String, String> environment = new LinkedHashMap<>();
+        for (Field field : domain.state) environment.put(field.name, field.type);
+        for (DomainRoute route : domain.routes) environment.put(route.name, route.type);
+        for (Param parameter : handler.params) environment.put(parameter.name, parameter.type);
+        for (Field field : domain.state) {
+            String effect = null;
+            if ("FileIO".equals(field.type)) {
+                effect = fileIoEffectInStatements(program, handler.body, environment,
+                        field.name, new HashSet<>());
+            }
+            for (Stmt statement : handler.body) {
+                String target = statement.a == null ? "" : statement.a.trim();
+                if ((statement.kind == Stmt.Kind.Assign || statement.kind == Stmt.Kind.Var
+                        || statement.kind == Stmt.Kind.Let)
+                        && (target.equals(field.name) || target.startsWith(field.name + "."))) {
+                    effect = "WRITE";
+                    break;
+                }
+            }
+            if (effect != null) effects.put(field.name, effect);
+        }
+        return effects;
+    }
+
+    private static String fileIoEffectInStatements(Program program, List<Stmt> statements,
+                                                    Map<String, String> environment, String owner,
+                                                    Set<String> visited) {
+        for (Stmt statement : statements) {
+            String expression = (statement.text == null ? "" : statement.text) + " "
+                    + (statement.a == null ? "" : statement.a) + " "
+                    + (statement.b == null ? "" : statement.b);
+            java.util.regex.Matcher member = java.util.regex.Pattern.compile(
+                    "\\b" + java.util.regex.Pattern.quote(owner)
+                            + "\\s*\\.\\s*(read|chunks|open|write|sync|close)\\s*\\(")
+                    .matcher(expression);
+            if (member.find()) return ("read".equals(member.group(1)) || "chunks".equals(member.group(1)))
+                    ? "READ" : "WRITE";
+            for (Function function : program.functions) {
+                java.util.regex.Matcher call = java.util.regex.Pattern.compile(
+                        "\\b" + java.util.regex.Pattern.quote(function.name) + "\\s*\\(")
+                        .matcher(expression);
+                if (!call.find() || !visited.add(function.name)) continue;
+                int open = expression.indexOf('(', call.start());
+                int close = ParserSupport.matchingParen(expression, open);
+                if (close < open) { visited.remove(function.name); continue; }
+                List<String> args = ParserSupport.splitTopLevel(expression.substring(open + 1, close), ',');
+                for (int index = 0; index < function.params.size() && index < args.size(); index++) {
+                    if (!owner.equals(args.get(index).trim())) continue;
+                    String parameter = function.params.get(index).name;
+                    String effect = fileIoEffectInStatements(program, function.body, Map.of(), parameter, visited);
+                    if (effect != null) { visited.remove(function.name); return effect; }
+                }
+                visited.remove(function.name);
+            }
+        }
+        if (!statements.isEmpty()) {
+            // Function return expressions are represented outside the ordinary statement list.
+            for (Function function : program.functions) {
+                if (!function.params.stream().anyMatch(parameter -> parameter.name.equals(owner))) continue;
+                if (function.resultExpression != null) {
+                    java.util.regex.Matcher member = java.util.regex.Pattern.compile(
+                            "\\b" + java.util.regex.Pattern.quote(owner)
+                                    + "\\s*\\.\\s*(read|chunks|open|write|sync|close)\\s*\\(")
+                            .matcher(function.resultExpression);
+                    if (member.find()) return ("read".equals(member.group(1))
+                            || "chunks".equals(member.group(1))) ? "READ" : "WRITE";
+                    for (Function callee : program.functions) {
+                        java.util.regex.Matcher call = java.util.regex.Pattern.compile(
+                                "\\b" + java.util.regex.Pattern.quote(callee.name) + "\\s*\\(")
+                                .matcher(function.resultExpression);
+                        if (!call.find() || !visited.add(callee.name)) continue;
+                        int open = function.resultExpression.indexOf('(', call.start());
+                        int close = ParserSupport.matchingParen(function.resultExpression, open);
+                        if (close >= open) {
+                            List<String> args = ParserSupport.splitTopLevel(
+                                    function.resultExpression.substring(open + 1, close), ',');
+                            for (int index = 0; index < callee.params.size() && index < args.size(); index++) {
+                                if (!owner.equals(args.get(index).trim())) continue;
+                                String effect = fileIoEffectInStatements(program, callee.body,
+                                        Map.of(), callee.params.get(index).name, visited);
+                                if (effect != null) { visited.remove(callee.name); return effect; }
+                            }
+                        }
+                        visited.remove(callee.name);
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
     private static String buildSynchronizationPlanJson(Program program) {
         if (program == null || program.domains.isEmpty()) {
             return "";
@@ -2367,7 +2555,9 @@ public class SemanticQueryEngine {
             if (di > 0) sb.append(",\n");
             sb.append("        {\n");
             sb.append("          \"domain\": \"").append(d.name).append("\",\n");
-            if (d.name.equals("Store") && d.state.stream().anyMatch(f -> f.name.equals("pair"))) {
+            if (d.state.stream().anyMatch(field -> "FileIO".equals(field.type))) {
+                appendFileIoSynchronizationPlan(program, d, sb);
+            } else if (d.name.equals("Store") && d.state.stream().anyMatch(f -> f.name.equals("pair"))) {
                 sb.append("""
           "sync_classes": [
             {

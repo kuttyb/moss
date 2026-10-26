@@ -17335,3 +17335,45 @@ facts; its current Store query path also emits stale fixture-shaped data.
 ABI-v9 and staged ABI-v10 Java suites each pass all 12 classes. The FileIO
 harness remains incomplete at the query-plan gap; this does not establish
 general synchronization-plan parity or native runtime acceptance.
+
+### Phase 25.3 continuation — FileIO semantic harness reaches green
+
+The pending Java semantic changes now cover the full focused Phase 20 FileIO
+semantics harness, including synchronization-plan facts, range and batch
+boundary checks, lifecycle behavior, domain warnings, positive cases, and
+expected rejections. `python3 tests/tooling/check_phase20_fileio_semantics.py
+./moss tmp/phase25-3-cpp-fileio-semantics` passes, and the harness also passes
+against the Java launcher on its configured temporary fixture set. The query
+plan path for domains with FileIO state now derives state-field classes and
+handler effects from the loaded program instead of returning the stale
+Store-shaped fixture payload.
+
+Validation on this worktree: `scripts/java/test.sh` and
+`MOSS_STAGED_ABI=v10 scripts/java/test.sh` pass all 12 Java test classes;
+`git diff --check` passes. This remains focused semantic evidence: it does not
+establish complete synchronization-plan parity, generated Rust correctness,
+native FileIO behavior, SDK integration, or completion of the Phase 25.3
+acceptance gates.
+
+### Phase 25.3 stopping checkpoint — focused FileIO semantics green
+
+The Java FileIO semantic checker now passes the complete focused Phase 20
+semantic harness, including its positive cases, expected diagnostics, domain
+blocking warnings, and synchronization-plan assertions:
+`python3 tests/tooling/check_phase20_fileio_semantics.py scripts/java/run.sh
+tmp/phase25-3-java-fileio-semantics-current`. The same harness passes with the
+C++ compiler. This work also adds batch-derived Range lifetime checks, domain
+FileIO operation-state checks, FileIO boundary/collection restrictions,
+compile-time integer bound propagation, and FileIO-specific synchronization
+query data.
+
+Validation immediately before this checkpoint: `scripts/java/test.sh` and
+`MOSS_STAGED_ABI=v10 scripts/java/test.sh` each pass all 12 Java test classes;
+`git diff --check` passes; `python3 tests/tooling/check_agent_feedback.py`
+passes. Full Java harness completion was confirmed after those unit runs.
+This is a focused checker/query checkpoint only. The Java port is stopping
+here at L7 direction; the frozen-candidate acceptance gates, native Rust
+compilation/execution, SDK integration, full language/semantic parity, final
+packaging/daemon evidence, and independent Architect GO/NO-GO have not been
+completed. Do not treat this checkpoint as Phase 25.3 completion or a release
+candidate.

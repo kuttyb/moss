@@ -12,6 +12,8 @@ import java.util.Set;
 public class TypeEnv {
     private final Map<String, TypeRef> bindings = new HashMap<>();
     private final Set<String> boundedFileIoRequests = new HashSet<>();
+    private final Set<String> boundedStrings = new HashSet<>();
+    private final Map<String, java.math.BigInteger> finiteIntegerConstants = new HashMap<>();
 
     public TypeEnv() {}
 
@@ -19,6 +21,8 @@ public class TypeEnv {
         if (other != null) {
             this.bindings.putAll(other.bindings);
             this.boundedFileIoRequests.addAll(other.boundedFileIoRequests);
+            this.boundedStrings.addAll(other.boundedStrings);
+            this.finiteIntegerConstants.putAll(other.finiteIntegerConstants);
         }
     }
 
@@ -29,6 +33,8 @@ public class TypeEnv {
     public void put(String key, TypeRef type) {
         bindings.put(key, type);
         boundedFileIoRequests.remove(key);
+        boundedStrings.remove(key);
+        finiteIntegerConstants.remove(key);
     }
 
     public void put(String key, String typeString) {
@@ -39,6 +45,8 @@ public class TypeEnv {
             bindings.put(key, parsed != null ? parsed : TypeRef.primitive(typeString));
         }
         boundedFileIoRequests.remove(key);
+        boundedStrings.remove(key);
+        finiteIntegerConstants.remove(key);
     }
 
     public boolean containsKey(String key) {
@@ -48,6 +56,8 @@ public class TypeEnv {
     public void remove(String key) {
         bindings.remove(key);
         boundedFileIoRequests.remove(key);
+        boundedStrings.remove(key);
+        finiteIntegerConstants.remove(key);
     }
 
     public void markBoundedFileIoRequests(String key) { boundedFileIoRequests.add(key); }
@@ -55,6 +65,15 @@ public class TypeEnv {
     public Set<String> boundedFileIoRequestNames() { return Set.copyOf(boundedFileIoRequests); }
     public void invalidateBoundedFileIoRequestsForName(String key) { boundedFileIoRequests.remove(key); }
     public void invalidateBoundedFileIoRequests() { boundedFileIoRequests.clear(); }
+    public void putFiniteIntegerConstant(String key, java.math.BigInteger value) {
+        if (value != null) finiteIntegerConstants.put(key, value);
+        else finiteIntegerConstants.remove(key);
+    }
+    public java.math.BigInteger finiteIntegerConstant(String key) {
+        return finiteIntegerConstants.get(key);
+    }
+    public void markBoundedString(String key) { boundedStrings.add(key); }
+    public boolean isBoundedString(String key) { return boundedStrings.contains(key); }
 
     public Map<String, TypeRef> getBindings() {
         return Collections.unmodifiableMap(bindings);
@@ -74,5 +93,8 @@ public class TypeEnv {
 
     public void clear() {
         bindings.clear();
+        boundedFileIoRequests.clear();
+        boundedStrings.clear();
+        finiteIntegerConstants.clear();
     }
 }

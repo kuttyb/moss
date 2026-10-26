@@ -527,6 +527,11 @@ public class ExpressionTyper {
                             } finally {
                                 this.currentExpectedType = prevExpected;
                             }
+                            if (containsCapability(solver.resolve(actual), "FileIO")
+                                    && !aExpr.matches("[A-Za-z_][A-Za-z0-9_]*"))
+                                throw new CompileError(line,
+                                        "FileIO ownership must remain bound to its pinned local owner",
+                                        "FILEIO_PINNED_OWNERSHIP");
                             displayArgTypes.add(solver.resolve(actual).toCanonicalString());
                         }
                         actualArgs.add(actual);
@@ -561,6 +566,22 @@ public class ExpressionTyper {
                                         callee + "' has incompatible type '" + actual.toCanonicalString() +
                                         "', expected '" + expected.toCanonicalString() + "'", "TYPE_MISMATCH");
                             }
+                        }
+                    }
+
+                    for (int left = 0; left < fn.params.size(); left++) {
+                        if (left >= actualArgs.size()
+                                || !containsCapability(solver.resolve(actualArgs.get(left)), "FileIO")) continue;
+                        String leftActual = stripNamedArgPrefix(argExprs.get(left)).trim();
+                        for (int right = left + 1; right < fn.params.size(); right++) {
+                            if (right >= actualArgs.size()
+                                    || !leftActual.equals(stripNamedArgPrefix(argExprs.get(right)).trim())
+                                    || !containsCapability(solver.resolve(actualArgs.get(right)), "FileIO")) continue;
+                            if (fileIoParameterAccess(fn, fn.params.get(left).name) != 1
+                                    || fileIoParameterAccess(fn, fn.params.get(right).name) != 1)
+                                throw new CompileError(line,
+                                        "the same FileIO owner is passed to overlapping non-read helper parameters",
+                                        "OWNERSHIP_CONFLICTING_ACCESS");
                         }
                     }
 
@@ -1291,6 +1312,10 @@ public class ExpressionTyper {
                 throw new CompileError(line, "handler parameters cannot contain FileIO capabilities",
                         "FILEIO_BOUNDARY_ESCAPE");
             }
+            if (containsCapability(actual, "Range") || containsCapability(actual, "RangeBatch")) {
+                throw new CompileError(line, "FileIO-backed ranges cannot cross a domain message boundary",
+                        "FILEIO_BOUNDARY_ESCAPE");
+            }
             if (containsDomainHandle(actual)) {
                 throw new CompileError(line, "domain handles cannot be passed as handler payloads",
                         "MOSS_COMPILE_ERROR");
@@ -1338,6 +1363,12 @@ public class ExpressionTyper {
         TypeRef elemType = null;
         for (int i = 0; i < items.size(); i++) {
             TypeRef t = infer(items.get(i), line, env);
+            if (containsCapability(t, "FileIO"))
+                throw new CompileError(line, "FileIO capabilities cannot be stored in collections",
+                        "FILEIO_PINNED_OWNERSHIP");
+            if (containsCapability(t, "Range") || containsCapability(t, "RangeBatch"))
+                throw new CompileError(line, "FileIO-backed ranges cannot be stored in collections",
+                        "FILEIO_COLLECTION_ESCAPE");
             if (elemType == null) {
                 elemType = t;
             } else {
@@ -1542,6 +1573,104 @@ public class ExpressionTyper {
         }
     }
 
+    private static boolean isNegativeIntegerLiteral(String expression) {
+        java.math.BigInteger value = evaluateIntegerConstant(expression);
+        return value != null && value.signum() < 0;
+    }
+
+    private static boolean isNegativeIntegerLiteral(String expression, TypeEnv env) {
+        java.math.BigInteger value = integerConstant(expression, env);
+        return value != null && value.signum() < 0;
+    }
+
+    private static boolean isNonnegativeIntegerLiteral(String expression) {
+        java.math.BigInteger value = evaluateIntegerConstant(expression);
+        return value != null && value.signum() >= 0;
+    }
+
+    private static boolean isNonnegativeIntegerLiteral(String expression, TypeEnv env) {
+        java.math.BigInteger value = integerConstant(expression, env);
+        return value != null && value.signum() >= 0;
+    }
+
+    private static int fileIoParameterAccess(Function function, String parameter) {
+        int access = 0;
+        String owner = java.util.regex.Pattern.quote(parameter);
+        java.util.regex.Pattern operations = java.util.regex.Pattern.compile(
+                "\\b" + owner + "\\s*\\.\\s*(read|chunks|open|write|sync|close)\\s*\\(");
+        for (Stmt statement : function.body) {
+            java.util.regex.Matcher matcher = operations.matcher(
+                    (statement.text == null ? "" : statement.text) + " "
+                            + (statement.a == null ? "" : statement.a) + " "
+                            + (statement.b == null ? "" : statement.b));
+            while (matcher.find()) {
+                if ("read".equals(matcher.group(1)) || "chunks".equals(matcher.group(1))) access |= 1;
+                else access |= 2;
+            }
+        }
+        if (function.resultExpression != null) {
+            java.util.regex.Matcher matcher = operations.matcher(function.resultExpression);
+            while (matcher.find()) {
+                if ("read".equals(matcher.group(1)) || "chunks".equals(matcher.group(1))) access |= 1;
+                else access |= 2;
+            }
+        }
+        return access == 1 ? 1 : access;
+    }
+
+    private static java.math.BigInteger integerConstant(String expression, TypeEnv env) {
+        java.math.BigInteger value = evaluateIntegerConstant(expression);
+        if (value != null || env == null || expression == null) return value;
+        return env.finiteIntegerConstant(expression.trim());
+    }
+
+    static java.math.BigInteger evaluateIntegerConstant(String expression) {
+        if (expression == null) return null;
+        String value = expression.trim().replace("_", "");
+        while (value.startsWith("(") && value.endsWith(")")) {
+            int depth = 0;
+            boolean wraps = true;
+            for (int i = 0; i < value.length(); i++) {
+                if (value.charAt(i) == '(') depth++;
+                else if (value.charAt(i) == ')' && --depth == 0 && i != value.length() - 1) {
+                    wraps = false;
+                    break;
+                }
+            }
+            if (!wraps) break;
+            value = value.substring(1, value.length() - 1).trim();
+        }
+        if (value.matches("\\d+")) {
+            try { return new java.math.BigInteger(value); }
+            catch (NumberFormatException ignored) { return null; }
+        }
+        for (String operators : List.of("+-", "*/%")) {
+            int depth = 0;
+            for (int i = value.length() - 1; i > 0; i--) {
+                char ch = value.charAt(i);
+                if (ch == ')') depth++;
+                else if (ch == '(') depth--;
+                else if (depth == 0 && operators.indexOf(ch) >= 0) {
+                    java.math.BigInteger left = evaluateIntegerConstant(value.substring(0, i));
+                    java.math.BigInteger right = evaluateIntegerConstant(value.substring(i + 1));
+                    if (left == null || right == null) return null;
+                    switch (ch) {
+                        case '+': return left.add(right);
+                        case '-': return left.subtract(right);
+                        case '*': return left.multiply(right);
+                        case '/': return right.signum() == 0 ? null : left.divide(right);
+                        case '%': return right.signum() == 0 ? null : left.remainder(right);
+                    }
+                }
+            }
+        }
+        if (value.startsWith("-")) {
+            java.math.BigInteger operand = evaluateIntegerConstant(value.substring(1));
+            return operand == null ? null : operand.negate();
+        }
+        return null;
+    }
+
     private TypeRef inferMethodCall(String target, String member, List<String> argExprs, int line, TypeEnv env) {
         TypeRef targetType = infer(target, line, env);
         targetType = solver.resolve(targetType);
@@ -1553,6 +1682,9 @@ public class ExpressionTyper {
                     String argument = argExprs.get(index).trim();
                     if (index == 1 && ("ro".equals(argument) || "rw".equals(argument)
                             || "create".equals(argument) || "_".equals(argument))) continue;
+                    if (index == 1)
+                        throw new CompileError(line, "invalid FileIO mode '" + argument + "'",
+                                "FILEIO_INVALID_OPERATION");
                     infer(argument, line, env);
                 }
                 return TypeRef.primitive("FileIO");
@@ -1560,10 +1692,54 @@ public class ExpressionTyper {
             if ("read".equals(member)) {
                 if (argExprs.size() == 1) {
                     String requestExpression = argExprs.get(0).trim();
-                    if (requestExpression.startsWith("[")) return TypeRef.primitive("RangeBatch");
+                    if (requestExpression.startsWith("[")) {
+                        if (!requestExpression.endsWith("]"))
+                            throw new CompileError(line, "malformed FileIO batch requests",
+                                    "FILEIO_INVALID_OPERATION");
+                        String body = requestExpression.substring(1, requestExpression.length() - 1).trim();
+                        java.math.BigInteger totalSize = java.math.BigInteger.ZERO;
+                        for (String request : body.isEmpty() ? List.<String>of()
+                                : parseArguments(body)) {
+                            String pair = request.trim();
+                            if (!pair.startsWith("(") || !pair.endsWith(")"))
+                                throw new CompileError(line, "each FileIO batch request must be an (offset, size) pair",
+                                        "FILEIO_INVALID_OPERATION");
+                            List<String> coordinates = parseArguments(pair.substring(1, pair.length() - 1));
+                            if (coordinates.size() != 2)
+                                throw new CompileError(line, "each FileIO batch request must have two coordinates",
+                                        "FILEIO_INVALID_OPERATION");
+                            TypeRef offset = solver.resolve(infer(coordinates.get(0), line, env));
+                            TypeRef size = solver.resolve(infer(coordinates.get(1), line, env));
+                            if (offset == null || size == null || !"int".equals(offset.name())
+                                    || !"int".equals(size.name()))
+                                throw new CompileError(line, "FileIO batch offsets and sizes must be Int",
+                                        "FILEIO_INVALID_OPERATION");
+                            if (isNegativeIntegerLiteral(coordinates.get(0), env))
+                                throw new CompileError(line, "FileIO request offset must be nonnegative",
+                                        "FILEIO_INVALID_BOUND");
+                            if (!isNonnegativeIntegerLiteral(coordinates.get(0), env))
+                                throw new CompileError(line, "FileIO batch offset requires a compiler-proven finite bound",
+                                        "FILEIO_UNBOUNDED_REQUEST");
+                            if (isNegativeIntegerLiteral(coordinates.get(1), env))
+                                throw new CompileError(line, "FileIO request size must be nonnegative",
+                                        "FILEIO_INVALID_BOUND");
+                            if (!isNonnegativeIntegerLiteral(coordinates.get(1), env))
+                                throw new CompileError(line, "FileIO batch size requires a compiler-proven finite bound",
+                                        "FILEIO_UNBOUNDED_REQUEST");
+                            java.math.BigInteger requestSize = integerConstant(coordinates.get(1), env);
+                            totalSize = totalSize.add(requestSize);
+                            if (totalSize.compareTo(java.math.BigInteger.valueOf(Long.MAX_VALUE)) > 0)
+                                throw new CompileError(line, "FileIO batch total size exceeds the supported finite bound",
+                                        "FILEIO_UNBOUNDED_REQUEST");
+                        }
+                        return TypeRef.primitive("RangeBatch");
+                    }
                     TypeRef requests = solver.resolve(infer(requestExpression, line, env));
+                    if (requests == null || requests.kind() != TypeKind.Builtin
+                            || !"vector".equals(requests.name()) || requests.typeArgs().size() != 1)
+                        throw new CompileError(line, "FileIO.read expects a vector of (offset, size) requests",
+                                "FILEIO_INVALID_OPERATION");
                     if (env.isBoundedFileIoRequests(requestExpression)
-                            && requests.kind() == TypeKind.Builtin && "vector".equals(requests.name())
                             && requests.typeArgs().size() == 1) {
                         String requestType = solver.resolve(requests.typeArgs().get(0)).name();
                         ObjectType request = objects.get(requestType);
@@ -1580,6 +1756,15 @@ public class ExpressionTyper {
                 }
                 requireArgumentCount(line, "FileIO.read", argExprs, 2, 2);
                 for (String argument : argExprs) infer(argument, line, env);
+                if (isNegativeIntegerLiteral(argExprs.get(0), env))
+                    throw new CompileError(line, "FileIO read offset must be nonnegative",
+                            "FILEIO_INVALID_BOUND");
+                if (isNegativeIntegerLiteral(argExprs.get(1), env))
+                    throw new CompileError(line, "FileIO read size must be nonnegative",
+                            "FILEIO_INVALID_BOUND");
+                if (!isNonnegativeIntegerLiteral(argExprs.get(1), env))
+                    throw new CompileError(line, "FileIO read size requires a compiler-proven finite bound",
+                            "FILEIO_UNBOUNDED_REQUEST");
                 return TypeRef.primitive("Range");
             }
             if ("write".equals(member)) {
@@ -1595,7 +1780,9 @@ public class ExpressionTyper {
                             "FileIO.write payload must be String or Range", "FILEIO_INVALID_PAYLOAD");
                 boolean literalString = payloadExpression.length() >= 2
                         && payloadExpression.startsWith("\"") && payloadExpression.endsWith("\"");
-                if (!literalString)
+                boolean boundedString = env.isBoundedString(payloadExpression)
+                        || payloadExpression.matches("(?s)\\s*\"[^\"]*\"(?:\\s*\\+\\s*\"[^\"]*\")+\\s*");
+                if (!literalString && !boundedString)
                     throw new CompileError(line,
                             "FileIO.write String payload requires a compiler-proven finite bound",
                             "FILEIO_UNBOUNDED_REQUEST");
@@ -1614,8 +1801,17 @@ public class ExpressionTyper {
             if ("chunks".equals(member)) {
                 requireArgumentCount(line, "FileIO.chunks", argExprs, 1, 1);
                 for (String argument : argExprs) infer(argument, line, env);
+                if (isNegativeIntegerLiteral(argExprs.get(0), env)
+                        || java.math.BigInteger.ZERO.equals(integerConstant(argExprs.get(0), env)))
+                    throw new CompileError(line, "FileIO chunk size must be positive",
+                            "FILEIO_INVALID_BOUND");
+                if (!isNonnegativeIntegerLiteral(argExprs.get(0), env))
+                    throw new CompileError(line, "FileIO chunk size requires a compiler-proven finite bound",
+                            "FILEIO_UNBOUNDED_REQUEST");
                 return TypeRef.builtin("vector", List.of(TypeRef.primitive("Range")));
             }
+            throw new CompileError(line, "FileIO has no source operation '" + member + "'",
+                    "FILEIO_INVALID_OPERATION");
         }
 
         if (targetType.kind() == TypeKind.Builtin && "vector".equals(targetType.name())) {

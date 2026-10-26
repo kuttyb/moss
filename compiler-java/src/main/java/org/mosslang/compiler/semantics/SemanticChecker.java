@@ -598,6 +598,12 @@ public class SemanticChecker {
                 if (!fieldNames.add(f.name)) {
                     throw new CompileError(f.line, "duplicate field '" + f.name + "' in type '" + o.name + "'", "DUPLICATE_FIELD");
                 }
+                TypeRef fieldType = f.typeRef != null ? f.typeRef
+                        : (f.type == null || f.type.isBlank() ? null : TypeParser.parseCanonical(f.type));
+                if (containsRangeCapability(fieldType))
+                    throw new CompileError(f.line,
+                            "FileIO-backed ranges cannot be stored in object fields or collections",
+                            "FILEIO_COLLECTION_ESCAPE");
             }
         }
         for (ObjectType o : program.objects) {
@@ -657,6 +663,12 @@ public class SemanticChecker {
                 if (!stateNames.add(s.name)) {
                     throw new CompileError(s.line, "duplicate domain state '" + s.name + "' in domain '" + d.name + "'", "DUPLICATE_STATE");
                 }
+                TypeRef stateType = s.typeRef != null ? s.typeRef
+                        : (s.type == null || s.type.isBlank() ? null : TypeParser.parseCanonical(s.type));
+                if (stateType != null && ("Range".equals(stateType.toCanonicalString())
+                        || "RangeBatch".equals(stateType.toCanonicalString())))
+                    throw new CompileError(s.line, "FileIO-backed ranges cannot be stored in domain state",
+                            "RANGE_STATE_ESCAPE");
                 if (s.init != null && !s.init.isEmpty() && s.type != null && !s.type.isEmpty()) {
                     TypeSolver stateSolver = new TypeSolver(sessionCounter++);
                     ExpressionTyper stateTyper = new ExpressionTyper(program, typeContext, stateSolver, functions, domains, objects, enums, traits);
@@ -1248,6 +1260,10 @@ public class SemanticChecker {
         for (Param p : handler.params) {
             TypeRef t = p.typeRef != null ? p.typeRef :
                     (p.type != null && !p.type.isEmpty() ? TypeParser.parseCanonical(p.type) : solver.fresh(0));
+            if (containsFileIoBoundaryValue(t))
+                throw new CompileError(handler.line,
+                        "handler parameters cannot contain FileIO-backed capabilities",
+                        "FILEIO_BOUNDARY_ESCAPE");
             env.put(p.name, t != null ? t : solver.fresh(0));
             payloads.add(p.name);
         }
@@ -1257,6 +1273,7 @@ public class SemanticChecker {
                 (handler.replyType != null && !handler.replyType.isEmpty() ? TypeParser.parseCanonical(handler.replyType) : solver.fresh(0));
 
         env = checkBlock(handler.body, 0, handler.body.size(), env, typer, solver, true, handler.name, expectedReply);
+        validateHandlerFileIoRangeEscape(domain, handler);
         for (Stmt statement : handler.body) {
             if (statement.kind != Stmt.Kind.Let && statement.kind != Stmt.Kind.Var
                     && statement.kind != Stmt.Kind.Assign) continue;
@@ -1815,7 +1832,22 @@ public class SemanticChecker {
             }
         }
         computeFileIoFunctionLifecycleSummaries();
-        for (Function function : program.functions) validateFunctionFileIoLifecycle(function);
+        for (Function function : program.functions) {
+            validateFunctionFileIoLifecycle(function);
+            validateFunctionFileIoRangeEscape(function);
+        }
+        for (Domain domain : program.domains) {
+            for (Handler handler : domain.handlers) {
+                Function lifecycle = new Function();
+                lifecycle.name = domain.name + "." + handler.name;
+                lifecycle.line = handler.line;
+                lifecycle.sourceFile = handler.sourceFile;
+                lifecycle.body.addAll(handler.body);
+                lifecycle.params.addAll(handler.params);
+                validateFunctionFileIoLifecycle(lifecycle);
+                validateDomainFileIoLifecycle(domain, handler);
+            }
+        }
         validateSharedInferredFunctionArguments();
     }
 
@@ -2449,7 +2481,6 @@ public class SemanticChecker {
             validateExecutorLifecycle(program.main.body);
             validateDirectMainRaises(program.main.body);
             validateMainFileIoRaises(program.main.body, env);
-            validateMainFileIoLifecycle(program.main.body);
             validateMainFunctionRaises(program.main.body);
             validateMainMethodRaises(program.main.body, env, solver);
             validateRootIngressRaiseTotality(program.main.body, env, solver);
@@ -2465,6 +2496,7 @@ public class SemanticChecker {
                     }
                 }
             }
+            validateMainFileIoLifecycle(program.main.body);
             for (Map.Entry<String, TypeRef> entry : env.typeEnv.getBindings().entrySet()) {
                 TypeRef resolved = solver.resolve(entry.getValue());
                 int bLine = env.bindingLines.getOrDefault(entry.getKey(), program.main.line);
@@ -2691,6 +2723,7 @@ public class SemanticChecker {
     }
 
     private void validateMainFileIoLifecycle(List<Stmt> statements) {
+        validateFileIoRangeBatchLifetimes(statements);
         Map<String, Integer> result = fileIoLifecycleBlock(statements, 0, statements.size(), 0,
                 new LinkedHashMap<>(), false);
         for (Map.Entry<String, Integer> owner : result.entrySet()) {
@@ -2869,6 +2902,7 @@ public class SemanticChecker {
 
     private void validateFunctionFileIoLifecycle(Function function) {
         List<Stmt> statements = fileIoLifecycleStatements(function);
+        validateFileIoRangeBatchLifetimes(statements);
         Map<String, Integer> borrowedOwners = new LinkedHashMap<>();
         for (Param parameter : function.params) {
             if (isFileIoLifecycleParameter(function, parameter))
@@ -2877,6 +2911,63 @@ public class SemanticChecker {
         int baseIndent = statements.isEmpty() ? 0 : statements.get(0).indent;
         fileIoLifecycleBlock(statements, 0, statements.size(), baseIndent,
                 borrowedOwners, true);
+    }
+
+    private void validateFileIoRangeBatchLifetimes(List<Stmt> statements) {
+        Map<String, Integer> batchGeneration = new LinkedHashMap<>();
+        Map<String, Map.Entry<String, Integer>> rangeOrigins = new LinkedHashMap<>();
+        for (Stmt statement : statements) {
+            if (statement == null) continue;
+            String expressions = statementExpressions(statement);
+            for (Map.Entry<String, Map.Entry<String, Integer>> origin : rangeOrigins.entrySet()) {
+                if (containsIdentifier(expressions, origin.getKey())
+                        && !Objects.equals(batchGeneration.getOrDefault(origin.getValue().getKey(), 0),
+                                origin.getValue().getValue())) {
+                    throw new CompileError(statement.line,
+                            "Range '" + origin.getKey() + "' outlived its RangeBatch",
+                            "RANGE_BATCH_LIFETIME");
+                }
+            }
+            if (statement.kind != Stmt.Kind.Assign && statement.kind != Stmt.Kind.Let
+                    && statement.kind != Stmt.Kind.Var) continue;
+            String target = statement.a == null ? "" : statement.a.trim();
+            String rhs = statement.b == null ? "" : statement.b.trim();
+            if (target.isEmpty()) continue;
+            String type = statement.semanticType == null ? "" : statement.semanticType.trim();
+            if ("RangeBatch".equals(type) || isFileIoBatchRead(rhs))
+                batchGeneration.put(target, batchGeneration.getOrDefault(target, 0) + 1);
+            if ("Range".equals(type)) {
+                String source = indexedIdentifier(rhs);
+                if (source != null && batchGeneration.containsKey(source))
+                    rangeOrigins.put(target, Map.entry(source, batchGeneration.get(source)));
+                else if (rangeOrigins.containsKey(rhs))
+                    rangeOrigins.put(target, rangeOrigins.get(rhs));
+                else rangeOrigins.remove(target);
+            } else {
+                rangeOrigins.remove(target);
+            }
+        }
+    }
+
+    private static boolean isFileIoBatchRead(String expression) {
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile(
+                "\\b[A-Za-z_][A-Za-z0-9_]*\\s*\\.\\s*read\\s*\\((.*)\\)",
+                java.util.regex.Pattern.DOTALL).matcher(expression);
+        if (!matcher.matches()) return false;
+        List<String> arguments = ExpressionTyper.parseArguments(matcher.group(1));
+        return arguments.size() == 1;
+    }
+
+    private static String indexedIdentifier(String expression) {
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile(
+                "^([A-Za-z_][A-Za-z0-9_]*)\\s*\\[.*]$", java.util.regex.Pattern.DOTALL)
+                .matcher(expression);
+        return matcher.matches() ? matcher.group(1) : null;
+    }
+
+    private static boolean containsIdentifier(String expression, String identifier) {
+        return java.util.regex.Pattern.compile("\\b" + java.util.regex.Pattern.quote(identifier) + "\\b")
+                .matcher(expression == null ? "" : expression).find();
     }
 
     private boolean isFileIoLifecycleParameter(Function function, Param parameter) {
@@ -2893,6 +2984,110 @@ public class SemanticChecker {
                 && operation.matcher(function.resultExpression).matches();
     }
 
+    private void validateDomainFileIoLifecycle(Domain domain, Handler handler) {
+        Map<String, Integer> state = new LinkedHashMap<>();
+        for (Field field : domain.state) {
+            if (!"FileIO".equals(field.type)) continue;
+            String owner = java.util.regex.Pattern.quote(field.name);
+            java.util.regex.Pattern opens = java.util.regex.Pattern.compile(
+                    "\\b" + owner + "\\s*\\.\\s*open\\s*\\(");
+            if (handler.body.stream().anyMatch(statement -> opens.matcher(statementExpressions(statement)).find()))
+                state.put(field.name, 2);
+        }
+        if (state.isEmpty()) return;
+        List<Stmt> statements = new ArrayList<>(handler.body);
+        int baseIndent = statements.isEmpty() ? 0 : statements.get(0).indent;
+        fileIoLifecycleBlock(statements, 0, statements.size(), baseIndent, state, false);
+    }
+
+    private static boolean isFileIoCapability(TypeRef type) {
+        return type != null && "FileIO".equals(type.toCanonicalString());
+    }
+
+    private static boolean containsFileIoBoundaryValue(TypeRef type) {
+        if (type == null) return false;
+        String name = type.name();
+        if ("FileIO".equals(name) || "Range".equals(name) || "RangeBatch".equals(name)) return true;
+        for (TypeRef argument : type.typeArgs())
+            if (containsFileIoBoundaryValue(argument)) return true;
+        return false;
+    }
+
+    private static boolean containsRangeCapability(TypeRef type) {
+        if (type == null) return false;
+        if ("Range".equals(type.name()) || "RangeBatch".equals(type.name())) return true;
+        for (TypeRef argument : type.typeArgs())
+            if (containsRangeCapability(argument)) return true;
+        return false;
+    }
+
+    private void validateFunctionFileIoRangeEscape(Function function) {
+        Set<String> batchOwners = new HashSet<>();
+        for (Stmt statement : function.body) {
+            if (("RangeBatch".equals(statement.semanticType)
+                    || (statement.b != null && isFileIoBatchReadExpression(statement.b)))
+                    && statement.a != null) batchOwners.add(statement.a.trim());
+        }
+        for (Stmt statement : function.body) {
+            if (statement.kind != Stmt.Kind.Return) continue;
+            String expression = statement.a == null ? "" : statement.a.trim();
+            if (expression.isEmpty() && statement.text != null) {
+                String text = statement.text.trim();
+                if (text.startsWith("return ")) expression = text.substring(7).trim();
+            }
+            if (expression.matches("(?s).*\\b[A-Za-z_][A-Za-z0-9_]*\\s*\\.\\s*(read|chunks)\\s*\\(\\s*[^)].*"
+                    ) || returnsIndexedBatchRange(expression, batchOwners))
+                throw new CompileError(statement.line,
+                        "a FileIO-backed Range cannot escape the lifetime of its owner",
+                        "FILEIO_PINNED_OWNERSHIP");
+        }
+        if (function.resultExpression != null
+                && (function.resultExpression.matches("(?s).*\\b[A-Za-z_][A-Za-z0-9_]*\\s*\\.\\s*(read|chunks)\\s*\\(\\s*[^)].*"
+                    ) || returnsIndexedBatchRange(function.resultExpression, batchOwners)))
+            throw new CompileError(function.resultLine != 0 ? function.resultLine : function.line,
+                    "a FileIO-backed Range cannot escape the lifetime of its owner",
+                    "FILEIO_PINNED_OWNERSHIP");
+    }
+
+    private void validateHandlerFileIoRangeEscape(Domain domain, Handler handler) {
+        Set<String> fileOwners = new HashSet<>();
+        Set<String> batchOwners = new HashSet<>();
+        for (Field field : domain.state)
+            if ("FileIO".equals(field.type)) fileOwners.add(field.name);
+        for (Stmt statement : handler.body)
+            if (statement.a != null && statement.b != null && isFileIoBatchReadExpression(statement.b))
+                batchOwners.add(statement.a.trim());
+        for (Stmt statement : handler.body) {
+            if (statement.kind != Stmt.Kind.Reply) continue;
+            String expression = statement.a == null ? "" : statement.a.trim();
+            if (expression.startsWith("reply ")) expression = expression.substring(6).trim();
+            if (("Range".equals(handler.replyType) || "RangeBatch".equals(handler.replyType))
+                    && returnsIndexedBatchRange(expression, batchOwners))
+                throw new CompileError(statement.line,
+                        "a FileIO-backed Range cannot cross a domain handler boundary",
+                        "FILEIO_BOUNDARY_ESCAPE");
+            for (String owner : fileOwners) {
+                if (expression.matches("(?s).*\\b" + java.util.regex.Pattern.quote(owner)
+                        + "\\s*\\.\\s*(read|chunks)\\s*\\(\\s*[^)].*"))
+                    throw new CompileError(statement.line,
+                            "a FileIO-backed Range cannot cross a domain handler boundary",
+                            "FILEIO_BOUNDARY_ESCAPE");
+            }
+        }
+    }
+
+    private static boolean isFileIoBatchReadExpression(String expression) {
+        return expression != null && expression.matches(
+                "(?s).*\\b[A-Za-z_][A-Za-z0-9_]*\\s*\\.\\s*read\\s*\\(\\s*\\[.*");
+    }
+
+    private static boolean returnsIndexedBatchRange(String expression, Set<String> batchOwners) {
+        for (String owner : batchOwners)
+            if (expression.matches("(?s).*\\b" + java.util.regex.Pattern.quote(owner)
+                    + "\\s*\\[.*\\].*")) return true;
+        return false;
+    }
+
     private Map<String, Integer> fileIoLifecycleBlock(List<Stmt> statements, int start, int end,
                                                                int indent, Map<String, Integer> incoming,
                                                                boolean scoped) {
@@ -2905,6 +3100,8 @@ public class SemanticChecker {
             if (statement.indent > indent) { index++; continue; }
             if (statement.kind == Stmt.Kind.If || statement.kind == Stmt.Kind.While
                     || statement.kind == Stmt.Kind.For || statement.kind == Stmt.Kind.Try) {
+                if (statement.kind == Stmt.Kind.If || statement.kind == Stmt.Kind.While)
+                    applyFileIoFunctionLifecycleSummaries(statementExpressions(statement), state);
                 int bodyEnd = index + 1;
                 while (bodyEnd < end && statements.get(bodyEnd).indent > statement.indent) bodyEnd++;
                 Map<String, Integer> first = fileIoLifecycleBlock(statements, index + 1, bodyEnd,
@@ -3050,10 +3247,24 @@ public class SemanticChecker {
     }
 
     private static int fileIoOpenState(String expression) {
-        int open = expression == null ? -1 : expression.indexOf('(');
-        int close = matchingCloseParen(expression, open);
+        String source = expression == null ? "" : expression.trim();
+        while (source.startsWith("(") && source.endsWith(")")) {
+            int depth = 0;
+            boolean wraps = true;
+            for (int i = 0; i < source.length(); i++) {
+                if (source.charAt(i) == '(') depth++;
+                else if (source.charAt(i) == ')' && --depth == 0 && i != source.length() - 1) {
+                    wraps = false;
+                    break;
+                }
+            }
+            if (!wraps) break;
+            source = source.substring(1, source.length() - 1).trim();
+        }
+        int open = source.indexOf('(');
+        int close = matchingCloseParen(source, open);
         List<String> arguments = open >= 0 && close > open
-                ? ExpressionTyper.parseArguments(expression.substring(open + 1, close)) : List.of();
+                ? ExpressionTyper.parseArguments(source.substring(open + 1, close)) : List.of();
         if (arguments.size() < 2) return 4;
         String mode = arguments.get(1).trim();
         if (mode.equals("ro")) return 3;
@@ -5752,6 +5963,20 @@ public class SemanticChecker {
         }
     }
 
+    private static void updateFiniteIntegerConstant(String name, String expression, OwnershipEnv env) {
+        java.math.BigInteger value = ExpressionTyper.evaluateIntegerConstant(expression);
+        if (value == null && expression != null)
+            value = env.typeEnv.finiteIntegerConstant(expression.trim());
+        env.typeEnv.putFiniteIntegerConstant(name, value);
+    }
+
+    private static void updateBoundedString(String name, String expression, OwnershipEnv env) {
+        String value = expression == null ? "" : expression.trim();
+        boolean bounded = value.matches("(?s)\"(?:[^\"\\\\]|\\\\.)*\"(?:\\s*\\+\\s*\"(?:[^\"\\\\]|\\\\.)*\")*")
+                || env.typeEnv.isBoundedString(value);
+        if (bounded) env.typeEnv.markBoundedString(name);
+    }
+
     private void checkStatement(Stmt s, OwnershipEnv env, ExpressionTyper typer, TypeSolver solver,
                                 boolean insideHandler, String enclosingName, TypeRef expectedType) {
         if (s == null) return;
@@ -5777,14 +6002,24 @@ public class SemanticChecker {
 
                 // Check RHS expression availability before consuming
                 requireAvailable(s.line, expr, env);
+                if (env.typeEnv.isBoundedFileIoRequests(expr))
+                    throw new CompileError(s.line,
+                            "copying a bounded FileIO request vector loses its finite proof",
+                            "FILEIO_UNBOUNDED_REQUEST");
 
                 TypeRef inferred = typer.infer(expr, s.line, env.typeEnv);
                 env.put(varName, inferred, s.line);
                 updateFileIoRequestBound(varName, expr, env);
+                updateFiniteIntegerConstant(varName, expr, env);
+                updateBoundedString(varName, expr, env);
                 if (s.kind == Stmt.Kind.Let) {
                     env.immutables.add(varName);
                 }
 
+                if (env.containsKey(expr) && isFileIoCapability(solver.resolve(env.get(expr))))
+                    throw new CompileError(s.line,
+                            "FileIO ownership is pinned and cannot be reassigned",
+                            "FILEIO_PINNED_OWNERSHIP");
                 // If expr is a bare identifier referring to a transfer type, consume it
                 if (env.containsKey(expr) && transferType(env.get(expr))) {
                     consumeBinding(s.line, expr, env, varName);
@@ -5890,9 +6125,19 @@ public class SemanticChecker {
 
                 // If not already in scope, assignment introduces local variable
                 if (!env.containsKey(varName)) {
+                    if (env.typeEnv.isBoundedFileIoRequests(expr))
+                        throw new CompileError(s.line,
+                                "copying a bounded FileIO request vector loses its finite proof",
+                                "FILEIO_UNBOUNDED_REQUEST");
                     TypeRef inferred = typer.infer(expr, s.line, env.typeEnv);
                     env.put(varName, inferred, s.line);
                     updateFileIoRequestBound(varName, expr, env);
+                    updateFiniteIntegerConstant(varName, expr, env);
+                    updateBoundedString(varName, expr, env);
+                    if (env.containsKey(expr) && isFileIoCapability(solver.resolve(env.get(expr))))
+                        throw new CompileError(s.line,
+                                "FileIO ownership is pinned and cannot be reassigned",
+                                "FILEIO_PINNED_OWNERSHIP");
                     if (env.containsKey(expr) && transferType(env.get(expr))) {
                         consumeBinding(s.line, expr, env, varName);
                     } else if (!consumeOwnedFieldProjection(s.line, expr, inferred, env, varName)) {
@@ -5902,15 +6147,25 @@ public class SemanticChecker {
                 }
 
                 TypeRef targetType = env.get(varName);
+                if (isFileIoCapability(solver.resolve(targetType)))
+                    throw new CompileError(s.line,
+                            "FileIO ownership is pinned and cannot be reassigned",
+                            "FILEIO_PINNED_OWNERSHIP");
                 TypeRef inferred = typer.infer(expr, s.line, env.typeEnv);
                 if (!solver.unify(targetType, inferred)) {
                     throw new CompileError(s.line, "type mismatch in assignment to '" + varName + "': expected '" +
                             solver.resolve(targetType).toCanonicalString() + "', got '" + solver.resolve(inferred).toCanonicalString() + "'", "TYPE_MISMATCH");
                 }
                 updateFileIoRequestBound(varName, expr, env);
+                updateFiniteIntegerConstant(varName, expr, env);
+                updateBoundedString(varName, expr, env);
                 // A mutable local may be reinitialized after ownership transfer.
                 // Clear its consumed state before recording transfers in the RHS.
                 env.moved.remove(varName);
+                if (env.containsKey(expr) && isFileIoCapability(solver.resolve(env.get(expr))))
+                    throw new CompileError(s.line,
+                            "FileIO ownership is pinned and cannot be reassigned",
+                            "FILEIO_PINNED_OWNERSHIP");
                 if (env.containsKey(expr) && transferType(env.get(expr))) {
                     consumeBinding(s.line, expr, env, varName);
                 } else if (!consumeOwnedFieldProjection(s.line, expr, inferred, env, varName)) {
