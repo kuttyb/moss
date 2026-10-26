@@ -17032,3 +17032,15 @@ All six mocked `scripts/java/test_jdt_client.py` lifecycle tests pass. The
 live JDT daemon is not running and no `eclipse` executable is installed, so
 live daemon startup/build/stop remains unverified. No Rust compilation or
 native execution was performed.
+
+### Phase 25.3 correction — Java Fast Debug Executor behavior
+
+A direct interpreter differential on `tests/phase20_executor_multi_root.moss`
+showed C++ stdout `10` while Java silently returned `0`. Java Fast Debug now
+evaluates Executor configuration values, snapshots domain targets and handler
+arguments at `invoke`, executes queued roots in submission order at `join`,
+and emits the corresponding Executor trace events. The fixture's Java stdout
+and full structured trace now compare byte-for-byte with C++. All 12 Java test
+classes pass under ABI-v9 and staged ABI-v10. FileIO remains an intentional
+Fast Debug limitation; native Executor behavior is still deferred to the
+frozen-candidate gate.

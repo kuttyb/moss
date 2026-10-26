@@ -279,6 +279,20 @@ public class FastInterpreter {
         }
     }
 
+    private static final class PreparedHandlerCall {
+        final DomainInstance instance;
+        final Handler handler;
+        final List<Value> arguments;
+        final Stmt statement;
+
+        PreparedHandlerCall(DomainInstance instance, Handler handler, List<Value> arguments, Stmt statement) {
+            this.instance = instance;
+            this.handler = handler;
+            this.arguments = List.copyOf(arguments);
+            this.statement = statement;
+        }
+    }
+
     private final Program program;
     private final boolean trace;
     private final PrintStream stdout;
@@ -300,6 +314,8 @@ public class FastInterpreter {
     private String traceSemanticIdentity = "main@1";
     private boolean deferDomainStateTrace = false;
     private int deferredSourceArgumentReads = 0;
+    private final Map<String, List<PreparedHandlerCall>> fastDebugExecutors = new HashMap<>();
+    private PreparedHandlerCall preparedMessageCall;
 
     private String traceIdentity() {
         return traceSemanticIdentity;
@@ -1222,6 +1238,109 @@ public class FastInterpreter {
         return declarations;
     }
 
+    private PreparedHandlerCall prepareExecutorHandlerCall(String invocation, Stmt statement,
+                                                           Map<String, Value> locals,
+                                                           String function, int depth) {
+        ParsedCall parsed = parseCall(invocation);
+        if (parsed == null) throw new ExecutionError(statement.line, "malformed Executor.invoke handler call");
+        int member = lastTopLevelDot(parsed.callee);
+        if (member <= 0) throw new ExecutionError(statement.line, "Executor.invoke requires a domain handler call");
+        String receiver = parsed.callee.substring(0, member).trim();
+        String handlerName = parsed.callee.substring(member + 1).trim();
+        Value target = evalExpr(receiver, locals, null);
+        if (target.kind != Value.Kind.DOMAIN)
+            throw new ExecutionError(statement.line, "Executor.invoke target is not a domain instance");
+        DomainInstance instance = target.asDomain();
+        Handler handler = instance.domain.handlers.stream()
+                .filter(candidate -> candidate.name.equals(handlerName)).findFirst()
+                .orElseThrow(() -> new ExecutionError(statement.line,
+                        "domain '" + instance.domain.name + "' has no handler '" + handlerName + "'"));
+        if (handler.params.size() != parsed.arguments.size())
+            throw new ExecutionError(statement.line, "Executor.invoke handler argument count mismatch");
+        List<Value> arguments = new ArrayList<>();
+        for (String argument : parsed.arguments) {
+            int named = topLevelColon(argument);
+            String expression = named >= 0 ? argument.substring(named + 1).trim() : argument.trim();
+            arguments.add(copyReturnedValue(evalExpr(expression, locals, null)));
+        }
+        Stmt message = new Stmt(Stmt.Kind.Message, statement.line, statement.indent,
+                invocation, statement.sourceFile);
+        message.a = receiver;
+        message.b = handlerName;
+        message.args.addAll(parsed.arguments);
+        return new PreparedHandlerCall(instance, handler, arguments, message);
+    }
+
+    private record ParsedCall(String callee, List<String> arguments) {}
+
+    private static ParsedCall parseCall(String expression) {
+        String value = expression == null ? "" : expression.trim();
+        int open = value.indexOf('(');
+        if (open <= 0 || !value.endsWith(")")) return null;
+        int depth = 0;
+        boolean quoted = false;
+        for (int index = open; index < value.length(); index++) {
+            char ch = value.charAt(index);
+            if (ch == '"' && (index == 0 || value.charAt(index - 1) != '\\')) quoted = !quoted;
+            if (quoted) continue;
+            if (ch == '(') depth++;
+            else if (ch == ')' && --depth == 0) {
+                if (index != value.length() - 1) return null;
+                String arguments = value.substring(open + 1, index).trim();
+                return new ParsedCall(value.substring(0, open).trim(),
+                        arguments.isEmpty() ? List.of() : splitArgs(arguments));
+            }
+        }
+        return null;
+    }
+
+    private static int lastTopLevelDot(String expression) {
+        int depth = 0;
+        boolean quoted = false;
+        int last = -1;
+        for (int index = 0; index < expression.length(); index++) {
+            char ch = expression.charAt(index);
+            if (ch == '"' && (index == 0 || expression.charAt(index - 1) != '\\')) quoted = !quoted;
+            if (quoted) continue;
+            if (ch == '(' || ch == '[' || ch == '{') depth++;
+            else if (ch == ')' || ch == ']' || ch == '}') depth--;
+            else if (ch == '.' && depth == 0) last = index;
+        }
+        return last;
+    }
+
+    private static int topLevelColon(String expression) {
+        int depth = 0;
+        boolean quoted = false;
+        for (int index = 0; index < expression.length(); index++) {
+            char ch = expression.charAt(index);
+            if (ch == '"' && (index == 0 || expression.charAt(index - 1) != '\\')) quoted = !quoted;
+            if (quoted) continue;
+            if (ch == '(' || ch == '[' || ch == '{') depth++;
+            else if (ch == ')' || ch == ']' || ch == '}') depth--;
+            else if (ch == ':' && depth == 0) return index;
+        }
+        return -1;
+    }
+
+    private static List<String> parseExecutorConstruction(String expression) {
+        String value = expression == null ? "" : expression.trim();
+        List<String> reverseArguments = new ArrayList<>();
+        while (true) {
+            int dot = lastTopLevelDot(value);
+            if (dot < 0) {
+                ParsedCall base = parseCall(value);
+                if (base == null || !"Executor".equals(base.callee) || !base.arguments.isEmpty()) return null;
+                Collections.reverse(reverseArguments);
+                return reverseArguments;
+            }
+            ParsedCall member = parseCall(value.substring(dot + 1));
+            if (member == null) return null;
+            if (!"start".equals(member.callee)) reverseArguments.addAll(member.arguments);
+            value = value.substring(0, dot).trim();
+        }
+    }
+
     private Value evalStmt(Stmt s, Map<String, Value> locals, DomainInstance currentDomain, String funcName, int depth) {
         if (s == null) return Value.ofUnit();
         switch (s.kind) {
@@ -1237,6 +1356,30 @@ public class FastInterpreter {
             }
             case Call -> {
                 String callee = s.a != null ? s.a.trim() : "";
+                if (fastDebugExecutors.containsKey(callee)) {
+                    if ("invoke".equals(s.b)) {
+                        if (s.args.size() != 1) throw new ExecutionError(s.line, "invalid Executor.invoke call");
+                        PreparedHandlerCall root = prepareExecutorHandlerCall(s.args.get(0), s, locals, funcName, depth);
+                        fastDebugExecutors.get(callee).add(root);
+                        traceSimpleEvent(s, funcName, "root_submit", s.args.get(0), depth);
+                        return Value.ofUnit();
+                    }
+                    if ("join".equals(s.b)) {
+                        List<PreparedHandlerCall> roots = fastDebugExecutors.remove(callee);
+                        if (roots == null) throw new ExecutionError(s.line, "Executor is not active");
+                        for (PreparedHandlerCall root : roots) {
+                            preparedMessageCall = root;
+                            Stmt message = new Stmt(Stmt.Kind.Message, root.statement.line,
+                                    root.statement.indent, root.statement.text, root.statement.sourceFile);
+                            message.a = root.statement.a;
+                            message.b = root.statement.b;
+                            message.args.addAll(root.statement.args);
+                            evalStmt(message, locals, currentDomain, funcName, depth);
+                        }
+                        traceSimpleEvent(s, funcName, "executor_join", callee, depth);
+                        return Value.ofUnit();
+                    }
+                }
                 if (callee.equals("assert")) {
                     String condStr = !s.args.isEmpty() ? s.args.get(0) : "";
                     if (condStr.isEmpty() && s.text.contains("(") && s.text.endsWith(")")) {
@@ -1278,6 +1421,14 @@ public class FastInterpreter {
                     varName = varName.split(":")[0].trim();
                 }
                 String exprStr = s.b != null ? s.b.trim() : "";
+                List<String> executorConfig = parseExecutorConstruction(exprStr);
+                if (executorConfig != null) {
+                    for (String argument : executorConfig) evalExpr(argument, locals, currentDomain);
+                    locals.put(varName, Value.ofUnit());
+                    fastDebugExecutors.put(varName, new ArrayList<>());
+                    traceSimpleEvent(s, funcName, "executor_start", varName, depth);
+                    return Value.ofUnit();
+                }
                 Value val = evalExpr(exprStr, locals, currentDomain);
                 if (val.kind == Value.Kind.DOMAIN && "main".equals(funcName)
                         && isDirectDomainConstruction(exprStr)) {
@@ -1375,32 +1526,44 @@ public class FastInterpreter {
             case Message -> {
                 String targetName = s.a;
                 String handlerName = s.b;
-                Value targetVal = locals.get(targetName);
-                if (targetVal == null && currentDomain != null) targetVal = currentDomain.state.get(targetName);
-                if (targetVal == null || targetVal.kind != Value.Kind.DOMAIN) {
-                    throw new RuntimeException("message target '" + targetName + "' is not an active domain instance");
-                }
-                DomainInstance targetDomain = targetVal.asDomain();
-                Handler handler = null;
-                for (Handler h : targetDomain.domain.handlers) {
-                    if (h.name.equals(handlerName)) {
-                        handler = h;
-                        break;
-                    }
-                }
-                if (handler == null) {
-                    throw new RuntimeException("domain '" + targetDomain.domain.name + "' has no handler '" + handlerName + "'");
-                }
-
-                if (locals.containsKey(targetName)) traceLocalRead(targetName);
-
+                PreparedHandlerCall prepared = preparedMessageCall;
+                preparedMessageCall = null;
+                DomainInstance targetDomain;
+                Handler handler;
                 List<Value> args = new ArrayList<>();
                 StringBuilder argDetails = new StringBuilder();
-                for (int i = 0; i < s.args.size(); i++) {
-                    if (i > 0) argDetails.append(", ");
-                    Value v = evalExpr(s.args.get(i), locals, currentDomain);
-                    args.add(copyReturnedValue(v));
-                    argDetails.append(traceValueSummary(v));
+                if (prepared != null) {
+                    targetDomain = prepared.instance;
+                    handler = prepared.handler;
+                    args.addAll(prepared.arguments);
+                    for (int i = 0; i < args.size(); i++) {
+                        if (i > 0) argDetails.append(", ");
+                        argDetails.append(traceValueSummary(args.get(i)));
+                    }
+                } else {
+                    Value targetVal = locals.get(targetName);
+                    if (targetVal == null && currentDomain != null) targetVal = currentDomain.state.get(targetName);
+                    if (targetVal == null || targetVal.kind != Value.Kind.DOMAIN) {
+                        throw new RuntimeException("message target '" + targetName + "' is not an active domain instance");
+                    }
+                    targetDomain = targetVal.asDomain();
+                    handler = null;
+                    for (Handler candidate : targetDomain.domain.handlers) {
+                        if (candidate.name.equals(handlerName)) {
+                            handler = candidate;
+                            break;
+                        }
+                    }
+                    if (handler == null) {
+                        throw new RuntimeException("domain '" + targetDomain.domain.name + "' has no handler '" + handlerName + "'");
+                    }
+                    if (locals.containsKey(targetName)) traceLocalRead(targetName);
+                    for (int i = 0; i < s.args.size(); i++) {
+                        if (i > 0) argDetails.append(", ");
+                        Value value = evalExpr(s.args.get(i), locals, currentDomain);
+                        args.add(copyReturnedValue(value));
+                        argDetails.append(traceValueSummary(value));
+                    }
                 }
 
                 eventId++;

@@ -1084,3 +1084,16 @@ check; all six mocked JDT client lifecycle tests pass. A live Eclipse daemon is
 unavailable in this environment. Generated Rust has not been compiled or run.
 Physical worker compensation, runtime Root identity/context, and native
 Executor behavior remain open; this is not Executor parity evidence.
+
+### Correction — Java Fast Debug Executor schedule
+
+Running `tests/phase20_executor_multi_root.moss` through both interpreters
+initially produced C++ output `10` and Java output `0`: Java ignored the
+Executor construction, `invoke`, and `join` statements. Java Fast Debug now
+evaluates Executor configuration arguments at construction, snapshots each
+domain target and handler argument at submission, drains queued roots in order
+at `join`, and emits `executor_start`, `root_submit`, and `executor_join`
+events. The existing Phase 20 fixture produces output `10`, and its structured
+trace compares byte-for-byte with C++ including state events. All 12 Java test
+classes pass under ABI-v9 and staged ABI-v10. This is deterministic
+interpreter behavior only; native Executor execution remains unverified.

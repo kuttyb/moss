@@ -46,6 +46,7 @@ public final class FastInterpreterTest {
         testDomainConstructionTraceIsStructured();
         testDomainConstructionTraceUsesBindingName();
         testDomainMessageTraceCarriesHandlerContext();
+        testExecutorFastDebugRunsQueuedRootsAtJoin();
         testLocalArgumentTraceOccursInsideCallee();
         testIndexedStringMapReadTraceRetainsSourceLiteral();
         testNamedDomainStateAndNestedRoutes();
@@ -1084,6 +1085,42 @@ public final class FastInterpreterTest {
                 || !events.contains("\"message_event_id\":3,\"handler_event_id\":4")
                 || !"worker: 10\ncurrent: 10\n".equals(stdout.toString(StandardCharsets.UTF_8))) {
             throw new AssertionError("domain message trace lost handler context: " + events);
+        }
+    }
+
+    private static void testExecutorFastDebugRunsQueuedRootsAtJoin() {
+        var program = Parser.parseSource(""
+                + "domain Counter:\n"
+                + "  value = 0\n"
+                + "  fn Add(amount: Int):\n"
+                + "    value = value + amount\n"
+                + "  fn Read() -> Int:\n"
+                + "    reply value\n"
+                + "fn main():\n"
+                + "  counter = Counter()\n"
+                + "  executor = Executor().threads(2).max_threads(4).queue_capacity(8).start()\n"
+                + "  executor.invoke(counter.Add(1))\n"
+                + "  executor.invoke(counter.Add(2))\n"
+                + "  executor.invoke(counter.Add(3))\n"
+                + "  executor.invoke(counter.Add(4))\n"
+                + "  executor.join()\n"
+                + "  result = message counter.Read()\n"
+                + "  echo result\n", "fast-interpreter-executor.moss");
+        new CheckedProgram(program).run();
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+        ByteArrayOutputStream trace = new ByteArrayOutputStream();
+        new FastInterpreter(program, true,
+                new PrintStream(stdout, true, StandardCharsets.UTF_8),
+                new PrintStream(trace, true, StandardCharsets.UTF_8)).run();
+        String events = trace.toString(StandardCharsets.UTF_8);
+        int joinEvent = events.indexOf("\"event\":\"executor_join\"");
+        int lastRootReturn = events.lastIndexOf("\"detail\":\"()\"");
+        int postJoinMessage = joinEvent < 0 ? -1
+                : events.indexOf("\"event\":\"message_call\"", joinEvent);
+        if (!"10\n".equals(stdout.toString(StandardCharsets.UTF_8))
+                || events.split("\\\"event\\\":\\\"root_submit\\\"", -1).length != 5
+                || joinEvent <= lastRootReturn || postJoinMessage <= joinEvent) {
+            throw new AssertionError("Executor Fast Debug must submit roots and drain them at join: " + events);
         }
     }
 
