@@ -1065,3 +1065,22 @@ Validation: all 12 Java unit classes pass under ABI-v9 and staged ABI-v10.
 Generated Rust has the expected typed route fields, conversions, and compatible
 handler dispatch. Rust compilation/native execution remain deferred; the
 frozen-candidate gate is still required.
+
+### Follow-up — synchronous root ingress through active Java Executor
+
+Checked main-level message statements now lower through `runtime_invoke`,
+including imported ABI-v9 source-free handlers via their generated message
+bridge. The runtime queues an active root and synchronously returns its reply;
+when no Executor is active it runs inline. FIFO tickets serialize synchronous
+ingress, startup coordinates with an inline root, queue admissions are reserved
+against `join()`, and ingress arriving during draining waits for the post-join
+inline state. Inline panics fail closed. Regressions require an active root
+message between `Executor.start()` and `Executor.join()`, including source-free
+bridge dispatch.
+
+Validation: all 12 Java test classes pass in ABI-v9 and staged ABI-v10.
+`scripts/java/package.sh` and the packaged launcher pass a focused generation
+check; all six mocked JDT client lifecycle tests pass. A live Eclipse daemon is
+unavailable in this environment. Generated Rust has not been compiled or run.
+Physical worker compensation, runtime Root identity/context, and native
+Executor behavior remain open; this is not Executor parity evidence.
