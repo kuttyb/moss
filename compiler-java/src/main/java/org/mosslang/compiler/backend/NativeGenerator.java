@@ -176,18 +176,11 @@ public class NativeGenerator {
         Set<String> raisingFunctions = new HashSet<>();
         for (Function f : program.functions) {
             if (!f.sourceFreeRaiseVariants.isEmpty()) raisingFunctions.add(f.name);
-            boolean hasTry = false;
             for (Stmt s : f.body) {
-                if (s.kind == Stmt.Kind.Try) {
-                    hasTry = true;
-                }
                 if (s.kind == Stmt.Kind.Raise) {
-                    String rVal = s.a != null ? s.a.trim() : (s.text != null && s.text.startsWith("raise ") ? s.text.substring(6).trim() : "");
-                    if (!hasTry || rVal.isEmpty() || rVal.equals("raise")) {
-                        raisingFunctions.add(f.name);
-                        break;
-                    }
-                } else if (!hasTry && s.text != null && s.text.trim().startsWith("raise ")) {
+                    raisingFunctions.add(f.name);
+                    break;
+                } else if (s.text != null && s.text.trim().startsWith("raise ")) {
                     raisingFunctions.add(f.name);
                     break;
                 }

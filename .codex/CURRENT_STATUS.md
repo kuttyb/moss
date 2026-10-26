@@ -16947,3 +16947,14 @@ method bridge remain intact. Added a local raising `Box.poke` regression that
 requires ordinary `?` propagation. All 12 Java test classes pass under ABI-v9
 and staged ABI-v10. Rust compilation/native execution remains deferred to the
 frozen-candidate acceptance gate.
+
+### Phase 25.3 correction — escaping raise after local recovery
+
+A minimal function with a handled `raise` inside `try/recover` followed by an
+unhandled top-level `raise` exposed a backend classification bug. Java's
+function-level scan kept a `hasTry` flag and emitted a plain `i64` function with
+an abort for the escaping raise; C++ emitted `Result<i64, __MossRaised>`. The
+scan now marks every top-level Raise independently (nested Try bodies remain
+nested AST statements). A regression checks the generated signature. All 12
+Java unit classes pass under ABI-v9 and staged ABI-v10. No Rust compilation or
+native execution was performed.

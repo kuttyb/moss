@@ -114,6 +114,24 @@ public final class SourceFreeFunctionMetadataTest {
             if (handledRaiseRust.contains("pub fn service.signal()")) {
                 throw new AssertionError("source-free function was emitted as an invalid local Rust stub");
             }
+            Program raiseAfterRecover = Parser.parseSource(""
+                    + "enum Fault:\n"
+                    + "  Bad\n"
+                    + "fn invoke(flag: Bool) -> Int:\n"
+                    + "  try:\n"
+                    + "    raise Fault.Bad\n"
+                    + "  recover Fault.Bad:\n"
+                    + "    pass\n"
+                    + "  raise Fault.Bad\n"
+                    + "fn main():\n"
+                    + "  pass\n", "raise-after-recover.moss");
+            new SemanticChecker(raiseAfterRecover).run();
+            String raiseAfterRecoverRust = org.mosslang.compiler.backend.NativeGenerator.generate(
+                    raiseAfterRecover, false);
+            if (!raiseAfterRecoverRust.contains("fn invoke(flag: bool) -> Result<i64, __MossRaised>")) {
+                throw new AssertionError("a top-level raise after a completed recovery was not propagated: "
+                        + raiseAfterRecoverRust);
+            }
             Program raiseLikeText = Parser.parseSource(""
                     + "import service\n"
                     + "fn note():\n"
