@@ -3113,6 +3113,17 @@ public class SemanticCheckerTest {
                 + "  recover:\n"
                 + "    pass\n", "fileio-inferred-helper-closes-caller.moss");
         new SemanticChecker(inferredHelperClosesCaller).run();
+        Program helperClosesCallerInExpression = Parser.parseSource(variants
+                + "fn finish(file: FileIO) -> Int:\n"
+                + "  file.close()\n"
+                + "  return 1\n"
+                + "fn main():\n"
+                + "  try:\n"
+                + "    file = FileIO.open(\"input\", ro)\n"
+                + "    echo finish(file)\n"
+                + "  recover:\n"
+                + "    pass\n", "fileio-helper-close-expression.moss");
+        new SemanticChecker(helperClosesCallerInExpression).run();
         assertCompileError(variants
                 + "fn finish(file: FileIO):\n"
                 + "  file.close()\n"

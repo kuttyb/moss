@@ -2857,7 +2857,7 @@ public class SemanticChecker {
                     }
                 }
             }
-            applyFileIoFunctionLifecycleSummary(statement, state);
+            applyFileIoFunctionLifecycleSummaries(expressions, state);
             index++;
         }
         if (scoped) {
@@ -2876,24 +2876,25 @@ public class SemanticChecker {
         return state;
     }
 
-    private void applyFileIoFunctionLifecycleSummary(Stmt statement, Map<String, Integer> state) {
-        if (statement.kind != Stmt.Kind.Call || statement.text == null) return;
-        String call = statement.text.trim();
-        int open = call.indexOf('(');
-        if (open <= 0) return;
-        String name = call.substring(0, open).trim();
-        Function function = functions.get(name);
-        Map<String, Integer> summary = fileIoFunctionLifecycleSummaries.get(name);
-        if (function == null || summary == null) return;
-        int close = matchingCloseParen(call, open);
-        if (close < 0) return;
-        List<String> arguments = ParserSupport.splitTopLevel(call.substring(open + 1, close), ',');
-        for (int index = 0; index < function.params.size() && index < arguments.size(); index++) {
-            Param parameter = function.params.get(index);
-            Integer after = summary.get(parameter.name);
-            String actual = arguments.get(index).trim();
-            if (after == null || after == -1 || !state.containsKey(actual)) continue;
-            state.put(actual, after);
+    private void applyFileIoFunctionLifecycleSummaries(String expressions, Map<String, Integer> state) {
+        java.util.regex.Matcher calls = java.util.regex.Pattern.compile(
+                "\\b([A-Za-z_][A-Za-z0-9_]*)\\s*\\(").matcher(expressions);
+        while (calls.find()) {
+            String name = calls.group(1);
+            Function function = functions.get(name);
+            Map<String, Integer> summary = fileIoFunctionLifecycleSummaries.get(name);
+            if (function == null || summary == null) continue;
+            int open = expressions.indexOf('(', calls.start());
+            int close = matchingCloseParen(expressions, open);
+            if (close < 0) continue;
+            List<String> arguments = ParserSupport.splitTopLevel(expressions.substring(open + 1, close), ',');
+            for (int index = 0; index < function.params.size() && index < arguments.size(); index++) {
+                Param parameter = function.params.get(index);
+                Integer after = summary.get(parameter.name);
+                String actual = arguments.get(index).trim();
+                if (after == null || after == -1 || !state.containsKey(actual)) continue;
+                state.put(actual, after);
+            }
         }
     }
 
