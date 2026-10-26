@@ -36,6 +36,7 @@ public class SemanticCheckerTest {
         testImmutableLocalRejectsDirectAndForwardedWriteMethods();
         testNestedFieldReadInBranchConditionKeepsReceiverReadOnly();
         testBranchLocalTypesDoNotLeakFromOneSidedPaths();
+        testBranchJoinConstrainsInferredParametersAtCallsite();
         testMovingObjectFieldConsumesMethodReceiver();
         testSiblingMutatorReceiverModeAndUnitCodegen();
         testForLoopValuesCanFlowToObjectMethodArguments();
@@ -1886,6 +1887,43 @@ public class SemanticCheckerTest {
         } catch (CompileError error) {
             if (!"UNKNOWN_SYMBOL_OR_TYPE".equals(error.getCode())) throw error;
         }
+    }
+
+    private static void testBranchJoinConstrainsInferredParametersAtCallsite() {
+        String source = ""
+                + "type A:\n"
+                + "  value: Int\n"
+                + "type B:\n"
+                + "  value: String\n"
+                + "fn choose(left, right, flag: Bool):\n"
+                + "  if flag:\n"
+                + "    alias = left\n"
+                + "  else:\n"
+                + "    alias = right\n"
+                + "fn main():\n"
+                + "  choose(A(value=1), B(value=\"x\"), true)\n";
+        assertCompileError(source, "TYPE_MISMATCH");
+
+        Program sameType = Parser.parseSource(source.replace("B(value=\"x\")", "A(value=2)"),
+                "branch-join-shared-inferred-type-positive.moss");
+        new SemanticChecker(sameType).run();
+
+        assertCompileError(""
+                + "type A:\n"
+                + "  value: Int\n"
+                + "type B:\n"
+                + "  value: String\n"
+                + "fn choose(left, right, flag: Bool):\n"
+                + "  if flag:\n"
+                + "    alias = left\n"
+                + "  else:\n"
+                + "    alias = right\n"
+                + "domain Worker:\n"
+                + "  fn Run():\n"
+                + "    choose(A(value=1), B(value=\"x\"), true)\n"
+                + "fn main():\n"
+                + "  worker = Worker()\n"
+                + "  message worker.Run()\n", "TYPE_MISMATCH");
     }
 
     private static void testSiblingMutatorReceiverModeAndUnitCodegen() {

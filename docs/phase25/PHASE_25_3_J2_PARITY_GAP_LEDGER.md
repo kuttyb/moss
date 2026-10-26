@@ -1029,3 +1029,22 @@ with consuming semantics; the C++ unresolved summary suggests its result may be
 an under-inference. Keep this as an unresolved baseline delta until native
 behavior is checked at the frozen-candidate gate; do not weaken Java's ownership
 check based solely on this C++ acceptance.
+
+
+### Correction — enforce branch-joined inferred parameter constraints at calls
+
+A generic helper assigned `alias = left` and `alias = right` on opposite branch
+arms. Its checked parameter types shared one inference variable, but Java did
+not enforce that equality at concrete calls. C++ rejected distinct `A`/`B`
+arguments with `TYPE_MISMATCH`; Java accepted them. This also occurred when a
+domain handler called the helper before function-body inference had completed.
+Java now checks shared inferred parameter identities at call inference and
+revalidates retained semantic call edges after all function constraints are
+known. Both compilers reject the minimal and domain-handler mismatch, while a
+same-type call remains accepted. This is targeted callsite constraint
+preservation, not general specialized-body rechecking.
+
+Validation: all 12 Java test classes pass under ABI-v9 and staged ABI-v10;
+`tests/differential/run_differential.py --mode check_json
+tests/differential/corpus` passes all 8 files; Phase 22.3 semantic-query and
+Phase 6A agent API checks pass. Native and SDK acceptance remain deferred.

@@ -1810,6 +1810,33 @@ public class SemanticChecker {
                 program.localBindingLines.computeIfAbsent(f.name, k -> new HashMap<>()).put(entry.getKey(), bLine);
             }
         }
+        validateSharedInferredFunctionArguments();
+    }
+
+    private void validateSharedInferredFunctionArguments() {
+        if (program.semanticCallEdges == null) return;
+        for (SemanticCallEdge edge : program.semanticCallEdges) {
+            if (edge.target == null || !edge.target.startsWith("fn:")) continue;
+            Function function = functions.get(edge.target.substring(3));
+            if (function == null || edge.argumentTypes == null) continue;
+            TypeSolver solver = new TypeSolver(sessionCounter++);
+            Map<String, TypeRef> sharedArguments = new HashMap<>();
+            for (int index = 0; index < function.params.size() && index < edge.argumentTypes.size(); index++) {
+                TypeRef checked = function.params.get(index).checkedTypeRef;
+                if (checked == null || checked.kind() != TypeKind.InferenceVar) continue;
+                String variable = checked.toCanonicalString();
+                String actualName = edge.argumentTypes.get(index);
+                TypeRef actual = TypeParser.parseCanonical(actualName);
+                if (actual == null) continue;
+                TypeRef previous = sharedArguments.putIfAbsent(variable, actual);
+                if (previous != null && !solver.unify(previous, actual)) {
+                    throw new CompileError(edge.line,
+                            "arguments to function '" + function.name
+                                    + "' conflict with a shared inferred parameter type",
+                            "TYPE_MISMATCH", edge.sourceFile);
+                }
+            }
+        }
     }
 
     private void checkObjectMethods() {

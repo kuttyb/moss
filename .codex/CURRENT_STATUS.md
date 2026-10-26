@@ -16921,3 +16921,19 @@ Rebuilt the standalone `compiler-java/dist/moss.jar`; its launcher reports
 `tests/differential/corpus` check-json run passes all 8 files with no divergence
 or C++ oracle failures. Java unit tests passed all 12 classes immediately
 before packaging. These checks do not replace native/SDK acceptance.
+
+
+### Phase 25.3 correction — preserve branch-join constraints at generic callsites
+
+A helper assigned a local from two unannotated parameters in opposite branch
+arms. C++ rejected calls passing distinct concrete types; Java had accepted,
+including when the call came from a domain handler checked before the helper's
+body constraints were finalized. Java now enforces equal concrete types for
+parameters that share the same checked inference variable, both while checking
+ordinary calls and in a post-check pass over retained call edges for earlier
+handler callsites. A same-type call remains valid. C++ and Java now both reject
+the minimal and domain-handler mismatches with `TYPE_MISMATCH`.
+
+Validation: all 12 Java test classes pass under ABI-v9 and staged ABI-v10; the
+8-file JSON differential corpus, Phase 22.3 semantic-query checks, and Phase
+6A agent API checks pass. Native/backend validation remains deferred.

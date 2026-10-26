@@ -558,6 +558,23 @@ public class ExpressionTyper {
                         }
                     }
 
+                    // A control-flow join inside a generic function can unify
+                    // otherwise unannotated parameters. Preserve that checked
+                    // equality constraint at each concrete callsite: callers
+                    // must not instantiate a shared inferred type variable
+                    // with different concrete argument types.
+                    Map<String, TypeRef> sharedInferredArguments = new HashMap<>();
+                    for (int i = 0; i < fn.params.size(); i++) {
+                        TypeRef checked = fn.params.get(i).checkedTypeRef;
+                        if (checked == null || checked.kind() != TypeKind.InferenceVar) continue;
+                        String variable = checked.toCanonicalString();
+                        TypeRef previous = sharedInferredArguments.putIfAbsent(variable, actualArgs.get(i));
+                        if (previous != null && !solver.unify(previous, actualArgs.get(i))) {
+                            throw new CompileError(line, "arguments to function '" + callee
+                                    + "' conflict with a shared inferred parameter type", "TYPE_MISMATCH");
+                        }
+                    }
+
                     SpecializationKey sKey = new SpecializationKey();
                     sKey.callableId = fn.semanticCallableId;
                     sKey.callableArguments.addAll(callableArgs);
