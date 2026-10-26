@@ -20041,7 +20041,11 @@ class Checker {
       ++observable_effect_fixed_point_changed_rounds_;
     }
     phase21_warnings_enabled_ = true;
-    concrete_effect_cache_enabled_ = false;
+    // The summaries are now stable. Keep the authoritative exceptional walk
+    // over every real body below, but memoize nested concrete-effect summaries
+    // so a deep call chain is not recursively re-walked for each caller.
+    invalidate_concrete_effect_cache();
+    concrete_effect_cache_enabled_ = true;
     observable_effects_function_evaluations_ =
         concrete_effect_evaluations_ - evaluations_before;
 
@@ -20103,6 +20107,7 @@ class Checker {
         err(p_.main->source_file, p_.main->line,
             "main may not let typed errors escape; handle every raised variant with try/recover");
     }
+    concrete_effect_cache_enabled_ = false;
   }
 
   static vector<string> functional_captures(const string& expression,

@@ -30,5 +30,17 @@ before leaving the pass.
 
 ## Validation
 
-Before/after results and the required corpus, Fast Debug, check, and compiler
-performance gates will be recorded here when C1 is complete.
+An initial profile of the candidate on the same four fixtures shows linear
+growth and no cache-disabled evaluations:
+
+| Fixture | Evaluations | Distinct inputs | Cache-disabled calls | Cache hits | Parse misses |
+|---|---:|---:|---:|---:|---:|
+| W4 D5 | 58 | 11 | 0 | 30 | 7,272 |
+| W4 D10 | 113 | 21 | 0 | 60 | 18,507 |
+| W4 D15 | 168 | 31 | 0 | 90 | 34,417 |
+| W4 D18 | 201 | 37 | 0 | 108 | 46,207 |
+
+The D18 evaluation count fell 99.96% (524,451 to 201), and parse misses fell
+99.74% (17,866,873 to 46,207). The fixed-point count remains one. This supports
+the selected cache-window fix; the timing result and all required parity gates
+are pending.
