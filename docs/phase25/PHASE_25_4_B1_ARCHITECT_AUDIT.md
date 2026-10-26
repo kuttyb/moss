@@ -1,5 +1,8 @@
 # Phase 25.4 B1 — Independent Adversarial Architect Audit
 
+> **Audit interpretation (2026-10-25):** The original GO applies to the **B1 benchmark/test infrastructure and evidence available at its audited SHA**. It is not an independent validation of ECT *internal* CPU root-cause attribution. In particular, expression-string reparsing and textual type handling inside semantic phases were unmeasured. The audit verdict is preserved as history, not expanded to certify later profiling or performance projections. See [B1 merge-readiness note](PHASE_25_4_B1_MERGE_READINESS.md).
+
+
 **Audit Target Commit SHA:** `f7920400057cd734636de2a5a993ce72370d26f4`  
 **Prior Hardened Baseline SHA:** `199b9e6d17e7e98921a56043a34f8a508f77cd13`  
 **Corpus Version:** Group A: Torture `1.0.0` (54 fixtures); Group B: Real-World `1.0.0` (23 workloads)  
