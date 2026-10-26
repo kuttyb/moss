@@ -10280,12 +10280,6 @@ does not yet prove requirement identity/dependency correspondence against the
 new body node. This internal codec/lowerer slice is not end-to-end parity or R1
 acceptance.
 
-The active-ingress regression also covers an imported ABI-v9 source-free
-domain: it verifies the bridge method is called through `runtime_invoke`
-between Executor start and join. `SourceFreeObjectMetadataTest` passes in
-ABI-v9, and all 12 Java test classes pass under staged ABI-v10. These checks
-inspect generated Rust; they do not compile or execute it.
-
 ### R1 collection-loop hostile-slot correction — working tree, 2026-10-21
 
 The adversarial audit of the conditional importer guard found two unchecked slots in the narrow Count/Index loop exception: projection emitted an unvalidated `else` body, and loop index / optional `count_equal` accumulator initializers were checked only for Int type. The importer now requires an empty `else`, index literal `0`, and optional match-counter literal `0`. Added sealed artifact mutations that add the accepted then-action to an else branch, start the index at `1`, and start the SDK `count_equal` accumulator at `1`.
@@ -17017,3 +17011,19 @@ inline. However, physical worker compensation, runtime Root identity/context,
 fail-closed inline panic cleanup, other concurrent root-admission paths, and
 native Rust behavior remain unverified Java runtime gaps for later feature
 completion and frozen-candidate acceptance.
+
+The active-ingress regression also covers an imported ABI-v9 source-free
+domain: it verifies the bridge method is called through `runtime_invoke`
+between Executor start and join. `SourceFreeObjectMetadataTest` passes in
+ABI-v9, and all 12 Java test classes pass under staged ABI-v10. These checks
+inspect generated Rust; they do not compile or execute it.
+
+### Phase 25.3 packaging and optional build-daemon recheck
+
+Rebuilt `compiler-java/dist/moss.jar` from the current compiler, verified the
+packaged `moss --help`, and generated the Phase 20 multi-root Rust through the
+standalone launcher; the output includes the ingress runtime and root call.
+All six mocked `scripts/java/test_jdt_client.py` lifecycle tests pass. The
+live JDT daemon is not running and no `eclipse` executable is installed, so
+live daemon startup/build/stop remains unverified. No Rust compilation or
+native execution was performed.
