@@ -1,9 +1,10 @@
-# Phase 26.0.1 integration — C1–C3 merged locally — 2026-10-26
+# Phase 26.0.1 integration — C1–C4 merged locally — 2026-10-26
 
-- Integration is on `phase26-0-1-integration`, based on main `274f848`. C1–C3 are merged locally; C4 report-only closeout remains, followed by the combined local gates, Architect review, and push to main with GitHub CI skipped as requested.
-- C1 implementation SHA `807d491e8c0e1a1a6701c96d4b5db270705dd837`; Architect GO. Local gates: full 2,064-source full-hash differential with zero changes, Fast Debug parity, `make check` 140/140, and compiler-perf with no noise-floor slowdown. D18 improved 7,152.46 ms to 28.92 ms.
-- C2 code/test SHA `ba859c04d01688aeb14653668dd710242117f804`; Architect GO. It removes the duplicate snapshot checker only for a one-source Application check without overrides. Local full-corpus, Fast Debug, `make check` 140/140, snapshot-byte parity, and five-repetition 77-fixture performance gates passed. See `docs/phase26.0.1/C2-checker-inventory.md`.
-- C3 implementation SHA `fdeb72b16faa82a8dfefd04a1db90e9d87fe4cf9`; Architect GO. Local full-corpus, Fast Debug, `make check` 141/141, and compiler-perf gates passed. D18 parse misses fell from 17,866,873 to 898; D18 timing improved 5.0%, aggregate 57-fixture median sum improved 3.6%. See `docs/phase26.0.1/C3-parse-cache.md`.
+- Integration is on `phase26-0-1-integration`, based on main `274f848`. C1–C4 are merged locally. Next: run the combined corpus differential, Fast Debug parity, `make check`, compiler-perf, and feedback validation on this machine; send the frozen tree and gate outputs to the Architect; then push the approved main merge with GitHub CI skipped.
+- C1 implementation SHA `807d491e8c0e1a1a6701c96d4b5db270705dd837`; Architect GO. Prior local gates: full 2,064-source full-hash differential with zero changes, Fast Debug parity, `make check` 140/140, and compiler-perf with no noise-floor slowdown. D18 improved 7,152.46 ms to 28.92 ms.
+- C2 code/test SHA `ba859c04d01688aeb14653668dd710242117f804`; Architect GO. It removes the duplicate snapshot checker only for a one-source Application check without overrides. Prior full-corpus, Fast Debug, `make check` 140/140, snapshot-byte parity, and five-repetition 77-fixture performance gates passed. See `docs/phase26.0.1/C2-checker-inventory.md`.
+- C3 implementation SHA `fdeb72b16faa82a8dfefd04a1db90e9d87fe4cf9`; Architect GO. Prior full-corpus, Fast Debug, `make check` 141/141, and compiler-perf gates passed. D18 parse misses fell 17,866,873 to 898; D18 timing improved 5.0%, aggregate 57-fixture median sum improved 3.6%. See `docs/phase26.0.1/C3-parse-cache.md`.
+- C4 closes without compiler changes. Architect GO for report SHA `dd4d60ee2d9fbf5a64bf40f4caba7cbf6f679868`. Callgrind found direct parser/cache methods below 0.1% Ir; the remaining TypeEnv walk is stateful and no redundant traversal is established. See `docs/phase26.0.1/C4-regex-profile.md`.
 - User directed local regression execution only; do not start GitHub-hosted regression jobs.
 
 ---
