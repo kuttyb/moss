@@ -81,16 +81,16 @@ One consequence to accept: with Fast Debug no longer a full peer, the native-vs-
 - Changes to generated Rust shape or rustc build time.
 - Language changes of any kind.
 
-## Exit criteria and the decision point after Phase 26
+## Exit criteria and the decision point after Phase 26 — complete
 
-Phase 26 is done when every merged workstream shows a measured reduction on its target workload with all correctness gates green.
+Phase 26 is complete: W1–W3 show measured gains, W4 was dropped by the profiler criterion, W5 was folded into W3, and PR #17 merged to `main` after all gates passed.
 
 - [x] W1–W3 measured; W4 dropped because type spelling stays below 15%; W5 timer-key fix folded into W3
 - [x] Expression-text/type spelling/map shares re-measured on the 8 baseline workloads
 - [x] B1 hotspots re-attributed, including W5 W100, W4 D18, regex, datastructures, rolling window, and checkout
 - [x] Final attribution and small-fixture latency published in `W3_RESULTS.md`
-- [x] W2/W3 merged into the Phase 26 integration branch; PR #17 to main passed core regressions, optimized examples, and compiler performance
+- [x] W1–W3 merged to `main` through PR #17 after core regressions, optimized examples, and compiler performance passed
 
-**Decision point after W3.** The measured type-spelling direct share is below 15% on every workload, while total Callgrind Ir fell on all eight. Stop Phase 26 after W3, retain the discipline rules, keep the expression representation refactor parked, and move to Graph DSL. W4 is dropped. Reopen representation work only if later attribution shows a material share.
+**Decision point after W3.** The measured type-spelling direct share is below 15% on every workload, while total Callgrind Ir fell on all eight. Phase 26 is stopped after W3. The discipline rules remain, the expression representation refactor stays parked, and Graph DSL is next. Reopen representation work only if later attribution shows a material share.
 
 Open question: what share counts as "large"? Proposed threshold: 15% of compiler instructions on any baseline workload.

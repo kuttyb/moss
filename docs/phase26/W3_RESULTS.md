@@ -67,8 +67,9 @@ combined Phase 26 PR to main run #17 passed core regressions, optimized examples
 and compiler performance. The
 hosted same-runner W5 median was 19.2254 s on W1 and 0.2663 s on the candidate
 (98.6% lower), with identical check JSON. PR #18 merged into `phase26-moss-speedup` as
-`5595b8e7d66f90284b03805ad647e3a1251d7890`; PR #17 is the W1–W3 delivery to
-`main`.
+`5595b8e7d66f90284b03805ad647e3a1251d7890`. PR #17 run #18 passed all
+applicable gates and merged W1–W3 to `main` at
+`4f5788fd1176c22452ff3a8eb2893f3c62f571b0`. Phase 26 is complete.
 
 ## Decision after W3
 
