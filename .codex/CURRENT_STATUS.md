@@ -16854,3 +16854,6 @@ same-source/target/line edges to syntactic call occurrences on that source
 line, ignoring comments and quoted text; genuine repeated calls remain
 distinct. `SemanticQueryEngineTest` and `tests/tooling/check_semantic_queries.py`
 pass, including the existing specialized direct-call assertions.
+When a combined program has no retained `sourceLines`, the occurrence cap
+recovers the original statement text from the source callable as a fallback;
+the unit test clears `Program.sourceLines` to exercise this path.

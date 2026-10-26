@@ -1761,6 +1761,7 @@ public class SemanticQueryEngine {
                 break;
             }
         }
+        if (sourceLine == null) sourceLine = sourceCallLineFromCallable(edge, program);
         if (sourceLine == null) return Integer.MAX_VALUE;
         String codeLine = maskQueryStringsAndComment(sourceLine);
         java.util.regex.Matcher matcher = java.util.regex.Pattern.compile(
@@ -1769,6 +1770,39 @@ public class SemanticQueryEngine {
         int count = 0;
         while (matcher.find()) count++;
         return Math.max(1, count);
+    }
+
+    private static String sourceCallLineFromCallable(SemanticCallEdge edge, Program program) {
+        List<Stmt> body = null;
+        String source = edge.source == null ? "" : edge.source;
+        if ("main".equals(source) && program.main != null) {
+            body = program.main.body;
+        } else if (source.startsWith("fn:")) {
+            String name = source.substring(3);
+            Function function = program.functions.stream().filter(candidate -> candidate.name.equals(name))
+                    .findFirst().orElse(null);
+            if (function != null) body = function.body;
+        } else if (source.startsWith("method:")) {
+            String name = source.substring(7);
+            for (ObjectType object : program.objects) {
+                for (Method method : object.methods) {
+                    if ((object.name + "." + method.name).equals(name)) body = method.body;
+                }
+            }
+        }
+        if (body == null) return null;
+        for (Stmt statement : body) {
+            if (statement == null || statement.line != edge.line) continue;
+            if (statement.text != null && !statement.text.isBlank()) return statement.text;
+            StringBuilder sourceText = new StringBuilder(statement.text == null ? "" : statement.text);
+            if (statement.a != null) sourceText.append(' ').append(statement.a);
+            if (statement.b != null) sourceText.append(' ').append(statement.b);
+            if (statement.args != null) {
+                for (String argument : statement.args) sourceText.append(' ').append(argument);
+            }
+            if (!sourceText.isEmpty()) return sourceText.toString();
+        }
+        return null;
     }
 
     private static String maskQueryStringsAndComment(String source) {

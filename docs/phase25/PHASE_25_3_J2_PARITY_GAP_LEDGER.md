@@ -966,3 +966,6 @@ caps same-source/target/line edges at the number of syntactic calls on that
 line, masking comments and string literals. Genuine repeated calls remain
 distinct. `SemanticQueryEngineTest` and
 `tests/tooling/check_semantic_queries.py scripts/java/run.sh` pass.
+When combined project programs do not retain `sourceLines`, the query derives
+the call count from the matching source callable's original statement text; a
+unit regression clears `Program.sourceLines` to cover that fallback.

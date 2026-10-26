@@ -444,6 +444,7 @@ public final class SemanticQueryEngineTest {
                 + "fn main():\n"
                 + "  result = inspect(1) + inspect(1)\n", "repeated-call-location.moss");
         new SemanticChecker(program).run();
+        program.sourceLines.clear();
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         try (PrintStream stream = new PrintStream(output, true, StandardCharsets.UTF_8)) {
             SemanticQueryEngine.executeQuery("resolve", "line:4", program,
