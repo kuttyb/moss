@@ -2760,8 +2760,26 @@ public class SemanticChecker {
             String expressions = statementExpressions(statement);
             for (String owner : new ArrayList<>(state.keySet())) {
                 String quoted = java.util.regex.Pattern.quote(owner);
-                if (expressions.matches("(?s).*\\b" + quoted + "\\s*\\.\\s*close\\s*\\(\\s*\\).*"))
-                    state.put(owner, 0);
+                java.util.regex.Matcher operations = java.util.regex.Pattern.compile(
+                        "\\b" + quoted + "\\s*\\.\\s*(open|read|write|sync|close|chunks)\\s*\\(")
+                        .matcher(expressions);
+                while (operations.find()) {
+                    String operation = operations.group(1);
+                    int ownerState = state.get(owner);
+                    if (operation.equals("open")) {
+                        if (ownerState == 1) throw new CompileError(statement.line,
+                                "FileIO '" + owner + "' is already open", "FILEIO_ALREADY_OPEN");
+                        state.put(owner, 1);
+                    } else {
+                        if (ownerState == 0) throw new CompileError(statement.line,
+                                "FileIO '" + owner + "' is closed during " + operation,
+                                "FILEIO_CLOSED_OPERATION");
+                        if (ownerState == 2) throw new CompileError(statement.line,
+                                "FileIO '" + owner + "' has no definite lifecycle state during " + operation,
+                                "FILEIO_UNKNOWN_STATE");
+                        if (operation.equals("close")) state.put(owner, 0);
+                    }
+                }
             }
             index++;
         }

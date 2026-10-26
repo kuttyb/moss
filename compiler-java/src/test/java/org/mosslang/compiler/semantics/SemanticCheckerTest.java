@@ -3032,6 +3032,24 @@ public class SemanticCheckerTest {
         new SemanticChecker(allBranchesClose).run();
         assertCompileError(variants
                 + "fn main():\n"
+                + "  try:\n"
+                + "    file = FileIO.open(\"input\", ro)\n"
+                + "    file.close()\n"
+                + "    data = file.read(0, 4)\n"
+                + "  recover:\n"
+                + "    pass\n", "FILEIO_CLOSED_OPERATION");
+        assertCompileError(variants
+                + "fn main():\n"
+                + "  try:\n"
+                + "    file = FileIO.open(\"input\", ro)\n"
+                + "    if true:\n"
+                + "      file.close()\n"
+                + "    data = file.read(0, 4)\n"
+                + "    file.close()\n"
+                + "  recover:\n"
+                + "    pass\n", "FILEIO_UNKNOWN_STATE");
+        assertCompileError(variants
+                + "fn main():\n"
                 + "  file = FileIO.open(\"input\", ro)\n"
                 + "  data = file.read(0, 4)\n"
                 + "  file.close()\n", "MOSS_COMPILE_ERROR");

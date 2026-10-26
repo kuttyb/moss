@@ -17250,3 +17250,14 @@ currently covers local roots and structured local control flow only. Helper-
 managed owners, domain FileIO fields, operation-state validation after close,
 and complete FileIO lifecycle parity remain open. Native Rust acceptance was
 not run.
+
+### Correction — validate FileIO operation state
+
+The root-local flow now validates instance `open`, `read`, `write`, `sync`,
+`chunks`, and `close` calls against tracked state. A closed owner fails with
+`FILEIO_CLOSED_OPERATION`; a branch-joined unknown state fails with
+`FILEIO_UNKNOWN_STATE`. Java and C++ focused probes agree on both cases.
+
+Both ABI-v9 and staged ABI-v10 Java suites pass all 12 classes. Mode-state
+checks such as write-after-read-only-open, helper ownership/effect transfer,
+domain field lifecycle, and broader FileIO semantic parity remain open.
