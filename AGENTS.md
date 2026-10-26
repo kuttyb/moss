@@ -167,4 +167,5 @@ When working with Moss:
   `phase25-2-work`, and the current Phase 25.4 check-gate fixes on
   `phase25-4-check-gates`, the user authorized local commits and normal pushes
   to the configured remote. Keep each task on its scoped branch; do not merge
-  directly to `main`, force-push, or rewrite published history.
+  directly to `main` unless the user explicitly directs that merge. Do not
+  force-push or rewrite published history.

@@ -12189,7 +12189,8 @@ exactly its one expected token. The performance baseline job is marked exclusive
 in `tests/run_parallel.py`, so it waits for concurrent jobs to finish and then
 runs without CPU contention. `AGENTS.md` now records the user's scoped normal
 commit/push authorization for this branch and preserves the no-direct-main and
-no-force-push rules.
+no-force-push rules. The user subsequently explicitly directed that this change
+be merged to `main`.
 
 Validation: `python3 tests/tooling/check_retired_syntax.py --self-test` and its
 full repository scan pass. Standalone `python3
