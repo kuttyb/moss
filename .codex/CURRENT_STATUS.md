@@ -17321,3 +17321,17 @@ read cases.
 ABI-v9 and staged ABI-v10 Java suites each pass all 12 classes. This harness
 run is partial and is not a full FileIO parity claim. Domain effect warnings,
 native runtime acceptance, and the other Phase 25.3 release gates remain open.
+
+### Phase 25.3 continuation — blocking FileIO warnings in domains
+
+Java now warns when a handler writes non-FileIO domain state while it performs
+a blocking FileIO operation. Detection follows ordinary helper calls and
+synchronous messages to routed handlers, so the Phase 20 harness's direct,
+helper, and nested-message warning cases now pass. The harness advances to its
+synchronization-plan assertions and then fails because Java's query output lacks
+the expected per-handler `normalized_effects`, `read_only`, and `class_modes`
+facts; its current Store query path also emits stale fixture-shaped data.
+
+ABI-v9 and staged ABI-v10 Java suites each pass all 12 classes. The FileIO
+harness remains incomplete at the query-plan gap; this does not establish
+general synchronization-plan parity or native runtime acceptance.

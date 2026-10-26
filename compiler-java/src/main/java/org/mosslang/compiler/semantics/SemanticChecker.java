@@ -202,6 +202,7 @@ public class SemanticChecker {
             checkObjectMethods();
             checkFunctions();
             closeFunctionAccessModes();
+            warnFileIoBlockingWithSharedWrite();
             // Recheck with function summaries available for methods that call
             // ordinary functions in their bodies.
             checkObjectMethods();
@@ -2700,6 +2701,130 @@ public class SemanticChecker {
                         "FILEIO_MUST_CLOSE");
             }
         }
+    }
+
+    private void warnFileIoBlockingWithSharedWrite() {
+        for (Domain domain : program.domains) {
+            Set<String> fileOwners = new LinkedHashSet<>();
+            for (Field field : domain.state) {
+                if ("FileIO".equals(field.type)) fileOwners.add(field.name);
+            }
+            for (Handler handler : domain.handlers) {
+                Set<String> written = new LinkedHashSet<>();
+                for (Stmt statement : handler.body) {
+                    if (statement.kind != Stmt.Kind.Assign && statement.kind != Stmt.Kind.Var
+                            && statement.kind != Stmt.Kind.Let) continue;
+                    String target = statement.a == null ? "" : statement.a.trim();
+                    int dot = target.indexOf('.');
+                    if (dot >= 0) target = target.substring(0, dot);
+                    String stateRoot = target;
+                    if (!target.isEmpty() && !fileOwners.contains(target)
+                            && domain.state.stream().anyMatch(field -> field.name.equals(stateRoot)))
+                        written.add(target);
+                }
+                if (written.isEmpty()) continue;
+                Map<String, String> environment = new LinkedHashMap<>();
+                for (Field field : domain.state) environment.put(field.name, field.type);
+                for (DomainRoute route : domain.routes) environment.put(route.name, route.type);
+                for (Param parameter : handler.params) environment.put(parameter.name, parameter.type);
+                for (Stmt statement : handler.body) {
+                    String blocking = findFileIoBlockingOperation(statementExpressions(statement),
+                            environment, new HashSet<>());
+                    if (blocking == null) continue;
+                    String states = String.join(", ", written);
+                    warnings.add(new Warning(statement.line,
+                            "blocking FileIO " + blocking
+                                    + " may hold WRITE/CONSUME protection of " + states,
+                            "FILEIO_BLOCKING_WITH_SHARED_WRITE", statement.sourceFile));
+                }
+            }
+        }
+    }
+
+    private String findFileIoBlockingOperation(String expression, Map<String, String> environment,
+                                               Set<String> visited) {
+        if (expression == null || expression.isEmpty()) return null;
+        java.util.regex.Matcher messages = java.util.regex.Pattern.compile(
+                "\\bmessage\\s+([A-Za-z_][A-Za-z0-9_]*)\\.([A-Za-z_][A-Za-z0-9_]*)\\s*\\(")
+                .matcher(expression);
+        while (messages.find()) {
+            String receiver = messages.group(1);
+            String handlerName = messages.group(2);
+            Domain targetDomain = domains.get(environment.get(receiver));
+            Handler targetHandler = targetDomain == null ? null : targetDomain.handlers.stream()
+                    .filter(handler -> handler.name.equals(handlerName)).findFirst().orElse(null);
+            String identity = "message:" + (targetDomain == null ? "" : targetDomain.name)
+                    + "." + handlerName;
+            if (targetHandler == null || !visited.add(identity)) continue;
+            Map<String, String> targetEnvironment = new LinkedHashMap<>();
+            for (Field field : targetDomain.state) targetEnvironment.put(field.name, field.type);
+            for (DomainRoute route : targetDomain.routes) targetEnvironment.put(route.name, route.type);
+            int open = expression.indexOf('(', messages.start());
+            int close = matchingCloseParen(expression, open);
+            List<String> arguments = close < 0 ? List.of()
+                    : ParserSupport.splitTopLevel(expression.substring(open + 1, close), ',');
+            for (int index = 0; index < targetHandler.params.size(); index++) {
+                Param parameter = targetHandler.params.get(index);
+                String type = parameter.type;
+                if ((type == null || type.isEmpty()) && index < arguments.size())
+                    type = environment.get(arguments.get(index).trim());
+                if (type != null) targetEnvironment.put(parameter.name, type);
+            }
+            for (Stmt nested : targetHandler.body) {
+                String blocking = findFileIoBlockingOperation(statementExpressions(nested),
+                        targetEnvironment, visited);
+                if (blocking != null) {
+                    visited.remove(identity);
+                    return blocking + " via message " + receiver + "." + handlerName;
+                }
+            }
+            visited.remove(identity);
+        }
+        java.util.regex.Matcher member = java.util.regex.Pattern.compile(
+                "\\b([A-Za-z_][A-Za-z0-9_]*)\\s*\\.\\s*(read|chunks|open|write|sync|close)\\s*\\(")
+                .matcher(expression);
+        while (member.find()) {
+            String receiver = member.group(1);
+            if ("FileIO".equals(receiver) || "FileIO".equals(environment.get(receiver)))
+                return member.group(2);
+        }
+        java.util.regex.Matcher calls = java.util.regex.Pattern.compile(
+                "\\b([A-Za-z_][A-Za-z0-9_]*)\\s*\\(").matcher(expression);
+        while (calls.find()) {
+            String name = calls.group(1);
+            Function function = functions.get(name);
+            if (function == null || !visited.add(name)) continue;
+            int open = expression.indexOf('(', calls.start());
+            int close = matchingCloseParen(expression, open);
+            if (close < 0) { visited.remove(name); continue; }
+            List<String> arguments = ParserSupport.splitTopLevel(expression.substring(open + 1, close), ',');
+            Map<String, String> childEnvironment = new LinkedHashMap<>();
+            for (int index = 0; index < function.params.size(); index++) {
+                Param parameter = function.params.get(index);
+                String type = parameter.type;
+                if ((type == null || type.isEmpty()) && index < arguments.size())
+                    type = environment.get(arguments.get(index).trim());
+                if (type != null) childEnvironment.put(parameter.name, type);
+            }
+            for (Stmt nested : function.body) {
+                String blocking = findFileIoBlockingOperation(statementExpressions(nested),
+                        childEnvironment, visited);
+                if (blocking != null) {
+                    visited.remove(name);
+                    return blocking + " via " + name;
+                }
+            }
+            if (function.resultExpression != null) {
+                String blocking = findFileIoBlockingOperation(function.resultExpression,
+                        childEnvironment, visited);
+                if (blocking != null) {
+                    visited.remove(name);
+                    return blocking + " via " + name;
+                }
+            }
+            visited.remove(name);
+        }
+        return null;
     }
 
     private void computeFileIoFunctionLifecycleSummaries() {
