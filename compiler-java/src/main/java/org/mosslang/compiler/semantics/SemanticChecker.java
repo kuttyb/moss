@@ -2825,7 +2825,9 @@ public class SemanticChecker {
                 if (!target.isEmpty() && rhs.matches("(?s).*\\bFileIO\\s*\\.\\s*open\\s*\\(.*"))
                     state.put(target, fileIoOpenState(rhs));
                 else if (!target.isEmpty() && state.containsKey(rhs.trim()))
-                    state.put(target, state.get(rhs.trim()));
+                    throw new CompileError(statement.line,
+                            "FileIO ownership is pinned and cannot be reassigned",
+                            "FILEIO_PINNED_OWNERSHIP");
             }
             String expressions = statementExpressions(statement);
             for (String owner : new ArrayList<>(state.keySet())) {

@@ -17300,5 +17300,9 @@ transitive, and expression-nested close helpers, including
 `FILEIO_CLOSED_OPERATION` after the helper returns.
 
 Both ABI-v9 and staged ABI-v10 Java suites pass all 12 classes. Conditional
-helper close paths and aliases of a helper's FileIO parameter still need
-lifecycle coverage. This does not validate native Rust behavior.
+helper close paths now have focused branch-join evidence: all branches closed
+is accepted, while a partial close rejects later use as
+`FILEIO_UNKNOWN_STATE`, matching C++. A helper-body alias is rejected by both
+compilers with `FILEIO_PINNED_OWNERSHIP`; Java now reports the ownership error
+at the alias assignment. More complex ownership transformations remain open.
+This does not validate native Rust behavior.

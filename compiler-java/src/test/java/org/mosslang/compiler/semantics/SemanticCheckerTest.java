@@ -3126,6 +3126,16 @@ public class SemanticCheckerTest {
         new SemanticChecker(helperClosesCallerInExpression).run();
         assertCompileError(variants
                 + "fn finish(file: FileIO):\n"
+                + "  alias = file\n"
+                + "  alias.close()\n"
+                + "fn main():\n"
+                + "  try:\n"
+                + "    file = FileIO.open(\"input\", ro)\n"
+                + "    finish(file)\n"
+                + "  recover:\n"
+                + "    pass\n", "FILEIO_PINNED_OWNERSHIP");
+        assertCompileError(variants
+                + "fn finish(file: FileIO):\n"
                 + "  file.close()\n"
                 + "fn noop(file: FileIO):\n"
                 + "  pass\n"
