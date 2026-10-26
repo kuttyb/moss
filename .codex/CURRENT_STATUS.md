@@ -1,6 +1,6 @@
 # Phase 26 complete — W1–W3 merged to main — 2026-10-26
 
-## Local compiler-perf suite follow-up — PR #20 ready — 2026-10-26
+## Local compiler-perf suite follow-up — expanded validation pending — 2026-10-26
 
 - Branch: `compiler-perf-local-suite`, based on `main` at `bdf973af`. No compiler
   source changes. `make compiler-perf` now runs three timing repetitions over
@@ -24,6 +24,14 @@
   optimized examples, and local compiler performance; Phase 26 W1/W2-specific
   jobs were skipped by their branch conditions. PR remains open for integration.
   Team closeout: `docs/phase26/agent-patterns/team-local-perf-suite.md`.
+- Pre-merge follow-up requests are in progress: adjacent interleaving for each
+  baseline/candidate fixture pair; slowdown noise floor (>5% and >20 ms, or
+  non-overlapping ranges); profiling counters per fixture; CPU/RSS reporting;
+  and CI smoke-job rename. Next required measurement is the quiet-host 77-fixture
+  `c66fb76c` comparison (three timing reps plus a separate profile pass), then
+  publish the report in `MossPhase26.md` and candidate median dataset in
+  `benchmarks/phase25_4/cpp_baseline/results/`. Do not merge until that evidence
+  and the final Architect review are complete.
 
 - W2/W3 implementation is complete. PR #18 merged into `phase26-moss-speedup`
   as `5595b8e7d66f90284b03805ad647e3a1251d7890`; PR #17 merged W1–W3 to `main` at

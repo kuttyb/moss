@@ -55,7 +55,7 @@ jobs:
           mkdir -p tmp
           TMPDIR="$PWD/tmp" make --jobs="$(nproc)" examples-optimized
 
-  local-compiler-perf:
+  local-compiler-perf-smoke:
     if: github.base_ref == 'main'
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -63,7 +63,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Run the local B1 suite in one-repetition gate mode
+      - name: Smoke-test the local B1 timing and profiling suite
         run: |
           mkdir -p tmp
           MOSS_PERF_REPS=1 TMPDIR="$PWD/tmp" make --jobs="$(nproc)" compiler-perf

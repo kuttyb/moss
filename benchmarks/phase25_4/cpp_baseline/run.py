@@ -38,6 +38,29 @@ import time
 from typing import Any, Dict, List, Optional, Tuple
 
 STAGE_TIMER_RE = re.compile(r"^MOSS_PROFILE\|([^|]+)\|([0-9]+)$", re.M)
+PROFILE_COUNTER_KEYS = {
+    "functions_analyzed", "types_analyzed", "specialization_requests",
+    "distinct_specialization_keys", "actual_specialization_checks",
+    "checked_specializations", "reused_specialization_results",
+    "specialization_body_checking", "inference_rounds", "inference_work_units",
+    "inference_reinferred_functions", "inference_changed_functions",
+    "parse_cache_hits", "parse_cache_misses", "concrete_effect_evaluations",
+    "observable_effects_function_evaluations",
+    "specialization_effect_function_evaluations", "specialization_effect_cache_hits",
+    "specialization_effect_computations", "specialization_effect_distinct_inputs",
+    "concrete_effect_computations", "concrete_effect_cache_hits",
+    "concrete_effect_cache_enabled_calls", "concrete_effect_cache_disabled_calls",
+    "concrete_effect_cache_entries", "concrete_effect_distinct_inputs",
+    "concrete_effect_max_depth", "effects_fixed_point_rounds",
+    "effects_fixed_point_changed_rounds", "effects_fixed_point_limit",
+    "infer_object_fields_rounds", "infer_domain_state_fields_rounds",
+    "infer_handler_reply_types_rounds",
+}
+PROFILE_COUNTER_PATTERN = re.compile(
+    r"^(?:inference_reinferred_functions_round_\d+|"
+    r"inference_changed_functions_round_\d+|"
+    r"inference_signature_invocation_\d+_wave_\d+_(?:visited|changed))$")
+PROFILE_COUNTER_MAX_KEYS = {"concrete_effect_max_depth", "effects_fixed_point_limit"}
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 TORTURE_ROOT = REPO_ROOT / "benchmarks" / "compiler_torture"
@@ -159,30 +182,30 @@ def run_trial(moss_bin: Path, fixture: dict, iteration: int, timeout_seconds: in
     # Extract profiling timers and counters
     stage_ms = {}
     counters = {}
+    counter_records = []
+    checker_index = -1
     actual_specializations = None
     specialization_requests = None
     specialization_body_checking_ms = None
 
     if mode == "profiling":
         for stage, val in STAGE_TIMER_RE.findall(stderr):
-            if stage in ("checked_specializations", "actual_specialization_checks"):
-                actual_specializations = int(val)
-                counters[stage] = int(val)
-            elif stage == "specialization_requests":
-                specialization_requests = int(val)
-                counters[stage] = int(val)
-            elif stage == "specialization_body_checking":
-                specialization_body_checking_ms = round(int(val) / 1e6, 3)
-                counters[stage] = int(val)
-            elif stage in ("functions_analyzed", "types_analyzed", "distinct_specialization_keys",
-                           "reused_specialization_results", "inference_rounds", "inference_work_units",
-                           "parse_cache_hits", "parse_cache_misses"):
-                counters[stage] = int(val)
-            elif stage in ("inference_reinferred_functions",
-                           "inference_changed_functions") or stage.startswith(
-                               "inference_reinferred_functions_round_") or stage.startswith(
-                               "inference_changed_functions_round_"):
-                counters[stage] = int(val)
+            is_counter = stage in PROFILE_COUNTER_KEYS or PROFILE_COUNTER_PATTERN.match(stage)
+            if is_counter:
+                value = int(val)
+                if stage == "functions_analyzed" or checker_index < 0:
+                    checker_index += 1
+                counter_records.append({"checker": checker_index, "key": stage, "value": value})
+                if stage in PROFILE_COUNTER_MAX_KEYS:
+                    counters[stage] = max(counters.get(stage, value), value)
+                else:
+                    counters[stage] = counters.get(stage, 0) + value
+                if stage in ("checked_specializations", "actual_specialization_checks"):
+                    actual_specializations = counters[stage]
+                elif stage == "specialization_requests":
+                    specialization_requests = counters[stage]
+                elif stage == "specialization_body_checking":
+                    specialization_body_checking_ms = round(counters[stage] / 1e6, 3)
             else:
                 stage_ms[stage] = stage_ms.get(stage, 0.0) + int(val) / 1e6
 
@@ -219,6 +242,7 @@ def run_trial(moss_bin: Path, fixture: dict, iteration: int, timeout_seconds: in
         "specialization_body_checking_ms": specialization_body_checking_ms,
         "unattributed_ms": unattributed_ms,
         "counters_json": json.dumps(counters, sort_keys=True),
+        "counter_records_json": json.dumps(counter_records, sort_keys=True),
         "success": success,
         "timed_out": timed_out,
         "exit_code": p.returncode,

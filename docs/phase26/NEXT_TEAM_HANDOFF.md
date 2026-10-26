@@ -95,18 +95,17 @@ effects. Keep those contracts intact when working on W2 and later workstreams.
 
 ## Local compiler performance runner follow-up
 
-`make compiler-perf` now runs the local B1 timing suite with three repetitions,
-isolated artifacts under `tmp/compiler-perf/<run-id>/`, and a median-based
-comparison report. By default it includes all 54 torture fixtures plus the
-attribution set. To compare against a revision, run
-`MOSS_PERF_BASELINE=<git-ref> make compiler-perf`. Add
-`MOSS_PERF_INCLUDE_REAL_WORLD=1` to include all 23 curated checkout workloads;
-set `MOSS_PERF_REPS` only when a smaller/longer local run is intentional. The
-comparison records the 8 attribution workloads, total sum of per-fixture
-medians, small-fixture latencies, and every fixture slower by more than 5%.
-See `docs/phase25/PERMANENT_COMPILER_PERFORMANCE_REGRESSION_TARGET.md` for
-commands and interpretation. This is benchmark/tooling work; it makes no
-compiler behavior change.
+`make compiler-perf` runs three untraced timing repetitions plus one separate
+profiling sample per fixture, writing isolated artifacts under
+`tmp/compiler-perf/<run-id>/`. With a baseline, its three timing samples are
+interleaved adjacent per fixture and the first side alternates across fixtures
+and repetitions. Set `MOSS_PERF_BASELINE=<git-ref>` to compare; set
+`MOSS_PERF_INCLUDE_REAL_WORLD=1` to include the full 77-fixture set (54 torture
+plus 23 curated real-world workloads). The report includes wall medians, CPU time, peak RSS, all
+eight attribution workloads, per-fixture work counters, and slowdowns exceeding
+5% plus either 20 ms or non-overlapping timing ranges. This is a
+benchmark/tooling change and makes no compiler behavior change. See
+`docs/phase25/PERMANENT_COMPILER_PERFORMANCE_REGRESSION_TARGET.md` for details.
 
 Worklist complexity debt: simplify to a plain convergence check unless a real
 package shows partial waves.
