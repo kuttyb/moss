@@ -293,6 +293,23 @@ public final class SourceFreeObjectMetadataTest {
             throw new AssertionError("raise-like method text made note a raising function: "
                     + methodLikeTextRust);
         }
+        Program localRaisingMethod = Parser.parseSource(""
+                + "enum Fault:\n"
+                + "  Bad\n"
+                + "type Box:\n"
+                + "  fn poke() -> Int:\n"
+                + "    raise Fault.Bad\n"
+                + "fn invoke(box: Box) -> Int:\n"
+                + "  return box.poke()\n"
+                + "fn main():\n"
+                + "  pass\n", "local-raising-poke-method.moss");
+        new SemanticChecker(localRaisingMethod).run();
+        String localRaisingMethodRust = NativeGenerator.generate(localRaisingMethod, false);
+        if (!localRaisingMethodRust.contains("box.poke()?")
+                || localRaisingMethodRust.contains("box.poke().map_err(|e| __moss_raise")) {
+            throw new AssertionError("locally checked raising method bypassed method metadata lowering: "
+                    + localRaisingMethodRust);
+        }
         Program importedMethodSummary = Parser.parseSource(""
                 + "fn relay(point: provider__Point, values: Vector[Int]):\n"
                 + "  point.replace(values)\n"

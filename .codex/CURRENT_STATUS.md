@@ -16937,3 +16937,13 @@ the minimal and domain-handler mismatches with `TYPE_MISMATCH`.
 Validation: all 12 Java test classes pass under ABI-v9 and staged ABI-v10; the
 8-file JSON differential corpus, Phase 22.3 semantic-query checks, and Phase
 6A agent API checks pass. Native/backend validation remains deferred.
+
+### Phase 25.3 continuation — metadata-driven raising method codegen
+
+Removed a method-name-specific `.poke` codegen path. Raising status now comes
+from the checked object-method metadata for both enclosing function signatures
+and call propagation; the existing `fail`/`__fail` handling and source-free
+method bridge remain intact. Added a local raising `Box.poke` regression that
+requires ordinary `?` propagation. All 12 Java test classes pass under ABI-v9
+and staged ABI-v10. Rust compilation/native execution remains deferred to the
+frozen-candidate acceptance gate.

@@ -175,9 +175,6 @@ public class NativeGenerator {
 
         Set<String> raisingFunctions = new HashSet<>();
         for (Function f : program.functions) {
-            if (f.resultExpression != null && f.resultExpression.contains(".poke(")) {
-                raisingFunctions.add(f.name);
-            }
             if (!f.sourceFreeRaiseVariants.isEmpty()) raisingFunctions.add(f.name);
             boolean hasTry = false;
             for (Stmt s : f.body) {
@@ -190,7 +187,7 @@ public class NativeGenerator {
                         raisingFunctions.add(f.name);
                         break;
                     }
-                } else if (!hasTry && s.text != null && (s.text.trim().startsWith("raise ") || s.text.contains(".poke("))) {
+                } else if (!hasTry && s.text != null && s.text.trim().startsWith("raise ")) {
                     raisingFunctions.add(f.name);
                     break;
                 }
@@ -3303,7 +3300,7 @@ public class NativeGenerator {
                     }
                     return bridge.toString();
                 }
-                if (methodName.equals("fail") || methodName.endsWith("__fail") || methodName.equals("poke")) {
+                if (methodName.equals("fail") || methodName.endsWith("__fail")) {
                     List<String> callArgs = new ArrayList<>();
                     for (String ra : rawArgs) {
                         callArgs.add(lowerExpr(ra.trim(), stateFields, domains, objects));
