@@ -1499,12 +1499,18 @@ public class SemanticCheckerTest {
                 + "    reply value\n"
                 + "fn main():\n"
                 + "  counter = Counter()\n"
+                + "  executor = Executor().threads(1).start()\n"
                 + "  result = message counter.Read()\n"
-                + "  echo result\n", "executor-root-admission.moss");
+                + "  echo result\n"
+                + "  executor.join()\n", "executor-root-admission.moss");
         new SemanticChecker(rootAdmission).run();
         String rootRust = NativeGenerator.generate(rootAdmission, false);
         if (!rootRust.contains("runtime_invoke(move || __moss_root_domain.Read_root())")
-                || !rootRust.contains("pub fn runtime_invoke<R, F>")) {
+                || !rootRust.contains("pub fn runtime_invoke<R, F>")
+                || rootRust.indexOf("__MossExecutor::new().threads(1_i64).start()")
+                        > rootRust.indexOf("let mut result = { let __moss_root_domain")
+                || rootRust.indexOf("executor.join();")
+                        < rootRust.indexOf("let mut result = { let __moss_root_domain")) {
             throw new AssertionError("main root messages must pass through runtime_invoke");
         }
     }

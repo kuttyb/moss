@@ -16997,10 +16997,11 @@ Java main-level `message` statements now lower through `runtime_invoke`, which
 runs inline when no Executor is active and otherwise enqueues a reply-bearing
 closure through the active Executor queue. Nested message statements retain
 their existing shared path. Added a generated-Rust regression for a replying
-main-level message. All 12 Java test classes pass under ABI-v9 and staged
-ABI-v10, and the focused multi-root fixture emits the expected
-`runtime_invoke(move || ...)` call. Rust compilation/native execution remains
-deferred.
+main-level message. The regression now places the reply-bearing message
+between `Executor.start()` and `Executor.join()` and asserts this ordering in
+generated Rust, covering the active-queue call path structurally. The focused
+semantic test passes under ABI-v9, and all 12 Java test classes pass under
+staged ABI-v10. Rust compilation/native execution remains deferred.
 
 Scope note: this is evidence for the generated-main ingress path only. It does
 not establish C++ process-runtime parity for concurrent host ingress, fair
