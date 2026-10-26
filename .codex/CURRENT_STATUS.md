@@ -2,7 +2,7 @@
 
 - Baseline `274f848`; C3 candidate `fdeb72b16faa82a8dfefd04a1db90e9d87fe4cf9`. The regex work profile counted 5,437,622 total parse-cache lookups, unchanged by C3, with 3,267,924 binary split hits and 2.14M hits across other helpers. C3 reduced failed misses but did not reduce lookup count.
 - Callgrind on regex alone (`-O2 -g`) recorded 19.266B Ir; `walk_type_environment_block` was 98.24% inclusive. Parser/cache methods are <0.1% Ir. Architect recommends no C4 code change because the walker performs stateful semantic updates and the profile does not establish redundant traversal. Record the measured no-fix outcome and reprofile after C2+C3 integration.
-- Report: `docs/phase26.0.1/C4-regex-profile.md`; C4 report-only PR and final Architect report-SHA review remain. C3 PR #23 hosted core regression is also still pending.
+- Report: `docs/phase26.0.1/C4-regex-profile.md`; C4 report-only PR #24 is open as draft; final Architect report-SHA review remains. C3 PR #23 hosted core regression is also still pending.
 
 ---
 
