@@ -4,6 +4,7 @@ import org.mosslang.compiler.ast.Program;
 import org.mosslang.compiler.cli.Main;
 import org.mosslang.compiler.parser.Parser;
 import org.mosslang.compiler.semantics.CheckedProgram;
+import org.mosslang.compiler.semantics.SemanticChecker;
 
 import java.io.File;
 import java.nio.file.Files;
@@ -20,6 +21,7 @@ public class DebugMapGeneratorTest {
         testUserSortFunctionShadowsBuiltinLowering();
         testCharCodepointRustLowering();
         testScalarProtocolRustLowering();
+        testFileIoRuntimeAndCheckedLowering();
         testCliFlagsDebugMap();
 
         System.out.println("DebugMapGeneratorTest PASSED: All tests passed successfully.");
@@ -202,6 +204,34 @@ public class DebugMapGeneratorTest {
                 "Char.codepoint lowers the named receiver to its Unicode scalar value");
         assertTrue(rust.contains("(('\\u{2C}') as u32 as i64)"),
                 "Char.codepoint lowers a literal receiver to its Unicode scalar value");
+    }
+
+    private static void testFileIoRuntimeAndCheckedLowering() {
+        String source = """
+                enum FileError:
+                  IO
+                fn main():
+                  try:
+                    file = FileIO.open("input", ro)
+                    bytes = file.read(0, 1)
+                    for byte in bytes:
+                      echo byte
+                    file.close()
+                  recover:
+                    pass
+                """;
+        Program program = Parser.parseSource(source, "fileio-native-lowering.moss");
+        new SemanticChecker(program).run();
+        String rust = NativeGenerator.generate(program, false);
+        assertTrue(rust.contains("pub mod moss_fileio"), "production FileIO runtime must be bundled");
+        assertTrue(rust.contains("fn __moss_raise_fileio(error: MossFileError)"),
+                "FileIO errors must enter Moss error propagation");
+        assertTrue(rust.contains("FileIO::open_checked(&(MossStr::from(\"input\")), \"ro\")"),
+                "open must pass its path and mode to the checked runtime");
+        assertTrue(rust.contains(".read_checked(0_i64, 1_i64).map_err(__moss_raise_fileio)?"),
+                "read must use checked error propagation");
+        assertTrue(rust.contains(".bytes() {"), "Range iteration must traverse bytes");
+        assertTrue(!rust.contains("__MossFile"), "legacy length-only FileIO stub must not be emitted");
     }
 
     private static void testScalarProtocolRustLowering() {

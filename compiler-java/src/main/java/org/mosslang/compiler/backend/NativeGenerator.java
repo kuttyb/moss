@@ -128,6 +128,67 @@ public class NativeGenerator {
         }
     }
 
+    private static boolean programUsesFileIo(Program program) {
+        for (Function function : program.functions) {
+            if (fileIoType(function.returnType)) return true;
+            for (Param parameter : function.params) if (fileIoType(parameter.type)) return true;
+            if (fileIoExpression(function.resultExpression)) return true;
+            for (Stmt statement : function.body) if (fileIoStatement(statement)) return true;
+        }
+        for (ObjectType object : program.objects) {
+            for (Field field : object.fields) {
+                if (fileIoType(field.type) || fileIoExpression(field.init)) return true;
+            }
+            for (Method method : object.methods) {
+                if (fileIoType(method.returnType)) return true;
+                for (Param parameter : method.params) if (fileIoType(parameter.type)) return true;
+                for (Stmt statement : method.body) if (fileIoStatement(statement)) return true;
+            }
+        }
+        for (Domain domain : program.domains) {
+            for (Field field : domain.state) {
+                if (fileIoType(field.type) || fileIoExpression(field.init)) return true;
+            }
+            for (Handler handler : domain.handlers) {
+                if (fileIoType(handler.replyType)) return true;
+                for (Param parameter : handler.params) if (fileIoType(parameter.type)) return true;
+                for (Stmt statement : handler.body) if (fileIoStatement(statement)) return true;
+                for (FailureArm arm : handler.failureArms)
+                    for (Stmt statement : arm.body) if (fileIoStatement(statement)) return true;
+            }
+        }
+        for (EnumType enumeration : program.enums)
+            for (EnumCase enumCase : enumeration.cases)
+                for (Field field : enumCase.fields) if (fileIoType(field.type)) return true;
+        if (program.main != null)
+            for (Stmt statement : program.main.body) if (fileIoStatement(statement)) return true;
+        for (TestDecl test : program.tests)
+            for (Stmt statement : test.body) if (fileIoStatement(statement)) return true;
+        for (BenchDecl benchmark : program.benchmarks)
+            for (Stmt statement : benchmark.body) if (fileIoStatement(statement)) return true;
+        return false;
+    }
+
+    private static boolean fileIoType(String type) {
+        return type != null && (type.matches(".*(?<![A-Za-z0-9_])(?:FileIO|RangeBatch|Range)(?![A-Za-z0-9_]).*"));
+    }
+
+    private static boolean fileIoExpression(String expression) {
+        if (expression == null) return false;
+        return expression.contains("FileIO.") || expression.contains("FileIO(")
+                || expression.contains("RangeBatch.") || expression.contains("RangeBatch(")
+                || expression.contains("Range.empty") || expression.contains("Range.from_")
+                || expression.contains("Range::") || expression.contains("FileIO::");
+    }
+
+    private static boolean fileIoStatement(Stmt statement) {
+        if (statement == null) return false;
+        if (fileIoExpression(statement.text) || fileIoExpression(statement.a)
+                || fileIoExpression(statement.b)) return true;
+        for (String argument : statement.args) if (fileIoExpression(argument)) return true;
+        return false;
+    }
+
     public static String generate(Program program, boolean debugBuild) {
         return generate(program, debugBuild, false);
     }
@@ -160,6 +221,20 @@ public class NativeGenerator {
 
         o.append(MossRuntimeSupport.FLOAT_RUNTIME).append("\n");
         o.append(MossRuntimeSupport.EXECUTOR_RUNTIME).append("\n");
+        o.append(MossRuntimeSupport.FAIR_LEAF_RUNTIME).append("\n");
+        if (programUsesFileIo(program)) {
+            o.append(MossRuntimeSupport.FILEIO_RUNTIME).append("\n");
+            o.append("fn __moss_raise_fileio(error: MossFileError) -> __MossRaised {\n")
+                    .append("    __moss_raise(format!(\"FileError::{:?}\", error))\n")
+                    .append("}\n\n");
+            if (program.explicitModule && program.main == null) {
+                o.append("#[cfg(moss_process_root)]\nmod __moss_fileio_root_runtime {\nuse super::*;\n")
+                        .append(MossRuntimeSupport.FILEIO_ROOT_RUNTIME)
+                        .append("}\n#[cfg(moss_process_root)]\npub use __moss_fileio_root_runtime::*;\n");
+            } else {
+                o.append(MossRuntimeSupport.FILEIO_ROOT_RUNTIME).append("\n");
+            }
+        }
         o.append(MossRuntimeSupport.HANDLER_RUNTIME).append("\n");
         o.append(MossRuntimeSupport.STRING_RUNTIME).append("\n");
         o.append(MossRuntimeSupport.DISPLAY_RUNTIME).append("\n");
@@ -1402,8 +1477,9 @@ public class NativeGenerator {
             case "char", "Char" -> "char";
             case "unit" -> "()";
             case "vector", "Vector" -> "std::vec::Vec<i64>";
-            case "range", "Range" -> "__MossRange";
-            case "FileIO" -> "__MossFile";
+            case "range", "Range" -> "Range";
+            case "RangeBatch" -> "RangeBatch";
+            case "FileIO" -> "FileIO";
             case "Executor" -> "__MossExecutor";
             default -> mossType.endsWith("Ref") ? mossType : mossType;
         };
@@ -1544,6 +1620,12 @@ public class NativeGenerator {
                     String start = rArgs.size() > 0 ? lowerExpr(rArgs.get(0).trim(), stateFields, objFields, domains, objects) : "0_i64";
                     String end = rArgs.size() > 1 ? lowerExpr(rArgs.get(1).trim(), stateFields, objFields, domains, objects) : "0_i64";
                     o.append(indent).append("for ").append(loopVar).append(" in (").append(start).append(")..(").append(end).append(") {\n");
+                } else if ("Range".equals(bindingTypeName(iterExpr))) {
+                    o.append(indent).append("for ").append(loopVar).append(" in (")
+                            .append(lowerExpr(iterExpr, stateFields, objFields, domains, objects)).append(").bytes() {\n");
+                } else if ("RangeBatch".equals(bindingTypeName(iterExpr))) {
+                    o.append(indent).append("for ").append(loopVar).append(" in (")
+                            .append(lowerExpr(iterExpr, stateFields, objFields, domains, objects)).append(").ranges() {\n");
                 } else {
                     o.append(indent).append("for ").append(loopVar).append(" in (").append(lowerExpr(iterExpr, stateFields, objFields, domains, objects)).append(").clone() {\n");
                 }
@@ -2506,6 +2588,8 @@ public class NativeGenerator {
 
     private static boolean expressionCallsRaisingMethod(String expression, String context) {
         if (expression == null || expression.isBlank()) return false;
+        String maskedExpression = maskStringLiterals(expression);
+        if (maskedExpression.matches("(?s).*\\bFileIO\\s*\\.\\s*open\\s*\\(.*")) return true;
         java.util.regex.Matcher calls = java.util.regex.Pattern.compile(
                 "(?<![A-Za-z0-9_])([A-Za-z_][A-Za-z0-9_]*(?:\\s*\\.\\s*[A-Za-z_][A-Za-z0-9_]*)*)"
                         + "\\s*\\.\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*\\(")
@@ -2513,6 +2597,8 @@ public class NativeGenerator {
         while (calls.find()) {
             String receiver = calls.group(1).replaceAll("\\s", "");
             String methodName = calls.group(2);
+            if ("FileIO".equals(bindingTypeName(receiver, context))
+                    && Set.of("open", "read", "write", "sync", "close").contains(methodName)) return true;
             int open = expression.indexOf('(', calls.start());
             int close = matchingCloseParen(expression, open);
             int arguments = close <= open + 1 ? 0
@@ -2542,6 +2628,13 @@ public class NativeGenerator {
             }
         }
         return masked.toString();
+    }
+
+    private static String rustStringLiteral(String source) {
+        String value = source == null ? "" : source.trim();
+        if (value.length() >= 2 && value.charAt(0) == '"'
+                && value.charAt(value.length() - 1) == '"') return value;
+        return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
     }
 
     private static int matchingCloseParen(String text, int openIndex) {
@@ -3218,6 +3311,15 @@ public class NativeGenerator {
         }
         if (openParen > 0 && expr.endsWith(")")) {
             String callee = expr.substring(0, openParen).trim();
+            if (callee.equals("FileIO.open")) {
+                List<String> arguments = splitTopLevel(expr.substring(openParen + 1, expr.length() - 1), ',');
+                String path = arguments.isEmpty() ? "MossStr::from(\"\")"
+                        : lowerExpr(arguments.get(0).trim(), stateFields, domains, objects);
+                String mode = arguments.size() < 2 ? "\"ro\"" : rustStringLiteral(arguments.get(1).trim());
+                String open = "FileIO::open_checked(&(" + path + "), " + mode + ").map_err(__moss_raise_fileio)";
+                return currentInTry.get() ? open + "?"
+                        : open + ".unwrap_or_else(|error| panic!(\"{}\", error.message))";
+            }
             if (domains.containsKey(callee)) {
                 Domain d = domains.get(callee);
                 String args = expr.substring(openParen + 1, expr.length() - 1).trim();
@@ -3477,13 +3579,66 @@ public class NativeGenerator {
                     if (rawArgs.size() >= 1 && rawArgs.get(0).trim().matches("^[A-Za-z_][A-Za-z0-9_]*$")) {
                         pathArg = pathArg + ".clone()";
                     }
-                    String callStr = "__MossFile::open(" + pathArg + ")";
+                    String modeArg = rawArgs.size() < 2 ? "\"ro\"" : rustStringLiteral(rawArgs.get(1).trim());
+                    String callStr = "FileIO::open_checked(&(" + pathArg + "), " + modeArg + ")"
+                            + ".map_err(__moss_raise_fileio)";
                     if (currentInTry.get()) {
                         return callStr + "?";
                     }
-                    return callStr + ".unwrap_or_default()";
+                    return callStr + ".unwrap_or_else(|error| panic!(\"{}\", error.message))";
                 }
                 String loweredRecv = lowerExpr(recv, stateFields, domains, objects);
+                if ("FileIO".equals(bindingTypeName(recv))) {
+                    String propagation = currentInTry.get() ? "?" : "";
+                    if (methodName.equals("open") && rawArgs.size() == 2) {
+                        return loweredRecv + ".open_in_place_checked(&(" + lowerExpr(rawArgs.get(0).trim(), stateFields, domains, objects)
+                                + "), " + rustStringLiteral(rawArgs.get(1).trim()) + ")"
+                                + ".map_err(__moss_raise_fileio)" + propagation;
+                    }
+                    if (methodName.equals("read") && rawArgs.size() == 2) {
+                        return loweredRecv + ".read_checked(" + lowerExpr(rawArgs.get(0).trim(), stateFields, domains, objects)
+                                + ", " + lowerExpr(rawArgs.get(1).trim(), stateFields, domains, objects) + ")"
+                                + ".map_err(__moss_raise_fileio)" + propagation;
+                    }
+                    if (methodName.equals("read") && rawArgs.size() == 1) {
+                        String requests = rawArgs.get(0).trim();
+                        if (requests.startsWith("[") && requests.endsWith("]")) {
+                            List<String> entries = splitTopLevel(requests.substring(1, requests.length() - 1), ',');
+                            StringBuilder batch = new StringBuilder("{ let __moss_batch_file = &(" + loweredRecv + "); ");
+                            List<String> pairs = new ArrayList<>();
+                            int entryIndex = 0;
+                            for (String entry : entries) {
+                                String item = entry.trim();
+                                if (item.startsWith("(") && item.endsWith(")")) item = item.substring(1, item.length() - 1);
+                                List<String> coordinates = splitTopLevel(item, ',');
+                                if (coordinates.size() != 2) return "compile_error!(\"unsupported FileIO batch request lowering\")";
+                                String offset = "__moss_batch_offset_" + entryIndex;
+                                String size = "__moss_batch_size_" + entryIndex;
+                                batch.append("let ").append(offset).append(" = ")
+                                        .append(lowerExpr(coordinates.get(0).trim(), stateFields, domains, objects)).append("; ")
+                                        .append("let ").append(size).append(" = ")
+                                        .append(lowerExpr(coordinates.get(1).trim(), stateFields, domains, objects)).append("; ");
+                                pairs.add("(" + offset + ", " + size + ")");
+                                entryIndex++;
+                            }
+                            batch.append("__moss_batch_file.read_batch_checked(&[")
+                                    .append(String.join(", ", pairs)).append("]) }");
+                            return "(" + batch + ").map_err(__moss_raise_fileio)" + propagation;
+                        }
+                    }
+                    if (methodName.equals("write") && rawArgs.size() == 2) {
+                        return loweredRecv + ".write_checked(" + lowerExpr(rawArgs.get(0).trim(), stateFields, domains, objects)
+                                + ", &(" + lowerExpr(rawArgs.get(1).trim(), stateFields, domains, objects) + "))"
+                                + ".map_err(__moss_raise_fileio)" + propagation;
+                    }
+                    if (methodName.equals("sync") && rawArgs.size() <= 1) {
+                        String dataonly = !rawArgs.isEmpty() && rawArgs.get(0).trim().equals("dataonly") ? "true" : "false";
+                        return loweredRecv + ".sync_checked(" + dataonly + ").map_err(__moss_raise_fileio)" + propagation;
+                    }
+                    if (methodName.equals("close") && rawArgs.isEmpty()) {
+                        return loweredRecv + ".close_checked().map_err(__moss_raise_fileio)" + propagation;
+                    }
+                }
                 String scalarType = scalarExpressionType(recv);
                 if (Set.of("int", "float", "char", "string", "bool").contains(scalarType)) {
                     if ((methodName.equals("less") || methodName.equals("isequal"))
@@ -3812,6 +3967,10 @@ public class NativeGenerator {
                 String rawBase = expr.substring(0, openBr).trim();
                 String base = lowerExpr(rawBase, stateFields, domains, objects);
                 String idx = lowerExpr(expr.substring(openBr + 1, closeBr).trim(), stateFields, domains, objects);
+                String indexedType = bindingTypeName(rawBase);
+                if ("Range".equals(indexedType) || "RangeBatch".equals(indexedType)) {
+                    return "(" + base + ").get(" + idx + ")";
+                }
                 boolean isMap = false;
                 Program prog = currentProgram.get();
                 if (prog != null && prog.localBindingTypes != null) {

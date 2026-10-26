@@ -76,38 +76,6 @@ fn moss_float_hash(value: f64) -> i64 {
     public static final String EXECUTOR_RUNTIME = """
 // Phase 20 Executor Runtime  (moss executor_runtime_rust: process root)
 #[allow(dead_code, non_camel_case_types)]
-#[derive(Clone, Debug, Default)]
-pub struct __MossRange { pub len: i64 }
-impl __MossRange {
-    pub fn length(&self) -> i64 { self.len }
-}
-#[allow(dead_code, non_camel_case_types)]
-#[derive(Clone, Debug, Default)]
-pub struct __MossFile { pub total_len: i64 }
-impl __MossFile {
-    pub fn open(path: MossStr) -> Result<__MossFile, __MossRaised> {
-        match std::fs::read(&*path) {
-            Ok(bytes) => Ok(__MossFile { total_len: bytes.len() as i64 }),
-            Err(_) => Err(__moss_raise("FileError::NotFound".to_string())),
-        }
-    }
-    pub fn chunks(&self, size: i64) -> std::vec::Vec<__MossRange> {
-        let mut out = std::vec::Vec::new();
-        let mut rem = self.total_len;
-        while rem > 0 {
-            let take = if rem >= size { size } else { rem };
-            out.push(__MossRange { len: take });
-            rem -= take;
-        }
-        out
-    }
-    pub fn read(&self, offset: i64, size: i64) -> __MossRange {
-        let avail = (self.total_len - offset).max(0);
-        __MossRange { len: avail.min(size) }
-    }
-    pub fn close(&self) {}
-}
-#[allow(dead_code, non_camel_case_types)]
 type __MossExecutorJob = Box<dyn FnOnce() + Send + 'static>;
 struct __MossExecutorQueueState {
     pending: std::collections::VecDeque<__MossExecutorJob>,
@@ -441,6 +409,10 @@ where R: Send + 'static, F: FnOnce() -> R + Send + 'static {
 // ─── End Phase 20 Executor Runtime ───────────────────────────────────────
 """;
 
+    public static final String FAIR_LEAF_RUNTIME = RuntimeSupportResources.read("fair_leaf_runtime.rs");
+    public static final String FILEIO_RUNTIME = RuntimeSupportResources.read("fileio_runtime.rs");
+    public static final String FILEIO_ROOT_RUNTIME = RuntimeSupportResources.read("fileio_root_runtime.rs");
+
     public static final String HANDLER_RUNTIME = """
 pub trait __MossCloneCapture: std::fmt::Debug + Send + Sync {
     fn clone_capture(&self) -> Box<dyn __MossCloneCapture>;
@@ -637,6 +609,9 @@ impl MossStr {
     pub fn join(&self, parts: std::vec::Vec<MossStr>) -> MossStr {
         MossStr(parts.iter().map(|part| part.0.as_str()).collect::<std::vec::Vec<_>>().join(&self.0))
     }
+}
+impl AsRef<[u8]> for MossStr {
+    fn as_ref(&self) -> &[u8] { self.0.as_bytes() }
 }
 
 impl std::ops::Add for MossStr {

@@ -17129,3 +17129,28 @@ mode and lacks writes, batch reads, and production root/runtime modules. This
 is not Fast Debug's intentional FileIO limitation; native FileIO support is
 unfinished and must be addressed before the frozen candidate. No Rust
 compilation or execution was run.
+
+### Phase 25.3 continuation — production FileIO runtime and checked lowering
+
+The Java native backend now bundles the production `moss_fileio`, root
+coordination, and fair leaf runtime source as classpath resources. FileIO use
+selects those runtime modules, with the root module gated for source-free
+provider builds. Java lowering now calls checked open/read/write/sync/close
+operations, maps FileIO failures into Java's Moss raised carrier, lowers inline
+bounded batch reads through `read_batch_checked`, indexes Range/RangeBatch via
+`.get`, and iterates Range bytes and RangeBatch ranges. The focused generator
+regression asserts production runtime emission, checked open/read calls, byte
+iteration, and removal of the old stub.
+
+Validation: `scripts/java/test.sh` and `MOSS_STAGED_ABI=v10 scripts/java/test.sh`
+both pass all 12 Java test classes. Generated
+output for `tests/tooling/fixtures/phase20_fileio_runtime_integration.moss`
+shows checked string write, read, inline two-request batch read, batch indexing
+and iteration, checked mode-aware open, sync, and close. This is generated-text
+and Java unit evidence only; generated Rust has not been compiled or executed.
+Remaining FileIO work includes named request-vector batch lowering, `chunks`
+lowering, and Executor Solo-hook wiring for the root runtime. Broad semantic
+parity, SDK integration, source-free ABI verification, Fast Debug/tracing
+acceptance, daemon/package readiness, native acceptance, and independent
+Architect review remain open. No full `make check` or expensive acceptance
+suite was run.
