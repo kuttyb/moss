@@ -1067,7 +1067,8 @@ bool is_single_char_literal(const string& value) {
 }
 
 bool parse_member_call(const string& text, string& receiver, string& handler,
-                        vector<string>& args) {
+                       vector<string>& args, bool* outputs_written) {
+  if (outputs_written) *outputs_written = false;
   string value = trim(text);
   // A member call inside an argument is not the outer call's receiver.
   // In particular f(message route.Run()) must check route as a message
@@ -1094,6 +1095,7 @@ bool parse_member_call(const string& text, string& receiver, string& handler,
     return false;
   receiver = trim(value.substr(0, dot));
   handler = trim(value.substr(dot + 1, lp - dot - 1));
+  if (outputs_written) *outputs_written = true;
   if (receiver.empty() || handler.empty()) return false;
   string inside = value.substr(lp + 1, rp - lp - 1);
   args.clear();

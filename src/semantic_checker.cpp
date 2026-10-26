@@ -24,6 +24,7 @@
 #include <tuple>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 #include <sys/types.h>
@@ -1709,6 +1710,38 @@ class Checker {
                   << changed_functions << '\n';
         std::cerr << "MOSS_PROFILE|parse_cache_hits|" << parse_cache_hits_ << '\n';
         std::cerr << "MOSS_PROFILE|parse_cache_misses|" << parse_cache_misses_ << '\n';
+        std::cerr << "MOSS_PROFILE|parse_cache_entries|"
+                  << parse_cache_entries_ << '\n';
+        std::cerr << "MOSS_PROFILE|parse_cache_limit|"
+                  << parse_cache_limit_ << '\n';
+        std::cerr << "MOSS_PROFILE|parse_cache_insertions_before_cap|"
+                  << parse_cache_insertions_before_cap_ << '\n';
+        std::cerr << "MOSS_PROFILE|parse_cache_failed_simple_before_cap|"
+                  << parse_cache_failed_simple_before_cap_ << '\n';
+        std::cerr << "MOSS_PROFILE|parse_cache_failed_member_before_cap|"
+                  << parse_cache_failed_member_before_cap_ << '\n';
+        std::cerr << "MOSS_PROFILE|parse_cache_success_after_cap|"
+                  << parse_cache_success_after_cap_ << '\n';
+        std::cerr << "MOSS_PROFILE|parse_cache_failed_simple_after_cap|"
+                  << parse_cache_failed_simple_after_cap_ << '\n';
+        std::cerr << "MOSS_PROFILE|parse_cache_failed_member_after_cap|"
+                  << parse_cache_failed_member_after_cap_ << '\n';
+        std::cerr << "MOSS_PROFILE|parse_cache_distinct_failed_simple_inputs|"
+                  << parse_cache_distinct_failed_simple_inputs_.size() << '\n';
+        std::cerr << "MOSS_PROFILE|parse_cache_distinct_failed_member_inputs|"
+                  << parse_cache_distinct_failed_member_inputs_.size() << '\n';
+        std::cerr << "MOSS_PROFILE|parse_cache_distinct_failed_simple_saturated|"
+                  << (parse_cache_distinct_failed_simple_saturated_ ? 1 : 0) << '\n';
+        std::cerr << "MOSS_PROFILE|parse_cache_distinct_failed_member_saturated|"
+                  << (parse_cache_distinct_failed_member_saturated_ ? 1 : 0) << '\n';
+        std::cerr << "MOSS_PROFILE|parse_cache_failed_simple_cache_hits|"
+                  << parse_cache_failed_simple_cache_hits_ << '\n';
+        std::cerr << "MOSS_PROFILE|parse_cache_failed_member_cache_hits|"
+                  << parse_cache_failed_member_cache_hits_ << '\n';
+        std::cerr << "MOSS_PROFILE|parse_cache_failed_simple_insertions|"
+                  << parse_cache_failed_simple_insertions_ << '\n';
+        std::cerr << "MOSS_PROFILE|parse_cache_failed_member_insertions|"
+                  << parse_cache_failed_member_insertions_ << '\n';
         std::cerr << "MOSS_PROFILE|concrete_effect_evaluations|"
                   << concrete_effect_evaluations_ << '\n';
         std::cerr << "MOSS_PROFILE|observable_effects_function_evaluations|"
@@ -1775,10 +1808,13 @@ class Checker {
     std::optional<std::pair<string, string>> result;
   };
   struct CallParseEntry {
+    bool success = true;
     string name;
     vector<string> arguments;
   };
   struct MemberParseEntry {
+    bool success = true;
+    bool failure_outputs_written = false;
     string receiver;
     string member;
     vector<string> arguments;
@@ -1792,6 +1828,22 @@ class Checker {
   mutable size_t parse_cache_entries_ = 0;
   mutable uint64_t parse_cache_hits_ = 0;
   mutable uint64_t parse_cache_misses_ = 0;
+  mutable uint64_t parse_cache_insertions_before_cap_ = 0;
+  mutable uint64_t parse_cache_failed_simple_before_cap_ = 0;
+  mutable uint64_t parse_cache_failed_member_before_cap_ = 0;
+  mutable uint64_t parse_cache_success_after_cap_ = 0;
+  mutable uint64_t parse_cache_failed_simple_after_cap_ = 0;
+  mutable uint64_t parse_cache_failed_member_after_cap_ = 0;
+  mutable uint64_t parse_cache_failed_simple_cache_hits_ = 0;
+  mutable uint64_t parse_cache_failed_member_cache_hits_ = 0;
+  mutable uint64_t parse_cache_failed_simple_insertions_ = 0;
+  mutable uint64_t parse_cache_failed_member_insertions_ = 0;
+  // Profile-only bounded sets estimate the exact number of distinct failed
+  // spellings up to the existing cache cap without unbounded diagnostic memory.
+  mutable std::unordered_set<string> parse_cache_distinct_failed_simple_inputs_;
+  mutable std::unordered_set<string> parse_cache_distinct_failed_member_inputs_;
+  mutable bool parse_cache_distinct_failed_simple_saturated_ = false;
+  mutable bool parse_cache_distinct_failed_member_saturated_ = false;
 
   Program& p_;
   bool legacy_signature_inference_ = false;
@@ -10409,17 +10461,45 @@ class Checker {
     auto found = simple_call_parse_cache_.find(text);
     if (found != simple_call_parse_cache_.end()) {
       ++parse_cache_hits_;
+      if (!found->second.success) {
+        if (profile_concrete_effect_work_) ++parse_cache_failed_simple_cache_hits_;
+        return false;
+      }
       callee = found->second.name;
       args = found->second.arguments;
       return true;
     }
     ++parse_cache_misses_;
-    // A failed shared parse may leave outputs untouched or partially set them.
-    // Re-run failures rather than replaying a result dependent on their inputs.
-    if (!moss::parse_simple_call(text, callee, args)) return false;
-    if (parse_cache_entries_ < parse_cache_limit_) {
-      simple_call_parse_cache_.emplace(text, CallParseEntry{callee, args});
+    const bool cache_full = parse_cache_entries_ >= parse_cache_limit_;
+    // Simple-call parsing leaves its output parameters untouched on failure,
+    // so a negative result can be replayed without recording caller state.
+    if (!moss::parse_simple_call(text, callee, args)) {
+      if (profile_concrete_effect_work_) {
+        if (cache_full) ++parse_cache_failed_simple_after_cap_;
+        else ++parse_cache_failed_simple_before_cap_;
+        if (parse_cache_distinct_failed_simple_inputs_.count(text) == 0) {
+          if (parse_cache_distinct_failed_simple_inputs_.size() < parse_cache_limit_)
+            parse_cache_distinct_failed_simple_inputs_.insert(text);
+          else
+            parse_cache_distinct_failed_simple_saturated_ = true;
+        }
+      }
+      if (!cache_full) {
+        simple_call_parse_cache_.emplace(text, CallParseEntry{false, {}, {}});
+        ++parse_cache_entries_;
+        if (profile_concrete_effect_work_) {
+          ++parse_cache_insertions_before_cap_;
+          ++parse_cache_failed_simple_insertions_;
+        }
+      }
+      return false;
+    }
+    if (cache_full) {
+      if (profile_concrete_effect_work_) ++parse_cache_success_after_cap_;
+    } else {
+      simple_call_parse_cache_.emplace(text, CallParseEntry{true, callee, args});
       ++parse_cache_entries_;
+      if (profile_concrete_effect_work_) ++parse_cache_insertions_before_cap_;
     }
     return true;
   }
@@ -10429,16 +10509,58 @@ class Checker {
     auto found = member_call_parse_cache_.find(text);
     if (found != member_call_parse_cache_.end()) {
       ++parse_cache_hits_;
+      if (!found->second.success) {
+        if (profile_concrete_effect_work_) ++parse_cache_failed_member_cache_hits_;
+        if (found->second.failure_outputs_written) {
+          receiver = found->second.receiver;
+          member = found->second.member;
+        }
+        return false;
+      }
       receiver = found->second.receiver;
       member = found->second.member;
       args = found->second.arguments;
       return true;
     }
     ++parse_cache_misses_;
-    if (!moss::parse_member_call(text, receiver, member, args)) return false;
-    if (parse_cache_entries_ < parse_cache_limit_) {
-      member_call_parse_cache_.emplace(text, MemberParseEntry{receiver, member, args});
+    const bool cache_full = parse_cache_entries_ >= parse_cache_limit_;
+    bool outputs_written = false;
+    // Member parsing can assign receiver/member before rejecting an empty
+    // side. Preserve those observable output mutations for negative hits.
+    if (!moss::parse_member_call(text, receiver, member, args,
+                                 &outputs_written)) {
+      if (profile_concrete_effect_work_) {
+        if (cache_full) ++parse_cache_failed_member_after_cap_;
+        else ++parse_cache_failed_member_before_cap_;
+        if (parse_cache_distinct_failed_member_inputs_.count(text) == 0) {
+          if (parse_cache_distinct_failed_member_inputs_.size() < parse_cache_limit_)
+            parse_cache_distinct_failed_member_inputs_.insert(text);
+          else
+            parse_cache_distinct_failed_member_saturated_ = true;
+        }
+      }
+      if (!cache_full) {
+        MemberParseEntry failed;
+        failed.success = false;
+        failed.failure_outputs_written = outputs_written;
+        failed.receiver = receiver;
+        failed.member = member;
+        member_call_parse_cache_.emplace(text, std::move(failed));
+        ++parse_cache_entries_;
+        if (profile_concrete_effect_work_) {
+          ++parse_cache_insertions_before_cap_;
+          ++parse_cache_failed_member_insertions_;
+        }
+      }
+      return false;
+    }
+    if (cache_full) {
+      if (profile_concrete_effect_work_) ++parse_cache_success_after_cap_;
+    } else {
+      member_call_parse_cache_.emplace(
+          text, MemberParseEntry{true, false, receiver, member, args});
       ++parse_cache_entries_;
+      if (profile_concrete_effect_work_) ++parse_cache_insertions_before_cap_;
     }
     return true;
   }
@@ -10453,10 +10575,14 @@ class Checker {
       }
     }
     ++parse_cache_misses_;
+    const bool cache_full = parse_cache_entries_ >= parse_cache_limit_;
     auto result = moss::split_top_level(text, delimiter);
-    if (parse_cache_entries_ < parse_cache_limit_) {
+    if (cache_full) {
+      if (profile_concrete_effect_work_) ++parse_cache_success_after_cap_;
+    } else {
       top_level_parse_cache_[text].emplace(delimiter, result);
       ++parse_cache_entries_;
+      if (profile_concrete_effect_work_) ++parse_cache_insertions_before_cap_;
     }
     return result;
   }
@@ -10468,10 +10594,14 @@ class Checker {
       return found->second;
     }
     ++parse_cache_misses_;
+    const bool cache_full = parse_cache_entries_ >= parse_cache_limit_;
     auto result = moss::strip_redundant_outer_parentheses(text);
-    if (parse_cache_entries_ < parse_cache_limit_) {
+    if (cache_full) {
+      if (profile_concrete_effect_work_) ++parse_cache_success_after_cap_;
+    } else {
       outer_parentheses_parse_cache_.emplace(text, result);
       ++parse_cache_entries_;
+      if (profile_concrete_effect_work_) ++parse_cache_insertions_before_cap_;
     }
     return result;
   }
@@ -10488,10 +10618,14 @@ class Checker {
       }
     }
     ++parse_cache_misses_;
+    const bool cache_full = parse_cache_entries_ >= parse_cache_limit_;
     auto result = split_binary_uncached(expression, operators);
-    if (parse_cache_entries_ < parse_cache_limit_) {
+    if (cache_full) {
+      if (profile_concrete_effect_work_) ++parse_cache_success_after_cap_;
+    } else {
       binary_parse_cache_[expression].push_back({operators, result});
       ++parse_cache_entries_;
+      if (profile_concrete_effect_work_) ++parse_cache_insertions_before_cap_;
     }
     return result;
   }
@@ -31682,6 +31816,55 @@ export fn fresh(x):
         has_sort_fact("sort_values_reverse", true);
   }
 
+  static bool unit_test_negative_parse_cache_replay() {
+    Program program;
+    Checker checker(program);
+
+    string callee = "preserve-callee";
+    vector<string> arguments = {"preserve-argument"};
+    if (checker.parse_simple_call("not a call", callee, arguments) ||
+        callee != "preserve-callee" ||
+        arguments != vector<string>{"preserve-argument"})
+      return false;
+    callee = "different-callee";
+    arguments = {"different-argument"};
+    if (checker.parse_simple_call("not a call", callee, arguments) ||
+        callee != "different-callee" ||
+        arguments != vector<string>{"different-argument"})
+      return false;
+
+    string receiver;
+    string member = "foo";
+    arguments = {"first-argument"};
+    if (checker.parse_member_call(".foo()", receiver, member, arguments) ||
+        !receiver.empty() || member != "foo" ||
+        arguments != vector<string>{"first-argument"})
+      return false;
+    receiver = "stale-receiver";
+    member = "stale-member";
+    arguments = {"second-argument"};
+    if (checker.parse_member_call(".foo()", receiver, member, arguments) ||
+        !receiver.empty() || member != "foo" ||
+        arguments != vector<string>{"second-argument"})
+      return false;
+
+    receiver = "preserve-receiver";
+    member = "preserve-member";
+    arguments = {"preserve-arguments"};
+    if (checker.parse_member_call("no member call", receiver, member,
+                                  arguments) ||
+        receiver != "preserve-receiver" || member != "preserve-member" ||
+        arguments != vector<string>{"preserve-arguments"})
+      return false;
+    receiver = "different-receiver";
+    member = "different-member";
+    arguments = {"different-arguments"};
+    return !checker.parse_member_call("no member call", receiver, member,
+                                      arguments) &&
+        receiver == "different-receiver" && member == "different-member" &&
+        arguments == vector<string>{"different-arguments"};
+  }
+
 private:
 #include "executor_invoke_lowering.inc"
 #include "file_chunk_lowering.inc"
@@ -31741,6 +31924,9 @@ bool checker_unit_test_vector_literal_operand_occurrences() {
 }
 bool checker_unit_test_statement_call_occurrence_roles() {
   return Checker::unit_test_statement_call_occurrence_roles();
+}
+bool checker_unit_test_negative_parse_cache_replay() {
+  return Checker::unit_test_negative_parse_cache_replay();
 }
 
 }  // namespace moss

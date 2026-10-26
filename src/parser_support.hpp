@@ -23,7 +23,8 @@ bool parse_simple_call(const std::string& text, std::string& callee,
 bool plain_identifier(const std::string& value);
 bool parse_member_call(const std::string& text, std::string& receiver,
                        std::string& handler,
-                       std::vector<std::string>& arguments);
+                       std::vector<std::string>& arguments,
+                       bool* outputs_written = nullptr);
 std::size_t matching_paren(const std::string& text, std::size_t open);
 std::size_t top_level_assignment(const std::string& text);
 std::size_t top_level_colon(const std::string& text);
