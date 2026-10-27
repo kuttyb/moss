@@ -1,6 +1,6 @@
 # Phase 26.1 exit status
 
-**Status: C1 closeout review pending; T1 has not started.** This report records
+**Status: C1 closeout blocked by Architect NO-GO; T1 has not started.** This report records
 the C1 gates on implementation commit `4b14c07a35e44ab3977f6f9eb2ef62e9eb9241f0`.
 
 ## C1 outcomes
@@ -23,7 +23,11 @@ and Toolkit package-scope rows in `C1_RESULTS.md`; two more accepted on main
 but reject here with `MODULE_IDENTITY_UNRESOLVED`:
 `examples/priority_queue/src/main.moss` and
 `examples/swarm/Julia/CircularBuffer/src/main.moss`. These remain unresolved;
-the report does not characterize the corpus differential as green.
+the report does not characterize the corpus differential as green. Architect
+reviewed exact commit `5197ae0b` and determined these are real
+accepted-to-rejected regressions tied to C1's package identity handling, not
+documented scope omissions. The user directed no further C1 code changes, so
+C1 cannot be declared closed and T1 has not started.
 
 ## Known regression: cross-package Emacs xref
 

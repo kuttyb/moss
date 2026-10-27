@@ -87,7 +87,18 @@ The run was not certified: the C1 working tree was dirty, and certification requ
 
 ## Architect Review
 
-Architect verdict: **NO-GO** for C1 closeout. The 12-row Margo mapping, complete semantic Tests target, and scope-identity cases are now covered. The literal corpus-wide diagnostic-set oracle remains absent because the checker and package command expose only the first error. Architect says no comparison of one result per file/package can prove both set inclusions; an oracle-only diagnostic enumeration path or an explicit acceptance narrowing is required. Do not start T1 until this is resolved and the final C1 tree receives GO.
+Historical review on the pre-closeout oracle attempt: **NO-GO** because the
+multi-error diagnostic-set oracle was incomplete. That oracle work was removed
+under the later fail-fast G-a/G-b acceptance contract; it is not the current
+closeout blocker.
+
+Current review of exact commit `5197ae0b7cc98404bd7ed8cd7a0c6bfeb66ca199`:
+**NO-GO**. Architect independently reproduced the two extra
+`MODULE_IDENTITY_UNRESOLVED` corpus failures in `priority_queue` and Julia
+`CircularBuffer`. They pass on `origin/main`, so these are verdict regressions,
+not the documented Calc/Toolkit package-scope differences. Per the user's
+instruction, no further C1 compiler changes were made. C1 cannot be marked
+closed and T1 must not start until the regression has an authorized disposition.
 
 ## Historical Multi-Error Oracle Experiment — 2026-10-26
 
