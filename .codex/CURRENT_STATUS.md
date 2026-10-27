@@ -1,14 +1,13 @@
 # Phase 26.1 working rules (user, 2026-10-27)
 
-## Current state — T1 implementation in progress
+## Current state — T1 Architect finding fixed; final gates pending
 
-- Active branch: `phase26-1-m1`, remote `origin/phase26-1-m1`. C1 is closed and frozen at reviewed implementation `7bc75969`, with Architect GO recorded in `4150ee94`. T1 implementation checkpoint `d79ae577` and benchmark metadata correction `af905345` are pushed. The full gates are now partially complete: `make check` passed 145/145, the corpus differential against `4150ee94` checked 2,064 sources with zero verdict/code/Rust-hash differences, enforced package-perf passed 70/70, and Fast Debug parity passed.
-- T1 keeps imported `.mossi` signatures out of inference rounds and convergence fingerprints, validates signature immutability after inference/effect phases, and hydrates private ABI-v10 parameter access during interface loading. Concrete specialization remains active.
-- Imported ABI-v10 member requirements now feed validation through temporary views rather than rewriting `Function.constraints`. Legacy ABI-v9 open summaries retain interface-declared effects and call dependencies without a later inference rewrite.
-- Focused checks pass: `check_phase25_typed_semantic_api.py` and `check_phase25_r2_wp2_member.py`; compiler build and `git diff --check` pass. Compiler-perf first stopped on stale MG1–MG5 directory hashes in the benchmark manifests; the tracked fixtures themselves are clean. Diagnosis: the original manifest hashes are correct for tracked fixture inputs, but `verify.py` included ignored Margo `build/` outputs created by `make check`. I reverted the manifest and runner workarounds and changed the project hash calculation to exclude generated build directories. `python3 benchmarks/compiler_torture/verify.py` now passes 54/54 against the unchanged manifest.
-- Required T1 gates still outstanding: full corpus differential against C1 checkpoint `4150ee94` with zero verdict/code/Rust changes; `make check`; Fast Debug parity; enforced `package-perf`; `compiler-perf` against C1 closeout with no slowdown beyond noise floor; Architect GO on exact final SHA. No GitHub-hosted regression jobs or PRs.
-- Next: commit and push the fixture verifier correction and status, rerun compiler-perf against `4150ee94`, then obtain Architect GO on the exact final implementation SHA and push the T1 closeout to `origin/phase26-1-m1`.
-- All authorized regression gates run on this work machine. Historical C1 oracle attempts remain evidence only, not passing gates; see the history below.
+- Active branch: `phase26-1-m1`, remote `origin/phase26-1-m1`. C1 is closed and frozen at reviewed implementation `7bc75969`, with Architect GO recorded in `4150ee94`.
+- T1 implementation checkpoint before review was `14f025e1`. Architect returned NO-GO because the transient imported method-validation view cleared all constraints, dropping non-Method requirements. The fix now preserves every non-Method constraint and replaces only Method constraints from the sealed summary; imported member requirement IDs use summary member order.
+- A focused C++ regression constructs an imported function with both Operator and Method constraints and asserts the view retains the Operator while replacing the body-derived Method. The existing hostile ABI-v10 member tests and typed semantic API test pass after the fix. Compiler build, feedback validation, and `git diff --check` pass.
+- T1 gates before this Architect finding were green: `make check` 145/145; corpus differential vs `4150ee94` 2,064 sources and zero verdict/code/generated-Rust-hash differences; Fast Debug parity passed; enforced package-perf 70/70; compiler-perf 77 fixtures, 3 repetitions, +0.6% aggregate, no slowdowns past the noise floor. These validate the prior implementation but must be rerun after the fix.
+- Next: checkpoint and push the mixed-constraint repair; rerun `make check`, corpus differential, Fast Debug, package-perf, and compiler-perf; request Architect review on the exact final implementation SHA. Do not claim T1 complete until GO arrives.
+- No GitHub-hosted regression jobs or PRs. All authorized gates run on this work machine. Historical C1 oracle attempts remain evidence only, not passing gates.
 
 ---
 

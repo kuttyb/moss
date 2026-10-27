@@ -32,6 +32,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 #include "ast.hpp"
+#include "imported_method_validation.hpp"
 #include "type_ir.hpp"
 #include "typed_semantic_api.hpp"
 #include "checked_body_ir.hpp"
@@ -22458,52 +22459,8 @@ class Checker {
 
   std::optional<Function> imported_method_validation_view(
       const Function& function) const {
-    if (!compiled_interface_file(function.source_file) || !function.open_summary ||
-        function.open_summary->member_requirements.empty())
-      return std::nullopt;
-    Function view = function;
-    // The sealed summary is the authority for imported member requirements.
-    // Adapt it transiently for the existing admission checker without writing
-    // those derived constraints into the imported Function signature.
-    view.constraints.clear();
-    const auto& summary = *function.open_summary;
-    for (std::size_t ordinal = 0;
-         ordinal < summary.member_requirements.size(); ++ordinal) {
-      const auto& member = summary.member_requirements[ordinal];
-      std::optional<std::size_t> receiver_index;
-      for (std::size_t index = 0; index < summary.parameter_types.size(); ++index) {
-        if (!summary.parameter_types[index] || !member.receiver ||
-            !summary.parameter_types[index]->structurally_equal(*member.receiver))
-          continue;
-        if (receiver_index)
-          throw std::logic_error(
-              "imported member receiver matches multiple parameters");
-        receiver_index = index;
-      }
-      if (!receiver_index || *receiver_index >= function.params.size())
-        throw std::logic_error("imported member receiver is detached from parameters");
-      Constraint requirement(ConstraintKind::Method,
-          function.params[*receiver_index].name, member.member_name,
-          "_method_result:" + std::to_string(ordinal));
-      requirement.arity = member.argument_types.size();
-      for (const auto& argument_type : member.argument_types) {
-        std::optional<std::size_t> argument_index;
-        for (std::size_t index = 0; index < summary.parameter_types.size(); ++index) {
-          if (!summary.parameter_types[index] || !argument_type ||
-              !summary.parameter_types[index]->structurally_equal(*argument_type))
-            continue;
-          if (argument_index)
-            throw std::logic_error(
-                "imported member argument matches multiple parameters");
-          argument_index = index;
-        }
-        if (!argument_index || *argument_index >= function.params.size())
-          throw std::logic_error("imported member argument is detached from parameters");
-        requirement.arguments.push_back(function.params[*argument_index].name);
-      }
-      view.constraints.push_back(std::move(requirement));
-    }
-    return view;
+    if (!compiled_interface_file(function.source_file)) return std::nullopt;
+    return moss::imported_method_validation_view(function);
   }
 
   vector<moss::MemberDispatchRequirement> validate_method_requirements(
@@ -22512,9 +22469,13 @@ class Checker {
     auto instantiated = instantiated_function_env(function, parameter_types);
     std::optional<string> related_function_result;
     vector<moss::MemberDispatchRequirement> resolved_requirements;
+    size_t imported_member_ordinal = 0;
     for (size_t ordinal = 0; ordinal < function.constraints.size(); ++ordinal) {
       const auto& requirement = function.constraints[ordinal];
       if (requirement.kind != ConstraintKind::Method) continue;
+      const size_t member_ordinal =
+          compiled_interface_file(function.source_file) && function.open_summary
+              ? imported_member_ordinal++ : ordinal;
       auto receiver = instantiated.find(requirement.subject);
       string receiver_type = receiver != instantiated.end() ? canonical_type_name(receiver->second) : string();
       if (receiver == instantiated.end() ||
@@ -22557,7 +22518,7 @@ class Checker {
           method ? method->return_type.value_or("unit") : "unit"));
       moss::MemberDispatchRequirement closed;
       closed.requirement_id = function.semantic_callable_id + ":member:" +
-          std::to_string(ordinal);
+          std::to_string(member_ordinal);
       closed.member_name = requirement.detail;
       closed.receiver = moss::Type::parse_canonical(
           canonical_type_name(receiver->second)).value_or(nullptr);
@@ -22569,7 +22530,7 @@ class Checker {
                        function.source_file, function.line, 1,
                        function.semantic_callable_id,
                        function.semantic_callable_id + ":member:" +
-                           std::to_string(ordinal)};
+                           std::to_string(member_ordinal)};
       if (const auto* operation = builtin_operation(receiver->second,
                                                     requirement.detail)) {
         closed.admitted_template_or_builtin_family =

@@ -55,6 +55,14 @@ with tempfile.TemporaryDirectory(prefix="phase25-r2-wp2-", dir=TMP) as td:
         run(["g++", "-std=c++17", "-O0", "-Wall", "-Wextra", "-Werror",
              "-Wno-missing-field-initializers", "-pedantic", "-Isrc",
              source, "src/checked_body_ir.cpp", "-o", target])
+    validation_view_test = scratch / "validation_view_test"
+    run(["g++", "-std=c++17", "-O0", "-Wall", "-Wextra", "-Werror",
+         "-Wno-missing-field-initializers", "-pedantic", "-Isrc",
+         "tests/tooling/check_phase26_1_t1_validation_view.cpp",
+         "src/type_ir.cpp", "-o", validation_view_test])
+    validation_view_result = run([validation_view_test])
+    assert "PASS mixed imported validation constraints preserved" in (
+        validation_view_result.stdout)
 
     provider = scratch / "provider"
     package(provider, "wp2_member_provider", """module Service
