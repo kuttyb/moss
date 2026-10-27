@@ -2,7 +2,7 @@
 
 ## Current state — C1 implementation extended, closeout pending
 
-- Active branch and remote: `phase26-1-m1`, base HEAD `ad3276ca`. Current working changes are uncommitted; they add semantic-only checking of the complete Tests target to `margo build --check`, diagnostics/scope identity evidence, callback reachability for `any()` / `all()`, impact snapshot workflow guidance, and C1 regression coverage.
+- Active branch and remote: `phase26-1-m1`, HEAD `fb73204d`, clean and pushed to `origin/phase26-1-m1`. The checkpoint adds semantic-only checking of the complete Tests target to `margo build --check`, diagnostics/scope identity evidence, callback reachability for `any()` / `all()`, impact snapshot workflow guidance, C1 regression coverage, and M1 wall-time output.
 - C1 review remains **NO-GO**. The 12 changed corpus rows are mapped to rejecting `margo build --check` package diagnostics and traced reachable identities. The user selected the oracle-only diagnostic-enumeration path; scaffolding is started in `src/ast.hpp`, but collection and the corpus-wide set comparison are not implemented yet.
 - `make --jobs="$(nproc)" check`: 145/145 passed after current source/test changes; suite wall time 234.68 s. Fast Debug parity and feedback validation passed in that run.
 - `MOSS_M1_ENFORCE_TARGETS=1 make package-perf`: completed successfully, all 70 scenario rows met after adding M1 wall-time capture. Latest counters: `tmp/compiler-perf/m1-20261026-223914/`. Three paired baseline-main/candidate timing runs are summarized in `docs/phase26/M1_WALL_TIME_RESULTS.md`. Baseline `margo build` includes Rust compilation while candidate `margo build --check` is semantic-only; report the command-mode distinction.
