@@ -52,7 +52,7 @@ def graphs() -> dict[str, dict[str, dict]]:
 
     hub = package("m1_hub", {}, "m1_hub", "export fn value() -> Int:\n  return 1\n" + anchors())
     consumers = {f"consumer_{i}": package(f"m1_consumer_{i}", {"m1_hub": "../hub"},
-                 f"m1_consumer_{i}", "import m1_hub\nexport fn value() -> Int:\n  return m1_hub.value()\n")
+                 f"m1_consumer_{i}", "import m1_hub\nexport fn value():\n  return m1_hub.value()\n")
                  for i in range(8)}
     fan_deps = {f"m1_consumer_{i}": f"../consumer_{i}" for i in range(8)}
     fan_imports = "\n".join(f"import m1_consumer_{i}" for i in range(8))
@@ -61,16 +61,20 @@ def graphs() -> dict[str, dict[str, dict]]:
                   f"{fan_imports}\nfn main():\n{fan_calls}\n")
 
     generic = package("m1_generic", {}, "m1_generic",
-                      "export fn identity(value):\n  return value\n" + anchors())
+                      "export fn identity(value):\n  return value\n" + anchors()
+                      + "export fn forwarded_explicit() -> Int:\n  return 1\n")
     int_consumer = package("m1_int_consumer", {"m1_generic": "../generic"}, "m1_int_consumer",
-                           "import m1_generic\nexport fn value() -> Int:\n  return m1_generic.identity(17)\n")
+                           "import m1_generic\nexport fn value() -> Int:\n  return m1_generic.identity(17)\n"
+                           "export fn forwarded():\n  return m1_generic.forwarded_explicit()\n")
     text_consumer = package("m1_text_consumer", {"m1_generic": "../generic"}, "m1_text_consumer",
-                            'import m1_generic\nexport fn value() -> String:\n  return m1_generic.identity("moss")\n')
+                            'import m1_generic\nexport fn value() -> String:\n  return m1_generic.identity("moss")\n'
+                            "export fn forwarded():\n  return m1_generic.forwarded_explicit()\n")
     generic_app = package("m1_generic_app", {
         "m1_int_consumer": "../int_consumer",
         "m1_text_consumer": "../text_consumer",
     }, "m1_generic_app", "import m1_int_consumer\nimport m1_text_consumer\nfn main():\n"
-       "  echo m1_int_consumer.value()\n  echo m1_text_consumer.value()\n")
+       "  echo m1_int_consumer.value()\n  echo m1_text_consumer.value()\n"
+       "export fn forwarded():\n  return m1_int_consumer.forwarded()\n")
 
     return {
         "application_library": {"app": app, "library": lib},
@@ -195,7 +199,7 @@ def run_profiled_check(root: Path, package_roots: dict[str, Path], target: Path,
     return counts
 
 
-def mutate_scenario(source: Path, scenario: str) -> None:
+def mutate_scenario(source: Path, scenario: str, position: str) -> None:
     text = source.read_text()
     if scenario == "E0":
         os.utime(source, None)
@@ -206,8 +210,18 @@ def mutate_scenario(source: Path, scenario: str) -> None:
         text = text.replace("export fn inferred_anchor():\n  return 1",
                             'export fn inferred_anchor():\n  return "changed"', 1)
     elif scenario == "E3":
-        text = text.replace("export fn explicit_anchor() -> Int:\n  return 1",
-                            "export fn explicit_anchor() -> Float:\n  return 1.0", 1)
+        if position == "app":
+            text = text.replace("export fn explicit_anchor() -> Int:\n  return 1",
+                                "export fn explicit_anchor() -> Float:\n  return 1.0", 1)
+        elif "m1_core" in text:
+            text = text.replace("export fn explicit_value(x: Int) -> Int:\n  return x",
+                                "export fn explicit_value(x: Int) -> Float:\n  return 1.0", 1)
+        elif "m1_hub" in text:
+            text = text.replace("export fn value() -> Int:\n  return 1",
+                                "export fn value() -> Float:\n  return 1.0", 1)
+        elif "m1_generic" in text:
+            text = text.replace("export fn forwarded_explicit() -> Int:\n  return 1",
+                                "export fn forwarded_explicit() -> Float:\n  return 1.0", 1)
     else:
         raise ValueError(scenario)
     if scenario != "E0":
@@ -286,7 +300,7 @@ def main() -> int:
         target = roots[package_key] / "src" / f"{graph[package_key]['module']}.moss"
         original_source = target.read_text()
         for scenario in ("E0", "E1", "E2", "E3"):
-            mutate_scenario(target, scenario)
+            mutate_scenario(target, scenario, position)
             expected = expected_target(fixture, position, scenario, len(graph))
             command = ("margo build --check" if margo_check_supported else
                        "margo build (build --check unsupported)")
