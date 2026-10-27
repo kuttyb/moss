@@ -1,28 +1,15 @@
 # Phase 26.1 F1 — interface freshness and source boundaries
 
-Implementation: `e9186f2ca6c5f64c18e419f6b079746444276612` on
+Implementation: `b0744694e08ddf2809bf4dd6705d616f6c6c28ba` on
 `phase26-1-m1`, based on main `d109b8f17276f70b591432fd345d57e727f17501`.
 
-## Architect follow-up in progress
-
-The Architect found a gap in the initial implementation: direct `moss build`
-could load a stale imported `.mossi`. Freshness validation is now unconditional
-for all imported interfaces, and the focused regression confirms direct build
-rejects a body-only provider edit before using its old interface. The focused
-F1 and borrowed-read checks pass. The first full run after this correction
-passed 133/142; nine tests depended on removed provider sources or asserted the
-old missing-module wording. Those fixtures are now classified and being
-migrated under `F1_TEST_MIGRATION.md`. The earlier corpus differential and
-compiler-perf numbers below predate this follow-up and must be rerun after the
-migrations before F1 closes.
-
 F1 records a content hash of each package's Moss sources in `.mossi`, outside
-the semantic interface hash. `moss check` validates that hash using source
-bytes, reports the R2 rebuild guidance for a missing or stale interface, and
 does not use `MOSS_FAST_DEBUG_SOURCE_ROOTS`. It follows the requested package
 module's local source closure and resolves other packages only through current
-`.mossi` files. Candidate discovery excludes the checking package's own build
-tree. Margo and Fast Debug keep their package-aware source handoff.
+`.mossi` files. Every imported interface load, including direct `moss build`,
+validates freshness before trusting its records. Candidate discovery excludes
+the checking package's own build tree. Margo and Fast Debug keep their
+package-aware source handoff.
 
 Phase 26.1 retires binary-only source-free provider packages under R2. Imported
 semantic interfaces and native linking remain available when the provider
@@ -36,19 +23,33 @@ classified in [`F1_TEST_MIGRATION.md`](F1_TEST_MIGRATION.md).
 | --- | --- |
 | Full corpus differential vs `d109b8f1` | 2,064 sources; 1,325 accepted on both sides; 0 verdict changes; 0 diagnostic-code changes; 0 generated-Rust hash changes |
 | Fast Debug parity | Passed in `shard_fast_debug` within the full regression suite |
-| `make --jobs="$(nproc)" check` | 142/142 jobs passed on the implementation tree |
-| Agent feedback and whitespace validation | Passed |
-| Architect review | Final exact-SHA review requested; result pending |
+| Full corpus TSV comparison | Baseline and candidate outputs byte-identical |
+| `make --jobs="$(nproc)" check` | 142/142 jobs passed on `b0744694` |
+| F1 and borrowed-read focused checks | Passed, including direct-build stale `.mossi` rejection |
+| Agent feedback, Python compilation, and whitespace validation | Passed |
+| Architect review | Focused follow-up GO; final exact-SHA review requested |
 
 ## Performance
 
-Run `20261026-190550` used the same WSL2 host (`DESKTOP-0T772KP`) for baseline
-`d109b8f1` and candidate `e9186f2c`. It included all 77 fixtures, three
-interleaved untraced timing repetitions, and one profiling sample per side.
-The sum of fixture wall-time medians was 5.447 s for each revision. No fixture
-exceeded the report's slowdown noise floor. In particular, the eight
-attribution workloads had no noise-floor slowdown. Full per-fixture timing,
-CPU, peak RSS, and counters are in the local run under
-`tmp/compiler-perf/20261026-190550/`.
+Run `20261026-192030` used WSL2 host `DESKTOP-0T772KP` for baseline `d109b8f1`
+and candidate `b0744694`. It included all 77 fixtures, three interleaved
+untraced timing repetitions, and one profiling sample per side. The sum of
+fixture wall-time medians was 5.258 s baseline and 5.292 s candidate (+0.7%).
+No fixture exceeded the noise floor.
+
+| Attribution workload | Baseline | Candidate | Change |
+| --- | ---: | ---: | ---: |
+| `example_checkout` | 3.54 ms | 3.77 ms | +6.5% |
+| `rw_packages_regex` | 711.08 ms | 715.91 ms | +0.7% |
+| `rw_projects_rolling_window` | 49.43 ms | 48.59 ms | -1.7% |
+| `rw_sdk_datastructures` | 275.80 ms | 283.29 ms | +2.7% |
+| `w2_spec_distinct_n032` | 1788.43 ms | 1798.09 ms | +0.5% |
+| `w3_spec_repeated_n032` | 869.34 ms | 879.89 ms | +1.2% |
+| `w4_infer_deep_d018` | 26.80 ms | 25.80 ms | -3.7% |
+| `w5_infer_wide_w100` | 121.81 ms | 123.90 ms | +1.7% |
+
+Small-fixture latency: checkout was 3.54 ms baseline / 3.77 ms candidate;
+rolling window was 49.43 ms / 48.59 ms. Full per-fixture wall, CPU, peak RSS,
+ranges, and work counters are in `tmp/compiler-perf/20261026-192030/`.
 
 No GitHub regression jobs were launched.

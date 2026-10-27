@@ -1,11 +1,11 @@
-# Phase 26.1 F1 complete — 2026-10-26
+# Phase 26.1 F1 gates green — 2026-10-26
 
-- Active branch: `phase26-1-m1`; F1 implementation SHA `e9186f2ca6c5f64c18e419f6b079746444276612`, pushed to `origin/phase26-1-m1`. F1 uses package-local requested-module source closure for `moss check`, excludes Fast Debug dependency source-root overrides, validates source freshness from `.mossi`, and ignores the package's own build outputs as interfaces. Binary-only provider packages are retired under R2.
-- Full corpus differential against main `d109b8f1`: 2,064 sources; 1,325 accepted on both sides; zero verdict, diagnostic-code, or generated-Rust hash changes.
-- `make --jobs="$(nproc)" check` passed 142/142 on the exact implementation tree. `shard_fast_debug` passed in the suite. Focused F1, borrowed-reads, Phase 20C executor 54/54, Phase 10.6F, Phase 10.6F.1, and staged-v10 scenario 11 checks pass. Feedback, Python compilation, and whitespace validation pass.
-- Compiler-perf run `20261026-190550`: baseline `d109b8f1` vs F1, 77 fixtures, 3 interleaved timing reps. Sum of fixture medians 5.447s on both sides; no fixture exceeded the noise floor. The report is in `docs/phase26/F1_RESULTS.md`; disposable full artifacts are under `tmp/compiler-perf/20261026-190550/`.
-- Source-free provider retirement and every test migration are recorded in `PHASE_26_1_RULES.md` and `F1_TEST_MIGRATION.md`. No GitHub regression jobs were launched.
-- Final Architect review requested for exact SHA `e9186f2c`; await its result before starting G1. Then proceed G1, C1, T1 in order, requiring a green complete local regression before each next item. At exit, enforce every M1 target, publish the certified compiler-perf result, and open one PR to main.
+- Active branch: `phase26-1-m1`; F1 implementation SHA `b0744694e08ddf2809bf4dd6705d616f6c6c28ba`, pushed to `origin/phase26-1-m1`. Every imported `.mossi` load validates provider source freshness, including direct `moss build`. F1 also enforces per-file source closure, excludes Fast Debug dependency source-root overrides, and ignores the checking package's own build outputs as interfaces.
+- Full corpus differential against main `d109b8f1`: 2,064 sources; 1,325 accepted on both sides; zero verdict, diagnostic-code, or generated-Rust hash changes; baseline and candidate TSVs are byte-identical.
+- `make --jobs="$(nproc)" check` passed 142/142 on `b0744694`; `shard_fast_debug` passed. Focused F1 and borrowed-read checks pass. Feedback, Python compilation, and whitespace validation pass.
+- Compiler-perf run `20261026-192030`: baseline `d109b8f1` vs `b0744694`, 77 fixtures, 3 interleaved timing repetitions. Sum of fixture medians 5.258s vs 5.292s (+0.7%); no fixture exceeded the noise floor. See `docs/phase26/F1_RESULTS.md`; full artifacts are under `tmp/compiler-perf/20261026-192030/`.
+- Source-free provider retirement and every modified test classification are recorded in `PHASE_26_1_RULES.md` and `F1_TEST_MIGRATION.md`. The focused Architect review is GO; final exact-SHA review is pending. No GitHub regression jobs were launched.
+- Next: after final Architect GO, proceed to G1. Require the complete local regression to pass before beginning C1, then T1. At exit, enforce every M1 target, publish the certified compiler-perf result, and open one PR to main.
 
 ---
 
