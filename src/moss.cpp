@@ -15470,7 +15470,7 @@ static CheckedProjectUnit check_project_sources(
         if (!modules.count(name.first)) {
           if (require_current_interfaces)
             throw CompileError(name.second.line,
-                stale_interface_message(name.first), "MOSS_INTERFACE_STALE");
+                stale_interface_message(name.first));
           else
             throw CompileError(name.second.line, "imported module '" +
                 name.first + "' was not found in source or compiled interfaces");
@@ -19806,7 +19806,8 @@ static SourceCompilationContext analyze_source_context(
 // module reachable; root project source has precedence over external source
 // providers, matching ordinary native module-provider selection.
 static vector<std::filesystem::path> fast_debug_source_closure(
-    const SourceCompilationContext& context) {
+    const SourceCompilationContext& context,
+    bool include_dependency_source_roots = true) {
   if (!context.project ||
       (context.mode != ProgramGenerationMode::Application &&
        context.mode != ProgramGenerationMode::Tests))
@@ -19863,8 +19864,9 @@ static vector<std::filesystem::path> fast_debug_source_closure(
   // invocation-scoped MOSS_FAST_DEBUG_SOURCE_ROOTS handoff).
   // Dependency source files are indexed here and merged into the same
   // compilation unit; their module declarations make them self-identifying.
-  if (const char* source_roots_env =
-          std::getenv("MOSS_FAST_DEBUG_SOURCE_ROOTS")) {
+  if (include_dependency_source_roots) {
+   if (const char* source_roots_env =
+           std::getenv("MOSS_FAST_DEBUG_SOURCE_ROOTS")) {
     string roots_value = source_roots_env;
     size_t begin = 0;
     while (begin <= roots_value.size()) {
@@ -19900,6 +19902,7 @@ static vector<std::filesystem::path> fast_debug_source_closure(
       for (const auto& source : dep_sources)
         add_source(source, dep_manifest.root, false);
     }
+   }
   }
 
   if (!has_explicit_modules) return context.sources;
@@ -23695,7 +23698,7 @@ int main(int argc, char** argv) {
           // their current .mossi interfaces. Fast Debug intentionally keeps
           // its dependency-source closure supplied by Margo.
           auto sources = active_command == "check"
-              ? context.sources
+              ? moss::fast_debug_source_closure(context, false)
               : moss::fast_debug_source_closure(context);
           // Check and semantic queries stop at semantics, exactly like the
           // standalone path below; only compilation lowers to Rust.

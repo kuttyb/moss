@@ -66,9 +66,10 @@ def check(consumer: Path, provider: Path, env: dict[str, str], *, ok: bool = Tru
                consumer, env, ok=ok)
 
 
-def assert_interface_error(result, package: str):
+def assert_interface_error(result, package: str,
+                           code: str = "MOSS_INTERFACE_STALE"):
     payload = json.loads(result.stdout)
-    assert payload["error"]["code"] == "MOSS_INTERFACE_STALE", payload
+    assert payload["error"]["code"] == code, payload
     assert payload["error"]["message"] == (
         f"interface for {package} is missing or stale; run `margo build`"), payload
 
@@ -110,7 +111,7 @@ def main() -> int:
     # No interface is a targeted build instruction, even though source exists.
     interface.unlink()
     missing = check(consumer, provider, env, ok=False)
-    assert_interface_error(missing, "f1_lib")
+    assert_interface_error(missing, "f1_lib", "MOSS_COMPILE_ERROR")
     run([MARGO, "build"], provider, env)
 
     # moss check must ignore the Fast Debug source-root handoff and consume the
@@ -151,7 +152,7 @@ def main() -> int:
     own_env["MOSS_MODULE_PATH"] = str(own)
     orphan = run([COMPILER, "check", own / "src/main.moss", "--json"],
                  own, own_env, ok=False)
-    assert_interface_error(orphan, "f1_ghost")
+    assert_interface_error(orphan, "f1_ghost", "MOSS_COMPILE_ERROR")
 
     # Vendored/path dependencies remain discoverable below the consumer root.
     nested_consumer_root = SCRATCH / "nested" / "application"
@@ -160,6 +161,21 @@ def main() -> int:
     run([MARGO, "build"], nested_provider, env)
     nested_check = check(nested_consumer, nested_provider, env)
     assert json.loads(nested_check.stdout)["ok"] is True, nested_check.stdout
+
+    # Checking one package file retains its local import closure rather than
+    # semantically checking unrelated sibling modules. This also guards
+    # against using the raw project source list for `moss check <file>`.
+    scope = SCRATCH / "single-file-scope"
+    (scope / "src").mkdir(parents=True)
+    (scope / "Moss.toml").write_text(manifest("f1_single_file_scope"))
+    requested = scope / "src/library.moss"
+    requested.write_text(
+        "module f1_library\nexport fn answer() -> Int:\n  return 42\n")
+    (scope / "src/main.moss").write_text(
+        "module f1_scope_app\nimport f1_library\nfn main():\n"
+        "  echo f1_library.missing()\n")
+    scoped = run([COMPILER, "check", requested, "--json"], scope, env)
+    assert json.loads(scoped.stdout)["ok"] is True, scoped.stdout
 
     # Staged ABI-v10 serialization also carries out-of-band freshness metadata.
     v10_env = dict(env)
