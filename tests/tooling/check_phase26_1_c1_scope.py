@@ -146,6 +146,50 @@ def main() -> int:
     assert any("::A:fn:f" in identity for identity in callback_edges), callback_edges
     assert not any("::B:fn:f" in identity for identity in callback_edges), callback_edges
 
+    # When a callback leaf is ambiguous across imported modules, file scope
+    # must conservatively include every matching callback body. The checker
+    # may then report its normal ambiguity/type diagnostic.
+    root, entry, env = new_package("c1_ambiguous_callback_reachability")
+    entry.write_text(
+        "module App\n"
+        "import A\n"
+        "import B\n"
+        "fn main():\n"
+        "  xs = [2, 1]\n"
+        "  sort(xs, by: cmp)\n")
+    (root / "src/a.moss").write_text(
+        "module A\n"
+        "export fn cmp(value: Int) -> Int:\n"
+        "  return absent_a()\n")
+    (root / "src/b.moss").write_text(
+        "module B\n"
+        "export fn cmp(value: Int) -> Int:\n"
+        "  return absent_b()\n")
+    traced = run([COMPILER, "check", entry, "--json"], root,
+                 env | {"MOSS_PHASE26_C1_SCOPE_TRACE": "1"}, ok=False)
+    callback_edges = [
+        row.split("|", 3)[3] for row in traced.stderr.splitlines()
+        if row.startswith("MOSS_C1_SCOPE_ID|function|") and
+        len(row.split("|", 3)) == 4
+    ]
+    assert any("::A:fn:cmp" in identity for identity in callback_edges), callback_edges
+    assert any("::B:fn:cmp" in identity for identity in callback_edges), callback_edges
+    assert "absent_a" in traced.stdout + traced.stderr, traced
+    (root / "src/a.moss").write_text(
+        "module A\n"
+        "export fn cmp(value: Int) -> Int:\n"
+        "  return value\n")
+    traced_b = run([COMPILER, "check", entry, "--json"], root,
+                   env | {"MOSS_PHASE26_C1_SCOPE_TRACE": "1"}, ok=False)
+    callback_edges_b = [
+        row.split("|", 3)[3] for row in traced_b.stderr.splitlines()
+        if row.startswith("MOSS_C1_SCOPE_ID|function|") and
+        len(row.split("|", 3)) == 4
+    ]
+    assert any("::A:fn:cmp" in identity for identity in callback_edges_b), callback_edges_b
+    assert any("::B:fn:cmp" in identity for identity in callback_edges_b), callback_edges_b
+    assert "absent_b" in traced_b.stdout + traced_b.stderr, traced_b
+
     # Name mentions are not call edges. A local value called `broken` and a
     # string containing `read()` must not select same-named sibling callables.
     # Unrelated object and enum declaration errors are also package-only for

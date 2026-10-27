@@ -11919,10 +11919,10 @@ static void add_callable_argument_references(const string& source,
       called_functions.push_back(&function);
     };
     for (const auto& function : program.functions) collect(function);
-    // An unqualified call with several same-leaf declarations is resolved by
-    // module context later; without that context do not infer callback edges
-    // from every candidate's formal signature.
-    if (!qualified && called_functions.size() != 1) return result;
+    // File checking must be conservative when this syntactic pass cannot know
+    // which same-leaf declaration name resolution will choose. Include every
+    // candidate's callable slots so an ambiguous or context-sensitive call
+    // cannot hide a reachable callback body.
     for (const Function* function : called_functions) {
       for (const auto& constraint : function->constraints) {
         if (constraint.kind != ConstraintKind::Callable) continue;
@@ -11949,9 +11949,10 @@ static void add_callable_argument_references(const string& source,
           (!qualified && value == function.declaration_name))
         matches.push_back(&function);
     }
-    // An unqualified callback is reachable only if name resolution is unique.
-    if (matches.size() == 1)
-      references.functions.insert(matches.front()->name);
+    // Preserve every candidate on ambiguity. Selecting too many bodies is
+    // safer than letting file mode omit a callback that the checker resolves.
+    for (const Function* function : matches)
+      references.functions.insert(function->name);
   };
   std::function<void(const string&)> visit = [&](const string& expression) {
     string text = expression;
