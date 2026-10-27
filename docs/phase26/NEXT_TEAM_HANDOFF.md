@@ -125,7 +125,8 @@ package shows partial waves.
 
 T1 implementation and local gates are complete on branch `phase26-1-m1` at
 `18c04f2ea965fc71c6b835dd6b8690310e514656`, pushed to
-`origin/phase26-1-m1`. Architect GO is for this exact implementation SHA. T1
+`origin/phase26-1-m1`. Architect GO is for this exact implementation SHA.
+Delivery head `6ec0561d` adds only closeout docs/feedback/status. T1
 defers imported generic body checks until concrete instantiation and removes
 the obsolete dependency-role bit from Margo package fingerprints. The focused
 regression verifies that a current geolib interface is skipped on the first
