@@ -1,9 +1,11 @@
-# Phase 26.1.1 — X1 implementing single-file `.mossi` sections — 2026-10-27
+# Phase 26.1.1 — X1 Section 2 producer checkpoint — 2026-10-27
 
-- Active branch `phase26-1-m1`, delivery head `3776f5ba`; X0 is complete and Architect-approved at implementation SHA `44ee82331080c0072a9c2416913e6a0fe66660c8`. X0 results and counters: `docs/phase26/PHASE_26_1_1_X0_RESULTS.md` and `benchmarks/phase26_1/results/m1_phase26_1_1_x0.csv`.
-- Bank decided that `.mossi` is the sole body store: Section 1 holds signatures and existing ABI-v9 generic bodies and is the interface digest input; Section 2 holds non-generic executable bodies and is excluded from that digest and downstream fingerprints, but bound to the package fingerprint. X3 source locations remain a separate sidecar. No other index unless X2 proves necessary.
-- The rules document now records the decision before X1 code. Next: implement/validate Section 2, including E1 non-generic edit stability and generic-body propagation. Continue to X2 only after the X1 gate passes. No X1 implementation is committed yet.
-- X1 architecture review requested from Architect: canonical section framing/hashes; producer/importer digest handling; function, method, handler and domain execution facts; ambient-provider fingerprint normalization; and how Margo passes its package fingerprint to Moss.
+- Active branch `phase26-1-m1`, remote head `e76c1918` before this checkpoint. X0 remains complete and Architect-approved at implementation SHA `44ee82331080c0072a9c2416913e6a0fe66660c8`; see `docs/phase26/PHASE_26_1_1_X0_RESULTS.md` and `benchmarks/phase26_1/results/m1_phase26_1_1_x0.csv`.
+- Bank's single-`.mossi` decision is recorded in the rules: Section 1 is the ABI-v9 signature/generic-body interface digest; Section 2 stores checked non-generic execution bodies, is excluded from interface/downstream check fingerprints, and is bound to source freshness and the package fingerprint. X3 locations remain a separate sidecar.
+- Implemented deterministic Section 2 framing/hash and producer records for concrete/private functions, exported-object methods, and exported-domain handlers. The v9 provider contract and generic semantic hashes are now Section-1-only; the importer validates declared-length framing, section hash, interface/source bindings, and Margo validates the embedded package fingerprint.
+- Check-only ambient provider fingerprints now include Section 1 plus a current/stale boolean. A rebuilt current provider can change Section 2 without rechecking consumers; an ambient stale provider changes the fingerprint and cannot be skipped.
+- Focused `tests/tooling/check_phase26_1_1_x1.py` passes: initial 2-package build checks both; non-generic E1 checks only provider and preserves Section 1 digests while changing Section 2; generic-body edit checks provider and consumer and changes the generic digest. `make moss-opt`, Python compilation, and `git diff --check` pass.
+- This is a producer/fingerprint checkpoint only. The Section 2 interpreter projection/round-trip is not implemented yet; X1 is not complete and X2 has not started. Architect reviewed the earlier partial tree as NO-GO, identifying the hash, stale-ambient, and framing issues; those are fixed here. Request a fresh review after the loader/round-trip is integrated.
 
 ### 26.1 base status
 

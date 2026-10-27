@@ -13894,6 +13894,16 @@ static string source_free_contract_material(const string& text) {
     throw CompileError(0, "ABI-v9 provider contract digest is malformed",
                        "SOURCE_FREE_CONTRACT_INVALID");
   string material = text.substr(0, begin + 1) + text.substr(end + 1);
+  const string execution_marker = "\nexecution_body_version ";
+  const size_t execution_section = material.find(execution_marker);
+  if (execution_section != string::npos) {
+    if (material.find(execution_marker,
+                      execution_section + execution_marker.size()) !=
+        string::npos)
+      throw CompileError(0, "ABI-v9 execution-body section is repeated",
+                         "SOURCE_FREE_EXECUTION_BODY_INVALID");
+    material.resize(execution_section + 1);
+  }
   const string freshness_marker = "\npackage_source_hash ";
   const size_t freshness = material.find(freshness_marker);
   if (freshness != string::npos) {
@@ -13920,15 +13930,119 @@ static string source_free_declared_digest(const string& text) {
 }
 
 static string source_free_declared_package_hash(const string& text) {
+  const size_t execution_section = text.find("\nexecution_body_version ");
+  const std::string_view section1(text.data(), execution_section == string::npos
+      ? text.size() : execution_section + 1);
   const string marker = "\npackage_source_hash ";
-  const size_t begin = text.find(marker);
+  const size_t begin = section1.find(marker);
   if (begin == string::npos ||
-      text.find(marker, begin + marker.size()) != string::npos)
+      section1.find(marker, begin + marker.size()) != string::npos)
     return {};
   const size_t value_begin = begin + marker.size();
-  const size_t end = text.find('\n', value_begin);
+  const size_t end = section1.find('\n', value_begin);
   if (end == string::npos) return {};
-  return text.substr(value_begin, end - value_begin);
+  return string(section1.substr(value_begin, end - value_begin));
+}
+
+struct ExecutionBodySectionView {
+  bool present = false;
+  size_t section_begin = 0;
+  string payload;
+  string package_fingerprint;
+};
+
+static bool execution_body_hash(const string& value) {
+  return value.size() == 64 &&
+      std::all_of(value.begin(), value.end(), [](unsigned char ch) {
+        return (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f');
+      });
+}
+
+static ExecutionBodySectionView parse_execution_body_section(
+    const string& text) {
+  static const string marker = "\nexecution_body_version ";
+  ExecutionBodySectionView result;
+  const size_t marker_at = text.find(marker);
+  if (marker_at == string::npos) return result;
+  if (text.find(marker, marker_at + marker.size()) != string::npos)
+    throw CompileError(0, "ABI-v9 execution-body section is repeated",
+                       "SOURCE_FREE_EXECUTION_BODY_INVALID");
+  result.present = true;
+  result.section_begin = marker_at + 1;
+  std::istringstream section(text.substr(result.section_begin));
+  string line;
+  if (!std::getline(section, line) || line != "execution_body_version 1")
+    throw CompileError(0, "unsupported ABI-v9 execution-body section version",
+                       "SOURCE_FREE_EXECUTION_BODY_INVALID");
+  if (!std::getline(section, line) || !starts_with(line, "execution_body_length "))
+    throw CompileError(0, "ABI-v9 execution-body section length is missing",
+                       "SOURCE_FREE_EXECUTION_BODY_INVALID");
+  size_t payload_length = 0;
+  try {
+    const string value = line.substr(string("execution_body_length ").size());
+    size_t consumed = 0;
+    const auto parsed = std::stoull(value, &consumed);
+    if (consumed != value.size() || parsed > 128u * 1024u * 1024u)
+      throw std::out_of_range("execution body length");
+    payload_length = static_cast<size_t>(parsed);
+  } catch (const std::exception&) {
+    throw CompileError(0, "ABI-v9 execution-body section length is invalid",
+                       "SOURCE_FREE_EXECUTION_BODY_INVALID");
+  }
+  if (!std::getline(section, line) || !starts_with(line, "execution_body_hash sha256:"))
+    throw CompileError(0, "ABI-v9 execution-body section hash is missing",
+                       "SOURCE_FREE_EXECUTION_BODY_INVALID");
+  const string declared_body_hash =
+      line.substr(string("execution_body_hash sha256:").size());
+  if (!execution_body_hash(declared_body_hash))
+    throw CompileError(0, "ABI-v9 execution-body section hash is malformed",
+                       "SOURCE_FREE_EXECUTION_BODY_INVALID");
+  if (!std::getline(section, line) || line != "execution_body_payload")
+    throw CompileError(0, "ABI-v9 execution-body payload is missing",
+                       "SOURCE_FREE_EXECUTION_BODY_INVALID");
+  const size_t payload_begin = result.section_begin +
+      static_cast<size_t>(section.tellg());
+  static const string end_marker = "execution_body_end\n";
+  if (payload_length > text.size() - payload_begin)
+    throw CompileError(0, "ABI-v9 execution-body payload framing is invalid",
+                       "SOURCE_FREE_EXECUTION_BODY_INVALID");
+  const size_t payload_end = payload_begin + payload_length;
+  if (text.compare(payload_end, end_marker.size(), end_marker) != 0 ||
+      payload_end + end_marker.size() != text.size())
+    throw CompileError(0, "ABI-v9 execution-body payload framing is invalid",
+                       "SOURCE_FREE_EXECUTION_BODY_INVALID");
+  result.payload = text.substr(payload_begin, payload_end - payload_begin);
+  if (result.payload.size() != payload_length ||
+      source_free_contract_sha256(result.payload) != declared_body_hash)
+    throw CompileError(0, "ABI-v9 execution-body payload hash or length mismatch",
+                       "SOURCE_FREE_EXECUTION_BODY_INVALID");
+
+  std::istringstream payload(result.payload);
+  string package_fingerprint, interface_digest, package_source_hash;
+  if (!std::getline(payload, line) || !starts_with(line, "package_fingerprint "))
+    throw CompileError(0, "ABI-v9 execution-body package fingerprint is missing",
+                       "SOURCE_FREE_EXECUTION_BODY_INVALID");
+  package_fingerprint = line.substr(string("package_fingerprint ").size());
+  if (!execution_body_hash(package_fingerprint))
+    throw CompileError(0, "ABI-v9 execution-body package fingerprint is malformed",
+                       "SOURCE_FREE_EXECUTION_BODY_INVALID");
+  if (!std::getline(payload, line) || !starts_with(line, "interface_digest "))
+    throw CompileError(0, "ABI-v9 execution-body interface binding is missing",
+                       "SOURCE_FREE_EXECUTION_BODY_INVALID");
+  interface_digest = line.substr(string("interface_digest ").size());
+  if (!execution_body_hash(interface_digest) ||
+      interface_digest != source_free_declared_digest(text))
+    throw CompileError(0, "ABI-v9 execution-body Section 1 binding mismatch",
+                       "SOURCE_FREE_EXECUTION_BODY_INVALID");
+  if (!std::getline(payload, line) || !starts_with(line, "package_source_hash "))
+    throw CompileError(0, "ABI-v9 execution-body source binding is missing",
+                       "SOURCE_FREE_EXECUTION_BODY_INVALID");
+  package_source_hash = line.substr(string("package_source_hash ").size());
+  if (package_source_hash != source_free_declared_package_hash(text))
+    throw CompileError(0, "ABI-v9 execution-body package source binding mismatch",
+                       "SOURCE_FREE_EXECUTION_BODY_INVALID");
+  result.package_fingerprint = std::move(package_fingerprint);
+  return result;
 }
 
 static string stale_interface_message(const string& package_name) {
@@ -14162,6 +14276,10 @@ static ParsedModuleUnit load_module_interface(
   content << input.rdbuf();
   string text = content.str();
   const bool v10_interface = starts_with(text, "moss-module-interface-v3\n");
+  const ExecutionBodySectionView execution_bodies = v10_interface
+      ? ExecutionBodySectionView{} : parse_execution_body_section(text);
+  const string semantic_text = execution_bodies.present
+      ? text.substr(0, execution_bodies.section_begin) : text;
   if (v10_interface != staged_abi_v10())
     throw CompileError(0, v10_interface
         ? "source-free provider uses staged ABI v10; rebuild it for ABI v9 or set MOSS_STAGED_ABI=v10"
@@ -14205,7 +14323,7 @@ static ParsedModuleUnit load_module_interface(
   const string concrete_hash = stable_hash(text.substr(
       contract_at + contract_marker.size(),
       semantic_at + 1 - contract_at - contract_marker.size()));
-  const string generic_hash = stable_hash(text.substr(
+  const string generic_hash = stable_hash(semantic_text.substr(
       semantic_at + semantic_marker.size()));
   if (declared_hashes.size() != 3 ||
       declared_hashes["concrete_interface_hash"] != concrete_hash ||
@@ -14240,7 +14358,7 @@ static ParsedModuleUnit load_module_interface(
                        (indexed_strings_staged() ? "staged indexed-v1" : "plain") +
                        " representation; rebuild the provider with the same MOSS_STAGED_STRING_REPR",
                        "STRING_REPRESENTATION_MISMATCH");
-  std::istringstream lines(text);
+  std::istringstream lines(semantic_text);
   ParsedModuleUnit unit;
   unit.name = interface_module_name(text, file);
   unit.module_identity = interface_module_identity(text, unit.name);
@@ -19262,6 +19380,165 @@ static void validate_imported_nominal_key_proofs(
   }
 }
 
+static void write_execution_body_statement(std::ostream& out,
+                                           const Stmt& statement) {
+  out << "stmt " << static_cast<int>(statement.kind) << " "
+      << statement.line << " " << statement.indent << " "
+      << std::quoted(statement.text) << " " << std::quoted(statement.a) << " "
+      << std::quoted(statement.b) << " "
+      << std::quoted(statement.semantic_type) << " "
+      << std::quoted(statement.message_result) << " "
+      << statement.args.size();
+  for (const auto& argument : statement.args)
+    out << " " << std::quoted(argument);
+  out << " " << statement.exceptional_alternatives.size();
+  for (const auto& raised : statement.exceptional_alternatives)
+    out << " " << std::quoted(raised.canonical());
+  out << "\n";
+}
+
+static string execution_body_package_fingerprint(
+    const string& package_source_hash, const BackendToolchainIdentity& backend) {
+  const char* supplied = std::getenv("MARGO_PACKAGE_FINGERPRINT");
+  if (supplied && *supplied) {
+    const string fingerprint(supplied);
+    if (fingerprint.size() != 64 ||
+        !std::all_of(fingerprint.begin(), fingerprint.end(),
+            [](unsigned char value) {
+              return (value >= '0' && value <= '9') ||
+                  (value >= 'a' && value <= 'f');
+            }))
+      throw ProjectError("MOSS_INTERFACE_ERROR",
+          "Margo supplied a malformed package fingerprint for .mossi Section 2");
+    return fingerprint;
+  }
+  // Direct `moss build` remains useful for local interface probes. Margo
+  // always supplies the full source/toolchain/dependency fingerprint.
+  return source_free_contract_sha256(
+      "standalone-mossi-execution-v1\n" + package_source_hash + "\n" +
+      backend.fingerprint + "\n");
+}
+
+static string encode_execution_body_payload(
+    const Program& program, const string& module,
+    const string& package_fingerprint, const string& interface_digest,
+    const string& package_source_hash) {
+  std::ostringstream payload;
+  payload << "package_fingerprint " << package_fingerprint << "\n"
+          << "interface_digest " << interface_digest << "\n"
+          << "package_source_hash " << package_source_hash << "\n";
+
+  vector<const Function*> functions;
+  for (const auto& function : program.functions) {
+    if (module_name_from_symbol(function.name) != module ||
+        program.external_modules.count(module) || function.generic ||
+        function.static_dispatch)
+      continue;
+    functions.push_back(&function);
+  }
+  std::sort(functions.begin(), functions.end(),
+            [](const Function* left, const Function* right) {
+              return left->name < right->name;
+            });
+  for (const auto* function : functions) {
+    payload << "function " << std::quoted(function->name) << " "
+            << (function->exported ? 1 : 0) << " " << function->line << " "
+            << function->result_line << " " << function->params.size() << " "
+            << std::quoted(function->return_type.value_or("unit")) << " "
+            << std::quoted(std::filesystem::path(function->source_file)
+                               .filename().string()) << " "
+            << (function->result_expression ? 1 : 0) << " "
+            << std::quoted(function->result_expression.value_or(string())) << "\n";
+    for (size_t index = 0; index < function->params.size(); ++index) {
+      const Effect effect = index < function->parameter_effects.size()
+          ? function->parameter_effects[index] : Effect::Read;
+      payload << "param " << index << " "
+              << std::quoted(function->params[index].name) << " "
+              << std::quoted(function->params[index].type) << " "
+              << ownership_effect_name(effect) << "\n";
+    }
+    for (const auto& statement : function->body)
+      write_execution_body_statement(payload, statement);
+    payload << "function_end\n";
+  }
+
+  vector<const ObjectType*> objects;
+  for (const auto& object : program.objects)
+    if (object.exported && module_name_from_symbol(object.name) == module)
+      objects.push_back(&object);
+  std::sort(objects.begin(), objects.end(),
+            [](const ObjectType* left, const ObjectType* right) {
+              return left->name < right->name;
+            });
+  for (const auto* object : objects) {
+    vector<const Method*> methods;
+    for (const auto& method : object->methods) methods.push_back(&method);
+    std::sort(methods.begin(), methods.end(),
+              [](const Method* left, const Method* right) {
+                return left->name < right->name;
+              });
+    for (const auto* method : methods) {
+      payload << "method " << std::quoted(object->name) << " "
+              << std::quoted(method->name) << " " << method->line << " "
+              << method->result_line << " "
+              << std::quoted(std::filesystem::path(method->source_file)
+                                 .filename().string()) << " "
+              << (method->result_expression ? 1 : 0) << " "
+              << std::quoted(method->result_expression.value_or(string())) << "\n";
+      for (const auto& statement : method->body)
+        write_execution_body_statement(payload, statement);
+      payload << "method_end\n";
+    }
+  }
+
+  vector<const Domain*> domains;
+  for (const auto& domain : program.domains)
+    if (domain.exported && module_name_from_symbol(domain.name) == module)
+      domains.push_back(&domain);
+  std::sort(domains.begin(), domains.end(),
+            [](const Domain* left, const Domain* right) {
+              return left->name < right->name;
+            });
+  for (const auto* domain : domains) {
+    vector<const Handler*> handlers;
+    for (const auto& handler : domain->handlers) handlers.push_back(&handler);
+    std::sort(handlers.begin(), handlers.end(),
+              [](const Handler* left, const Handler* right) {
+                return left->name < right->name;
+              });
+    for (const auto* handler : handlers) {
+      payload << "handler " << std::quoted(domain->name) << " "
+              << std::quoted(handler->name) << " " << handler->line << " "
+              << std::quoted(std::filesystem::path(handler->source_file)
+                                 .filename().string()) << " "
+              << handler->body.size() << "\n";
+      for (const auto& statement : handler->body)
+        write_execution_body_statement(payload, statement);
+      payload << "handler_end\n";
+    }
+  }
+  return payload.str();
+}
+
+static string append_execution_body_section(
+    const Program& program, const string& module,
+    const string& interface_digest, const string& package_source_hash,
+    const BackendToolchainIdentity& backend) {
+  const string package_fingerprint = execution_body_package_fingerprint(
+      package_source_hash, backend);
+  const string payload = encode_execution_body_payload(
+      program, module, package_fingerprint, interface_digest,
+      package_source_hash);
+  std::ostringstream section;
+  section << "execution_body_version 1\n"
+          << "execution_body_length " << payload.size() << "\n"
+          << "execution_body_hash sha256:"
+          << source_free_contract_sha256(payload) << "\n"
+          << "execution_body_payload\n" << payload
+          << "execution_body_end\n";
+  return section.str();
+}
+
 static vector<std::filesystem::path> write_module_interfaces(
     const ProjectManifest& manifest, const Program& program,
     const std::filesystem::path& directory,
@@ -19889,10 +20166,12 @@ static vector<std::filesystem::path> write_module_interfaces(
     synchronization_require(first_line != string::npos,
                             "ABI-v9 interface header is incomplete");
     const string digest = source_free_contract_sha256(material);
-    const string text = material.substr(0, first_line + 1) +
+    string text = material.substr(0, first_line + 1) +
         "provider_contract_digest sha256:" + digest + "\n" +
         "package_source_hash " + package_source_hash + "\n" +
         material.substr(first_line + 1);
+    text += append_execution_body_section(
+        program, entry.first, digest, package_source_hash, backend);
     if (!prior || prior_text.str() != text) {
       std::ofstream output(file, std::ios::binary);
       if (!output)
