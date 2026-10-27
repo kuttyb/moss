@@ -1,5 +1,13 @@
 # Phase 26.1 working rules (user, 2026-10-27)
 
+## Current state — T1 generic-import rule checkpoint in progress
+
+- Active branch: `phase26-1-m1`, currently pushed through `622d7642` before this T1 checkpoint.
+- T1 now defers an open generic body until it has a concrete specialization. The new `check_phase26_1_t1_generic_imports.py` probe passes the unused `util.fill` import, a compatible `fill(Int)` instantiation, and a failing incompatible instantiation.
+- The fresh `natural_app_attempt` graph still stops while checking geolib itself at `Triangle.area`, as expected from geolib's own failing check. A pending user clarification asks whether its consumer regression should seed a current `.mossi` or change Margo dependency checking; do not alter R2 without direction.
+- Next: checkpoint/push this implementation, settle the geolib fixture setup, then run the requested final corpus differential, full local gates, compiler-perf, and Architect review on the final implementation SHA.
+
+
 ## Current state — T1 Architect finding fixed; final gates pending
 
 - Active branch: `phase26-1-m1`, remote `origin/phase26-1-m1`. C1 is closed and frozen at reviewed implementation `7bc75969`, with Architect GO recorded in `4150ee94`.

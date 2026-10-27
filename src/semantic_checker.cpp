@@ -628,7 +628,17 @@ class Checker {
     {
       CompilerStageTimer timer("specialization_checking");
       check_method_ownership();
-      for (const auto& f : p_.functions) check_function(f);
+      for (const auto& f : p_.functions) {
+        // Generic bodies are checked at concrete specialization sites.  A
+        // declaration pass over an uninstantiated generic would otherwise
+        // resolve its open receiver/argument types as though the module import
+        // itself were an instantiation (and can reject an unused imported
+        // generic in a consumer).  `check_static_specialization` still checks
+        // the body as soon as a concrete caller supplies its type arguments.
+        if ((f.generic || f.static_dispatch) && f.specializations.empty())
+          continue;
+        check_function(f);
+      }
       refresh_open_nominal_constructor_results_from_checked_types();
       refresh_open_arithmetic_summaries_from_checked_types();
       refresh_open_collection_summaries_from_checked_types();
