@@ -1,6 +1,6 @@
 # Phase 26.1 C1 Results — Function-Scoped Check & Package Rules
 
-- Implementation SHA: pending Architect review
+- Implementation SHA: `7bc75969ceea7988d45ed9ae619d17c4cde5f970`
 - Branch: `phase26-1-m1`
 
 ## Scope and Invariants
@@ -117,10 +117,12 @@ multi-error diagnostic-set oracle was incomplete. That oracle work was removed
 under the later fail-fast G-a/G-b acceptance contract; it is not the current
 closeout blocker.
 
-Review of exact commit `5197ae0b7cc98404bd7ed8cd7a0c6bfeb66ca199` returned
-**NO-GO** because of the two extra module-identity regressions. The authorized
-fix and all local gates are now complete; Architect review of the final commit
-is pending. Do not treat the old NO-GO as the final review verdict.
+Review of exact implementation commit
+`7bc75969ceea7988d45ed9ae619d17c4cde5f970` returned **GO**. Architect
+independently confirmed the implicit-module fix is limited to test/benchmark
+caller contexts, both regression files and the geometry check pass, the full
+differential has exactly the 12 documented rows, and all requested local gates
+are green. The earlier NO-GO on `5197ae0b` was resolved by this fix.
 
 ## Historical Multi-Error Oracle Experiment — 2026-10-26
 

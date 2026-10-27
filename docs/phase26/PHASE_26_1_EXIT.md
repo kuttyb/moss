@@ -1,7 +1,7 @@
 # Phase 26.1 exit status
 
-**Status: C1 gates green; Architect review pending; T1 has not started.** This report records
-the final C1 candidate; its commit SHA will be recorded after checkpointing.
+**Status: C1 complete; Architect GO; T1 starts after the reviewed checkpoint is pushed.**
+The implementation commit reviewed was `7bc75969ceea7988d45ed9ae619d17c4cde5f970`.
 
 ## C1 outcomes
 
