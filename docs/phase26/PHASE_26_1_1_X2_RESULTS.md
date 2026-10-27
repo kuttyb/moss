@@ -68,3 +68,195 @@ before completion. Nine failures had appeared when it was stopped; see
 `.codex/CURRENT_STATUS.md` for their identities. There is no aggregate result.
 X2 is still incomplete and awaits external review of this follow-up, full gates,
 and exact-SHA Architect review.
+
+## Complete baseline at `fc6331d08146f7150378ee3728b228e915e078e5`
+
+The full baseline was run uninterrupted with `make --jobs="$(nproc)" check`:
+**130 passed, 16 failed, 0 skipped, out of 146 jobs**. The 16 failed jobs and
+first triage are below. Every failure is initially assigned to bucket (b), a
+Fast Debug scope or Section 2 coverage regression. None of the failed
+assertions expects dependency `.moss` source to be loaded; none is identified
+as specifically an ABI-v10 failure. `shard_abi_v10_units` passed, but does not
+exercise the currently missing v10 Section 2 writer/loader path. The causes in
+this table are based on the suite's captured failure output; rows marked for
+focused confirmation remain open until the corresponding reproducer passes.
+
+### Failed jobs and triage
+
+| Bucket | Failed job | Captured failure / triage |
+|---|---|---|
+| b | `check_phase21_original_af` | Fast Debug reports unresolved callable `add` before the expected FileIO preflight; selected callable closure is incomplete. |
+| b | `check_phase21_root_totality` | Fast Debug cannot resolve reached `Worker.Fail`; message-handler reachability is incomplete. |
+| b | `check_phase25_typed_semantic_api` | Static callback specialization of `apply` fails with `TYPE_INFERENCE_FAILED` in the interpreted run. |
+| b | `check_phase25_team_a_semantics` | Resolved callable-key parity fails with the same `apply` specialization inference error in Fast Debug. |
+| b | `sdk_adv_data_oracle_fast_debug` | `margo debug` checks dependency package `moss.linalg`'s unrelated test target and fails at `tests/linalg_test.moss:231`; dependency refresh is exceeding the selected entry's reach. |
+| b | `sdk_text_encoding` | R12 guard fires for reachable private helper `text__matches_at`, absent from dependency Section 2. |
+| b | `sdk_adv_data_margo_debug` | `margo debug` again checks `moss.linalg`'s unrelated test target and fails at `tests/linalg_test.moss:231`; same dependency-refresh scope defect as the oracle job. |
+| b | `check_phase25_s1_checker_authority` | Fast Debug reports `TYPE_INFERENCE_FAILED` for callable-parameter `apply` before the expected named-argument diagnostic. |
+| b | `check_phase25_s2_char_string` | Fast Debug executes and prints `1` for a `Map[Record, Int]` declaration that should fail with `RECORD_MAP_KEY_UNSUPPORTED`; selected checking lost required declaration context. |
+| b | `check_phase20_executor_fileio` | Fast Debug cannot resolve reached handler `Worker.Process`; message-handler reachability is incomplete. |
+| b | `check_phase15_9_cross_package_specialization` | Section 2 includes an unrelated private helper. The current all-private-body expansion is broader than the execution closure and regresses this source-free boundary test. |
+| b | `check_phase25_sb_check_display` | A function reference needed for `ECHO_DISPLAY_UNSUPPORTED` is pruned first, yielding `UNKNOWN_SYMBOL_OR_TYPE` instead. |
+| b | `check_phase20_fileio_semantics` | Native/Fast Debug status parity assertion fails for `unbounded_read`; reproduce and capture both outcomes during repair. |
+| b | `check_builtin_generic_typing` | `underscore_domain_state` Fast Debug check fails to infer handler reply type `payload.value`; confirm the missing scoped type/context edge during repair. |
+| b | `shard_fast_debug` | Structured debug query returns `DEBUG_QUERY_TARGET_NOT_FOUND` for an unexecuted identity instead of `DEBUG_QUERY_NOT_EXECUTED`; scoped pruning removed query identity context. |
+| b | `shard_phase106_runtime` | Fast Debug fails generic callable specialization `tools__map_by` in the unqualified-project parity case. |
+
+Bucket (a): no failed baseline job is currently classified here. Bucket (c):
+no failed baseline job is currently classified here. The v10 Section 2 change
+and v10 E1 gate remain required independently of this baseline result.
+
+### Audit of the six existing dependency/interface expectation edits
+
+These six tests pass in the baseline. The audit records the behavior each
+expectation is intended to establish; Architect acceptance is still pending.
+
+| Suite | Changed expectation and intended behavior |
+|---|---|
+| `check_phase21_imported_effects` | Forged Section 1 effect metadata now recomputes the Section 1 digest and v9 Section 2 seal, so the consumer test isolates effect validation instead of failing first on stale body metadata. |
+| `check_phase21_source_free_abi` | ABI mutations now keep Section 1 digests and Section 2 bindings internally consistent, preserving the source-free loader and hostile-metadata assertions. |
+| `check_phase21_source_free_cache_binding` | Warm-cache forgery recomputes Section 1 digest material and refreshes the v9 Section 2 seal, so the check tests artifact binding rather than accidentally testing stale execution-body metadata. |
+| `repro_phase21_mossi_pattern_forgery` | Pattern forgeries reseal Section 1 and v9 Section 2 before consumer execution, so rejection demonstrates pattern validation with provider source unavailable. |
+| `check_phase25_conformance` | Gate 11 now expects `margo debug` to execute the dependency generic from its checked `.mossi` Section 1 body and return `1`, instead of requiring a `FAST_DEBUG_NATIVE_DEPENDENCY` failure. |
+| `check_phase26_1_f1_interface_rules` | Fast Debug now expects a missing/stale `.mossi` interface diagnostic, independent of `MOSS_FAST_DEBUG_SOURCE_ROOTS`; Margo refreshes the current interface before execution. |
+
+The Architect must explicitly accept each of these six expectation changes.
+
+### Exact baseline pass list
+
+The pass list is the 146-job manifest minus the 16 failures above; the suite
+reported 130 passes. Names are recorded exactly as `tests/run_parallel.py`
+lists them:
+
+```text
+check_make_incremental_dependencies
+check_retired_syntax
+check_agent_skills
+check_agent_feedback
+check_phase21_shared_abi
+check_phase21_source_free_abi
+check_phase21_abi_v9_migration
+check_phase21_source_free_cache_binding
+check_phase21_source_free_proof_edges
+check_phase21_source_free_standard_write_recovery
+check_phase21_standard_write_order
+check_phase21_addendum_a_c
+check_phase21_imported_effects
+check_phase21_sourcefree_noop_warning
+repro_phase21_mossi_pattern_forgery
+check_phase21_abi_v9_external_cache
+check_phase20_cross_crate_range_abi
+check_phase21_on_fail_capture
+check_phase21_recovery_semantics
+check_phase21_peer_recovery
+check_phase21_peer_warnings
+check_phase21_unary_not_effects
+check_phase21_field_projection_effects
+check_phase21_early_condition_raise
+check_phase21_recover_reinit
+check_phase21_expression_ownership_edges
+check_phase21_raising_iterators
+check_phase21_early_placement_proof
+check_phase21_method_noop_warning
+check_phase21_recovery_native
+check_phase21_root_expression_ingress
+check_phase21_absolute_root_boundary
+check_phase21_handler_failure_native
+check_phase21_fileio_errors
+check_phase21_fileio_close_full
+check_phase21_fileio_root_cleanup
+check_phase21_lock_fileio_adversarial
+check_phase21_float_ieee
+check_phase21_numeric_parse
+check_phase21_builtin_error_contract
+check_phase21_standard_error_namespace
+check_phase21_borrowed_view_write
+check_generic_specialization
+check_phase24_imported_generic_expressions
+check_phase24_same_module_type_resolution
+check_phase24_bitwise_operations
+check_phase25_recursive_layout
+check_phase26_w1_parse_cache
+check_phase26_w2_inference_worklist
+check_phase26_1_f1_interface_rules
+check_phase26_1_g1_fingerprints
+check_phase26_1_c1_scope
+check_phase26_1_c1_corpus_cases
+check_phase26_1_t1_generic_imports
+check_phase26_0_1_c3_parse_cache
+check_phase25_type_ir
+check_phase25_a3_specialization
+check_phase25_conformance
+check_phase25_nominal_identity
+check_phase25_field_visibility
+check_phase25_checked_body_ir
+check_phase25_r2_wp1_call_chain
+check_phase25_r2_wp2_member
+check_phase25_r2_wp3_nominal
+check_phase25_r2_wp4_oracle_inventory
+check_runtime
+check_shared_string_linkage
+sdk_foundations
+sdk_adv_data_cbor
+sdk_adv_data_oracle_debug
+sdk_adv_data_oracle_release
+sdk_adv_data_margo_run
+sdk_adv_data_margo_release
+sdk_adv_data_source_free
+check_phase24_adversarial_architect
+check_phase25_g1_regressions
+check_phase25_g4_unicode
+check_phase25_g3_ordering
+check_phase25_l7_repairs
+check_phase25_indexed_string
+check_phase25_s3_key_protocol
+check_phase25_s4_fast_debug_adversarial
+check_phase25_sc_safe_arithmetic
+check_phase25_sa_numeric_literals
+check_phase25_4_performance_baseline
+phase25_key_protocol_fixtures
+check_swarm_feedback
+check_swarm_issues
+check_agent_benchmark
+check_agent_baseline
+check_agent_baseline_analysis
+check_phase22_3_ab
+check_phase21c_branch_errors
+check_phase21_peer_effects
+check_phase21_peer_open_pipelines
+check_phase21_pipeline_try_placeholder
+check_phase21_unary_not_speculation
+check_phase21_chunk_fileio_raise
+check_phase20_domain_field_physical
+check_phase20_r5_fair
+check_teaching_diagnostics
+check_no_internal_type_leak
+check_semantic_queries
+check_phase225_semantic_ide
+check_phase15_15_string_api
+check_phase24_string_concat
+check_phase25_char_string_sdk_packages
+check_swarm_003_formatter
+check_swarm_032_formatter_parentheses
+check_formatter_indexing
+check_swarm_059_project_diagnostics
+check_phase15_7_formatter_convergence
+check_phase15_8_cross_package_fast_debug
+check_swarm_039_project_fast_debug_tests
+check_swarm_059_diagnostic_provenance
+check_swarm_060_qualified_rename
+check_phase20_fileio_runtime
+phase20_review_probes
+check_phase20_release_semantics
+check_phase20_doc_examples
+shard_negative
+shard_abi_v10_units
+shard_showcase
+shard_swarm_cases
+shard_phase4_diff
+shard_phase46_opt
+shard_concurrency
+shard_phase25_int_payloads
+shard_enum_modules
+shard_phase5_tooling
+```

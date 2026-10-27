@@ -1,10 +1,10 @@
-# Phase 26.1.1 — X2 follow-up checkpoint — 2026-10-27
+# Phase 26.1.1 — full baseline and triage — 2026-10-27
 
-- Active branch: `phase26-1-m1`. This checkpoint addresses the two X2 findings from Architect NO-GO at `3a22c1f5`: Main scope now removes colocated test/bench declarations before checking; the filtered-test regression uses explicit modules and verifies that an unselected test module's unresolved import does not block the selected test. The source change also emits non-generic private helper/method bodies into `.mossi` Section 2, covering `sdk/text`'s private `text__matches_at` execution dependency.
-- `./moss agent bootstrap --json` reports `language_version: moss-0.1`.
-- Focused `check_phase26_1_1_x2.py` and `check_phase26_1_f1_interface_rules.py` both pass on the current source tree.
-- A new `make --jobs="$(nproc)" check` run was stopped at the user's direction before completion. At interruption, 9 failures had appeared: `check_phase21_original_af`, `check_phase21_root_totality`, `check_phase25_typed_semantic_api`, `check_phase25_team_a_semantics`, `sdk_adv_data_oracle_fast_debug`, `sdk_adv_data_margo_debug`, `sdk_text_encoding`, `check_phase25_s1_checker_authority`, and `check_phase25_s2_char_string`. This is a partial, interrupted run, not an aggregate result; remaining jobs and final counts are unknown.
-- X2 remains incomplete and the prior exact-SHA Architect NO-GO remains open pending external review. Full check, Fast Debug corpus parity/R12 guard, corpus differential, `make c1-corpus-gates`, compiler performance guard, and a new exact-SHA Architect review remain outstanding. X3/X4 have not started.
+- Active branch `phase26-1-m1`, exact baseline SHA `fc6331d08146f7150378ee3728b228e915e078e5`. `./moss agent bootstrap --json` reports `moss-0.1`.
+- Uninterrupted `make --jobs="$(nproc)" check`: **130/146 passed, 16 failed, 0 skipped**. The full pass/fail lists and first triage are in `docs/phase26/PHASE_26_1_1_X2_RESULTS.md`.
+- All 16 observed failures are provisionally bucketed (b), Fast Debug scope or Section 2 coverage. None asserts that Fast Debug should read dependency `.moss` source; no failed job is identified as an ABI-v10-specific case. `shard_abi_v10_units` passed, but it does not exercise the required v10 Section 2 path.
+- A focused X2 and F1 run on this baseline passed earlier; the full baseline supersedes the previous interrupted run and exposed broader failures. The prior Architect NO-GO at `3a22c1f5` remains unresolved.
+- Added `docs/phase26/PHASE_26_1_1_X1_RESULTS.md` from the historical X1 status entries. X1+X2 are not accepted; v10 Section 2 write/read, the narrowed private-body closure, six test-expectation audits, fixes, focused gates, and exact-SHA Architect review remain outstanding. X3/X4 are not started.
 
 ## X1 earlier pushed decoder checkpoint (historical)
 
