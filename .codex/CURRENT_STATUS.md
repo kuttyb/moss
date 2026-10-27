@@ -1,9 +1,9 @@
 # Phase 26.1.1 — ABI-v10 Section 2 checkpoint — 2026-10-27
 
-- Active branch `phase26-1-m1`; latest pushed checkpoint `beb27000`. The full uninterrupted `make --jobs="$(nproc)" check` on that exact commit passed: **148/148 jobs, 0 failures, 0 skipped**; runner wall time 241.54s. This includes the v10 suites and all six repaired failures from the preceding full run.
+- Active branch `phase26-1-m1`; latest pushed checkpoint `8ddf97e0`. The full uninterrupted `make --jobs="$(nproc)" check` on that exact commit passed: **148/148 jobs, 0 failures, 0 skipped**; runner wall time 240.58s. This includes the v10 suites and all six repaired failures from the preceding full run. The earlier full run at `beb27000` also passed 148/148.
 - Focused evidence also passes: C1 scope/package probes, Phase 21 A–F/root-totality, Phase 20 Executor/FileIO, Phase 25 S1/S2/S-B, typed semantic API, Team A, builtin generic typing (129/129), X1 ABI-v9/v10, Phase 15.9, Phase 22.4, Phase 106, G2 conformance (11/11), R2 WP1/WP2/WP3, ABI-v10 units, and SDK text-encoding Fast Debug (3/3).
 - The uninterrupted baseline at `fc6331d08146f7150378ee3728b228e915e078e5` remains 130/146 passed, 16 failed, 0 skipped. Baseline triage and repair dispositions are in `docs/phase26/PHASE_26_1_1_X2_RESULTS.md`.
-- Next: record the exact full-suite result and audit disposition in the status/results docs, checkpoint and push; rerun `make check` on the frozen documentation checkpoint; then obtain Architect review of X1+X2 and explicit acceptance of all six expectation audits. X3 and X4 follow.
+- Next: record the exact frozen-checkpoint result in the status/results docs, checkpoint and push; rerun `make check` on that documentation checkpoint; then obtain Architect review of X1+X2 and explicit acceptance of all six expectation audits. X3 and X4 follow.
 
 ## Baseline and triage — 2026-10-27
 

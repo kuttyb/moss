@@ -146,7 +146,11 @@ uninterrupted `make --jobs="$(nproc)" check` on `beb27000` passed: **148 passed,
 0 failed, 0 skipped**, with 241.54 seconds suite wall time. This run includes
 the v10 suites, all six repaired jobs, and the six audited expectation suites.
 Architect review of the six expectation changes and frozen X1+X2 checkpoint is
-still pending.
+still pending. For the frozen X1+X2 checkpoint `8ddf97e0`, the full
+uninterrupted `make --jobs="$(nproc)" check` also passed: **148 passed, 0
+failed, 0 skipped**, with 240.58 seconds suite wall time. The repository is
+being checkpointed once more with this exact run recorded before Architect
+review.
 
 ### Audit of the six existing dependency/interface expectation edits
 
