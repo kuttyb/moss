@@ -21,6 +21,30 @@ MARGO = ROOT / "margo"
 MOSS = ROOT / "build/compiler/moss-opt"
 TMP = ROOT / "tmp/phase26-1-m1"
 COUNTER_RE = re.compile(r"^MOSS_PROFILE\|([^|]+)\|([0-9]+)$", re.M)
+IDENTITY_RE = re.compile(r"^MOSS_PROFILE_ID\|source_function\|(.+)$", re.M)
+
+# C1 partial-reach fixture: the edited file reaches only part of its package.
+# Reachable function identities (`<file>:<function>`) are listed explicitly;
+# the set, not the raw checker-entry count, is the pass/fail target.
+PARTIAL_REACH_ENTRY = "m1_partial.moss"
+PARTIAL_REACH_FILES = {
+    PARTIAL_REACH_ENTRY: (
+        "module m1_partial\n"
+        "fn main():\n  echo reached_top(3)\n"
+        "fn reached_top(x: Int) -> Int:\n  return reached_leaf(x) + 1\n"
+        "fn reached_leaf(x: Int) -> Int:\n  return x\n"),
+    "helpers.moss": (
+        "module m1_partial\n"
+        "fn unreached_a(x: Int) -> Int:\n  return unreached_b(x)\n"
+        "fn unreached_b(x: Int) -> Int:\n  return unreached_c(x) + 1\n"
+        "fn unreached_c(x: Int) -> Int:\n  return x\n"),
+}
+PARTIAL_REACH_EXPECTED = {
+    "m1_partial.moss:main", "m1_partial.moss:reached_top",
+    "m1_partial.moss:reached_leaf"}
+PARTIAL_REACH_PACKAGE = PARTIAL_REACH_EXPECTED | {
+    "helpers.moss:unreached_a", "helpers.moss:unreached_b",
+    "helpers.moss:unreached_c"}
 
 
 def package(name: str, deps: dict[str, str], module: str, body: str) -> dict:
@@ -138,12 +162,14 @@ def invoke(cmd: list[str], cwd: Path, env: dict[str, str], label: str) -> tuple[
 
 def summarize_logs(logdir: Path, package_roots: dict[str, Path]) -> dict:
     function_checks = inference_visits = 0
+    identities: set[str] = set()
     checked_packages: set[str] = set()
     for path in sorted(logdir.glob("*.stderr")):
         log_text = path.read_text()
         if "M1_CWD=" not in log_text:
             continue
         checked_packages.add(log_text.split("M1_CWD=", 1)[1].splitlines()[0])
+        identities.update(IDENTITY_RE.findall(log_text))
         for key, value in COUNTER_RE.findall(log_text):
             if key == "source_function_checks":
                 function_checks += int(value)
@@ -155,7 +181,8 @@ def summarize_logs(logdir: Path, package_roots: dict[str, Path]) -> dict:
                   if (root := roots_by_path.get(checked)) is not None)
     return {"packages_checked": len(checked_packages), "modules_checked": modules,
             "functions_checked": function_checks,
-            "inference_function_visits": inference_visits}
+            "inference_function_visits": inference_visits,
+            "function_identities": sorted(identities)}
 
 
 def run_profiled_build(root: Path, package_roots: dict[str, Path], label: str,
@@ -197,6 +224,38 @@ def run_profiled_check(root: Path, package_roots: dict[str, Path], target: Path,
     if counts["packages_checked"] != 1:
         raise RuntimeError(f"moss check should check only the edited package, got {counts['packages_checked']}")
     return counts
+
+
+def run_partial_reach(run_id: str, rows: list[dict]) -> None:
+    """C1 target: file check reaches 3 of 6 functions; package mode all 6."""
+    root = TMP / "graphs" / run_id / "partial_reach"
+    (root / "src").mkdir(parents=True, exist_ok=True)
+    (root / "Moss.toml").write_text(
+        '[project]\nname = "m1_partial"\nversion = "0.1.0"\n')
+    for name, text in PARTIAL_REACH_FILES.items():
+        (root / "src" / name).write_text(text)
+    roots = {"app": root}
+    entry = root / "src" / PARTIAL_REACH_ENTRY
+    package = run_profiled_build(root, roots, "partial_reach-check",
+                                 check_mode=True)
+    checked = run_profiled_check(root, roots, entry, "partial_reach-moss-check")
+    for command, counts, expected in (
+            ("margo build --check", package, PARTIAL_REACH_PACKAGE),
+            ("moss check <edited file>", checked, PARTIAL_REACH_EXPECTED)):
+        identities = set(counts["function_identities"])
+        met = identities == expected
+        rows.append({"fixture": "partial_reach", "position": "entry",
+                     "scenario": "reach", "command": command,
+                     **{k: v for k, v in counts.items()
+                        if k != "function_identities"},
+                     "expected_packages": 1,
+                     "target_met": met and counts["packages_checked"] == 1,
+                     "function_identities": " ".join(sorted(identities)),
+                     "expected_functions": len(expected)})
+        if not met:
+            raise RuntimeError(
+                f"partial_reach {command}: reachable functions "
+                f"{sorted(identities)}; expected {sorted(expected)}")
 
 
 def mutate_scenario(source: Path, scenario: str, position: str) -> None:
@@ -350,8 +409,12 @@ def main() -> int:
             # Ensure each E scenario starts from the original bytes.
             target.write_text(original_source)
 
+    run_partial_reach(run_id, rows)
+
+    fieldnames = list(rows[0]) + ["function_identities", "expected_functions"]
     with (out / "m1_work_counters.csv").open("w", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=list(rows[0]), lineterminator="\n")
+        writer = csv.DictWriter(handle, fieldnames=fieldnames, restval="",
+                                lineterminator="\n")
         writer.writeheader(); writer.writerows(rows)
     lines = ["# Phase 26.1 M1 package work counters", "", f"- Main SHA: `{subprocess.check_output(['git','rev-parse','origin/main'], cwd=ROOT, text=True).strip()}`", f"- Measurement revision SHA: `{subprocess.check_output(['git','rev-parse','HEAD'], cwd=ROOT, text=True).strip()}`",
              "- The harness checks whether `margo build --check` is supported. On the pre-feature baseline it records the rejection and measures `margo build` as a full-work fallback.",
@@ -364,6 +427,12 @@ def main() -> int:
     lines += ["", "## Edit and revert scenarios", "", "| Fixture / position | Edit | Command | Actual | R-rule target | Target met | Modules | Functions | Inference visits |", "|---|---|---|---:|---:|:---:|---:|---:|---:|"]
     for row in rows[4:]:
         lines.append(f"| {row['fixture']} / {row['position']} | {row['scenario']} | `{row['command']}` | {row['packages_checked']} | {row['expected_packages']} | {row['target_met']} | {row['modules_checked']} | {row['functions_checked']} | {row['inference_function_visits']} |")
+    lines += ["", "## Partial-reach fixture (C1 target)", "",
+              "The edited file reaches 3 of the package's 6 functions. The target is the exact reachable set by identity (`<file>:<function>`), not a raw entry count.", "",
+              "| Command | Functions | Expected | Target met | Identities |", "|---|---:|---:|:---:|---|"]
+    for row in rows:
+        if row["fixture"] == "partial_reach":
+            lines.append(f"| `{row['command']}` | {row['functions_checked']} | {row['expected_functions']} | {row['target_met']} | {row['function_identities']} |")
     lines += ["", "Scenario definitions: E0 touches the source without changing bytes; E1 changes an exported function body while preserving its interface; E2 changes an inferred exported result type; E3 changes an explicit exported result type. Core/hub/provider E2 targets include direct dependents; E3 targets the full transitive closure. Top-app E1–E3 targets are one package. Each scenario is edited and reverted independently. `MOSS_M1_ENFORCE_TARGETS=1` turns target mismatches into hard failures; it is intended for after G1 implements incremental checks. The pre-G1 baseline reports mismatches as data.", "",
               "Functions checked counts source function checker entry occurrences, not unique reachable identities. R3 still requires its diagnostic oracle; any work attribution by reachable function should record identities, not infer them from this aggregate count. Full rows: `benchmarks/phase26_1/results/m1_phase26_main.csv`.", ""]
     (out / "M1_BASELINE.md").write_text("\n".join(lines))

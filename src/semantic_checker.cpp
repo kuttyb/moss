@@ -363,22 +363,22 @@ class Checker {
       p_.enums.push_back(std::move(declaration));
     }
     for (auto& f : p_.functions) {
-      if (f.name == "assert" || f.name == "assertEqual")
+      if (!p_.file_check_scope && (f.name == "assert" || f.name == "assertEqual"))
         err(f.source_file, f.line, "function name '" + f.name +
                         "' is reserved by Moss test assertions");
-      if (!functions_.emplace(f.name, &f).second)
+      if (!functions_.emplace(f.name, &f).second && !p_.file_check_scope)
         err(f.source_file, f.line, "duplicate function: " + f.name);
       if (!f.semantic_callable_id.empty())
         callable_id_to_function_[f.semantic_callable_id] = &f;
     }
     for (auto& d : p_.domains) {
-      if (!domains_.emplace(d.name, &d).second)
+      if (!domains_.emplace(d.name, &d).second && !p_.file_check_scope)
         err(d.source_file, d.line, "duplicate domain: " + d.name);
     }
     for (auto& o : p_.objects) {
-      if (!objects_.emplace(o.name, &o).second)
+      if (!objects_.emplace(o.name, &o).second && !p_.file_check_scope)
         err(o.source_file, o.line, "duplicate object type: " + o.name);
-      if (domains_.count(o.name))
+      if (domains_.count(o.name) && !p_.file_check_scope)
         err(o.source_file, o.line, "type '" + o.name +
             "' has the same name as a domain; one name names one declaration",
             "DUPLICATE_SYMBOL");
@@ -386,7 +386,7 @@ class Checker {
     for (auto& e : p_.enums) {
       const bool clash = !enums_.emplace(e.name, &e).second ||
           objects_.count(e.name) || domains_.count(e.name);
-      if (!clash) continue;
+      if (!clash || p_.file_check_scope) continue;
       // Report a collision with a compiler standard error at the user's
       // declaration, naming the standard type it would redeclare.
       if (e.source_file == "<moss-std>") {
@@ -470,8 +470,9 @@ class Checker {
     }
     p_.assert_declaration_type_consistency();
     for (auto& t : p_.traits) {
-      if (!traits_.emplace(t.name, &t).second)
+      if (!traits_.emplace(t.name, &t).second && !p_.file_check_scope)
         err(t.source_file, t.line, "duplicate trait: " + t.name);
+      if (p_.file_check_scope) continue;
       if (auto standard = enums_.find(t.name);
           standard != enums_.end() && standard->second->source_file == "<moss-std>")
         err(t.source_file, t.line, "'" + standard->second->declaration_name +
@@ -485,13 +486,13 @@ class Checker {
     }
     // `Iterator` names the standard iteration trait.
     const string reserved = "Iterator";
-    if (auto object = objects_.find(reserved); object != objects_.end())
+    if (!p_.file_check_scope) if (auto object = objects_.find(reserved); object != objects_.end())
       err(object->second->source_file, object->second->line,
           "'Iterator' is reserved by the standard iteration trait", "DUPLICATE_SYMBOL");
-    if (auto enumeration = enums_.find(reserved); enumeration != enums_.end())
+    if (!p_.file_check_scope) if (auto enumeration = enums_.find(reserved); enumeration != enums_.end())
       err(enumeration->second->source_file, enumeration->second->line,
           "'Iterator' is reserved by the standard iteration trait", "DUPLICATE_SYMBOL");
-    if (auto domain = domains_.find(reserved); domain != domains_.end())
+    if (!p_.file_check_scope) if (auto domain = domains_.find(reserved); domain != domains_.end())
       err(domain->second->source_file, domain->second->line,
           "'Iterator' is reserved by the standard iteration trait", "DUPLICATE_SYMBOL");
     iterator_trait_.name = "Iterator";
@@ -500,7 +501,8 @@ class Checker {
     next.name = "next";
     next.set_return_type("option[_]");
     iterator_trait_.methods.push_back(std::move(next));
-    if (!traits_.emplace(iterator_trait_.name, &iterator_trait_).second)
+    if (!traits_.emplace(iterator_trait_.name, &iterator_trait_).second &&
+        !p_.file_check_scope && !p_.traits.empty())
       err(p_.traits.front().source_file, p_.traits.front().line,
           "trait name 'Iterator' is reserved by the standard iteration contract");
   }
@@ -518,9 +520,9 @@ class Checker {
       // Seed internal structural/generic parameter relations before cross-reference inference.
       infer_function_signatures(false);
       infer_object_fields();
-      check_object_layout_cycles();
+      if (!p_.file_check_scope) check_object_layout_cycles();
       check_enums();
-      check_traits();
+      if (!p_.file_check_scope) check_traits();
       check_objects();
       // Function results and handler replies can constrain each other through an
       // synchronous message or local call. Run non-final inference rounds before the
@@ -549,7 +551,7 @@ class Checker {
       }
       check_domain_handle_declarations();
       check_objects();
-      check_declared_map_key_types();
+      if (!p_.file_check_scope) check_declared_map_key_types();
       check_local_call_cycles();
       // The first summary pass seeds result relations for call-cycle analysis.
       // A second pass can bind straight-line private-call results to the exact
@@ -609,7 +611,13 @@ class Checker {
       concrete_effect_cache_enabled_ = true;
       validate_borrowed_view_write_effects();
     }
-    { CompilerStageTimer timer("concrete_graph"); build_concrete_domain_graph(); }
+    // A file check with a root main still needs its static composition to
+    // validate messages issued from that file. Only package-wide duplicate
+    // route checks are suppressed by the scoped declaration mode.
+    if (!p_.file_check_scope || p_.main) {
+      CompilerStageTimer timer("concrete_graph");
+      build_concrete_domain_graph();
+    }
     {
       CompilerStageTimer timer("specialization_checking");
       check_method_ownership();
@@ -641,7 +649,7 @@ class Checker {
       for (const auto& d : p_.domains) check_domain(d);
       if (p_.main) check_main(*p_.main);
       check_test_and_benchmark_declarations();
-      validate_staged_nominal_map_key_proofs();
+      if (!p_.file_check_scope) validate_staged_nominal_map_key_proofs();
     }
     p_.concrete_domain_graph.closed = true;
     std::ostringstream graph_material;
@@ -1665,6 +1673,8 @@ class Checker {
         std::cerr << "MOSS_PROFILE|functions_analyzed|" << recorder.get_counter("functions_analyzed") << '\n';
         std::cerr << "MOSS_PROFILE|source_function_checks|"
                   << source_function_checks_ << '\n';
+        for (const auto& identity : source_function_identities_)
+          std::cerr << "MOSS_PROFILE_ID|source_function|" << identity << '\n';
         std::cerr << "MOSS_PROFILE|types_analyzed|" << recorder.get_counter("types_analyzed") << '\n';
         std::cerr << "MOSS_PROFILE|specialization_requests|" << specialization_requests_ << '\n';
         std::cerr << "MOSS_PROFILE|distinct_specialization_keys|" << recorder.get_counter("distinct_specialization_keys") << '\n';
@@ -1874,6 +1884,8 @@ class Checker {
   mutable size_t concrete_effect_max_depth_ = 0;
   bool profile_concrete_effect_work_ = false;
   uint64_t source_function_checks_ = 0;
+  // Distinct source function identities (`<file>:<name>`), profile-only.
+  std::set<string> source_function_identities_;
   bool specialization_effect_profile_active_ = false;
   uint64_t observable_effects_function_evaluations_ = 0;
   uint64_t specialization_effect_function_evaluations_ = 0;
@@ -8119,6 +8131,7 @@ class Checker {
       }
     }
     for (const auto& domain : p_.domains) {
+      if (p_.file_check_scope && !p_.file_scope_domains.count(domain.name)) continue;
       for (const auto& field : domain.state)
         check_declared_map_keys(domain.source_file, field.line, field.type);
       for (const auto& handler : domain.handlers)
@@ -8949,6 +8962,7 @@ class Checker {
 
   void check_objects() {
     for (const auto& object : p_.objects) {
+      if (p_.file_check_scope && !p_.file_scope_objects.count(object.name)) continue;
       current_source_file_ = object.source_file;
       std::set<string> field_names;
       std::set<string> method_signatures;
@@ -8965,7 +8979,7 @@ class Checker {
                 "MALFORMED_TYPE_EXPRESSION");
           err(field_source, field.line, "unknown field type '" + field.type + "'");
         }
-        if (!field_names.insert(field.name).second)
+        if (!field_names.insert(field.name).second && !p_.file_check_scope)
           err(field_source, field.line, "duplicate object field '" + field.name + "' in " + object.name);
       }
       current_object_ = &object;
@@ -8988,7 +9002,7 @@ class Checker {
           signature += ":" + canonical_type_name(param.type);
           env[param.name] = param.type;
         }
-        if (!method_signatures.insert(signature).second)
+        if (!method_signatures.insert(signature).second && !p_.file_check_scope)
           err(method_source, method.line, "duplicate method signature '" + object.name + "." +
               method.name + "'");
         if (method.return_type && !valid_type(*method.return_type))
@@ -9174,9 +9188,12 @@ class Checker {
                  name.substr(bracket + 1, name.size() - bracket - 2), ','))
           visit_type(argument, file, line);
     };
-    for (const auto& enumeration : p_.enums)
+    for (const auto& enumeration : p_.enums) {
+      if (p_.file_check_scope && !p_.file_scope_enums.count(enumeration.name)) continue;
       visit(enumeration.name, enumeration.source_file, enumeration.line);
-    for (const auto& declaration : p_.enums)
+    }
+    for (const auto& declaration : p_.enums) {
+      if (p_.file_check_scope && !p_.file_scope_enums.count(declaration.name)) continue;
       for (const auto& item : declaration.cases)
         for (const auto& field : item.fields) {
           if (!valid_type(field.type))
@@ -9187,7 +9204,9 @@ class Checker {
             err(field.source_file, field.line,
                 "trait types are static structural constraints and cannot be stored in enum payloads");
         }
+    }
     for (const auto& declaration : p_.enums) {
+      if (p_.file_check_scope && !p_.file_scope_enums.count(declaration.name)) continue;
       string short_name = declaration.name;
       if (auto separator = short_name.rfind("__"); separator != string::npos)
         short_name = short_name.substr(separator + 2);
@@ -9281,6 +9300,7 @@ class Checker {
             "; declare an immutable domainroutes dependency instead");
     };
     for (const auto& domain : p_.domains) {
+      if (p_.file_check_scope && !p_.file_scope_domains.count(domain.name)) continue;
       for (const auto& field : domain.state)
         reject(field.type, field.source_file.empty() ? domain.source_file : field.source_file, field.line, "stored as ordinary state");
       for (const auto& handler : domain.handlers) {
@@ -9298,6 +9318,7 @@ class Checker {
         reject(*function.return_type, function.source_file, function.line, "returned as ordinary values");
     }
     for (const auto& object : p_.objects) {
+      if (p_.file_check_scope && !p_.file_scope_objects.count(object.name)) continue;
       for (const auto& field : object.fields)
         reject(field.type, field.source_file.empty() ? object.source_file : field.source_file, field.line, "stored in aggregates");
       for (const auto& method : object.methods) {
@@ -9308,7 +9329,8 @@ class Checker {
           reject(*method.return_type, method_source, method.line, "returned as ordinary values");
       }
     }
-    for (const auto& trait : p_.traits)
+    for (const auto& trait : p_.traits) {
+      if (p_.file_check_scope) continue;
       for (const auto& method : trait.methods) {
         string method_source = method.source_file.empty() ? trait.source_file : method.source_file;
         for (const auto& parameter : method.params)
@@ -9316,6 +9338,7 @@ class Checker {
         if (method.return_type)
           reject(*method.return_type, method_source, trait.line, "returned as ordinary values");
       }
+    }
   }
 
   void check_static_message_receiver(int line, const string& receiver,
@@ -9387,6 +9410,7 @@ class Checker {
   }
 
   void check_domain(const Domain& d) {
+    if (p_.file_check_scope && !p_.file_scope_domains.count(d.name)) return;
     current_source_file_ = d.source_file;
     std::set<string> state_names, handler_names;
     for (const auto& f : d.state) {
@@ -9399,7 +9423,8 @@ class Checker {
       if (canonical_type_name(f.type) == "FileIO" && !f.init.empty())
         err(f.line, "domain-field FileIO begins closed and is opened in place",
             "FILEIO_PINNED_OWNERSHIP");
-      if (!state_names.insert(f.name).second) err(f_source, f.line, "duplicate state field '" + f.name + "'");
+      if (!state_names.insert(f.name).second && !p_.file_check_scope)
+        err(f_source, f.line, "duplicate state field '" + f.name + "'");
       if (!f.init.empty()) {
         ObservableEffects initializer_effects =
             observable_expression_effects(f.init, {});
@@ -9419,7 +9444,7 @@ class Checker {
       if (!domains_.count(route.type))
         err(route.source_file, route.line,
             "unknown domain route type '" + route.type + "'");
-      if (!route_names.insert(route.name).second)
+      if (!route_names.insert(route.name).second && !p_.file_check_scope)
         err(route.source_file, route.line,
             "duplicate domain route '" + route.name + "'");
       if (state_names.count(route.name))
@@ -9432,7 +9457,8 @@ class Checker {
       SourceFileScope semantic_context(
           current_semantic_context_,
           "handler:" + d.name + "." + h.name);
-      if (!handler_names.insert(h.name).second) err(h_source, h.line, "duplicate handler '" + h.name + "' in domain " + d.name);
+      if (!handler_names.insert(h.name).second && !p_.file_check_scope)
+        err(h_source, h.line, "duplicate handler '" + h.name + "' in domain " + d.name);
       if (h.reply_type && !valid_type(*h.reply_type)) err(h_source, h.line, "unknown reply type '" + *h.reply_type + "'");
       if (h.reply_type && fileio_contains_scoped_type(*h.reply_type))
         err(h.line,
@@ -9914,7 +9940,8 @@ class Checker {
     ScopedOpTimer t_fn("check_function", f.name);
     if (profile_concrete_effect_work_ &&
         std::filesystem::path(f.source_file).extension() != ".mossi")
-      ++source_function_checks_;
+      source_function_checks_ += 1, source_function_identities_.insert(
+          std::filesystem::path(f.source_file).filename().string() + ":" + f.name);
     current_source_file_ = f.source_file;
     SourceFileScope semantic_context(
         current_semantic_context_, "fn:" + f.name);
@@ -13504,6 +13531,7 @@ class Checker {
           constrain_constructor_fields(function.result_line, *function.result_expression, env);
       }
       for (auto& domain : p_.domains) {
+        if (p_.file_check_scope && !p_.file_scope_domains.count(domain.name)) continue;
         SourceFileScope domain_source(current_source_file_, domain.source_file);
         for (const auto& field : domain.state) {
           string field_source = field.source_file.empty()
@@ -13549,6 +13577,7 @@ class Checker {
     }
     infer_object_fields_rounds_ += rounds_run;
     for (const auto& object : p_.objects) {
+      if (p_.file_check_scope && !p_.file_scope_objects.count(object.name)) continue;
       bool is_generic = std::any_of(object.fields.begin(), object.fields.end(),
           [](const Field& f) { return f.inferred; });
       if (is_generic) continue;
@@ -13850,6 +13879,7 @@ class Checker {
          round <= p_.domains.size() * 3 + p_.objects.size() + 3; ++round) {
       const string before = inferred_checker_signature();
       for (auto& domain : p_.domains) {
+        if (p_.file_check_scope && !p_.file_scope_domains.count(domain.name)) continue;
         SourceFileScope domain_source(current_source_file_, domain.source_file);
         TypeEnv initializer_env;
         initializer_env["self"] = domain.name;
@@ -13966,6 +13996,7 @@ class Checker {
     infer_domain_state_fields_rounds_ += rounds_run;
     if (!finalize) return;
     for (const auto& domain : p_.domains) {
+      if (p_.file_check_scope && !p_.file_scope_domains.count(domain.name)) continue;
       for (const auto& field : domain.state) {
         if (field.type.empty()) {
           string field_source = field.source_file.empty()
@@ -13984,6 +14015,7 @@ class Checker {
          round <= p_.domains.size() * 3 + p_.functions.size() + 3; ++round) {
       const string before = inferred_checker_signature();
       for (auto& domain : p_.domains) {
+        if (p_.file_check_scope && !p_.file_scope_domains.count(domain.name)) continue;
         for (auto& handler : domain.handlers) {
           string handler_source = handler.source_file.empty()
               ? domain.source_file : handler.source_file;

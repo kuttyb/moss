@@ -805,6 +805,13 @@ struct ExecutorStartPlan {
 };
 
 struct Program {
+  // Set only by `moss check <file>` on a project. This tells checker passes
+  // that callable bodies have already been reduced to the file's reachable
+  // closure and that package-wide rules belong to Margo's build path.
+  bool file_check_scope = false;
+  std::set<string> file_scope_objects;
+  std::set<string> file_scope_enums;
+  std::set<string> file_scope_domains;
   // Compiler-internal typed projection of checked facts, populated once by
   // Checker::run. ABI serializers consume this rather than diagnostic text.
   std::shared_ptr<TypedSemanticModuleV1> typed_semantics;

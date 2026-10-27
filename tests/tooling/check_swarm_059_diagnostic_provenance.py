@@ -16,6 +16,7 @@ import sys
 import tempfile
 
 REPO = Path(__file__).resolve().parents[2]
+MARGO = REPO / "margo"
 
 
 def run(command, *, cwd, env=None):
@@ -165,15 +166,11 @@ def test_invalid_object_field_type_non_root(compiler):
             'export type Broken:\n'
             '  value: MissingType\n', encoding="utf-8")
 
-        # 1. Human-readable diagnostic from root check
+        # File scope omits this unused declaration; package mode owns its
+        # declaration validation and retains the physical source location.
         res_human = run([str(compiler), "check", str(src / "main.moss")], cwd=root)
-        if res_human.returncode == 0:
-            raise AssertionError(f"Expected check to fail, but succeeded:\n{res_human.stdout}")
-        combined = res_human.stderr + res_human.stdout
-        if "models.moss" not in combined:
-            raise AssertionError(f"Expected error to reference models.moss, got:\n{combined}")
-        if "main.moss" in combined and "models.moss" not in combined:
-            raise AssertionError(f"Error was incorrectly attributed to root main.moss:\n{combined}")
+        if res_human.returncode != 0:
+            raise AssertionError(f"Unreachable declaration affected file check:\n{res_human.stderr}")
 
         # 2. Structured JSON diagnostic from root check
         res_json = run([str(compiler), "check", str(src / "main.moss"), "--json"], cwd=root)
@@ -182,20 +179,15 @@ def test_invalid_object_field_type_non_root(compiler):
         except json.JSONDecodeError as err:
             raise AssertionError(f"Expected JSON output, got:\n{res_json.stdout}\n{res_json.stderr}") from err
 
-        source_file = None
-        if not payload.get("ok"):
-            error_obj = payload.get("error", {})
-            source_file = error_obj.get("source_file")
-        else:
-            diagnostics = payload.get("result", {}).get("diagnostics", [])
-            if diagnostics:
-                source_file = diagnostics[0].get("source_file")
+        if not payload.get("ok") or payload.get("result", {}).get("diagnostics"):
+            raise AssertionError(f"Unreachable declaration affected JSON file check: {payload}")
+        package = run([str(MARGO), "build", "--check"], cwd=root,
+                      env=env_for(compiler))
+        combined = package.stderr + package.stdout
+        if package.returncode == 0 or "models.moss" not in combined:
+            raise AssertionError(f"Package check lost object-field diagnostic provenance: {combined}")
 
-        if not source_file or "models.moss" not in source_file:
-            raise AssertionError(
-                f"JSON diagnostic source_file did not identify models.moss: {source_file!r}\nPayload:\n{payload}")
-
-    print("  [PASS] invalid object field type provenance in non-root module (human and JSON)")
+    print("  [PASS] unused object field is omitted by file check and reported by package check")
 
 
 def test_invalid_object_method_signature_non_root(compiler):
@@ -221,13 +213,11 @@ def test_invalid_object_method_signature_non_root(compiler):
             '  fn process(x: MissingType) -> Int:\n'
             '    return 0\n', encoding="utf-8")
 
-        # 1. Human-readable diagnostic from root check
+        # This method is not reachable from the root file. Package mode still
+        # validates its declaration and owns the source provenance.
         res_human = run([str(compiler), "check", str(src / "main.moss")], cwd=root)
-        if res_human.returncode == 0:
-            raise AssertionError(f"Expected check to fail, but succeeded:\n{res_human.stdout}")
-        combined = res_human.stderr + res_human.stdout
-        if "models.moss" not in combined:
-            raise AssertionError(f"Expected error to reference models.moss, got:\n{combined}")
+        if res_human.returncode != 0:
+            raise AssertionError(f"Unreachable method affected file check:\n{res_human.stderr}")
 
         # 2. Structured JSON diagnostic from root check
         res_json = run([str(compiler), "check", str(src / "main.moss"), "--json"], cwd=root)
@@ -236,20 +226,15 @@ def test_invalid_object_method_signature_non_root(compiler):
         except json.JSONDecodeError as err:
             raise AssertionError(f"Expected JSON output, got:\n{res_json.stdout}\n{res_json.stderr}") from err
 
-        source_file = None
-        if not payload.get("ok"):
-            error_obj = payload.get("error", {})
-            source_file = error_obj.get("source_file")
-        else:
-            diagnostics = payload.get("result", {}).get("diagnostics", [])
-            if diagnostics:
-                source_file = diagnostics[0].get("source_file")
+        if not payload.get("ok") or payload.get("result", {}).get("diagnostics"):
+            raise AssertionError(f"Unreachable method affected JSON file check: {payload}")
+        package = run([str(MARGO), "build", "--check"], cwd=root,
+                      env=env_for(compiler))
+        combined = package.stderr + package.stdout
+        if package.returncode == 0 or "models.moss" not in combined:
+            raise AssertionError(f"Package check lost method-signature diagnostic provenance: {combined}")
 
-        if not source_file or "models.moss" not in source_file:
-            raise AssertionError(
-                f"JSON diagnostic source_file did not identify models.moss: {source_file!r}\nPayload:\n{payload}")
-
-    print("  [PASS] invalid object method signature provenance in non-root module (human and JSON)")
+    print("  [PASS] unused method is omitted by file check and reported by package check")
 
 
 def test_invalid_trait_method_signature_non_root(compiler):
@@ -273,13 +258,10 @@ def test_invalid_trait_method_signature_non_root(compiler):
             'export trait Broken:\n'
             '  fn perform(x: MissingType) -> Int\n', encoding="utf-8")
 
-        # 1. Human-readable diagnostic from root check
+        # Trait declaration/coherence checks are package-wide under R4.
         res_human = run([str(compiler), "check", str(src / "main.moss")], cwd=root)
-        if res_human.returncode == 0:
-            raise AssertionError(f"Expected check to fail, but succeeded:\n{res_human.stdout}")
-        combined = res_human.stderr + res_human.stdout
-        if "contracts.moss" not in combined:
-            raise AssertionError(f"Expected error to reference contracts.moss, got:\n{combined}")
+        if res_human.returncode != 0:
+            raise AssertionError(f"Unreachable trait affected file check:\n{res_human.stderr}")
 
         # 2. Structured JSON diagnostic from root check
         res_json = run([str(compiler), "check", str(src / "main.moss"), "--json"], cwd=root)
@@ -288,20 +270,15 @@ def test_invalid_trait_method_signature_non_root(compiler):
         except json.JSONDecodeError as err:
             raise AssertionError(f"Expected JSON output, got:\n{res_json.stdout}\n{res_json.stderr}") from err
 
-        source_file = None
-        if not payload.get("ok"):
-            error_obj = payload.get("error", {})
-            source_file = error_obj.get("source_file")
-        else:
-            diagnostics = payload.get("result", {}).get("diagnostics", [])
-            if diagnostics:
-                source_file = diagnostics[0].get("source_file")
+        if not payload.get("ok") or payload.get("result", {}).get("diagnostics"):
+            raise AssertionError(f"Unreachable trait affected JSON file check: {payload}")
+        package = run([str(MARGO), "build", "--check"], cwd=root,
+                      env=env_for(compiler))
+        combined = package.stderr + package.stdout
+        if package.returncode == 0 or "contracts.moss" not in combined:
+            raise AssertionError(f"Package check lost trait diagnostic provenance: {combined}")
 
-        if not source_file or "contracts.moss" not in source_file:
-            raise AssertionError(
-                f"JSON diagnostic source_file did not identify contracts.moss: {source_file!r}\nPayload:\n{payload}")
-
-    print("  [PASS] invalid trait method signature provenance in non-root module (human and JSON)")
+    print("  [PASS] unused trait is omitted by file check and reported by package check")
 
 
 def main():

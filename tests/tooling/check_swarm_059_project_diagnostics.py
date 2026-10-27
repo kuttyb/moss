@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Project diagnostics retain the physical source of each compiler error."""
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -9,6 +10,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 COMPILER = Path(sys.argv[1] if len(sys.argv) > 1 else ROOT / "moss").resolve()
+MARGO = ROOT / "margo"
 
 
 def run(*args, expected=0):
@@ -28,7 +30,7 @@ with tempfile.TemporaryDirectory(prefix="moss-sw-059-", dir=ROOT / "tmp") as nam
     source_dir = project / "src"
     source_dir.mkdir()
     (project / "Moss.toml").write_text(
-        '[project]\nname = "provenance"\nversion = "0.1.0"\n\n'
+        '[package]\nname = "provenance"\nversion = "0.1.0"\n\n'
         '[build]\nsource = "src"\n',
         encoding="utf-8",
     )
@@ -133,9 +135,25 @@ with tempfile.TemporaryDirectory(prefix="moss-sw-059-", dir=ROOT / "tmp") as nam
         ),
     }
 
+    package_only = {"ordinary type error", "bad function call", "bad method call",
+                    "function finalization"}
+    env = dict(os.environ)
+    env["MOSS"] = str(COMPILER)
     for name, (other_text, root_text, expected_message, expected_line) in cases.items():
         other_source.write_text(other_text, encoding="utf-8")
         root_source.write_text(root_text, encoding="utf-8")
+
+        if name in package_only:
+            # R3 scopes file checks to reachable callables. These diagnostics
+            # belong to package validation and remain visible under Margo.
+            check = run("check", root_source, "--json", expected=0)
+            assert json.loads(check.stdout).get("ok") is True, (name, check.stdout)
+            package = subprocess.run([str(MARGO), "build", "--check"], cwd=project,
+                                     env=env, text=True, capture_output=True)
+            combined = package.stdout + package.stderr
+            assert package.returncode != 0 and expected_message in combined, (
+                name, package.returncode, combined)
+            continue
 
         try:
             structured_result = run("check", root_source, "--json", expected=1)

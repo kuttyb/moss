@@ -271,7 +271,9 @@ void build_type_context(Program& program) {
   for (const auto& object : program.objects) {
     vector<moss::NominalFieldSlot> fields;
     for (const auto& field : object.fields) {
-      const bool inferred = field.inferred || field.type.empty();
+      const bool inferred = field.inferred || field.type.empty() ||
+          (program.file_check_scope &&
+           !program.file_scope_objects.count(object.name));
       fields.push_back({field.name, inferred ? string() : trim(field.type), inferred});
     }
     declare(moss::DeclarationKind::Record, object.name, object.defining_module,
@@ -11667,7 +11669,8 @@ static void annotate_program_source(Program& program, const string& source_file)
 }
 
 static void merge_project_program(Program& destination, Program source,
-                                  const string& source_file) {
+                                  const string& source_file,
+                                  const std::filesystem::path* file_check_root = nullptr) {
   // Each physical file was parsed independently, but all declarations are
   // checked together below.  This is temporary global linkage until Moss has
   // explicit modules/imports; no synthetic source file or implicit namespace
@@ -11701,6 +11704,12 @@ static void merge_project_program(Program& destination, Program source,
                                 std::make_move_iterator(source.benchmarks.begin()),
                                 std::make_move_iterator(source.benchmarks.end()));
   if (source.main) {
+    if (file_check_root) {
+      if (std::filesystem::absolute(source_file).lexically_normal() ==
+          std::filesystem::absolute(*file_check_root).lexically_normal())
+        destination.main = std::move(source.main);
+      return;
+    }
     if (destination.main) {
       CompileError error(source.main->line, "duplicate proc main()");
       error.source_file = source_file;
@@ -11708,6 +11717,405 @@ static void merge_project_program(Program& destination, Program source,
     }
     destination.main = std::move(source.main);
   }
+}
+
+struct FileCheckReferences {
+  std::set<string> functions, methods, handlers;
+};
+
+static std::set<string> type_identifiers(const string& text) {
+  std::set<string> result;
+  string name;
+  for (unsigned char ch : text) {
+    if (std::isalnum(ch) || ch == '_') name.push_back(static_cast<char>(ch));
+    else if (!name.empty()) { result.insert(std::move(name)); name.clear(); }
+  }
+  if (!name.empty()) result.insert(std::move(name));
+  return result;
+}
+
+static void add_expression_references(const string& source,
+                                      FileCheckReferences& references) {
+  string text = source;
+  enum class Quote { None, Single, Double } quote = Quote::None;
+  bool escaped = false;
+  for (size_t i = 0; i < text.size(); ++i) {
+    char ch = text[i];
+    if (quote != Quote::None) {
+      if (escaped) escaped = false;
+      else if (ch == '\\') escaped = true;
+      else if ((quote == Quote::Single && ch == '\'') ||
+               (quote == Quote::Double && ch == '"')) quote = Quote::None;
+      else text[i] = ' ';
+      continue;
+    }
+    if (ch == '#') {
+      while (i < text.size() && text[i] != '\n') text[i++] = ' ';
+      if (i == text.size()) break;
+      continue;
+    }
+    if (ch == '\'') { quote = Quote::Single; text[i] = ' '; continue; }
+    if (ch == '"') { quote = Quote::Double; text[i] = ' '; continue; }
+  }
+  auto add_bare_references = [&](size_t begin, size_t end) {
+    for (size_t at = begin; at < end;) {
+      if (!(std::isalpha(static_cast<unsigned char>(text[at])) || text[at] == '_')) {
+        ++at;
+        continue;
+      }
+      const size_t start = at++;
+      while (at < end &&
+             (std::isalnum(static_cast<unsigned char>(text[at])) || text[at] == '_')) ++at;
+      if (at < end && text[at] == '.') continue;
+      references.functions.insert(text.substr(start, at - start));
+    }
+  };
+  if (const auto by = text.find("by:"); by != string::npos)
+    add_bare_references(by + 3, text.size());
+  else if (const auto by = text.find("by="); by != string::npos)
+    add_bare_references(by + 3, text.size());
+  for (const string& operation : {"map(", "filter(", "reduce(", "fold(", "each("}) {
+    size_t at = 0;
+    while ((at = text.find(operation, at)) != string::npos) {
+      const size_t begin = at + operation.size();
+      size_t end = text.find(')', begin);
+      if (end == string::npos) end = text.size();
+      add_bare_references(begin, end);
+      at = begin;
+    }
+  }
+  for (size_t i = 0; i < text.size();) {
+    if (!(std::isalpha(static_cast<unsigned char>(text[i])) || text[i] == '_')) {
+      ++i;
+      continue;
+    }
+    const size_t begin = i++;
+    while (i < text.size() &&
+           (std::isalnum(static_cast<unsigned char>(text[i])) || text[i] == '_')) ++i;
+    string name = text.substr(begin, i - begin);
+    size_t next = i;
+    while (next < text.size() && std::isspace(static_cast<unsigned char>(text[next]))) ++next;
+    if (next == text.size() || text[next] != '(') continue;
+    size_t previous = begin;
+    while (previous > 0 && std::isspace(static_cast<unsigned char>(text[previous - 1]))) --previous;
+    const bool member = previous > 0 && text[previous - 1] == '.';
+    bool message_handler = false;
+    if (member) {
+      const size_t dot = previous - 1;
+      const auto message = text.rfind("message", dot);
+      if (message != string::npos &&
+          (message == 0 ||
+           !(std::isalnum(static_cast<unsigned char>(text[message - 1])) ||
+             text[message - 1] == '_')) &&
+          (message + 7 == text.size() ||
+           std::isspace(static_cast<unsigned char>(text[message + 7])))) {
+        message_handler = true;
+        for (size_t between = message + 7; between < begin; ++between)
+          if (!(std::isalnum(static_cast<unsigned char>(text[between])) ||
+                text[between] == '_' || text[between] == '.' ||
+                std::isspace(static_cast<unsigned char>(text[between])))) {
+            message_handler = false;
+            break;
+          }
+      }
+    }
+    if (member && message_handler) references.handlers.insert(std::move(name));
+    else if (member) references.methods.insert(std::move(name));
+    else references.functions.insert(std::move(name));
+  }
+}
+
+static void add_statement_references(const vector<Stmt>& body,
+                                     FileCheckReferences& references) {
+  for (const auto& statement : body) {
+    if (statement.kind == Stmt::Kind::Message) {
+      if (!statement.b.empty()) references.handlers.insert(trim(statement.b));
+      for (const auto& argument : statement.args)
+        add_expression_references(argument, references);
+      continue;
+    }
+    for (const string* text : {&statement.text, &statement.a, &statement.b})
+      add_expression_references(*text, references);
+    for (const auto& argument : statement.args)
+      add_expression_references(argument, references);
+    if (statement.kind == Stmt::Kind::Call) {
+      if (!statement.b.empty()) {
+        const string source = trim(statement.text);
+        if (starts_with(source, "message "))
+          references.handlers.insert(trim(statement.b));
+        else
+          references.methods.insert(trim(statement.b));
+      } else if (!statement.a.empty()) {
+        references.functions.insert(trim(statement.a));
+      }
+    }
+  }
+}
+
+static string unqualified_callable_name(const string& name) {
+  size_t separator = name.rfind("__");
+  size_t width = 2;
+  const auto dot = name.rfind('.');
+  if (dot != string::npos && (separator == string::npos || dot > separator)) {
+    separator = dot;
+    width = 1;
+  }
+  const auto colon = name.rfind("::");
+  if (colon != string::npos && (separator == string::npos || colon > separator)) {
+    separator = colon;
+    width = 2;
+  }
+  return separator == string::npos ? name : name.substr(separator + width);
+}
+
+// Reduce project-file checking to the conservative syntactic callable closure
+// rooted in the requested file. The checker still receives all nominal and
+// signature declarations as lookup context, but only reachable source bodies.
+// A method name deliberately selects every method with that name.
+static void scope_program_to_file(Program& program,
+                                 const std::filesystem::path& root_file) {
+  const string root = std::filesystem::absolute(root_file).lexically_normal().string();
+  auto is_root = [&](const string& source) {
+    return !source.empty() &&
+        std::filesystem::absolute(source).lexically_normal().string() == root;
+  };
+  for (const auto& object : program.objects)
+    if (is_root(object.source_file)) program.file_scope_objects.insert(object.name);
+  for (const auto& enumeration : program.enums)
+    if (is_root(enumeration.source_file)) program.file_scope_enums.insert(enumeration.name);
+  for (const auto& domain : program.domains)
+    if (is_root(domain.source_file)) program.file_scope_domains.insert(domain.name);
+  std::set<size_t> selected_functions, selected_methods, selected_handlers;
+  std::vector<FileCheckReferences> function_refs(program.functions.size());
+  std::vector<FileCheckReferences> method_refs;
+  std::vector<FileCheckReferences> handler_refs;
+  size_t method_count = 0, handler_count = 0;
+  for (const auto& object : program.objects) method_count += object.methods.size();
+  for (const auto& domain : program.domains) handler_count += domain.handlers.size();
+  method_refs.resize(method_count);
+  handler_refs.resize(handler_count);
+  size_t method_index = 0, handler_index = 0;
+  for (size_t i = 0; i < program.functions.size(); ++i) {
+    const auto& function = program.functions[i];
+    auto& refs = function_refs[i];
+    add_statement_references(function.body, refs);
+    if (function.result_expression) add_expression_references(*function.result_expression, refs);
+    if (is_root(function.source_file)) selected_functions.insert(i);
+  }
+  for (const auto& object : program.objects) {
+    for (const auto& method : object.methods) {
+      auto& refs = method_refs[method_index];
+      add_statement_references(method.body, refs);
+      if (method.result_expression) add_expression_references(*method.result_expression, refs);
+      if (is_root(method.source_file)) selected_methods.insert(method_index);
+      ++method_index;
+    }
+  }
+  for (const auto& domain : program.domains) {
+    for (const auto& handler : domain.handlers) {
+      auto& refs = handler_refs[handler_index];
+      add_statement_references(handler.body, refs);
+      for (const auto& arm : handler.failure_arms)
+        add_statement_references(arm.body, refs);
+      if (is_root(handler.source_file)) selected_handlers.insert(handler_index);
+      ++handler_index;
+    }
+  }
+  FileCheckReferences root_references;
+  if (program.main && is_root(program.main->source_file))
+    add_statement_references(program.main->body, root_references);
+  for (const auto& test : program.tests)
+    if (is_root(test.source_file)) {
+      add_statement_references(test.body, root_references);
+    }
+  for (const auto& bench : program.benchmarks)
+    if (is_root(bench.source_file)) {
+      add_statement_references(bench.body, root_references);
+    }
+
+  auto matches = [](const std::set<string>& references, const string& name) {
+    return references.count(name) || references.count(unqualified_callable_name(name));
+  };
+  bool changed = true;
+  while (changed) {
+    changed = false;
+    FileCheckReferences active = root_references;
+    auto merge = [&](const FileCheckReferences& refs) {
+      active.functions.insert(refs.functions.begin(), refs.functions.end());
+      active.methods.insert(refs.methods.begin(), refs.methods.end());
+      active.handlers.insert(refs.handlers.begin(), refs.handlers.end());
+    };
+    for (auto index : selected_functions) merge(function_refs[index]);
+    method_index = handler_index = 0;
+    for (const auto& object : program.objects) {
+      for (size_t i = 0; i < object.methods.size(); ++i) {
+        if (selected_methods.count(method_index))
+          merge(method_refs[method_index]);
+        ++method_index;
+      }
+    }
+    for (const auto& domain : program.domains) {
+      for (size_t i = 0; i < domain.handlers.size(); ++i) {
+        if (selected_handlers.count(handler_index))
+          merge(handler_refs[handler_index]);
+        ++handler_index;
+      }
+    }
+    auto refs_before_initializers = std::make_tuple(
+        active.functions.size(), active.methods.size(), active.handlers.size());
+    for (const auto& object : program.objects) {
+      const bool selected_object = matches(active.functions, object.name) ||
+          std::any_of(object.methods.begin(), object.methods.end(), [&](const Method& method) {
+            return matches(active.methods, method.name);
+          });
+      if (!selected_object) continue;
+      for (const auto& field : object.fields)
+        if (!field.init.empty()) add_expression_references(field.init, active);
+    }
+    for (const auto& domain : program.domains) {
+      const bool selected_domain = matches(active.functions, domain.name) ||
+          std::any_of(domain.handlers.begin(), domain.handlers.end(), [&](const Handler& handler) {
+            return matches(active.handlers, handler.name);
+          });
+      if (!selected_domain) continue;
+      for (const auto& field : domain.state)
+        if (!field.init.empty()) add_expression_references(field.init, active);
+    }
+    changed |= refs_before_initializers != std::make_tuple(
+        active.functions.size(), active.methods.size(), active.handlers.size());
+    for (size_t i = 0; i < program.functions.size(); ++i) {
+      const auto& function = program.functions[i];
+      if (selected_functions.count(i) ||
+          std::filesystem::path(function.source_file).extension() == ".mossi") continue;
+      if (matches(active.functions, function.name)) changed |= selected_functions.insert(i).second;
+    }
+    method_index = 0;
+    for (const auto& object : program.objects) {
+      for (const auto& method : object.methods) {
+        if (!selected_methods.count(method_index) && matches(active.methods, method.name)) {
+          changed |= selected_methods.insert(method_index).second;
+        }
+        ++method_index;
+      }
+    }
+    handler_index = 0;
+    for (const auto& domain : program.domains) {
+      for (const auto& handler : domain.handlers) {
+        if (!selected_handlers.count(handler_index) && matches(active.handlers, handler.name)) {
+          changed |= selected_handlers.insert(handler_index).second;
+        }
+        ++handler_index;
+      }
+    }
+  }
+
+  FileCheckReferences reachable = root_references;
+  auto add_reachable_refs = [&](const FileCheckReferences& refs) {
+    reachable.functions.insert(refs.functions.begin(), refs.functions.end());
+    reachable.methods.insert(refs.methods.begin(), refs.methods.end());
+    reachable.handlers.insert(refs.handlers.begin(), refs.handlers.end());
+  };
+  for (auto index : selected_functions) add_reachable_refs(function_refs[index]);
+  method_index = handler_index = 0;
+  for (const auto& object : program.objects) {
+    for (size_t i = 0; i < object.methods.size(); ++i) {
+      if (selected_methods.count(method_index)) add_reachable_refs(method_refs[method_index]);
+      ++method_index;
+    }
+  }
+  for (const auto& domain : program.domains) {
+    for (size_t i = 0; i < domain.handlers.size(); ++i) {
+      if (selected_handlers.count(handler_index)) add_reachable_refs(handler_refs[handler_index]);
+      ++handler_index;
+    }
+  }
+  auto signature_mentions = [&](const string& type) {
+    auto refs = type_identifiers(type);
+    for (const auto& object : program.objects)
+      if (refs.count(object.name) || refs.count(unqualified_callable_name(object.name)))
+        program.file_scope_objects.insert(object.name);
+    for (const auto& enumeration : program.enums)
+      if (refs.count(enumeration.name) || refs.count(unqualified_callable_name(enumeration.name)))
+        program.file_scope_enums.insert(enumeration.name);
+    for (const auto& domain : program.domains)
+      if (refs.count(domain.name) || refs.count(unqualified_callable_name(domain.name)))
+        program.file_scope_domains.insert(domain.name);
+  };
+  for (size_t i = 0; i < program.functions.size(); ++i) {
+    if (!selected_functions.count(i)) continue;
+    for (const auto& parameter : program.functions[i].params)
+      signature_mentions(parameter.type);
+    if (program.functions[i].return_type)
+      signature_mentions(*program.functions[i].return_type);
+  }
+  method_index = handler_index = 0;
+  for (const auto& object : program.objects) {
+    for (const auto& method : object.methods) {
+      if (selected_methods.count(method_index)) {
+        program.file_scope_objects.insert(object.name);
+        for (const auto& parameter : method.params) signature_mentions(parameter.type);
+        if (method.return_type) signature_mentions(*method.return_type);
+      }
+      ++method_index;
+    }
+  }
+  for (const auto& domain : program.domains) {
+    for (const auto& handler : domain.handlers) {
+      if (selected_handlers.count(handler_index)) {
+        program.file_scope_domains.insert(domain.name);
+        for (const auto& parameter : handler.params) signature_mentions(parameter.type);
+        if (handler.reply_type) signature_mentions(*handler.reply_type);
+      }
+      ++handler_index;
+    }
+  }
+  for (const auto& object : program.objects)
+    if (matches(reachable.functions, object.name))
+      program.file_scope_objects.insert(object.name);
+  for (const auto& domain : program.domains) {
+    if (matches(reachable.functions, domain.name))
+      program.file_scope_domains.insert(domain.name);
+    if (std::any_of(domain.handlers.begin(), domain.handlers.end(), [&](const Handler& handler) {
+          return matches(reachable.handlers, handler.name);
+        }))
+      program.file_scope_domains.insert(domain.name);
+  }
+
+  std::vector<Function> functions;
+  for (size_t i = 0; i < program.functions.size(); ++i) {
+    if (selected_functions.count(i) ||
+        std::filesystem::path(program.functions[i].source_file).extension() == ".mossi")
+      functions.push_back(std::move(program.functions[i]));
+  }
+  program.functions = std::move(functions);
+  method_index = 0;
+  for (auto& object : program.objects) {
+    std::vector<Method> methods;
+    for (auto& method : object.methods) {
+      if (selected_methods.count(method_index) ||
+          std::filesystem::path(method.source_file).extension() == ".mossi")
+        methods.push_back(std::move(method));
+      ++method_index;
+    }
+    object.methods = std::move(methods);
+  }
+  handler_index = 0;
+  for (auto& domain : program.domains) {
+    std::vector<Handler> handlers;
+    for (auto& handler : domain.handlers) {
+      if (selected_handlers.count(handler_index) ||
+          std::filesystem::path(handler.source_file).extension() == ".mossi")
+        handlers.push_back(std::move(handler));
+      ++handler_index;
+    }
+    domain.handlers = std::move(handlers);
+  }
+  if (program.main && !is_root(program.main->source_file)) program.main.reset();
+  program.tests.erase(std::remove_if(program.tests.begin(), program.tests.end(),
+      [&](const TestDecl& test) { return !is_root(test.source_file); }), program.tests.end());
+  program.benchmarks.erase(std::remove_if(program.benchmarks.begin(), program.benchmarks.end(),
+      [&](const BenchDecl& bench) { return !is_root(bench.source_file); }), program.benchmarks.end());
+  program.file_check_scope = true;
 }
 
 // Phase 6 persists a compact view of the authoritative semantic model.  The
@@ -12642,7 +13050,8 @@ static void rewrite_module_program(
 }
 
 static void validate_module_exports(const std::map<string,ParsedModuleUnit>& modules,
-                                    const std::map<string,std::set<string>>& public_exports) {
+                                    const std::map<string,std::set<string>>& public_exports,
+                                    bool file_check_scope = false) {
   for (const auto& entry : modules) {
     const string& module = entry.first;
     std::map<string,int> export_counts;
@@ -12659,7 +13068,7 @@ static void validate_module_exports(const std::map<string,ParsedModuleUnit>& mod
         if (domain.exported) ++export_counts[domain.name];
     }
     for (const auto& exported : export_counts) {
-      if (exported.second > 1)
+      if (!file_check_scope && exported.second > 1)
         throw CompileError(1, "duplicate exported name '" + exported.first +
                            "' in module '" + module + "'");
     }
@@ -15388,7 +15797,8 @@ static CheckedProjectUnit check_project_sources(
     const string& declaration_filter = {},
     const std::set<string>* declaration_ids = nullptr,
     const std::map<std::filesystem::path, string>* source_overrides = nullptr,
-    bool require_native_artifacts = true) {
+    bool require_native_artifacts = true,
+    const std::filesystem::path* file_check_root = nullptr) {
   try {
     Program program;
     std::map<string,ParsedModuleUnit> modules;
@@ -15535,7 +15945,8 @@ static CheckedProjectUnit check_project_sources(
       std::map<string,std::set<string>> public_exports;
       for (const auto& entry : modules)
         public_exports[entry.first] = module_export_names(entry.second);
-      validate_module_exports(modules, public_exports);
+      validate_module_exports(modules, public_exports,
+                              file_check_root != nullptr);
       // Rewriting/moving one file must not erase names needed to resolve the
       // next file's route types. Keep the source namespace immutable.
       const auto source_modules = modules;
@@ -15545,8 +15956,13 @@ static CheckedProjectUnit check_project_sources(
         for (auto& file : entry.second.files) {
           for (auto& import : file.first.imports) import.owner_module = entry.first;
           rewrite_module_program(file.first, entry.first, source_modules, public_exports);
-          if (file.first.main && !external) program.main_module = entry.first;
-          merge_project_program(program, std::move(file.first), file.second);
+          if (file.first.main && !external &&
+              (!file_check_root ||
+               std::filesystem::absolute(file.second).lexically_normal() ==
+                   std::filesystem::absolute(*file_check_root).lexically_normal()))
+            program.main_module = entry.first;
+          merge_project_program(program, std::move(file.first), file.second,
+                                file_check_root);
         }
       }
     } else {
@@ -15554,11 +15970,18 @@ static CheckedProjectUnit check_project_sources(
       // source order-independent whole-project semantics.
       for (auto& entry : modules) {
         for (auto& file : entry.second.files) {
-          if (file.first.main) program.main_module = manifest.name;
-          merge_project_program(program, std::move(file.first), file.second);
+          if (file.first.main &&
+              (!file_check_root ||
+               std::filesystem::absolute(file.second).lexically_normal() ==
+                   std::filesystem::absolute(*file_check_root).lexically_normal()))
+            program.main_module = manifest.name;
+          merge_project_program(program, std::move(file.first), file.second,
+                                file_check_root);
         }
       }
     }
+    if (file_check_root)
+      scope_program_to_file(program, *file_check_root);
     prepare_and_validate_module_exports(program, false);
     CheckedProgram checker(program);
     checker.run();
@@ -15643,9 +16066,11 @@ static CompiledProjectUnit check_project_semantics(
     const ProjectManifest& manifest,
     const vector<std::filesystem::path>& sources, bool optimized,
     ProgramGenerationMode mode,
-    const std::map<std::filesystem::path, string>* source_overrides = nullptr) {
+    const std::map<std::filesystem::path, string>* source_overrides = nullptr,
+    const std::filesystem::path* file_check_root = nullptr) {
   CheckedProjectUnit checked = check_project_sources(
-      manifest, sources, mode, {}, nullptr, source_overrides, false);
+      manifest, sources, mode, {}, nullptr, source_overrides, false,
+      file_check_root);
   try {
     optimize_program(checked.program, optimized);
     OptimizationPlan plan = OptimizationPlan{optimized};
@@ -23824,7 +24249,8 @@ int main(int argc, char** argv) {
           auto unit = check_only
               ? moss::check_project_semantics(
                     context.manifest, sources, optimize_shared_memory,
-                    context.mode, overrides.empty() ? nullptr : &overrides)
+                    context.mode, overrides.empty() ? nullptr : &overrides,
+                    active_command == "check" ? &context.requested_source : nullptr)
               : moss::analyze_project_sources(
                     context.manifest, sources, optimize_shared_memory,
                     debug_build, context.mode, {}, nullptr,
@@ -23899,7 +24325,9 @@ int main(int argc, char** argv) {
     // later impact/affected-test commands.  Query and standalone compilation
     // remain read-only; a malformed or unrelated manifest never masks the
     // ordinary Moss check result.
-    if (check_only && query_command.empty()) {
+    // R3: file checking is semantic-only and must not run the native snapshot
+    // projection, which lowers Rust as a side effect of `moss check`.
+    if (check_only && query_command.empty() && active_command != "check") {
       auto project_root = nearest_moss_project_root(
           std::filesystem::path(active_input));
       if (project_root) {
