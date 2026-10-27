@@ -1,3 +1,13 @@
+# Phase 26.1 working rules (user, 2026-10-26)
+
+- Team of 2: Agent 1 = coordinator, coder and reviewer; Agent 2 = adversarial reviewer, invoked occasionally at frozen checkpoints (not per commit).
+- Checkpoint often: commit and push to `origin/phase26-1-m1` on this same branch.
+- Run all regressions locally on this machine; do not start hosted CI regression jobs.
+- Agents communicate silently (messages), never via PRs.
+- C1 WIP checkpoint `b2015f83`: carried-over uncommitted work plus the partial_reach M1 fixture; not yet gated.
+
+---
+
 # Phase 26.1 current status — 2026-10-26
 
 ## G1 gates green — 2026-10-26
