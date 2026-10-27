@@ -158,7 +158,8 @@ def test_map_keys_fail_closed():
              "Vector-of-record key", nominal_code, 6)
     rejected("fn main():\n  var m = Map()\n  m[[1.5]] = 1\n  echo 1\n",
              "Vector[Float] key", "FLOAT_MAP_KEY_UNSUPPORTED", 3)
-    rejected(tag + "fn size(m: Map[Tag, Int]) -> Int:\n  return 0\n\nfn main():\n  echo 1\n",
+    rejected(tag + "fn size(m: Map[Tag, Int]) -> Int:\n  return 0\n\n"
+             "fn main():\n  m = Map()\n  echo size(m)\n",
              "declared Map[Record, V] parameter", nominal_code)
     engines(tag + "fn main():\n  var m = Map()\n  m[\"a\"] = Tag(label: \"x\")\n"
             "  echo m[\"a\"].label\n  var k = Map()\n  k[[1, 2]] = 3\n  echo k.get([1, 2], 0)\n",

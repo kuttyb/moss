@@ -190,6 +190,57 @@ def main() -> int:
     assert any("::B:fn:cmp" in identity for identity in callback_edges_b), callback_edges_b
     assert "absent_b" in traced_b.stdout + traced_b.stderr, traced_b
 
+    # R11 includes handlers reached by message expressions and failures
+    # reachable through an on_fail arm. Neither body may be pruned before the
+    # selected-entry checker diagnoses its broken call.
+    root, entry, env = new_package("c1_message_handler_reachability")
+    entry.write_text(
+        "module c1_message_handler_reachability\n"
+        "domain Worker:\n"
+        "  fn Run():\n"
+        "    echo missing_from_handler()\n"
+        "fn main():\n"
+        "  worker = Worker()\n"
+        "  message worker.Run()\n")
+    message_check = check_file(entry, env, ok=False)
+    assert "missing_from_handler" in message_check.stdout + message_check.stderr, (
+        message_check.stdout, message_check.stderr)
+
+    root, entry, env = new_package("c1_handler_failure_arm_reachability")
+    entry.write_text(
+        "module c1_handler_failure_arm_reachability\n"
+        "enum Fault:\n  Bad\n"
+        "domain Worker:\n"
+        "  fn Run():\n"
+        "    raise Fault.Bad\n"
+        "  on_fail Fault.Bad:\n"
+        "    echo missing_from_failure_arm()\n"
+        "fn main():\n"
+        "  worker = Worker()\n"
+        "  message worker.Run()\n")
+    failure_check = check_file(entry, env, ok=False)
+    assert "missing_from_failure_arm" in failure_check.stdout + failure_check.stderr, (
+        failure_check.stdout, failure_check.stderr)
+
+    # Static callback slots are inferred by checking `apply` and `map_by`.
+    # Their callback declarations must be retained before that inference runs.
+    root, entry, env = new_package("c1_callable_static_specializations")
+    entry.write_text(
+        "module c1_callable_static_specializations\n"
+        "fn plus_one(value: Int) -> Int:\n"
+        "  return value + 1\n"
+        "fn apply(callback, value: Int) -> Int:\n"
+        "  return callback(value)\n"
+        "fn map_by(items, transform_fn):\n"
+        "  return items |> map(transform_fn)\n"
+        "fn main():\n"
+        "  echo apply(plus_one, 2)\n"
+        "  values = map_by([1, 2], plus_one)\n"
+        "  echo values[0] + values[1]\n")
+    check_file(entry, env, ok=True)
+    specialized = run([COMPILER, "run", "--interp", entry], root, env, ok=True)
+    assert specialized.stdout == "3\n5\n", (specialized.stdout, specialized.stderr)
+
     # Name mentions are not call edges. A local value called `broken` and a
     # string containing `read()` must not select same-named sibling callables.
     # Unrelated object and enum declaration errors are also package-only for
@@ -291,6 +342,42 @@ def main() -> int:
         package_check.stdout, package_check.stderr)
     assert "absent" in package_check.stdout + package_check.stderr, (
         package_check.stdout, package_check.stderr)
+
+    # Rust-style package boundaries: a dependency's broken tests fail when it
+    # is built as the root, but do not block a consumer's build or Fast Debug.
+    provider, provider_source, provider_env = new_package(
+        "c1_dependency_test_boundary_provider")
+    provider_source.write_text(
+        "module Shared\n"
+        "export fn value() -> Int:\n"
+        "  return 42\n")
+    provider_test = provider / "tests" / "broken_test.moss"
+    provider_test.parent.mkdir()
+    provider_test.write_text(
+        "module BrokenProviderTest\n"
+        "test \"broken\":\n"
+        "  assert(missing_test_helper())\n")
+    own_provider_check = run([MARGO, "build", "--check"], provider,
+                             provider_env, ok=False)
+    assert "missing_test_helper" in own_provider_check.stdout + own_provider_check.stderr, (
+        own_provider_check.stdout, own_provider_check.stderr)
+
+    consumer, consumer_source, consumer_env = new_package(
+        "c1_dependency_test_boundary_consumer")
+    relative_provider = os.path.relpath(provider, consumer).replace(os.sep, "/")
+    (consumer / "Moss.toml").write_text(
+        '[package]\nname = "c1_dependency_test_boundary_consumer"\n'
+        'version = "0.1.0"\n\n[build]\nsource = "src"\n\n'
+        '[dependencies]\nc1_dependency_test_boundary_provider = '
+        f'{{ path = "{relative_provider}" }}\n')
+    consumer_source.write_text(
+        "module App\nimport Shared\n"
+        "fn main():\n  echo Shared.value()\n")
+    run([MARGO, "build", "--check"], consumer, consumer_env, ok=True)
+    run([MARGO, "build"], consumer, consumer_env, ok=True)
+    consumer_debug = run([MARGO, "debug"], consumer, consumer_env, ok=True)
+    assert consumer_debug.stdout == "42\n", (
+        consumer_debug.stdout, consumer_debug.stderr)
 
     # Whole-target test mode retains package-wide duplicate declarations
     # across separate test files; file-by-file scoped checks cannot prove this.

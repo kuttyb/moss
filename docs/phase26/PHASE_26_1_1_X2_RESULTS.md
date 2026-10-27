@@ -106,6 +106,29 @@ Bucket (a): no failed baseline job is currently classified here. Bucket (c):
 no failed baseline job is currently classified here. The v10 Section 2 change
 and v10 E1 gate remain required independently of this baseline result.
 
+### Bank-ordered repair disposition
+
+Focused reruns on the current worktree cover the failures and their repaired
+invariants. The full uninterrupted `make check` is still pending, so these are
+focused results rather than final suite closure.
+
+| Baseline failure | Repair / evidence |
+|---|---|
+| `check_phase21_original_af` | R11 callback reach now includes built-in `map`/`reduce` callback arguments in reached handlers; A–F reproductions pass. |
+| `check_phase21_root_totality`, `check_phase20_executor_fileio` | R11 reach now includes message handlers, handler failure arms, and `executor.invoke` handler targets; both focused suites pass. |
+| `check_phase25_typed_semantic_api`, `check_phase25_team_a_semantics`, `check_phase25_s1_checker_authority`, `shard_phase106_runtime` | Scoped checking resolves callable slots from invoked parameters and functional pipeline stages, and matches implicit-module callback values by their callable names; typed API, Team A, S1, C1 `apply`/`map_by`, and Phase 106 runtime checks pass. |
+| `check_phase25_s2_char_string` | The former invalid `Map[Tag, Int]` declaration was unreachable, so the fixture contradicted selected-entry scope. It now calls `size(m)` from `main`; `moss check` and Fast Debug both reject the reached declaration with `RECORD_MAP_KEY_UNSUPPORTED` before output. The complete S2 suite passes. |
+| `sdk_adv_data_oracle_fast_debug`, `sdk_adv_data_margo_debug` | Bank’s R7 policy is implemented: only root check builds include `tests` in target checks/fingerprints; dependency refresh checks `src`. C1 regression proves a dependency’s own broken test fails its root check, while consumer check-build, native build, and `margo debug` pass. |
+| `sdk_text_encoding`, `check_phase15_9_cross_package_specialization` | Section 2 now carries the private concrete callable closure reachable from exported declarations; X1 ABI-v9 and v10 gates and Phase 15.9 cross-package specialization pass. |
+| `check_phase25_sb_check_display` | Bare function values used by `echo` and value initializers are retained with lexical local shadowing; the complete S-B display suite passes with `ECHO_DISPLAY_UNSUPPORTED`. |
+| `check_phase20_fileio_semantics` | The `unbounded_read` probe now calls `run(1)`, so its FileIO request is reachable under R11. The test accepts the established Fast Debug FileIO capability guard where it precedes operation-specific diagnostics; the full FileIO semantics script passes. |
+| `check_builtin_generic_typing` | Scoped type context retains nominal identities referenced only by reached object/domain initializers; all 129 probes pass, including `underscore_domain_state`. |
+| `shard_fast_debug` | Scoped programs preserve body-free facts for pruned function identities; Phase 22.4 query tests now return `DEBUG_QUERY_NOT_EXECUTED` for known unexecuted identities. |
+
+The six historical expectation edits audited below are unchanged. The additional
+S2 fixture correction above also requires Architect acceptance as part of the
+frozen X1+X2 review.
+
 ### Audit of the six existing dependency/interface expectation edits
 
 These six tests pass in the baseline. The audit records the behavior each

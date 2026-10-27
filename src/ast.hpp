@@ -826,6 +826,9 @@ struct Program {
   // that callable bodies have already been reduced to the file's reachable
   // closure and that package-wide rules belong to Margo's build path.
   bool file_check_scope = false;
+  // Declaration identities retained for scoped Fast Debug queries after their
+  // executable bodies have been pruned from the checked program.
+  vector<Function> file_scope_pruned_functions;
   std::set<string> file_scope_objects;
   std::set<string> file_scope_enums;
   std::set<string> file_scope_domains;

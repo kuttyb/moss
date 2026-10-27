@@ -7338,6 +7338,32 @@ static vector<SemanticTargetFact> semantic_target_facts(
     }
   }
 
+  for (const auto& function : program.file_scope_pruned_functions) {
+    SemanticTargetFact fact;
+    fact.semantic_identity = "fn:" + function.name + "@" +
+        std::to_string(function.line);
+    fact.context = "fn:" + function.name;
+    fact.kind = "function";
+    fact.name = function.name;
+    fact.type = function.return_type.value_or("unit");
+    fact.line = function.line;
+    fact.source_file = function.source_file;
+    fact.module_identity = semantic_module_name(function.name);
+    fact.export_visibility = function.exported ? "exported" : "private";
+    fact.export_kind = function.exported
+        ? (function.generic ? "generic" : "concrete") : "private";
+    fact.observable_effects = function.observable_effects;
+    fact.has_observable_effects = true;
+    fact.provenance.push_back(fact.semantic_identity);
+    for (size_t index = 0; index < function.params.size(); ++index) {
+      Effect effect = index < function.parameter_effects.size()
+          ? function.parameter_effects[index] : Effect::Read;
+      fact.parameters.push_back(
+          {function.params[index].name, function.params[index].type, effect});
+    }
+    targets.push_back(std::move(fact));
+  }
+
   for (const auto& enumeration : program.enums) {
     SemanticTargetFact fact;
     fact.semantic_identity = "enum:" + enumeration.name + "@" +
@@ -11837,6 +11863,28 @@ static void add_statement_references(const vector<Stmt>& body,
         add_expression_references(argument, references);
       continue;
     }
+    auto callable_leaf = [](const string& name) {
+      size_t separator = name.rfind("__");
+      size_t width = 2;
+      const auto dot = name.rfind('.');
+      if (dot != string::npos && (separator == string::npos || dot > separator)) {
+        separator = dot;
+        width = 1;
+      }
+      return separator == string::npos ? name : name.substr(separator + width);
+    };
+    for (const string* candidate : {&statement.text, &statement.a}) {
+      string callee;
+      vector<string> arguments;
+      if (!parse_simple_call(*candidate, callee, arguments) ||
+          callable_leaf(callee) != "invoke" || arguments.empty())
+        continue;
+      string handler_call;
+      vector<string> handler_arguments;
+      if (!parse_simple_call(arguments.front(), handler_call, handler_arguments))
+        continue;
+      references.handlers.insert(callable_leaf(handler_call));
+    }
     for (const string* text : {&statement.text, &statement.a, &statement.b})
       add_expression_references(*text, references);
     for (const auto& argument : statement.args)
@@ -11913,7 +11961,59 @@ static void add_callable_argument_references(const string& source,
           if (constraint.subject == function->params[index].name)
             result.push_back(index);
       }
+      // Scoped checking runs before CheckedProgram has inferred callable
+      // constraints. Also recognize parameters invoked as callees in the
+      // candidate body's source syntax so named callback arguments remain in
+      // reachability until their static specializations are checked.
+      FileCheckReferences body_references;
+      add_statement_references(function->body, body_references);
+      if (function->result_expression)
+        add_expression_references(*function->result_expression, body_references);
+      std::set<string> pipeline_callable_parameters;
+      auto inspect_pipeline = [&](const string& expression) {
+        auto pipeline = parse_functional_pipeline(expression);
+        if (!pipeline) return;
+        for (const auto& stage : pipeline->stages) {
+          size_t callback_index = std::numeric_limits<size_t>::max();
+          switch (stage.kind) {
+            case FunctionalNodeKind::Map:
+            case FunctionalNodeKind::Filter:
+            case FunctionalNodeKind::Any:
+            case FunctionalNodeKind::All:
+              callback_index = 0;
+              break;
+            case FunctionalNodeKind::Reduce:
+              callback_index = 1;
+              break;
+            case FunctionalNodeKind::Source:
+            case FunctionalNodeKind::Sum:
+            case FunctionalNodeKind::Count:
+              break;
+          }
+          if (callback_index < stage.arguments.size())
+            pipeline_callable_parameters.insert(
+                trim(stage.arguments[callback_index]));
+        }
+      };
+      for (const auto& statement : function->body) {
+        inspect_pipeline(statement.text);
+        inspect_pipeline(statement.a);
+        inspect_pipeline(statement.b);
+        for (const auto& argument : statement.args) inspect_pipeline(argument);
+      }
+      if (function->result_expression)
+        inspect_pipeline(*function->result_expression);
+      for (size_t index = 0; index < function->params.size(); ++index) {
+        const auto& parameter = function->params[index].name;
+        if (body_references.functions.count(parameter) ||
+            body_references.functions.count(
+                unqualified_callable_name(parameter)) ||
+            pipeline_callable_parameters.count(parameter))
+          result.push_back(index);
+      }
     }
+    std::sort(result.begin(), result.end());
+    result.erase(std::unique(result.begin(), result.end()), result.end());
     return result;
   };
   auto add_callable_value = [&](const string& raw_value) {
@@ -11929,7 +12029,9 @@ static void add_callable_argument_references(const string& source,
       const string function_name = canonical_spelling(function.name);
       if ((qualified && (normalized == function_name || value == function.name ||
                          value == function.semantic_callable_id)) ||
-          (!qualified && value == function.declaration_name))
+          (!qualified && (value == function.declaration_name ||
+                          value == function.name ||
+                          value == unqualified_callable_name(function.name))))
         matches.push_back(&function);
     }
     // Preserve every candidate on ambiguity. Selecting too many bodies is
@@ -11987,9 +12089,28 @@ static void add_callable_argument_references(const string& source,
       call = text.substr(begin, close - begin + 1);
       if (!parse_simple_call(call, callee, arguments)) continue;
       const auto callback_indices = callable_parameter_indices(callee);
+      const auto functional_kind = functional_stage_kind(callee);
       for (size_t index = 0; index < arguments.size(); ++index) {
-        if (std::find(callback_indices.begin(), callback_indices.end(), index) !=
-            callback_indices.end()) add_callable_value(arguments[index]);
+        bool callback_value = std::find(callback_indices.begin(),
+            callback_indices.end(), index) != callback_indices.end();
+        if (functional_kind) {
+          switch (*functional_kind) {
+            case FunctionalNodeKind::Map:
+            case FunctionalNodeKind::Filter:
+            case FunctionalNodeKind::Any:
+            case FunctionalNodeKind::All:
+              callback_value = callback_value || index == 0;
+              break;
+            case FunctionalNodeKind::Reduce:
+              callback_value = callback_value || index == 1;
+              break;
+            case FunctionalNodeKind::Source:
+            case FunctionalNodeKind::Sum:
+            case FunctionalNodeKind::Count:
+              break;
+          }
+        }
+        if (callback_value) add_callable_value(arguments[index]);
         visit(arguments[index]);
       }
       open = close;
@@ -11998,10 +12119,59 @@ static void add_callable_argument_references(const string& source,
   visit(source);
 }
 
-static void add_statement_callable_references(const vector<Stmt>& body,
-                                              const Program& program,
-                                              FileCheckReferences& references) {
+static void add_bare_callable_value_reference(
+    const string& raw_value, const Program& program,
+    const std::set<string>& local_names, FileCheckReferences& references) {
+  const string value = trim(raw_value);
+  if (value.empty() || local_names.count(value) ||
+      !std::all_of(value.begin(), value.end(), [](unsigned char ch) {
+        return std::isalnum(ch) || ch == '_' || ch == '.' || ch == ':';
+      })) return;
+  string normalized = value;
+  for (size_t dot = normalized.find('.'); dot != string::npos;
+       dot = normalized.find('.', dot + 2))
+    normalized.replace(dot, 1, "__");
+  const bool qualified = value.find('.') != string::npos ||
+      value.find("::") != string::npos || value.find("__") != string::npos;
+  for (const auto& function : program.functions) {
+    const string function_name = function.name;
+    if ((qualified && (normalized == function_name || value == function.name ||
+                       value == function.semantic_callable_id)) ||
+        (!qualified && (value == function.declaration_name ||
+                        value == function.name ||
+                        value == unqualified_callable_name(function.name))))
+      references.functions.insert(function.name);
+  }
+}
+
+static void add_statement_callable_references(
+    const vector<Stmt>& body, const Program& program,
+    FileCheckReferences& references, std::set<string> local_names = {}) {
+  std::vector<std::pair<int,string>> block_local_bindings;
   for (const auto& statement : body) {
+    while (!block_local_bindings.empty() &&
+           block_local_bindings.back().first > statement.indent) {
+      local_names.erase(block_local_bindings.back().second);
+      block_local_bindings.pop_back();
+    }
+    if (statement.kind == Stmt::Kind::Echo) {
+      if (!statement.args.empty()) {
+        for (const auto& argument : statement.args)
+          add_bare_callable_value_reference(argument, program, local_names,
+                                            references);
+      } else {
+        string expression = trim(statement.a.empty() ? statement.text : statement.a);
+        if (starts_with(expression, "echo ")) expression = trim(expression.substr(5));
+        for (const auto& argument : split_top_level(expression, ','))
+          add_bare_callable_value_reference(argument, program, local_names,
+                                            references);
+      }
+    }
+    if ((statement.kind == Stmt::Kind::Let ||
+         statement.kind == Stmt::Kind::Var ||
+         statement.kind == Stmt::Kind::Assign) && !statement.b.empty())
+      add_bare_callable_value_reference(statement.b, program, local_names,
+                                        references);
     for (const string* text : {&statement.text, &statement.a, &statement.b})
       add_callable_argument_references(*text, program, references);
     for (const auto& argument : statement.args)
@@ -12017,6 +12187,18 @@ static void add_statement_callable_references(const vector<Stmt>& body,
         call += ")";
         add_callable_argument_references(call, program, references);
       }
+    }
+    if ((statement.kind == Stmt::Kind::Let ||
+         statement.kind == Stmt::Kind::Var ||
+         statement.kind == Stmt::Kind::Assign ||
+         statement.kind == Stmt::Kind::For) && !statement.a.empty()) {
+      local_names.insert(trim(statement.a));
+      block_local_bindings.emplace_back(statement.indent, trim(statement.a));
+    }
+    if (!statement.message_result.empty()) {
+      local_names.insert(trim(statement.message_result));
+      block_local_bindings.emplace_back(statement.indent,
+                                        trim(statement.message_result));
     }
   }
 }
@@ -12068,7 +12250,11 @@ static void scope_program_to_file(Program& program,
     auto& refs = function_refs[i];
     add_statement_references(function.body, refs);
     if (function.result_expression) add_expression_references(*function.result_expression, refs);
-    add_statement_callable_references(function.body, program, refs);
+    std::set<string> function_locals;
+    for (const auto& parameter : function.params)
+      function_locals.insert(parameter.name);
+    add_statement_callable_references(function.body, program, refs,
+                                      std::move(function_locals));
     if (function.result_expression)
       add_callable_argument_references(*function.result_expression, program, refs);
     if (scope_kind == FastDebugScopeKind::File &&
@@ -12079,7 +12265,12 @@ static void scope_program_to_file(Program& program,
       auto& refs = method_refs[method_index];
       add_statement_references(method.body, refs);
       if (method.result_expression) add_expression_references(*method.result_expression, refs);
-      add_statement_callable_references(method.body, program, refs);
+      std::set<string> method_locals{"self"};
+      for (const auto& field : object.fields) method_locals.insert(field.name);
+      for (const auto& parameter : method.params)
+        method_locals.insert(parameter.name);
+      add_statement_callable_references(method.body, program, refs,
+                                        std::move(method_locals));
       if (method.result_expression)
         add_callable_argument_references(*method.result_expression, program, refs);
       if (scope_kind == FastDebugScopeKind::File &&
@@ -12091,10 +12282,17 @@ static void scope_program_to_file(Program& program,
     for (const auto& handler : domain.handlers) {
       auto& refs = handler_refs[handler_index];
       add_statement_references(handler.body, refs);
-      add_statement_callable_references(handler.body, program, refs);
+      std::set<string> handler_locals{"self"};
+      for (const auto& field : domain.state) handler_locals.insert(field.name);
+      for (const auto& route : domain.routes) handler_locals.insert(route.name);
+      for (const auto& parameter : handler.params)
+        handler_locals.insert(parameter.name);
+      add_statement_callable_references(handler.body, program, refs,
+                                        handler_locals);
       for (const auto& arm : handler.failure_arms) {
         add_statement_references(arm.body, refs);
-        add_statement_callable_references(arm.body, program, refs);
+        add_statement_callable_references(arm.body, program, refs,
+                                          handler_locals);
       }
       if (scope_kind == FastDebugScopeKind::File &&
           is_root(handler.source_file)) selected_handlers.insert(handler_index);
@@ -12273,6 +12471,37 @@ static void scope_program_to_file(Program& program,
       program.file_scope_domains.insert(domain.name);
   }
 
+  // Inferred object/domain state types have no signature string to retain.
+  // Keep the nominal declarations named by initializers of reached state so
+  // reply inference, display checks, and semantic queries retain their type
+  // identities after unrelated callable bodies are pruned.
+  for (bool grew = true; grew;) {
+    grew = false;
+    FileCheckReferences initializer_references;
+    for (const auto& object : program.objects)
+      if (program.file_scope_objects.count(object.name))
+        for (const auto& field : object.fields)
+          if (!field.init.empty())
+            add_expression_references(field.init, initializer_references);
+    for (const auto& domain : program.domains)
+      if (program.file_scope_domains.count(domain.name))
+        for (const auto& field : domain.state)
+          if (!field.init.empty())
+            add_expression_references(field.init, initializer_references);
+    for (const auto& object : program.objects)
+      if (!program.file_scope_objects.count(object.name) &&
+          matches(initializer_references.functions, object.name))
+        grew |= program.file_scope_objects.insert(object.name).second;
+    for (const auto& enumeration : program.enums)
+      if (!program.file_scope_enums.count(enumeration.name) &&
+          matches(initializer_references.functions, enumeration.name))
+        grew |= program.file_scope_enums.insert(enumeration.name).second;
+    for (const auto& domain : program.domains)
+      if (!program.file_scope_domains.count(domain.name) &&
+          matches(initializer_references.functions, domain.name))
+        grew |= program.file_scope_domains.insert(domain.name).second;
+  }
+
 
 
   // Field types of an in-scope object are validated, so the declarations they
@@ -12385,11 +12614,20 @@ static void scope_program_to_file(Program& program,
     return std::filesystem::path(source).extension() == ".mossi" ||
            program.external_modules.count(module_name_from_symbol(owner_name)) != 0;
   };
+  program.file_scope_pruned_functions.clear();
   std::vector<Function> functions;
   for (size_t i = 0; i < program.functions.size(); ++i) {
     if (selected_functions.count(i) ||
         from_interface(program.functions[i].name, program.functions[i].source_file))
       functions.push_back(std::move(program.functions[i]));
+    else {
+      Function identity = program.functions[i];
+      identity.body.clear();
+      identity.result_expression.reset();
+      identity.execution_body.reset();
+      identity.execution_result_expression.reset();
+      program.file_scope_pruned_functions.push_back(std::move(identity));
+    }
   }
   program.functions = std::move(functions);
   method_index = 0;
@@ -20138,7 +20376,10 @@ static std::set<string> execution_body_callable_closure(
       add_statement_references(function.body, references);
       if (function.result_expression)
         add_expression_references(*function.result_expression, references);
-      add_statement_callable_references(function.body, program, references);
+      std::set<string> locals;
+      for (const auto& parameter : function.params) locals.insert(parameter.name);
+      add_statement_callable_references(function.body, program, references,
+                                        std::move(locals));
       if (function.result_expression)
         add_callable_argument_references(*function.result_expression, program,
                                          references);
@@ -20147,22 +20388,28 @@ static std::set<string> execution_body_callable_closure(
       add_statement_references(method.body, references);
       if (method.result_expression)
         add_expression_references(*method.result_expression, references);
-      add_statement_callable_references(method.body, program, references);
+      std::set<string> locals{"self"};
+      for (const auto& parameter : method.params) locals.insert(parameter.name);
+      add_statement_callable_references(method.body, program, references,
+                                        std::move(locals));
       if (method.result_expression)
         add_callable_argument_references(*method.result_expression, program,
                                          references);
     };
     auto add_handler_body = [&](const Handler& handler) {
       add_statement_references(handler.body, references);
-      add_statement_callable_references(handler.body, program, references);
+      std::set<string> locals{"self"};
+      for (const auto& parameter : handler.params) locals.insert(parameter.name);
+      add_statement_callable_references(handler.body, program, references,
+                                        locals);
       for (const auto& arm : handler.failure_arms) {
         add_statement_references(arm.body, references);
-        add_statement_callable_references(arm.body, program, references);
+        add_statement_callable_references(arm.body, program, references, locals);
       }
       if (handler.execution_failure_arms)
         for (const auto& arm : *handler.execution_failure_arms) {
           add_statement_references(arm.body, references);
-          add_statement_callable_references(arm.body, program, references);
+          add_statement_callable_references(arm.body, program, references, locals);
         }
     };
     for (const auto& function : program.functions)

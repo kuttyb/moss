@@ -43,8 +43,12 @@ check work only where needed.
   flags, and its dependencies' semantic `.mossi` interface hashes. Source
   freshness metadata is excluded from those dependency interface hashes.
 - **R7:** `margo build --check` checks each package and writes `.mossi`, without
-  invoking rustc. It checks the complete application target and, when present,
-  the complete `src + tests` target semantically without executing tests.
+  invoking rustc. It checks each dependency's `src` target and the root
+  package's complete `src` target plus, when present, its complete `tests`
+  target semantically without executing tests. A dependency's own tests are
+  checked only when that dependency is the root package of its own Margo build;
+  a broken dependency test does not block consumers. This package boundary also
+  applies when Margo refreshes dependency interfaces for Fast Debug.
 - Output remains deterministic.
 
 ## Measurement and rollout

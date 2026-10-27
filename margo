@@ -545,7 +545,8 @@ def interface_native_abi(interface: Path) -> int | None:
 
 
 def package_fingerprint(package: Package, release: bool, check_only: bool,
-                        toolchain: dict, ordered: list[Package]) -> str:
+                        toolchain: dict, ordered: list[Package],
+                        include_test_sources: bool) -> str:
     dependencies = []
     for dependency in sorted(package.dependencies,
                              key=lambda item: (item.data["name"], item.identity)):
@@ -556,8 +557,9 @@ def package_fingerprint(package: Package, release: bool, check_only: bool,
         "MOSS_STAGED_ABI", "MOSS_STAGED_STRING_REPR", "MOSS_RUNTIME_SOURCE_DIR",
         "RUSTFLAGS", "CARGO_ENCODED_RUSTFLAGS")}
     payload = {
-        "format": "margo-package-fingerprint-v2",
+        "format": "margo-package-fingerprint-v3",
         "execution_body_section": 1,
+        "check_test_target": "root-only" if check_only else "none",
         "identity": package.identity,
         "name": package.data["name"],
         "version": package.data["version"],
@@ -566,7 +568,7 @@ def package_fingerprint(package: Package, release: bool, check_only: bool,
         "test_sources": ([{"path": path.relative_to(package.root).as_posix(),
                            "sha256": sha256_file(path)}
                           for path in package_test_sources(package)]
-                         if check_only else []),
+                         if check_only and include_test_sources else []),
         "dependencies": dependencies,
         "native_dependency_artifacts": [] if check_only else
             dependency_native_artifacts(package, release),
@@ -618,8 +620,10 @@ def build_graph(root: Package, ordered: list[Package], release: bool,
     for package in ordered:
         profile = profile_name(release, check_only)
         state_path = package.root / "build" / profile / ".margo-fingerprint.json"
+        is_root_package = package.root.resolve() == root.root.resolve()
         fingerprint = package_fingerprint(package, release, check_only,
-                                          toolchain, ordered)
+                                          toolchain, ordered,
+                                          include_test_sources=is_root_package)
         prior = {}
         try:
             prior = json.loads(state_path.read_text(encoding="utf-8"))
@@ -650,7 +654,7 @@ def build_graph(root: Package, ordered: list[Package], release: bool,
         except (json.JSONDecodeError, KeyError) as error:
             raise MargoError(f"dependency package build produced invalid Moss JSON for {package.data['name']}") from error
         test_sources = package_test_sources(package)
-        if check_only and test_sources:
+        if check_only and is_root_package and test_sources:
             test_check = subprocess.run(
                 [str(MOSS), "test", "--check", "--json"],
                 cwd=package.root, env=env, text=True,

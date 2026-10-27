@@ -1,9 +1,9 @@
 # Phase 26.1.1 — ABI-v10 Section 2 checkpoint — 2026-10-27
 
-- Active branch `phase26-1-m1`; pushed implementation checkpoint `b13a52bf`. The ABI-v9 X1 focused gate passed. ABI-v10 initially exposed three remaining Section 1 parsers that consumed appended Section 2 data; those reads now isolate Section 1 before parsing.
-- After those fixes, `make --jobs="$(nproc)" moss-opt` passed and both focused X1 gates passed. The ABI-v10 gate verifies Section 2 binding to the package fingerprint and v10 semantic hash, reachable private helper execution, generic execution, and provider-only rechecking after a non-generic body edit.
-- The follow-up parser fixes and corrected v10 gate JSON handling are currently uncommitted. `git diff --check` passed before these final edits; rerun it and commit/push this checkpoint.
-- Full baseline at `fc6331d08146f7150378ee3728b228e915e078e5` remains 130/146 passed, 16 failed, 0 skipped; triage and exact lists are below. X2 regression repair, six expectation audits/Architect acceptance, frozen X1+X2 review, X3, X4, and final gates remain.
+- Active branch `phase26-1-m1`; latest pushed checkpoint `a5120406`. Local work now includes the Bank-ordered X2 repairs, R7 package boundary, and focused regressions; these changes are not yet committed.
+- Focused evidence on the current worktree: compiler build passed; C1 scope/package probes passed; Phase 21 A–F and root-totality probes passed; Phase 20 Executor/FileIO passed; Phase 25 S1 checker authority, S2 char/string, S-B display, typed semantic API, and Team A callable tests passed; builtin generic typing passed 129/129; X1 ABI-v9 and ABI-v10 gates passed; Phase 15.9 cross-package specialization and Phase 22.4 debug-query passed; Phase 106 runtime shard passed.
+- The uninterrupted baseline at `fc6331d08146f7150378ee3728b228e915e078e5` remains 130/146 passed, 16 failed, 0 skipped. Baseline triage and repair dispositions are in `docs/phase26/PHASE_26_1_1_X2_RESULTS.md`.
+- Next: run `git diff --check`, Python compilation, and feedback validation; checkpoint and push the repairs; run one uninterrupted full `make --jobs="$(nproc)" check`; finalize the six expectation audits and obtain frozen X1+X2 Architect review. X3 and X4 follow.
 
 ## Baseline and triage — 2026-10-27
 
