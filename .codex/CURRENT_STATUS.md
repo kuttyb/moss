@@ -1,12 +1,12 @@
 # Phase 26.1 working rules (user, 2026-10-27)
 
-## Current state — C1 GO; push reviewed checkpoint, then start T1
+## Current state — T1 implementation in progress
 
-- Active branch: `phase26-1-m1`, remote `origin/phase26-1-m1`, last pushed checkpoint `9331c86b`; Architect returned GO for C1 implementation `7bc75969`. Push the reviewed checkpoint before beginning T1. The oracle-only multi-error scaffolding is removed. F1's Fast Debug source-root allowlist, geometry identity fix, and malformed Margo dependency correction are included in prior pushed work.
-- The ambiguous-callback fallback includes every same-leaf candidate for callable callee slots and callback values. `make --jobs="$(nproc)"`, the focused C1 scope script, and the isolated xref expected-failure ERT passed.
-- The 17 G-b no-hit package roots and first error codes are documented in `docs/phase26/C1_RESULTS.md`. `geolib`'s own `margo build --check` rejects `Triangle.area` at `shapes.moss:48`; Triangle.area and unused imported `util.fill` are classified as dependency bodies re-evaluated in consumer package checks (T1 scope), not C1 reach defects.
-- Cross-package xref remains a known regression: `.mossi` returns interface-file locations. The expected-failure test points to Phase 26.1.1, where declaration locations will go in a sidecar outside the interface digest.
-- Corrected `check_phase26_1_c1_corpus_scope_gates.py` discovery now follows the nearest `Moss.toml`/`moss.toml` ancestor. Before the compiler fix, its 438-root run failed on both lowercase-manifest regressions. The test-body caller identity fix resolves them without changing the unrelated `trait_export` baseline failure. Final checks: corpus differential has exactly 12 documented rows; `make c1-corpus-gates` passes on 438 roots (`G-a 654/654`, `G-b 70/70`); enforced `package-perf` passes 70/70; `make check` passes 145/145 with Fast Debug. Architect GO is recorded for `7bc75969`; push this checkpoint, then start T1. Geometry's `main_module` behavior was retained and its file check passes.
+- Active branch: `phase26-1-m1`, remote `origin/phase26-1-m1`, clean at pushed checkpoint `4150ee94`. C1 is closed and frozen. Architect returned GO for exact C1 implementation SHA `7bc75969`; corrected corpus discovery and C1 closeout gates are recorded below.
+- T1 scope: functions from dependency `.mossi` files are immutable signature inputs in inference and checked-body projection. Exclude them from signature inference rounds/fingerprints; retain instantiation at new concrete types. Add an internal error guard against signature mutation. Keep this work limited to `Checker::run()` inference and `project_imported_h3_checked_bodies` plus T1 tests.
+- Initial audit found two writes in imported checked-body projection: parameter effects seeded from the sealed summary, and callback observable effects reset after body validation. Move imported effect hydration to `.mossi` loading and make projection validate-only; do not alter language behavior.
+- Required T1 gates after implementation: full corpus differential against C1 checkpoint `4150ee94` with zero verdict/code/Rust changes; `make check`; Fast Debug parity; enforced `package-perf`; `compiler-perf` against C1 closeout with no slowdown beyond noise floor; Architect GO on exact SHA. No GitHub-hosted regression jobs or PRs.
+- Next: complete the signature immutability audit, implement guards/exclusions, run focused tests then required local gates, obtain Architect GO, and push every checkpoint to `origin/phase26-1-m1`.
 - The historical oracle attempt remains evidence only, not a passing gate; see the history below. All authorized regression gates run on this work machine. No hosted CI or PRs.
 
 ---
