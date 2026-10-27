@@ -629,13 +629,16 @@ class Checker {
       CompilerStageTimer timer("specialization_checking");
       check_method_ownership();
       for (const auto& f : p_.functions) {
-        // Generic bodies are checked at concrete specialization sites.  A
-        // declaration pass over an uninstantiated generic would otherwise
-        // resolve its open receiver/argument types as though the module import
-        // itself were an instantiation (and can reject an unused imported
-        // generic in a consumer).  `check_static_specialization` still checks
-        // the body as soon as a concrete caller supplies its type arguments.
-        if ((f.generic || f.static_dispatch) && f.specializations.empty())
+        // Imported generic bodies are checked at concrete specialization
+        // sites. Margo also sets this flag while building a dependency
+        // interface for a consumer, so an uninstantiated generic in that
+        // provider is not treated as a consumer instantiation. Ordinary
+        // package checks retain their existing declaration-body behavior.
+        const bool open_generic = f.generic || f.static_dispatch;
+        const bool dependency_interface =
+            std::getenv("MOSS_CHECK_DEPENDENCY_GENERIC_BODY_DEFER") != nullptr;
+        if (open_generic && f.specializations.empty() &&
+            (compiled_interface_file(f.source_file) || dependency_interface))
           continue;
         check_function(f);
       }

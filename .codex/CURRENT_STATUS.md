@@ -4,6 +4,7 @@
 
 - Active branch: `phase26-1-m1`, currently pushed through `622d7642` before this T1 checkpoint.
 - T1 now defers an open generic body until it has a concrete specialization. The new `check_phase26_1_t1_generic_imports.py` probe passes the unused `util.fill` import, a compatible `fill(Int)` instantiation, and a failing incompatible instantiation.
+- The first implementation checkpoint `6a27532e` was intentionally broader and produced 19 corpus changes; it is superseded by the narrowed working change. Current code defers imported generics and uninstantiated generics only while Margo checks a dependency for a consumer; ordinary root-package generic checking retains its prior behavior. The new dependency policy is included in Margo fingerprints.
 - The fresh `natural_app_attempt` graph still stops while checking geolib itself at `Triangle.area`, as expected from geolib's own failing check. A pending user clarification asks whether its consumer regression should seed a current `.mossi` or change Margo dependency checking; do not alter R2 without direction.
 - Next: checkpoint/push this implementation, settle the geolib fixture setup, then run the requested final corpus differential, full local gates, compiler-perf, and Architect review on the final implementation SHA.
 
