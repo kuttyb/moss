@@ -59,14 +59,19 @@ fn used() -> Int:
 
 fn unreachable() -> Int:
   return definitely_missing()
+
+bench "unselected sibling bench":
+  definitely_missing()
 ''', '\n[dependencies]\ndep = { path = "../dep" }\n')
         (app / "tests").mkdir()
         test_a = app / "tests" / "a.moss"
-        test_a.write_text('''test "first":
+        test_a.write_text('''module tests_a
+test "first":
   echo 1
 ''', encoding="utf-8")
         test_b = app / "tests" / "b.moss"
-        test_b.write_text('''test "second":
+        test_b.write_text('''module tests_b
+test "second":
   echo 2
 ''', encoding="utf-8")
 
@@ -114,7 +119,17 @@ export fn not_reached() -> Int:
         require_ok(margo_tests, "Margo all-package Fast Debug tests")
         if margo_tests.stdout != all_tests.stdout:
             raise AssertionError("Margo test --interp did not select all package tests")
-        test_b.write_text('''test "second":
+        main_source = app / "src" / "main.moss"
+        main_source.write_text(main_source.read_text() +
+            '\ntest "unselected sibling test":\n  echo definitely_missing()\n',
+            encoding="utf-8")
+        main_after_test = run([str(margo), "debug"], cwd=app, env=env)
+        require_ok(main_after_test, "main Fast Debug excludes colocated test body")
+        if main_after_test.stdout.strip() != "43":
+            raise AssertionError("colocated test body changed selected main execution")
+        test_b.write_text('''module tests_b
+import definitely_missing_module
+test "second":
   echo definitely_missing()
 ''', encoding="utf-8")
         selected_with_unreachable_error = run(
@@ -126,8 +141,9 @@ export fn not_reached() -> Int:
             raise AssertionError("filtered test checked an unselected test body")
         all_with_error = run([str(moss), "test", "--interp"], cwd=app, env=env)
         if (all_with_error.returncode == 0 or
-                "UNKNOWN_SYMBOL_OR_TYPE" not in all_with_error.stderr):
-            raise AssertionError("no-file test run failed to check every package test")
+                "interface for definitely_missing_module is missing or stale"
+                not in all_with_error.stderr):
+            raise AssertionError("no-file test run failed to resolve every package test module")
 
         # The removed source-root variable cannot supply dependency source.
         # Once the checked interface becomes stale, Moss must stop at that

@@ -163,11 +163,11 @@ def main() -> int:
         assert json.loads(unset.stdout) == json.loads(overridden.stdout), (
             command, unset.stdout, overridden.stdout)
     direct_debug = run([COMPILER, "debug", consumer], consumer, check_env, ok=False)
-    assert "Fast Debug dependency source root is not a directory" in (
+    assert "interface for f1_lib is missing or stale; run `margo build`" in (
         direct_debug.stdout + direct_debug.stderr), (
             direct_debug.stdout, direct_debug.stderr)
 
-    # Margo's Fast Debug entry points still resolve dependency source roots.
+    # Margo refreshes dependency .mossi files before Fast Debug execution.
     debug = run([MARGO, "debug"], consumer, check_env)
     assert "42" in debug.stdout, (debug.stdout, debug.stderr)
     interp = run([MARGO, "test", "--interp"], consumer, check_env)

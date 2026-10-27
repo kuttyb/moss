@@ -12417,15 +12417,26 @@ static void scope_program_to_file(Program& program,
   if (scope_kind == FastDebugScopeKind::Tests ||
       (program.main && !is_root(program.main->source_file)))
     program.main.reset();
-  program.tests.erase(std::remove_if(program.tests.begin(), program.tests.end(),
-      [&](const TestDecl& test) {
-        return !(all_package_tests || is_root(test.source_file)) ||
-            (scope_kind == FastDebugScopeKind::Tests && !test_filter.empty() &&
-             test.name.find(test_filter) == string::npos &&
-             test.semantic_identity.find(test_filter) == string::npos);
-      }), program.tests.end());
-  program.benchmarks.erase(std::remove_if(program.benchmarks.begin(), program.benchmarks.end(),
-      [&](const BenchDecl& bench) { return !is_root(bench.source_file); }), program.benchmarks.end());
+  if (scope_kind == FastDebugScopeKind::Main) {
+    program.tests.clear();
+    program.benchmarks.clear();
+  } else {
+    program.tests.erase(std::remove_if(program.tests.begin(), program.tests.end(),
+        [&](const TestDecl& test) {
+          return !(all_package_tests || is_root(test.source_file)) ||
+              (scope_kind == FastDebugScopeKind::Tests && !test_filter.empty() &&
+               test.name.find(test_filter) == string::npos &&
+               test.semantic_identity.find(test_filter) == string::npos);
+        }), program.tests.end());
+    if (scope_kind == FastDebugScopeKind::Tests)
+      program.benchmarks.clear();
+    else
+      program.benchmarks.erase(
+          std::remove_if(program.benchmarks.begin(), program.benchmarks.end(),
+              [&](const BenchDecl& bench) {
+                return !is_root(bench.source_file);
+              }), program.benchmarks.end());
+  }
   program.file_check_scope = true;
 }
 
@@ -20091,51 +20102,6 @@ static string encode_execution_body_payload(
   payload << "package_fingerprint " << package_fingerprint << "\n"
           << "interface_digest " << interface_digest << "\n";
 
-  std::set<string> execution_callables;
-  for (const auto& function : program.functions)
-    if (function.exported && !function.generic && !function.static_dispatch &&
-        module_name_from_symbol(function.name) == module)
-      execution_callables.insert("fn:" + function.name);
-  for (const auto& object : program.objects)
-    if (object.exported && module_name_from_symbol(object.name) == module)
-      for (const auto& method : object.methods)
-        execution_callables.insert("method:" + object.name + "." + method.name);
-  for (const auto& domain : program.domains)
-    if (domain.exported && module_name_from_symbol(domain.name) == module)
-      for (const auto& handler : domain.handlers)
-        execution_callables.insert("handler:" + domain.name + "." + handler.name);
-  bool expanded = true;
-  while (expanded) {
-    expanded = false;
-    for (const auto& edge : program.semantic_call_edges) {
-      if (!execution_callables.count(edge.source)) continue;
-      if (starts_with(edge.target, "fn:")) {
-        const string target_name = edge.target.substr(3);
-        auto target = std::find_if(program.functions.begin(),
-            program.functions.end(), [&](const Function& function) {
-              return function.name == target_name;
-            });
-        if (target != program.functions.end() &&
-            module_name_from_symbol(target->name) == module &&
-            !target->generic && !target->static_dispatch &&
-            execution_callables.insert(edge.target).second)
-          expanded = true;
-      } else if (starts_with(edge.target, "method:")) {
-        const size_t separator = edge.target.rfind('.');
-        if (separator == string::npos) continue;
-        const string owner = edge.target.substr(7, separator - 7);
-        auto object = std::find_if(program.objects.begin(),
-            program.objects.end(), [&](const ObjectType& candidate) {
-              return candidate.name == owner &&
-                  module_name_from_symbol(candidate.name) == module;
-            });
-        if (object != program.objects.end() &&
-            execution_callables.insert(edge.target).second)
-          expanded = true;
-      }
-    }
-  }
-
   // Private nominal declarations are execution support. A reached concrete
   // body can construct/read a private object or instantiate a private enum
   // without invoking a private method, so serialize package-local nominal
@@ -20226,9 +20192,7 @@ static string encode_execution_body_payload(
   for (const auto& function : program.functions) {
     if (module_name_from_symbol(function.name) != module ||
         program.external_modules.count(module) || function.generic ||
-        function.static_dispatch || !function.provider_origin_file.empty() ||
-        (!function.exported &&
-         !execution_callables.count("fn:" + function.name)))
+        function.static_dispatch || !function.provider_origin_file.empty())
       continue;
     functions.push_back(&function);
   }
@@ -20272,9 +20236,7 @@ static string encode_execution_body_payload(
   for (const auto* object : objects) {
     vector<const Method*> methods;
     for (const auto& method : object->methods)
-      if (object->exported || execution_callables.count(
-              "method:" + object->name + "." + method.name))
-        methods.push_back(&method);
+      methods.push_back(&method);
     std::sort(methods.begin(), methods.end(),
               [](const Method* left, const Method* right) {
                 return left->name < right->name;
@@ -21651,7 +21613,9 @@ static SourceCompilationContext analyze_source_context(
 // Fast Debug narrows root-package source to the module closure. Imported
 // packages are resolved only through their checked .mossi interfaces.
 static vector<std::filesystem::path> fast_debug_source_closure(
-    const SourceCompilationContext& context) {
+    const SourceCompilationContext& context,
+    bool fast_debug_test_scope = false,
+    bool all_package_tests = false) {
   if (!context.project ||
       (context.mode != ProgramGenerationMode::Application &&
        context.mode != ProgramGenerationMode::Tests))
@@ -21729,7 +21693,11 @@ static vector<std::filesystem::path> fast_debug_source_closure(
     result.insert(result.end(), provider->files.begin(), provider->files.end());
     for (const auto& imported : provider->imports) visit(imported);
   };
-  if (context.mode == ProgramGenerationMode::Tests) {
+  if (context.mode == ProgramGenerationMode::Tests && fast_debug_test_scope &&
+      !all_package_tests) {
+    if (entry_module.empty()) return context.sources;
+    visit(entry_module);
+  } else if (context.mode == ProgramGenerationMode::Tests) {
     // Every root-project module participates in project-wide test discovery.
     // Treat each as a closure root so tests and application modules can reach
     // source dependencies without pulling in unrelated dependency providers.
@@ -24607,7 +24575,8 @@ static moss::Program load_checked_interpreter_program(
           context.sources.end());
     }
     if (context.project) {
-      auto sources = moss::fast_debug_source_closure(context);
+      auto sources = moss::fast_debug_source_closure(
+          context, test_mode, all_package_tests);
       auto checked = moss::check_project_sources(
           context.manifest, sources, context.mode, {}, nullptr, nullptr, false,
           nullptr, true, &execution_scope);

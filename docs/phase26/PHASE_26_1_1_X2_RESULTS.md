@@ -48,3 +48,23 @@ X2 remains in progress. The full corpus Fast Debug parity, R12 corpus guard,
 corpus differential, complete `make check`, `make c1-corpus-gates`, compiler
 performance guard, and Architect review of the X2 implementation SHA remain
 pending.
+
+## Follow-up checkpoint — 2026-10-27
+
+The follow-up addresses the Architect's two X2 findings: Main scope now removes
+colocated tests and benchmarks before checking, and the filtered-test regression
+uses separate explicit modules to prove that an unselected test module's missing
+import does not block the selected test. Section 2 emission now includes
+non-generic private functions and methods, which supplies private helper bodies
+such as `sdk/text`'s `text__matches_at` to Fast Debug consumers.
+
+Focused gates passed on this checkpoint:
+
+- `python3 tests/tooling/check_phase26_1_1_x2.py build/compiler/moss-opt`
+- `python3 tests/tooling/check_phase26_1_f1_interface_rules.py build/compiler/moss-opt build/compiler/margo`
+
+A new `make --jobs="$(nproc)" check` was interrupted at the user's request
+before completion. Nine failures had appeared when it was stopped; see
+`.codex/CURRENT_STATUS.md` for their identities. There is no aggregate result.
+X2 is still incomplete and awaits external review of this follow-up, full gates,
+and exact-SHA Architect review.

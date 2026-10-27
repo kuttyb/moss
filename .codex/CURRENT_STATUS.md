@@ -1,10 +1,10 @@
-# Phase 26.1.1 — X2 review findings checkpoint — 2026-10-27
+# Phase 26.1.1 — X2 follow-up checkpoint — 2026-10-27
 
-- Active branch `phase26-1-m1`, pushed X2 SHA `3a22c1f5`. Architect returned NO-GO for that exact implementation SHA: Main mode retains colocated test/bench bodies, and filtered test mode resolves imports from every test module before pruning. Both need regressions and fixes.
-- Full local `make --jobs="$(nproc)" check` on `3a22c1f5`: 130/146 passed, 16 failed. In addition to the two X2 scope defects, Fast Debug parity failures include omitted callbacks, handlers, and unsupported-feature preflight behavior. The thread-slot runtime stress test failed again under full parallel load (its isolated suite passed 54/54). This run is not green.
-- Likely X1 Section 2 coverage gap: `sdk/text`'s Section 2 stores calls to private `text__matches_at` from exported bodies but omits the private helper body, producing `FAST_DEBUG_UNCHECKED_EXECUTION`. Bank's Section 2 contract covers non-generic package functions; serialization currently relies on incomplete call-edge expansion.
-- Focused X2 fixture, Phase 15.8 10/10, G2 11/11, and enforced package-perf 86/86 passed at `3a22c1f5`, but they do not cover the missing R11 cases or full Fast Debug parity. Do not treat X2 as complete.
-- Next: expand Section 2 concrete-body coverage; clear tests/benches from Main scope; narrow selected-test source import closure and add explicit-module regressions; then repair Fast Debug parity cases and rerun focused gates. Request new Architect review after these fixes. X3/X4 not started.
+- Active branch: `phase26-1-m1`. This checkpoint addresses the two X2 findings from Architect NO-GO at `3a22c1f5`: Main scope now removes colocated test/bench declarations before checking; the filtered-test regression uses explicit modules and verifies that an unselected test module's unresolved import does not block the selected test. The source change also emits non-generic private helper/method bodies into `.mossi` Section 2, covering `sdk/text`'s private `text__matches_at` execution dependency.
+- `./moss agent bootstrap --json` reports `language_version: moss-0.1`.
+- Focused `check_phase26_1_1_x2.py` and `check_phase26_1_f1_interface_rules.py` both pass on the current source tree.
+- A new `make --jobs="$(nproc)" check` run was stopped at the user's direction before completion. At interruption, 9 failures had appeared: `check_phase21_original_af`, `check_phase21_root_totality`, `check_phase25_typed_semantic_api`, `check_phase25_team_a_semantics`, `sdk_adv_data_oracle_fast_debug`, `sdk_adv_data_margo_debug`, `sdk_text_encoding`, `check_phase25_s1_checker_authority`, and `check_phase25_s2_char_string`. This is a partial, interrupted run, not an aggregate result; remaining jobs and final counts are unknown.
+- X2 remains incomplete and the prior exact-SHA Architect NO-GO remains open pending external review. Full check, Fast Debug corpus parity/R12 guard, corpus differential, `make c1-corpus-gates`, compiler performance guard, and a new exact-SHA Architect review remain outstanding. X3/X4 have not started.
 
 ## X1 earlier pushed decoder checkpoint (historical)
 
