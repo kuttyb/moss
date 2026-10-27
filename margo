@@ -424,10 +424,10 @@ def ambient_provider_is_current(interface: Path) -> bool:
         material.extend(relative)
         material.extend(f"{len(contents)}\n".encode("ascii"))
         material.extend(contents)
-    declared = next((line.partition(" ")[2]
-                     for line in interface.read_text(encoding="utf-8").splitlines()
-                     if line.startswith("package_source_hash ")), "")
-    return declared == "sha256:" + hashlib.sha256(material).hexdigest()
+    declared = next((line.partition(b" ")[2]
+                     for line in interface.read_bytes().splitlines()
+                     if line.startswith(b"package_source_hash ")), b"")
+    return declared == ("sha256:" + hashlib.sha256(material).hexdigest()).encode()
 
 
 def ambient_provider_inputs(package: Package, ordered: list[Package],
@@ -494,7 +494,8 @@ def ambient_semantic_interface(interface: Path) -> dict:
         line for line in section1.splitlines(keepends=True)
         if not line.startswith(b"package_source_hash "))
     fields = {}
-    for line in section1.decode("utf-8").splitlines():
+    for raw_line in section1.splitlines():
+        line = raw_line.decode("utf-8", errors="ignore")
         key, separator, value = line.partition(" ")
         if separator and key in {"module_id", "native_abi", "schema_version",
                                  "concrete_interface_hash", "generic_semantic_hash",
@@ -522,17 +523,20 @@ def ambient_semantic_interface(interface: Path) -> dict:
 
 
 def execution_body_package_fingerprint(interface: Path) -> str | None:
-    lines = interface.read_text(encoding="utf-8").splitlines()
+    lines = interface.read_bytes().splitlines()
     try:
-        payload = lines.index("execution_body_payload")
+        payload = lines.index(b"execution_body_payload")
     except ValueError:
         return None
     if payload + 1 >= len(lines):
         raise MargoError(f"truncated execution-body section in {interface}")
-    key, separator, value = lines[payload + 1].partition(" ")
-    if key != "package_fingerprint" or not separator or not value:
+    key, separator, value = lines[payload + 1].partition(b" ")
+    if key != b"package_fingerprint" or not separator or not value:
         raise MargoError(f"missing execution-body package fingerprint in {interface}")
-    return value
+    try:
+        return value.decode("ascii")
+    except UnicodeDecodeError as error:
+        raise MargoError(f"malformed execution-body package fingerprint in {interface}") from error
 
 
 def package_fingerprint(package: Package, release: bool, check_only: bool,
@@ -658,7 +662,7 @@ def build_graph(root: Package, ordered: list[Package], release: bool,
                 if path.suffix != ".mossi":
                     continue
                 embedded = execution_body_package_fingerprint(path)
-                if embedded != fingerprint:
+                if embedded is not None and embedded != fingerprint:
                     raise MargoError(
                         f".mossi execution-body fingerprint mismatch for {path}: "
                         f"expected {fingerprint}, found {embedded!r}")

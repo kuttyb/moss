@@ -10,6 +10,9 @@ import shutil
 import subprocess
 import sys
 
+from phase26_1_1_mossi_test_helpers import (
+    refresh_v9_execution_section, section1_digest_material)
+
 
 repo = Path(__file__).resolve().parents[2]
 compiler = Path(sys.argv[1]).resolve()
@@ -95,17 +98,12 @@ assert executed.returncode == 0 and executed.stdout == "7\n", executed
 # still contains its original provider-owned marker.
 forged, count = re.subn(r"(?m)^compiler [^\n]+$", "compiler forged", original)
 assert count == 1
-material, count = re.subn(
-    r"(?m)^provider_contract_digest sha256:[0-9a-f]{64}\n", "", forged)
-assert count == 1
-material, count = re.subn(
-    r"(?m)^package_source_hash sha256:[0-9a-f]{64}\n", "", material)
-assert count == 1
-digest = hashlib.sha256(material.encode()).hexdigest()
+digest = hashlib.sha256(section1_digest_material(forged).encode()).hexdigest()
 forged, count = re.subn(
     r"(?m)^provider_contract_digest sha256:[0-9a-f]{64}$",
     "provider_contract_digest sha256:" + digest, forged)
 assert count == 1
+forged = refresh_v9_execution_section(forged)
 interface.write_text(forged)
 checked = run(compiler, "check", consumer_source, "--json", cwd=consumer,
               provider_path=provider_path)

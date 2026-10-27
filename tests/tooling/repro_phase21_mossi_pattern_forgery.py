@@ -10,6 +10,10 @@ import shutil
 import subprocess
 import sys
 
+from phase26_1_1_mossi_test_helpers import (
+    refresh_v9_execution_section, section1_digest_material,
+    section1_semantic_exports)
+
 
 ROOT = Path(__file__).resolve().parents[2]
 COMPILER = Path(sys.argv[1] if len(sys.argv) > 1 else ROOT / "moss").resolve()
@@ -82,8 +86,9 @@ for before, after in patterns.items():
     assert text.count(before) == 2, before
     text = text.replace(before, after)
 
-contract, semantic = text.split("\ncontract\n", 1)[1].split(
+contract, _ = text.split("\ncontract\n", 1)[1].split(
     "\nsemantic_exports\n", 1)
+semantic = section1_semantic_exports(text)
 
 
 def hash_section(section):
@@ -99,17 +104,13 @@ for key, section in (("concrete_interface_hash", contract + "\n"),
     text, count = re.subn(rf"(?m)^{key} [0-9a-f]{{16}}$",
                           f"{key} {hash_section(section)}", text)
     assert count == 1, (key, count)
-material, count = re.subn(
-    r"(?m)^provider_contract_digest sha256:[0-9a-f]{64}\n", "", text)
-assert count == 1
-material, count = re.subn(
-    r"(?m)^package_source_hash sha256:[0-9a-f]{64}\n", "", material)
-assert count == 1
+material = section1_digest_material(text)
 text, count = re.subn(
     r"(?m)^provider_contract_digest sha256:[0-9a-f]{64}$",
     "provider_contract_digest sha256:" + hashlib.sha256(
         material.encode()).hexdigest(), text)
 assert count == 1
+text = refresh_v9_execution_section(text)
 interface.write_text(text)
 
 checked = json.loads(run(COMPILER, "check", main, "--json",

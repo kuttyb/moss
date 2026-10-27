@@ -13290,12 +13290,24 @@ static void rewrite_module_program(
         if (!arm.binding.empty()) arm_locals.insert(arm.binding);
         body(arm.body, arm_locals);
       }
+      if (handler.execution_failure_arms) {
+        for (auto& arm : *handler.execution_failure_arms) {
+          auto arm_locals = initial_locals;
+          body(arm.body, arm_locals);
+        }
+      }
       if (handler.provider_abi) {
         RaiseSet remaining = handler.observable_effects.raise_set;
-        for (const auto& record : handler.provider_abi->failure_arms) {
+        for (size_t arm_index = 0;
+             arm_index < handler.provider_abi->failure_arms.size(); ++arm_index) {
+          const auto& record = handler.provider_abi->failure_arms[arm_index];
           FailureArm arm;
           arm.line = handler.line;
           arm.source_file = handler.source_file;
+          if (handler.execution_failure_arms &&
+              arm_index < handler.execution_failure_arms->size())
+            arm.execution_body = std::move(
+                (*handler.execution_failure_arms)[arm_index].body);
           if (record.pattern.kind == FailurePatternKind::CatchAll) {
             arm.exceptional_alternatives = remaining;
             remaining.clear();
@@ -13655,6 +13667,7 @@ struct ExecutionBodySectionView {
   size_t section_begin = 0;
   string payload;
   string package_fingerprint;
+  string interface_digest;
 };
 
 static void parse_generic_ir_line(const string& line, Function& function) {
@@ -13770,14 +13783,29 @@ static string execution_body_short_name(const string& qualified) {
       ? qualified : qualified.substr(type_separator + 2);
 }
 
+static string execution_body_resolve_source_path(
+    const std::filesystem::path& interface_file, const string& relative) {
+  const std::filesystem::path path(relative);
+  if (relative.empty() || path.is_absolute() ||
+      std::any_of(path.begin(), path.end(), [](const auto& component) {
+        return component == "..";
+      }))
+    throw CompileError(0, "invalid source path in ABI-v9 execution-body section",
+                       "SOURCE_FREE_EXECUTION_BODY_INVALID");
+  auto root = find_project_root(interface_file.parent_path());
+  if (!root)
+    throw CompileError(0, "execution-body source has no package root",
+                       "SOURCE_FREE_EXECUTION_BODY_INVALID");
+  return (*root / path).lexically_normal().string();
+}
+
 static void parse_execution_body_payload(const ExecutionBodySectionView& section,
                                          Program& provider,
                                          const std::filesystem::path& file) {
   if (!section.present) return;
   std::istringstream input(section.payload);
   string line;
-  for (const char* expected : {"package_fingerprint ", "interface_digest ",
-                               "package_source_hash "}) {
+  for (const char* expected : {"package_fingerprint ", "interface_digest "}) {
     if (!std::getline(input, line) || !starts_with(line, expected))
       throw CompileError(0, "truncated ABI-v9 execution-body metadata",
                          "SOURCE_FREE_EXECUTION_BODY_INVALID");
@@ -13787,6 +13815,54 @@ static void parse_execution_body_payload(const ExecutionBodySectionView& section
     if (line.empty())
       throw CompileError(0, "empty record in ABI-v9 execution-body section",
                          "SOURCE_FREE_EXECUTION_BODY_INVALID");
+    if (starts_with(line, "private_object ")) {
+      std::istringstream header(line.substr(15));
+      string name, source_path;
+      int declaration_line = 0;
+      size_t field_count = 0;
+      if (!(header >> std::quoted(name) >> declaration_line >>
+            std::quoted(source_path) >> field_count) || field_count > 100000)
+        throw CompileError(std::max(declaration_line, 0),
+            "invalid private object in ABI-v9 execution-body section",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      if (std::any_of(provider.objects.begin(), provider.objects.end(),
+              [&](const ObjectType& object) {
+                return execution_body_short_name(object.name) ==
+                    execution_body_short_name(name);
+              }))
+        throw CompileError(std::max(declaration_line, 0),
+            "duplicate private object in ABI-v9 execution-body section",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      ObjectType object;
+      object.name = execution_body_short_name(name);
+      object.exported = false;
+      object.line = declaration_line;
+      object.execution_source_file =
+          execution_body_resolve_source_path(file, source_path);
+      object.source_file = file.string();
+      for (size_t index = 0; index < field_count; ++index) {
+        if (!std::getline(input, line) || !starts_with(line, "private_field "))
+          throw CompileError(std::max(declaration_line, 0),
+              "missing private object field in ABI-v9 execution-body section",
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+        std::istringstream field_input(line.substr(14));
+        Field field;
+        if (!(field_input >> std::quoted(field.name) >>
+              std::quoted(field.type) >> std::quoted(field.init) >> field.line) ||
+            field.name.empty() || field.type.empty())
+          throw CompileError(std::max(declaration_line, 0),
+              "invalid private object field in ABI-v9 execution-body section",
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+        field.source_file = object.execution_source_file;
+        object.fields.push_back(std::move(field));
+      }
+      if (!std::getline(input, line) || line != "private_object_end")
+        throw CompileError(std::max(declaration_line, 0),
+            "unterminated private object in ABI-v9 execution-body section",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      provider.objects.push_back(std::move(object));
+      continue;
+    }
     if (starts_with(line, "function ")) {
       std::istringstream header(line.substr(9));
       string name, source_file, return_type, effects_text;
@@ -13891,12 +13967,13 @@ static void parse_execution_body_payload(const ExecutionBodySectionView& section
       }
       function->line = declaration_line;
       function->result_line = result_line;
-      function->source_file = file.string();
+      function->execution_source_file =
+          execution_body_resolve_source_path(file, source_file);
       function->header = "fn " + function->name;
       if (has_result) {
-        function->result_expression = std::move(result_expression);
-        function->expression_body = true;
+        function->execution_result_expression = std::move(result_expression);
       }
+      vector<Stmt> execution_statements;
       while (std::getline(input, line) && line != "function_end") {
         Stmt statement;
         std::istringstream statement_input(line);
@@ -13907,22 +13984,26 @@ static void parse_execution_body_payload(const ExecutionBodySectionView& section
           throw CompileError(std::max(declaration_line, 0),
               "invalid function body record in ABI-v9 execution-body section",
               "SOURCE_FREE_EXECUTION_BODY_INVALID");
-        statement.source_file = file.string();
-        function->body.push_back(std::move(statement));
+        statement.source_file = function->execution_source_file;
+        execution_statements.push_back(std::move(statement));
       }
       if (line != "function_end")
         throw CompileError(std::max(declaration_line, 0),
             "unterminated function body in ABI-v9 execution-body section",
             "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      function->execution_body = std::move(execution_statements);
       continue;
     }
     if (starts_with(line, "method ")) {
       std::istringstream header(line.substr(7));
-      string owner, name, source_file;
+      string owner, name, source_file, return_type, receiver_text, effects_text;
       int declaration_line = 0, result_line = 0, has_result = 0;
+      size_t parameter_count = 0;
       if (!(header >> std::quoted(owner) >> std::quoted(name) >>
             declaration_line >> result_line >> std::quoted(source_file) >>
-            has_result) || (has_result != 0 && has_result != 1))
+            std::quoted(return_type) >> receiver_text >>
+            std::quoted(effects_text) >> parameter_count >> has_result) ||
+          parameter_count > 100000 || (has_result != 0 && has_result != 1))
         throw CompileError(std::max(declaration_line, 0),
             "invalid method in ABI-v9 execution-body section",
             "SOURCE_FREE_EXECUTION_BODY_INVALID");
@@ -13948,15 +14029,82 @@ static void parse_execution_body_payload(const ExecutionBodySectionView& section
             "SOURCE_FREE_EXECUTION_BODY_INVALID");
       auto method = std::find_if(object->methods.begin(), object->methods.end(),
           [&](const Method& candidate) { return candidate.name == name; });
-      if (method == object->methods.end() ||
-          !method_bodies.insert(execution_body_short_name(owner) + "::" + name).second)
+      if (method == object->methods.end() && object->exported)
+        throw CompileError(std::max(declaration_line, 0),
+            "execution-body method has no Section 1 method declaration",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      if (method == object->methods.end()) {
+        Method private_method;
+        private_method.owner = object->name;
+        private_method.name = name;
+        private_method.set_return_type(return_type == "unit"
+            ? std::optional<string>() : std::optional<string>(return_type));
+        auto receiver = interface_effect(receiver_text);
+        if (!receiver)
+          throw CompileError(std::max(declaration_line, 0),
+              "invalid private method receiver effect",
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+        private_method.receiver_effect = *receiver;
+        private_method.observable_effects =
+            interface_effects("effects=" + effects_text);
+        object->methods.push_back(std::move(private_method));
+        method = std::prev(object->methods.end());
+      }
+      if (!method_bodies.insert(execution_body_short_name(owner) + "::" + name).second)
         throw CompileError(std::max(declaration_line, 0),
             "execution-body method is undeclared or duplicated",
             "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      if (object->exported &&
+          (method->return_type.value_or("unit") != return_type ||
+           ownership_effect_name(method->receiver_effect) != receiver_text ||
+           method->params.size() != parameter_count))
+        throw CompileError(std::max(declaration_line, 0),
+            "execution-body method signature disagrees with Section 1",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      vector<Param> private_parameters;
+      vector<Effect> private_effects;
+      for (size_t index = 0; index < parameter_count; ++index) {
+        if (!std::getline(input, line) || !starts_with(line, "method_param "))
+          throw CompileError(std::max(declaration_line, 0),
+              "missing execution-body method parameter",
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+        std::istringstream parameter(line.substr(13));
+        size_t ordinal = 0;
+        Param parsed;
+        string effect_text, parameter_trailing;
+        if (!(parameter >> ordinal >> std::quoted(parsed.name) >>
+              std::quoted(parsed.type) >> effect_text) || ordinal != index ||
+            (parameter >> parameter_trailing))
+          throw CompileError(std::max(declaration_line, 0),
+              "invalid execution-body method parameter",
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+        auto effect = interface_effect(effect_text);
+        if (!effect)
+          throw CompileError(std::max(declaration_line, 0),
+              "invalid execution-body method parameter effect",
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+        if (object->exported &&
+            (method->params[index].name != parsed.name ||
+             method->params[index].type != parsed.type ||
+             index >= method->parameter_effects.size() ||
+             method->parameter_effects[index] != *effect))
+          throw CompileError(std::max(declaration_line, 0),
+              "execution-body method parameter disagrees with Section 1",
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+        private_parameters.push_back(std::move(parsed));
+        private_effects.push_back(*effect);
+      }
+      if (!object->exported) {
+        method->params = std::move(private_parameters);
+        method->parameter_effects = std::move(private_effects);
+      }
       method->line = declaration_line;
       method->result_line = result_line;
-      method->source_file = file.string();
-      if (has_result) method->result_expression = std::move(result_expression);
+      method->execution_source_file =
+          execution_body_resolve_source_path(file, source_file);
+      if (has_result)
+        method->execution_result_expression = std::move(result_expression);
+      vector<Stmt> execution_statements;
       while (std::getline(input, line) && line != "method_end") {
         Stmt statement;
         std::istringstream statement_input(line);
@@ -13967,13 +14115,14 @@ static void parse_execution_body_payload(const ExecutionBodySectionView& section
           throw CompileError(std::max(declaration_line, 0),
               "invalid method body record in ABI-v9 execution-body section",
               "SOURCE_FREE_EXECUTION_BODY_INVALID");
-        statement.source_file = file.string();
-        method->body.push_back(std::move(statement));
+        statement.source_file = method->execution_source_file;
+        execution_statements.push_back(std::move(statement));
       }
       if (line != "method_end")
         throw CompileError(std::max(declaration_line, 0),
             "unterminated method body in ABI-v9 execution-body section",
             "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      method->execution_body = std::move(execution_statements);
       continue;
     }
     if (starts_with(line, "handler ")) {
@@ -14006,11 +14155,14 @@ static void parse_execution_body_payload(const ExecutionBodySectionView& section
             "execution-body handler is undeclared or duplicated",
             "SOURCE_FREE_EXECUTION_BODY_INVALID");
       handler->line = declaration_line;
-      handler->source_file = file.string();
-      if (handler->failure_arms.size() != failure_arm_count)
+      handler->execution_source_file =
+          execution_body_resolve_source_path(file, source_file);
+      if (!handler->provider_abi ||
+          handler->provider_abi->failure_arms.size() != failure_arm_count)
         throw CompileError(std::max(declaration_line, 0),
             "execution-body failure-arm count disagrees with Section 1",
             "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      vector<Stmt> handler_execution_statements;
       for (size_t index = 0; index < statement_count; ++index) {
         if (!std::getline(input, line))
           throw CompileError(std::max(declaration_line, 0),
@@ -14025,9 +14177,11 @@ static void parse_execution_body_payload(const ExecutionBodySectionView& section
           throw CompileError(std::max(declaration_line, 0),
               "invalid handler body record in ABI-v9 execution-body section",
               "SOURCE_FREE_EXECUTION_BODY_INVALID");
-        statement.source_file = file.string();
-        handler->body.push_back(std::move(statement));
+        statement.source_file = handler->execution_source_file;
+        handler_execution_statements.push_back(std::move(statement));
       }
+      handler->execution_body = std::move(handler_execution_statements);
+      vector<FailureArm> execution_arms(failure_arm_count);
       for (size_t arm_index = 0; arm_index < failure_arm_count; ++arm_index) {
         if (!std::getline(input, line) || !starts_with(line, "failure_arm "))
           throw CompileError(std::max(declaration_line, 0),
@@ -14041,9 +14195,9 @@ static void parse_execution_body_payload(const ExecutionBodySectionView& section
           throw CompileError(std::max(declaration_line, 0),
               "invalid execution-body handler failure arm",
               "SOURCE_FREE_EXECUTION_BODY_INVALID");
-        auto& arm = handler->failure_arms[arm_index];
+        auto& arm = execution_arms[arm_index];
         arm.line = arm_line;
-        arm.source_file = file.string();
+        arm.source_file = handler->execution_source_file;
         for (size_t index = 0; index < arm_statement_count; ++index) {
           if (!std::getline(input, line))
             throw CompileError(std::max(arm_line, 0),
@@ -14054,7 +14208,7 @@ static void parse_execution_body_payload(const ExecutionBodySectionView& section
             throw CompileError(std::max(arm_line, 0),
                 "invalid handler failure-arm statement",
                 "SOURCE_FREE_EXECUTION_BODY_INVALID");
-          statement.source_file = file.string();
+          statement.source_file = handler->execution_source_file;
           arm.body.push_back(std::move(statement));
         }
         if (!std::getline(input, line) || line != "failure_arm_end")
@@ -14066,13 +14220,15 @@ static void parse_execution_body_payload(const ExecutionBodySectionView& section
         throw CompileError(std::max(declaration_line, 0),
             "unterminated handler body in ABI-v9 execution-body section",
             "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      handler->execution_failure_arms = std::move(execution_arms);
       continue;
     }
     throw CompileError(0, "unknown record in ABI-v9 execution-body section",
                        "SOURCE_FREE_EXECUTION_BODY_INVALID");
   }
   for (const auto& function : provider.functions) {
-    if (function.generic || function.static_dispatch) continue;
+    if (function.generic || function.static_dispatch ||
+        !function.provider_origin_file.empty()) continue;
     if (!function_bodies.count(execution_body_short_name(function.name)))
       throw CompileError(std::max(function.line, 0),
           "ABI-v9 execution-body section omits a concrete function body",
@@ -14409,18 +14565,11 @@ static ExecutionBodySectionView parse_execution_body_section(
     throw CompileError(0, "ABI-v9 execution-body interface binding is missing",
                        "SOURCE_FREE_EXECUTION_BODY_INVALID");
   interface_digest = line.substr(string("interface_digest ").size());
-  if (!execution_body_hash(interface_digest) ||
-      interface_digest != source_free_declared_digest(text))
-    throw CompileError(0, "ABI-v9 execution-body Section 1 binding mismatch",
-                       "SOURCE_FREE_EXECUTION_BODY_INVALID");
-  if (!std::getline(payload, line) || !starts_with(line, "package_source_hash "))
-    throw CompileError(0, "ABI-v9 execution-body source binding is missing",
-                       "SOURCE_FREE_EXECUTION_BODY_INVALID");
-  package_source_hash = line.substr(string("package_source_hash ").size());
-  if (package_source_hash != source_free_declared_package_hash(text))
-    throw CompileError(0, "ABI-v9 execution-body package source binding mismatch",
+  if (!execution_body_hash(interface_digest))
+    throw CompileError(0, "ABI-v9 execution-body Section 1 binding is malformed",
                        "SOURCE_FREE_EXECUTION_BODY_INVALID");
   result.package_fingerprint = std::move(package_fingerprint);
+  result.interface_digest = std::move(interface_digest);
   return result;
 }
 
@@ -14673,6 +14822,12 @@ static ParsedModuleUnit load_module_interface(
   } else {
     verify_source_free_provider_binding(file, text,
                                         require_native_artifact);
+    if (execution_bodies.present &&
+        execution_bodies.interface_digest !=
+            source_free_declared_digest(text))
+      throw CompileError(0,
+          "ABI-v9 execution-body Section 1 binding mismatch",
+          "SOURCE_FREE_EXECUTION_BODY_INVALID");
     validate_provider_source_freshness(
         file, source_free_declared_package_hash(text));
     if (text.find("\nnative_abi " + std::to_string(kNativeAbiVersion) + "\n") == string::npos)
@@ -19803,19 +19958,96 @@ static string execution_body_package_fingerprint(
 }
 
 static string encode_execution_body_payload(
-    const Program& program, const string& module,
-    const string& package_fingerprint, const string& interface_digest,
-    const string& package_source_hash) {
+    const ProjectManifest& manifest, const Program& program,
+    const string& module,
+    const string& package_fingerprint, const string& interface_digest) {
   std::ostringstream payload;
   payload << "package_fingerprint " << package_fingerprint << "\n"
-          << "interface_digest " << interface_digest << "\n"
-          << "package_source_hash " << package_source_hash << "\n";
+          << "interface_digest " << interface_digest << "\n";
+
+  std::set<string> execution_callables;
+  for (const auto& function : program.functions)
+    if (function.exported && !function.generic && !function.static_dispatch &&
+        module_name_from_symbol(function.name) == module)
+      execution_callables.insert("fn:" + function.name);
+  for (const auto& object : program.objects)
+    if (object.exported && module_name_from_symbol(object.name) == module)
+      for (const auto& method : object.methods)
+        execution_callables.insert("method:" + object.name + "." + method.name);
+  for (const auto& domain : program.domains)
+    if (domain.exported && module_name_from_symbol(domain.name) == module)
+      for (const auto& handler : domain.handlers)
+        execution_callables.insert("handler:" + domain.name + "." + handler.name);
+  bool expanded = true;
+  while (expanded) {
+    expanded = false;
+    for (const auto& edge : program.semantic_call_edges) {
+      if (!execution_callables.count(edge.source)) continue;
+      if (starts_with(edge.target, "fn:")) {
+        const string target_name = edge.target.substr(3);
+        auto target = std::find_if(program.functions.begin(),
+            program.functions.end(), [&](const Function& function) {
+              return function.name == target_name;
+            });
+        if (target != program.functions.end() &&
+            module_name_from_symbol(target->name) == module &&
+            !target->generic && !target->static_dispatch &&
+            execution_callables.insert(edge.target).second)
+          expanded = true;
+      } else if (starts_with(edge.target, "method:")) {
+        const size_t separator = edge.target.rfind('.');
+        if (separator == string::npos) continue;
+        const string owner = edge.target.substr(7, separator - 7);
+        auto object = std::find_if(program.objects.begin(),
+            program.objects.end(), [&](const ObjectType& candidate) {
+              return candidate.name == owner &&
+                  module_name_from_symbol(candidate.name) == module;
+            });
+        if (object != program.objects.end() &&
+            execution_callables.insert(edge.target).second)
+          expanded = true;
+      }
+    }
+  }
+
+  // Private object declarations are execution support only when an exported
+  // callable reaches one of their methods. They never enter the interface
+  // digest or public export set.
+  vector<const ObjectType*> private_objects;
+  for (const auto& object : program.objects) {
+    if (object.exported || module_name_from_symbol(object.name) != module ||
+        program.external_modules.count(module)) continue;
+    const bool needed = std::any_of(object.methods.begin(), object.methods.end(),
+        [&](const Method& method) {
+          return execution_callables.count(
+              "method:" + object.name + "." + method.name) != 0;
+        });
+    if (!needed) continue;
+    private_objects.push_back(&object);
+  }
+  std::sort(private_objects.begin(), private_objects.end(),
+            [](const ObjectType* left, const ObjectType* right) {
+              return left->name < right->name;
+            });
+  for (const auto* object : private_objects) {
+    payload << "private_object " << std::quoted(object->name) << " "
+            << object->line << " "
+            << std::quoted(project_relative_path(manifest, object->source_file))
+            << " " << object->fields.size() << "\n";
+    for (const auto& field : object->fields)
+      payload << "private_field " << std::quoted(field.name) << " "
+              << std::quoted(field.type) << " " << std::quoted(field.init)
+              << " " << field.line << "\n";
+    payload << "private_object_end\n";
+  }
 
   vector<const Function*> functions;
   for (const auto& function : program.functions) {
     if (module_name_from_symbol(function.name) != module ||
         program.external_modules.count(module) || function.generic ||
-        function.static_dispatch)
+        function.static_dispatch || !function.provider_origin_file.empty() ||
+        (!function.exported &&
+         !execution_callables.count("fn:" + function.name)))
       continue;
     functions.push_back(&function);
   }
@@ -19829,8 +20061,8 @@ static string encode_execution_body_payload(
             << function->result_line << " " << function->params.size() << " "
             << std::quoted(function->return_type.value_or("unit")) << " "
             << std::quoted(interface_effects_text(function->observable_effects)) << " "
-            << std::quoted(std::filesystem::path(function->source_file)
-                               .filename().string()) << " "
+            << std::quoted(project_relative_path(manifest,
+                                                  function->source_file)) << " "
             << (function->result_expression ? 1 : 0) << " "
             << std::quoted(function->result_expression.value_or(string())) << "\n";
     for (size_t index = 0; index < function->params.size(); ++index) {
@@ -19848,7 +20080,9 @@ static string encode_execution_body_payload(
 
   vector<const ObjectType*> objects;
   for (const auto& object : program.objects)
-    if (object.exported && module_name_from_symbol(object.name) == module)
+    if ((object.exported || std::find(private_objects.begin(), private_objects.end(),
+                                      &object) != private_objects.end()) &&
+        module_name_from_symbol(object.name) == module)
       objects.push_back(&object);
   std::sort(objects.begin(), objects.end(),
             [](const ObjectType* left, const ObjectType* right) {
@@ -19856,7 +20090,10 @@ static string encode_execution_body_payload(
             });
   for (const auto* object : objects) {
     vector<const Method*> methods;
-    for (const auto& method : object->methods) methods.push_back(&method);
+    for (const auto& method : object->methods)
+      if (object->exported || execution_callables.count(
+              "method:" + object->name + "." + method.name))
+        methods.push_back(&method);
     std::sort(methods.begin(), methods.end(),
               [](const Method* left, const Method* right) {
                 return left->name < right->name;
@@ -19865,10 +20102,22 @@ static string encode_execution_body_payload(
       payload << "method " << std::quoted(object->name) << " "
               << std::quoted(method->name) << " " << method->line << " "
               << method->result_line << " "
-              << std::quoted(std::filesystem::path(method->source_file)
-                                 .filename().string()) << " "
+              << std::quoted(project_relative_path(manifest,
+                                                    method->source_file)) << " "
+              << std::quoted(method->return_type.value_or("unit")) << " "
+              << ownership_effect_name(method->receiver_effect) << " "
+              << std::quoted(interface_effects_text(method->observable_effects))
+              << " " << method->params.size() << " "
               << (method->result_expression ? 1 : 0) << " "
               << std::quoted(method->result_expression.value_or(string())) << "\n";
+      for (size_t index = 0; index < method->params.size(); ++index) {
+        const Effect effect = index < method->parameter_effects.size()
+            ? method->parameter_effects[index] : Effect::Read;
+        payload << "method_param " << index << " "
+                << std::quoted(method->params[index].name) << " "
+                << std::quoted(method->params[index].type) << " "
+                << ownership_effect_name(effect) << "\n";
+      }
       for (const auto& statement : method->body)
         write_execution_body_statement(payload, statement);
       payload << "method_end\n";
@@ -19893,8 +20142,8 @@ static string encode_execution_body_payload(
     for (const auto* handler : handlers) {
       payload << "handler " << std::quoted(domain->name) << " "
               << std::quoted(handler->name) << " " << handler->line << " "
-              << std::quoted(std::filesystem::path(handler->source_file)
-                                 .filename().string()) << " "
+              << std::quoted(project_relative_path(manifest,
+                                                    handler->source_file)) << " "
               << handler->body.size() << " "
               << handler->failure_arms.size() << "\n";
       for (const auto& statement : handler->body)
@@ -19914,14 +20163,14 @@ static string encode_execution_body_payload(
 }
 
 static string append_execution_body_section(
-    const Program& program, const string& module,
+    const ProjectManifest& manifest, const Program& program,
+    const string& module,
     const string& interface_digest, const string& package_source_hash,
     const BackendToolchainIdentity& backend) {
   const string package_fingerprint = execution_body_package_fingerprint(
       package_source_hash, backend);
   const string payload = encode_execution_body_payload(
-      program, module, package_fingerprint, interface_digest,
-      package_source_hash);
+      manifest, program, module, package_fingerprint, interface_digest);
   std::ostringstream section;
   section << "execution_body_version 1\n"
           << "execution_body_length " << payload.size() << "\n"
@@ -20564,7 +20813,7 @@ static vector<std::filesystem::path> write_module_interfaces(
         "package_source_hash " + package_source_hash + "\n" +
         material.substr(first_line + 1);
     text += append_execution_body_section(
-        program, entry.first, digest, package_source_hash, backend);
+        manifest, program, entry.first, digest, package_source_hash, backend);
     if (!prior || prior_text.str() != text) {
       std::ofstream output(file, std::ios::binary);
       if (!output)
@@ -24193,6 +24442,29 @@ static std::map<std::string, std::string> fast_debug_fileio_tests(
   return rejected;
 }
 
+static bool fast_debug_execution_bodies_complete(const moss::Program& program) {
+  for (const auto& function : program.functions) {
+    const string module = moss::module_name_from_symbol(function.name);
+    if (!program.external_modules.count(module) || function.generic ||
+        function.static_dispatch || !function.provider_origin_file.empty())
+      continue;
+    if (!function.execution_body) return false;
+  }
+  for (const auto& object : program.objects) {
+    if (!program.external_modules.count(moss::module_name_from_symbol(object.name)))
+      continue;
+    for (const auto& method : object.methods)
+      if (!method.execution_body) return false;
+  }
+  for (const auto& domain : program.domains) {
+    if (!program.external_modules.count(moss::module_name_from_symbol(domain.name)))
+      continue;
+    for (const auto& handler : domain.handlers)
+      if (!handler.execution_body) return false;
+  }
+  return true;
+}
+
 static moss::Program load_checked_interpreter_program(
     const std::filesystem::path& input, bool test_mode = false,
     std::map<std::string, std::string>* fileio_tests = nullptr) {
@@ -24209,7 +24481,8 @@ static moss::Program load_checked_interpreter_program(
           context, moss::DependencySourceRootAccess::AllowlistedFastDebug);
       auto checked = moss::check_project_sources(
           context.manifest, sources, context.mode);
-      if (!checked.program.external_modules.empty()) {
+      if (!checked.program.external_modules.empty() &&
+          !fast_debug_execution_bodies_complete(checked.program)) {
         string missing = *checked.program.external_modules.begin();
         throw moss::ProjectError(
             "FAST_DEBUG_NATIVE_DEPENDENCY",

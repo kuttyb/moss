@@ -261,7 +261,8 @@
     Frame frame; frame.handler_scope = true; frame.domain = &instance; frame.handler = target->name;
     frame.function = instance.definition->name + "." + target->name;
     frame.functional_context = functional_handler_context(*instance.definition, *target);
-    frame.source_file = instance.definition->source_file;
+    frame.source_file = target->execution_source_file.empty()
+        ? instance.definition->source_file : target->execution_source_file;
     frame.semantic_identity = "handler:" + instance.definition->name + "." +
         target->name + "@" + std::to_string(target->line);
     const auto& specialization =
@@ -286,7 +287,9 @@
     {
       EventScope handler_scope(*this, handler_id, true, true);
       try {
-        flow = execute(target->body, frame, output);
+        const auto& executable_body = target->execution_body
+            ? *target->execution_body : target->body;
+        flow = execute(executable_body, frame, output);
       } catch (const RaisedSignal& raised) {
         if (!root_ingress || target->failure_arms.empty()) throw;
         const FailureArm* selected = nullptr;
@@ -345,7 +348,9 @@
           }
         emit("on_fail", failure, selected->line,
              raised.identity.canonical());
-        flow = execute(selected->body, failure, output);
+        const auto& executable_body = selected->execution_body
+            ? *selected->execution_body : selected->body;
+        flow = execute(executable_body, failure, output);
       }
       bool needs_reply = target->reply_type.has_value() || specialization.handler_reply_types.count(target->name);
       if (needs_reply && !flow.returned) throw RuntimeError(line, "handler completed without its required reply");

@@ -344,6 +344,9 @@ struct FailureArm {
   // fresh Root failure interval. This is distinct from the normal handler.
   std::optional<StateLeafEffects> state_effects;
   vector<Stmt> body;
+  // Source-free Fast Debug executable body from ABI-v9 Section 2.
+  std::optional<vector<Stmt>> execution_body;
+  string execution_source_file;
 };
 // ABI-v9 diagnostic provenance. A witness is emitted only for a checked
 // no-op catch-all whose selected raise can follow these formal WRITE leaves.
@@ -394,6 +397,10 @@ struct Method {
     for (const auto& param : params) param.assert_consistent();
   }
   vector<Stmt> body;
+  // Source-free Fast Debug executable body from ABI-v9 Section 2.
+  std::optional<vector<Stmt>> execution_body;
+  std::optional<string> execution_result_expression;
+  string execution_source_file;
   std::optional<string> result_expression;
   int result_line = 0;
   vector<int> result_continuation_lines;
@@ -489,6 +496,11 @@ struct Handler {
     for (const auto& param : params) param.assert_consistent();
   }
   vector<Stmt> body;
+  // Source-free Fast Debug executable body from ABI-v9 Section 2.
+  std::optional<vector<Stmt>> execution_body;
+  std::optional<string> execution_result_expression;
+  std::optional<vector<FailureArm>> execution_failure_arms;
+  string execution_source_file;
   vector<FailureArm> failure_arms;
   ObservableEffects observable_effects;
   mutable vector<RecoveryWarningWitness> recovery_warning_witnesses;
@@ -514,7 +526,7 @@ struct DomainRoute {
 // rewriting qualifies `name`. Identity is derived from these, never by
 // splitting the qualified spelling (TYPE_IR_CONTRACT §3.1).
 struct Domain { string name, header; vector<Field> state; vector<DomainRoute> routes; vector<Handler> handlers; bool exported = false; int line = 0; string source_file; string defining_module; string declaration_name; };
-struct ObjectType { string name, header; vector<Field> fields; vector<Method> methods; bool exported = false; int line = 0; string source_file; string defining_module; string declaration_name; };
+struct ObjectType { string name, header; vector<Field> fields; vector<Method> methods; bool exported = false; int line = 0; string source_file; string defining_module; string declaration_name; string execution_source_file; };
 struct EnumCase { string name; vector<Field> fields; int line = 0; string source_file; };
 struct EnumType { string name, header; vector<EnumCase> cases; bool exported = false; int line = 0; string source_file; string defining_module; string declaration_name; };
 struct MainProc { vector<Stmt> body; int line = 0; string header; string source_file; };
@@ -610,6 +622,10 @@ struct Function {
     for (const auto& param : params) param.assert_consistent();
   }
   vector<Stmt> body;
+  // Source-free Fast Debug executable body from ABI-v9 Section 2.
+  std::optional<vector<Stmt>> execution_body;
+  std::optional<string> execution_result_expression;
+  string execution_source_file;
   // Bound at module name resolution, before checking. Source-free functions
   // retain the same defining package/module/declaration identity.
   string defining_module, declaration_name, semantic_callable_id;

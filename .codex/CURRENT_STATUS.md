@@ -1,4 +1,11 @@
-# Phase 26.1.1 — X1 executable-section reader checkpoint — 2026-10-27
+# Phase 26.1.1 — X1 execution-section WIP checkpoint — 2026-10-27
+
+- Active branch `phase26-1-m1`, based at pushed `81331af3`; current source/test edits are checkpointed separately below. X1 remains incomplete and Architect GO is not available.
+- Focused `tests/tooling/check_phase26_1_1_x1.py` passes: non-generic E1 changes only the provider Section 2, generic edits propagate, and a direct Fast Debug trace uses dependency execution bodies.
+- `make moss-opt`, targeted Python compilation, and `git diff --check` pass. The targeted legacy suite is not green: `check_phase21_source_free_abi.py` exposes a mismatch between Section 1 handler failure-arm count and Section 2; `repro_phase21_mossi_pattern_forgery.py` reports an unknown execution-section record. `check_phase21_source_free_cache_binding.py` passes. Two other attempted scripts were invoked with the wrong Margo path and are not validation results.
+- Next: fix Section 2 handler failure-arm serialization/decoding and record parsing; rerun the affected tests with the repository `margo`; then request an exact-SHA Architect review. Do not start X2 until X1 gates and review are green.
+
+## X1 earlier pushed decoder checkpoint (historical)
 
 - Active branch `phase26-1-m1`; last pushed checkpoint `46f08087` is the Section 2 producer/fingerprint milestone. X0 is complete and Architect-approved at implementation SHA `44ee82331080c0072a9c2416913e6a0fe66660c8`; see `docs/phase26/PHASE_26_1_1_X0_RESULTS.md` and `benchmarks/phase26_1/results/m1_phase26_1_1_x0.csv`.
 - X1 now writes and decodes the `.mossi` Section 2 records for concrete/private functions, methods, handlers, and handler failure-arm bodies. The loader validates Section 1 first, then validates section length/hash and source/interface bindings before attaching bodies. Margo passes and verifies the package fingerprint.

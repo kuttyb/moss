@@ -10,6 +10,10 @@ import shutil
 import subprocess
 import sys
 
+from phase26_1_1_mossi_test_helpers import (
+    refresh_v9_execution_section, section1_digest_material,
+    section1_semantic_exports)
+
 
 compiler = Path(sys.argv[1]).resolve()
 margo = compiler.with_name("margo")
@@ -203,8 +207,9 @@ line = next(s for s in tampered.splitlines() if s.startswith("export fn fail "))
 changed = re.sub(r" effects=[^ ]+", "", line, count=1)
 assert changed != line
 tampered = tampered.replace(line, changed, 1)
-contract, semantic = tampered.split("\ncontract\n", 1)[1].split(
+contract, _ = tampered.split("\ncontract\n", 1)[1].split(
     "\nsemantic_exports\n", 1)
+semantic = section1_semantic_exports(tampered)
 def stable_hash(section):
     value = 14695981039346656037
     for byte in section.encode():
@@ -215,13 +220,11 @@ for key, section in (("concrete_interface_hash", contract + "\n"),
                      ("generic_semantic_hash", semantic)):
     tampered = re.sub(rf"(?m)^{key} [0-9a-f]{{16}}$",
                       f"{key} {stable_hash(section)}", tampered)
-material = re.sub(r"(?m)^provider_contract_digest sha256:[0-9a-f]{64}\n",
-                  "", tampered, count=1)
-material = re.sub(r"(?m)^package_source_hash sha256:[0-9a-f]{64}\n",
-                  "", material, count=1)
+material = section1_digest_material(tampered)
 tampered = re.sub(r"(?m)^provider_contract_digest sha256:[0-9a-f]{64}$",
                   "provider_contract_digest sha256:" +
                   hashlib.sha256(material.encode()).hexdigest(), tampered)
+tampered = refresh_v9_execution_section(tampered)
 consumer.write_text(source_free)
 build_and_run("17\n23\n")
 # Keep the consumer source unchanged so this is a true warm-cache forgery.

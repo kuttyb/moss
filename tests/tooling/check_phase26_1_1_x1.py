@@ -96,9 +96,35 @@ def main() -> int:
         raise AssertionError("generic body edit did not change the Section 1 digest")
     if checked(generic) != {"x1_library", "x1_app"}:
         raise AssertionError(f"generic edit did not recheck its consumer: {generic}")
+
+    native = subprocess.run([str(MARGO), "build", "--json"], cwd=app,
+                            env=env, text=True, stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE)
+    if native.returncode:
+        raise RuntimeError(f"margo build failed:\n{native.stdout}\n{native.stderr}")
+    execution_env = env.copy()
+    execution_env.pop("MOSS_FAST_DEBUG_SOURCE_ROOTS", None)
+    execution_env["MOSS_MODULE_PATH"] = str(library / "build" / "debug")
+    interpreted = subprocess.run(
+        [str(MOSS), "run", "--interp", "--trace", str(app / "src" / "main.moss")],
+        cwd=app, env=execution_env, text=True, stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE)
+    if interpreted.returncode or interpreted.stdout != "2\n7\n":
+        raise AssertionError(
+            f"Section 2 Fast Debug output mismatch: {interpreted.returncode}, "
+            f"{interpreted.stdout!r}, {interpreted.stderr}")
+    trace = [json.loads(line) for line in interpreted.stderr.splitlines()
+             if line.startswith("{")]
+    provider_events = [event for event in trace
+                       if event.get("function", "").endswith("value")]
+    if not provider_events or any(
+            event.get("source_file") != str(lib_source)
+            for event in provider_events):
+        raise AssertionError(f"dependency trace lost source locations: {provider_events}")
     print(json.dumps({"initial": sorted(checked(initial)),
                       "non_generic_e1": sorted(checked(non_generic)),
-                      "generic_body_edit": sorted(checked(generic)), "ok": True},
+                      "generic_body_edit": sorted(checked(generic)),
+                      "fast_debug_trace_events": len(trace), "ok": True},
                      sort_keys=True))
     return 0
 

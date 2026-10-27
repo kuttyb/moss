@@ -10,6 +10,10 @@ import shutil
 import subprocess
 import sys
 
+from phase26_1_1_mossi_test_helpers import (
+    refresh_v9_execution_section, section1_digest_material,
+    section1_semantic_exports)
+
 
 repo = Path(__file__).resolve().parents[2]
 compiler = Path(sys.argv[1]).resolve()
@@ -44,8 +48,9 @@ def write_interface(path, text):
             path.read_text()).group(1)
         write_interface.baselines[path] = (rlib, original_bytes, original_digest)
     rlib, original_bytes, original_digest = write_interface.baselines[path]
-    contract, semantic = text.split("\ncontract\n", 1)[1].split(
+    contract, _ = text.split("\ncontract\n", 1)[1].split(
         "\nsemantic_exports\n", 1)
+    semantic = section1_semantic_exports(text)
     def hash_section(section):
         value = 14695981039346656037
         for byte in section.encode():
@@ -57,17 +62,12 @@ def write_interface(path, text):
         text, count = re.subn(rf"(?m)^{key} [0-9a-f]{{16}}$",
                               f"{key} {hash_section(section)}", text)
         assert count == 1, (key, count)
-    material, count = re.subn(
-        r"(?m)^provider_contract_digest sha256:[0-9a-f]{64}\n", "", text)
-    assert count == 1
-    material, count = re.subn(
-        r"(?m)^package_source_hash sha256:[0-9a-f]{64}\n", "", material)
-    assert count == 1
-    digest = hashlib.sha256(material.encode()).hexdigest()
+    digest = hashlib.sha256(section1_digest_material(text).encode()).hexdigest()
     text, count = re.subn(
         r"(?m)^provider_contract_digest sha256:[0-9a-f]{64}$",
         "provider_contract_digest sha256:" + digest, text)
     assert count == 1
+    text = refresh_v9_execution_section(text)
     path.write_text(text)
     sealed = original_bytes.replace(original_digest.encode(), digest.encode())
     assert sealed != original_bytes or digest == original_digest

@@ -2016,7 +2016,8 @@ class FastInterpreter {
     frame.function = target.name;
     const auto* specialization = specialization_for_call(target, caller, line);
     frame.functional_context = functional_function_context(target, specialization);
-    frame.source_file = target.source_file;
+    frame.source_file = target.execution_source_file.empty()
+        ? target.source_file : target.execution_source_file;
     frame.semantic_identity = "fn:" + target.name + "@" +
         std::to_string(target.line);
     if (specialization)
@@ -2028,9 +2029,15 @@ class FastInterpreter {
                     specialization ? &specialization->parameter_types : nullptr);
     int enter_id = emit("FunctionEnter", frame, target.line);
     EventScope function_scope(*this, enter_id, true);
-    Flow flow = execute(target.body, frame, output);
+    const auto& executable_body = target.execution_body
+        ? *target.execution_body : target.body;
+    Flow flow = execute(executable_body, frame, output);
     Value result = flow.returned ? flow.value :
-        (target.result_expression ? eval(*target.result_expression, frame, target.result_line, output) : Value::unit());
+        (target.execution_result_expression
+             ? eval(*target.execution_result_expression, frame, target.result_line, output)
+             : target.result_expression
+                 ? eval(*target.result_expression, frame, target.result_line, output)
+                 : Value::unit());
     if (!flow.returned)
       emit("Return", frame, target.result_line ? target.result_line : target.line,
            result.display());
@@ -2045,7 +2052,8 @@ class FastInterpreter {
     Frame frame;
     frame.function = target.owner + "." + target.name;
     frame.functional_context = functional_method_context(target);
-    frame.source_file = target.source_file;
+    frame.source_file = target.execution_source_file.empty()
+        ? target.source_file : target.execution_source_file;
     frame.semantic_identity = "method:" + target.owner + "." +
         target.name + "@" + std::to_string(target.line);
     frame.locals["self"] = receiver;
@@ -2060,9 +2068,15 @@ class FastInterpreter {
     bind_parameters(target.params, target.parameter_effects, arguments, caller, frame, line, output);
     int enter_id = emit("MethodEnter", frame, target.line);
     EventScope method_scope(*this, enter_id, true);
-    Flow flow = execute(target.body, frame, output);
+    const auto& executable_body = target.execution_body
+        ? *target.execution_body : target.body;
+    Flow flow = execute(executable_body, frame, output);
     Value result = flow.returned ? flow.value :
-        (target.result_expression ? eval(*target.result_expression, frame, target.result_line, output) : Value::unit());
+        (target.execution_result_expression
+             ? eval(*target.execution_result_expression, frame, target.result_line, output)
+             : target.result_expression
+                 ? eval(*target.result_expression, frame, target.result_line, output)
+                 : Value::unit());
     if (!flow.returned)
       emit("Return", frame, target.result_line ? target.result_line : target.line,
            result.display());
