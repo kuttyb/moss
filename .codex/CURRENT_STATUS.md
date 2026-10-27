@@ -1,4 +1,11 @@
-# Phase 26.1.1 — full baseline and triage — 2026-10-27
+# Phase 26.1.1 — ABI-v10 Section 2 checkpoint — 2026-10-27
+
+- Active branch `phase26-1-m1`; pushed implementation checkpoint `b13a52bf`. The ABI-v9 X1 focused gate passed. ABI-v10 initially exposed three remaining Section 1 parsers that consumed appended Section 2 data; those reads now isolate Section 1 before parsing.
+- After those fixes, `make --jobs="$(nproc)" moss-opt` passed and both focused X1 gates passed. The ABI-v10 gate verifies Section 2 binding to the package fingerprint and v10 semantic hash, reachable private helper execution, generic execution, and provider-only rechecking after a non-generic body edit.
+- The follow-up parser fixes and corrected v10 gate JSON handling are currently uncommitted. `git diff --check` passed before these final edits; rerun it and commit/push this checkpoint.
+- Full baseline at `fc6331d08146f7150378ee3728b228e915e078e5` remains 130/146 passed, 16 failed, 0 skipped; triage and exact lists are below. X2 regression repair, six expectation audits/Architect acceptance, frozen X1+X2 review, X3, X4, and final gates remain.
+
+## Baseline and triage — 2026-10-27
 
 - Active branch `phase26-1-m1`, exact baseline SHA `fc6331d08146f7150378ee3728b228e915e078e5`. `./moss agent bootstrap --json` reports `moss-0.1`.
 - Uninterrupted `make --jobs="$(nproc)" check`: **130/146 passed, 16 failed, 0 skipped**. The full pass/fail lists and first triage are in `docs/phase26/PHASE_26_1_1_X2_RESULTS.md`.

@@ -20920,8 +20920,12 @@ static vector<std::filesystem::path> write_module_interfaces(
         throw ProjectError("MOSS_INTERFACE_ERROR",
             "staged ABI-v10 import '" + import.name + "' of module '" + module +
                 "' has no selected provider interface", directory.string());
-      auto provider = abi_v10::parse(read_text_file(
-          selected->second, "MOSS_INTERFACE_ERROR"));
+      const string provider_text = read_text_file(
+          selected->second, "MOSS_INTERFACE_ERROR");
+      const size_t section2 = provider_text.find(
+          "\nexecution_body_version ");
+      auto provider = abi_v10::parse(section2 == string::npos
+          ? provider_text : provider_text.substr(0, section2 + 1));
       value.imports.push_back({provider.value.module_id, provider.binary_hash,
                                provider.semantic_hash});
       for (const auto& record : provider.value.semantic_contract)
@@ -21361,8 +21365,12 @@ static NativeArtifact compile_native_artifact(
         shared_runtime_identity->artifact_hash + "\n";
     for (const auto& selected : unit.external_module_interfaces) {
       try {
-        auto provider = abi_v10::decode(read_text_file(
-            selected.second, "MOSS_INTERFACE_ERROR"));
+        const string provider_text = read_text_file(
+            selected.second, "MOSS_INTERFACE_ERROR");
+        const size_t section2 = provider_text.find(
+            "\nexecution_body_version ");
+        auto provider = abi_v10::decode(section2 == string::npos
+            ? provider_text : provider_text.substr(0, section2 + 1));
         size_t runtime_records = 0;
         for (const auto& record : provider.value.binary_contract)
           if (starts_with(record.payload, "runtime ")) {
@@ -21487,7 +21495,10 @@ static NativeArtifact compile_native_artifact(
         const bool v10 = staged_abi_v10();
         if (v10) {
           try {
-            abi_v10::decode(interface_text);
+            const size_t section2 = interface_text.find(
+                "\nexecution_body_version ");
+            abi_v10::decode(section2 == string::npos
+                ? interface_text : interface_text.substr(0, section2 + 1));
           } catch (const abi_v10::Error& error) {
             throw ProjectError("MOSS_INTERFACE_ERROR",
                 string("generated ABI-v10 provider interface is invalid: ") +

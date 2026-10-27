@@ -47,7 +47,7 @@ def section(path: Path) -> tuple[dict[str, str], str, str]:
 def build_check(app: Path, env: dict[str, str]) -> dict:
     result = run([str(MARGO), "build", "--check", "--json"],
                  cwd=app, env=env)
-    return json.loads(result.stdout)["result"]
+    return json.loads(result.stdout)
 
 
 def main() -> int:
