@@ -1,6 +1,19 @@
 # Phase 26.1 working rules (user, 2026-10-27)
 
-## Current state — T1 implementation complete; certification awaits main integration
+## Current state — 26.1.1 rules recorded; X0/X1 feasibility next
+
+- Active branch `phase26-1-m1` starts from pushed delivery head `0872d6422e0b59eb2c45349861ec61f759fc7de7`.
+- Phase 26.1.1 command scope and R8–R13 are recorded in `docs/phase26/PHASE_26_1_1_RULES.md` before implementation. No 26.1.1 code changes yet.
+- Next: add X0 counter gates, then inspect ABI v10 `.mossi` checked-body representation to determine whether a per-package snapshot can satisfy R13 without duplicating generic bodies. Stop and report if it cannot.
+
+### 26.1 base status
+
+- Phase 26.1 implementation SHA `18c04f2ea965fc71c6b835dd6b8690310e514656` has Architect GO; delivery head `0872d642` is pushed. T1 and all pre-integration local gates are complete.
+- Certified compiler-perf and merge remain explicitly gated on Bank authorization under the new 26.1.1 instruction.
+
+<!-- Historical status follows. -->
+
+## Prior T1 implementation summary
 
 - Active branch: `phase26-1-m1`; implementation SHA `18c04f2ea965fc71c6b835dd6b8690310e514656` has Architect GO. Delivery head `6ec0561d` is pushed to `origin/phase26-1-m1`; it is documentation, feedback, handoff, and status only.
 - T1 defers method admission only when the open generic arguments prevent a concrete decision. Imported `.mossi` bodies are omitted from declaration-scope checking; concrete specialization still validates calls. The focused generic-import regressions pass.
