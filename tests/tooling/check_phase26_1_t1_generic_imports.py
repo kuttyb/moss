@@ -97,16 +97,10 @@ def main() -> int:
     interface_text = "\n".join(path.read_text(errors="replace")
                                 for path in interfaces)
     assert "package_source_hash sha256:" in interface_text, interfaces
-    consumer = run([MARGO, "build", "--check", "--json"], app, env,
-                   ok=False)
-    consumer_output = consumer.stdout + consumer.stderr
-    assert "UNKNOWN_SYMBOL_OR_TYPE" in consumer_output, consumer_output
-    assert "natural_geolib_attempt/src/" not in consumer_output, consumer_output
-    assert "Triangle.area" not in consumer_output, consumer_output
 
-    # A minimal successful consumer makes Margo's skip explicit in its result.
-    # The provider was just checked as a root; changing only its graph role
-    # must not perturb its package fingerprint or trigger another check.
+    # Make the first graph transition after seeding geolib a successful
+    # consumer check. This proves the root-produced interface is skipped when
+    # that same package first appears as a dependency.
     probe = SCRATCH / "consumer_probe"
     (probe / "src").mkdir(parents=True)
     (probe / "Moss.toml").write_text(
@@ -121,6 +115,14 @@ def main() -> int:
     probe_payload = json.loads(probe_result.stdout)
     assert probe_payload["checked"] == ["consumer_probe"], probe_payload
     assert "geolib" in probe_payload["skipped"], probe_payload
+
+    consumer = run([MARGO, "build", "--check", "--json"], app, env,
+                   ok=False)
+    consumer_output = consumer.stdout + consumer.stderr
+    assert "UNKNOWN_SYMBOL_OR_TYPE" in consumer_output, consumer_output
+    assert "natural_geolib_attempt/src/" not in consumer_output, consumer_output
+    assert "Triangle.area" not in consumer_output, consumer_output
+
     print("PASS natural_app has no geolib-body diagnostic; Margo skips unchanged geolib; owner still rejects Triangle.area")
     return 0
 

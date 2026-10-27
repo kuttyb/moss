@@ -4,7 +4,7 @@
 
 - Active branch: `phase26-1-m1`; implementation checkpoint `95b81ec1b39129175a971bc0ebc0bab5e316d900` is pushed to `origin/phase26-1-m1`. Architect review on that SHA was NO-GO.
 - T1 defers method admission only when the open generic arguments prevent a concrete decision. Imported `.mossi` bodies are omitted from declaration-scope checking; concrete specialization still validates calls. The focused generic-import regressions pass.
-- Removed the obsolete dependency-role fingerprint bit and environment flag. The focused T1 test now explicitly proves Margo skips the unchanged geolib when it becomes a dependency; focused test and `git diff --check` pass.
+- Removed the obsolete dependency-role fingerprint bit and environment flag. Architect noted the successful skip probe must be the first dependency-graph invocation after seeding; the test is reordered accordingly and now proves Margo skips the unchanged geolib at that first root-to-dependency transition. Focused test and `git diff --check` pass.
 - All full gates are pending rerun after this correction. Next: commit/push this checkpoint; rerun `make check`, corpus differential, Fast Debug, package-perf, and compiler-perf; then request Architect GO on the exact new SHA. Run certification only after integration into `main`.
 
 
