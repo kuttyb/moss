@@ -9630,6 +9630,9 @@ class Checker {
   }
 
   void check_main(const MainProc& m) {
+    if (profile_concrete_effect_work_)
+      source_function_identities_.insert(
+          std::filesystem::path(m.source_file).filename().string() + ":main");
     current_source_file_ = m.source_file;
     SourceFileScope semantic_context(current_semantic_context_, "main");
     TypeEnv env;

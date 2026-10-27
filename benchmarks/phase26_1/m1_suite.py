@@ -40,11 +40,12 @@ PARTIAL_REACH_FILES = {
         "fn unreached_c(x: Int) -> Int:\n  return x\n"),
 }
 PARTIAL_REACH_EXPECTED = {
-    "m1_partial.moss:main", "m1_partial.moss:reached_top",
-    "m1_partial.moss:reached_leaf"}
+    "m1_partial.moss:main", "m1_partial.moss:m1_partial__reached_top",
+    "m1_partial.moss:m1_partial__reached_leaf"}
 PARTIAL_REACH_PACKAGE = PARTIAL_REACH_EXPECTED | {
-    "helpers.moss:unreached_a", "helpers.moss:unreached_b",
-    "helpers.moss:unreached_c"}
+    "helpers.moss:m1_partial__unreached_a",
+    "helpers.moss:m1_partial__unreached_b",
+    "helpers.moss:m1_partial__unreached_c"}
 
 
 def package(name: str, deps: dict[str, str], module: str, body: str) -> dict:
