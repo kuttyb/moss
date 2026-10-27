@@ -165,6 +165,40 @@ def main() -> int:
 
     if normalized_trace(trace) != normalized_trace(native_trace):
         raise AssertionError("check-only and native dependency traces differ")
+    # Section 2 is not semantic input or part of the interface fingerprint.
+    # A damaged execution payload must leave `moss check`'s verdict alone but
+    # must fail closed when the Fast Debug interpreter requests it.
+    corrupt_dir = library / "build" / "corrupt-debug"
+    corrupt_dir.mkdir(parents=True, exist_ok=True)
+    interface_text = interface.read_text(encoding="utf-8")
+    section_marker = "execution_body_hash sha256:"
+    if section_marker not in interface_text:
+        raise AssertionError("cannot corrupt missing Section 2 hash")
+    marker_at = interface_text.index(section_marker) + len(section_marker)
+    corrupt_text = (interface_text[:marker_at] + "0" * 64 +
+                    interface_text[marker_at + 64:])
+    (corrupt_dir / interface.name).write_text(corrupt_text, encoding="utf-8")
+    corrupt_env = env.copy()
+    corrupt_env["MOSS_MODULE_PATH"] = str(corrupt_dir)
+    semantic = subprocess.run(
+        [str(MOSS), "check", str(app / "src" / "main.moss"), "--json"],
+        cwd=app, env=corrupt_env, text=True, stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE)
+    if semantic.returncode or not json.loads(semantic.stdout).get("ok"):
+        raise AssertionError(
+            f"Section 2 corruption changed semantic check: "
+            f"{semantic.returncode}, {semantic.stdout}, {semantic.stderr}")
+    execution_env = corrupt_env.copy()
+    fast_debug = subprocess.run(
+        [str(MOSS), "run", "--interp", str(app / "src" / "main.moss")],
+        cwd=app, env=execution_env, text=True, stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE)
+    if fast_debug.returncode == 0 or \
+            "SOURCE_FREE_EXECUTION_BODY_INVALID" not in (
+                fast_debug.stdout + fast_debug.stderr):
+        raise AssertionError(
+            f"Fast Debug accepted corrupt Section 2: "
+            f"{fast_debug.returncode}, {fast_debug.stdout}, {fast_debug.stderr}")
     provider_events = [event for event in trace
                        if event.get("function", "").endswith("value")]
     if not provider_events or any(
@@ -180,6 +214,20 @@ def main() -> int:
             f"source-free execution missed helper/method bodies: {executed}")
     if not any(event.get("event") == "on_fail" for event in trace):
         raise AssertionError("source-free execution missed handler failure-arm body")
+    source_backed_callables = {
+        "x1_library__hidden_helper",
+        "x1_library__HiddenBox.increment",
+        "x1_library__Worker.Run",
+        "x1_library__Worker.Run$fail",
+    }
+    source_backed_events = [event for event in trace
+                            if event.get("function") in source_backed_callables]
+    if not source_backed_events or any(
+            event.get("source_file") != str(lib_source)
+            for event in source_backed_events):
+        raise AssertionError(
+            f"Section 2 callable trace locations disagree with source: "
+            f"{source_backed_events}")
     _, _, executable_section = section(interface)
     if ('private_object "x1_library__HiddenBox"' not in executable_section or
             'private_enum "x1_library__Hidden"' not in executable_section):

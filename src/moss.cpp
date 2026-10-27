@@ -14869,16 +14869,22 @@ static void validate_abi_v10_nominal_declarations(
 }
 
 static ParsedModuleUnit load_module_interface(
-    const std::filesystem::path& file, bool require_native_artifact = true) {
+    const std::filesystem::path& file, bool require_native_artifact = true,
+    bool load_execution_bodies = false) {
   std::ifstream input(file, std::ios::binary);
   std::ostringstream content;
   content << input.rdbuf();
   string text = content.str();
   const bool v10_interface = starts_with(text, "moss-module-interface-v3\n");
-  const ExecutionBodySectionView execution_bodies = v10_interface
-      ? ExecutionBodySectionView{} : parse_execution_body_section(text);
-  const string semantic_text = execution_bodies.present
-      ? text.substr(0, execution_bodies.section_begin) : text;
+  const size_t section2_marker = text.find("\nexecution_body_version ");
+  ExecutionBodySectionView execution_bodies;
+  if (!v10_interface && load_execution_bodies)
+    execution_bodies = parse_execution_body_section(text);
+  // Section 2 is deliberately outside semantic admission and interface
+  // fingerprints. Ordinary imports parse only Section 1; the interpreter
+  // explicitly requests and validates executable bodies.
+  const string semantic_text = section2_marker == string::npos
+      ? text : text.substr(0, section2_marker + 1);
   if (v10_interface != staged_abi_v10())
     throw CompileError(0, v10_interface
         ? "source-free provider uses staged ABI v10; rebuild it for ABI v9 or set MOSS_STAGED_ABI=v10"
@@ -14963,7 +14969,11 @@ static ParsedModuleUnit load_module_interface(
                        (indexed_strings_staged() ? "staged indexed-v1" : "plain") +
                        " representation; rebuild the provider with the same MOSS_STAGED_STRING_REPR",
                        "STRING_REPRESENTATION_MISMATCH");
-  std::istringstream lines(semantic_text);
+  // ABI-v10's framed container must first be projected to the legacy
+  // declaration-record view above. ABI-v9 keeps its original Section 1 bytes
+  // with Section 2 removed. Parsing the raw ABI-v10 container here mistakes
+  // section labels (for example `binary_contract`) for Moss module records.
+  std::istringstream lines(v10_interface ? text : semantic_text);
   ParsedModuleUnit unit;
   unit.name = interface_module_name(text, file);
   unit.module_identity = interface_module_identity(text, unit.name);
@@ -16185,7 +16195,8 @@ static ParsedModuleUnit load_module_interface(
   // Section 2 is admitted only after Section 1 signatures and provider
   // contracts have passed validation. It supplies executable non-generic
   // bodies without reopening the provider source tree.
-  parse_execution_body_payload(execution_bodies, provider, file);
+  if (load_execution_bodies)
+    parse_execution_body_payload(execution_bodies, provider, file);
   for (auto& function : provider.functions) {
     function.source_file = file.string();
     function.header = "fn " + function.name;
@@ -16828,7 +16839,8 @@ static CheckedProjectUnit check_project_sources(
     const std::set<string>* declaration_ids = nullptr,
     const std::map<std::filesystem::path, string>* source_overrides = nullptr,
     bool require_native_artifacts = true,
-    const std::filesystem::path* file_check_root = nullptr) {
+    const std::filesystem::path* file_check_root = nullptr,
+    bool load_execution_bodies = false) {
   Program program;
   try {
     std::map<string,ParsedModuleUnit> modules;
@@ -16897,7 +16909,8 @@ static CheckedProjectUnit check_project_sources(
               providers, requested.second);
           if (!selected) continue;
           ParsedModuleUnit provider = load_module_interface(
-              selected->interface_file, require_native_artifacts);
+              selected->interface_file, require_native_artifacts,
+              load_execution_bodies);
           // The provider map was indexed by the interface's module_id; retain
           // that invariant here rather than accepting a filename coincidence.
           if (provider.name != name)
@@ -24606,7 +24619,8 @@ static moss::Program load_checked_interpreter_program(
       auto sources = moss::fast_debug_source_closure(
           context, moss::DependencySourceRootAccess::AllowlistedFastDebug);
       auto checked = moss::check_project_sources(
-          context.manifest, sources, context.mode, {}, nullptr, nullptr, false);
+          context.manifest, sources, context.mode, {}, nullptr, nullptr, false,
+          nullptr, true);
       if (!checked.program.external_modules.empty() &&
           !fast_debug_execution_bodies_complete(checked.program)) {
         string missing = *checked.program.external_modules.begin();
