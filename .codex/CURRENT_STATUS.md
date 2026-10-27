@@ -1,12 +1,11 @@
-# Phase 26.1 F1 checkpoint — 2026-10-26
+# Phase 26.1 F1 complete — 2026-10-26
 
-- Active branch: `phase26-1-m1`; M1 is pushed through `a943260f`. F1 progress checkpoints are pushed through `39d341fb`.
-- F1 adds package source freshness metadata to `.mossi`, stale/missing interface guidance, `moss check` isolation from Fast Debug dependency source roots, and own-build-output filtering. Binary-only provider packages are retired by R2; imported `.mossi` semantics and native links remain supported for source-backed packages.
-- The full corpus differential against main `d109b8f1` now passes: 2,064 sources, 1,325 accepted on both sides, zero verdict/diagnostic-code changes, and zero generated-Rust hash changes. This required preserving the requested module's package-local source closure and the existing generic diagnostic code for missing imports while adding R2 rebuild guidance.
-- Focused evidence passes: F1 interface regression, borrowed-reads, staged ABI-v10 Phase 25 scenario 11, Phase 20C executor 54/54, Phase 10.6F, and Phase 10.6F.1. The last complete `make check` passed 142/142 before the package-local closure/diagnostic compatibility correction; rerun it now. Fast Debug parity and compiler-perf remain pending.
-- The migration audit at `docs/phase26/F1_TEST_MIGRATION.md` classifies all changed test files. Feedback validation and `git diff --check` pass. No GitHub regression jobs were launched.
-- Architect's review identified the source-removal fixtures and the package-wide source selection regression; these are fixed. Request final review after the exact F1 tree passes all gates.
-- Next: commit and push the closure fix; rerun all F1 gates locally. Do not begin G1 until the complete regression is green. After G1, C1, and T1 each pass their full local regression, verify M1 targets, publish the exit report with a certified compiler-perf run, then open one PR to main.
+- Active branch: `phase26-1-m1`; F1 implementation SHA `e9186f2ca6c5f64c18e419f6b079746444276612`, pushed to `origin/phase26-1-m1`. F1 uses package-local requested-module source closure for `moss check`, excludes Fast Debug dependency source-root overrides, validates source freshness from `.mossi`, and ignores the package's own build outputs as interfaces. Binary-only provider packages are retired under R2.
+- Full corpus differential against main `d109b8f1`: 2,064 sources; 1,325 accepted on both sides; zero verdict, diagnostic-code, or generated-Rust hash changes.
+- `make --jobs="$(nproc)" check` passed 142/142 on the exact implementation tree. `shard_fast_debug` passed in the suite. Focused F1, borrowed-reads, Phase 20C executor 54/54, Phase 10.6F, Phase 10.6F.1, and staged-v10 scenario 11 checks pass. Feedback, Python compilation, and whitespace validation pass.
+- Compiler-perf run `20261026-190550`: baseline `d109b8f1` vs F1, 77 fixtures, 3 interleaved timing reps. Sum of fixture medians 5.447s on both sides; no fixture exceeded the noise floor. The report is in `docs/phase26/F1_RESULTS.md`; disposable full artifacts are under `tmp/compiler-perf/20261026-190550/`.
+- Source-free provider retirement and every test migration are recorded in `PHASE_26_1_RULES.md` and `F1_TEST_MIGRATION.md`. No GitHub regression jobs were launched.
+- Final Architect review requested for exact SHA `e9186f2c`; await its result before starting G1. Then proceed G1, C1, T1 in order, requiring a green complete local regression before each next item. At exit, enforce every M1 target, publish the certified compiler-perf result, and open one PR to main.
 
 ---
 
