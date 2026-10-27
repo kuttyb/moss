@@ -13,7 +13,11 @@ check work only where needed.
   stale; run \`margo build\``. Staleness is detected using the package source
   content hash recorded in `.mossi`. This freshness hash is metadata outside
   the semantic interface hash. Packages always ship with source; binary-only
-  packages are unsupported.
+  packages are unsupported. **Source-free provider retirement:** Phase 26.1
+  retires package workflows that remove or omit provider source while expecting
+  `.mossi` alone to make the package current. Imported `.mossi` remains the
+  semantic interface used by consumers; the provider source is available only
+  for freshness hashing, not parsing or semantic checking by `moss check`.
 - **R6 (checkstop):** If a rebuilt package's semantic `.mossi` interface hash
   is unchanged, its dependents are not re-checked. This hash excludes the
   source-freshness metadata so an implementation-only edit does not trigger
@@ -60,6 +64,8 @@ check work only where needed.
 
 ## Scope exclusions
 
-Parallel builds, rustc/Cargo invocation design, one crate per package, retiring
-source-free provider machinery, incremental builds, and changes to Fast Debug
-beyond preserving its behavior are out of scope.
+Parallel builds, rustc/Cargo invocation design, one crate per package,
+incremental builds, and changes to Fast Debug beyond preserving its behavior
+are out of scope. The package-level source-free-provider retirement above is
+in scope because it is required by R2; it does not remove `.mossi` interfaces
+or native linking against compiled provider artifacts.

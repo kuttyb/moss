@@ -1,10 +1,11 @@
 # Phase 26.1 F1 checkpoint — 2026-10-26
 
-- Branch `phase26-1-m1`; M1 is pushed through `a943260f`. F1 progress checkpoint `e78b6a22` is pushed to `origin/phase26-1-m1`.
-- F1 adds `.mossi` package source freshness metadata and stale/missing interface diagnostics, keeps `moss check` independent of Fast Debug source overrides, excludes a package's own build outputs from interface discovery, and migrates interface fixtures to retain provider sources under R2.
-- This is not a completed F1 delivery. The previous local full regression run failed in `check_borrowed_reads.py`: its source-free package scenario now violates R2. The nominal identity indentation error mentioned in the earlier run has since been corrected and Python compilation passes. `git diff --check` and Python compilation pass. No GitHub regression jobs were launched.
-- Architect's design review supports strict R2 in all modes and universal own-build-output filtering; final review of the exact completed F1 tree remains pending.
-- Next: finish migrating the borrowed-reads source-free scenario, rerun local `make check`, and run the differential, Fast Debug, and compiler-perf gates. Then request Architect review on the frozen SHA and push the completed result.
+- Active branch: `phase26-1-m1`; M1 is pushed through `a943260f`. Progress checkpoints `e78b6a22` and `32f75960` are pushed to the same-name remote.
+- F1 adds package source freshness metadata to `.mossi`, stale/missing interface diagnostics, `moss check` source-root isolation from Fast Debug overrides, and own-build-output filtering. Binary-only provider packages are retired by R2; imported `.mossi` semantics and native links remain supported for source-backed packages.
+- Fixed the borrowed-reads fixture by splitting provider and consumer packages. Fixed Phase 25 scenario 11 to replace current source and artifacts together so the interface freshness hash matches. Added exhaustive test-migration classification at `docs/phase26/F1_TEST_MIGRATION.md` and updated `PHASE_26_1_RULES.md`.
+- Focused evidence: F1 interface regression passes; borrowed-reads passes; staged ABI-v10 Phase 25 scenario 11 passes; modified Python scripts compile; `git diff --check` passes; agent-feedback validator passes. Full local `make check`, corpus differential, Fast Debug parity, and compiler-perf remain pending. No GitHub regression jobs were launched.
+- Architect reviewed the F1 checkpoint and identified the two fixture issues now fixed. Final review of exact completed F1 SHA remains pending.
+- Next: checkpoint F1 completion, run all required gates locally, and do not begin G1 until full regression is green. After G1, C1, and T1 each pass their full local regression, verify all M1 targets, publish the exit report with a certified compiler-perf run, then open one PR to main.
 
 ---
 

@@ -502,14 +502,23 @@ def run_scenario_11(ctx: HarnessContext) -> ScenarioResult:
         env = module_environment(provider)
         build_and_execute(ctx, consumer, env, ["10"])
         require_success(ctx.run_cmd(package_command(ctx, "build"), cwd=consumer, env=env), "unchanged warm consumer build")
-        # Replace selected compiled artifacts at the same path; neither provider's
-        # source remains and consumer source/manifest are unchanged.
+        # Replace both source and compiled interface at the selected provider
+        # path. R2 requires source freshness to match. The consumer source and
+        # manifest stay unchanged, preserving the warm-cache invalidation check.
         changed = stage_current_provider(ctx, res, fixture / "provider_v2", root, "provider-v2")
-        shutil.rmtree(provider)
-        shutil.copytree(changed, provider)
+        provider_root = provider.parent.parent
+        changed_root = changed.parent.parent
+        shutil.copyfile(changed_root / "src/provider.moss",
+                        provider_root / "src/provider.moss")
+        for artifact in changed.iterdir():
+            target = provider / artifact.name
+            if artifact.is_dir():
+                shutil.copytree(artifact, target, dirs_exist_ok=True)
+            else:
+                shutil.copy2(artifact, target)
         proc = ctx.run_cmd(package_command(ctx, "build"), cwd=consumer, env=env)
         if proc.returncode == 0:
-            raise AcceptanceFailure("changed source-free layout reused stale consumer or accepted missing extra field")
+            raise AcceptanceFailure("changed provider layout reused stale consumer or accepted missing extra field")
         # Margo's wrapper preserves compiler JSON in stderr; extract its structured
         # diagnostic rather than accepting unrelated build failures or any cache miss.
         error = decode_compiler_error(proc.stdout) or decode_compiler_error(proc.stderr)
@@ -519,7 +528,7 @@ def run_scenario_11(ctx: HarnessContext) -> ScenarioResult:
             raise AcceptanceFailure(f"unrelated failure after layout replacement: {error}")
         res.details["invalidation_proven"] = True
         res.details["diagnostic"] = error
-    return execute_scenario(ctx, 11, "Replacing source-free provider layout invalidates unchanged warm consumer", body)
+    return execute_scenario(ctx, 11, "Replacing source-backed provider layout invalidates unchanged warm consumer", body)
 
 
 # ==============================================================================
