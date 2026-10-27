@@ -1,9 +1,10 @@
 # Phase 26.1.1 — ABI-v10 Section 2 checkpoint — 2026-10-27
 
-- Active branch `phase26-1-m1`; latest pushed checkpoint `8ddf97e0`. The full uninterrupted `make --jobs="$(nproc)" check` on that exact commit passed: **148/148 jobs, 0 failures, 0 skipped**; runner wall time 240.58s. This includes the v10 suites and all six repaired failures from the preceding full run. The earlier full run at `beb27000` also passed 148/148.
+- Active branch `phase26-1-m1`; latest pushed checkpoint `39d4f282`. The frozen code checkpoint `8ddf97e0` passed uninterrupted `make --jobs="$(nproc)" check`: **148/148 jobs, 0 failures, 0 skipped**, 240.58s wall time. The later full run at documentation-only `39d4f282` completed 147/148; its sole failure was `shard_phase5_tooling`, where the installed LLDB-DAP timed out. An isolated rerun of that shard also timed out. The earlier implementation checkpoint `beb27000` passed 148/148 as well.
 - Focused evidence also passes: C1 scope/package probes, Phase 21 A–F/root-totality, Phase 20 Executor/FileIO, Phase 25 S1/S2/S-B, typed semantic API, Team A, builtin generic typing (129/129), X1 ABI-v9/v10, Phase 15.9, Phase 22.4, Phase 106, G2 conformance (11/11), R2 WP1/WP2/WP3, ABI-v10 units, and SDK text-encoding Fast Debug (3/3).
+- Frozen Architect review: X1+X2 code GO at `8ddf97e0`, carried forward to `39d4f282` because the intervening commit is docs-only. The Architect explicitly accepted all six dependency/interface expectation audits and the S2 fixture correction.
 - The uninterrupted baseline at `fc6331d08146f7150378ee3728b228e915e078e5` remains 130/146 passed, 16 failed, 0 skipped. Baseline triage and repair dispositions are in `docs/phase26/PHASE_26_1_1_X2_RESULTS.md`.
-- Next: record the exact frozen-checkpoint result in the status/results docs, checkpoint and push; rerun `make check` on that documentation checkpoint; then obtain Architect review of X1+X2 and explicit acceptance of all six expectation audits. X3 and X4 follow.
+- Next: implement X3's declaration location sidecar and xref queries, then X4's six edge-case regressions. Keep the LLDB-DAP timeout visible in validation records; rerun all required final gates after X3/X4.
 
 ## Baseline and triage — 2026-10-27
 
