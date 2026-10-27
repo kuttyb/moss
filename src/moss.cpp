@@ -15925,7 +15925,9 @@ static CheckedProjectUnit check_project_sources(
     const std::set<string>* declaration_ids = nullptr,
     const std::map<std::filesystem::path, string>* source_overrides = nullptr,
     bool require_native_artifacts = true,
-    const std::filesystem::path* file_check_root = nullptr) {
+    const std::filesystem::path* file_check_root = nullptr,
+    bool phase26_c1_oracle = false,
+    bool phase26_c1_oracle_package_scope = false) {
   Program program;
   try {
     std::map<string,ParsedModuleUnit> modules;
@@ -16109,10 +16111,52 @@ static CheckedProjectUnit check_project_sources(
     }
     if (file_check_root)
       scope_program_to_file(program, *file_check_root);
+    if (phase26_c1_oracle) {
+      program.phase26_c1_oracle = true;
+      if (phase26_c1_oracle_package_scope && !file_check_root) {
+        // Collect body diagnostics from the whole package while suppressing
+        // R4 whole-package analyses. Keep every source body in the program;
+        // only mark the checker as scoped for package-rule gating.
+        program.file_check_scope = true;
+        for (const auto& object : program.objects)
+          program.file_scope_objects.insert(object.name);
+        for (const auto& enumeration : program.enums)
+          program.file_scope_enums.insert(enumeration.name);
+        for (const auto& domain : program.domains)
+          program.file_scope_domains.insert(domain.name);
+      }
+    }
     prepare_and_validate_module_exports(program, false);
     CheckedProgram checker(program);
-    checker.run();
-    prepare_and_validate_module_exports(program, true);
+    try {
+      checker.run();
+    } catch (const CompileError& error) {
+      if (!phase26_c1_oracle) throw;
+      program.phase26_c1_oracle_incomplete_code = error.code.empty()
+          ? diagnostic_code_for_message(error.what()) : error.code;
+      program.phase26_c1_oracle_incomplete_message = error.what();
+      program.phase26_c1_oracle_incomplete_source = error.source_file;
+      program.phase26_c1_oracle_incomplete_line = error.line;
+    }
+    if (phase26_c1_oracle &&
+        program.phase26_c1_oracle_incomplete_code.empty()) {
+      try {
+        prepare_and_validate_module_exports(program, true);
+      } catch (const CompileError& error) {
+        program.phase26_c1_oracle_incomplete_code = error.code.empty()
+            ? diagnostic_code_for_message(error.what()) : error.code;
+        program.phase26_c1_oracle_incomplete_message = error.what();
+        program.phase26_c1_oracle_incomplete_source = error.source_file;
+        program.phase26_c1_oracle_incomplete_line = error.line;
+      }
+    } else if (!phase26_c1_oracle) {
+      prepare_and_validate_module_exports(program, true);
+    }
+    if (phase26_c1_oracle) {
+      if (program.phase26_c1_oracle_incomplete_code.empty())
+        program.phase26_c1_oracle_complete = true;
+      return {std::move(program), {}, {}};
+    }
     vector<Warning> warnings = checker.warnings();
     if (!declaration_filter.empty() || declaration_ids) {
       if (mode == ProgramGenerationMode::Tests) {
@@ -16197,10 +16241,17 @@ static CompiledProjectUnit check_project_semantics(
     const vector<std::filesystem::path>& sources, bool optimized,
     ProgramGenerationMode mode,
     const std::map<std::filesystem::path, string>* source_overrides = nullptr,
-    const std::filesystem::path* file_check_root = nullptr) {
+    const std::filesystem::path* file_check_root = nullptr,
+    bool phase26_c1_oracle = false,
+    bool phase26_c1_oracle_package_scope = false) {
   CheckedProjectUnit checked = check_project_sources(
       manifest, sources, mode, {}, nullptr, source_overrides, false,
-      file_check_root);
+      file_check_root, phase26_c1_oracle,
+      phase26_c1_oracle_package_scope);
+  if (phase26_c1_oracle &&
+      !checked.program.phase26_c1_oracle_diagnostics.empty())
+    return {std::move(checked.program), {}, std::move(checked.warnings),
+            string(), std::move(checked.external_module_interfaces)};
   try {
     optimize_program(checked.program, optimized);
     OptimizationPlan plan = OptimizationPlan{optimized};
@@ -20655,13 +20706,98 @@ static int run_project_build(const ProjectManifest& manifest, bool release,
 // invoking the native toolchain. Keep these interfaces in a separate output
 // profile so a check-only result cannot replace a native provider's .mossi
 // beside an older .rlib.
+static void write_phase26_c1_oracle_json(
+    std::ostream& out, const string& command, const string& target,
+    const Program* program, const ProjectError* incomplete = nullptr) {
+  const bool has_program_incomplete = program &&
+      !program->phase26_c1_oracle_incomplete_code.empty();
+  const bool complete = program && program->phase26_c1_oracle_complete &&
+      !incomplete && !has_program_incomplete;
+  out << "{\"protocol_version\":1,\"schema_version\":\"moss-c1-oracle-1\","
+         "\"command\":";
+  write_debug_json_string(out, command);
+  out << ",\"ok\":" << (complete ? "true" : "false")
+      << ",\"result\":{\"target\":";
+  write_debug_json_string(out, target);
+  out << ",\"complete\":" << (complete ? "true" : "false")
+      << ",\"diagnostics\":[";
+  if (program) {
+    for (size_t index = 0;
+         index < program->phase26_c1_oracle_diagnostics.size(); ++index) {
+      if (index) out << ',';
+      const auto& diagnostic = program->phase26_c1_oracle_diagnostics[index];
+      out << "{\"code\":";
+      write_debug_json_string(
+          out, diagnostic.code.empty()
+              ? diagnostic_code_for_message(diagnostic.what())
+              : diagnostic.code);
+      out << ",\"message\":";
+      write_debug_json_string(out, diagnostic.what());
+      out << ",\"source_file\":";
+      write_debug_json_string(out, diagnostic.source_file);
+      out << ",\"line\":" << diagnostic.line << ",\"semantic_identity\":";
+      write_debug_json_string(out, diagnostic.semantic_identity);
+      out << ",\"package_only\":false}";
+    }
+  }
+  out << ']';
+  if (incomplete || has_program_incomplete) {
+    const string code = incomplete ? incomplete->code
+        : program->phase26_c1_oracle_incomplete_code;
+    const string message = incomplete ? incomplete->what()
+        : program->phase26_c1_oracle_incomplete_message;
+    const string source = incomplete ? incomplete->source_file
+        : program->phase26_c1_oracle_incomplete_source;
+    const int line = incomplete ? incomplete->line
+        : program->phase26_c1_oracle_incomplete_line;
+    out << ",\"incomplete_error\":{\"code\":";
+    write_debug_json_string(out, code);
+    out << ",\"message\":";
+    write_debug_json_string(out, message);
+    out << ",\"source_file\":";
+    write_debug_json_string(out, source);
+    out << ",\"line\":" << line << '}';
+  }
+  out << "}}\n";
+}
+
+static int run_project_file_c1_oracle(
+    const ProjectManifest& manifest,
+    const vector<std::filesystem::path>& sources,
+    ProgramGenerationMode mode,
+    const std::filesystem::path& root) {
+  try {
+    auto checked = check_project_semantics(
+        manifest, sources, false, mode, nullptr, &root, true, false);
+    write_phase26_c1_oracle_json(std::cout, "check", "file",
+                                 &checked.program);
+  } catch (const ProjectError& error) {
+    write_phase26_c1_oracle_json(std::cout, "check", "file", nullptr,
+                                 &error);
+  }
+  return 0;
+}
+
 static int run_project_interface_check(const ProjectManifest& manifest,
-                                       bool release, bool json) {
+                                       bool release, bool json,
+                                       bool phase26_c1_oracle = false) {
   vector<std::filesystem::path> sources = project_source_files(manifest);
   if (sources.empty())
     throw ProjectError("PROJECT_SOURCE_NOT_FOUND",
                        "project target contains no Moss source files");
   const auto mode = ProgramGenerationMode::Application;
+  if (phase26_c1_oracle) {
+    try {
+      auto checked = check_project_semantics(
+          manifest, sources, release, mode, nullptr, nullptr, true, true);
+      write_phase26_c1_oracle_json(std::cout, "build", "application",
+                                   &checked.program);
+    } catch (const ProjectError& error) {
+      write_phase26_c1_oracle_json(std::cout, "build", "application",
+                                   nullptr, &error);
+    }
+    return 0;
+  }
   CompiledProjectUnit checked = check_project_semantics(
       manifest, sources, release, mode);
   // Legacy source sets have no declared Moss module owner. Give their
@@ -20746,13 +20882,27 @@ static int run_project_interface_check(const ProjectManifest& manifest,
 // this while checking package semantics so package checks cover the same
 // declaration universe as the test target.
 static int run_project_test_semantic_check(const ProjectManifest& manifest,
-                                           bool json) {
+                                           bool json,
+                                           bool phase26_c1_oracle = false) {
   const auto sources = project_declaration_sources(manifest, "tests");
   if (sources.empty())
     throw ProjectError("PROJECT_SOURCE_NOT_FOUND",
                        "test target contains no Moss source files");
-  (void)check_project_semantics(manifest, sources, false,
-                                ProgramGenerationMode::Tests);
+  if (phase26_c1_oracle) {
+    try {
+      auto checked = check_project_semantics(
+          manifest, sources, false, ProgramGenerationMode::Tests, nullptr,
+          nullptr, true, true);
+      write_phase26_c1_oracle_json(std::cout, "test", "tests",
+                                   &checked.program);
+    } catch (const ProjectError& error) {
+      write_phase26_c1_oracle_json(std::cout, "test", "tests",
+                                   nullptr, &error);
+    }
+    return 0;
+  }
+  auto checked = check_project_semantics(
+      manifest, sources, false, ProgramGenerationMode::Tests);
   if (json) {
     std::cout << "{\"protocol_version\": 1, \"schema_version\": ";
     write_debug_json_string(std::cout, kAgentSchemaVersion);
@@ -20766,6 +20916,25 @@ static int run_project_test_semantic_check(const ProjectManifest& manifest,
   } else {
     std::cout << "Checked " << sources.size()
               << " test-target source file(s) (semantic-only)\n";
+  }
+  return 0;
+}
+
+static int run_project_benchmark_semantic_check(
+    const ProjectManifest& manifest) {
+  const auto sources = project_declaration_sources(manifest, "benches");
+  if (sources.empty())
+    throw ProjectError("PROJECT_SOURCE_NOT_FOUND",
+                       "project target contains no Moss benchmark sources");
+  try {
+    auto checked = check_project_semantics(
+        manifest, sources, false, ProgramGenerationMode::Benchmarks, nullptr,
+        nullptr, true, true);
+    write_phase26_c1_oracle_json(std::cout, "bench", "benches",
+                                 &checked.program);
+  } catch (const ProjectError& error) {
+    write_phase26_c1_oracle_json(std::cout, "bench", "benches", nullptr,
+                                 &error);
   }
   return 0;
 }
@@ -22596,16 +22765,23 @@ static int run_project_command(int argc, char** argv) {
     if (command == "build") {
       bool release = false;
       bool check_only = false;
+      bool phase26_c1_oracle = false;
       for (int index = 2; index < argc; ++index) {
         string argument = argv[index];
         if (argument == "--release") release = true;
         else if (argument == "--check") check_only = true;
+        else if (argument == "--phase26-c1-oracle")
+          phase26_c1_oracle = true;
         else if (argument != "--json")
           throw ProjectError("BUILD_PROFILE_ERROR",
                              "unexpected build argument '" + argument + "'");
       }
+      if (phase26_c1_oracle && !check_only)
+        throw ProjectError("BUILD_PROFILE_ERROR",
+                           "--phase26-c1-oracle requires --check");
       if (check_only)
-        return run_project_interface_check(manifest, release, json);
+        return run_project_interface_check(manifest, release, json,
+                                           phase26_c1_oracle);
       return run_project_build(manifest, release, json);
     }
     if (command == "fmt") {
@@ -22723,10 +22899,17 @@ static int run_project_command(int argc, char** argv) {
       string filter;
       string save_name;
       string compare_name;
+      bool check_only = false;
+      bool phase26_c1_oracle = false;
       std::optional<double> fail_over;
       for (int index = 2; index < argc; ++index) {
         string argument = argv[index];
         if (argument == "--json") continue;
+        if (argument == "--check") { check_only = true; continue; }
+        if (argument == "--phase26-c1-oracle") {
+          phase26_c1_oracle = true;
+          continue;
+        }
         if (argument == "--save" || argument == "--compare" ||
             argument == "--fail-over") {
           if (++index >= argc)
@@ -22745,6 +22928,17 @@ static int run_project_command(int argc, char** argv) {
               "moss bench accepts at most one filter");
         filter = argument;
       }
+      if (phase26_c1_oracle) {
+        if (!check_only || !filter.empty() || !save_name.empty() ||
+            !compare_name.empty() || fail_over)
+          throw ProjectError(
+              "BENCHMARK_CONFIGURATION_ERROR",
+              "--phase26-c1-oracle requires moss bench --check --json");
+        return run_project_benchmark_semantic_check(manifest);
+      }
+      if (check_only)
+        throw ProjectError("BENCHMARK_CONFIGURATION_ERROR",
+                           "moss bench --check requires --phase26-c1-oracle");
       if (fail_over && compare_name.empty())
         throw ProjectError(
             "BENCHMARK_CONFIGURATION_ERROR",
@@ -24087,11 +24281,14 @@ int main(int argc, char** argv) {
     if (string(argv[1]) == "test") {
       bool semantic_check = false;
       bool test_json = false;
+      bool phase26_c1_oracle = false;
       bool invalid_arguments = false;
       for (int index = 2; index < argc; ++index) {
         const string argument = argv[index];
         if (argument == "--check") semantic_check = true;
         else if (argument == "--json") test_json = true;
+        else if (argument == "--phase26-c1-oracle")
+          phase26_c1_oracle = true;
         else invalid_arguments = true;
       }
       if (semantic_check) {
@@ -24109,7 +24306,8 @@ int main(int argc, char** argv) {
               "no Moss.toml was found in this directory or any parent");
         const auto manifest = moss::load_project_manifest(*root);
         try {
-          return moss::run_project_test_semantic_check(manifest, test_json);
+          return moss::run_project_test_semantic_check(
+              manifest, test_json, phase26_c1_oracle);
         } catch (const moss::ProjectError& error) {
           if (test_json)
             moss::write_project_error_json(std::cout, "test", error);
@@ -24278,6 +24476,7 @@ int main(int argc, char** argv) {
     bool explain_fusion = false;
     bool debug_build = false;
     bool diagnostic_paths = false;
+    bool phase26_c1_oracle = false;
     string input, output, debug_map_output, native_output;
     string query_command, query_target, query_source, query_kind,
         query_enclosing, query_overlay_source;
@@ -24319,6 +24518,7 @@ int main(int argc, char** argv) {
       else if (a == "--explain-fusion") explain_fusion = true;
       else if (a == "--debug") debug_build = true;
       else if (a == "--diagnostic-paths") diagnostic_paths = true;
+      else if (a == "--phase26-c1-oracle") phase26_c1_oracle = true;
       else if (a == "--emit-debug-map") {
         if (++i >= argc) { usage(); return 2; }
         debug_map_output = argv[i];
@@ -24445,6 +24645,16 @@ int main(int argc, char** argv) {
           auto sources = active_command == "check"
               ? moss::fast_debug_source_closure(context, false)
               : moss::fast_debug_source_closure(context);
+          if (phase26_c1_oracle) {
+            if (!json_output || active_command != "check") {
+              std::cerr << "moss: --phase26-c1-oracle requires moss check "
+                           "<file> --json\n";
+              return 2;
+            }
+            return moss::run_project_file_c1_oracle(
+                context.manifest, sources, context.mode,
+                context.requested_source);
+          }
           // Check and semantic queries stop at semantics, exactly like the
           // standalone path below; only compilation lowers to Rust.
           auto unit = check_only
@@ -24499,12 +24709,42 @@ int main(int argc, char** argv) {
           ? static_cast<std::istream&>(recovered_input)
           : query_overlay ? static_cast<std::istream&>(overlay_input)
                           : static_cast<std::istream&>(f);
-      active_program = moss::parse_source(
-          source_stream,
-          std::filesystem::absolute(input).lexically_normal().string());
+      try {
+        active_program = moss::parse_source(
+            source_stream,
+            std::filesystem::absolute(input).lexically_normal().string());
+      } catch (const moss::CompileError& error) {
+        if (!phase26_c1_oracle) throw;
+        moss::ProjectError incomplete(
+            error.code.empty() ? moss::diagnostic_code_for_message(error.what())
+                               : error.code,
+            error.what(), error.source_file, error.line, error.teaching,
+            error.semantic_identity);
+        moss::write_phase26_c1_oracle_json(
+            std::cout, "check", "standalone", nullptr, &incomplete);
+        return 0;
+      }
       auto& standalone_program = *active_program;
+      if (phase26_c1_oracle) standalone_program.phase26_c1_oracle = true;
       moss::CheckedProgram checker(standalone_program);
-      checker.run();
+      try {
+        checker.run();
+      } catch (const moss::CompileError& error) {
+        if (!phase26_c1_oracle) throw;
+        moss::ProjectError incomplete(
+            error.code.empty() ? moss::diagnostic_code_for_message(error.what())
+                               : error.code,
+            error.what(), error.source_file, error.line, error.teaching,
+            error.semantic_identity);
+        moss::write_phase26_c1_oracle_json(
+            std::cout, "check", "standalone", nullptr, &incomplete);
+        return 0;
+      }
+      if (phase26_c1_oracle) {
+        moss::write_phase26_c1_oracle_json(
+            std::cout, "check", "standalone", &standalone_program);
+        return 0;
+      }
       warnings = checker.warnings();
       if (!json_output) {
         for (const auto& warning : warnings)

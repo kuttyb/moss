@@ -49,3 +49,62 @@ The run was not certified: the C1 working tree was dirty, and certification requ
 ## Architect Review
 
 Architect verdict: **NO-GO** for C1 closeout. The 12-row Margo mapping, complete semantic Tests target, and scope-identity cases are now covered. The literal corpus-wide diagnostic-set oracle remains absent because the checker and package command expose only the first error. Architect says no comparison of one result per file/package can prove both set inclusions; an oracle-only diagnostic enumeration path or an explicit acceptance narrowing is required. Do not start T1 until this is resolved and the final C1 tree receives GO.
+
+## Corpus Oracle Closeout Attempt — 2026-10-26
+
+The experimental oracle-only path and gate are in
+`tests/tooling/check_phase26_1_c1_corpus_oracle.py`. It obtains current
+dependency interface paths from Margo, runs application/test/benchmark package
+targets, then compares each tracked package source with its file-scoped check.
+It normalizes diagnostic paths and compares `(code, message, line, source,
+semantic_identity)` multisets. Missing/stale interface errors are represented
+as terminal module-loading diagnostics and are accepted only when package and
+file modes return the exact same error before body analysis. Sources outside a
+declared package target are checked as their own compilation units.
+
+Final local attempt result: **FAIL / uncomparable**, not a gate pass. The
+tracked corpus contains 2,064 `.moss` sources. The gate ran 519 package target
+queries and completed 2,029 paired or standalone file checks, reporting 675
+enumerated package/terminal diagnostics; 35 source rows were not verified.
+There are 28 uncomparable rows. Categories:
+
+- 16 checker-internal failures during package/file checking (including
+  unresolved callable argument, concrete method effect target, state layout,
+  and message receiver), plus four signal-11 terminations. Some internal
+  failures reproduce on the prior baseline; they still prevent diagnostic-set
+  proof, and the adversarial review requires reduction before attributing them
+  to baseline-only behavior.
+- Six package/file terminal mismatches where missing/stale dependency
+  interfaces differ by source or module (`routekit`, `natural_system`, and
+  Toolkit app). These are not accepted as equivalent terminal results.
+- One Margo fixture graph references a package without a manifest, and one
+  file diagnostic (`MODULE_IDENTITY_UNRESOLVED` in `geometry_modules`) is
+  absent from package output.
+
+The earlier 12-row gate continues to pass, as do the targeted full-set oracle
+comparisons for Toolkit (9 files, 6 package diagnostics) and Calc (18 files, 4
+package diagnostics). Those do not supersede the corpus result. Exact terminal
+matches are limited pre-body coverage, not complete package/file diagnostic
+set equivalence. The Architect notes that the current acceptance rule allows a
+package terminal if any one file matches while other files return an empty
+complete body set. This must not be described as full-target coverage.
+
+The corpus log is reproducible with:
+
+```sh
+python3 tests/tooling/check_phase26_1_c1_corpus_oracle.py build/compiler/moss-dev
+```
+
+Do not mark C1 complete or begin T1 from this result. Next: reduce the crashes
+and internal invariants, fix the `geometry_modules` diagnostic mismatch,
+address package/file interface ordering and the malformed Margo fixture, and
+change terminal handling so partial pre-body checks are explicitly separate
+from complete diagnostic-set comparisons. Then rerun this gate and request
+Architect review of that exact tree.
+
+After these oracle and report edits, `make --jobs="$(nproc)" check` passed
+145/145 locally in 236.74 s, including `shard_fast_debug`. This validates the
+ordinary regression suite on the implementation tree; it does not make the
+failed corpus oracle green. The Architect reviewed base `a60f21db` plus this
+worktree diff and returned **NO-GO** for C1, confirming all 28 rows and the 35
+unverified sources noted above.

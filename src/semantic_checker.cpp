@@ -621,7 +621,10 @@ class Checker {
     {
       CompilerStageTimer timer("specialization_checking");
       check_method_ownership();
-      for (const auto& f : p_.functions) check_function(f);
+      for (const auto& f : p_.functions)
+        run_phase26_c1_oracle_owner(
+            f.semantic_callable_id, f.source_file,
+            [&] { check_function(f); });
       refresh_open_nominal_constructor_results_from_checked_types();
       refresh_open_arithmetic_summaries_from_checked_types();
       refresh_open_collection_summaries_from_checked_types();
@@ -646,8 +649,14 @@ class Checker {
                     "' has unresolved callback effects in its open ABI-v10 summary",
                 "SOURCE_FREE_CALLABLE_EFFECTS_UNRESOLVED");
         }
-      for (const auto& d : p_.domains) check_domain(d);
-      if (p_.main) check_main(*p_.main);
+      for (const auto& d : p_.domains)
+        run_phase26_c1_oracle_owner(
+            "domain:" + d.name + "@" + std::to_string(d.line),
+            d.source_file, [&] { check_domain(d); });
+      if (p_.main)
+        run_phase26_c1_oracle_owner(
+            "main@" + std::to_string(p_.main->line),
+            p_.main->source_file, [&] { check_main(*p_.main); });
       check_test_and_benchmark_declarations();
       if (!p_.file_check_scope) validate_staged_nominal_map_key_proofs();
     }
@@ -1795,6 +1804,7 @@ class Checker {
                   << infer_handler_reply_types_rounds_ << '\n';
       }
     }
+    if (p_.phase26_c1_oracle) p_.phase26_c1_oracle_complete = true;
   }
 
   const vector<Warning>& warnings() const { return warnings_; }
@@ -7939,6 +7949,36 @@ class Checker {
 #include "fileio_semantics.inc"
 #include "borrowed_view_write.inc"
 
+  template <typename Action>
+  void run_phase26_c1_oracle_owner(const string& identity,
+                                  const string& source_file,
+                                  Action&& action) {
+    if (!p_.phase26_c1_oracle) {
+      action();
+      return;
+    }
+    try {
+      action();
+    } catch (const CompileError& error) {
+      CompileError captured = error;
+      if (captured.source_file.empty()) captured.source_file = source_file;
+      if (captured.semantic_identity.empty())
+        captured.semantic_identity = identity;
+      const bool duplicate = std::any_of(
+          p_.phase26_c1_oracle_diagnostics.begin(),
+          p_.phase26_c1_oracle_diagnostics.end(),
+          [&](const CompileError& prior) {
+            return prior.code == captured.code &&
+                prior.what() == captured.what() &&
+                prior.source_file == captured.source_file &&
+                prior.line == captured.line &&
+                prior.semantic_identity == captured.semantic_identity;
+          });
+      if (duplicate) return;
+      p_.phase26_c1_oracle_diagnostics.push_back(std::move(captured));
+    }
+  }
+
   [[noreturn]] void err(int line, const string& msg) const {
     CompileError error(line, msg);
     if (!current_source_file_.empty()) error.source_file = current_source_file_;
@@ -8985,6 +9025,9 @@ class Checker {
       current_object_ = &object;
       for (auto& method : const_cast<ObjectType&>(object).methods) {
         string method_source = method.source_file.empty() ? object.source_file : method.source_file;
+        run_phase26_c1_oracle_owner(
+            "method:" + object.name + "." + method.name + "@" +
+                std::to_string(method.line), method_source, [&] {
         current_source_file_ = method_source;
         string signature = method.name + "/" + std::to_string(method.params.size());
         TypeEnv env;
@@ -9051,6 +9094,7 @@ class Checker {
               *method.result_expression, final_env, "return-value");
         if (!method.return_type && has_value_return)
           err(method_source, method.line, "cannot infer return type for method '" + object.name + "." + method.name + "'");
+        });
       }
       current_object_ = nullptr;
     }
@@ -9415,6 +9459,9 @@ class Checker {
     std::set<string> state_names, handler_names;
     for (const auto& f : d.state) {
       string f_source = f.source_file.empty() ? d.source_file : f.source_file;
+      run_phase26_c1_oracle_owner(
+          "domain:" + d.name + "@" + std::to_string(d.line),
+          f_source, [&] {
       if (canonical_type_name(f.type) != "FileIO" &&
           fileio_contains_scoped_type(f.type))
         err(f.line, "borrowed Range views cannot be stored in domain state",
@@ -9438,9 +9485,13 @@ class Checker {
               "domain state initializers must be side-effect-free and cannot perform message, domain, I/O, failing, or divergent work");
         }
       }
+      });
     }
     std::set<string> route_names;
     for (const auto& route : d.routes) {
+      run_phase26_c1_oracle_owner(
+          "domain:" + d.name + "@" + std::to_string(d.line),
+          route.source_file, [&] {
       if (!domains_.count(route.type))
         err(route.source_file, route.line,
             "unknown domain route type '" + route.type + "'");
@@ -9450,9 +9501,13 @@ class Checker {
       if (state_names.count(route.name))
         err(route.source_file, route.line,
             "duplicate domain member '" + route.name + "' (state and route share one namespace)");
+      });
     }
     for (const auto& h : d.handlers) {
       string h_source = h.source_file.empty() ? d.source_file : h.source_file;
+      run_phase26_c1_oracle_owner(
+          "handler:" + d.name + "." + h.name + "@" +
+              std::to_string(h.line), h_source, [&] {
       current_source_file_ = h_source;
       SourceFileScope semantic_context(
           current_semantic_context_,
@@ -9597,6 +9652,7 @@ class Checker {
           [](const FailureArm& arm) { return !arm.captures.empty(); });
       const_cast<Handler&>(h).phase21_capture_carrier_type = has_captures
           ? "__MossRaisedCarrier_" + d.name + "_" + h.name : string();
+      });
     }
   }
 
@@ -9909,33 +9965,41 @@ class Checker {
   void check_test_and_benchmark_declarations() {
     std::set<string> test_names;
     for (const auto& test : p_.tests) {
-      if (!test_names.insert(test.name).second)
-        err(test.source_file, test.line,
-            "duplicate test name '" + test.name + "'");
-      TypeEnv env;
-      env = check_stmts(test.body, std::move(env), nullptr, nullptr);
-      check_closed_body_types(test.body, env, test.line);
-      OwnershipEnv ownership;
-      ownership.types = std::move(env);
-      SourceFileScope source_scope(current_source_file_, test.source_file);
-      SourceFileScope semantic_context(
-          current_semantic_context_, "test:" + test.name);
-      check_ownership(test.body, std::move(ownership), nullptr, nullptr);
+      run_phase26_c1_oracle_owner(
+          test.semantic_identity, test.source_file, [&] {
+            SourceFileScope source_scope(current_source_file_, test.source_file);
+            SourceFileScope semantic_context(
+                current_semantic_context_, "test:" + test.name);
+            if (!test_names.insert(test.name).second && !p_.file_check_scope)
+              err(test.source_file, test.line,
+                  "duplicate test name '" + test.name + "'");
+            TypeEnv env;
+            env = check_stmts(test.body, std::move(env), nullptr, nullptr);
+            check_closed_body_types(test.body, env, test.line);
+            OwnershipEnv ownership;
+            ownership.types = std::move(env);
+            check_ownership(test.body, std::move(ownership), nullptr, nullptr);
+          });
     }
     std::set<string> benchmark_names;
     for (const auto& benchmark : p_.benchmarks) {
-      if (!benchmark_names.insert(benchmark.name).second)
-        err(benchmark.source_file, benchmark.line,
-            "duplicate benchmark name '" + benchmark.name + "'");
-      TypeEnv env;
-      env = check_stmts(benchmark.body, std::move(env), nullptr, nullptr);
-      check_closed_body_types(benchmark.body, env, benchmark.line);
-      OwnershipEnv ownership;
-      ownership.types = std::move(env);
-      SourceFileScope source_scope(current_source_file_, benchmark.source_file);
-      SourceFileScope semantic_context(
-          current_semantic_context_, "bench:" + benchmark.name);
-      check_ownership(benchmark.body, std::move(ownership), nullptr, nullptr);
+      run_phase26_c1_oracle_owner(
+          benchmark.semantic_identity, benchmark.source_file, [&] {
+            SourceFileScope source_scope(current_source_file_, benchmark.source_file);
+            SourceFileScope semantic_context(
+                current_semantic_context_, "bench:" + benchmark.name);
+            if (!benchmark_names.insert(benchmark.name).second &&
+                !p_.file_check_scope)
+              err(benchmark.source_file, benchmark.line,
+                  "duplicate benchmark name '" + benchmark.name + "'");
+            TypeEnv env;
+            env = check_stmts(benchmark.body, std::move(env), nullptr, nullptr);
+            check_closed_body_types(benchmark.body, env, benchmark.line);
+            OwnershipEnv ownership;
+            ownership.types = std::move(env);
+            check_ownership(benchmark.body, std::move(ownership), nullptr,
+                            nullptr);
+          });
     }
   }
 
@@ -20734,22 +20798,27 @@ class Checker {
     for (const auto& object : p_.objects) {
       current_object_ = &object;
       for (const auto& method : object.methods) {
-        SourceFileScope source_scope(current_source_file_, method.source_file);
-        SourceFileScope semantic_context(
-            current_semantic_context_,
-            "method:" + object.name + "." + method.name);
-        OwnershipEnv ownership;
-        ownership.types["self"] = object.name;
-        for (const auto& field : object.fields)
-          ownership.types[field.name] = field.type;
-        for (const auto& parameter : method.params)
-          ownership.types[parameter.name] = parameter.type;
-        OwnershipEnv final_ownership = check_ownership(
-            method.body, std::move(ownership), nullptr, nullptr);
-        if (method.result_expression)
-          check_ownership_expression(
-              method.result_line ? method.result_line : method.line,
-              *method.result_expression, final_ownership, Effect::Consume);
+        run_phase26_c1_oracle_owner(
+            "method:" + object.name + "." + method.name + "@" +
+                std::to_string(method.line), method.source_file, [&] {
+              SourceFileScope source_scope(current_source_file_, method.source_file);
+              SourceFileScope semantic_context(
+                  current_semantic_context_,
+                  "method:" + object.name + "." + method.name);
+              OwnershipEnv ownership;
+              ownership.types["self"] = object.name;
+              for (const auto& field : object.fields)
+                ownership.types[field.name] = field.type;
+              for (const auto& parameter : method.params)
+                ownership.types[parameter.name] = parameter.type;
+              OwnershipEnv final_ownership = check_ownership(
+                  method.body, std::move(ownership), nullptr, nullptr);
+              if (method.result_expression)
+                check_ownership_expression(
+                    method.result_line ? method.result_line : method.line,
+                    *method.result_expression, final_ownership,
+                    Effect::Consume);
+            });
       }
       current_object_ = nullptr;
     }
