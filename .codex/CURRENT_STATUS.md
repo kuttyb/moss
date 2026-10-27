@@ -1,9 +1,9 @@
 # Phase 26.1.1 — ABI-v10 Section 2 checkpoint — 2026-10-27
 
-- Active branch `phase26-1-m1`; latest pushed checkpoint `b7a7890d`. A complete run there finished 142/148 passed, with six failures subsequently reproduced and repaired in the uncommitted worktree. The additional Section 1 generic dependency and v10 parser fix makes the SDK Fast Debug edge tests pass; v10 Section 1 mutation tools now ignore the Section 2 trailer.
-- Current focused evidence: C1 scope/package probes, Phase 21 A–F/root-totality, Phase 20 Executor/FileIO, Phase 25 S1/S2/S-B, typed semantic API, Team A, builtin generic typing (129/129), X1 ABI-v9/v10, Phase 15.9, Phase 22.4, Phase 106, G2 conformance (11/11), R2 WP1/WP2/WP3, and the complete ABI-v10 units shard pass. The latest compiler also passes `sdk/text-encoding-acceptance` Fast Debug tests (3/3).
+- Active branch `phase26-1-m1`; latest pushed checkpoint `beb27000`. The full uninterrupted `make --jobs="$(nproc)" check` on that exact commit passed: **148/148 jobs, 0 failures, 0 skipped**; runner wall time 241.54s. This includes the v10 suites and all six repaired failures from the preceding full run.
+- Focused evidence also passes: C1 scope/package probes, Phase 21 A–F/root-totality, Phase 20 Executor/FileIO, Phase 25 S1/S2/S-B, typed semantic API, Team A, builtin generic typing (129/129), X1 ABI-v9/v10, Phase 15.9, Phase 22.4, Phase 106, G2 conformance (11/11), R2 WP1/WP2/WP3, ABI-v10 units, and SDK text-encoding Fast Debug (3/3).
 - The uninterrupted baseline at `fc6331d08146f7150378ee3728b228e915e078e5` remains 130/146 passed, 16 failed, 0 skipped. Baseline triage and repair dispositions are in `docs/phase26/PHASE_26_1_1_X2_RESULTS.md`.
-- Next: run `git diff --check`, Python compilation, and feedback validation; checkpoint and push the follow-up repairs; run an uninterrupted full `make --jobs="$(nproc)" check` on that commit; finalize the six expectation audits and obtain frozen X1+X2 Architect review. X3 and X4 follow.
+- Next: record the exact full-suite result and audit disposition in the status/results docs, checkpoint and push; rerun `make check` on the frozen documentation checkpoint; then obtain Architect review of X1+X2 and explicit acceptance of all six expectation audits. X3 and X4 follow.
 
 ## Baseline and triage — 2026-10-27
 

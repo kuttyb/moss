@@ -68,7 +68,8 @@ The full `make --jobs="$(nproc)" check` at `b7a7890d` completed uninterrupted:
 `check_phase25_conformance`, `check_phase25_r2_wp1_call_chain`,
 `check_phase25_r2_wp2_member`, `check_phase25_r2_wp3_nominal`,
 `sdk_text_encoding`, and `shard_abi_v10_units`. The repairs below address them;
-a second uninterrupted run on a new frozen commit is pending.
+the follow-up commit and full-suite result are recorded after the repair
+disposition below.
 
 ## Complete baseline at `fc6331d08146f7150378ee3728b228e915e078e5`
 
@@ -140,7 +141,12 @@ digest-covered body is now emitted in Section 1, and the v10 reader parses
 private generic dependency bodies while continuing to ignore legacy body
 records for exported callables that use checked-body records. The SDK Fast
 Debug tests, all three R2 suites, G2 11/11, and the complete ABI-v10 units shard
-pass on the current worktree.
+passed. These repairs were committed as `beb27000` and pushed. The full
+uninterrupted `make --jobs="$(nproc)" check` on `beb27000` passed: **148 passed,
+0 failed, 0 skipped**, with 241.54 seconds suite wall time. This run includes
+the v10 suites, all six repaired jobs, and the six audited expectation suites.
+Architect review of the six expectation changes and frozen X1+X2 checkpoint is
+still pending.
 
 ### Audit of the six existing dependency/interface expectation edits
 
