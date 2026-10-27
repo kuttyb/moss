@@ -5,17 +5,18 @@
 | Mode | Commands | Rule |
 |---|---|---|
 | Emits Rust | `moss build`, native `moss test`, `moss bench`, `margo build`, `margo run`, `margo test` | Unchanged package rules: check the whole package; load other packages through `.mossi` only. |
-| Edit-compile-test | `moss check <file>`, `moss run --interp`, `moss test --interp`, `moss debug`, `margo test --interp`, `margo debug` | Check only the selected entry points and the functions, handlers, and domains they reach. Dependency bodies come from checked package snapshots, never dependency `.moss` source. |
+| Edit-compile-test | `moss check <file>`, `moss run --interp`, `moss test --interp`, `moss debug`, `margo test --interp`, `margo debug` | Check only the selected entry points and the functions, handlers, and domains they reach. Dependency bodies come from checked `.mossi` interfaces, never dependency `.moss` source. |
 
 ## Invariants
 
 - **R8 — no dependency source:** edit-compile-test commands do not parse or
   check dependency package `.moss` files. Dependency bodies are read only from
-  that package's checked snapshot.
-- **R9 — snapshots current first:** Margo makes dependency snapshots current
-  before Fast Debug execution, as `margo build --check` does. Missing or stale
-  snapshots are rebuilt or produce an error directing the user to
-  `margo build --check`; execution never falls back to source.
+  that package's `.mossi` Section 2; generic bodies continue to use the
+  existing Section 1 ABI-v9 path.
+- **R9 — interfaces current first:** Margo makes dependency `.mossi` files
+  current before Fast Debug execution, as `margo build --check` does. A missing
+  or stale interface is rebuilt or produces an error directing the user to
+  `margo build --check`; execution never falls back to dependency source.
 - **R10 — behavior parity:** for reachable code, Fast Debug preserves stdout,
   exit status, and trace events.
 - **R11 — selected entries define reachability:**
@@ -27,27 +28,34 @@
     and domains built from the entries.
 - **R12 — checked execution guard:** the interpreter must not execute a
   function that was neither checked in the current run nor loaded from a
-  current dependency snapshot. Attempting this is a loud internal error.
+  current dependency `.mossi`. Attempting this is a loud internal error.
 - **R13 — dependency generics:** when an app instantiates a dependency generic,
-  check that concrete instantiation using the generic body from the dependency
-  snapshot. Importing the package alone does not check the generic body.
+  check that concrete instantiation using the existing Section 1 generic body
+  from `.mossi`. Importing the package alone does not check the generic body.
 - **Source-root override removal:** remove `MOSS_FAST_DEBUG_SOURCE_ROOTS` and
   its allowlist behavior once R8 is enforced.
 
-## Snapshot and source-location artifacts
+## `.mossi` sections and source-location sidecar
 
-- `margo build --check` writes one checked-program snapshot per package next
-  to its `.mossi`. The snapshot and interface use the same package fingerprint
-  so their checked facts cannot drift apart.
-- The snapshot must carry generic bodies in a representation the consumer can
-  instantiate and check. ABI v10 checked bodies already present in `.mossi`
-  must be reused rather than duplicated. If R13 cannot be supported without
-  duplication, stop and report the ABI decision; do not fall back to source.
+- The `.mossi` is the only body store. Section 1 contains signatures and the
+  generic bodies already emitted by ABI v9. Its interface digest is G1's input
+  and covers Section 1 only.
+- Section 2 contains checked executable bodies for non-generic functions,
+  methods, and handlers in the representation Fast Debug executes. Section 2
+  has its own integrity hash and package-fingerprint binding, but is excluded
+  from the Section 1 interface digest and downstream package fingerprints. A
+  stale `.mossi` is stale as a whole. Do not add another index unless X2 proves
+  one is needed.
+- X1 gate: editing a non-generic dependency body changes Section 2, preserves
+  the Section 1 digest, and rechecks zero dependents. Editing a generic body
+  changes the Section 1 digest and rechecks only affected consumers. Generic
+  instantiation continues through the existing T1/ABI-v9 generic-body path;
+  do not expand staged ABI-v10 checked-body coverage in this phase.
 - `margo build --check` also writes declaration source locations (file and
-  line) to a sidecar next to `.mossi`. The sidecar is outside the interface
-  digest and package fingerprint. Queries/editor navigation use it without
-  parsing or checking dependency source. A source-location-only edit updates
-  the sidecar without causing downstream package rechecks.
+  line) to a separate sidecar next to `.mossi`. The sidecar is outside the
+  interface digest and package fingerprint. Queries/editor navigation use it
+  without parsing or checking dependency source. A source-location-only edit
+  updates the sidecar without causing downstream package rechecks.
 
 ## Work order and acceptance gates
 
@@ -56,8 +64,8 @@
    expected checked functions by identity. Cover an edited dependency function
    reached by a test, an unrelated test, app-only edits, E1 dependency snapshot
    regeneration, and G1 E2/E3 propagation.
-2. **X1:** implement the paired per-package snapshot and prove R13 feasibility
-   before continuing.
+2. **X1:** implement the two `.mossi` sections and prove the E1/generic-edit
+   digest and recheck behavior before continuing.
 3. **X2:** implement entry-scoped root Fast Debug checking, R12's execution
    guard, Margo snapshot refresh for `debug` and `test --interp`, and remove the
    source-root override.
