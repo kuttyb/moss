@@ -20108,11 +20108,44 @@ static string encode_execution_body_payload(
     payload << "private_object_end\n";
   }
 
+  // An enum carried by Section 1 for an exported generic's checked error
+  // body is already authoritative execution metadata. Do not duplicate it in
+  // Section 2: the reader will materialize the same declaration from the
+  // generic_error_enum record.
+  std::set<string> section1_generic_error_enums;
+  for (const auto& enumeration : program.enums) {
+    if (enumeration.exported || module_name_from_symbol(enumeration.name) != module ||
+        enumeration.source_file == "<moss-std>") continue;
+    const bool required = std::any_of(program.functions.begin(),
+        program.functions.end(), [&](const Function& function) {
+      if (!function.exported || !function.generic ||
+          module_name_from_symbol(function.name) != module)
+        return false;
+      return std::any_of(function.body.begin(), function.body.end(),
+          [&](const Stmt& statement) {
+        return std::any_of(statement.exceptional_alternatives.begin(),
+            statement.exceptional_alternatives.end(),
+            [&](const RaisedIdentity& raised) {
+          if (raised.kind != RaisedIdentityKind::EnumVariant) return false;
+          const string type = canonical_type_name(raised.type);
+          const string candidate = canonical_type_name(enumeration.name);
+          if (type == candidate) return true;
+          const auto separator = type.rfind("::");
+          return separator != string::npos &&
+              type.substr(separator + 2) ==
+                  enumeration.name.substr(module.size() + 2);
+        });
+      });
+    });
+    if (required) section1_generic_error_enums.insert(enumeration.name);
+  }
+
   vector<const EnumType*> private_enums;
   for (const auto& enumeration : program.enums)
     if (!enumeration.exported &&
         module_name_from_symbol(enumeration.name) == module &&
-        !program.external_modules.count(module))
+        !program.external_modules.count(module) &&
+        !section1_generic_error_enums.count(enumeration.name))
       private_enums.push_back(&enumeration);
   std::sort(private_enums.begin(), private_enums.end(),
             [](const EnumType* left, const EnumType* right) {
@@ -24573,7 +24606,7 @@ static moss::Program load_checked_interpreter_program(
       auto sources = moss::fast_debug_source_closure(
           context, moss::DependencySourceRootAccess::AllowlistedFastDebug);
       auto checked = moss::check_project_sources(
-          context.manifest, sources, context.mode);
+          context.manifest, sources, context.mode, {}, nullptr, nullptr, false);
       if (!checked.program.external_modules.empty() &&
           !fast_debug_execution_bodies_complete(checked.program)) {
         string missing = *checked.program.external_modules.begin();

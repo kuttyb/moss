@@ -65,11 +65,15 @@ def main() -> int:
         "type HiddenBox:\n  value: Int\n"
         "  fn increment(amount: Int) -> Int:\n    return amount + 1\n"
         "fn hidden_helper(value: Int) -> Int:\n  return value + 1\n"
+        "enum GenericFailure:\n  Bad(code: Int)\n"
         "export fn value() -> Int:\n"
         "  hidden = HiddenBox(value: hidden_helper(1))\n"
         "  tag = Hidden.Value(value: hidden.increment(hidden_helper(1)))\n"
         "  return hidden.increment(hidden_helper(1))\n"
-        "export fn identity(value):\n  return value\n", encoding="utf-8")
+        "export fn identity(value):\n  return value\n"
+        "export fn maybe(value) -> Int:\n"
+        "  if value == 0:\n    raise GenericFailure.Bad(code: value)\n"
+        "  return value\n", encoding="utf-8")
     lib_source.write_text(lib_source.read_text() +
         "export enum Failure:\n  Bad\n"
         "export domain Worker:\n"
@@ -121,19 +125,46 @@ def main() -> int:
                             stderr=subprocess.PIPE)
     if native.returncode:
         raise RuntimeError(f"margo build failed:\n{native.stdout}\n{native.stderr}")
-    execution_env = env.copy()
-    execution_env.pop("MOSS_FAST_DEBUG_SOURCE_ROOTS", None)
-    execution_env["MOSS_MODULE_PATH"] = str(library / "build" / "debug")
-    interpreted = subprocess.run(
-        [str(MOSS), "run", "--interp", "--trace", str(app / "src" / "main.moss")],
-        cwd=app, env=execution_env, text=True, stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE)
-    if interpreted.returncode or interpreted.stdout != "4\n7\n9\n":
+    def interpret(profile: str) -> tuple[subprocess.CompletedProcess[str], list[dict]]:
+        execution_env = env.copy()
+        execution_env.pop("MOSS_FAST_DEBUG_SOURCE_ROOTS", None)
+        execution_env["MOSS_MODULE_PATH"] = str(library / "build" / profile)
+        result = subprocess.run(
+            [str(MOSS), "run", "--interp", "--trace",
+             str(app / "src" / "main.moss")],
+            cwd=app, env=execution_env, text=True, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE)
+        events = [json.loads(line) for line in result.stderr.splitlines()
+                  if line.startswith("{")]
+        return result, events
+
+    check_only_dir = library / "build" / "check-debug"
+    check_only_rlibs = list(check_only_dir.rglob("*.rlib"))
+    if check_only_rlibs:
         raise AssertionError(
-            f"Section 2 Fast Debug output mismatch: {interpreted.returncode}, "
-            f"{interpreted.stdout!r}, {interpreted.stderr}")
-    trace = [json.loads(line) for line in interpreted.stderr.splitlines()
-             if line.startswith("{")]
+            f"check-only profile unexpectedly emitted rlibs: {check_only_rlibs}")
+    interpreted, trace = interpret("check-debug")
+    native_interpreted, native_trace = interpret("debug")
+    for profile, result in (("check-only", interpreted),
+                            ("native", native_interpreted)):
+        if result.returncode or result.stdout != "4\n7\n9\n":
+            raise AssertionError(
+                f"{profile} Section 2 Fast Debug output mismatch: "
+                f"{result.returncode}, {result.stdout!r}, {result.stderr}")
+    def normalized_trace(events: list[dict]) -> list[dict]:
+        normalized = []
+        for event in events:
+            record = dict(event)
+            source_file = record.get("source_file", "")
+            if source_file.endswith(".mossi"):
+                # ABI-v9 generic bodies retain their existing Section 1 source
+                # spelling; X3 adds source locations for editor navigation.
+                record["source_file"] = "<generic-section1>"
+            normalized.append(record)
+        return normalized
+
+    if normalized_trace(trace) != normalized_trace(native_trace):
+        raise AssertionError("check-only and native dependency traces differ")
     provider_events = [event for event in trace
                        if event.get("function", "").endswith("value")]
     if not provider_events or any(
@@ -153,6 +184,10 @@ def main() -> int:
     if ('private_object "x1_library__HiddenBox"' not in executable_section or
             'private_enum "x1_library__Hidden"' not in executable_section):
         raise AssertionError("Section 2 omitted private nominal declarations")
+    if 'private_enum "x1_library__GenericFailure"' in executable_section or \
+            'generic_error_enum "GenericFailure"' not in interface.read_text():
+        raise AssertionError(
+            "private generic error enum was not reused from Section 1")
     print(json.dumps({"initial": sorted(checked(initial)),
                       "non_generic_e1": sorted(checked(non_generic)),
                       "generic_body_edit": sorted(checked(generic)),
