@@ -53,6 +53,50 @@ def refresh_v9_execution_section(text: str) -> str:
         "interface_digest " + digest_match.group(1), payload)
     if count != 1:
         raise AssertionError(f"expected one Section 2 interface binding, got {count}")
+    # Forged Section 1 tests may add a failure arm to probe ABI validation.
+    # Keep the separately framed execution bodies structurally aligned so the
+    # test reaches the intended Section 1 validation instead of failing at the
+    # earlier cross-section consistency check.
+    interface_counts = {
+        match.group(1): int(match.group(2))
+        for match in re.finditer(
+            r'(?m)^  handler_failure_arms "([^"]+)" ([0-9]+)$', prefix)
+    }
+    handler_pattern = re.compile(
+        r'(?m)^handler ("[^"]+") ("[^"]+") ([0-9]+) '
+        r'("[^"]+") ([0-9]+) ([0-9]+)$')
+    rebuilt = []
+    cursor = 0
+    for match in handler_pattern.finditer(payload):
+        rebuilt.append(payload[cursor:match.start()])
+        owner, quoted_name, line, source_path, statement_count, old_count = \
+            match.groups()
+        name = bytes(quoted_name[1:-1], "utf-8").decode("unicode_escape")
+        desired = interface_counts.get(name, int(old_count))
+        handler_end = payload.find("handler_end\n", match.end())
+        if handler_end < 0:
+            raise AssertionError("unterminated handler in execution section")
+        handler_end += len("handler_end\n")
+        body = payload[match.end():handler_end - len("handler_end\n")]
+        if body.startswith("\n"):
+            body = body[1:]
+        arm_pattern = re.compile(
+            r'(?ms)^failure_arm ([0-9]+) ([0-9]+) ([0-9]+)\n'
+            r'.*?^failure_arm_end\n')
+        arms = list(arm_pattern.finditer(body))
+        if len(arms) != desired:
+            if len(arms) > desired:
+                body = body[:arms[desired].start()]
+            else:
+                body += "".join(
+                    f"failure_arm {index} {line} 0\nfailure_arm_end\n"
+                    for index in range(len(arms), desired))
+        rebuilt.append(
+            f"handler {owner} {quoted_name} {line} {source_path} "
+            f"{statement_count} {desired}\n{body}handler_end\n")
+        cursor = handler_end
+    rebuilt.append(payload[cursor:])
+    payload = "".join(rebuilt)
     header = (
         "execution_body_version 1\n"
         f"execution_body_length {len(payload.encode('utf-8'))}\n"

@@ -61,11 +61,26 @@ def main() -> int:
     lib_source = library / "src" / "x1_library.moss"
     lib_source.write_text(
         "module x1_library\n"
-        "export fn value() -> Int:\n  return 1\n"
+        "enum Hidden:\n  Value(value: Int)\n"
+        "type HiddenBox:\n  value: Int\n"
+        "  fn increment(amount: Int) -> Int:\n    return amount + 1\n"
+        "fn hidden_helper(value: Int) -> Int:\n  return value + 1\n"
+        "export fn value() -> Int:\n"
+        "  hidden = HiddenBox(value: hidden_helper(1))\n"
+        "  tag = Hidden.Value(value: hidden.increment(hidden_helper(1)))\n"
+        "  return hidden.increment(hidden_helper(1))\n"
         "export fn identity(value):\n  return value\n", encoding="utf-8")
+    lib_source.write_text(lib_source.read_text() +
+        "export enum Failure:\n  Bad\n"
+        "export domain Worker:\n"
+        "  fn Run() -> Int:\n    raise Failure.Bad\n"
+        "  on_fail Failure.Bad:\n    reply 9\n", encoding="utf-8")
     (app / "src" / "main.moss").write_text(
-        "module x1_app\nimport x1_library\nfn main():\n  echo x1_library.value()\n"
-        "  echo x1_library.identity(7)\n", encoding="utf-8")
+        "module x1_app\nimport x1_library\nfn main():\n"
+        "  worker = x1_library.Worker()\n"
+        "  echo x1_library.value()\n"
+        "  echo x1_library.identity(7)\n"
+        "  echo message worker.Run()\n", encoding="utf-8")
     env = os.environ.copy()
     env["MOSS"] = str(MOSS)
 
@@ -75,7 +90,9 @@ def main() -> int:
     if checked(initial) != {"x1_library", "x1_app"}:
         raise AssertionError(f"initial check did not build both packages: {initial}")
 
-    lib_source.write_text(lib_source.read_text().replace("return 1", "return 2", 1),
+    lib_source.write_text(lib_source.read_text().replace(
+        "fn hidden_helper(value: Int) -> Int:\n  return value + 1",
+        "fn hidden_helper(value: Int) -> Int:\n  return value + 2", 1),
                           encoding="utf-8")
     non_generic = run(env)
     body_header, body_hash, body_payload = section(interface)
@@ -88,7 +105,9 @@ def main() -> int:
     if checked(non_generic) != {"x1_library"}:
         raise AssertionError(f"non-generic E1 did not check only provider: {non_generic}")
 
-    lib_source.write_text(lib_source.read_text().replace("return value", "return (value)", 1),
+    lib_source.write_text(lib_source.read_text().replace(
+        "export fn identity(value):\n  return value",
+        "export fn identity(value):\n  return (value)", 1),
                           encoding="utf-8")
     generic = run(env)
     generic_header, _, _ = section(interface)
@@ -109,7 +128,7 @@ def main() -> int:
         [str(MOSS), "run", "--interp", "--trace", str(app / "src" / "main.moss")],
         cwd=app, env=execution_env, text=True, stdout=subprocess.PIPE,
         stderr=subprocess.PIPE)
-    if interpreted.returncode or interpreted.stdout != "2\n7\n":
+    if interpreted.returncode or interpreted.stdout != "4\n7\n9\n":
         raise AssertionError(
             f"Section 2 Fast Debug output mismatch: {interpreted.returncode}, "
             f"{interpreted.stdout!r}, {interpreted.stderr}")
@@ -121,6 +140,19 @@ def main() -> int:
             event.get("source_file") != str(lib_source)
             for event in provider_events):
         raise AssertionError(f"dependency trace lost source locations: {provider_events}")
+    executed = {event.get("function") for event in trace
+                if event.get("event") in {"FunctionEnter", "MethodEnter"}}
+    required_execution = {"x1_library__hidden_helper",
+                          "x1_library__HiddenBox.increment"}
+    if not required_execution.issubset(executed):
+        raise AssertionError(
+            f"source-free execution missed helper/method bodies: {executed}")
+    if not any(event.get("event") == "on_fail" for event in trace):
+        raise AssertionError("source-free execution missed handler failure-arm body")
+    _, _, executable_section = section(interface)
+    if ('private_object "x1_library__HiddenBox"' not in executable_section or
+            'private_enum "x1_library__Hidden"' not in executable_section):
+        raise AssertionError("Section 2 omitted private nominal declarations")
     print(json.dumps({"initial": sorted(checked(initial)),
                       "non_generic_e1": sorted(checked(non_generic)),
                       "generic_body_edit": sorted(checked(generic)),

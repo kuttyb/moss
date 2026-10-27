@@ -13815,6 +13815,77 @@ static void parse_execution_body_payload(const ExecutionBodySectionView& section
     if (line.empty())
       throw CompileError(0, "empty record in ABI-v9 execution-body section",
                          "SOURCE_FREE_EXECUTION_BODY_INVALID");
+    if (starts_with(line, "private_enum ")) {
+      std::istringstream header(line.substr(13));
+      string name, source_path, trailing;
+      int declaration_line = 0;
+      size_t case_count = 0;
+      if (!(header >> std::quoted(name) >> declaration_line >>
+            std::quoted(source_path) >> case_count) || name.empty() ||
+          case_count > 100000 || (header >> trailing))
+        throw CompileError(std::max(declaration_line, 0),
+            "invalid private enum in ABI-v9 execution-body section",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      if (std::any_of(provider.enums.begin(), provider.enums.end(),
+              [&](const EnumType& enumeration) {
+                return execution_body_short_name(enumeration.name) ==
+                    execution_body_short_name(name);
+              }))
+        throw CompileError(std::max(declaration_line, 0),
+            "duplicate private enum in ABI-v9 execution-body section",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      EnumType enumeration;
+      enumeration.name = execution_body_short_name(name);
+      enumeration.exported = false;
+      enumeration.line = declaration_line;
+      enumeration.source_file = execution_body_resolve_source_path(
+          file, source_path);
+      std::set<string> case_names;
+      for (size_t index = 0; index < case_count; ++index) {
+        if (!std::getline(input, line) ||
+            !starts_with(line, "private_enum_case "))
+          throw CompileError(std::max(declaration_line, 0),
+              "missing private enum case in ABI-v9 execution-body section",
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+        std::istringstream case_header(line.substr(18));
+        EnumCase item;
+        size_t field_count = 0;
+        if (!(case_header >> std::quoted(item.name) >> item.line >>
+              field_count) || item.name.empty() || field_count > 100000 ||
+            !case_names.insert(item.name).second || (case_header >> trailing))
+          throw CompileError(std::max(declaration_line, 0),
+              "invalid private enum case in ABI-v9 execution-body section",
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+        std::set<string> field_names;
+        for (size_t field_index = 0; field_index < field_count;
+             ++field_index) {
+          if (!std::getline(input, line) ||
+              !starts_with(line, "private_enum_field "))
+            throw CompileError(std::max(item.line, 0),
+                "missing private enum field in ABI-v9 execution-body section",
+                "SOURCE_FREE_EXECUTION_BODY_INVALID");
+          std::istringstream field_header(line.substr(19));
+          Field field;
+          if (!(field_header >> std::quoted(field.name) >>
+                std::quoted(field.type) >> field.line) || field.name.empty() ||
+              field.type.empty() || !field_names.insert(field.name).second ||
+              (field_header >> trailing))
+            throw CompileError(std::max(item.line, 0),
+                "invalid private enum field in ABI-v9 execution-body section",
+                "SOURCE_FREE_EXECUTION_BODY_INVALID");
+          field.source_file = enumeration.source_file;
+          item.source_file = enumeration.source_file;
+          item.fields.push_back(std::move(field));
+        }
+        enumeration.cases.push_back(std::move(item));
+      }
+      if (!std::getline(input, line) || line != "private_enum_end")
+        throw CompileError(std::max(declaration_line, 0),
+            "unterminated private enum in ABI-v9 execution-body section",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      provider.enums.push_back(std::move(enumeration));
+      continue;
+    }
     if (starts_with(line, "private_object ")) {
       std::istringstream header(line.substr(15));
       string name, source_path;
@@ -20010,19 +20081,15 @@ static string encode_execution_body_payload(
     }
   }
 
-  // Private object declarations are execution support only when an exported
-  // callable reaches one of their methods. They never enter the interface
-  // digest or public export set.
+  // Private nominal declarations are execution support. A reached concrete
+  // body can construct/read a private object or instantiate a private enum
+  // without invoking a private method, so serialize package-local nominal
+  // shapes independently of callable closure. These records remain outside
+  // the interface digest and public export set.
   vector<const ObjectType*> private_objects;
   for (const auto& object : program.objects) {
     if (object.exported || module_name_from_symbol(object.name) != module ||
         program.external_modules.count(module)) continue;
-    const bool needed = std::any_of(object.methods.begin(), object.methods.end(),
-        [&](const Method& method) {
-          return execution_callables.count(
-              "method:" + object.name + "." + method.name) != 0;
-        });
-    if (!needed) continue;
     private_objects.push_back(&object);
   }
   std::sort(private_objects.begin(), private_objects.end(),
@@ -20039,6 +20106,32 @@ static string encode_execution_body_payload(
               << std::quoted(field.type) << " " << std::quoted(field.init)
               << " " << field.line << "\n";
     payload << "private_object_end\n";
+  }
+
+  vector<const EnumType*> private_enums;
+  for (const auto& enumeration : program.enums)
+    if (!enumeration.exported &&
+        module_name_from_symbol(enumeration.name) == module &&
+        !program.external_modules.count(module))
+      private_enums.push_back(&enumeration);
+  std::sort(private_enums.begin(), private_enums.end(),
+            [](const EnumType* left, const EnumType* right) {
+              return left->name < right->name;
+            });
+  for (const auto* enumeration : private_enums) {
+    payload << "private_enum " << std::quoted(enumeration->name) << " "
+            << enumeration->line << " "
+            << std::quoted(project_relative_path(manifest,
+                                                  enumeration->source_file))
+            << " " << enumeration->cases.size() << "\n";
+    for (const auto& item : enumeration->cases) {
+      payload << "private_enum_case " << std::quoted(item.name) << " "
+              << item.line << " " << item.fields.size() << "\n";
+      for (const auto& field : item.fields)
+        payload << "private_enum_field " << std::quoted(field.name) << " "
+                << std::quoted(field.type) << " " << field.line << "\n";
+    }
+    payload << "private_enum_end\n";
   }
 
   vector<const Function*> functions;

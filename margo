@@ -12,6 +12,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -539,6 +540,11 @@ def execution_body_package_fingerprint(interface: Path) -> str | None:
         raise MargoError(f"malformed execution-body package fingerprint in {interface}") from error
 
 
+def interface_native_abi(interface: Path) -> int | None:
+    match = re.search(rb"(?m)^native_abi ([0-9]+)$", interface.read_bytes())
+    return int(match.group(1)) if match else None
+
+
 def package_fingerprint(package: Package, release: bool, check_only: bool,
                         toolchain: dict, ordered: list[Package]) -> str:
     dependencies = []
@@ -662,6 +668,9 @@ def build_graph(root: Package, ordered: list[Package], release: bool,
                 if path.suffix != ".mossi":
                     continue
                 embedded = execution_body_package_fingerprint(path)
+                if interface_native_abi(path) == 9 and embedded is None:
+                    raise MargoError(
+                        f"new ABI-v9 .mossi is missing its execution-body section: {path}")
                 if embedded is not None and embedded != fingerprint:
                     raise MargoError(
                         f".mossi execution-body fingerprint mismatch for {path}: "

@@ -1,9 +1,10 @@
 # Phase 26.1.1 — X1 execution-section WIP checkpoint — 2026-10-27
 
-- Active branch `phase26-1-m1`, based at pushed `81331af3`; current source/test edits are checkpointed separately below. X1 remains incomplete and Architect GO is not available.
-- Focused `tests/tooling/check_phase26_1_1_x1.py` passes: non-generic E1 changes only the provider Section 2, generic edits propagate, and a direct Fast Debug trace uses dependency execution bodies.
-- `make moss-opt`, targeted Python compilation, and `git diff --check` pass. The targeted legacy suite is not green: `check_phase21_source_free_abi.py` exposes a mismatch between Section 1 handler failure-arm count and Section 2; `repro_phase21_mossi_pattern_forgery.py` reports an unknown execution-section record. `check_phase21_source_free_cache_binding.py` passes. Two other attempted scripts were invoked with the wrong Margo path and are not validation results.
-- Next: fix Section 2 handler failure-arm serialization/decoding and record parsing; rerun the affected tests with the repository `margo`; then request an exact-SHA Architect review. Do not start X2 until X1 gates and review are green.
+- Active branch `phase26-1-m1`, latest pushed checkpoint `67c363c1`; current X1 follow-up edits are pending a separate checkpoint. X1 remains incomplete and Architect GO is not available.
+- `tests/tooling/check_phase26_1_1_x1.py` passes with 40 trace events. The source-free fixture exercises private object construction, private enum construction, a private method, a helper call, and a handler failure arm. Non-generic E1 checks only `x1_library`; a generic-body edit checks `x1_library` and `x1_app`. Dependency traces retain the provider source path.
+- Targeted regressions pass with `MOSS=$PWD/build/compiler/moss-opt`: source-free ABI-v9, ABI-v9 migration, imported effects, forged handler metadata, and warm-cache binding. `make moss-opt`, Python compilation, and `git diff --check` pass. Full `make check` has not yet been rerun on these edits.
+- Architect reviewed `67c363c1` as structurally sound to continue, NO-GO for X1 completion. Findings now addressed in working tree: serialize private nominal shapes in Section 2 and require an execution section for newly emitted ABI-v9 `.mossi`; the focused source-free fixture covers helper/method/handler execution. Request review again on the next exact checkpoint.
+- Next: push these X1 fixes, rerun `make check` and the X1 gates, then request Architect review. Do not start X2 until X1 gates and review are green.
 
 ## X1 earlier pushed decoder checkpoint (historical)
 
