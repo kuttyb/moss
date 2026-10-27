@@ -306,7 +306,7 @@ def main() -> int:
     with (out / "m1_work_counters.csv").open("w", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=list(rows[0]), lineterminator="\n")
         writer.writeheader(); writer.writerows(rows)
-    lines = ["# Phase 26.1 M1 package work counters", "", f"- Main SHA: `{subprocess.check_output(['git','rev-parse','origin/main'], cwd=ROOT, text=True).strip()}`", f"- Measurement/compiler instrumentation SHA: `{subprocess.check_output(['git','rev-parse','HEAD'], cwd=ROOT, text=True).strip()}`",
+    lines = ["# Phase 26.1 M1 package work counters", "", f"- Main SHA: `{subprocess.check_output(['git','rev-parse','origin/main'], cwd=ROOT, text=True).strip()}`", f"- Measurement revision SHA: `{subprocess.check_output(['git','rev-parse','HEAD'], cwd=ROOT, text=True).strip()}`",
              "- The harness checks whether `margo build --check` is supported. On the pre-feature baseline it records the rejection and measures `margo build` as a full-work fallback.",
              "- Counter source: one `MOSS_PROFILE_COMPILER=1` compiler invocation per checked package; modules count source files in checked packages (these fixtures use one source module per file). `functions_checked` counts source function checker entries, summed across Checker instances. `inference_function_visits` is total inference visits, not unique functions.",
              "- The Margo rows are package-graph totals. The file-check rows profile the edited file with the built dependency interfaces on `MOSS_MODULE_PATH`.", "",

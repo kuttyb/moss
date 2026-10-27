@@ -1,6 +1,7 @@
 # Phase 26.1 M1 package work counters
 
 - Main SHA: `d109b8f17276f70b591432fd345d57e727f17501`
+- Measurement revision SHA: `a0ee71e1cc85f7640f181641194dbcf1b70e0aec`
 - The harness checks whether `margo build --check` is supported. On the pre-feature baseline it records the rejection and measures `margo build` as a full-work fallback.
 - Counter source: one `MOSS_PROFILE_COMPILER=1` compiler invocation per checked package; modules count source files in checked packages (these fixtures use one source module per file). `functions_checked` counts source function checker entries, summed across Checker instances. `inference_function_visits` is total inference visits, not unique functions.
 - The Margo rows are package-graph totals. The file-check rows profile the edited file with the built dependency interfaces on `MOSS_MODULE_PATH`.
