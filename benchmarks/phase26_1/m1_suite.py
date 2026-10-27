@@ -300,6 +300,12 @@ def main() -> int:
         roots = write_graph(root, graph)
         app_root = roots["app"]
         run_profiled_build(app_root, roots, f"{fixture}-{position}-initial")
+        if margo_check_supported:
+            # Seed the semantic-check fingerprint state independently from
+            # the native build state before measuring edit/revert work.
+            run_profiled_build(app_root, roots,
+                               f"{fixture}-{position}-check-initial",
+                               check_mode=True)
         target = roots[package_key] / "src" / f"{graph[package_key]['module']}.moss"
         original_source = target.read_text()
         for scenario in ("E0", "E1", "E2", "E3"):

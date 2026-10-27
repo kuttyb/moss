@@ -13275,12 +13275,14 @@ static void validate_provider_source_freshness(
 }
 
 static void verify_source_free_provider_binding(
-    const std::filesystem::path& interface_file, const string& text) {
+    const std::filesystem::path& interface_file, const string& text,
+    bool require_native_artifact = true) {
   const string material = source_free_contract_material(text);
   const string declared = source_free_declared_digest(text);
   if (source_free_contract_sha256(material) != declared)
     throw CompileError(0, "ABI-v9 provider metadata does not match its declared contract digest",
                        "SOURCE_FREE_CONTRACT_MISMATCH");
+  if (!require_native_artifact) return;
   const auto rlib = selected_provider_rlib(interface_file);
   std::ifstream input(rlib, std::ios::binary);
   std::ostringstream archive;
@@ -13358,17 +13360,20 @@ static void verify_source_free_provider_binding(
 // are records projected into the declaration lines read below.
 static string verified_abi_v10_interface_records(
     const std::filesystem::path& file, const string& text,
-    abi_v10::SealedInterface* sealed = nullptr) {
+    abi_v10::SealedInterface* sealed = nullptr,
+    bool require_native_artifact = true) {
   abi_v10::SealedInterface parsed;
   try {
     parsed = abi_v10::parse(text);
     if (!abi_v10::digest_matches(text, parsed))
       throw abi_v10::Error("SOURCE_FREE_CONTRACT_INVALID",
                            "ABI-v10 provider metadata does not match its declared contract digest");
-    const auto rlib = selected_provider_rlib(file);
-    abi_v10::validate_selected_rlib(
-        read_text_file(rlib, "SOURCE_FREE_PROVIDER_ARTIFACT_MISSING"),
-        tooling_name(file.stem().string()), parsed.digest);
+    if (require_native_artifact) {
+      const auto rlib = selected_provider_rlib(file);
+      abi_v10::validate_selected_rlib(
+          read_text_file(rlib, "SOURCE_FREE_PROVIDER_ARTIFACT_MISSING"),
+          tooling_name(file.stem().string()), parsed.digest);
+    }
     abi_v10::verify_canonical(text, parsed);
     abi_v10::validate_complete_interface(parsed);
   } catch (const abi_v10::Error& error) {
@@ -13467,7 +13472,7 @@ static void validate_abi_v10_nominal_declarations(
 }
 
 static ParsedModuleUnit load_module_interface(
-    const std::filesystem::path& file) {
+    const std::filesystem::path& file, bool require_native_artifact = true) {
   std::ifstream input(file, std::ios::binary);
   std::ostringstream content;
   content << input.rdbuf();
@@ -13480,11 +13485,13 @@ static ParsedModuleUnit load_module_interface(
         "SOURCE_FREE_ABI_REBUILD_REQUIRED");
   abi_v10::SealedInterface sealed;
   if (v10_interface) {
-    text = verified_abi_v10_interface_records(file, text, &sealed);
+    text = verified_abi_v10_interface_records(
+        file, text, &sealed, require_native_artifact);
     validate_provider_source_freshness(file,
                                        sealed.value.package_source_hash);
   } else {
-    verify_source_free_provider_binding(file, text);
+    verify_source_free_provider_binding(file, text,
+                                        require_native_artifact);
     validate_provider_source_freshness(
         file, source_free_declared_package_hash(text));
     if (text.find("\nnative_abi " + std::to_string(kNativeAbiVersion) + "\n") == string::npos)
@@ -15380,7 +15387,8 @@ static CheckedProjectUnit check_project_sources(
     ProgramGenerationMode mode,
     const string& declaration_filter = {},
     const std::set<string>* declaration_ids = nullptr,
-    const std::map<std::filesystem::path, string>* source_overrides = nullptr) {
+    const std::map<std::filesystem::path, string>* source_overrides = nullptr,
+    bool require_native_artifacts = true) {
   try {
     Program program;
     std::map<string,ParsedModuleUnit> modules;
@@ -15449,7 +15457,7 @@ static CheckedProjectUnit check_project_sources(
               providers, requested.second);
           if (!selected) continue;
           ParsedModuleUnit provider = load_module_interface(
-              selected->interface_file);
+              selected->interface_file, require_native_artifacts);
           // The provider map was indexed by the interface's module_id; retain
           // that invariant here rather than accepting a filename coincidence.
           if (provider.name != name)
@@ -15637,7 +15645,7 @@ static CompiledProjectUnit check_project_semantics(
     ProgramGenerationMode mode,
     const std::map<std::filesystem::path, string>* source_overrides = nullptr) {
   CheckedProjectUnit checked = check_project_sources(
-      manifest, sources, mode, {}, nullptr, source_overrides);
+      manifest, sources, mode, {}, nullptr, source_overrides, false);
   try {
     optimize_program(checked.program, optimized);
     OptimizationPlan plan = OptimizationPlan{optimized};
@@ -18558,6 +18566,8 @@ static vector<std::filesystem::path> write_module_interfaces(
       module_names.insert(module_name_from_symbol(domain.name));
   for (const auto& import : program.imports)
     if (!import.owner_module.empty()) module_names.insert(import.owner_module);
+  if (!program.explicit_module && !program.main_module.empty())
+    module_names.insert(program.main_module);
   for (const auto& module : module_names) {
     (void)contents[module];
     (void)interface_contents[module];
@@ -18612,10 +18622,16 @@ static vector<std::filesystem::path> write_module_interfaces(
     out << "export fn " << function.name.substr(module.size() + 2)
         << " kind=" << dispatch_kind
         << " semantic_hash=";
+    // Only preserve checked body identity when consumers instantiate or
+    // statically dispatch this callable from .mossi. Concrete functions link
+    // from the provider rlib, so their implementation body belongs to native
+    // artifact invalidation, not the semantic interface/checkstop hash.
     std::ostringstream body;
     body << function.header << "\n";
-    for (const auto& statement : function.body) body << statement.text << "\n";
-    if (function.result_expression) body << *function.result_expression << "\n";
+    if (function.generic || function.static_dispatch) {
+      for (const auto& statement : function.body) body << statement.text << "\n";
+      if (function.result_expression) body << *function.result_expression << "\n";
+    }
     string semantic_hash = stable_hash(body.str());
     out << semantic_hash << " return=" << function.return_type.value_or("unit")
         << " effects=" << interface_effects_text(function.observable_effects) << "\n";
@@ -20059,6 +20075,96 @@ static int run_project_build(const ProjectManifest& manifest, bool release,
   } else {
     std::cout << "Built " << manifest.name << " (" << profile << ")\n"
               << "  " << artifact.executable.string() << "\n";
+  }
+  return 0;
+}
+
+// Package `margo build --check` emits semantic interfaces without querying or
+// invoking the native toolchain. Keep these interfaces in a separate output
+// profile so a check-only result cannot replace a native provider's .mossi
+// beside an older .rlib.
+static int run_project_interface_check(const ProjectManifest& manifest,
+                                       bool release, bool json) {
+  vector<std::filesystem::path> sources = project_source_files(manifest);
+  if (sources.empty())
+    throw ProjectError("PROJECT_SOURCE_NOT_FOUND",
+                       "project target contains no Moss source files");
+  const auto mode = ProgramGenerationMode::Application;
+  CompiledProjectUnit checked = check_project_semantics(
+      manifest, sources, release, mode);
+  // Legacy source sets have no declared Moss module owner. Give their
+  // package-level check result an empty package interface so R7 still has a
+  // freshness-bearing .mossi artifact for this package.
+  if (!checked.program.explicit_module && checked.program.main_module.empty())
+    checked.program.main_module = manifest.name;
+  BackendToolchainIdentity backend;
+  backend.rustc_executable = "semantic-check-only";
+  backend.version_verbose = "semantic-check-only-v1";
+  backend.profile = release ? "check-release" : "check-debug";
+  backend.compile_flags = {"--semantic-check-only"};
+  backend.fingerprint = stable_hash(
+      "moss-semantic-check-only-v1\n" + backend.profile + "\n" +
+      kCompilerVersion + "\n");
+  std::optional<abi_v10::RuntimeCrateIdentity> check_runtime;
+  if (staged_abi_v10()) {
+    abi_v10::RuntimeCrateIdentity identity;
+    identity.build_key = source_free_contract_sha256(
+        "moss-semantic-check-only-runtime-build-v1");
+    identity.artifact_hash = source_free_contract_sha256(
+        "moss-semantic-check-only-runtime-artifact-v1");
+    identity.source_hash = source_free_contract_sha256(
+        "moss-semantic-check-only-runtime-source-v1");
+    identity.toolchain_fingerprint = backend.fingerprint;
+    identity.profile = backend.profile;
+    check_runtime = std::move(identity);
+  }
+  const string profile = release ? "check-release" : "check-debug";
+  const auto directory = manifest.root / "build" / profile;
+  std::error_code error;
+  std::filesystem::create_directories(directory, error);
+  if (error)
+    throw ProjectError("MOSS_INTERNAL_OR_IO_ERROR",
+                       "cannot create interface output directory '" +
+                           directory.string() + "': " + error.message());
+  const auto current_modules = module_names_for_program(checked.program);
+  for (std::filesystem::directory_iterator iterator(directory, error), end;
+       !error && iterator != end; iterator.increment(error)) {
+    if (!iterator->is_regular_file(error) ||
+        iterator->path().extension() != ".mossi")
+      continue;
+    const string module = iterator->path().stem().string();
+    if (std::find(current_modules.begin(), current_modules.end(), module) ==
+        current_modules.end()) {
+      std::filesystem::remove(iterator->path(), error);
+      if (error)
+        throw ProjectError("MOSS_INTERNAL_OR_IO_ERROR",
+                           "cannot remove stale Moss module interface '" +
+                               iterator->path().string() + "': " +
+                               error.message());
+    }
+  }
+  if (error)
+    throw ProjectError("MOSS_INTERNAL_OR_IO_ERROR",
+                       "cannot scan interface output directory '" +
+                           directory.string() + "': " + error.message());
+  const auto interfaces = write_module_interfaces(
+      manifest, checked.program, directory, backend,
+      checked.external_module_interfaces, check_runtime);
+  if (json) {
+    write_agent_envelope_begin(std::cout, "build", true);
+    std::cout << "  \"result\": {\"project\": ";
+    write_debug_json_string(std::cout, manifest.name);
+    std::cout << ", \"check_only\": true, \"profile\": ";
+    write_debug_json_string(std::cout, profile);
+    std::cout << ", \"module_interfaces\": [";
+    for (size_t index = 0; index < interfaces.size(); ++index) {
+      if (index) std::cout << ", ";
+      write_debug_json_string(std::cout, interfaces[index].string());
+    }
+    std::cout << "]}\n}\n";
+  } else {
+    std::cout << "Checked " << manifest.name << " (" << profile
+              << "); wrote " << interfaces.size() << " module interface(s)\n";
   }
   return 0;
 }
@@ -21888,13 +21994,17 @@ static int run_project_command(int argc, char** argv) {
         std::filesystem::current_path());
     if (command == "build") {
       bool release = false;
+      bool check_only = false;
       for (int index = 2; index < argc; ++index) {
         string argument = argv[index];
         if (argument == "--release") release = true;
+        else if (argument == "--check") check_only = true;
         else if (argument != "--json")
           throw ProjectError("BUILD_PROFILE_ERROR",
                              "unexpected build argument '" + argument + "'");
       }
+      if (check_only)
+        return run_project_interface_check(manifest, release, json);
       return run_project_build(manifest, release, json);
     }
     if (command == "fmt") {

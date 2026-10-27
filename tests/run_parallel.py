@@ -100,6 +100,7 @@ TOOLING_TESTS: list[tuple] = [
     ("check_phase26_w1_parse_cache", [sys.executable, "tests/tooling/check_phase26_w1_parse_cache.py", "{compiler}"]),
     ("check_phase26_w2_inference_worklist", [sys.executable, "tests/tooling/check_phase26_w2_inference_worklist.py", "{compiler}"]),
     ("check_phase26_1_f1_interface_rules", [sys.executable, "tests/tooling/check_phase26_1_f1_interface_rules.py", "{compiler}"]),
+    ("check_phase26_1_g1_fingerprints", [sys.executable, "tests/tooling/check_phase26_1_g1_fingerprints.py", "{compiler}"]),
     ("check_phase26_0_1_c3_parse_cache", [sys.executable, "tests/tooling/check_phase26_0_1_c3_parse_cache.py", "{compiler}"]),
     ("check_phase25_type_ir", [sys.executable, "tests/tooling/check_phase25_type_ir.py"]),
     ("check_phase25_a3_specialization", [sys.executable, "tests/tooling/check_phase25_a3_specialization.py", "{compiler}"]),
