@@ -628,20 +628,7 @@ class Checker {
     {
       CompilerStageTimer timer("specialization_checking");
       check_method_ownership();
-      for (const auto& f : p_.functions) {
-        // Imported generic bodies are checked at concrete specialization
-        // sites. Margo also sets this flag while building a dependency
-        // interface for a consumer, so an uninstantiated generic in that
-        // provider is not treated as a consumer instantiation. Ordinary
-        // package checks retain their existing declaration-body behavior.
-        const bool open_generic = f.generic || f.static_dispatch;
-        const bool dependency_interface =
-            std::getenv("MOSS_CHECK_DEPENDENCY_GENERIC_BODY_DEFER") != nullptr;
-        if (open_generic && f.specializations.empty() &&
-            (compiled_interface_file(f.source_file) || dependency_interface))
-          continue;
-        check_function(f);
-      }
+      for (const auto& f : p_.functions) check_function(f);
       refresh_open_nominal_constructor_results_from_checked_types();
       refresh_open_arithmetic_summaries_from_checked_types();
       refresh_open_collection_summaries_from_checked_types();
@@ -9004,6 +8991,8 @@ class Checker {
         if (method.return_type && !valid_type(*method.return_type))
           err(method_source, method.line, "unknown result type '" + *method.return_type +
               "' in method '" + object.name + "." + method.name + "'");
+        if (compiled_interface_file(method_source))
+          continue;
         TypeEnv entry_env = env;
         TypeEnv inferred_env = env;
         infer_statement_expressions(method.body, inferred_env);
@@ -9937,6 +9926,10 @@ class Checker {
   }
 
   void check_function(const Function& source_function) {
+    // A `.mossi` body is a provider artifact. Its signature and checked-body
+    // records are validated at import, and generic bodies are checked only by
+    // register_static_specialization when a consumer supplies concrete types.
+    if (compiled_interface_file(source_function.source_file)) return;
     auto imported_validation = imported_method_validation_view(source_function);
     const Function& f = imported_validation
         ? *imported_validation : source_function;
@@ -10020,6 +10013,24 @@ class Checker {
       if (!f.generic && !f.static_dispatch)
         const_cast<Function&>(f).set_return_type("unit");
     }
+  }
+
+  bool defer_generic_method_admission(
+      const vector<string>& argument_types,
+      MethodResolutionFailure failure) const {
+    if (checking_specialization_ ||
+        failure != MethodResolutionFailure::IncompatibleArguments ||
+        !starts_with(current_semantic_context_, "fn:"))
+      return false;
+    auto enclosing = functions_.find(current_semantic_context_.substr(3));
+    if (enclosing == functions_.end() ||
+        !(enclosing->second->generic || enclosing->second->static_dispatch))
+      return false;
+    return std::any_of(argument_types.begin(), argument_types.end(),
+        [](const string& type) {
+          return type.empty() || open_generic(type) ||
+              contains_internal_placeholder(type);
+        });
   }
 
   std::optional<string> domain_constructor(const string& expr) const {
@@ -20860,6 +20871,7 @@ class Checker {
     for (const auto& object : p_.objects) {
       current_object_ = &object;
       for (const auto& method : object.methods) {
+        if (compiled_interface_file(method.source_file)) continue;
         SourceFileScope source_scope(current_source_file_, method.source_file);
         SourceFileScope semantic_context(
             current_semantic_context_,
@@ -25850,13 +25862,16 @@ class Checker {
         vector<string> argument_types;
         for (const auto& arg : args)
           argument_types.push_back(inferred_expr_type(arg, env).value_or(""));
+        MethodResolutionFailure failure = MethodResolutionFailure::None;
         const Method* method = resolve_method(
-            canonical_type_name(it->second), handler, argument_types);
-        if (!method)
+            canonical_type_name(it->second), handler, argument_types,
+            false, &failure);
+        if (!method && !defer_generic_method_admission(argument_types, failure))
           err(line, "no matching method '" + canonical_type_name(it->second) + "." +
               handler + "' for supplied arguments");
-        retain_active_expression_target(
-            "method:" + method->owner + "." + method->name);
+        if (method)
+          retain_active_expression_target(
+              "method:" + method->owner + "." + method->name);
       }
       string canon_recv = canonical_type_name(receiver);
       if (canon_recv == "int" || canon_recv == "float" || canon_recv == "char" ||
@@ -27259,8 +27274,12 @@ class Checker {
               for (const auto& argument : statement.args)
                 argument_types.push_back(
                     inferred_expr_type(argument, current_env).value_or(""));
-              if (!resolve_method(canonical_type_name(*receiver_type), statement.b,
-                                  argument_types))
+              MethodResolutionFailure failure = MethodResolutionFailure::None;
+              const Method* method = resolve_method(
+                  canonical_type_name(*receiver_type), statement.b,
+                  argument_types, false, &failure);
+              if (!method &&
+                  !defer_generic_method_admission(argument_types, failure))
                 err(statement.line, "no matching method '" + *receiver_type + "." +
                     statement.b + "' for supplied arguments");
             } else if (receiver_type && current_function &&
