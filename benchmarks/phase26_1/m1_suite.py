@@ -380,9 +380,9 @@ def run_fast_debug_scenarios(run_id: str, rows: list[dict], enforce: bool) -> No
                    and len(changed_packages) == expected_changed,
                "function_identities": " ".join(sorted(identities)),
                "expected_functions": len(expected),
-               "snapshot_packages_changed": len(changed_packages),
-               "snapshot_changed_packages": " ".join(changed_packages),
-               "expected_snapshot_packages_changed": expected_changed}
+               "package_artifacts_changed": len(changed_packages),
+               "package_artifact_changed_packages": " ".join(changed_packages),
+               "expected_package_artifacts_changed": expected_changed}
         rows.append(row)
         if enforce and not row["target_met"]:
             raise RuntimeError(
