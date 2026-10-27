@@ -1241,6 +1241,34 @@
       (when (buffer-live-p planner-buffer)
         (kill-buffer planner-buffer)))))
 
+(ert-deftest moss-mode-cross-package-xref-source-location-known-regression ()
+  "Expected failure until Phase 26.1.1 stores declaration locations in a sidecar."
+  :expected-result :failed
+  (let* ((root (moss--repo-root default-directory))
+         (planner-main (expand-file-name "projects/build_planner/planner/src/main.moss" root))
+         (planner-root (expand-file-name "projects/build_planner/planner" root))
+         (planner-buffer (find-file-noselect planner-main))
+         (moss-compiler-command (expand-file-name "moss" root))
+         (moss-margo-command (expand-file-name "margo" root)))
+    (unwind-protect
+        (with-current-buffer planner-buffer
+          (moss-mode)
+          (let ((default-directory planner-root)
+                (process-environment
+                 (cons (concat "MOSS=" moss-compiler-command)
+                       process-environment)))
+            (should (= 0 (call-process moss-margo-command nil nil nil "build"))))
+          (goto-char (point-min))
+          (search-forward "summary_total_cost")
+          (backward-char (length "summary_total_cost"))
+          (let* ((xrefs (xref-backend-definitions 'moss "summary_total_cost"))
+                 (location (xref-item-location (car xrefs))))
+            (should (string-match-p "graphlib/src/model\\.moss"
+                                    (xref-file-location-file location)))
+            (should (= 64 (xref-file-location-line location)))))
+      (when (buffer-live-p planner-buffer)
+        (kill-buffer planner-buffer)))))
+
 (ert-deftest moss-mode-dependent-package-check-and-compilation ()
   "Verify Emacs compilation builds dependent packages from clean state without prebuilt artifacts."
   (let* ((root (moss--repo-root default-directory))

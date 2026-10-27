@@ -1,6 +1,6 @@
 # Phase 26.1 C1 Results — Function-Scoped Check & Package Rules
 
-- Implementation SHA: pending C1 closeout commit
+- Implementation SHA: C1 source checkpoint `9e4b54c8`; closeout documentation/test update pending
 - Branch: `phase26-1-m1`
 
 ## Scope and Invariants
@@ -31,10 +31,10 @@ package; file mode must not read that dependency's Moss sources.
 
 | Rejected package root | First code | Error owner / audit |
 |---|---|---|
-| `examples/swarm/modules/algo_chain/repro/generic_poisons_import/split/consumer` | `MOSS_COMPILE_ERROR` | Imported `provider.util.fill`; unused by consumer `main`. Suspected imported-generic over-evaluation; needs a C1/T1 regression and fix. |
+| `examples/swarm/modules/algo_chain/repro/generic_poisons_import/split/consumer` | `MOSS_COMPILE_ERROR` | Imported `provider.util.fill`; unused by consumer `main`. Dependency body is re-evaluated in the consumer package check; T1 scope, not a C1 reach defect. |
 | `examples/swarm/modules/algo_chain/repro/natural_chain/routekit` | `INVALID_BARE_IDENTIFIER_STATEMENT` | Dependency `heapkit.MinHeap.push`, `heap.moss:28`; owner-package gate reaches it. |
 | `examples/swarm/modules/algo_chain/routekit` | `INVALID_BARE_IDENTIFIER_STATEMENT` | Dependency `heapkit.MinHeap.push`, `heap.moss:28`; owner-package gate reaches it. |
-| `examples/swarm/modules/lib_and_app/repro/natural_app_attempt` | `TYPE_MISMATCH` | `geolib.shapes.Triangle.area`, `shapes.moss:46`; app's `main → Scene.total_area → TriItem.area` chain appears to reach it. Suspected C1 reachability defect; needs a focused file-mode reproduction. |
+| `examples/swarm/modules/lib_and_app/repro/natural_app_attempt` | `TYPE_MISMATCH` | `geolib.shapes.Triangle.area`, `shapes.moss:46`; geolib's own `margo build --check` rejects with `TYPE_MISMATCH` at `shapes.moss:48` (`method:shapes__Triangle.area@46`). Dependency body is re-evaluated in the consumer package check; T1 scope, not a C1 reach defect. |
 | `examples/swarm/modules/text_toolkit/app` | `UNSUPPORTED_STRING_ORDERING` | Dependency `toolkit.strings.min_text`; this app does not call it. |
 | `examples/swarm/modules/text_toolkit/probe_debug` | `UNSUPPORTED_STRING_ORDERING` | Dependency `toolkit.strings.min_text`; this probe does not call it. |
 | `packages/numerics_integration` | `TYPE_MISMATCH` | Dependency test `packages/linalg/tests/linalg_test.moss`, `malformed direct matrix construction validation`; the linalg owner package's file gate reaches it. |
@@ -49,20 +49,18 @@ package; file mode must not read that dependency's Moss sources.
 | `tests/phase25/key_protocol/05-coherence-mismatch-free-proofs/app` | `RECORD_MAP_KEY_UNSUPPORTED` | Dependency `alpha.record`; invalid provider cannot emit a current interface. |
 | `tests/phase25/key_protocol/05-coherence-mismatch-method-override/app` | `RECORD_MAP_KEY_UNSUPPORTED` | Dependency `alpha.record`; invalid provider cannot emit a current interface. |
 
-The `natural_app_attempt` closure and unused imported `fill` are the two
-unresolved non-package-wide reach/scope cases from this audit. The remaining
-rows are owned by dependency packages or dependency test targets. Re-run the
-complete corpus gate after resolving the two cases before calling G-b closed.
+`Triangle.area` and imported `util.fill` are dependency bodies re-evaluated in
+the consumer's package check; both are T1 scope, not C1 reach defects. The
+other rows are dependency-owned diagnostics or dependency test targets. The
+G-b gate remains the file-scope oracle for the package that owns each body.
 
-## Cross-Package Xref Constraint
+## Known Regression: Cross-Package Emacs Xref
 
-The ABI-v9 `.mossi` format carries no declaration source path and line. An
-optional `declaration_sources` section was prototyped and tested, but Architect
-review determined that it changes the ABI-v9 wire format/provider digest and
-that replacing imported `source_file` values breaks compiled-provider
-identification. That proposal was reverted under the no-ABI-change constraint.
-Cross-package Emacs xref therefore remains unresolved; do not claim the source
-location gate passed.
+Cross-package xref currently points to the dependency's `.mossi` file at line
+0. The source-location expectation is marked as an expected failure in the
+Emacs suite. Phase 26.1.1 will add declaration locations in a sidecar file,
+outside the interface digest. Do not count this as a C1 gate failure or claim
+the source-location behavior already works.
 
 ## The 12 Corpus Differences
 

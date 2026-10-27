@@ -1,12 +1,12 @@
 # Phase 26.1 working rules (user, 2026-10-27)
 
-## Current state — C1 blocked at xref constraint; T1 not started
+## Current state — C1 closeout gates in progress; T1 not started
 
 - Active branch: `phase26-1-m1`, remote `origin/phase26-1-m1`, checkpoint `624d43ce`. The oracle-only multi-error scaffolding is removed. F1's Fast Debug source-root allowlist, geometry identity fix, and malformed Margo dependency correction are included in prior pushed work.
-- This turn's ambiguous-callback fallback includes every same-leaf candidate for both callable callee slots and callback values. `make --jobs="$(nproc)"` and `python3 tests/tooling/check_phase26_1_c1_scope.py ./moss` passed on the current source; this is focused validation only.
-- Cross-package xref is blocked by the explicit no-ABI-change constraint. Architect determined that adding declaration locations to the ABI-v9 `.mossi` wire format changes its contract digest, and changing imported `source_file` from `.mossi` breaks provider-identification paths. The prototype was reverted. The Emacs test still reflects the prior interface-only location behavior. Following the user's stop instruction, do not continue closeout gates until this constraint is resolved.
-- The 17 G-b no-hit package roots and their first error codes/owners are documented in `docs/phase26/C1_RESULTS.md`. The audit identifies two unresolved scope cases: reachable `Triangle.area` through the app call chain and an unused imported generic `util.fill` being evaluated by its consumer. Other no-hit rows are dependency-owned diagnostics/test targets and should be checked at their owner package.
-- Not run after checkpoint `624d43ce`: full `make check`, full corpus differential, enforced package-perf, and `make c1-corpus-gates`. No final Architect GO; T1 has not started. Earlier historical gate results in the sections below are not evidence for this exact source tree.
+- The ambiguous-callback fallback includes every same-leaf candidate for callable callee slots and callback values. `make --jobs="$(nproc)"`, the focused C1 scope script, and the isolated xref expected-failure ERT passed.
+- The 17 G-b no-hit package roots and first error codes are documented in `docs/phase26/C1_RESULTS.md`. `geolib`'s own `margo build --check` rejects `Triangle.area` at `shapes.moss:48`; Triangle.area and unused imported `util.fill` are classified as dependency bodies re-evaluated in consumer package checks (T1 scope), not C1 reach defects.
+- Cross-package xref remains a known regression: `.mossi` returns interface-file locations. The expected-failure test points to Phase 26.1.1, where declaration locations will go in a sidecar outside the interface digest. No C1 compiler changes are planned for this.
+- Closeout gates are now running on the final C1 code/test tree: full `make check`, full corpus differential against `origin/main`, enforced package-perf, and `make c1-corpus-gates`. Architect GO on the exact final commit remains pending; T1 has not started.
 - The historical oracle attempt remains evidence only, not a passing gate; see the history below. All authorized regression gates run on this work machine. No hosted CI or PRs.
 
 ---
