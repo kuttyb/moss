@@ -6,11 +6,12 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import time
 
 ROOT = Path(__file__).resolve().parents[2]
 MARGO = ROOT / "margo"
-MOSS = ROOT / "build/compiler/moss-opt"
+MOSS = Path(sys.argv[1]).resolve()
 WORK = ROOT / "tmp/phase26-1-1-x1" / str(time.time_ns())
 
 

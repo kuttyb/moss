@@ -14925,7 +14925,7 @@ static ParsedModuleUnit load_module_interface(
   const bool v10_interface = starts_with(text, "moss-module-interface-v3\n");
   const size_t section2_marker = text.find("\nexecution_body_version ");
   ExecutionBodySectionView execution_bodies;
-  if (!v10_interface && load_execution_bodies)
+  if (load_execution_bodies)
     execution_bodies = parse_execution_body_section(text);
   // Section 2 is deliberately outside semantic admission and interface
   // fingerprints. Ordinary imports parse only Section 1; the interpreter
@@ -14940,9 +14940,15 @@ static ParsedModuleUnit load_module_interface(
   abi_v10::SealedInterface sealed;
   if (v10_interface) {
     text = verified_abi_v10_interface_records(
-        file, text, &sealed, require_native_artifact);
+        file, semantic_text, &sealed, require_native_artifact);
     validate_provider_source_freshness(file,
                                        sealed.value.package_source_hash);
+    if (execution_bodies.present &&
+        (!abi_v10::hex_hash(sealed.semantic_hash) ||
+         execution_bodies.interface_digest != sealed.semantic_hash.substr(7)))
+      throw CompileError(0,
+          "ABI-v10 execution-body Section 1 binding mismatch",
+          "SOURCE_FREE_EXECUTION_BODY_INVALID");
   } else {
     verify_source_free_provider_binding(file, text,
                                         require_native_artifact);
@@ -20094,6 +20100,140 @@ static string execution_body_package_fingerprint(
       backend.fingerprint + "\n");
 }
 
+static std::set<string> execution_body_callable_closure(
+    const Program& program, const string& module) {
+  auto local_module = [&](const string& name) {
+    return module_name_from_symbol(name) == module &&
+        !program.external_modules.count(module);
+  };
+  auto matches = [](const std::set<string>& names, const string& name) {
+    return names.count(name) || names.count(unqualified_callable_name(name));
+  };
+  auto function_key = [](const string& name) { return "fn:" + name; };
+  auto method_key = [](const string& owner, const string& name) {
+    return "method:" + owner + "." + name;
+  };
+  auto handler_key = [](const string& owner, const string& name) {
+    return "handler:" + owner + "." + name;
+  };
+
+  std::set<string> reachable;
+  for (const auto& function : program.functions)
+    if (function.exported && local_module(function.name))
+      reachable.insert(function_key(function.name));
+  for (const auto& object : program.objects)
+    if (object.exported && local_module(object.name))
+      for (const auto& method : object.methods)
+        reachable.insert(method_key(object.name, method.name));
+  for (const auto& domain : program.domains)
+    if (domain.exported && local_module(domain.name))
+      for (const auto& handler : domain.handlers)
+        reachable.insert(handler_key(domain.name, handler.name));
+
+  bool changed = true;
+  while (changed) {
+    changed = false;
+    FileCheckReferences references;
+    auto add_function_body = [&](const Function& function) {
+      add_statement_references(function.body, references);
+      if (function.result_expression)
+        add_expression_references(*function.result_expression, references);
+      add_statement_callable_references(function.body, program, references);
+      if (function.result_expression)
+        add_callable_argument_references(*function.result_expression, program,
+                                         references);
+    };
+    auto add_method_body = [&](const Method& method) {
+      add_statement_references(method.body, references);
+      if (method.result_expression)
+        add_expression_references(*method.result_expression, references);
+      add_statement_callable_references(method.body, program, references);
+      if (method.result_expression)
+        add_callable_argument_references(*method.result_expression, program,
+                                         references);
+    };
+    auto add_handler_body = [&](const Handler& handler) {
+      add_statement_references(handler.body, references);
+      add_statement_callable_references(handler.body, program, references);
+      for (const auto& arm : handler.failure_arms) {
+        add_statement_references(arm.body, references);
+        add_statement_callable_references(arm.body, program, references);
+      }
+      if (handler.execution_failure_arms)
+        for (const auto& arm : *handler.execution_failure_arms) {
+          add_statement_references(arm.body, references);
+          add_statement_callable_references(arm.body, program, references);
+        }
+    };
+    for (const auto& function : program.functions)
+      if (local_module(function.name) &&
+          reachable.count(function_key(function.name)))
+        add_function_body(function);
+    for (const auto& object : program.objects) {
+      if (!local_module(object.name)) continue;
+      bool object_reached = object.exported;
+      for (const auto& method : object.methods) {
+        if (!reachable.count(method_key(object.name, method.name))) continue;
+        object_reached = true;
+        add_method_body(method);
+      }
+      object_reached = object_reached || matches(references.functions, object.name);
+      if (object_reached)
+        for (const auto& field : object.fields)
+          if (!field.init.empty())
+            add_expression_references(field.init, references);
+    }
+    for (const auto& domain : program.domains) {
+      if (!local_module(domain.name)) continue;
+      bool domain_reached = domain.exported;
+      for (const auto& handler : domain.handlers) {
+        if (!reachable.count(handler_key(domain.name, handler.name))) continue;
+        domain_reached = true;
+        add_handler_body(handler);
+      }
+      domain_reached = domain_reached || matches(references.functions, domain.name);
+      if (domain_reached)
+        for (const auto& field : domain.state)
+          if (!field.init.empty())
+            add_expression_references(field.init, references);
+    }
+
+    // Preserve resolved compiler call edges as a second source of reach facts;
+    // the syntax walk also covers checked bodies whose specialized edge was
+    // intentionally omitted from the public semantic graph.
+    for (const auto& edge : program.semantic_call_edges) {
+      if (!reachable.count(edge.source)) continue;
+      if (starts_with(edge.target, "fn:"))
+        references.functions.insert(edge.target.substr(3));
+      else if (starts_with(edge.target, "method:")) {
+        const size_t dot = edge.target.rfind('.');
+        if (dot != string::npos)
+          references.methods.insert(edge.target.substr(dot + 1));
+      } else if (starts_with(edge.target, "handler:")) {
+        const size_t dot = edge.target.rfind('.');
+        if (dot != string::npos)
+          references.handlers.insert(edge.target.substr(dot + 1));
+      }
+    }
+
+    for (const auto& function : program.functions)
+      if (local_module(function.name) &&
+          matches(references.functions, function.name))
+        changed |= reachable.insert(function_key(function.name)).second;
+    for (const auto& object : program.objects)
+      if (local_module(object.name))
+        for (const auto& method : object.methods)
+          if (matches(references.methods, method.name))
+            changed |= reachable.insert(method_key(object.name, method.name)).second;
+    for (const auto& domain : program.domains)
+      if (local_module(domain.name))
+        for (const auto& handler : domain.handlers)
+          if (matches(references.handlers, handler.name))
+            changed |= reachable.insert(handler_key(domain.name, handler.name)).second;
+  }
+  return reachable;
+}
+
 static string encode_execution_body_payload(
     const ProjectManifest& manifest, const Program& program,
     const string& module,
@@ -20101,6 +20241,8 @@ static string encode_execution_body_payload(
   std::ostringstream payload;
   payload << "package_fingerprint " << package_fingerprint << "\n"
           << "interface_digest " << interface_digest << "\n";
+  const auto execution_callables =
+      execution_body_callable_closure(program, module);
 
   // Private nominal declarations are execution support. A reached concrete
   // body can construct/read a private object or instantiate a private enum
@@ -20192,7 +20334,9 @@ static string encode_execution_body_payload(
   for (const auto& function : program.functions) {
     if (module_name_from_symbol(function.name) != module ||
         program.external_modules.count(module) || function.generic ||
-        function.static_dispatch || !function.provider_origin_file.empty())
+        function.static_dispatch || !function.provider_origin_file.empty() ||
+        (!function.exported &&
+         !execution_callables.count("fn:" + function.name)))
       continue;
     functions.push_back(&function);
   }
@@ -20236,7 +20380,9 @@ static string encode_execution_body_payload(
   for (const auto* object : objects) {
     vector<const Method*> methods;
     for (const auto& method : object->methods)
-      methods.push_back(&method);
+      if (object->exported || execution_callables.count(
+              "method:" + object->name + "." + method.name))
+        methods.push_back(&method);
     std::sort(methods.begin(), methods.end(),
               [](const Method* left, const Method* right) {
                 return left->name < right->name;
@@ -20269,7 +20415,13 @@ static string encode_execution_body_payload(
 
   vector<const Domain*> domains;
   for (const auto& domain : program.domains)
-    if (domain.exported && module_name_from_symbol(domain.name) == module)
+    if (module_name_from_symbol(domain.name) == module &&
+        (domain.exported || std::any_of(
+            domain.handlers.begin(), domain.handlers.end(),
+            [&](const Handler& handler) {
+              return execution_callables.count(
+                  "handler:" + domain.name + "." + handler.name) != 0;
+            })))
       domains.push_back(&domain);
   std::sort(domains.begin(), domains.end(),
             [](const Domain* left, const Domain* right) {
@@ -20277,7 +20429,10 @@ static string encode_execution_body_payload(
             });
   for (const auto* domain : domains) {
     vector<const Handler*> handlers;
-    for (const auto& handler : domain->handlers) handlers.push_back(&handler);
+    for (const auto& handler : domain->handlers)
+      if (domain->exported || execution_callables.count(
+              "handler:" + domain->name + "." + handler.name))
+        handlers.push_back(&handler);
     std::sort(handlers.begin(), handlers.end(),
               [](const Handler* left, const Handler* right) {
                 return left->name < right->name;
@@ -20903,7 +21058,20 @@ static vector<std::filesystem::path> write_module_interfaces(
   };
   for (auto& entry : contents) {
     if (staged_abi_v10()) {
-      const string text = encode_v10(entry.first);
+      const string interface_text = encode_v10(entry.first);
+      abi_v10::SealedInterface sealed;
+      try {
+        sealed = abi_v10::decode(interface_text);
+      } catch (const abi_v10::Error& error) {
+        throw ProjectError(error.code, error.what(), directory.string());
+      }
+      if (!abi_v10::hex_hash(sealed.semantic_hash))
+        throw ProjectError("SOURCE_FREE_CONTRACT_INVALID",
+                           "ABI-v10 semantic hash is malformed",
+                           directory.string());
+      const string text = interface_text + append_execution_body_section(
+          manifest, program, entry.first, sealed.semantic_hash.substr(7),
+          package_source_hash, backend);
       std::filesystem::path file =
           directory / (tooling_name(entry.first) + ".mossi");
       std::ifstream prior(file, std::ios::binary);

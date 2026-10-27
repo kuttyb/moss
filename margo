@@ -556,7 +556,8 @@ def package_fingerprint(package: Package, release: bool, check_only: bool,
         "MOSS_STAGED_ABI", "MOSS_STAGED_STRING_REPR", "MOSS_RUNTIME_SOURCE_DIR",
         "RUSTFLAGS", "CARGO_ENCODED_RUSTFLAGS")}
     payload = {
-        "format": "margo-package-fingerprint-v1",
+        "format": "margo-package-fingerprint-v2",
+        "execution_body_section": 1,
         "identity": package.identity,
         "name": package.data["name"],
         "version": package.data["version"],
@@ -667,9 +668,9 @@ def build_graph(root: Package, ordered: list[Package], release: bool,
                 if path.suffix != ".mossi":
                     continue
                 embedded = execution_body_package_fingerprint(path)
-                if interface_native_abi(path) == 9 and embedded is None:
+                if interface_native_abi(path) in (9, 10) and embedded is None:
                     raise MargoError(
-                        f"new ABI-v9 .mossi is missing its execution-body section: {path}")
+                        f"new ABI-v{interface_native_abi(path)} .mossi is missing its execution-body section: {path}")
                 if embedded is not None and embedded != fingerprint:
                     raise MargoError(
                         f".mossi execution-body fingerprint mismatch for {path}: "
