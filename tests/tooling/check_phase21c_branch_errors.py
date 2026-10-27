@@ -464,7 +464,6 @@ export fn at_one(chunk):
 run([COMPILER, "build"], cwd=provider)
 interface = provider / "build/debug/mapper.mossi"
 assert interface.exists() and "may_panic=1" in interface.read_text()
-(provider / "src/mapper.moss").rename(provider / "src/mapper.removed")
 (consumer / "src/main.moss").write_text('''module app
 import mapper
 

@@ -13467,7 +13467,7 @@ static void validate_abi_v10_nominal_declarations(
 }
 
 static ParsedModuleUnit load_module_interface(
-    const std::filesystem::path& file, bool require_current_source = false) {
+    const std::filesystem::path& file) {
   std::ifstream input(file, std::ios::binary);
   std::ostringstream content;
   content << input.rdbuf();
@@ -13481,14 +13481,12 @@ static ParsedModuleUnit load_module_interface(
   abi_v10::SealedInterface sealed;
   if (v10_interface) {
     text = verified_abi_v10_interface_records(file, text, &sealed);
-    if (require_current_source)
-      validate_provider_source_freshness(file,
-                                         sealed.value.package_source_hash);
+    validate_provider_source_freshness(file,
+                                       sealed.value.package_source_hash);
   } else {
     verify_source_free_provider_binding(file, text);
-    if (require_current_source)
-      validate_provider_source_freshness(
-          file, source_free_declared_package_hash(text));
+    validate_provider_source_freshness(
+        file, source_free_declared_package_hash(text));
     if (text.find("\nnative_abi " + std::to_string(kNativeAbiVersion) + "\n") == string::npos)
       throw CompileError(0, "compiled provider uses an incompatible native calling convention; rebuild its .mossi provider");
     // The producer already records separate hashes for the native contract and
@@ -15382,8 +15380,7 @@ static CheckedProjectUnit check_project_sources(
     ProgramGenerationMode mode,
     const string& declaration_filter = {},
     const std::set<string>* declaration_ids = nullptr,
-    const std::map<std::filesystem::path, string>* source_overrides = nullptr,
-    bool require_current_interfaces = false) {
+    const std::map<std::filesystem::path, string>* source_overrides = nullptr) {
   try {
     Program program;
     std::map<string,ParsedModuleUnit> modules;
@@ -15452,7 +15449,7 @@ static CheckedProjectUnit check_project_sources(
               providers, requested.second);
           if (!selected) continue;
           ParsedModuleUnit provider = load_module_interface(
-              selected->interface_file, require_current_interfaces);
+              selected->interface_file);
           // The provider map was indexed by the interface's module_id; retain
           // that invariant here rather than accepting a filename coincidence.
           if (provider.name != name)
@@ -15468,12 +15465,8 @@ static CheckedProjectUnit check_project_sources(
       }
       for (const auto& name : requested_imports)
         if (!modules.count(name.first)) {
-          if (require_current_interfaces)
-            throw CompileError(name.second.line,
-                stale_interface_message(name.first));
-          else
-            throw CompileError(name.second.line, "imported module '" +
-                name.first + "' was not found in source or compiled interfaces");
+          throw CompileError(name.second.line,
+              stale_interface_message(name.first));
         }
     }
     // Module identities (TYPE_IR_CONTRACT §3.1). A source module belongs to
@@ -15644,7 +15637,7 @@ static CompiledProjectUnit check_project_semantics(
     ProgramGenerationMode mode,
     const std::map<std::filesystem::path, string>* source_overrides = nullptr) {
   CheckedProjectUnit checked = check_project_sources(
-      manifest, sources, mode, {}, nullptr, source_overrides, true);
+      manifest, sources, mode, {}, nullptr, source_overrides);
   try {
     optimize_program(checked.program, optimized);
     OptimizationPlan plan = OptimizationPlan{optimized};

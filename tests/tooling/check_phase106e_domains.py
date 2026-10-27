@@ -138,5 +138,5 @@ result = json.loads(run([compiler, 'build', '--json'], cwd=project).stdout)['res
 assert run([result['artifacts']['executable']]).stdout == '5\n6\n'
 (project / 'src/detail.moss').rename(project / 'src/detail.hidden')
 rejected = run([compiler, 'run', '--interp', 'src/main.moss'], cwd=project, expected=1)
-assert 'source' in rejected.stderr and ('compiled' in rejected.stderr or '.mossi' in rejected.stderr), rejected.stderr
+assert 'interface for detail is missing or stale; run `margo build`' in rejected.stderr, rejected.stderr
 print('10.6E direct production/interpreter equivalence, exact routes/specializations, nested ordering, value independence, state WRITE-through, deterministic semantic trace, source-module closure, source-free rejection, and legacy retirement checks passed.')

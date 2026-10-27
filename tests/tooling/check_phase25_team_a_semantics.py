@@ -1254,9 +1254,9 @@ fn main():
         assert source_free_range.returncode == 0, (
             source_free_range.stdout, source_free_range.stderr)
         range_data = json.loads(source_free_range.stdout)
-        assert range_data["source_removed"] and (
+        assert range_data["provider_source_present"] and (
             range_data["range_output"] == "329"), range_data
-        print("PASS source-free generic Range return keeps owned Vector type",
+        print("PASS imported-interface generic Range return keeps owned Vector type",
               flush=True)
 
         # Staged ABI-v10 admits the checked empty-vector callable while

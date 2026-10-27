@@ -116,8 +116,6 @@ generic_provider = scratch / "generic-provider"
 shutil.copytree(fixture / "provider", generic_provider)
 (generic_provider / "src/mapper.moss").write_text(generic_source)
 run([margo, "build"], generic_provider)
-(generic_provider / "src/mapper.moss").rename(
-    generic_provider / "src/mapper.removed")
 generic_consumer = scratch / "generic-consumer"
 shutil.copytree(fixture / "consumer", generic_consumer)
 (generic_consumer / "tmp").mkdir()
@@ -126,4 +124,4 @@ generic_env["MOSS_MODULE_PATH"] = str(generic_provider / "build/debug")
 free_result = run([margo, "run"], generic_consumer, env=generic_env)
 assert free_result.stdout == "1\n", free_result
 
-print("Phase 20 cross-crate Range ABI fail-closed and generic/same-crate controls passed")
+print("Phase 20 cross-crate Range ABI fail-closed and source-backed imported-interface generic/same-crate controls passed")

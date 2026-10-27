@@ -47,8 +47,7 @@ def main():
     provider_interface = provider / "build/debug/collections.mossi"
     provider_rlib = provider / "build/debug/libcollections.rlib"
     assert provider_interface.exists() and provider_rlib.exists()
-    (provider / "src/collections.moss").rename(provider / "src/collections.removed")
-    assert not (provider / "src/collections.moss").exists()
+    assert (provider / "src/collections.moss").is_file()
     environment["MOSS_MODULE_PATH"] = str(provider / "build/debug")
     consumer_build = json.loads(invoke([moss, "build", "--json"], consumer, environment))
     assert consumer_build["ok"]
@@ -72,8 +71,7 @@ def main():
     byte_interface = range_provider / "build/debug/bytes.mossi"
     byte_rlib = range_provider / "build/debug/libbytes.rlib"
     assert byte_interface.exists() and byte_rlib.exists()
-    (range_provider / "src/bytes.moss").rename(range_provider / "src/bytes.removed")
-    assert not (range_provider / "src/bytes.moss").exists()
+    assert (range_provider / "src/bytes.moss").is_file()
     environment["MOSS_MODULE_PATH"] = str(range_provider / "build/debug")
     rebuilt = json.loads(invoke([moss, "build", "--json"], range_consumer, environment))
     assert rebuilt["ok"]
@@ -86,7 +84,7 @@ def main():
     range_executable = rebuilt["result"]["artifacts"]["executable"]
     range_output = invoke([range_executable], range_consumer, environment)
     assert range_output == "329\n", range_output
-    print(json.dumps({"source_removed": True, "provider_abi": "v9",
+    print(json.dumps({"provider_source_present": True, "provider_abi": "v9",
                       "generic_output": output.strip(), "range_output": range_output.strip(),
                       "native": "pass"}, sort_keys=True))
 

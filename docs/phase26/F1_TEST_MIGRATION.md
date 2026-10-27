@@ -58,6 +58,15 @@ contract.
 | `tests/tooling/repro_phase21_mossi_pattern_forgery.py` | **A/C — imported interface and hostile-record coverage retained:** uses separate provider/consumer packages; forged artifact digest calculations exclude the source freshness line. |
 | `tests/tooling/check_borrowed_reads.py` | **A — imported interface retained:** separate provider and consumer packages exercise helper, method, and domain views through the producer `.mossi`, with provider source kept for R2. |
 | `tests/tooling/check_phase26_1_f1_interface_rules.py` | **E — new contract coverage:** tests stale/missing interfaces, hash-only source reads, Fast Debug root isolation, own-build-output exclusion, and ABI-v10 freshness metadata. |
+| `tests/tooling/check_phase20_cross_crate_range_abi.py` | **A/B — imported interface retained:** the generic provider keeps its source after rebuilding the changed generic body; the cross-crate borrowed-Range rejection remains covered. |
+| `tests/phase25/runtime/check_shared_string_linkage.py` | **A/B — imported interface retained:** consumers still use sealed `.mossi` and rlib artifacts, while provider source remains available for freshness hashing. |
+| `tests/tooling/check_phase25_team_a_semantics.py` | **A/B — imported interface retained:** the generic Range acceptance asserts provider source remains present and preserves imported generic specialization coverage. |
+| `sdk/foundations/acceptance/validate_source_free.py` | **A/B — imported interface retained:** legacy acceptance name retained; both generic provider sources remain in their packages, and output records source presence. |
+| `tests/tooling/check_phase21c_branch_errors.py` | **A/B — imported interface retained:** panic-effect propagation continues through provider `.mossi`; provider source is kept current for R2. |
+| `tests/tooling/check_phase15_9_cross_package_specialization.py` | **A/B — imported interface retained:** specialization is read from the current provider `.mossi` with provider package source retained. |
+| `tests/tooling/check_enum_source_free.py` | **A/B — imported interface retained:** enum consumer uses the provider build directory under the source-backed package. |
+| `tests/tooling/check_margo.py` | **B — missing-interface diagnostic updated:** without the dependency interface, the test expects the R2 instruction to run `margo build`. |
+| `tests/tooling/check_phase106e_domains.py` | **B — source-removal premise retired:** removing a source module is asserted to fail with the R2 missing/stale interface guidance. |
 
 Classification key: **A** keeps imported `.mossi`/native interface coverage with
 provider source retained; **B** retires a source-removal premise while keeping

@@ -86,9 +86,20 @@ def main() -> int:
     assert interface.is_file(), interface
     assert "package_source_hash sha256:" in interface.read_text(), interface
 
-    # Hash-only validation rejects changed source before attempting to parse it.
+    # Freshness applies to every interface consumer, including direct native
+    # compilation outside Margo. A body edit is enough to stale the interface;
+    # the compiler must reject it before using the old signature or artifact.
     source = provider / "src/lib.moss"
     original = source.read_text()
+    source.write_text(original.replace("return 42", "return 43"))
+    build_env = dict(env)
+    build_env["MOSS_MODULE_PATH"] = str(provider / "build/debug")
+    stale_build = run([COMPILER, "build", "--json"], consumer, build_env,
+                      ok=False)
+    assert_interface_error(stale_build, "f1_provider")
+    source.write_text(original)
+
+    # Hash-only validation rejects changed source before attempting to parse it.
     source.write_text("module f1_lib\nthis is intentionally invalid syntax\n")
     stale = check(consumer, provider, env, ok=False)
     assert_interface_error(stale, "f1_provider")
