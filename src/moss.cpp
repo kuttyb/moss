@@ -11828,7 +11828,12 @@ static void add_expression_references(const string& source,
       references.functions.insert(name);
       references.methods.insert(std::move(name));
     }
-    else references.functions.insert(std::move(name));
+    else {
+      // A bare call inside a method may name a sibling method (implicit
+      // receiver), so it selects both kinds of callable by name.
+      references.methods.insert(name);
+      references.functions.insert(std::move(name));
+    }
   }
 }
 
@@ -11976,8 +11981,8 @@ static void scope_program_to_file(Program& program,
         ++handler_index;
       }
     }
-    auto refs_before_initializers = std::make_tuple(
-        active.functions.size(), active.methods.size(), active.handlers.size());
+    // `active` is rebuilt every round, so initializer references are re-added
+    // each time; convergence is judged only by newly selected declarations.
     for (const auto& object : program.objects) {
       const bool selected_object = matches(active.functions, object.name) ||
           std::any_of(object.methods.begin(), object.methods.end(), [&](const Method& method) {
@@ -11996,8 +12001,6 @@ static void scope_program_to_file(Program& program,
       for (const auto& field : domain.state)
         if (!field.init.empty()) add_expression_references(field.init, active);
     }
-    changed |= refs_before_initializers != std::make_tuple(
-        active.functions.size(), active.methods.size(), active.handlers.size());
     for (size_t i = 0; i < program.functions.size(); ++i) {
       const auto& function = program.functions[i];
       if (selected_functions.count(i) ||
@@ -12096,6 +12099,33 @@ static void scope_program_to_file(Program& program,
       program.file_scope_domains.insert(domain.name);
   }
 
+  // Field types of an in-scope object are validated, so the declarations they
+  // name must be in scope too (transitively); otherwise their fields would be
+  // treated as inferred and the field type could not be resolved.
+  for (bool grew = true; grew;) {
+    grew = false;
+    for (const auto& object : program.objects) {
+      if (!program.file_scope_objects.count(object.name)) continue;
+      for (const auto& field : object.fields) {
+        const auto refs = type_identifiers(field.type);
+        for (const auto& other : program.objects)
+          if (!program.file_scope_objects.count(other.name) &&
+              (refs.count(other.name) ||
+               refs.count(unqualified_callable_name(other.name))))
+            grew |= program.file_scope_objects.insert(other.name).second;
+        for (const auto& other : program.enums)
+          if (!program.file_scope_enums.count(other.name) &&
+              (refs.count(other.name) ||
+               refs.count(unqualified_callable_name(other.name))))
+            grew |= program.file_scope_enums.insert(other.name).second;
+        for (const auto& other : program.domains)
+          if (!program.file_scope_domains.count(other.name) &&
+              (refs.count(other.name) ||
+               refs.count(unqualified_callable_name(other.name))))
+            grew |= program.file_scope_domains.insert(other.name).second;
+      }
+    }
+  }
   // Imported providers are loaded through `.mossi` and keep their own
   // (original) source names, so identify them by module, not file extension.
   auto from_interface = [&](const string& owner_name, const string& source) {
