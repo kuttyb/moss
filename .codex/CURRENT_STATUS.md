@@ -1,5 +1,13 @@
 # Phase 26.1 working rules (user, 2026-10-27)
 
+## Current state — T1 review fix checkpoint; full gates pending
+
+- Active branch: `phase26-1-m1`; implementation checkpoint `95b81ec1b39129175a971bc0ebc0bab5e316d900` is pushed to `origin/phase26-1-m1`. Architect review on that SHA was NO-GO.
+- T1 defers method admission only when the open generic arguments prevent a concrete decision. Imported `.mossi` bodies are omitted from declaration-scope checking; concrete specialization still validates calls. The focused generic-import regressions pass.
+- Removed the obsolete dependency-role fingerprint bit and environment flag. The focused T1 test now explicitly proves Margo skips the unchanged geolib when it becomes a dependency; focused test and `git diff --check` pass.
+- All full gates are pending rerun after this correction. Next: commit/push this checkpoint; rerun `make check`, corpus differential, Fast Debug, package-perf, and compiler-perf; then request Architect GO on the exact new SHA. Run certification only after integration into `main`.
+
+
 ## Current state — T1 generic-import rule checkpoint in progress
 
 - Active branch: `phase26-1-m1`, currently pushed through `622d7642` before this T1 checkpoint.

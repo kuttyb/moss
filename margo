@@ -441,8 +441,7 @@ def ambient_provider_inputs(package: Package, ordered: list[Package],
 
 
 def package_fingerprint(package: Package, release: bool, check_only: bool,
-                        toolchain: dict, ordered: list[Package],
-                        dependency_generic_defer: bool = False) -> str:
+                        toolchain: dict, ordered: list[Package]) -> str:
     dependencies = []
     for dependency in sorted(package.dependencies,
                              key=lambda item: (item.data["name"], item.identity)):
@@ -469,7 +468,6 @@ def package_fingerprint(package: Package, release: bool, check_only: bool,
         "ambient_providers": ambient_provider_inputs(
             package, ordered, release, check_only),
         "compiler_and_toolchain": toolchain,
-        "dependency_generic_defer": dependency_generic_defer,
         "flags": flags,
         "profile": profile_name(release, check_only),
         "mode": "semantic-check" if check_only else "native-build",
@@ -515,10 +513,8 @@ def build_graph(root: Package, ordered: list[Package], release: bool,
     for package in ordered:
         profile = profile_name(release, check_only)
         state_path = package.root / "build" / profile / ".margo-fingerprint.json"
-        dependency_generic_defer = package.root != root.root
         fingerprint = package_fingerprint(package, release, check_only,
-                                          toolchain, ordered,
-                                          dependency_generic_defer)
+                                          toolchain, ordered)
         prior = {}
         try:
             prior = json.loads(state_path.read_text(encoding="utf-8"))
@@ -540,8 +536,6 @@ def build_graph(root: Package, ordered: list[Package], release: bool,
                 artifacts.append({})
             continue
         env = package_environment(package, ordered, release, check_only)
-        if dependency_generic_defer:
-            env["MOSS_CHECK_DEPENDENCY_GENERIC_BODY_DEFER"] = "1"
         command = [str(MOSS), "build"] + (["--release"] if release else []) + \
                   (["--check"] if check_only else []) + ["--json"]
         completed = run(command, cwd=package.root, env=env, capture=True)

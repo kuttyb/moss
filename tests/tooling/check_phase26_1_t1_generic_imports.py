@@ -103,7 +103,25 @@ def main() -> int:
     assert "UNKNOWN_SYMBOL_OR_TYPE" in consumer_output, consumer_output
     assert "natural_geolib_attempt/src/" not in consumer_output, consumer_output
     assert "Triangle.area" not in consumer_output, consumer_output
-    print("PASS natural_app uses a current geolib .mossi without rechecking provider bodies; owner still rejects Triangle.area")
+
+    # A minimal successful consumer makes Margo's skip explicit in its result.
+    # The provider was just checked as a root; changing only its graph role
+    # must not perturb its package fingerprint or trigger another check.
+    probe = SCRATCH / "consumer_probe"
+    (probe / "src").mkdir(parents=True)
+    (probe / "Moss.toml").write_text(
+        '[project]\nname = "consumer_probe"\nversion = "0.1.0"\n'
+        '[build]\nsource = "src"\n[dependencies]\n'
+        'geolib = { path = "../natural_geolib_attempt" }\n',
+        encoding="utf-8")
+    (probe / "src/main.moss").write_text(
+        "module app\nfn main():\n  return\n", encoding="utf-8")
+    probe_result = run([MARGO, "build", "--check", "--json"], probe, env,
+                       ok=True)
+    probe_payload = json.loads(probe_result.stdout)
+    assert probe_payload["checked"] == ["consumer_probe"], probe_payload
+    assert "geolib" in probe_payload["skipped"], probe_payload
+    print("PASS natural_app has no geolib-body diagnostic; Margo skips unchanged geolib; owner still rejects Triangle.area")
     return 0
 
 
