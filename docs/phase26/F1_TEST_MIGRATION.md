@@ -20,15 +20,15 @@ contract.
 | `tests/tooling/check_domain_handle_closure.py` | **B — source-removal assertion retired:** keeps provider source and continues checking that the package's own build output cannot replace it. |
 | `tests/tooling/check_handler_2pl.py` | **A — interface case separated:** ABI-v9 imported-interface validation uses an external consumer; the other handler behavior remains source-backed. |
 | `tests/tooling/check_phase20c_executor.py` | **B — source-removal assertion retired:** the explicit-module provider wrapper/runtime test keeps package sources; cross-package interface freshness is covered separately. |
-| `tests/tooling/check_phase21_abi_v9_external_cache.py` | **A — imported interface retained:** uses complete provider and consumer projects; artifact tampering still tests warm-cache binding. |
+| `tests/tooling/check_phase21_abi_v9_external_cache.py` | **A/R1 — imported interface retained:** uses complete provider and consumer projects; semantic check uses current `.mossi`, while Margo native build fingerprints changed external artifacts. |
 | `tests/tooling/check_phase21_abi_v9_migration.py` | **A — imported interface retained:** legacy ABI migration and consumer checks use a separate source-backed provider package. |
 | `tests/tooling/check_phase21_absolute_root_boundary.py` | **B — source-removal setup retired:** retains provider package sources while preserving the absolute-root boundary assertions. |
 | `tests/tooling/check_phase21_borrowed_view_write.py` | **B — source-removal setup retired:** keeps the provider package intact; borrowed-view diagnostics and runtime checks remain. |
-| `tests/tooling/check_phase21_imported_effects.py` | **A — imported interface retained:** separates provider and consumer; effect summaries are read from `.mossi` while provider source backs freshness. |
+| `tests/tooling/check_phase21_imported_effects.py` | **A/R1 — imported interface retained:** effect summaries and required semantic records are read from `.mossi`; provider source backs freshness. Malformed semantic records remain rejected by `moss check`. |
 | `tests/tooling/check_phase21_lock_fileio_adversarial.py` | **B — source-removal setup retired:** retains package source so adversarial lock/FileIO assertions reach their intended checks. |
 | `tests/tooling/check_phase21_root_expression_ingress.py` | **B — source-removal setup retired:** keeps the provider source; package source-free execution is no longer claimed. |
 | `tests/tooling/check_phase21_source_free_abi.py` | **A/C — interface and hostile-record coverage retained:** metadata probes run from a separate consumer; resealing removes the out-of-band freshness field before recomputing the ABI digest. Same-package runtime cases retain provider source. |
-| `tests/tooling/check_phase21_source_free_cache_binding.py` | **A — imported interface retained:** provider source remains available while consumer cache binding is tested against selected artifacts. |
+| `tests/tooling/check_phase21_source_free_cache_binding.py` | **A/R1 — imported interface retained:** provider source remains for freshness; `moss check` consumes the current interface without requiring `.rlib`, while native build rejects mismatched or missing artifacts. |
 | `tests/tooling/check_phase21_source_free_proof_edges.py` | **A — imported interface retained:** source-backed producer artifacts feed a separate consumer; proof-edge mutations remain covered. |
 | `tests/tooling/check_phase21_source_free_standard_write_recovery.py` | **B — source-removal setup retired:** preserves provider source and the standard-write recovery checks. |
 | `tests/tooling/check_phase21_sourcefree_noop_warning.py` | **B — source-removal setup retired:** maintains source-backed package input while testing no-op warning behavior. |
@@ -37,11 +37,11 @@ contract.
 | `tests/tooling/check_phase24_adversarial_architect.py` | **B — source-removal setup retired:** retains package source so adversarial semantic checks run against current package state. |
 | `tests/tooling/check_phase24_bitwise_operations.py` | **A — imported interface retained:** consumer resolution uses producer build outputs with producer source present. |
 | `tests/tooling/check_phase24_imported_generic_expressions.py` | **A — imported interface retained:** source-backed provider artifacts still exercise imported generic specialization. |
-| `tests/tooling/check_phase25_conformance.py` | **A/C — interface and hostile-record coverage retained:** consumer resolves the producer build directory; hostile copies live under the producer manifest and digest resealing excludes freshness metadata. |
+| `tests/tooling/check_phase25_conformance.py` | **A/C/R1 — interface and hostile-record coverage retained:** consumer resolves producer build output; malformed ABI-v10 records and stale source hashes are checked independently of rlib binding; resealing excludes freshness metadata. |
 | `tests/tooling/check_phase25_indexed_string.py` | **B — source-removal setup retired:** keeps source available while preserving indexed-string behavior checks. |
 | `tests/tooling/check_phase25_l7_repairs.py` | **B — source-removal setup retired:** preserves the provider source and L7 repair assertions. |
 | `tests/tooling/check_phase25_m2b1_provenance.py` | **B — source-removal setup retired:** retains the producer source for provenance and freshness checks. |
-| `tests/tooling/check_phase25_nominal_identity.py` | **A — imported interface retained:** distinct provider and consumer packages verify stable nominal identity through current `.mossi` outputs. |
+| `tests/tooling/check_phase25_nominal_identity.py` | **A/R1 — imported interface retained:** distinct provider/consumer packages verify stable nominal identity, and conflicting providers differ in exported type contract visible from their `.mossi` interfaces. |
 | `tests/tooling/check_phase106f.py` | **B — source-removal assertion retired:** the ledger project keeps `model.moss` while testing clean rebuilds, reconstructed rlib aliases, execution, and Debug behavior. |
 | `tests/tooling/check_phase106f1.py` | **A — imported interface retained:** splits the provider and consumer packages, keeps provider source for R2 freshness, and preserves generic handler-body, generated-layout, and legacy ABI rejection checks. |
 | `tests/tooling/check_phase25_r2_wp1_call_chain.py` | **A — imported interface retained:** copies full provider package trees, points consumers at producer build directories, and keeps ABI-v9 and hostile-body cases. |
@@ -55,7 +55,7 @@ contract.
 | `tests/tooling/check_phase25_typed_semantic_api.py` | **B — source-removal setup retired:** preserves provider package source for semantic API assertions. |
 | `tests/tooling/check_phase8_separate_compilation.py` | **B — source-removal setup retired:** keeps sources available and continues checking separate compilation behavior. |
 | `tests/tooling/check_synchronization_plan.py` | **B — same-package coverage narrowed:** keeps source in the package and corrupts its own old build artifact to prove it is ignored. |
-| `tests/tooling/repro_phase21_mossi_pattern_forgery.py` | **A/C — imported interface and hostile-record coverage retained:** uses separate provider/consumer packages; forged artifact digest calculations exclude the source freshness line. |
+| `tests/tooling/repro_phase21_mossi_pattern_forgery.py` | **A/C/R1 — imported interface and hostile-record coverage retained:** a self-consistent `.mossi` is the semantic input; native build rejects its forged contract because the selected rlib binds the original interface. Digest calculations exclude freshness metadata. |
 | `tests/tooling/check_borrowed_reads.py` | **A — imported interface retained:** separate provider and consumer packages exercise helper, method, and domain views through the producer `.mossi`, with provider source kept for R2. |
 | `tests/tooling/check_phase26_1_f1_interface_rules.py` | **E — new contract coverage:** tests stale/missing interfaces, hash-only source reads, Fast Debug root isolation, own-build-output exclusion, and ABI-v10 freshness metadata. |
 | `tests/tooling/check_phase20_cross_crate_range_abi.py` | **A/B — imported interface retained:** the generic provider keeps its source after rebuilding the changed generic body; the cross-crate borrowed-Range rejection remains covered. |

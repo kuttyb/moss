@@ -19366,6 +19366,22 @@ static NativeArtifact compile_native_artifact(
       std::filesystem::is_regular_file(artifact.debug_map) &&
       std::filesystem::is_regular_file(artifact.executable) &&
       artifact.module_rlibs.size() == artifact.module_interfaces.size()) {
+    // The provider scan above deliberately drops interfaces for this package
+    // so a stale local interface cannot act as an imported provider. Restore
+    // the package's own interface outputs in the cached result, matching the
+    // first-build result without making them inputs to provider selection.
+    for (const auto& module : local_source_modules) {
+      const auto interface_file = directory / (tooling_name(module) + ".mossi");
+      if (std::filesystem::is_regular_file(interface_file))
+        artifact.module_interfaces.push_back(interface_file);
+    }
+    if (local_source_modules.empty()) {
+      const auto interface_file = directory /
+          (tooling_name(manifest.name) + ".mossi");
+      if (std::filesystem::is_regular_file(interface_file))
+        artifact.module_interfaces.push_back(interface_file);
+    }
+    std::sort(artifact.module_interfaces.begin(), artifact.module_interfaces.end());
     artifact.reused = true;
     artifact.semantic_analysis_reused = true;
     return artifact;

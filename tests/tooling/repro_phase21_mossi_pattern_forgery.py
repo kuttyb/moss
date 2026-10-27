@@ -112,9 +112,11 @@ text, count = re.subn(
 assert count == 1
 interface.write_text(text)
 
-for command in (("check", main, "--json"), ("build", "--json")):
-    rejected = json.loads(run(COMPILER, *command, expected=1,
-                              env=consumer_env).stdout)
-    assert rejected["error"]["code"] == (
-        "SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH"), rejected
+checked = json.loads(run(COMPILER, "check", main, "--json",
+                         env=consumer_env).stdout)
+assert checked["ok"], checked
+rejected = json.loads(run(COMPILER, "build", "--json", expected=1,
+                          env=consumer_env).stdout)
+assert rejected["error"]["code"] == \
+    "SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH", rejected
 print("ABI-v9 forged failure-arm metadata rejected before native execution")

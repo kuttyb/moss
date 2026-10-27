@@ -233,7 +233,10 @@ fn main():
 def case_d(scratch, provider_artifacts, consumer_a_artifacts, b_source):
     """Incompatible providers claiming one module identity are rejected."""
     impostor = scratch / "impostor"
-    package(impostor, "g2provider", "0.1.0", "provider.moss", PROVIDER.format(answer=43))
+    incompatible = (PROVIDER.format(answer=43)
+                    .replace("answer() -> Int:", "answer() -> Bool:")
+                    .replace("return 43", "return true"))
+    package(impostor, "g2provider", "0.1.0", "provider.moss", incompatible)
     build(impostor)
     impostor_artifacts = publish(impostor)
     probe = scratch / "probe"

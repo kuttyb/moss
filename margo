@@ -348,8 +348,104 @@ def dependency_native_artifacts(package: Package, release: bool) -> list[dict]:
     return rows
 
 
+def ambient_provider_source_state(interface: Path) -> dict:
+    owner = next((parent for parent in interface.parents
+                  if (parent / "Moss.toml").is_file() or
+                     (parent / "moss.toml").is_file()), None)
+    if owner is None:
+        owner = next((parent for parent in interface.parents
+                      if (parent / "build").is_dir()), None)
+    if owner is None:
+        return {"owner": "missing"}
+
+    candidates = [owner / "Moss.toml", owner / "moss.toml"]
+    manifest = next((path for path in candidates if path.is_file()), None)
+    if manifest is None:
+        return {"owner": str(owner), "manifest": "missing"}
+    state = {"owner": str(owner), "manifest": str(manifest),
+             "manifest_sha256": sha256_file(manifest)}
+    try:
+        _, data = read_manifest(owner)
+    except MargoError as error:
+        state["manifest_error"] = str(error)
+        return state
+
+    source_root = owner / data["source"]
+    state["source_root"] = str(source_root)
+    state["source_root_exists"] = source_root.exists()
+    if source_root.is_file():
+        paths = [source_root] if source_root.suffix == ".moss" else []
+    elif source_root.is_dir():
+        paths = sorted(path for path in source_root.rglob("*.moss")
+                       if path.is_file())
+    else:
+        paths = []
+    state["sources"] = [
+        {"path": path.relative_to(owner).as_posix(),
+         "sha256": sha256_file(path)} for path in paths]
+    return state
+
+
+def ambient_provider_inputs(package: Package, ordered: list[Package],
+                            release: bool, check_only: bool) -> list[dict]:
+    graph_build_roots = {str((package.root / "build").resolve())
+                         for package in ordered}
+    roots = []
+    for position, entry in enumerate(filter(None,
+            os.environ.get("MOSS_MODULE_PATH", "").split(os.pathsep))):
+        roots.append({"origin": "MOSS_MODULE_PATH", "position": position,
+                      "path": Path(entry).resolve()})
+    roots.append({"origin": "package-deps", "position": 0,
+                  "path": (package.root / "deps").resolve()})
+    rows = []
+    for origin in roots:
+        root = origin["path"]
+        if origin["origin"] == "MOSS_MODULE_PATH" and any(
+                str(root) == build or str(root).startswith(build + os.sep)
+                for build in graph_build_roots):
+            continue
+        if not root.is_dir():
+            rows.append({**{key: value for key, value in origin.items()
+                           if key != "path"}, "path": str(root),
+                         "missing": True})
+            continue
+        for interface in sorted(root.rglob("*.mossi")):
+            record = {**{key: value for key, value in origin.items()
+                         if key != "path"}, "path": str(interface),
+                      "interface_sha256": sha256_file(interface)}
+            try:
+                fields = dict(line.split(" ", 1) for line in
+                              interface.read_text(encoding="utf-8").splitlines()
+                              if " " in line)
+                record["module_id"] = fields.get("module_id", "")
+                record["package_source_hash"] = fields.get("package_source_hash", "")
+                if fields.get("schema_version") == "10":
+                    record["semantic_hash"] = fields.get("semantic_contract_hash", "")
+                else:
+                    record["semantic_hash"] = [
+                        fields.get("concrete_interface_hash", ""),
+                        fields.get("generic_semantic_hash", "")]
+                # The compiler discovers interfaces recursively and checks
+                # source freshness at load time. Record both current and
+                # missing-source states so restoration cannot hit an old key.
+                record["provider_source_state"] = \
+                    ambient_provider_source_state(interface)
+            except (OSError, UnicodeDecodeError, ValueError):
+                raise MargoError(
+                    f"cannot fingerprint ambient provider interface {interface}")
+            if not check_only:
+                candidates = [interface.with_suffix(".rlib"),
+                              interface.parent / ("lib" + interface.stem + ".rlib")]
+                rlib = next((candidate for candidate in candidates
+                             if candidate.is_file()), None)
+                record["native_artifact_sha256"] = (
+                    sha256_file(rlib) if rlib else "missing")
+            rows.append(record)
+    return rows
+
+
 def package_fingerprint(package: Package, release: bool, check_only: bool,
-                        toolchain: dict) -> str:
+                        toolchain: dict, ordered: list[Package]) -> str:
     dependencies = []
     for dependency in sorted(package.dependencies,
                              key=lambda item: (item.data["name"], item.identity)):
@@ -369,6 +465,8 @@ def package_fingerprint(package: Package, release: bool, check_only: bool,
         "dependencies": dependencies,
         "native_dependency_artifacts": [] if check_only else
             dependency_native_artifacts(package, release),
+        "ambient_providers": ambient_provider_inputs(
+            package, ordered, release, check_only),
         "compiler_and_toolchain": toolchain,
         "flags": flags,
         "profile": profile_name(release, check_only),
@@ -415,7 +513,8 @@ def build_graph(root: Package, ordered: list[Package], release: bool,
     for package in ordered:
         profile = profile_name(release, check_only)
         state_path = package.root / "build" / profile / ".margo-fingerprint.json"
-        fingerprint = package_fingerprint(package, release, check_only, toolchain)
+        fingerprint = package_fingerprint(package, release, check_only,
+                                          toolchain, ordered)
         prior = {}
         try:
             prior = json.loads(state_path.read_text(encoding="utf-8"))

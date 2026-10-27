@@ -109,9 +109,10 @@ assert count == 1
 interface.write_text(forged)
 checked = run(compiler, "check", consumer_source, "--json", cwd=consumer,
               provider_path=provider_path)
-assert checked.returncode != 0, (checked.stdout, checked.stderr)
-assert json.loads(checked.stdout)["error"]["code"] == \
-    "SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH", checked.stdout
+# Semantic checking consumes the current .mossi and deliberately does not
+# validate the provider's selected native rlib. A native build still enforces
+# that binding before it can link the consumer.
+assert checked.returncode == 0, (checked.stdout, checked.stderr)
 built, result = build(consumer, provider_path)
 assert built.returncode != 0 and not result["ok"], (built.stdout, built.stderr)
 assert result["error"]["code"] == \
@@ -122,9 +123,7 @@ interface.write_text(original)
 rlib.unlink()
 checked = run(compiler, "check", consumer_source, "--json", cwd=consumer,
               provider_path=provider_path)
-assert checked.returncode != 0, (checked.stdout, checked.stderr)
-assert json.loads(checked.stdout)["error"]["code"] == \
-    "SOURCE_FREE_PROVIDER_ARTIFACT_MISSING", checked.stdout
+assert checked.returncode == 0, (checked.stdout, checked.stderr)
 built, result = build(consumer, provider_path)
 assert built.returncode != 0 and not result["ok"], (built.stdout, built.stderr)
 assert result["error"]["code"] == \

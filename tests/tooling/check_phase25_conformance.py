@@ -251,7 +251,7 @@ fn main():
     forged.write_bytes(changed.replace(b"moss-module-interface-v3\n",
         b"moss-module-interface-v3\nprovider_contract_digest sha256:" + digest + b"\n", 1))
     artifact_error(consumer_source, forged.parent,
-                   "SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH")
+                   "SOURCE_FREE_CONTRACT_INVALID")
 
     _, newer = source_free(s / "record-provider-new", PROVIDER_SIMPLE.replace("42", "43"))
     stale, stale_lib = clone_artifacts(pristine, s / "stale")
@@ -259,7 +259,7 @@ fn main():
     stale.write_bytes(newer_interface.read_bytes())
     assert stale_lib.exists()
     artifact_error(consumer_source, stale.parent,
-                   "SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH")
+                   "MOSS_INTERFACE_STALE")
 
 
 def g1(s):

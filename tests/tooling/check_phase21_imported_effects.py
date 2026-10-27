@@ -227,9 +227,10 @@ build_and_run("17\n23\n")
 # Keep the consumer source unchanged so this is a true warm-cache forgery.
 build_and_run("17\n23\n")
 interface.write_text(tampered)
-rejected = json.loads(run([compiler, "check", consumer, "--json"],
+checked = json.loads(run([compiler, "check", consumer, "--json"],
                           expected=1).stdout)
-assert rejected["error"]["code"] == "SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH"
+assert checked["error"]["code"] == "MOSS_COMPILE_ERROR" and \
+    "lacks Phase 21 observable effects" in checked["error"]["message"], checked
 rebuilt = json.loads(run([margo, "build", "--json"]).stdout)
 assert rebuilt["ok"], rebuilt
 assert interface.read_text() == original, "Margo must restore tampered provider output"
