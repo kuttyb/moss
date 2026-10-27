@@ -316,6 +316,17 @@ def main() -> int:
     assert "Checked 1 package" in semantic_check.stdout, semantic_check.stdout
     assert not list(root.rglob("*.rs")), "semantic test-target check emitted Rust"
 
+    # Lowercase manifests use the same implicit-module identity path as
+    # Moss.toml projects. These corpus files specialize generic member calls
+    # from test bodies, so file-scoped checking must retain the package module
+    # identity while checking those reached bodies.
+    for relative in (
+            "examples/priority_queue/src/main.moss",
+            "examples/swarm/Julia/CircularBuffer/src/main.moss"):
+        source = ROOT / relative
+        result = check_file(source, env, ok=True)
+        assert '"ok": true' in result.stdout, (relative, result.stdout)
+
     print("Phase 26.1 C1 reachability and package-rule probes passed")
     return 0
 

@@ -1,6 +1,6 @@
 # Phase 26.1 C1 Results — Function-Scoped Check & Package Rules
 
-- Implementation SHA: `4b14c07a35e44ab3977f6f9eb2ef62e9eb9241f0`
+- Implementation SHA: pending Architect review
 - Branch: `phase26-1-m1`
 
 ## Scope and Invariants
@@ -10,15 +10,40 @@
 - **Partial-reach fixture**: Verifies file check visits exactly reachable functions by identity (`m1_partial.moss:main`, `reached_top`, `reached_leaf`), whereas package mode checks all 6 functions.
 
 ## Validation Gates
-1. `make --jobs="$(nproc)" check`: **145/145 passed**, 0 skipped, suite wall time 234.27 s. Fast Debug parity passed as part of the suite.
-2. `MOSS_M1_ENFORCE_TARGETS=1 make package-perf`: **70 scenario rows passed** on `4b14c07a`; generated report `tmp/compiler-perf/m1-20261027-073227/M1_BASELINE.md`.
-3. `make c1-corpus-gates`: **passed with zero failures** on `4b14c07a`. It checked 2,064 tracked sources, 421 package roots, 335 accepted and 86 rejected packages, and 2,032 target files. G-a accepted-package sources: **633/633**. G-b reachable first package diagnostics: **68/68** rejected with the same code. There were 17 rejected packages with no file trace reaching their first error, nine missing/stale interface terminal packages, and 12 individually main-reproduced baseline package errors. Output: `tmp/phase26-1-m1/c1-one-way-gates-final.out`.
+1. `make --jobs="$(nproc)" check`: **145/145 passed**, 0 skipped, suite wall time 233.14 s. Fast Debug parity passed as part of the suite. Log: `tmp/make-check-c1-identity-fix.log`.
+2. `MOSS_M1_ENFORCE_TARGETS=1 make package-perf`: **70 scenario rows passed**; generated report `tmp/compiler-perf/m1-20261027-080447/M1_BASELINE.md`.
+3. `make c1-corpus-gates`: **passed with zero failures**. It checked 2,064 tracked sources, **438 package roots** (both manifest spellings), 350 accepted and 88 rejected packages, and 2,032 target files. G-a accepted-package sources: **654/654**. G-b reachable first package diagnostics: **70/70** rejected with the same code. There were 17 rejected packages with no file trace reaching their first error, nine missing/stale interface terminal packages, and 12 individually main-reproduced baseline package errors. Log: `tmp/c1-gates-final.log`.
 4. Source-root allowlist regressions passed in `check_phase26_1_f1_interface_rules.py`; the 12-row C1 package case gate passed with all six Calc and six Toolkit rows mapped to the expected package diagnostic. The geometry mismatch and malformed Margo dependency path are corrected.
-5. Full Corpus Differential against `origin/main` (`d109b8f17276f70b591432fd345d57e727f17501`), 2,064 sources including diagnostic codes and generated-Rust hashes: **FAIL / 14 differences**. The six Calc and six Toolkit rows below are the documented 12 package-scope omissions. Two additional sources now reject with `MODULE_IDENTITY_UNRESOLVED` although `origin/main` accepts them: `examples/priority_queue/src/main.moss` (`python-priority-queue`) and `examples/swarm/Julia/CircularBuffer/src/main.moss` (`julia-circular-buffer`). This was observed on the unchanged C1 code commit `4b14c07a`; no additional C1 compiler edits were made. The extra rows are unresolved and prevent claiming a green full corpus differential. Results: `tmp/phase26-1-m1/corpus-origin-main.tsv` and `tmp/phase26-1-m1/corpus-candidate-origin-main.tsv`.
+5. Full Corpus Differential against `origin/main` (`d109b8f17276f70b591432fd345d57e727f17501`), 2,064 sources including diagnostic codes and generated-Rust hashes: **exactly the 12 documented Calc/Toolkit rows and no others**. Baseline accepted 1,325; candidate accepted 1,336. The two lowercase-manifest identity regressions are fixed; all other verdicts and Rust hashes are unchanged. Results: `tmp/corpus-origin-main-final.tsv` and `tmp/corpus-candidate-final.tsv`; comparison log: `tmp/corpus-differential-final.log`.
 6. Package test-target check: `margo build --check` checks the complete Tests target (`src + tests`) semantically without executing tests or emitting Rust. Test-source contents are included in the check fingerprint. Focused probes cover a bad sibling test body and duplicate declarations across separate test files.
 7. Snapshot workflow: updated the agent workflow skill and API guide to state that `moss check <file>` does not persist the native-lowering snapshot. Run `moss build` before relying on incremental impact results; absent snapshots fall back conservatively.
 
 ## G-b No-Hit Package First-Error Audit
+
+The first corrected-discovery gate run found all 438 roots and failed on both
+`examples/priority_queue` and `examples/swarm/Julia/CircularBuffer` with
+`MODULE_IDENTITY_UNRESOLVED` lacking a semantic identity. The Margo package
+checks also rejected those roots, so the gate reported these as malformed
+first-error failures rather than G-a file rows. This proved the discovery hole
+was masking both regressions. After the fix, both package checks and file checks
+pass.
+
+The bisect `ad3276ca..4b14c07a` first marks `ffee86c5` as bad for
+`moss check examples/priority_queue/src/main.moss`. The exact error was
+`module 'python-priority-queue' has no package identity`, thrown by
+`program_module_identity` in `src/program_identity.cpp` (not the semantic
+checker’s “selected method has no nominal declaration identity” site). The
+missing key was the implicit package module identity for a test-body caller:
+the body used `main_module` (`python-priority-queue`), while the identity table
+stores the implicit module under `""`. The tests calling `is_higher_priority`
+and `inspect_capacity` were already reachable: respectively, the
+`custom structs duck-typing Prioritized trait` test and the
+`satisfies structural trait and static duck-typed callers` test. No nominal
+declaration was dropped. Test and benchmark caller context now falls back to
+the implicit key when its manifest-name key is absent. The previous
+`main_module` retention patch for `geometry_modules` was checked and retained:
+its explicit module key exists and
+`moss check .../geometry_modules/src/main.moss` passes.
 
 The earlier corpus gate reported 17 rejected consumer package roots whose own
 tracked files did not trace the package graph's first diagnostic. The table
@@ -92,13 +117,10 @@ multi-error diagnostic-set oracle was incomplete. That oracle work was removed
 under the later fail-fast G-a/G-b acceptance contract; it is not the current
 closeout blocker.
 
-Current review of exact commit `5197ae0b7cc98404bd7ed8cd7a0c6bfeb66ca199`:
-**NO-GO**. Architect independently reproduced the two extra
-`MODULE_IDENTITY_UNRESOLVED` corpus failures in `priority_queue` and Julia
-`CircularBuffer`. They pass on `origin/main`, so these are verdict regressions,
-not the documented Calc/Toolkit package-scope differences. Per the user's
-instruction, no further C1 compiler changes were made. C1 cannot be marked
-closed and T1 must not start until the regression has an authorized disposition.
+Review of exact commit `5197ae0b7cc98404bd7ed8cd7a0c6bfeb66ca199` returned
+**NO-GO** because of the two extra module-identity regressions. The authorized
+fix and all local gates are now complete; Architect review of the final commit
+is pending. Do not treat the old NO-GO as the final review verdict.
 
 ## Historical Multi-Error Oracle Experiment — 2026-10-26
 

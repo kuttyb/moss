@@ -72,18 +72,24 @@ def tracked_sources() -> list[Path]:
 
 
 def package_roots(sources: list[Path]) -> tuple[dict[Path, list[Path]], list[Path]]:
-    manifests = sorted(
-        (path for path in ROOT.rglob("Moss.toml")
-         if not ({".git", "tmp", "build"} &
-                 set(path.relative_to(ROOT).parts))),
-        key=lambda path: len(path.parts), reverse=True)
     grouped: dict[Path, list[Path]] = defaultdict(list)
     standalone = []
     for source in sources:
-        manifest = next((item for item in manifests
-                         if source.is_relative_to(item.parent)), None)
-        if manifest:
-            grouped[manifest.parent].append(source)
+        # Match nearest_moss_project_root: walk outward from the source's
+        # directory and stop at the first directory containing either spelling.
+        # load_project_manifest prefers Moss.toml if both are present there.
+        current = source.parent.resolve()
+        package_root = None
+        while current == ROOT or ROOT in current.parents:
+            if ((current / "Moss.toml").is_file() or
+                    (current / "moss.toml").is_file()):
+                package_root = current
+                break
+            if current == ROOT:
+                break
+            current = current.parent
+        if package_root:
+            grouped[package_root].append(source)
         else:
             standalone.append(source)
     return grouped, standalone

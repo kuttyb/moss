@@ -22678,6 +22678,15 @@ class Checker {
       string caller_module = p_.main_module.empty()
           ? p_.module_name : p_.main_module;
       string caller_id = current_semantic_context_;
+      // Test and benchmark bodies are not functions, so they have no
+      // defining_module to override the package's main-module context. In an
+      // implicit-module package the parser/identity table uses the empty key;
+      // main_module is the manifest name and is not a valid lookup key.
+      if ((starts_with(current_semantic_context_, "test:") ||
+           starts_with(current_semantic_context_, "bench:")) &&
+          !p_.module_identities.count(caller_module) &&
+          p_.module_identities.count(""))
+        caller_module.clear();
       if (starts_with(current_semantic_context_, "fn:")) {
         const string caller_name = current_semantic_context_.substr(3);
         auto caller = functions_.find(caller_name);
