@@ -2,12 +2,12 @@
 
 ## Current state — T1 implementation in progress
 
-- Active branch: `phase26-1-m1`, remote `origin/phase26-1-m1`. C1 is closed and frozen at reviewed implementation `7bc75969`, with Architect GO recorded in `4150ee94`. The current T1 changes are staged for a checkpoint; no required full gates have run on them yet.
+- Active branch: `phase26-1-m1`, remote `origin/phase26-1-m1`. C1 is closed and frozen at reviewed implementation `7bc75969`, with Architect GO recorded in `4150ee94`. T1 implementation checkpoint `d79ae577` is pushed. The full gates are now partially complete: `make check` passed 145/145, the corpus differential against `4150ee94` checked 2,064 sources with zero verdict/code/Rust-hash differences, enforced package-perf passed 70/70, and Fast Debug parity passed.
 - T1 keeps imported `.mossi` signatures out of inference rounds and convergence fingerprints, validates signature immutability after inference/effect phases, and hydrates private ABI-v10 parameter access during interface loading. Concrete specialization remains active.
 - Imported ABI-v10 member requirements now feed validation through temporary views rather than rewriting `Function.constraints`. Legacy ABI-v9 open summaries retain interface-declared effects and call dependencies without a later inference rewrite.
-- Focused checks pass: `check_phase25_typed_semantic_api.py` and `check_phase25_r2_wp2_member.py`; compiler build and `git diff --check` pass. An earlier failed focused run was resolved by preserving legacy effect facts and applying sealed member requirements in imported-body/call validation; those earlier failures are not current results.
+- Focused checks pass: `check_phase25_typed_semantic_api.py` and `check_phase25_r2_wp2_member.py`; compiler build and `git diff --check` pass. Compiler-perf first stopped on stale MG1–MG5 directory hashes in the benchmark manifests; the tracked fixtures themselves are clean. The corrected manifest hashes are currently uncommitted, and `python3 benchmarks/compiler_torture/verify.py` passes 54/54.
 - Required T1 gates still outstanding: full corpus differential against C1 checkpoint `4150ee94` with zero verdict/code/Rust changes; `make check`; Fast Debug parity; enforced `package-perf`; `compiler-perf` against C1 closeout with no slowdown beyond noise floor; Architect GO on exact final SHA. No GitHub-hosted regression jobs or PRs.
-- Next: commit and push this checkpoint, then run all required gates, address any failures, obtain Architect GO, and push the final T1 closeout to `origin/phase26-1-m1`.
+- Next: commit and push the benchmark manifest correction and status, rerun compiler-perf against `4150ee94`, then obtain Architect GO on the exact final implementation SHA and push the T1 closeout to `origin/phase26-1-m1`.
 - All authorized regression gates run on this work machine. Historical C1 oracle attempts remain evidence only, not passing gates; see the history below.
 
 ---
