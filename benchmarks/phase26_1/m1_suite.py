@@ -256,7 +256,7 @@ def main() -> int:
     out = ROOT / "tmp/compiler-perf" / f"m1-{run_id}"
     out.mkdir(parents=True, exist_ok=False)
     rows: list[dict] = []
-    strict_targets = os.environ.get("MOSS_M1_ENFORCE_TARGETS", "").lower() in {"1", "true", "yes"}
+    force_strict_targets = os.environ.get("MOSS_M1_ENFORCE_TARGETS", "").lower() in {"1", "true", "yes"}
     package_counts = {}
     for fixture, graph in graphs().items():
         root = TMP / "graphs" / run_id / fixture
@@ -284,6 +284,9 @@ def main() -> int:
     else:
         raise RuntimeError("margo build --check probe failed for a reason other than an unsupported option:\n"
                            + probe_output[-4000:])
+    # Once Margo supports the incremental --check contract, targets become a
+    # hard gate by default. The env flag enables the same gate during rollout.
+    strict_targets = force_strict_targets or margo_check_supported
 
     scenarios = [
         ("dependency_chain", "core", "core"),
@@ -346,7 +349,7 @@ def main() -> int:
         writer.writeheader(); writer.writerows(rows)
     lines = ["# Phase 26.1 M1 package work counters", "", f"- Main SHA: `{subprocess.check_output(['git','rev-parse','origin/main'], cwd=ROOT, text=True).strip()}`", f"- Measurement revision SHA: `{subprocess.check_output(['git','rev-parse','HEAD'], cwd=ROOT, text=True).strip()}`",
              "- The harness checks whether `margo build --check` is supported. On the pre-feature baseline it records the rejection and measures `margo build` as a full-work fallback.",
-             f"- Target enforcement: `{'on' if strict_targets else 'off'}` (`MOSS_M1_ENFORCE_TARGETS=1` enables hard assertions). `expected_packages` is always the R-rule target; `packages_checked` is observed work.",
+             f"- Target enforcement: `{'on' if strict_targets else 'off'}` (automatic when `margo build --check` is supported; `MOSS_M1_ENFORCE_TARGETS=1` enables it during rollout). `expected_packages` is always the R-rule target; `packages_checked` is observed work.",
              "- Counter source: one `MOSS_PROFILE_COMPILER=1` compiler invocation per checked package; modules count source files in checked packages (these fixtures use one source module per file). `functions_checked` counts source function checker entries, summed across Checker instances. `inference_function_visits` is total inference visits, not unique functions.",
              "- The Margo rows are package-graph totals. The file-check rows profile the edited file with the built dependency interfaces on `MOSS_MODULE_PATH`.", "",
              "## Package graph fixtures", "", "| Fixture | Packages | Baseline packages checked | Modules | Functions checked | Inference visits |", "|---|---:|---:|---:|---:|---:|"]
