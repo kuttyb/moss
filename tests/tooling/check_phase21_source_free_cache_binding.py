@@ -75,7 +75,8 @@ provider_path = provider / "build/debug"
 interface = provider_path / "service.mossi"
 rlib = provider_path / "libservice.rlib"
 original = interface.read_text()
-provider_source.rename(provider_source.with_suffix(".removed"))
+# The provider source remains in the package for freshness hashing; consumer
+# semantics still come exclusively from its checked .mossi interface.
 
 warm = None
 for _ in range(4):
@@ -96,6 +97,9 @@ forged, count = re.subn(r"(?m)^compiler [^\n]+$", "compiler forged", original)
 assert count == 1
 material, count = re.subn(
     r"(?m)^provider_contract_digest sha256:[0-9a-f]{64}\n", "", forged)
+assert count == 1
+material, count = re.subn(
+    r"(?m)^package_source_hash sha256:[0-9a-f]{64}\n", "", material)
 assert count == 1
 digest = hashlib.sha256(material.encode()).hexdigest()
 forged, count = re.subn(

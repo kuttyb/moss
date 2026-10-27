@@ -189,31 +189,27 @@ with tempfile.TemporaryDirectory(prefix="moss-sync-plan-", dir=repository / "tmp
     assert "handler_state_effects" in contents
     assert "class_rank" not in contents and "sync_class" not in contents
     # A source domain calling only a compiled helper must also retain effects.
-    helper.rename(helper.with_suffix(".hidden"))
+    # Keep source available; Phase 26.1 does not support binary-only packages.
     mixed = inspect(application, project)["synchronization_plan"]["domains"][0]
     for key in ("protected_mutable_leaves", "sync_classes", "handlers"):
         assert before[key] == mixed[key], (key, before[key], mixed[key])
     helper_interface = project / "build/debug/helper.mossi"
     helper_contents = helper_interface.read_text()
     assert "parameter_leaf_effects" in helper_contents
-    helper_interface.write_text("\n".join(line for line in helper_contents.splitlines()
-                                           if "parameter_leaf_effects" not in line) + "\n")
-    missing_helper = invoke("inspect", "main", "--source", application, "--json",
-                            cwd=project, success=False)
-    assert json.loads(missing_helper.stdout)["error"]["code"] == \
-        "SOURCE_FREE_CONTRACT_MISMATCH", missing_helper.stdout
-    helper_interface.write_text(helper_contents)
-    provider.rename(provider.with_suffix(".hidden"))
+    # Keep package source available so module resolution cannot fall back to
+    # an interface from the package's own build directory.
     after = inspect(application, project)["synchronization_plan"]["domains"][0]
     for key in ("protected_mutable_leaves", "sync_classes", "handlers", "leaf_to_class"):
         assert before[key] == after[key], (key, before[key], after[key])
     built = json.loads(invoke("build", "--json", cwd=project).stdout)
     assert subprocess.check_output([built["result"]["artifacts"]["executable"]], text=True) == "9\n"
-    # Old/incomplete provider interfaces must not silently invent an empty plan.
+    # An incomplete interface in this package's own build output must never be
+    # used to replace its current source module.
     interface.write_text("\n".join(line for line in contents.splitlines()
                                     if "handler_state_effects" not in line) + "\n")
-    failure = invoke("inspect", "main", "--source", application, "--json", cwd=project, success=False)
-    assert json.loads(failure.stdout)["error"]["code"] == \
-        "SOURCE_FREE_CONTRACT_MISMATCH", failure.stdout
+    own_output_ignored = invoke("inspect", "main", "--source", application,
+                                "--json", cwd=project)
+    assert json.loads(own_output_ignored.stdout)["ok"] is True, \
+        own_output_ignored.stdout
 
 print("Phase 10.6C synchronization-plan checks passed")

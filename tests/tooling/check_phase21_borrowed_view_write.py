@@ -70,7 +70,7 @@ if source_free.exists():
     shutil.rmtree(source_free)
 provider = source_free / "provider"
 consumer = source_free / "consumer"
-artifacts = source_free / "artifacts"
+artifacts = provider / "artifacts"
 for package, name in ((provider, "viewprovider"), (consumer, "viewconsumer")):
     (package / "src").mkdir(parents=True)
     (package / "Moss.toml").write_text(
@@ -90,7 +90,8 @@ assert built.returncode == 0, (built.stdout, built.stderr)
 artifacts.mkdir()
 for name in ("Provider.mossi", "libProvider.rlib"):
     shutil.copy2(provider / "build/debug" / name, artifacts / name)
-(provider / "src").rename(provider / "src.hidden")
+# Keep the copied interface beneath its provider manifest so R2 can verify its
+# freshness hash without loading the provider's source into the consumer check.
 assert {item.name for item in artifacts.iterdir()} == {
     "Provider.mossi", "libProvider.rlib"}
 environment["MOSS_MODULE_PATH"] = str(artifacts)

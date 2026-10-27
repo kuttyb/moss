@@ -37,6 +37,8 @@ struct Record {
 
 struct Interface {
   std::string module_id;
+  // Package freshness metadata is intentionally outside the semantic hashes.
+  std::string package_source_hash;
   std::string compiler;
   std::string backend_fingerprint;
   std::string backend_rustc;
@@ -213,6 +215,9 @@ inline std::string canonical_body(const Interface& value,
 }
 
 inline std::string encode(const Interface& value) {
+  require(value.package_source_hash.empty() || hex_hash(value.package_source_hash),
+          "SOURCE_FREE_CONTRACT_INVALID",
+          "ABI-v10 package source hash is malformed");
   std::string binary_hash, semantic_hash;
   const auto body = canonical_body(value, &binary_hash, &semantic_hash);
   const std::string header =
@@ -228,7 +233,11 @@ inline std::string encode(const Interface& value) {
   const auto material = header + "interface_hash " + interface_hash + "\n" + body;
   const auto digest = source_free_contract_sha256(material);
   return "moss-module-interface-v3\nprovider_contract_digest sha256:" +
-         digest + "\n" + material.substr(sizeof("moss-module-interface-v3\n") - 1);
+         digest + "\n" +
+         (value.package_source_hash.empty()
+              ? std::string()
+              : "package_source_hash " + value.package_source_hash + "\n") +
+         material.substr(sizeof("moss-module-interface-v3\n") - 1);
 }
 
 class Reader {
@@ -243,6 +252,15 @@ class Reader {
     require(valid_utf8(result) && result.find('\r') == std::string::npos,
             "SOURCE_FREE_CONTRACT_INVALID", "ABI-v10 line is not canonical UTF-8");
     return result;
+  }
+  std::string optional_field(const char* name) {
+    const auto saved = position_;
+    const std::string value = line();
+    const std::string prefix = std::string(name) + " ";
+    if (value.compare(0, prefix.size(), prefix) == 0)
+      return value.substr(prefix.size());
+    position_ = saved;
+    return {};
   }
   std::string bytes(std::size_t count) {
     require(count <= input_.size() - position_, "SOURCE_FREE_CONTRACT_INVALID",
@@ -323,6 +341,11 @@ inline SealedInterface parse(std::string_view text) {
           "ABI-v10 provider digest is malformed");
   SealedInterface result;
   result.digest = digest_text.substr(7);
+  result.value.package_source_hash = reader.optional_field("package_source_hash");
+  require(result.value.package_source_hash.empty() ||
+              hex_hash(result.value.package_source_hash),
+          "SOURCE_FREE_CONTRACT_INVALID",
+          "ABI-v10 package source hash is malformed");
   result.value.module_id = field(reader, "module_id");
   if (field(reader, "schema_version") != "10" ||
       field(reader, "native_abi") != "10")
@@ -372,8 +395,15 @@ inline bool digest_matches(std::string_view text, const SealedInterface& parsed)
   if (text.substr(0, prefix.size()) != prefix) return false;
   const auto line_end = text.find('\n', prefix.size());
   if (line_end == std::string_view::npos) return false;
+  std::size_t body_start = line_end + 1;
+  constexpr std::string_view freshness = "package_source_hash ";
+  if (text.substr(body_start, freshness.size()) == freshness) {
+    const auto freshness_end = text.find('\n', body_start);
+    if (freshness_end == std::string_view::npos) return false;
+    body_start = freshness_end + 1;
+  }
   std::string material("moss-module-interface-v3\n");
-  material.append(text.substr(line_end + 1));
+  material.append(text.substr(body_start));
   return source_free_contract_sha256(material) == parsed.digest;
 }
 

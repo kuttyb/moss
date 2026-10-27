@@ -9,6 +9,7 @@ import json
 import hashlib
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -157,11 +158,10 @@ def source_free(scratch, provider_source):
     write_package(provider, "g2provider", provider_source)
     built = run(MARGO, "build", "--json", cwd=provider)
     assert built.returncode == 0 and payload(built).get("ok"), (built.stdout, built.stderr)
-    artifacts = scratch / "artifacts"
-    artifacts.mkdir()
-    # Publish each interface with its selected provider rlib. The build's
-    # `libmoss_<Module>.rlib` is a rustc discovery alias that every consumer
-    # build recreates from the selected rlib; it is not provider ABI data.
+    # Consumers resolve the provider's current interface in place. Keeping
+    # the source tree lets check validate the out-of-band R2 source hash while
+    # still loading imported semantics only from .mossi.
+    artifacts = provider / "build/debug"
     interfaces = list((provider / "build/debug").glob("*.mossi"))
     files = interfaces + [file.with_name(f"lib{file.stem}.rlib") for file in interfaces]
     assert interfaces and all(file.exists() for file in files), \
@@ -171,10 +171,6 @@ def source_free(scratch, provider_source):
         and b"\nschema_version 10\n" in file.read_bytes()
         and b"\nnative_abi 10\n" in file.read_bytes()
         for file in interfaces), "provider did not emit ABI-v10 .mossi"
-    for file in files:
-        shutil.copy2(file, artifacts / file.name)
-    shutil.rmtree(provider / "src")
-    assert not (provider / "src").exists(), "provider source directory still reachable"
     env = os.environ.copy()
     env["MOSS_MODULE_PATH"] = str(artifacts)
     env["MOSS_STAGED_ABI"] = "v10"
@@ -205,11 +201,17 @@ def artifact_error(source, artifacts, code):
 
 
 def clone_artifacts(source, destination):
+    # Keep mutated interfaces under the producer package root so freshness
+    # validation can still read its source hash.
+    package_root = source.parents[1]
+    destination = package_root / "test-artifacts" / destination.name
+    destination.parent.mkdir(parents=True, exist_ok=True)
     shutil.copytree(source, destination)
     interfaces = list(destination.glob("*.mossi"))
-    libraries = list(destination.glob("*.rlib"))
-    assert len(interfaces) == len(libraries) == 1, (interfaces, libraries)
-    return interfaces[0], libraries[0]
+    assert len(interfaces) == 1, interfaces
+    selected_library = destination / f"lib{interfaces[0].stem}.rlib"
+    assert selected_library.is_file(), (interfaces, list(destination.glob("*.rlib")))
+    return interfaces[0], selected_library
 
 
 def replace_one(source, before, after):
@@ -243,6 +245,8 @@ fn main():
     digest_line = next(line for line in changed.splitlines(keepends=True)
                        if line.startswith(b"provider_contract_digest sha256:"))
     changed = changed.replace(digest_line, b"", 1)
+    changed = re.sub(rb"(?m)^package_source_hash sha256:[0-9a-f]{64}\n",
+                     b"", changed, count=1)
     digest = hashlib.sha256(changed).hexdigest().encode()
     forged.write_bytes(changed.replace(b"moss-module-interface-v3\n",
         b"moss-module-interface-v3\nprovider_contract_digest sha256:" + digest + b"\n", 1))

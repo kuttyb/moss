@@ -68,7 +68,7 @@ first = json.loads(run(margo, "build", "--json").stdout)
 assert run(first["artifacts"]["artifacts"]["executable"]).stdout == "3\n"
 interface = project / "build/debug/provider.mossi"
 assert interface.is_file()
-provider.rename(provider.with_suffix(".removed"))
+# Keep package source available for R2 interface freshness validation.
 
 # Alter the consumer to force a fresh source-free compilation. The provider's
 # early argument raise leaves its owned String available to the Root trailer.

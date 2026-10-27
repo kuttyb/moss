@@ -71,14 +71,12 @@ export fn unbox(item: Box):
     provider_env = fresh_env(scratch / "provider-home", MOSS_STAGED_ABI="v10")
     run([MARGO, "build"], cwd=provider, env=provider_env)
     artifacts = scratch / "provider-artifacts"
-    shutil.copytree(provider / "build" / "debug", artifacts)
-    interface = artifacts / "Service.mossi"
-    archive = artifacts / "libService.rlib"
+    shutil.copytree(provider, artifacts)
+    artifact_dir = artifacts / "build/debug"
+    interface = artifact_dir / "Service.mossi"
+    archive = artifact_dir / "libService.rlib"
     run([poisoner, interface, archive, "Service", "3", "nominal"])
     assert b"generic_stmt " not in interface.read_bytes()
-    shutil.rmtree(provider)
-    assert not list(scratch.rglob("provider/src/*.moss"))
-
     consumers = (
         ("int", "99", "99\n"),
         ("string", '"hello"', "hello\n"),
@@ -102,7 +100,7 @@ fn main():
         package(consumer, f"wp3_nominal_{profile}",
                 consumer_source.replace("EXPRESSION", expression))
         env = fresh_env(scratch / f"consumer-home-{profile}",
-                        MOSS_MODULE_PATH=str(artifacts),
+                        MOSS_MODULE_PATH=str(artifact_dir),
                         MOSS_STAGED_ABI="v10")
         run([MARGO, "build"], cwd=consumer, env=env)
         traced = run([MOSS, "check", consumer / "src" / "main.moss", "--json"],
@@ -122,7 +120,7 @@ fn main():
         executed = run([MARGO, "run"], cwd=consumer, env=env)
         assert executed.stdout == expected, (profile, executed.stdout,
                                               executed.stderr)
-        print(f"PASS independent source-free Box[{profile}] consumer",
+        print(f"PASS independent source-backed Box[{profile}] consumer",
               flush=True)
     assert len(instance_keys) == 2, instance_keys
 
@@ -135,10 +133,11 @@ fn main():
     for mutation in mutations:
         hostile = scratch / f"hostile-{mutation}"
         shutil.copytree(artifacts, hostile)
-        run([mutator, hostile / "Service.mossi",
-             hostile / "libService.rlib", mutation, "Service"])
+        hostile_artifacts = hostile / "build/debug"
+        run([mutator, hostile_artifacts / "Service.mossi",
+             hostile_artifacts / "libService.rlib", mutation, "Service"])
         env = fresh_env(scratch / f"hostile-home-{mutation}",
-                        MOSS_MODULE_PATH=str(hostile),
+                        MOSS_MODULE_PATH=str(hostile_artifacts),
                         MOSS_STAGED_ABI="v10",
                         MOSS_PHASE25_CHECKED_BODY_TRACE="1")
         rejected = run([MOSS, "check", consumer / "src" / "main.moss", "--json"],

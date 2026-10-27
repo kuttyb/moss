@@ -107,7 +107,7 @@ source_exe = json.loads(source_build.stdout)["artifacts"]["artifacts"][
 source_run = run(source_exe)
 assert (source_run.returncode, source_run.stdout) == (0, "2\n3\n9\n5\n"), source_run
 
-PROVIDER.rename(PROVIDER.with_suffix(".removed"))
+# Keep package source available for R2 interface freshness validation.
 CONSUMER.write_text(CONSUMER.read_text() + '  echo "rebuilt"\n')
 sourcefree_build = run(MARGO, "build", "--json")
 assert sourcefree_build.returncode == 0, (

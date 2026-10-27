@@ -178,7 +178,7 @@ project_check()
 built = json.loads(run(MARGO, "build", "--json", cwd=project).stdout)
 assert run(built["artifacts"]["artifacts"]["executable"],
            cwd=project).stdout == "99\n"
-provider.rename(provider.with_suffix(".removed"))
+# Keep package source available for R2 interface freshness validation.
 project_check()
 built = json.loads(run(MARGO, "build", "--json", cwd=project).stdout)
 assert run(built["artifacts"]["artifacts"]["executable"],

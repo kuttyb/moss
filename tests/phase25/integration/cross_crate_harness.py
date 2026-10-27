@@ -187,6 +187,7 @@ def corrupt_float_key_proof(mossi_text: str, mode: str = "malformed_effects") ->
 def recompute_contract_digest(mossi_text: str) -> str:
     """Recompute provider_contract_digest according to ABI-v9/v10 canonical hashing."""
     material = re.sub(r"(?m)^provider_contract_digest sha256:[0-9a-f]{64}\n?", "", mossi_text)
+    material = re.sub(r"(?m)^package_source_hash sha256:[0-9a-f]{64}\n?", "", material)
     digest = hashlib.sha256(material.encode("utf-8")).hexdigest()
     return re.sub(r"(?m)^provider_contract_digest sha256:[0-9a-f]{64}$",
                   f"provider_contract_digest sha256:{digest}", mossi_text)
@@ -236,9 +237,9 @@ def require_success(proc: subprocess.CompletedProcess, label: str) -> None:
         raise AcceptanceFailure(f"{label} failed (exit {proc.returncode}): {proc.stdout}\n{proc.stderr}")
 
 
-def stage_removed_provider(ctx: HarnessContext, res: ScenarioResult, source: Path,
+def stage_current_provider(ctx: HarnessContext, res: ScenarioResult, source: Path,
                            root: Path, name: str, imports: Optional[Dict[str, str]] = None) -> Path:
-    """Compile a real package, retain native artifacts, physically delete its entire tree."""
+    """Build a real provider and return its current interface output directory."""
     package = copy_binary_consumer(source, root / name)
     proc = ctx.run_cmd(package_command(ctx, "build"), cwd=package, env=imports)
     require_success(proc, f"provider {name} build")
@@ -255,18 +256,12 @@ def stage_removed_provider(ctx: HarnessContext, res: ScenarioResult, source: Pat
         if not re.search(rb"(?m)^schema_version 10$", header) or not re.search(
                 rb"(?m)^native_abi 10$", header):
             raise AcceptanceFailure(f"provider {name} did not emit ABI-v10 records")
-    artifact_dir = root / f"{name}-artifacts"
-    shutil.copytree(output, artifact_dir)
-    if list(artifact_dir.rglob("*.moss")):
-        raise AcceptanceFailure("artifact directory contains Moss source")
-    artifact_hashes = {str(f.relative_to(artifact_dir)): hashlib.sha256(f.read_bytes()).hexdigest()
-                       for f in artifact_dir.rglob("*") if f.is_file()}
-    shutil.rmtree(package)
-    if package.exists():
-        raise AcceptanceFailure(f"provider {name} source removal failed")
-    res.details.setdefault("removed_providers", []).append(
-        {"name": name, "source_tree_removed": True, "artifact_sha256": artifact_hashes})
-    return artifact_dir
+    artifact_hashes = {str(f.relative_to(output)): hashlib.sha256(f.read_bytes()).hexdigest()
+                       for f in output.rglob("*") if f.is_file()}
+    res.details.setdefault("source_backed_providers", []).append(
+        {"name": name, "source_tree_present": True,
+         "artifact_sha256": artifact_hashes})
+    return output
 
 
 def module_environment(*artifact_dirs: Path) -> Dict[str, str]:
@@ -275,9 +270,10 @@ def module_environment(*artifact_dirs: Path) -> Dict[str, str]:
 
 def build_and_execute(ctx: HarnessContext, consumer: Path, env: Dict[str, str],
                       expected_lines: List[str]) -> None:
-    require_success(ctx.run_cmd(package_command(ctx, "build"), cwd=consumer, env=env), "source-free consumer build")
+    """Build through imported .mossi interfaces; provider source is hash-only."""
+    require_success(ctx.run_cmd(package_command(ctx, "build"), cwd=consumer, env=env), "source-backed consumer build")
     proc = ctx.run_cmd(package_command(ctx, "run"), cwd=consumer, env=env)
-    require_success(proc, "source-free consumer execution")
+    require_success(proc, "source-backed consumer execution")
     # Margo may print build progress; program output must still contain exact lines,
     # in order, rather than accepting a substring such as 142 for expected 42.
     lines = proc.stdout.splitlines()
@@ -311,14 +307,14 @@ def execute_scenario(ctx: HarnessContext, scenario_id: int, name: str, body) -> 
 
 def run_scenario_1(ctx: HarnessContext) -> ScenarioResult:
     def body(res, root):
-        stage_removed_provider(ctx, res, ctx.fixtures_dir / "scenario01_provider", root, "provider")
-    return execute_scenario(ctx, 1, "Provider emits real ABI-v10 artifacts retained after source removal", body)
+        stage_current_provider(ctx, res, ctx.fixtures_dir / "scenario01_provider", root, "provider")
+    return execute_scenario(ctx, 1, "Provider emits real ABI-v10 artifacts with R2 source freshness", body)
 
 
 def run_box_consumer(ctx: HarnessContext, scenario_id: int, fixture: str,
                      expected_lines: List[str]) -> ScenarioResult:
     def body(res, root):
-        artifacts = stage_removed_provider(ctx, res, ctx.fixtures_dir / "scenario01_provider", root, "provider")
+        artifacts = stage_current_provider(ctx, res, ctx.fixtures_dir / "scenario01_provider", root, "provider")
         consumer = copy_binary_consumer(ctx.fixtures_dir / fixture, root / "consumer")
         build_and_execute(ctx, consumer, module_environment(artifacts), expected_lines)
     return execute_scenario(ctx, scenario_id, f"Source-free {fixture} compiles and executes", body)
@@ -334,10 +330,10 @@ def run_scenario_3(ctx: HarnessContext) -> ScenarioResult:
 
 def run_scenario_4(ctx: HarnessContext) -> ScenarioResult:
     def body(res, root):
-        provider = stage_removed_provider(ctx, res, ctx.fixtures_dir / "scenario01_provider", root, "provider")
+        provider = stage_current_provider(ctx, res, ctx.fixtures_dir / "scenario01_provider", root, "provider")
         env = module_environment(provider)
-        alpha = stage_removed_provider(ctx, res, ctx.fixtures_dir / "scenario02_consumer_a", root, "alpha", env)
-        beta = stage_removed_provider(ctx, res, ctx.fixtures_dir / "scenario03_consumer_b", root, "beta", env)
+        alpha = stage_current_provider(ctx, res, ctx.fixtures_dir / "scenario02_consumer_a", root, "alpha", env)
+        beta = stage_current_provider(ctx, res, ctx.fixtures_dir / "scenario03_consumer_b", root, "beta", env)
         consumer = copy_binary_consumer(ctx.fixtures_dir / "scenario04_joint_consumers", root / "joint")
         build_and_execute(ctx, consumer, module_environment(provider, alpha, beta), ["100", "shared"])
         res.details["linking_verified"] = True
@@ -351,7 +347,7 @@ def run_scenario_5(ctx: HarnessContext) -> ScenarioResult:
 def run_scenario_6(ctx: HarnessContext) -> ScenarioResult:
     def body(res, root):
         fixture = ctx.fixtures_dir / "scenario06_source_removal"
-        provider = stage_removed_provider(ctx, res, fixture / "provider", root, "provider")
+        provider = stage_current_provider(ctx, res, fixture / "provider", root, "provider")
         consumer = copy_binary_consumer(fixture / "consumer", root / "consumer")
         build_and_execute(ctx, consumer, module_environment(provider), ["99"])
     return execute_scenario(ctx, 6, "Source-removed generic provider with nested private helpers executes", body)
@@ -393,7 +389,7 @@ def diagnostic_error(proc: subprocess.CompletedProcess, expected_codes: set[str]
 def run_scenario_7(ctx: HarnessContext) -> ScenarioResult:
     def body(res, root):
         fixture = ctx.fixtures_dir / "scenario07_missing_method"
-        provider = stage_removed_provider(ctx, res, fixture / "provider", root, "provider")
+        provider = stage_current_provider(ctx, res, fixture / "provider", root, "provider")
         consumer = copy_binary_consumer(fixture / "consumer", root / "consumer")
         proc = ctx.run_cmd([ctx.compiler, "check", "src/main.moss", "--json"], cwd=consumer,
                            env=module_environment(provider))
@@ -425,7 +421,7 @@ def run_scenario_7(ctx: HarnessContext) -> ScenarioResult:
 def run_scenario_8(ctx: HarnessContext) -> ScenarioResult:
     def body(res, root):
         fixture = ctx.fixtures_dir / "scenario08_effect_conflict"
-        provider = stage_removed_provider(ctx, res, fixture / "provider", root, "provider")
+        provider = stage_current_provider(ctx, res, fixture / "provider", root, "provider")
         consumer = copy_binary_consumer(fixture / "consumer", root / "consumer")
         proc = ctx.run_cmd([ctx.compiler, "check", "src/main.moss", "--json"], cwd=consumer,
                            env=module_environment(provider))
@@ -469,7 +465,7 @@ def run_scenario_9(ctx: HarnessContext) -> ScenarioResult:
 def run_scenario_10(ctx: HarnessContext) -> ScenarioResult:
     def body(res, root):
         fixture = ctx.fixtures_dir / "scenario10_corrupt_metadata"
-        provider = stage_removed_provider(ctx, res, fixture / "provider", root, "provider")
+        provider = stage_current_provider(ctx, res, fixture / "provider", root, "provider")
         consumer = copy_binary_consumer(fixture / "consumer", root / "consumer")
         interface = next(provider.glob("*.mossi"))
         original = interface.read_text(encoding="utf-8")
@@ -501,14 +497,14 @@ def run_scenario_10(ctx: HarnessContext) -> ScenarioResult:
 def run_scenario_11(ctx: HarnessContext) -> ScenarioResult:
     def body(res, root):
         fixture = ctx.fixtures_dir / "scenario11_cache_invalidation"
-        provider = stage_removed_provider(ctx, res, fixture / "provider_v1", root, "provider-v1")
+        provider = stage_current_provider(ctx, res, fixture / "provider_v1", root, "provider-v1")
         consumer = copy_binary_consumer(fixture / "consumer", root / "consumer")
         env = module_environment(provider)
         build_and_execute(ctx, consumer, env, ["10"])
         require_success(ctx.run_cmd(package_command(ctx, "build"), cwd=consumer, env=env), "unchanged warm consumer build")
         # Replace selected compiled artifacts at the same path; neither provider's
         # source remains and consumer source/manifest are unchanged.
-        changed = stage_removed_provider(ctx, res, fixture / "provider_v2", root, "provider-v2")
+        changed = stage_current_provider(ctx, res, fixture / "provider_v2", root, "provider-v2")
         shutil.rmtree(provider)
         shutil.copytree(changed, provider)
         proc = ctx.run_cmd(package_command(ctx, "build"), cwd=consumer, env=env)

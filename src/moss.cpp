@@ -11772,6 +11772,19 @@ static string source_set_content_hash(
   return stable_hash(content.str());
 }
 
+static string package_source_freshness_hash(const ProjectManifest& manifest) {
+  const auto sources = project_source_files(manifest);
+  std::ostringstream content;
+  content << sources.size() << "\n";
+  for (const auto& source : sources) {
+    const string relative = project_relative_path(manifest, source);
+    const string bytes = read_text_file(source, "PROJECT_SOURCE_NOT_FOUND");
+    content << relative.size() << "\n" << relative
+            << bytes.size() << "\n" << bytes;
+  }
+  return "sha256:" + source_free_contract_sha256(content.str());
+}
+
 static string source_set_key(const ProjectManifest& manifest,
                              const vector<std::filesystem::path>& sources) {
   if (sources.size() == 1)
@@ -13196,7 +13209,23 @@ static string source_free_contract_material(const string& text) {
       }))
     throw CompileError(0, "ABI-v9 provider contract digest is malformed",
                        "SOURCE_FREE_CONTRACT_INVALID");
-  return text.substr(0, begin + 1) + text.substr(end + 1);
+  string material = text.substr(0, begin + 1) + text.substr(end + 1);
+  const string freshness_marker = "\npackage_source_hash ";
+  const size_t freshness = material.find(freshness_marker);
+  if (freshness != string::npos) {
+    if (material.find(freshness_marker, freshness + freshness_marker.size()) !=
+        string::npos)
+      throw CompileError(0, "ABI-v9 package source hash is repeated",
+                         "SOURCE_FREE_CONTRACT_INVALID");
+    const size_t freshness_line_start = freshness + 1;
+    const size_t freshness_end = material.find('\n', freshness_line_start);
+    if (freshness_end == string::npos)
+      throw CompileError(0, "ABI-v9 package source hash is incomplete",
+                         "SOURCE_FREE_CONTRACT_INVALID");
+    material.erase(freshness_line_start,
+                   freshness_end - freshness_line_start + 1);
+  }
+  return material;
 }
 
 static string source_free_declared_digest(const string& text) {
@@ -13204,6 +13233,45 @@ static string source_free_declared_digest(const string& text) {
   const size_t begin = text.find(marker);
   if (begin == string::npos) return {};
   return text.substr(begin + marker.size(), 64);
+}
+
+static string source_free_declared_package_hash(const string& text) {
+  const string marker = "\npackage_source_hash ";
+  const size_t begin = text.find(marker);
+  if (begin == string::npos ||
+      text.find(marker, begin + marker.size()) != string::npos)
+    return {};
+  const size_t value_begin = begin + marker.size();
+  const size_t end = text.find('\n', value_begin);
+  if (end == string::npos) return {};
+  return text.substr(value_begin, end - value_begin);
+}
+
+static string stale_interface_message(const string& package_name) {
+  return "interface for " + package_name +
+      " is missing or stale; run `margo build`";
+}
+
+static void validate_provider_source_freshness(
+    const std::filesystem::path& interface_file, const string& package_hash) {
+  auto root = find_project_root(interface_file.parent_path());
+  string package_name = interface_file.stem().string();
+  if (!root)
+    throw CompileError(0, stale_interface_message(package_name),
+                       "MOSS_INTERFACE_STALE");
+  try {
+    const ProjectManifest manifest = load_project_manifest(*root);
+    package_name = manifest.name;
+    if (package_hash.empty() ||
+        package_hash != package_source_freshness_hash(manifest))
+      throw CompileError(0, stale_interface_message(package_name),
+                         "MOSS_INTERFACE_STALE");
+  } catch (const CompileError&) {
+    throw;
+  } catch (const std::exception&) {
+    throw CompileError(0, stale_interface_message(package_name),
+                       "MOSS_INTERFACE_STALE");
+  }
 }
 
 static void verify_source_free_provider_binding(
@@ -13399,7 +13467,7 @@ static void validate_abi_v10_nominal_declarations(
 }
 
 static ParsedModuleUnit load_module_interface(
-    const std::filesystem::path& file) {
+    const std::filesystem::path& file, bool require_current_source = false) {
   std::ifstream input(file, std::ios::binary);
   std::ostringstream content;
   content << input.rdbuf();
@@ -13413,8 +13481,14 @@ static ParsedModuleUnit load_module_interface(
   abi_v10::SealedInterface sealed;
   if (v10_interface) {
     text = verified_abi_v10_interface_records(file, text, &sealed);
+    if (require_current_source)
+      validate_provider_source_freshness(file,
+                                         sealed.value.package_source_hash);
   } else {
     verify_source_free_provider_binding(file, text);
+    if (require_current_source)
+      validate_provider_source_freshness(
+          file, source_free_declared_package_hash(text));
     if (text.find("\nnative_abi " + std::to_string(kNativeAbiVersion) + "\n") == string::npos)
       throw CompileError(0, "compiled provider uses an incompatible native calling convention; rebuild its .mossi provider");
     // The producer already records separate hashes for the native contract and
@@ -15153,15 +15227,33 @@ static ParsedModuleUnit load_module_interface(
 
 static vector<std::filesystem::path> compiled_interface_candidates(
     const ProjectManifest& manifest) {
-  vector<std::filesystem::path> roots = {
-      manifest.root / "build" / "debug", manifest.root / "deps"};
+  vector<std::filesystem::path> roots = {manifest.root / "deps"};
+  std::error_code own_build_error;
+  auto own_build_root =
+      std::filesystem::weakly_canonical(manifest.root / "build", own_build_error);
+  if (own_build_error)
+    own_build_root = std::filesystem::absolute(manifest.root / "build")
+                         .lexically_normal();
+  auto is_own_build_path = [&](const std::filesystem::path& candidate) {
+    std::error_code error;
+    auto absolute = std::filesystem::weakly_canonical(candidate, error);
+    if (error) {
+      error.clear();
+      absolute = std::filesystem::absolute(candidate, error).lexically_normal();
+    }
+    if (error) return false;
+    const auto relative = absolute.lexically_relative(own_build_root);
+    if (relative.empty()) return absolute == own_build_root;
+    return relative != ".." && !starts_with(relative.generic_string(), "../");
+  };
   if (const char* path = std::getenv("MOSS_MODULE_PATH")) {
     string value = path;
     size_t begin = 0;
     while (begin <= value.size()) {
       size_t end = value.find(':', begin);
-      roots.emplace_back(value.substr(begin, end == string::npos
-                                                ? string::npos : end - begin));
+      const string root = value.substr(begin, end == string::npos
+                                                   ? string::npos : end - begin);
+      if (!root.empty() && !is_own_build_path(root)) roots.emplace_back(root);
       if (end == string::npos) break;
       begin = end + 1;
     }
@@ -15172,7 +15264,8 @@ static vector<std::filesystem::path> compiled_interface_candidates(
     if (!std::filesystem::is_directory(root, error)) continue;
     for (std::filesystem::recursive_directory_iterator it(root, error), end;
          !error && it != end; it.increment(error))
-      if (it->is_regular_file(error) && it->path().extension() == ".mossi")
+      if (it->is_regular_file(error) && it->path().extension() == ".mossi" &&
+          !is_own_build_path(it->path()))
         {
           std::error_code canonical_error;
           auto path = std::filesystem::weakly_canonical(it->path(), canonical_error);
@@ -15289,7 +15382,8 @@ static CheckedProjectUnit check_project_sources(
     ProgramGenerationMode mode,
     const string& declaration_filter = {},
     const std::set<string>* declaration_ids = nullptr,
-    const std::map<std::filesystem::path, string>* source_overrides = nullptr) {
+    const std::map<std::filesystem::path, string>* source_overrides = nullptr,
+    bool require_current_interfaces = false) {
   try {
     Program program;
     std::map<string,ParsedModuleUnit> modules;
@@ -15357,7 +15451,8 @@ static CheckedProjectUnit check_project_sources(
           const auto* selected = unique_compiled_module_provider(
               providers, requested.second);
           if (!selected) continue;
-          ParsedModuleUnit provider = load_module_interface(selected->interface_file);
+          ParsedModuleUnit provider = load_module_interface(
+              selected->interface_file, require_current_interfaces);
           // The provider map was indexed by the interface's module_id; retain
           // that invariant here rather than accepting a filename coincidence.
           if (provider.name != name)
@@ -15372,9 +15467,14 @@ static CheckedProjectUnit check_project_sources(
         }
       }
       for (const auto& name : requested_imports)
-        if (!modules.count(name.first))
-          throw CompileError(name.second.line, "imported module '" + name.first +
-                             "' was not found in source or compiled interfaces");
+        if (!modules.count(name.first)) {
+          if (require_current_interfaces)
+            throw CompileError(name.second.line,
+                stale_interface_message(name.first), "MOSS_INTERFACE_STALE");
+          else
+            throw CompileError(name.second.line, "imported module '" +
+                name.first + "' was not found in source or compiled interfaces");
+        }
     }
     // Module identities (TYPE_IR_CONTRACT §3.1). A source module belongs to
     // the package whose Moss.toml contains it (dependency sources reach here
@@ -15544,7 +15644,7 @@ static CompiledProjectUnit check_project_semantics(
     ProgramGenerationMode mode,
     const std::map<std::filesystem::path, string>* source_overrides = nullptr) {
   CheckedProjectUnit checked = check_project_sources(
-      manifest, sources, mode, {}, nullptr, source_overrides);
+      manifest, sources, mode, {}, nullptr, source_overrides, true);
   try {
     optimize_program(checked.program, optimized);
     OptimizationPlan plan = OptimizationPlan{optimized};
@@ -18440,6 +18540,8 @@ static vector<std::filesystem::path> write_module_interfaces(
     const std::map<string, std::filesystem::path>& external_interfaces,
     const std::optional<abi_v10::RuntimeCrateIdentity>& shared_runtime = std::nullopt) {
   program.assert_declaration_type_consistency();
+  const string package_source_hash =
+      package_source_freshness_hash(manifest);
   std::map<string,std::ostringstream> contents;
   std::map<string,std::ostringstream> interface_contents;
   std::map<string, vector<abi_v10::Record>> local_key_proofs;
@@ -18844,6 +18946,7 @@ static vector<std::filesystem::path> write_module_interfaces(
   std::function<string(const string&)> encode_v10 = [&](const string& module) {
     abi_v10::Interface value;
     value.module_id = abi_v10_module_id(manifest, module);
+    value.package_source_hash = package_source_hash;
     value.compiler = kCompilerVersion;
     value.backend_fingerprint = backend.fingerprint;
     value.backend_rustc = backend.version_verbose.substr(
@@ -19051,6 +19154,7 @@ static vector<std::filesystem::path> write_module_interfaces(
     const string digest = source_free_contract_sha256(material);
     const string text = material.substr(0, first_line + 1) +
         "provider_contract_digest sha256:" + digest + "\n" +
+        "package_source_hash " + package_source_hash + "\n" +
         material.substr(first_line + 1);
     if (!prior || prior_text.str() != text) {
       std::ofstream output(file, std::ios::binary);
@@ -23587,7 +23691,12 @@ int main(int argc, char** argv) {
           else if (query_overlay)
             overrides[std::filesystem::absolute(input).lexically_normal()] =
                 *query_overlay;
-          auto sources = moss::fast_debug_source_closure(context);
+          // The check contract resolves other packages exclusively through
+          // their current .mossi interfaces. Fast Debug intentionally keeps
+          // its dependency-source closure supplied by Margo.
+          auto sources = active_command == "check"
+              ? context.sources
+              : moss::fast_debug_source_closure(context);
           // Check and semantic queries stop at semantics, exactly like the
           // standalone path below; only compilation lowers to Rust.
           auto unit = check_only

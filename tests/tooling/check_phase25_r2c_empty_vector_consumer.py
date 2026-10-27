@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prove source-free ABI-v10 empty-vector import and specialization."""
+"""Prove ABI-v10 empty-vector imports against a source-backed provider."""
 
 import os
 from pathlib import Path
@@ -53,9 +53,8 @@ export fn fresh():
                   TMPDIR=str(TMP))
     run([str(MARGO), "build"], cwd=provider, env=staged)
     artifacts = scratch / "provider-artifacts"
-    shutil.copytree(provider / "build" / "debug", artifacts)
-    shutil.rmtree(provider / "src")
-    assert not (provider / "src").exists(), "provider source directory remained"
+    shutil.copytree(provider, artifacts)
+    artifact_dir = artifacts / "build/debug"
 
     consumer = scratch / "consumer"
     package(consumer, "r2c_empty_vector_consumer", """module Main
@@ -72,7 +71,7 @@ fn main():
   echo flags
 """)
     consumer_env = staged.copy()
-    consumer_env.update(MOSS_MODULE_PATH=str(artifacts),
+    consumer_env.update(MOSS_MODULE_PATH=str(artifact_dir),
                         MOSS_PHASE25_CHECKED_BODY_TRACE="1",
                         MARGO_HOME=str(scratch / "margo-consumer"))
     run([str(MARGO), "build"], cwd=consumer, env=consumer_env)
@@ -83,7 +82,7 @@ fn main():
         "consumer did not report checked-body projection", build_output)
     actual = run([str(MARGO), "run"], cwd=consumer, env=consumer_env)
     assert actual == "[]\n[7]\n[]\n[true]\n", actual
-    print("PASS source-free checked-body consumer: Vector[i32] and Vector[bool]")
+    print("PASS imported checked-body consumer: Vector[i32] and Vector[bool]")
     print("PASS checked-body branch trace present; legacy generic_stmt not selected")
     print("PASS native execution preserves empty vectors and concrete elements")
 
@@ -99,8 +98,7 @@ export fn fresh():
     v9_env["MARGO_HOME"] = str(scratch / "margo-provider-v9")
     run([str(MARGO), "build"], cwd=provider_v9, env=v9_env)
     v9_artifacts = scratch / "provider-v9-artifacts"
-    shutil.copytree(provider_v9 / "build" / "debug", v9_artifacts)
-    shutil.rmtree(provider_v9 / "src")
+    shutil.copytree(provider_v9, v9_artifacts)
     consumer_v9 = scratch / "consumer-v9"
     package(consumer_v9, "r2c_empty_vector_consumer_v9", """module Main
 import Provider
@@ -115,13 +113,13 @@ fn main():
 """)
     consumer_v9_env = v9_env.copy()
     consumer_v9_env.pop("MOSS_PHASE25_CHECKED_BODY_TRACE", None)
-    consumer_v9_env["MOSS_MODULE_PATH"] = str(v9_artifacts)
+    consumer_v9_env["MOSS_MODULE_PATH"] = str(v9_artifacts / "build/debug")
     consumer_v9_env["MARGO_HOME"] = str(scratch / "margo-consumer-v9")
     run([str(MARGO), "build"], cwd=consumer_v9, env=consumer_v9_env)
     v9_actual = run([str(MARGO), "run"], cwd=consumer_v9,
                     env=consumer_v9_env)
     assert v9_actual == "[7]\n[true]\n", v9_actual
-    print("PASS default ABI-v9 source-free empty-vector behavior")
+    print("PASS default ABI-v9 empty-vector behavior")
 
     failures = {
         "missing-summary": ("SOURCE_FREE_SUMMARY_INVALID",),
@@ -138,15 +136,16 @@ fn main():
     for mode, expected_codes in failures.items():
         mutated = scratch / f"artifacts-{mode}"
         shutil.copytree(artifacts, mutated)
-        run([str(mutator), str(mutated / "Provider.mossi"),
-             str(mutated / "libProvider.rlib"), mode], cwd=ROOT,
+        mutated_build = mutated / "build/debug"
+        run([str(mutator), str(mutated_build / "Provider.mossi"),
+             str(mutated_build / "libProvider.rlib"), mode], cwd=ROOT,
             env=consumer_env)
         bad_consumer = scratch / f"consumer-{mode}"
         package(bad_consumer, f"r2c_empty_vector_{mode.replace('-', '_')}",
                 "module Main\nimport Provider\n\nfn main():\n"
                 "  echo Provider.fresh()\n")
         bad_env = consumer_env.copy()
-        bad_env["MOSS_MODULE_PATH"] = str(mutated)
+        bad_env["MOSS_MODULE_PATH"] = str(mutated_build)
         rejected = run([str(MARGO), "build"], cwd=bad_consumer, env=bad_env,
                        expected=1)
         assert any(code in rejected for code in expected_codes), (
@@ -169,6 +168,6 @@ fn main():
                       "tests/tooling/check_phase25_m2b1_provenance.py",
                       str(MOSS)], cwd=ROOT, env=provenance_env)
     assert "PASS conflicting_fresh_use" in provenance, provenance
-    print("PASS M2b.1 source-free consumer provenance acceptance")
+    print("PASS M2b.1 consumer provenance acceptance")
 
 print("PASS R2c checked empty-vector consumer")

@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Source-free Phase 21 effects: preserve provider summaries and fail closed."""
+"""Imported effect summaries use current source-backed provider interfaces."""
 
 import json
 import hashlib
+import os
 from pathlib import Path
 import re
 import shutil
@@ -16,11 +17,16 @@ out = Path(sys.argv[2]).resolve()
 project = out / "provider-consumer"
 if project.exists():
     shutil.rmtree(project)
-(project / "src").mkdir(parents=True, exist_ok=True)
-(project / "moss.toml").write_text(
+(project / "provider/src").mkdir(parents=True)
+(project / "provider/moss.toml").write_text(
     '[project]\nname="phase21_imported_effects"\nversion="0.1.0"\n')
-provider = project / "src/provider.moss"
-consumer = project / "src/main.moss"
+consumer_project = project / "consumer"
+(consumer_project / "src").mkdir(parents=True)
+(consumer_project / "moss.toml").write_text(
+    '[project]\nname="phase21_effects_consumer"\nversion="0.1.0"\n'
+    '\n[dependencies]\nphase21_imported_effects = { path = "../provider" }\n')
+provider = project / "provider/src/provider.moss"
+consumer = consumer_project / "src/main.moss"
 provider.write_text('''module provider
 export enum Fault:
   Bad(code: Int)
@@ -44,8 +50,14 @@ export type Gauge:
 ''')
 
 
-def run(args, expected=0):
-    result = subprocess.run([str(a) for a in args], cwd=project,
+provider_env = dict(os.environ)
+provider_env["MOSS"] = str(compiler)
+consumer_env = dict(provider_env)
+consumer_env["MOSS_MODULE_PATH"] = str(project / "provider/build/debug")
+
+
+def run(args, expected=0, *, cwd=consumer_project, env=consumer_env):
+    result = subprocess.run([str(a) for a in args], cwd=cwd, env=env,
                             text=True, capture_output=True, timeout=180)
     assert result.returncode == expected, (
         args, result.returncode, result.stdout, result.stderr)
@@ -68,6 +80,8 @@ def build_and_run(expected):
     assert run([binary]).stdout == expected
 
 
+run([margo, "build", "--json"], cwd=project / "provider", env=provider_env)
+
 source_backed = '''module app
 import provider
 fn main():
@@ -88,7 +102,7 @@ fn main():
 consumer.write_text(source_backed)
 # Plant an old local output before the first build. It is neither an imported
 # provider nor a contract for the current app module.
-stale_app = project / "build/debug/app.mossi"
+stale_app = consumer_project / "build/debug/app.mossi"
 stale_app.parent.mkdir(parents=True)
 stale_app.write_text("moss-module-interface-v1\nnative_abi 8\n")
 assert check()["ok"]
@@ -105,7 +119,8 @@ assert stale_app.read_text().startswith(
     "moss-module-interface-v2\nprovider_contract_digest sha256:")
 assert run([margo, "debug"]).stdout == "17\n23\n19\n"
 
-provider.rename(provider.with_suffix(".removed"))
+# Keep the provider package source available so its interface freshness hash
+# remains valid under the Phase 26.1 R2 contract.
 source_free = '''module app
 import provider
 fn main():
@@ -176,7 +191,7 @@ fn main():
 ''')
 assert check()["ok"]
 
-interface = project / "build/debug/provider.mossi"
+interface = project / "provider/build/debug/provider.mossi"
 original = interface.read_text()
 assert "object_method fail" in original
 assert re.search(r"object_method fail[^\n]*effects=", original)
@@ -202,6 +217,8 @@ for key, section in (("concrete_interface_hash", contract + "\n"),
                       f"{key} {stable_hash(section)}", tampered)
 material = re.sub(r"(?m)^provider_contract_digest sha256:[0-9a-f]{64}\n",
                   "", tampered, count=1)
+material = re.sub(r"(?m)^package_source_hash sha256:[0-9a-f]{64}\n",
+                  "", material, count=1)
 tampered = re.sub(r"(?m)^provider_contract_digest sha256:[0-9a-f]{64}$",
                   "provider_contract_digest sha256:" +
                   hashlib.sha256(material.encode()).hexdigest(), tampered)
@@ -213,10 +230,9 @@ interface.write_text(tampered)
 rejected = json.loads(run([compiler, "check", consumer, "--json"],
                           expected=1).stdout)
 assert rejected["error"]["code"] == "SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH"
-warm_rejected = json.loads(run([margo, "build", "--json"],
-                               expected=1).stdout)
-assert not warm_rejected["ok"], warm_rejected
-interface.write_text(original)
+rebuilt = json.loads(run([margo, "build", "--json"]).stdout)
+assert rebuilt["ok"], rebuilt
+assert interface.read_text() == original, "Margo must restore tampered provider output"
 
 # Old local output metadata must not be mistaken for a compiled provider when
 # a no-export application is rebuilt in the same directory.

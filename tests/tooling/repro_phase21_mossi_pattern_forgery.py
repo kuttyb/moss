@@ -3,6 +3,7 @@
 
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import shutil
@@ -14,10 +15,14 @@ ROOT = Path(__file__).resolve().parents[2]
 COMPILER = Path(sys.argv[1] if len(sys.argv) > 1 else ROOT / "moss").resolve()
 OUT = ROOT / "tmp/phase21-mossi-pattern-forgery"
 shutil.rmtree(OUT, ignore_errors=True)
-(OUT / "src").mkdir(parents=True)
-(OUT / "moss.toml").write_text(
+(OUT / "provider/src").mkdir(parents=True)
+(OUT / "provider/moss.toml").write_text(
     '[project]\nname="phase21_pattern_forgery"\nversion="0.1.0"\n')
-provider = OUT / "src/service.moss"
+consumer_project = OUT / "consumer"
+(consumer_project / "src").mkdir(parents=True)
+(consumer_project / "moss.toml").write_text(
+    '[project]\nname="phase21_pattern_consumer"\nversion="0.1.0"\n')
+provider = OUT / "provider/src/service.moss"
 provider.write_text('''module service
 export enum E:
   A
@@ -36,7 +41,7 @@ export domain Worker:
     count = count + 2
     reply count
 ''')
-main = OUT / "src/main.moss"
+main = consumer_project / "src/main.moss"
 main.write_text('''module app
 import service
 fn main():
@@ -46,21 +51,26 @@ fn main():
 ''')
 
 
-def run(*command, expected=0):
+def run(*command, expected=0, cwd=consumer_project, env=None):
     result = subprocess.run(
-        [str(part) for part in command], cwd=OUT, capture_output=True,
+        [str(part) for part in command], cwd=cwd, env=env, capture_output=True,
         text=True, timeout=180)
     assert result.returncode == expected, (command, result.returncode,
                                             result.stdout, result.stderr)
     return result
 
 
-built = json.loads(run(COMPILER, "build", "--json").stdout)
+provider_build = json.loads(run(ROOT / "margo", "build", "--json",
+                                cwd=OUT / "provider").stdout)
+assert provider_build["ok"], provider_build
+consumer_env = os.environ.copy()
+consumer_env["MOSS"] = str(COMPILER)
+consumer_env["MOSS_MODULE_PATH"] = str(OUT / "provider/build/debug")
+built = json.loads(run(COMPILER, "build", "--json", env=consumer_env).stdout)
 assert built["ok"], built
 executable = Path(built["result"]["artifacts"]["executable"])
 assert run(executable).stdout == "1\n3\n"
-provider.rename(provider.with_suffix(".removed"))
-interface = OUT / "build/debug/service.mossi"
+interface = OUT / "provider/build/debug/service.mossi"
 text = interface.read_text()
 patterns = {
     'handler_failure_arm "Run" 0 "enum:service__E:A"':
@@ -92,6 +102,9 @@ for key, section in (("concrete_interface_hash", contract + "\n"),
 material, count = re.subn(
     r"(?m)^provider_contract_digest sha256:[0-9a-f]{64}\n", "", text)
 assert count == 1
+material, count = re.subn(
+    r"(?m)^package_source_hash sha256:[0-9a-f]{64}\n", "", material)
+assert count == 1
 text, count = re.subn(
     r"(?m)^provider_contract_digest sha256:[0-9a-f]{64}$",
     "provider_contract_digest sha256:" + hashlib.sha256(
@@ -100,7 +113,8 @@ assert count == 1
 interface.write_text(text)
 
 for command in (("check", main, "--json"), ("build", "--json")):
-    rejected = json.loads(run(COMPILER, *command, expected=1).stdout)
+    rejected = json.loads(run(COMPILER, *command, expected=1,
+                              env=consumer_env).stdout)
     assert rejected["error"]["code"] == (
         "SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH"), rejected
 print("ABI-v9 forged failure-arm metadata rejected before native execution")

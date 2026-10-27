@@ -81,18 +81,16 @@ export fn relay():
         flags = ["--release"] if profile == "release" else []
         run([MARGO, "build", *flags], cwd=provider, env=env)
         artifacts = scratch / f"artifacts-v10-{profile}"
-        shutil.copytree(provider / "build" / profile, artifacts)
-        interface = artifacts / "Service.mossi"
-        archive = artifacts / "libService.rlib"
+        shutil.copytree(provider, artifacts)
+        artifact_dir = artifacts / "build" / profile
+        interface = artifact_dir / "Service.mossi"
+        archive = artifact_dir / "libService.rlib"
         before = interface.read_text(errors="replace")
         assert "generic_stmt" in before, "provider has no legacy generic body to poison"
         run([poisoner, interface, archive, "Service", "3", "call-chain"])
         after = interface.read_text(errors="replace")
         assert "generic_stmt" not in after, after
         artifacts_by_profile[profile] = artifacts
-
-    shutil.rmtree(provider)
-    assert not list(scratch.rglob("provider/src/*.moss"))
 
     consumer_source = """module Main
 import Service
@@ -109,7 +107,8 @@ fn main():
     for profile, artifacts in artifacts_by_profile.items():
         flags = ["--release"] if profile == "release" else []
         env = fresh_env(scratch / f"consumer-v10-{profile}",
-                        MOSS_MODULE_PATH=str(artifacts), MOSS_STAGED_ABI="v10")
+                        MOSS_MODULE_PATH=str(artifacts / "build" / profile),
+                        MOSS_STAGED_ABI="v10")
         consumer = scratch / f"consumer-v10-{profile}"
         package(consumer, f"r2_chain_consumer_{profile}", consumer_source)
         run([MARGO, "build", *flags], cwd=consumer, env=env)
@@ -135,12 +134,11 @@ export fn relay():
         env = fresh_env(scratch / f"v9-provider-home-{profile}")
         run([MARGO, "build", *flags], cwd=v9_provider, env=env)
         artifacts = scratch / f"artifacts-v9-{profile}"
-        shutil.copytree(v9_provider / "build" / profile, artifacts)
-        shutil.rmtree(v9_provider)
+        shutil.copytree(v9_provider, artifacts)
         consumer = scratch / f"v9-consumer-{profile}"
         package(consumer, f"r2_chain_v9_consumer_{profile}", consumer_source)
         consumer_env = fresh_env(scratch / f"v9-consumer-home-{profile}",
-                                 MOSS_MODULE_PATH=str(artifacts))
+                                 MOSS_MODULE_PATH=str(artifacts / "build" / profile))
         run([MARGO, "build", *flags], cwd=consumer, env=consumer_env)
         executed = run([MARGO, "run", *flags], cwd=consumer, env=consumer_env)
         assert executed.stdout == expected, ("v9", profile, executed.stdout,
@@ -157,8 +155,9 @@ export fn relay():
     for mutation in mutations:
         artifacts = scratch / f"hostile-{mutation}"
         shutil.copytree(base, artifacts)
-        outcome = run([mutator, artifacts / "Service.mossi",
-                       artifacts / "libService.rlib", mutation, "Service"])
+        artifact_dir = artifacts / "build/debug"
+        outcome = run([mutator, artifact_dir / "Service.mossi",
+                       artifact_dir / "libService.rlib", mutation, "Service"])
         if mutation in ("duplicate-body", "duplicate-dependency",
                         "missing-dependency-hash"):
             assert f"rejected {mutation}" in outcome.stdout, outcome.stdout
@@ -167,7 +166,8 @@ export fn relay():
         assert f"mutated {mutation}" in outcome.stdout, outcome.stdout
         consumer = scratch / f"consumer-{mutation}"
         package(consumer, f"r2_chain_bad_{mutation}", consumer_source)
-        env = fresh_env(scratch / f"home-{mutation}", MOSS_MODULE_PATH=str(artifacts),
+        env = fresh_env(scratch / f"home-{mutation}",
+                        MOSS_MODULE_PATH=str(artifact_dir),
                         MOSS_STAGED_ABI="v10",
                         MOSS_PHASE25_CHECKED_BODY_TRACE="1")
         rejected = run([MOSS, "build", "--json"], cwd=consumer, env=env, ok=False)
@@ -181,4 +181,4 @@ export fn relay():
             mutation, target, rejected.stdout, rejected.stderr)
         print(f"PASS hostile call-chain {mutation}: {diagnostic['code']}", flush=True)
 
-print("R2 WP1 three-hop generic result chain, source-free Debug/Release, ABI-v9 controls, poisoned legacy bodies, and hostile closure: PASS")
+print("R2 WP1 three-hop generic result chain, source-backed Debug/Release interfaces, ABI-v9 controls, poisoned legacy bodies, and hostile closure: PASS")

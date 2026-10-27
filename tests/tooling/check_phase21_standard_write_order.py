@@ -142,7 +142,7 @@ build_and_run("1\n3\n5\n7\n")
 build_and_run("1\n3\n5\n7\n", release=True)
 assert run(margo, "debug", cwd=project).stdout == "1\n3\n5\n7\n"
 
-provider.rename(provider.with_suffix(".removed"))
+# Keep package source available for R2 interface freshness validation.
 consumer.write_text(consumer.read_text().replace(
     "      echo 1\n", "      echo 1\n      echo 1\n"))
 run(compiler, "check", consumer, "--json", cwd=project)

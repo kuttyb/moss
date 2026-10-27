@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Staged ABI-v10 nominal key proof transport across source-free crates."""
+"""Staged ABI-v10 nominal key proof transport across source-backed packages."""
 
 import json
 import os
@@ -74,7 +74,6 @@ def main():
         provider_artifacts = provider / "build/debug"
         provider_interface = provider_artifacts / "keyprov.mossi"
         canonical = proof_ids(wire_tool, provider_interface, env)
-        (provider / "src").rename(provider / "src.hidden")
         source_free_env = dict(env, MOSS_MODULE_PATH=str(provider_artifacts))
         checked = json.loads(run(
             [MOSS, "check", "src/main.moss", "--json"], app, source_free_env
@@ -90,7 +89,7 @@ def main():
 
         # Re-encode the proof and reseal the selected rlib marker, so the exact
         # method-hash check must reject this mutation before native linking.
-        mutant = work / "mutant"
+        mutant = provider / "mutant"
         mutant.mkdir()
         mutated_interface = mutant / "keyprov.mossi"
         old_digest, new_digest = run([
@@ -117,7 +116,6 @@ def main():
         build(registry, env)
         registry_artifacts = registry / "build/debug"
         canonical = proof_ids(wire_tool, registry_artifacts / "registry.mossi", env)
-        (registry / "src").rename(registry / "src.hidden")
         consumer_artifacts = [registry_artifacts]
         independent_operation_ids = []
         for consumer in ("alpha", "beta"):
@@ -129,7 +127,6 @@ def main():
             assert operations[("map", "get")][0] == canonical[0]
             independent_operation_ids.append(operations[("map", "get")][1])
             consumer_artifacts.append(artifacts)
-            (package / "src").rename(package / "src.hidden")
         app = copied / "app"
         app_env = dict(env, MOSS_MODULE_PATH=":".join(map(str, consumer_artifacts)))
         build(app, app_env)
@@ -137,7 +134,7 @@ def main():
         assert proof_ids(wire_tool, app / "build/debug/app.mossi", env) == canonical
         assert independent_operation_ids[0] == independent_operation_ids[1]
 
-        mutant_alpha = work / "mutant-alpha"
+        mutant_alpha = copied / "alpha" / "mutant-alpha"
         mutant_alpha.mkdir()
         alpha_artifacts = copied / "alpha/build/debug"
         old_digest, new_digest = run([
@@ -178,7 +175,7 @@ def main():
         assert "moss_runtime::MossMap<f64," in float_map_rust
         assert ".insert_with(moss_float_hash(__moss_key)" in float_map_rust
         assert "|a, b| moss_float_isequal(*a, *b)" in float_map_rust
-    print("PASS: one proof ID across source-free consumers; resealed tamper -> KEY_PROOF_INVALID / KEY_PROOF_COHERENCE_MISMATCH")
+    print("PASS: one proof ID across source-backed consumers; resealed tamper -> KEY_PROOF_INVALID / KEY_PROOF_COHERENCE_MISMATCH")
 
 
 if __name__ == "__main__":

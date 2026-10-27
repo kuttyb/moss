@@ -188,7 +188,7 @@ def check_execution_and_abi():
             '[project]\nname="bitwise_source_free"\nversion="0.1.0"\n',
             encoding="utf-8")
         provider_source = provider / "src/bitwise.moss"
-        provider_source.rename(provider / "src/bitwise.removed")
+        # Keep package source available for R2 interface freshness validation.
         compiled_provider = provider / "build/debug"
         assert (compiled_provider / "bitwise.mossi").exists()
         assert (compiled_provider / "libbitwise.rlib").exists()

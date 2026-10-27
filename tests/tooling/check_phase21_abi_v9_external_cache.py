@@ -56,21 +56,12 @@ def run(project, *args, provider_path=None, expected=0):
 
 
 run(provider_project, MARGO, "build", "--json")
-external = OUT / "external-provider"
-external.mkdir()
 build = provider_project / "build/debug"
-interface = external / "provider.mossi"
-rlib = external / "libprovider.rlib"
-shutil.copy2(build / "provider.mossi", interface)
-shutil.copy2(build / "libprovider.rlib", rlib)
-shutil.copy2(build / "bridge.mossi", external / "bridge.mossi")
-shutil.copy2(build / "libbridge.rlib", external / "libbridge.rlib")
-provider_source = provider_project / "src/provider.moss"
-provider_source.rename(provider_source.with_suffix(".removed"))
-
+interface = build / "provider.mossi"
+rlib = build / "libprovider.rlib"
 for _ in range(2):
     built = json.loads(run(consumer_project, MARGO, "build", "--json",
-                           provider_path=external).stdout)
+                           provider_path=build).stdout)
     executable = built["artifacts"]["artifacts"]["executable"]
     assert run(consumer_project, executable).stdout == "42\n"
 
@@ -82,12 +73,14 @@ forged = original.replace("return=int", "return=bool", 1)
 assert forged != original
 material = re.sub(r"(?m)^provider_contract_digest sha256:[0-9a-f]{64}\n",
                   "", forged, count=1)
+material = re.sub(r"(?m)^package_source_hash sha256:[0-9a-f]{64}\n",
+                  "", material, count=1)
 forged = re.sub(r"(?m)^provider_contract_digest sha256:[0-9a-f]{64}$",
                 "provider_contract_digest sha256:" +
                 hashlib.sha256(material.encode()).hexdigest(), forged)
 interface.write_text(forged)
 rejected = json.loads(run(consumer_project, MARGO, "build", "--json",
-                          provider_path=external, expected=1).stdout)
+                          provider_path=build, expected=1).stdout)
 assert not rejected["ok"], rejected
 interface.write_text(original)
 
@@ -110,18 +103,18 @@ fn main():
 run(alternate, MARGO, "build", "--json")
 shutil.copy2(alternate / "build/debug/libprovider.rlib", rlib)
 checked = json.loads(run(consumer_project, MOSS, "check", consumer, "--json",
-                         provider_path=external, expected=1).stdout)
+                         provider_path=build, expected=1).stdout)
 assert checked["error"]["code"] == \
     "SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH", checked
 rejected = json.loads(run(consumer_project, MARGO, "build", "--json",
-                          provider_path=external, expected=1).stdout)
+                          provider_path=build, expected=1).stdout)
 assert not rejected["ok"] and \
     "SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH" in rejected["error"], rejected
 
 # A selected stale provider artifact must also invalidate the warm consumer.
 rlib.write_bytes(b"!<arch>\n")
 rejected = json.loads(run(consumer_project, MARGO, "build", "--json",
-                          provider_path=external, expected=1).stdout)
+                          provider_path=build, expected=1).stdout)
 assert not rejected["ok"], rejected
 
 print("ABI-v9 transitive external-provider warm-cache revalidation passed")

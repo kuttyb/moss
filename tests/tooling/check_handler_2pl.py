@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Production 2PL: execute generated wrappers concurrently, not a runtime mock."""
 import json
+import os
 from pathlib import Path
 import re
 import resource
@@ -34,8 +35,8 @@ out.mkdir(parents=True, exist_ok=True)
 resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
 
 
-def run(args, *, expected=0, cwd=None):
-    result = subprocess.run(list(map(str, args)), cwd=cwd, text=True, capture_output=True, timeout=90)
+def run(args, *, expected=0, cwd=None, env=None):
+    result = subprocess.run(list(map(str, args)), cwd=cwd, env=env, text=True, capture_output=True, timeout=90)
     assert result.returncode == expected, (args, result.returncode, result.stdout, result.stderr)
     return result.stdout
 
@@ -300,7 +301,7 @@ fn main():
 ''')
 for source_free in (False, True):
     if source_free:
-        provider.rename(provider.with_suffix('.hidden'))
+        # Keep package source available; own build output cannot stand in for it.
         # Force a fresh consumer graph/layout rather than cached execution.
         application.write_text(application.read_text().replace('value: 8', 'value: 18'))
     built = json.loads(run([compiler, 'build', '--json'], cwd=project))['result']
@@ -316,7 +317,16 @@ legacy = contents.replace('native_abi 9\n', 'native_abi 8\n')
 legacy = re.sub(r'(?m)^provider_contract_digest sha256:[0-9a-f]{64}\n', '', legacy)
 assert legacy != contents
 interface_path.write_text(legacy)
-old = run([compiler, 'inspect', 'main', '--source', application, '--json'], expected=1, cwd=project)
+compat_consumer = project / 'compat-consumer'
+(compat_consumer / 'src').mkdir(parents=True)
+(compat_consumer / 'Moss.toml').write_text(
+    '[project]\nname = "phase106d_compat_consumer"\nversion = "0.1.0"\n')
+compat_source = compat_consumer / 'src/main.moss'
+compat_source.write_text(application.read_text())
+compat_env = dict(os.environ,
+                  MOSS_MODULE_PATH=str(project / 'build/debug'))
+old = run([compiler, 'inspect', 'main', '--source', compat_source, '--json'],
+          expected=1, cwd=compat_consumer, env=compat_env)
 assert json.loads(old)['error']['code'] == 'SOURCE_FREE_ABI_REBUILD_REQUIRED', old
 interface_path.write_text(contents)
 print('Phase 10.6D source/source-free domain and primitive WRITE ABI checks passed.')

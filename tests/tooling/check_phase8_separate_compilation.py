@@ -44,8 +44,8 @@ def main() -> int:
         assert (build / "app.rs").exists()
         assert any(Path(path).name.startswith("libpricing") for path in artifacts["module_rlibs"])
         assert "fn pricing__notional" not in (build / "app.rs").read_text()
-        hidden = root / "pricing.moss.hidden"
-        shutil.move(root / "src" / "pricing.moss", hidden)
+        # Packages must ship source under Phase 26.1; an own build/debug
+        # interface cannot replace a missing package module.
         second = run(compiler, root, "build", "--json")
         assert second["result"]["artifacts"]["module_interfaces"]
         executable = Path(second["result"]["artifacts"]["executable"])
