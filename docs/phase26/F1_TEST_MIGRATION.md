@@ -43,6 +43,7 @@ contract.
 | `tests/tooling/check_phase25_m2b1_provenance.py` | **B — source-removal setup retired:** retains the producer source for provenance and freshness checks. |
 | `tests/tooling/check_phase25_nominal_identity.py` | **A — imported interface retained:** distinct provider and consumer packages verify stable nominal identity through current `.mossi` outputs. |
 | `tests/tooling/check_phase106f.py` | **B — source-removal assertion retired:** the ledger project keeps `model.moss` while testing clean rebuilds, reconstructed rlib aliases, execution, and Debug behavior. |
+| `tests/tooling/check_phase106f1.py` | **A — imported interface retained:** splits the provider and consumer packages, keeps provider source for R2 freshness, and preserves generic handler-body, generated-layout, and legacy ABI rejection checks. |
 | `tests/tooling/check_phase25_r2_wp1_call_chain.py` | **A — imported interface retained:** copies full provider package trees, points consumers at producer build directories, and keeps ABI-v9 and hostile-body cases. |
 | `tests/tooling/check_phase25_r2_wp2_member.py` | **A — imported interface retained:** preserves producer manifests/source and directs consumers to current interface outputs. |
 | `tests/tooling/check_phase25_r2_wp3_nominal.py` | **A — imported interface retained:** preserves producer package roots and tests imported nominal behavior through `.mossi`. |
