@@ -127,7 +127,7 @@ def invoke(cmd: list[str], cwd: Path, env: dict[str, str], label: str) -> tuple[
 
 
 def summarize_logs(logdir: Path, package_roots: dict[str, Path]) -> dict:
-    functions = reinferred = 0
+    function_checks = inference_visits = 0
     checked_packages: set[str] = set()
     for path in sorted(logdir.glob("*.stderr")):
         log_text = path.read_text()
@@ -135,16 +135,17 @@ def summarize_logs(logdir: Path, package_roots: dict[str, Path]) -> dict:
             continue
         checked_packages.add(log_text.split("M1_CWD=", 1)[1].splitlines()[0])
         for key, value in COUNTER_RE.findall(log_text):
-            if key == "functions_analyzed":
-                functions += int(value)
+            if key == "source_function_checks":
+                function_checks += int(value)
             elif key == "inference_reinferred_functions":
-                reinferred += int(value)
+                inference_visits += int(value)
     roots_by_path = {str(root.resolve()): root for root in package_roots.values()}
     modules = sum(len(list((root / "src").rglob("*.moss")))
                   for checked in checked_packages
                   if (root := roots_by_path.get(checked)) is not None)
     return {"packages_checked": len(checked_packages), "modules_checked": modules,
-            "functions_checked": functions, "functions_reinferred": reinferred}
+            "functions_checked": function_checks,
+            "inference_function_visits": inference_visits}
 
 
 def run_profiled_build(root: Path, package_roots: dict[str, Path], label: str,
@@ -225,7 +226,7 @@ def main() -> int:
             raise RuntimeError(f"clean build of {fixture} checked {clean['packages_checked']} packages; expected {len(graph)}")
         rows.append({"fixture": fixture, "scenario": "clean_build", "command": "margo build",
                      "packages_checked": clean["packages_checked"], "modules_checked": clean["modules_checked"],
-                     "functions_checked": clean["functions_checked"], "functions_reinferred": clean["functions_reinferred"],
+                     "functions_checked": clean["functions_checked"], "inference_function_visits": clean["inference_function_visits"],
                      "expected_packages": len(graph)})
 
     scenario_graph = graphs()["dependency_chain"]
@@ -239,10 +240,16 @@ def main() -> int:
         probe_env = dict(os.environ)
         probe_env.update({"MOSS": str(MOSS),
                           "MARGO_HOME": str(TMP / "margo-home" / f"{scenario}-probe")})
-        probe_status, _ = invoke([str(MARGO), "build", "--check", "--json"],
-                                 probe_roots["app"], probe_env,
-                                 f"{scenario}-margo-check-probe")
-        margo_check_supported = probe_status == 0
+        probe_status, probe_output = invoke([str(MARGO), "build", "--check", "--json"],
+                                            probe_roots["app"], probe_env,
+                                            f"{scenario}-margo-check-probe")
+        if probe_status == 0:
+            margo_check_supported = True
+        elif re.search(r"unrecognized arguments: .*--check", probe_output):
+            margo_check_supported = False
+        else:
+            raise RuntimeError("margo build --check probe failed for a reason other than an unsupported option:\n"
+                               + probe_output[-4000:])
         target = core_root / "src/m1_core.moss"
         original_source = target.read_text()
         mutate_scenario(target, scenario)
@@ -261,7 +268,7 @@ def main() -> int:
                      "packages_checked": margo_counts["packages_checked"],
                      "modules_checked": margo_counts["modules_checked"],
                      "functions_checked": margo_counts["functions_checked"],
-                     "functions_reinferred": margo_counts["functions_reinferred"],
+                     "inference_function_visits": margo_counts["inference_function_visits"],
                      "expected_packages": len(roots)})
 
         check_counts = run_profiled_check(app_root, roots, target, f"{scenario}-after-moss-check")
@@ -270,7 +277,7 @@ def main() -> int:
                      "packages_checked": check_counts["packages_checked"],
                      "modules_checked": check_counts["modules_checked"],
                      "functions_checked": check_counts["functions_checked"],
-                     "functions_reinferred": check_counts["functions_reinferred"],
+                     "inference_function_visits": check_counts["inference_function_visits"],
                      "expected_packages": 1})
         target.write_text(original_source)
         revert_counts = run_profiled_build(app_root, roots, f"{scenario}-revert-margo-check",
@@ -285,7 +292,7 @@ def main() -> int:
                      "packages_checked": revert_counts["packages_checked"],
                      "modules_checked": revert_counts["modules_checked"],
                      "functions_checked": revert_counts["functions_checked"],
-                     "functions_reinferred": revert_counts["functions_reinferred"],
+                     "inference_function_visits": revert_counts["inference_function_visits"],
                      "expected_packages": len(roots)})
         revert_check = run_profiled_check(app_root, roots, target, f"{scenario}-revert-moss-check")
         rows.append({"fixture": "dependency_chain", "scenario": f"{scenario}-revert",
@@ -293,7 +300,7 @@ def main() -> int:
                      "packages_checked": revert_check["packages_checked"],
                      "modules_checked": revert_check["modules_checked"],
                      "functions_checked": revert_check["functions_checked"],
-                     "functions_reinferred": revert_check["functions_reinferred"],
+                     "inference_function_visits": revert_check["inference_function_visits"],
                      "expected_packages": 1})
 
     with (out / "m1_work_counters.csv").open("w", newline="") as handle:
@@ -301,16 +308,16 @@ def main() -> int:
         writer.writeheader(); writer.writerows(rows)
     lines = ["# Phase 26.1 M1 package work counters", "", f"- Main SHA: `{subprocess.check_output(['git','rev-parse','origin/main'], cwd=ROOT, text=True).strip()}`",
              "- The harness checks whether `margo build --check` is supported. On the pre-feature baseline it records the rejection and measures `margo build` as a full-work fallback.",
-             "- Counter source: one `MOSS_PROFILE_COMPILER=1` compiler invocation per checked package; module counts are source modules in checked packages. Function and reinference counters sum all checker-instance profile records.",
+             "- Counter source: one `MOSS_PROFILE_COMPILER=1` compiler invocation per checked package; modules count source files in checked packages (these fixtures use one source module per file). `functions_checked` counts source function checker entries, summed across Checker instances. `inference_function_visits` is total inference visits, not unique functions.",
              "- The Margo rows are package-graph totals. The file-check rows profile the edited file with the built dependency interfaces on `MOSS_MODULE_PATH`.", "",
-             "## Package graph fixtures", "", "| Fixture | Packages | Baseline packages checked | Modules | Functions checked | Re-inferred functions |", "|---|---:|---:|---:|---:|---:|"]
+             "## Package graph fixtures", "", "| Fixture | Packages | Baseline packages checked | Modules | Functions checked | Inference visits |", "|---|---:|---:|---:|---:|---:|"]
     for row in rows[:4]:
-        lines.append(f"| `{row['fixture']}` | {package_counts[row['fixture']]} | {row['packages_checked']} | {row['modules_checked']} | {row['functions_checked']} | {row['functions_reinferred']} |")
-    lines += ["", "## Edit and revert scenarios", "", "| Edit | Command | Packages checked | Modules checked | Functions checked | Functions re-inferred |", "|---|---|---:|---:|---:|---:|"]
+        lines.append(f"| `{row['fixture']}` | {package_counts[row['fixture']]} | {row['packages_checked']} | {row['modules_checked']} | {row['functions_checked']} | {row['inference_function_visits']} |")
+    lines += ["", "## Edit and revert scenarios", "", "| Edit | Command | Packages checked | Modules checked | Functions checked | Inference visits |", "|---|---|---:|---:|---:|---:|"]
     for row in rows[4:]:
-        lines.append(f"| {row['scenario']} | `{row['command']}` | {row['packages_checked']} | {row['modules_checked']} | {row['functions_checked']} | {row['functions_reinferred']} |")
+        lines.append(f"| {row['scenario']} | `{row['command']}` | {row['packages_checked']} | {row['modules_checked']} | {row['functions_checked']} | {row['inference_function_visits']} |")
     lines += ["", "Scenario definitions: E0 touches the source without changing bytes; E1 changes one function body while preserving its interface; E2 changes another function body so its inferred result type changes; E3 changes an explicit result signature whose type is forwarded through the dependency chain. Each starts from a fresh chain, measures both commands after the edit, restores the original source, and measures both commands after revert.", "",
-              "Full rows: `m1_work_counters.csv`.", ""]
+              "Functions checked counts source function checker entries, not call-graph reachability. R3 acceptance requires an additional counter for actual reached body checks. Full rows: `benchmarks/phase26_1/results/m1_phase26_main.csv`.", ""]
     (out / "M1_BASELINE.md").write_text("\n".join(lines))
     print(f"M1 baseline: {out / 'M1_BASELINE.md'}")
     print(f"M1 counters: {out / 'm1_work_counters.csv'}")

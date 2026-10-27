@@ -7,7 +7,8 @@ check work only where needed.
 ## Interface loading
 
 - **R1:** A present, current `.mossi` is sufficient for every other package.
-  `moss check` never reads another package's source.
+  `moss check` never parses or semantically checks another package's source.
+  It may read source bytes solely to compute the package hash required by R2.
 - **R2:** A missing or stale `.mossi` is an error: `interface for X is missing or
   stale; run \`margo build\``. Staleness is detected using the package source
   hash recorded in `.mossi`. Packages always ship with source; binary-only

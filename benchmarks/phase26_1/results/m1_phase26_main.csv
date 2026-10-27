@@ -1,21 +1,21 @@
-fixture,scenario,command,packages_checked,modules_checked,functions_checked,functions_reinferred,expected_packages
-application_library,clean_build,margo build,2,2,4,20,2
-dependency_chain,clean_build,margo build,4,4,30,164,4
-fan_in_eight,clean_build,margo build,10,10,52,292,10
-generic_cross_package,clean_build,margo build,4,4,16,88,4
-dependency_chain,E0,margo build (build --check unsupported),4,4,15,82,4
+fixture,scenario,command,packages_checked,modules_checked,functions_checked,inference_function_visits,expected_packages
+application_library,clean_build,margo build,2,2,2,20,2
+dependency_chain,clean_build,margo build,4,4,12,164,4
+fan_in_eight,clean_build,margo build,10,10,18,292,10
+generic_cross_package,clean_build,margo build,4,4,6,88,4
+dependency_chain,E0,margo build (build --check unsupported),4,4,6,82,4
 dependency_chain,E0,moss check <edited core file>,1,1,4,20,1
-dependency_chain,E0-revert,margo build (reverted; --check unsupported),4,4,15,82,4
+dependency_chain,E0-revert,margo build (reverted; --check unsupported),4,4,6,82,4
 dependency_chain,E0-revert,moss check <reverted core file>,1,1,4,20,1
-dependency_chain,E1,margo build (build --check unsupported),4,4,19,102,4
+dependency_chain,E1,margo build (build --check unsupported),4,4,10,102,4
 dependency_chain,E1,moss check <edited core file>,1,1,4,20,1
-dependency_chain,E1-revert,margo build (reverted; --check unsupported),4,4,19,102,4
+dependency_chain,E1-revert,margo build (reverted; --check unsupported),4,4,10,102,4
 dependency_chain,E1-revert,moss check <reverted core file>,1,1,4,20,1
-dependency_chain,E2,margo build (build --check unsupported),4,4,19,102,4
+dependency_chain,E2,margo build (build --check unsupported),4,4,10,102,4
 dependency_chain,E2,moss check <edited core file>,1,1,4,20,1
-dependency_chain,E2-revert,margo build (reverted; --check unsupported),4,4,19,102,4
+dependency_chain,E2-revert,margo build (reverted; --check unsupported),4,4,10,102,4
 dependency_chain,E2-revert,moss check <reverted core file>,1,1,4,20,1
-dependency_chain,E3,margo build (build --check unsupported),4,4,19,102,4
+dependency_chain,E3,margo build (build --check unsupported),4,4,10,102,4
 dependency_chain,E3,moss check <edited core file>,1,1,4,20,1
-dependency_chain,E3-revert,margo build (reverted; --check unsupported),4,4,19,102,4
+dependency_chain,E3-revert,margo build (reverted; --check unsupported),4,4,10,102,4
 dependency_chain,E3-revert,moss check <reverted core file>,1,1,4,20,1

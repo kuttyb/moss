@@ -1663,6 +1663,8 @@ class Checker {
 
       if (std::getenv("MOSS_PROFILE_COMPILER") != nullptr) {
         std::cerr << "MOSS_PROFILE|functions_analyzed|" << recorder.get_counter("functions_analyzed") << '\n';
+        std::cerr << "MOSS_PROFILE|source_function_checks|"
+                  << source_function_checks_ << '\n';
         std::cerr << "MOSS_PROFILE|types_analyzed|" << recorder.get_counter("types_analyzed") << '\n';
         std::cerr << "MOSS_PROFILE|specialization_requests|" << specialization_requests_ << '\n';
         std::cerr << "MOSS_PROFILE|distinct_specialization_keys|" << recorder.get_counter("distinct_specialization_keys") << '\n';
@@ -1871,6 +1873,7 @@ class Checker {
   mutable size_t concrete_effect_active_depth_ = 0;
   mutable size_t concrete_effect_max_depth_ = 0;
   bool profile_concrete_effect_work_ = false;
+  uint64_t source_function_checks_ = 0;
   bool specialization_effect_profile_active_ = false;
   uint64_t observable_effects_function_evaluations_ = 0;
   uint64_t specialization_effect_function_evaluations_ = 0;
@@ -9909,6 +9912,9 @@ class Checker {
 
   void check_function(const Function& f) {
     ScopedOpTimer t_fn("check_function", f.name);
+    if (profile_concrete_effect_work_ &&
+        std::filesystem::path(f.source_file).extension() != ".mossi")
+      ++source_function_checks_;
     current_source_file_ = f.source_file;
     SourceFileScope semantic_context(
         current_semantic_context_, "fn:" + f.name);
