@@ -1,0 +1,69 @@
+fixture,position,scenario,command,packages_checked,modules_checked,functions_checked,inference_function_visits,expected_packages,target_met
+application_library,clean,clean_build,margo build,2,2,6,40,2,True
+dependency_chain,clean,clean_build,margo build,4,4,20,272,4,True
+fan_in_eight,clean,clean_build,margo build,10,10,22,524,10,True
+generic_cross_package,clean,clean_build,margo build,4,4,18,292,4,True
+dependency_chain,core,E0,margo build --check,0,0,0,0,0,True
+dependency_chain,core,E0,moss check <edited file>,1,1,6,30,1,True
+dependency_chain,core,E0-revert,margo build --check (reverted),0,0,0,0,0,True
+dependency_chain,core,E0-revert,moss check <reverted file>,1,1,6,30,1,True
+dependency_chain,core,E1,margo build --check,1,1,6,30,1,True
+dependency_chain,core,E1,moss check <edited file>,1,1,6,30,1,True
+dependency_chain,core,E1-revert,margo build --check (reverted),1,1,6,30,1,True
+dependency_chain,core,E1-revert,moss check <reverted file>,1,1,6,30,1,True
+dependency_chain,core,E2,margo build --check,2,2,7,60,2,True
+dependency_chain,core,E2,moss check <edited file>,1,1,6,30,1,True
+dependency_chain,core,E2-revert,margo build --check (reverted),2,2,7,60,2,True
+dependency_chain,core,E2-revert,moss check <reverted file>,1,1,6,30,1,True
+dependency_chain,core,E3,margo build --check,4,4,10,136,4,True
+dependency_chain,core,E3,moss check <edited file>,1,1,6,30,1,True
+dependency_chain,core,E3-revert,margo build --check (reverted),4,4,10,136,4,True
+dependency_chain,core,E3-revert,moss check <reverted file>,1,1,6,30,1,True
+dependency_chain,app,E0,margo build --check,0,0,0,0,0,True
+dependency_chain,app,E0,moss check <edited file>,1,1,2,40,1,True
+dependency_chain,app,E0-revert,margo build --check (reverted),0,0,0,0,0,True
+dependency_chain,app,E0-revert,moss check <reverted file>,1,1,2,40,1,True
+dependency_chain,app,E1,margo build --check,1,1,2,40,1,True
+dependency_chain,app,E1,moss check <edited file>,1,1,2,40,1,True
+dependency_chain,app,E1-revert,margo build --check (reverted),1,1,2,40,1,True
+dependency_chain,app,E1-revert,moss check <reverted file>,1,1,2,40,1,True
+dependency_chain,app,E2,margo build --check,1,1,2,40,1,True
+dependency_chain,app,E2,moss check <edited file>,1,1,2,40,1,True
+dependency_chain,app,E2-revert,margo build --check (reverted),1,1,2,40,1,True
+dependency_chain,app,E2-revert,moss check <reverted file>,1,1,2,40,1,True
+dependency_chain,app,E3,margo build --check,1,1,2,40,1,True
+dependency_chain,app,E3,moss check <edited file>,1,1,2,40,1,True
+dependency_chain,app,E3-revert,margo build --check (reverted),1,1,2,40,1,True
+dependency_chain,app,E3-revert,moss check <reverted file>,1,1,2,40,1,True
+fan_in_eight,hub,E0,margo build --check,0,0,0,0,0,True
+fan_in_eight,hub,E0,moss check <edited file>,1,1,3,15,1,True
+fan_in_eight,hub,E0-revert,margo build --check (reverted),0,0,0,0,0,True
+fan_in_eight,hub,E0-revert,moss check <reverted file>,1,1,3,15,1,True
+fan_in_eight,hub,E1,margo build --check,1,1,3,15,1,True
+fan_in_eight,hub,E1,moss check <edited file>,1,1,3,15,1,True
+fan_in_eight,hub,E1-revert,margo build --check (reverted),1,1,3,15,1,True
+fan_in_eight,hub,E1-revert,moss check <reverted file>,1,1,3,15,1,True
+fan_in_eight,hub,E2,margo build --check,9,9,11,207,9,True
+fan_in_eight,hub,E2,moss check <edited file>,1,1,3,15,1,True
+fan_in_eight,hub,E2-revert,margo build --check (reverted),9,9,11,207,9,True
+fan_in_eight,hub,E2-revert,moss check <reverted file>,1,1,3,15,1,True
+fan_in_eight,hub,E3,margo build --check,10,10,11,262,10,True
+fan_in_eight,hub,E3,moss check <edited file>,1,1,3,15,1,True
+fan_in_eight,hub,E3-revert,margo build --check (reverted),10,10,11,262,10,True
+fan_in_eight,hub,E3-revert,moss check <reverted file>,1,1,3,15,1,True
+generic_cross_package,generic,E0,margo build --check,0,0,0,0,0,True
+generic_cross_package,generic,E0,moss check <edited file>,1,1,4,20,1,True
+generic_cross_package,generic,E0-revert,margo build --check (reverted),0,0,0,0,0,True
+generic_cross_package,generic,E0-revert,moss check <reverted file>,1,1,4,20,1,True
+generic_cross_package,generic,E1,margo build --check,1,1,4,20,1,True
+generic_cross_package,generic,E1,moss check <edited file>,1,1,4,20,1,True
+generic_cross_package,generic,E1-revert,margo build --check (reverted),1,1,4,20,1,True
+generic_cross_package,generic,E1-revert,moss check <reverted file>,1,1,4,20,1,True
+generic_cross_package,generic,E2,margo build --check,3,3,8,92,3,True
+generic_cross_package,generic,E2,moss check <edited file>,1,1,4,20,1,True
+generic_cross_package,generic,E2-revert,margo build --check (reverted),3,3,8,92,3,True
+generic_cross_package,generic,E2-revert,moss check <reverted file>,1,1,4,20,1,True
+generic_cross_package,generic,E3,margo build --check,4,4,9,146,4,True
+generic_cross_package,generic,E3,moss check <edited file>,1,1,4,20,1,True
+generic_cross_package,generic,E3-revert,margo build --check (reverted),4,4,9,146,4,True
+generic_cross_package,generic,E3-revert,moss check <reverted file>,1,1,4,20,1,True
