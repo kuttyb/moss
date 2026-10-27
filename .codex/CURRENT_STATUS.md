@@ -4,8 +4,8 @@
 - Full corpus differential against main `d109b8f1`: 2,064 sources; 1,325 accepted on both sides; zero verdict, diagnostic-code, or generated-Rust hash changes; baseline and candidate TSVs are byte-identical.
 - `make --jobs="$(nproc)" check` passed 142/142 on `b0744694`; `shard_fast_debug` passed. Focused F1 and borrowed-read checks pass. Feedback, Python compilation, and whitespace validation pass.
 - Compiler-perf run `20261026-192030`: baseline `d109b8f1` vs `b0744694`, 77 fixtures, 3 interleaved timing repetitions. Sum of fixture medians 5.258s vs 5.292s (+0.7%); no fixture exceeded the noise floor. See `docs/phase26/F1_RESULTS.md`; full artifacts are under `tmp/compiler-perf/20261026-192030/`.
-- Source-free provider retirement and every modified test classification are recorded in `PHASE_26_1_RULES.md` and `F1_TEST_MIGRATION.md`. The focused Architect review is GO; final exact-SHA review is pending. No GitHub regression jobs were launched.
-- Next: after final Architect GO, proceed to G1. Require the complete local regression to pass before beginning C1, then T1. At exit, enforce every M1 target, publish the certified compiler-perf result, and open one PR to main.
+- Source-free provider retirement and every modified test classification are recorded in `PHASE_26_1_RULES.md` and `F1_TEST_MIGRATION.md`. Architect final review is GO for implementation SHA `b0744694`; post-review docs sentence was repaired. No GitHub regression jobs were launched.
+- Next: begin G1. Require the complete local regression to pass before beginning C1, then T1. At exit, enforce every M1 target, publish the certified compiler-perf result, and open one PR to main.
 
 ---
 

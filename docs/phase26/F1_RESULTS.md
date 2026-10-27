@@ -4,8 +4,9 @@ Implementation: `b0744694e08ddf2809bf4dd6705d616f6c6c28ba` on
 `phase26-1-m1`, based on main `d109b8f17276f70b591432fd345d57e727f17501`.
 
 F1 records a content hash of each package's Moss sources in `.mossi`, outside
-does not use `MOSS_FAST_DEBUG_SOURCE_ROOTS`. It follows the requested package
-module's local source closure and resolves other packages only through current
+the semantic interface hash. `moss check` does not use
+`MOSS_FAST_DEBUG_SOURCE_ROOTS`. It follows the requested package module's local
+source closure and resolves other packages only through current
 `.mossi` files. Every imported interface load, including direct `moss build`,
 validates freshness before trusting its records. Candidate discovery excludes
 the checking package's own build tree. Margo and Fast Debug keep their
@@ -27,7 +28,7 @@ classified in [`F1_TEST_MIGRATION.md`](F1_TEST_MIGRATION.md).
 | `make --jobs="$(nproc)" check` | 142/142 jobs passed on `b0744694` |
 | F1 and borrowed-read focused checks | Passed, including direct-build stale `.mossi` rejection |
 | Agent feedback, Python compilation, and whitespace validation | Passed |
-| Architect review | Focused follow-up GO; final exact-SHA review requested |
+| Architect review | GO for implementation SHA `b0744694` |
 
 ## Performance
 
@@ -51,5 +52,9 @@ No fixture exceeded the noise floor.
 Small-fixture latency: checkout was 3.54 ms baseline / 3.77 ms candidate;
 rolling window was 49.43 ms / 48.59 ms. Full per-fixture wall, CPU, peak RSS,
 ranges, and work counters are in `tmp/compiler-perf/20261026-192030/`.
+
+The freshness gate rejects stale interfaces. Rebuilding and relinking a
+consumer after a provider body-only edit remains part of Margo fingerprinting
+and checkstop work in G1.
 
 No GitHub regression jobs were launched.
