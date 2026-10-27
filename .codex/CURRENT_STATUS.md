@@ -1,10 +1,10 @@
-# Phase 26.1.1 — X2 entry-scoped Fast Debug checkpoint — 2026-10-27
+# Phase 26.1.1 — X2 review findings checkpoint — 2026-10-27
 
-- Active branch `phase26-1-m1`; pushed X1 checkpoint `8dd933aa`. X1's Section 1/Section 2 split is Architect-approved at implementation SHA `424818e6`. X2 implementation is in progress and has not yet been checkpointed.
-- X2 now scopes checks to the selected `main` or tests; filtered tests skip unselected test bodies while no-file mode includes all package tests. Margo `debug` and `test --interp` refresh dependency `.mossi` files with check-only builds and execute with `MOSS_MODULE_PATH`. `MOSS_FAST_DEBUG_SOURCE_ROOTS` and its Emacs handoff are removed.
-- Focused validation: X2 fixture passed; Phase 15.8 cross-package Fast Debug 10/10; Phase 25 G2 11/11; `MOSS_M1_ENFORCE_TARGETS=1 make package-perf` passed 86/86. Isolated Phase 20 executor tests passed 54/54 after a single failure in the previous full run. Details: `docs/phase26/PHASE_26_1_1_X2_RESULTS.md`.
-- Previous full `make check` at X1 SHA `424818e6` was 143/146. The two Fast Debug failures were expectations for the old source-required behavior and now pass their updated focused suites. The thread-slot failure passed in isolation; full `make check` must be rerun.
-- Next: checkpoint and push this X2 implementation for parallel Architect review; then run corpus Fast Debug parity and the remaining final gates. X3 sidecar and X4 edge cases are not started.
+- Active branch `phase26-1-m1`, pushed X2 SHA `3a22c1f5`. Architect returned NO-GO for that exact implementation SHA: Main mode retains colocated test/bench bodies, and filtered test mode resolves imports from every test module before pruning. Both need regressions and fixes.
+- Full local `make --jobs="$(nproc)" check` on `3a22c1f5`: 130/146 passed, 16 failed. In addition to the two X2 scope defects, Fast Debug parity failures include omitted callbacks, handlers, and unsupported-feature preflight behavior. The thread-slot runtime stress test failed again under full parallel load (its isolated suite passed 54/54). This run is not green.
+- Likely X1 Section 2 coverage gap: `sdk/text`'s Section 2 stores calls to private `text__matches_at` from exported bodies but omits the private helper body, producing `FAST_DEBUG_UNCHECKED_EXECUTION`. Bank's Section 2 contract covers non-generic package functions; serialization currently relies on incomplete call-edge expansion.
+- Focused X2 fixture, Phase 15.8 10/10, G2 11/11, and enforced package-perf 86/86 passed at `3a22c1f5`, but they do not cover the missing R11 cases or full Fast Debug parity. Do not treat X2 as complete.
+- Next: expand Section 2 concrete-body coverage; clear tests/benches from Main scope; narrow selected-test source import closure and add explicit-module regressions; then repair Fast Debug parity cases and rerun focused gates. Request new Architect review after these fixes. X3/X4 not started.
 
 ## X1 earlier pushed decoder checkpoint (historical)
 
