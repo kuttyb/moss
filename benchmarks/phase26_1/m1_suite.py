@@ -319,6 +319,10 @@ def run_profiled_fast_debug(package_roots: dict[str, Path], test_file: Path,
         package_roots["app"], env, label)
     if status:
         raise RuntimeError(f"Fast Debug failed for {label}:\n{output[-4000:]}")
+    passed_tests = re.findall(r"^PASS (.+)$", output, re.M)
+    if passed_tests != [selected_test]:
+        raise RuntimeError(
+            f"Fast Debug filter {selected_test!r} selected {passed_tests!r}; expected exactly one test")
     counts = summarize_logs(logs, package_roots)
     identities = set(counts["function_identities"])
     dep_roots = {key: root for key, root in package_roots.items() if key != "app"}
