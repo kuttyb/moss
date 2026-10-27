@@ -1,3 +1,14 @@
+# Current task status — Phase 26.1 M1 expansion
+
+- Active branch: `phase26-1-m1`; baseline main is `d109b8f17276f70b591432fd345d57e727f17501`.
+- M1 harness now separates R-rule `expected_packages` from observed `packages_checked`, covers E0–E3 edit/revert on the dependency-chain core, top app, fan-in hub, and generic provider, and gives package work its own `make package-perf` target. `compiler-perf` remains timing-only; Make help again documents `MOSS_PERF_CERTIFY`.
+- E3 signatures are forwarded through downstream inferred exports. Latest package-perf run passed 68 measurement rows on implementation SHA `17578988310d1ec501d2f9cad35b71622a852191`; observed E3 checks matched 4/4 chain, 10/10 fan-in, and 4/4 generic package target. Margo build currently checks all packages, and mismatches remain reported as data by default; `MOSS_M1_ENFORCE_TARGETS=1` enables hard assertions for post-G1.
+- Full local `make check` passed 141/141 while the fixture-only E3 correction was being made. Python compilation, `git diff --check`, Make help inspection, and agent-feedback validation passed. No GitHub CI/regression jobs were launched.
+- Expanded baseline report and 68-row CSV are now copied into tracked paths but not yet committed. The Architect reviewed implementation SHA `17578988`: fixture semantics GO; final delivery remains pending review of the newly published report/CSV.
+- Next: commit report, CSV, team record, feedback, and this status; request final Architect review on exact artifact SHA; push approved M1 checkpoint. Then begin F1.
+
+---
+
 # Phase 26.0.1 integration — C1–C4 merged locally — 2026-10-26
 
 - Integration is on `phase26-0-1-integration`, based on main `274f848`. C1–C4 are merged locally. Next: run the combined corpus differential, Fast Debug parity, `make check`, compiler-perf, and feedback validation on this machine; send the frozen tree and gate outputs to the Architect; then push the approved main merge with GitHub CI skipped.

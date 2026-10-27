@@ -1,21 +1,69 @@
-fixture,scenario,command,packages_checked,modules_checked,functions_checked,inference_function_visits,expected_packages
-application_library,clean_build,margo build,2,2,2,20,2
-dependency_chain,clean_build,margo build,4,4,12,164,4
-fan_in_eight,clean_build,margo build,10,10,18,292,10
-generic_cross_package,clean_build,margo build,4,4,6,88,4
-dependency_chain,E0,margo build (build --check unsupported),4,4,6,82,4
-dependency_chain,E0,moss check <edited core file>,1,1,4,20,1
-dependency_chain,E0-revert,margo build (reverted; --check unsupported),4,4,6,82,4
-dependency_chain,E0-revert,moss check <reverted core file>,1,1,4,20,1
-dependency_chain,E1,margo build (build --check unsupported),4,4,10,102,4
-dependency_chain,E1,moss check <edited core file>,1,1,4,20,1
-dependency_chain,E1-revert,margo build (reverted; --check unsupported),4,4,10,102,4
-dependency_chain,E1-revert,moss check <reverted core file>,1,1,4,20,1
-dependency_chain,E2,margo build (build --check unsupported),4,4,10,102,4
-dependency_chain,E2,moss check <edited core file>,1,1,4,20,1
-dependency_chain,E2-revert,margo build (reverted; --check unsupported),4,4,10,102,4
-dependency_chain,E2-revert,moss check <reverted core file>,1,1,4,20,1
-dependency_chain,E3,margo build (build --check unsupported),4,4,10,102,4
-dependency_chain,E3,moss check <edited core file>,1,1,4,20,1
-dependency_chain,E3-revert,margo build (reverted; --check unsupported),4,4,10,102,4
-dependency_chain,E3-revert,moss check <reverted core file>,1,1,4,20,1
+fixture,position,scenario,command,packages_checked,modules_checked,functions_checked,inference_function_visits,expected_packages,target_met
+application_library,clean,clean_build,margo build,2,2,6,40,2,True
+dependency_chain,clean,clean_build,margo build,4,4,20,272,4,True
+fan_in_eight,clean,clean_build,margo build,10,10,22,524,10,True
+generic_cross_package,clean,clean_build,margo build,4,4,18,292,4,True
+dependency_chain,core,E0,margo build (build --check unsupported),4,4,10,136,0,False
+dependency_chain,core,E0,moss check <edited file>,1,1,6,30,1,True
+dependency_chain,core,E0-revert,margo build (build --check unsupported) (reverted),4,4,10,136,0,False
+dependency_chain,core,E0-revert,moss check <reverted file>,1,1,6,30,1,True
+dependency_chain,core,E1,margo build (build --check unsupported),4,4,16,166,1,False
+dependency_chain,core,E1,moss check <edited file>,1,1,6,30,1,True
+dependency_chain,core,E1-revert,margo build (build --check unsupported) (reverted),4,4,16,166,1,False
+dependency_chain,core,E1-revert,moss check <reverted file>,1,1,6,30,1,True
+dependency_chain,core,E2,margo build (build --check unsupported),4,4,16,166,2,False
+dependency_chain,core,E2,moss check <edited file>,1,1,6,30,1,True
+dependency_chain,core,E2-revert,margo build (build --check unsupported) (reverted),4,4,16,166,2,False
+dependency_chain,core,E2-revert,moss check <reverted file>,1,1,6,30,1,True
+dependency_chain,core,E3,margo build (build --check unsupported),4,4,16,166,4,True
+dependency_chain,core,E3,moss check <edited file>,1,1,6,30,1,True
+dependency_chain,core,E3-revert,margo build (build --check unsupported) (reverted),4,4,16,166,4,True
+dependency_chain,core,E3-revert,moss check <reverted file>,1,1,6,30,1,True
+dependency_chain,app,E0,margo build (build --check unsupported),4,4,10,136,0,False
+dependency_chain,app,E0,moss check <edited file>,1,1,2,40,1,True
+dependency_chain,app,E0-revert,margo build (build --check unsupported) (reverted),4,4,10,136,0,False
+dependency_chain,app,E0-revert,moss check <reverted file>,1,1,2,40,1,True
+dependency_chain,app,E1,margo build (build --check unsupported),4,4,12,176,1,False
+dependency_chain,app,E1,moss check <edited file>,1,1,2,40,1,True
+dependency_chain,app,E1-revert,margo build (build --check unsupported) (reverted),4,4,12,176,1,False
+dependency_chain,app,E1-revert,moss check <reverted file>,1,1,2,40,1,True
+dependency_chain,app,E2,margo build (build --check unsupported),4,4,12,176,1,False
+dependency_chain,app,E2,moss check <edited file>,1,1,2,40,1,True
+dependency_chain,app,E2-revert,margo build (build --check unsupported) (reverted),4,4,12,176,1,False
+dependency_chain,app,E2-revert,moss check <reverted file>,1,1,2,40,1,True
+dependency_chain,app,E3,margo build (build --check unsupported),4,4,12,176,1,False
+dependency_chain,app,E3,moss check <edited file>,1,1,2,40,1,True
+dependency_chain,app,E3-revert,margo build (build --check unsupported) (reverted),4,4,12,176,1,False
+dependency_chain,app,E3-revert,moss check <reverted file>,1,1,2,40,1,True
+fan_in_eight,hub,E0,margo build (build --check unsupported),10,10,11,262,0,False
+fan_in_eight,hub,E0,moss check <edited file>,1,1,3,15,1,True
+fan_in_eight,hub,E0-revert,margo build (build --check unsupported) (reverted),10,10,11,262,0,False
+fan_in_eight,hub,E0-revert,moss check <reverted file>,1,1,3,15,1,True
+fan_in_eight,hub,E1,margo build (build --check unsupported),10,10,14,277,1,False
+fan_in_eight,hub,E1,moss check <edited file>,1,1,3,15,1,True
+fan_in_eight,hub,E1-revert,margo build (build --check unsupported) (reverted),10,10,14,277,1,False
+fan_in_eight,hub,E1-revert,moss check <reverted file>,1,1,3,15,1,True
+fan_in_eight,hub,E2,margo build (build --check unsupported),10,10,14,277,9,False
+fan_in_eight,hub,E2,moss check <edited file>,1,1,3,15,1,True
+fan_in_eight,hub,E2-revert,margo build (build --check unsupported) (reverted),10,10,14,277,9,False
+fan_in_eight,hub,E2-revert,moss check <reverted file>,1,1,3,15,1,True
+fan_in_eight,hub,E3,margo build (build --check unsupported),10,10,14,277,10,True
+fan_in_eight,hub,E3,moss check <edited file>,1,1,3,15,1,True
+fan_in_eight,hub,E3-revert,margo build (build --check unsupported) (reverted),10,10,14,277,10,True
+fan_in_eight,hub,E3-revert,moss check <reverted file>,1,1,3,15,1,True
+generic_cross_package,generic,E0,margo build (build --check unsupported),4,4,9,146,0,False
+generic_cross_package,generic,E0,moss check <edited file>,1,1,4,20,1,True
+generic_cross_package,generic,E0-revert,margo build (build --check unsupported) (reverted),4,4,9,146,0,False
+generic_cross_package,generic,E0-revert,moss check <reverted file>,1,1,4,20,1,True
+generic_cross_package,generic,E1,margo build (build --check unsupported),4,4,13,166,1,False
+generic_cross_package,generic,E1,moss check <edited file>,1,1,4,20,1,True
+generic_cross_package,generic,E1-revert,margo build (build --check unsupported) (reverted),4,4,13,166,1,False
+generic_cross_package,generic,E1-revert,moss check <reverted file>,1,1,4,20,1,True
+generic_cross_package,generic,E2,margo build (build --check unsupported),4,4,13,166,3,False
+generic_cross_package,generic,E2,moss check <edited file>,1,1,4,20,1,True
+generic_cross_package,generic,E2-revert,margo build (build --check unsupported) (reverted),4,4,13,166,3,False
+generic_cross_package,generic,E2-revert,moss check <reverted file>,1,1,4,20,1,True
+generic_cross_package,generic,E3,margo build (build --check unsupported),4,4,13,166,4,True
+generic_cross_package,generic,E3,moss check <edited file>,1,1,4,20,1,True
+generic_cross_package,generic,E3-revert,margo build (build --check unsupported) (reverted),4,4,13,166,4,True
+generic_cross_package,generic,E3-revert,moss check <reverted file>,1,1,4,20,1,True
