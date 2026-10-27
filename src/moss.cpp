@@ -4126,21 +4126,6 @@ static bool abi_v10_checked_arithmetic_body_candidate(
 // Every target is selected by exact provider identity before inference starts.
 void project_imported_h3_checked_bodies(Program& program) {
   if (!staged_abi_v10() || !program.type_context) return;
-  // Private generic_dependency declarations do not have the public v9 param
-  // mode lines. Seed their declared access from the sealed v10 summary before
-  // resolving a caller; the checker compares its derived access after closure.
-  for (auto& function : program.functions)
-    if (!function.imported_checked_summary_payload.empty() &&
-        !function.exported && function.parameter_effects.empty()) {
-      auto summary = abi_v10::read_summary(
-          function.imported_checked_summary_payload);
-      if (summary.parameters.size() != function.params.size())
-        throw CompileError(0, "private checked ABI-v10 parameter count is mismatched",
-                           "SOURCE_FREE_CHECKED_BODY_INVALID");
-      for (const auto access : summary.parameter_access)
-        function.parameter_effects.push_back(
-            imported_abi_v10_effect(access));
-    }
   // Validate/project direct member leaves before any forwarding caller. A
   // caller can authenticate the leaf artifact hash and summary shape, but only
   // the leaf body validator can confirm its exact MemberCall identity. If a
@@ -4320,10 +4305,8 @@ void project_imported_h3_checked_bodies(Program& program) {
           declared.domain_read || declared.domain_write || declared.message ||
           declared.external_io || declared.fileio || declared.fileio_unknown ||
           declared.may_panic || !declared.raise_set.empty() ||
-          declared.may_diverge)
+          declared.may_diverge || declared.unresolved)
         invalid("checked ABI-v10 callback summary omits direct effects declared by the provider");
-      function.observable_effects = ObservableEffects{};
-      function.observable_effects.unresolved = false;
     }
     const bool vector_literal_body_candidate =
         vector_literal_summary_candidate &&
@@ -15893,6 +15876,34 @@ static ParsedModuleUnit load_module_interface(
         throw CompileError(std::max(function.line, 1),
             "checked ABI-v10 body identity or semantic hash does not match its summary",
             "SOURCE_FREE_CHECKED_BODY_INVALID");
+      // The checked summary is part of the imported interface. Private
+      // generic_dependency declarations have no legacy `param mode=` rows,
+      // so materialize their declared parameter access while loading the
+      // .mossi, before checker inference or checked-body projection begins.
+      // Projection must only validate this signature, never fill it in.
+      if (decoded_summary.parameters.size() != function.params.size() ||
+          decoded_summary.parameter_access.size() != function.params.size())
+        throw CompileError(std::max(function.line, 1),
+            "checked ABI-v10 parameter signature disagrees with its declaration",
+            "SOURCE_FREE_CHECKED_BODY_INVALID");
+      if (function.parameter_effects.empty()) {
+        function.parameter_effects.reserve(decoded_summary.parameter_access.size());
+        for (const auto access : decoded_summary.parameter_access)
+          function.parameter_effects.push_back(imported_abi_v10_effect(access));
+      } else {
+        if (function.parameter_effects.size() !=
+            decoded_summary.parameter_access.size())
+          throw CompileError(std::max(function.line, 1),
+              "checked ABI-v10 parameter access disagrees with its declaration",
+              "SOURCE_FREE_CHECKED_BODY_INVALID");
+        for (std::size_t index = 0;
+             index < decoded_summary.parameter_access.size(); ++index)
+          if (decoded_summary.parameter_access[index] !=
+              imported_abi_v10_access(function.parameter_effects[index]))
+            throw CompileError(std::max(function.line, 1),
+                "checked ABI-v10 parameter access disagrees with its declaration",
+                "SOURCE_FREE_CHECKED_BODY_INVALID");
+      }
       function.imported_checked_summary_payload = summary_payload;
       function.imported_checked_body_payload = body_payload;
       for (const auto& requirement : decoded_summary.requirements) {

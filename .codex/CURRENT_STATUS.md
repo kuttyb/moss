@@ -2,12 +2,13 @@
 
 ## Current state — T1 implementation in progress
 
-- Active branch: `phase26-1-m1`, remote `origin/phase26-1-m1`, clean at pushed checkpoint `4150ee94`. C1 is closed and frozen. Architect returned GO for exact C1 implementation SHA `7bc75969`; corrected corpus discovery and C1 closeout gates are recorded below.
-- T1 scope: functions from dependency `.mossi` files are immutable signature inputs in inference and checked-body projection. Exclude them from signature inference rounds/fingerprints; retain instantiation at new concrete types. Add an internal error guard against signature mutation. Keep this work limited to `Checker::run()` inference and `project_imported_h3_checked_bodies` plus T1 tests.
-- Initial audit found two writes in imported checked-body projection: parameter effects seeded from the sealed summary, and callback observable effects reset after body validation. Move imported effect hydration to `.mossi` loading and make projection validate-only; do not alter language behavior.
-- Required T1 gates after implementation: full corpus differential against C1 checkpoint `4150ee94` with zero verdict/code/Rust changes; `make check`; Fast Debug parity; enforced `package-perf`; `compiler-perf` against C1 closeout with no slowdown beyond noise floor; Architect GO on exact SHA. No GitHub-hosted regression jobs or PRs.
-- Next: complete the signature immutability audit, implement guards/exclusions, run focused tests then required local gates, obtain Architect GO, and push every checkpoint to `origin/phase26-1-m1`.
-- The historical oracle attempt remains evidence only, not a passing gate; see the history below. All authorized regression gates run on this work machine. No hosted CI or PRs.
+- Active branch: `phase26-1-m1`, remote `origin/phase26-1-m1`. C1 is closed and frozen at reviewed implementation `7bc75969`, with Architect GO recorded in `4150ee94`. The current T1 changes are staged for a checkpoint; no required full gates have run on them yet.
+- T1 keeps imported `.mossi` signatures out of inference rounds and convergence fingerprints, validates signature immutability after inference/effect phases, and hydrates private ABI-v10 parameter access during interface loading. Concrete specialization remains active.
+- Imported ABI-v10 member requirements now feed validation through temporary views rather than rewriting `Function.constraints`. Legacy ABI-v9 open summaries retain interface-declared effects and call dependencies without a later inference rewrite.
+- Focused checks pass: `check_phase25_typed_semantic_api.py` and `check_phase25_r2_wp2_member.py`; compiler build and `git diff --check` pass. An earlier failed focused run was resolved by preserving legacy effect facts and applying sealed member requirements in imported-body/call validation; those earlier failures are not current results.
+- Required T1 gates still outstanding: full corpus differential against C1 checkpoint `4150ee94` with zero verdict/code/Rust changes; `make check`; Fast Debug parity; enforced `package-perf`; `compiler-perf` against C1 closeout with no slowdown beyond noise floor; Architect GO on exact final SHA. No GitHub-hosted regression jobs or PRs.
+- Next: commit and push this checkpoint, then run all required gates, address any failures, obtain Architect GO, and push the final T1 closeout to `origin/phase26-1-m1`.
+- All authorized regression gates run on this work machine. Historical C1 oracle attempts remain evidence only, not passing gates; see the history below.
 
 ---
 
