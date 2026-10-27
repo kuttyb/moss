@@ -52,6 +52,30 @@ def package(name: str, deps: dict[str, str], module: str, body: str) -> dict:
     return {"name": name, "deps": deps, "module": module, "body": body}
 
 
+# Two-package Fast Debug fixture. The first selected test reaches one library
+# chain; the second test stays entirely in the app. Identities below are the
+# X0 target for R11 and make dependency versus package-wide work measurable.
+FAST_DEBUG_GRAPH = {
+    "app": package("m1_fd_app", {"m1_fd_lib": "../library"}, "m1_fd_app_api",
+                    "import m1_fd_lib\n"
+                    "export fn reaches_library():\n  return m1_fd_lib.helper()\n"
+                    "export fn reaches_explicit():\n  return m1_fd_lib.explicit_value()\n"
+                    "export fn app_only() -> Int:\n  return 7\n"
+                    "fn app_unused() -> Int:\n  return 8\n"),
+    "library": package("m1_fd_lib", {}, "m1_fd_lib",
+                       "export fn target_value():\n  return 1\n"
+                       "export fn helper():\n  return target_value()\n"
+                       "export fn explicit_value() -> Int:\n  return 2\n"
+                       "export fn unrelated() -> Int:\n  return 9\n"),
+}
+FAST_DEBUG_TESTS = (
+    "module m1_fd_tests\nimport m1_fd_app_api\n"
+    'test "reaches library":\n  echo m1_fd_app_api.reaches_library()\n'
+    'test "reaches explicit":\n  echo m1_fd_app_api.reaches_explicit()\n'
+    'test "does not reach library":\n  echo m1_fd_app_api.app_only()\n'
+)
+
+
 def anchors() -> str:
     """Stable declarations used to model inferred and explicit interface edits."""
     return ("export fn inferred_anchor():\n  return 1\n"
@@ -108,7 +132,6 @@ def graphs() -> dict[str, dict[str, dict]]:
         "generic_cross_package": {"app": generic_app, "int_consumer": int_consumer,
                                   "text_consumer": text_consumer, "generic": generic},
     }
-
 
 def write_graph(root: Path, graph: dict[str, dict]) -> dict[str, Path]:
     roots: dict[str, Path] = {}
@@ -264,6 +287,211 @@ def run_partial_reach(run_id: str, rows: list[dict], enforce: bool,
                 f"{sorted(identities)}; expected {sorted(expected)}")
 
 
+def package_artifact_hashes(package_roots: dict[str, Path]) -> dict[str, str]:
+    """Hash `.mossi` interfaces and Margo's existing semantic-cache files."""
+    import hashlib
+    result = {}
+    for key, root in package_roots.items():
+        paths = sorted({*root.rglob("*.mossi"),
+                        *root.rglob(".moss/semantic-cache-v1/*.snapshot")})
+        digest = hashlib.sha256()
+        for path in paths:
+            digest.update(path.relative_to(root).as_posix().encode())
+            digest.update(path.read_bytes())
+        result[key] = digest.hexdigest() if paths else ""
+    return result
+
+
+def run_profiled_fast_debug(package_roots: dict[str, Path], test_file: Path,
+                            selected_test: str, label: str) -> dict:
+    logs = TMP / "logs" / label
+    clear_logs(logs)
+    wrapper = TMP / "bin/moss-profile-wrapper"
+    make_wrapper(wrapper)
+    env = dict(os.environ)
+    env.update({"M1_REAL_MOSS": str(MOSS), "M1_PROFILE_DIR": str(logs),
+                "MOSS_PROFILE_COMPILER": "1",
+                "MOSS_FAST_DEBUG_SOURCE_ROOTS": os.pathsep.join(
+                    str(root) for key, root in package_roots.items()
+                    if key != "app")})
+    status, output, wall_ms = invoke(
+        [str(wrapper), "test", "--interp", str(test_file), selected_test],
+        package_roots["app"], env, label)
+    if status:
+        raise RuntimeError(f"Fast Debug failed for {label}:\n{output[-4000:]}")
+    counts = summarize_logs(logs, package_roots)
+    identities = set(counts["function_identities"])
+    dep_roots = {key: root for key, root in package_roots.items() if key != "app"}
+    dep_identity_sets = {
+        key: {identity for identity in identities
+              if identity.split(":", 1)[0] in {
+                  path.name for path in root.rglob("*.moss")}}
+        for key, root in dep_roots.items()}
+    full_dep_identity_sets = {
+        key: {identity for identity in (
+            "m1_fd_lib.moss:m1_fd_lib__target_value",
+            "m1_fd_lib.moss:m1_fd_lib__helper",
+            "m1_fd_lib.moss:m1_fd_lib__explicit_value",
+            "m1_fd_lib.moss:m1_fd_lib__unrelated")}
+        for key in dep_roots}
+    counts.update({
+        "dependency_packages_with_functions": sum(bool(v) for v in dep_identity_sets.values()),
+        "dependency_packages_fully_checked": sum(
+            bool(full_dep_identity_sets[key]) and
+            full_dep_identity_sets[key].issubset(dep_identity_sets[key])
+            for key in dep_roots),
+        "dependency_functions_checked": sum(map(len, dep_identity_sets.values())),
+        "wall_ms": round(wall_ms, 3),
+    })
+    return counts
+
+
+def run_fast_debug_scenarios(run_id: str, rows: list[dict], enforce: bool) -> None:
+    fixture = "fast_debug_two_package"
+    root = TMP / "graphs" / run_id / fixture
+    roots = write_graph(root, FAST_DEBUG_GRAPH)
+    tests = roots["app"] / "tests"
+    tests.mkdir(parents=True, exist_ok=True)
+    test_file = tests / "fast_debug.moss"
+    test_file.write_text(FAST_DEBUG_TESTS)
+    lib = roots["library"] / "src" / "m1_fd_lib.moss"
+    app = roots["app"] / "src" / "m1_fd_app_api.moss"
+    original_lib, original_app = lib.read_text(), app.read_text()
+
+    def record(scenario: str, selected: str, expected: set[str],
+               before: dict[str, str], expected_changed: int) -> None:
+        observed = run_profiled_fast_debug(roots, test_file, selected,
+                                           f"{fixture}-{scenario}-{selected}")
+        identities = set(observed["function_identities"])
+        after = package_artifact_hashes(roots)
+        changed_packages = [key for key in roots
+                            if before.get(key) != after.get(key)]
+        exact = identities == expected
+        row = {"fixture": fixture, "position": scenario, "scenario": selected,
+               "command": "moss test --interp <file> <filter>", **{
+                   key: value for key, value in observed.items()
+                   if key != "function_identities"},
+               "expected_dependency_packages_fully_checked": 0,
+               "target_met": exact and not observed["dependency_packages_fully_checked"]
+                   and len(changed_packages) == expected_changed,
+               "function_identities": " ".join(sorted(identities)),
+               "expected_functions": len(expected),
+               "snapshot_packages_changed": len(changed_packages),
+               "snapshot_changed_packages": " ".join(changed_packages),
+               "expected_snapshot_packages_changed": expected_changed}
+        rows.append(row)
+        if enforce and not row["target_met"]:
+            raise RuntimeError(
+                f"{fixture}/{scenario}/{selected}: functions={sorted(identities)}, "
+                f"expected={sorted(expected)}, fully_checked_dependencies="
+                f"{observed['dependency_packages_fully_checked']}, "
+                f"artifact_changes={changed_packages}, expected changes={expected_changed}")
+
+    # Establish the initial checked package artifacts. In the target design,
+    # these include the package snapshot paired with each .mossi interface.
+    run_profiled_build(roots["app"], roots,
+                       f"{fixture}-initial", check_mode=True)
+    base_hashes = package_artifact_hashes(roots)
+    if set(base_hashes.values()) == {""}:
+        raise RuntimeError("Fast Debug fixture did not produce package artifacts")
+    # The exact identity sets are explicit by file and semantic function.
+    reach = {
+        "m1_fd_app_api.moss:m1_fd_app_api__reaches_library",
+        "m1_fd_lib.moss:m1_fd_lib__helper",
+        "m1_fd_lib.moss:m1_fd_lib__target_value",
+    }
+    reach_explicit = {
+        "m1_fd_app_api.moss:m1_fd_app_api__reaches_explicit",
+        "m1_fd_lib.moss:m1_fd_lib__explicit_value",
+    }
+    local = {
+        "m1_fd_app_api.moss:m1_fd_app_api__app_only",
+    }
+
+    # Fast Debug selected-entry reach rows before and after a dependency edit.
+    record("baseline_reach", "reaches library", reach, base_hashes, 0)
+    record("baseline_local", "does not reach library", local, base_hashes, 0)
+
+    for scenario in ("E0", "E1", "E2", "E3"):
+        lib.write_text(original_lib)
+        if scenario == "E0":
+            os.utime(lib, None)
+            expected_checks = 0
+            expected_artifact_packages = []
+        elif scenario == "E1":
+            lib.write_text(original_lib.replace(
+                "export fn target_value():\n  return 1",
+                "export fn target_value():\n  return 1 + 0", 1))
+            expected_checks = 1
+            expected_artifact_packages = ["library"]
+        elif scenario == "E2":
+            lib.write_text(original_lib.replace(
+                "export fn target_value():\n  return 1",
+                'export fn target_value():\n  return "changed"', 1))
+            expected_checks = 2  # provider and app are directly dependent
+            expected_artifact_packages = ["app", "library"]
+        else:
+            lib.write_text(original_lib.replace(
+                "export fn explicit_value() -> Int:\n  return 2",
+                "export fn explicit_value() -> Float:\n  return 2.0", 1))
+            expected_checks = 2
+            expected_artifact_packages = ["app", "library"]
+        if lib.read_text() == original_lib and scenario != "E0":
+            raise RuntimeError(f"{scenario} did not mutate the Fast Debug provider")
+        before = package_artifact_hashes(roots)
+        changed = run_profiled_build(roots["app"], roots,
+                                     f"{fixture}-{scenario}-check", check_mode=True)
+        after_build = package_artifact_hashes(roots)
+        changed_artifacts = [key for key in roots
+                             if before.get(key) != after_build.get(key)]
+        # Existing G1 counters establish package propagation. Until X1 exists,
+        # artifact hashes below are only a proxy for output regeneration.
+        rows.append({"fixture": fixture, "position": "dependency", "scenario": scenario,
+                     "command": "margo build --check (Fast Debug fixture)", **changed,
+                     "expected_packages": expected_checks,
+                     "target_met": changed["packages_checked"] == expected_checks
+                         and changed_artifacts == expected_artifact_packages,
+                     "package_artifacts_changed": len(changed_artifacts),
+                     "package_artifact_changed_packages": " ".join(changed_artifacts),
+                     "expected_artifact_changed_packages": " ".join(expected_artifact_packages),
+                     "expected_package_artifacts_changed": expected_checks})
+        # The edit's selected test reaches the edited provider; the other
+        # selected test must remain independent of every library body.
+        after = after_build
+        selected, expected = (("reaches explicit", reach_explicit)
+                              if scenario == "E3" else ("reaches library", reach))
+        record(scenario + "_reach", selected, expected, after, 0)
+        record(scenario + "_local", "does not reach library", local, after, 0)
+        lib.write_text(original_lib)
+        run_profiled_build(roots["app"], roots,
+                           f"{fixture}-{scenario}-restore", check_mode=True)
+        base_hashes = package_artifact_hashes(roots)
+
+    # App-only source edit must not regenerate a dependency artifact.
+    app.write_text(original_app.replace(
+        "fn app_only() -> Int:\n  return 7",
+        "fn app_only() -> Int:\n  return 7 + 0", 1))
+    before = package_artifact_hashes(roots)
+    app_build = run_profiled_build(roots["app"], roots,
+                                   f"{fixture}-app-only-check", check_mode=True)
+    after = package_artifact_hashes(roots)
+    changed_app_artifacts = [key for key in roots
+                             if before.get(key) != after.get(key)]
+    rows.append({"fixture": fixture, "position": "app", "scenario": "app-only",
+                 "command": "margo build --check (Fast Debug fixture)", **app_build,
+                 "expected_packages": 1,
+                 "target_met": app_build["packages_checked"] == 1
+                     and changed_app_artifacts == ["app"],
+                 "package_artifacts_changed": len(changed_app_artifacts),
+                 "package_artifact_changed_packages": " ".join(changed_app_artifacts),
+                 "expected_artifact_changed_packages": "app",
+                 "expected_package_artifacts_changed": 1})
+    record("app_only", "does not reach library", local, after, 0)
+    if enforce and any(before[key] != after[key] for key in roots if key != "app"):
+        raise RuntimeError("app-only Fast Debug edit changed a dependency artifact")
+    app.write_text(original_app)
+
+
 def mutate_scenario(source: Path, scenario: str, position: str) -> None:
     text = source.read_text()
     if scenario == "E0":
@@ -417,8 +645,9 @@ def main() -> int:
             target.write_text(original_source)
 
     run_partial_reach(run_id, rows, strict_targets, margo_check_supported)
+    run_fast_debug_scenarios(run_id, rows, force_strict_targets)
 
-    fieldnames = list(rows[0]) + ["function_identities", "expected_functions"]
+    fieldnames = list(dict.fromkeys(key for row in rows for key in row))
     with (out / "m1_work_counters.csv").open("w", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames, restval="",
                                 lineterminator="\n")
@@ -433,6 +662,8 @@ def main() -> int:
         lines.append(f"| `{row['fixture']}` | {package_counts[row['fixture']]} | {row['packages_checked']} | {row['modules_checked']} | {row['functions_checked']} | {row['inference_function_visits']} |")
     lines += ["", "## Edit and revert scenarios", "", "Wall time is the elapsed command time on this machine, including Margo orchestration. `moss check` rows include one file check. These are single-run observations, not a timing certification.", "", "| Fixture / position | Edit | Command | Wall ms | Actual | R-rule target | Target met | Modules | Functions | Inference visits |", "|---|---|---|---:|---:|:---:|---:|---:|---:|---:|"]
     for row in rows[4:]:
+        if row["fixture"] == "fast_debug_two_package":
+            continue
         lines.append(f"| {row['fixture']} / {row['position']} | {row['scenario']} | `{row['command']}` | {row.get('wall_ms', 0):.3f} | {row['packages_checked']} | {row['expected_packages']} | {row['target_met']} | {row['modules_checked']} | {row['functions_checked']} | {row['inference_function_visits']} |")
     lines += ["", "## Partial-reach fixture (C1 target)", "",
               "The edited file reaches 3 of the package's 6 functions. The target is the exact reachable set by identity (`<file>:<function>`), not a raw entry count.", "",
@@ -440,6 +671,13 @@ def main() -> int:
     for row in rows:
         if row["fixture"] == "partial_reach":
             lines.append(f"| `{row['command']}` | {row['functions_checked']} | {row['expected_functions']} | {row['target_met']} | {row['function_identities']} |")
+    lines += ["", "## Fast Debug count gates (X0)", "",
+              "Targets are selected-entry function identities and package artifact changes, not elapsed time. `dependency_packages_fully_checked` is zero when Fast Debug checks only reached dependency functions. `package_artifacts_changed` hashes `.mossi` interfaces and Margo's existing semantic-cache snapshots. These are a baseline proxy for check/build artifact churn; Phase 26.1.1's checked-program snapshot does not exist yet, so these rows do not claim to measure it.",
+              "", "| Scenario | Selected test | Functions / target | Dependency functions | Dependency packages fully checked | Artifact packages changed / target | Target met | Identities |", "|---|---|---:|---:|---:|---:|:---:|---|"]
+    for row in rows:
+        if row["fixture"] != "fast_debug_two_package":
+            continue
+        lines.append(f"| {row['position']} | {row['scenario']} | {row['functions_checked']} / {row.get('expected_functions', 'package target')} | {row.get('dependency_functions_checked', 0)} | {row.get('dependency_packages_fully_checked', 0)} | {row.get('package_artifacts_changed', 0)} / {row.get('expected_package_artifacts_changed', row.get('expected_packages', 0))} | {row['target_met']} | {row.get('function_identities', '')} |")
     lines += ["", "Scenario definitions: E0 touches the source without changing bytes; E1 changes an exported function body while preserving its interface; E2 changes an inferred exported result type; E3 changes an explicit exported result type. Core/hub/provider E2 targets include direct dependents; E3 targets the full transitive closure. Top-app E1–E3 targets are one package. Each scenario is edited and reverted independently. `MOSS_M1_ENFORCE_TARGETS=1` turns target mismatches into hard failures; it is intended for after G1 implements incremental checks. The pre-G1 baseline reports mismatches as data.", "",
               "Functions checked counts source function checker entry occurrences, not unique reachable identities. R3 still requires its diagnostic oracle; any work attribution by reachable function should record identities, not infer them from this aggregate count. Full rows: `benchmarks/phase26_1/results/m1_phase26_main.csv`.", ""]
     (out / "M1_BASELINE.md").write_text("\n".join(lines))

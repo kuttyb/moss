@@ -1,10 +1,10 @@
-# Phase 26.1 working rules (user, 2026-10-27)
+# Phase 26.1.1 — X0 measured; X1 awaits ABI decision — 2026-10-27
 
-## Current state — 26.1.1 rules recorded; X0/X1 feasibility next
-
-- Active branch `phase26-1-m1` starts from pushed delivery head `0872d6422e0b59eb2c45349861ec61f759fc7de7`.
-- Phase 26.1.1 command scope and R8–R13 are recorded in `docs/phase26/PHASE_26_1_1_RULES.md` before implementation. No 26.1.1 code changes yet.
-- Next: add X0 counter gates, then inspect ABI v10 `.mossi` checked-body representation to determine whether a per-package snapshot can satisfy R13 without duplicating generic bodies. Stop and report if it cannot.
+- Active branch `phase26-1-m1`, based on `0872d642`; Phase 26.1.1 rules were recorded and pushed before implementation (`fcc797b2`).
+- X0 Fast Debug count fixture is implemented in `benchmarks/phase26_1/m1_suite.py`. Baseline `make package-perf` reports eight functions checked for both selected tests, versus the expected three reachable functions and one app-only function. E0–E3 package checks/artifact changes are 0/0, 1/1, 2/2, 2/2 in the two-package fixture; app-only changes only the app artifact. `MOSS_M1_ENFORCE_TARGETS=1 make package-perf` fails at the expected baseline reach mismatch, proving the Fast Debug target is active.
+- Architect's X1 feasibility review at `fcc797b2`: STOP before a body-bearing separate snapshot. Production ABI v9 already stores generic bodies in `.mossi`; staged ABI v10 stores limited checked-body records there too. A separate body snapshot duplicates payloads, and complete R13 requires an ABI/artifact decision. Architect recommends `.mossi` as authoritative body store plus a bodyless fingerprint/reference index, and extending checked-body coverage in the interface format.
+- Architect reviewed the X0 fixture and initially flagged artifact/target-label ambiguity. The harness now labels existing `.mossi` and Margo semantic-cache churn as a baseline proxy, omits a false zero-package claim on the one-package Fast Debug process, and keeps dependency-wide checking as a separate counter. Exact-SHA X0 review is pending.
+- No X1/X2 code has been started. Next: checkpoint and publish X0 counters, then request a Bank decision on the ABI approach. Do not implement a duplicate snapshot or fall back to dependency source.
 
 ### 26.1 base status
 
