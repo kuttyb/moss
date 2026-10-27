@@ -63,11 +63,12 @@ Focused gates passed on this checkpoint:
 - `python3 tests/tooling/check_phase26_1_1_x2.py build/compiler/moss-opt`
 - `python3 tests/tooling/check_phase26_1_f1_interface_rules.py build/compiler/moss-opt build/compiler/margo`
 
-A new `make --jobs="$(nproc)" check` was interrupted at the user's request
-before completion. Nine failures had appeared when it was stopped; see
-`.codex/CURRENT_STATUS.md` for their identities. There is no aggregate result.
-X2 is still incomplete and awaits external review of this follow-up, full gates,
-and exact-SHA Architect review.
+The full `make --jobs="$(nproc)" check` at `b7a7890d` completed uninterrupted:
+142 passed, 6 failed, 0 skipped, out of 148 jobs. The six failures were
+`check_phase25_conformance`, `check_phase25_r2_wp1_call_chain`,
+`check_phase25_r2_wp2_member`, `check_phase25_r2_wp3_nominal`,
+`sdk_text_encoding`, and `shard_abi_v10_units`. The repairs below address them;
+a second uninterrupted run on a new frozen commit is pending.
 
 ## Complete baseline at `fc6331d08146f7150378ee3728b228e915e078e5`
 
@@ -128,6 +129,18 @@ focused results rather than final suite closure.
 The six historical expectation edits audited below are unchanged. The additional
 S2 fixture correction above also requires Architect acceptance as part of the
 frozen X1+X2 review.
+
+The completed run at `b7a7890d` exposed two further contract gaps. Gate 9 had
+corrupted the final byte of the whole `.mossi`, which is now Section 2 and is
+outside the Section 1 digest; its corruption case now edits Section 1. Three
+R2 mutation tools and the empty-vector record verifier passed the whole
+container to a Section 1 decoder; they now isolate Section 1 before parsing.
+The SDK's `text__matches_at` is a reachable private generic helper. Its
+digest-covered body is now emitted in Section 1, and the v10 reader parses
+private generic dependency bodies while continuing to ignore legacy body
+records for exported callables that use checked-body records. The SDK Fast
+Debug tests, all three R2 suites, G2 11/11, and the complete ABI-v10 units shard
+pass on the current worktree.
 
 ### Audit of the six existing dependency/interface expectation edits
 

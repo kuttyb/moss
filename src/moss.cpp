@@ -12375,8 +12375,11 @@ static void scope_program_to_file(Program& program,
     }
     for (size_t i = 0; i < program.functions.size(); ++i) {
       const auto& function = program.functions[i];
-      if (selected_functions.count(i) ||
-          std::filesystem::path(function.source_file).extension() == ".mossi") continue;
+      if (selected_functions.count(i)) continue;
+      const bool from_interface =
+          std::filesystem::path(function.source_file).extension() == ".mossi";
+      if (from_interface && !(function.generic || function.static_dispatch))
+        continue;
       if (matches(active.functions, function.name)) changed |= selected_functions.insert(i).second;
     }
     method_index = 0;
@@ -16341,7 +16344,7 @@ static ParsedModuleUnit load_module_interface(
         starts_with(line, "generic_stmt") ||
         starts_with(line, "generic_source") ||
         starts_with(line, "generic_result")) {
-      if (current && !(staged_abi_v10() &&
+      if (current && !(staged_abi_v10() && current->exported &&
           (starts_with(line, "generic_stmt") ||
            starts_with(line, "generic_source"))))
         parse_generic_ir_line(line, *current);
@@ -20764,35 +20767,17 @@ static vector<std::filesystem::path> write_module_interfaces(
     (void)contents[module];
     (void)interface_contents[module];
   }
-  // A source-free importer needs checked IR for private helpers only when an
-  // exported static body can reach them.  Keep this module-local and
-  // transitive: the presence of an unrelated static export must not widen a
-  // provider's semantic interface.
+  // A source-free importer needs checked IR for private generic helpers when
+  // any exported body can reach them. Keep this module-local and transitive:
+  // an unrelated private generic must not widen a provider's interface.
   std::map<string,std::set<string>> static_export_private_helpers;
   for (const auto& module : module_names) {
-    std::set<string> pending;
+    const auto reachable = execution_body_callable_closure(program, module);
     for (const auto& function : program.functions)
-      if (function.exported && function.static_dispatch &&
-          belongs_to_module(function.name, module))
-        pending.insert(function.name);
-    while (!pending.empty()) {
-      string source = *pending.begin();
-      pending.erase(pending.begin());
-      for (const auto& edge : program.semantic_call_edges) {
-        if (edge.source != "fn:" + source) continue;
-        auto target = std::find_if(program.functions.begin(),
-                                   program.functions.end(),
-            [&](const Function& function) {
-              return edge.target == function.name ||
-                  edge.target == "fn:" + function.name;
-            });
-        if (target == program.functions.end() || target->exported ||
-            !belongs_to_module(target->name, module))
-          continue;
-        if (static_export_private_helpers[module].insert(target->name).second)
-          pending.insert(target->name);
-      }
-    }
+      if (!function.exported && (function.generic || function.static_dispatch) &&
+          belongs_to_module(function.name, module) &&
+          reachable.count("fn:" + function.name))
+        static_export_private_helpers[module].insert(function.name);
   }
   for (const auto& function : program.functions) {
     if (!function.exported) continue;

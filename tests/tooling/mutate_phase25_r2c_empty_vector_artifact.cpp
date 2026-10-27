@@ -19,6 +19,10 @@ void write_file(const std::string& path, const std::string& bytes) {
   output.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
   assert(output.good());
 }
+std::string section1_only(const std::string& bytes) {
+  const auto section2 = bytes.find("\nexecution_body_version ");
+  return section2 == std::string::npos ? bytes : bytes.substr(0, section2 + 1);
+}
 }
 
 int main(int argc, char** argv) {
@@ -26,7 +30,7 @@ int main(int argc, char** argv) {
   const std::string interface_path = argv[1];
   const std::string archive_path = argv[2];
   const std::string mode = argv[3];
-  auto sealed = moss::abi_v10::decode(read_file(interface_path));
+  auto sealed = moss::abi_v10::decode(section1_only(read_file(interface_path)));
   const std::string old_digest = sealed.digest;
   const std::string callable = "callable-v1:" + sealed.value.module_id +
       ":fn:fresh";

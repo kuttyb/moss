@@ -230,7 +230,14 @@ fn main():
 
     corrupt, _ = clone_artifacts(pristine, s / "corrupt")
     raw = corrupt.read_bytes()
-    corrupt.write_bytes(raw[:-1] + bytes([raw[-1] ^ 1]))
+    section2 = raw.find(b"\nexecution_body_version ")
+    section1_end = len(raw) if section2 < 0 else section2
+    semantic = raw.find(b"semantic_contract\n")
+    assert 0 <= semantic < section1_end, "missing Section 1 semantic contract"
+    corrupt_at = semantic + len(b"semantic_contract\n")
+    assert corrupt_at < section1_end, "empty Section 1 semantic contract"
+    corrupt.write_bytes(raw[:corrupt_at] + bytes([raw[corrupt_at] ^ 1]) +
+                        raw[corrupt_at + 1:])
     artifact_error(consumer_source, corrupt.parent, "SOURCE_FREE_CONTRACT_INVALID")
 
     v9, _ = clone_artifacts(pristine, s / "v9")

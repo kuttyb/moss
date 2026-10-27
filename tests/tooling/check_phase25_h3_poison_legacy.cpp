@@ -22,12 +22,17 @@ static void write_file(const std::string& path, const std::string& bytes) {
   assert(output.good());
 }
 
+static std::string section1_only(const std::string& bytes) {
+  const auto section2 = bytes.find("\nexecution_body_version ");
+  return section2 == std::string::npos ? bytes : bytes.substr(0, section2 + 1);
+}
+
 int main(int argc, char** argv) {
   assert(argc == 5 || argc == 6);
   const std::string interface_path = argv[1];
   const std::string archive_path = argv[2];
   const std::string module_name = argv[3];
-  auto sealed = moss::abi_v10::decode(read_file(interface_path));
+  auto sealed = moss::abi_v10::decode(section1_only(read_file(interface_path)));
   const auto old_digest = sealed.digest;
   std::size_t removed = 0;
   for (auto& record : sealed.value.semantic_contract) {
