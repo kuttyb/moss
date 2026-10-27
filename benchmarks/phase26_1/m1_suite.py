@@ -153,12 +153,15 @@ def clear_logs(logdir: Path) -> None:
         path.unlink()
 
 
-def invoke(cmd: list[str], cwd: Path, env: dict[str, str], label: str) -> tuple[int, str]:
+def invoke(cmd: list[str], cwd: Path, env: dict[str, str],
+           label: str) -> tuple[int, str, float]:
+    started = time.perf_counter()
     result = subprocess.run(cmd, cwd=cwd, env=env, text=True,
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    wall_ms = (time.perf_counter() - started) * 1000
     if result.returncode:
         (TMP / f"{label}.failed.log").write_text(result.stdout)
-    return result.returncode, result.stdout
+    return result.returncode, result.stdout, wall_ms
 
 
 def summarize_logs(logdir: Path, package_roots: dict[str, Path]) -> dict:
@@ -199,10 +202,10 @@ def run_profiled_build(root: Path, package_roots: dict[str, Path], label: str,
                 # graph so incremental build behavior is observable.
                 "MARGO_HOME": str(TMP / "margo-home" / str(abs(hash(str(root.resolve())))))})
     args = [str(MARGO), "build"] + (["--check"] if check_mode else []) + ["--json"]
-    status, output = invoke(args, root, env, label)
+    status, output, wall_ms = invoke(args, root, env, label)
     if status:
         raise RuntimeError(f"margo build failed for {label}:\n{output[-4000:]}")
-    return summarize_logs(logs, package_roots)
+    return {**summarize_logs(logs, package_roots), "wall_ms": round(wall_ms, 3)}
 
 
 def run_profiled_check(root: Path, package_roots: dict[str, Path], target: Path,
@@ -218,16 +221,18 @@ def run_profiled_check(root: Path, package_roots: dict[str, Path], target: Path,
     module_paths = [str(path / "build/debug") for path in package_roots.values()
                     if path != target_root]
     env["MOSS_MODULE_PATH"] = os.pathsep.join(module_paths)
-    status, output = invoke([str(wrapper), "check", str(target)], target_root, env, label)
+    status, output, wall_ms = invoke([str(wrapper), "check", str(target)],
+                                     target_root, env, label)
     if status:
         raise RuntimeError(f"moss check failed for {label}:\n{output[-4000:]}")
     counts = summarize_logs(logs, {"target": target_root})
     if counts["packages_checked"] != 1:
         raise RuntimeError(f"moss check should check only the edited package, got {counts['packages_checked']}")
-    return counts
+    return {**counts, "wall_ms": round(wall_ms, 3)}
 
 
-def run_partial_reach(run_id: str, rows: list[dict]) -> None:
+def run_partial_reach(run_id: str, rows: list[dict], enforce: bool,
+                      check_mode: bool) -> None:
     """C1 target: file check reaches 3 of 6 functions; package mode all 6."""
     root = TMP / "graphs" / run_id / "partial_reach"
     (root / "src").mkdir(parents=True, exist_ok=True)
@@ -238,7 +243,7 @@ def run_partial_reach(run_id: str, rows: list[dict]) -> None:
     roots = {"app": root}
     entry = root / "src" / PARTIAL_REACH_ENTRY
     package = run_profiled_build(root, roots, "partial_reach-check",
-                                 check_mode=True)
+                                 check_mode=check_mode)
     checked = run_profiled_check(root, roots, entry, "partial_reach-moss-check")
     for command, counts, expected in (
             ("margo build --check", package, PARTIAL_REACH_PACKAGE),
@@ -253,7 +258,7 @@ def run_partial_reach(run_id: str, rows: list[dict]) -> None:
                      "target_met": met and counts["packages_checked"] == 1,
                      "function_identities": " ".join(sorted(identities)),
                      "expected_functions": len(expected)})
-        if not met:
+        if not met and enforce:
             raise RuntimeError(
                 f"partial_reach {command}: reachable functions "
                 f"{sorted(identities)}; expected {sorted(expected)}")
@@ -312,7 +317,7 @@ def expected_target(fixture: str, position: str, scenario: str, graph_size: int)
 
 def main() -> int:
     TMP.mkdir(parents=True, exist_ok=True)
-    run_id = time.strftime("%Y%m%d-%H%M%S")
+    run_id = os.environ.get("M1_RUN_ID") or time.strftime("%Y%m%d-%H%M%S")
     out = ROOT / "tmp/compiler-perf" / f"m1-{run_id}"
     out.mkdir(parents=True, exist_ok=False)
     rows: list[dict] = []
@@ -335,8 +340,9 @@ def main() -> int:
     probe_roots = write_graph(probe_root, graphs()["dependency_chain"])
     probe_env = dict(os.environ)
     probe_env.update({"MOSS": str(MOSS), "MARGO_HOME": str(TMP / "margo-home" / "build-check-probe")})
-    probe_status, probe_output = invoke([str(MARGO), "build", "--check", "--json"],
-                                        probe_roots["app"], probe_env, "build-check-probe")
+    probe_status, probe_output, _ = invoke(
+        [str(MARGO), "build", "--check", "--json"], probe_roots["app"],
+        probe_env, "build-check-probe")
     if probe_status == 0:
         margo_check_supported = True
     elif re.search(r"unrecognized arguments: .*--check", probe_output):
@@ -410,7 +416,7 @@ def main() -> int:
             # Ensure each E scenario starts from the original bytes.
             target.write_text(original_source)
 
-    run_partial_reach(run_id, rows)
+    run_partial_reach(run_id, rows, strict_targets, margo_check_supported)
 
     fieldnames = list(rows[0]) + ["function_identities", "expected_functions"]
     with (out / "m1_work_counters.csv").open("w", newline="") as handle:
@@ -425,9 +431,9 @@ def main() -> int:
              "## Package graph fixtures", "", "| Fixture | Packages | Baseline packages checked | Modules | Functions checked | Inference visits |", "|---|---:|---:|---:|---:|---:|"]
     for row in rows[:4]:
         lines.append(f"| `{row['fixture']}` | {package_counts[row['fixture']]} | {row['packages_checked']} | {row['modules_checked']} | {row['functions_checked']} | {row['inference_function_visits']} |")
-    lines += ["", "## Edit and revert scenarios", "", "| Fixture / position | Edit | Command | Actual | R-rule target | Target met | Modules | Functions | Inference visits |", "|---|---|---|---:|---:|:---:|---:|---:|---:|"]
+    lines += ["", "## Edit and revert scenarios", "", "Wall time is the elapsed command time on this machine, including Margo orchestration. `moss check` rows include one file check. These are single-run observations, not a timing certification.", "", "| Fixture / position | Edit | Command | Wall ms | Actual | R-rule target | Target met | Modules | Functions | Inference visits |", "|---|---|---|---:|---:|:---:|---:|---:|---:|---:|"]
     for row in rows[4:]:
-        lines.append(f"| {row['fixture']} / {row['position']} | {row['scenario']} | `{row['command']}` | {row['packages_checked']} | {row['expected_packages']} | {row['target_met']} | {row['modules_checked']} | {row['functions_checked']} | {row['inference_function_visits']} |")
+        lines.append(f"| {row['fixture']} / {row['position']} | {row['scenario']} | `{row['command']}` | {row.get('wall_ms', 0):.3f} | {row['packages_checked']} | {row['expected_packages']} | {row['target_met']} | {row['modules_checked']} | {row['functions_checked']} | {row['inference_function_visits']} |")
     lines += ["", "## Partial-reach fixture (C1 target)", "",
               "The edited file reaches 3 of the package's 6 functions. The target is the exact reachable set by identity (`<file>:<function>`), not a raw entry count.", "",
               "| Command | Functions | Expected | Target met | Identities |", "|---|---:|---:|:---:|---|"]

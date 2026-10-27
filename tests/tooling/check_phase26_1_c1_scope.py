@@ -175,6 +175,44 @@ def main() -> int:
     check_file(entry, env, ok=True)
     check_package(root, env, ok=False)
 
+    # `margo build --check` validates the complete Tests target without
+    # executing tests or emitting Rust, and includes test sources in its fingerprint.
+    root, entry, env = new_package("c1_test_source_check")
+    entry.write_text("module c1_test_source_check\nfn main():\n  pass\n")
+    test_source = root / "tests" / "broken_test.moss"
+    test_source.parent.mkdir(parents=True)
+    test_source.write_text(
+        "module broken_test\nfn broken() -> Int:\n  return absent()\n")
+    package_check = run([MARGO, "build", "--check"], root, env, ok=False)
+    assert str(test_source) in package_check.stdout + package_check.stderr, (
+        package_check.stdout, package_check.stderr)
+    assert "absent" in package_check.stdout + package_check.stderr, (
+        package_check.stdout, package_check.stderr)
+
+    # Whole-target test mode retains package-wide duplicate declarations
+    # across separate test files; file-by-file scoped checks cannot prove this.
+    root, entry, env = new_package("c1_test_target_duplicates")
+    entry.write_text("module c1_test_target_duplicates\nfn main():\n  pass\n")
+    tests = root / "tests"
+    tests.mkdir()
+    for name, value in (("left", 1), ("right", 2)):
+        (tests / f"{name}.moss").write_text(
+            "module c1_test_target_duplicates\n"
+            f"fn shared() -> Int:\n  return {value}\n")
+    duplicate_check = run([MARGO, "build", "--check"], root, env, ok=False)
+    duplicate_output = duplicate_check.stdout + duplicate_check.stderr
+    assert "shared" in duplicate_output, duplicate_output
+
+    root, entry, env = new_package("c1_test_target_clean")
+    entry.write_text("module c1_test_target_clean\nfn main():\n  pass\n")
+    tests = root / "tests"
+    tests.mkdir()
+    (tests / "ok.moss").write_text(
+        'module c1_test_target_clean\ntest "works":\n  assert(true)\n')
+    semantic_check = run([MARGO, "build", "--check"], root, env, ok=True)
+    assert "Checked 1 package" in semantic_check.stdout, semantic_check.stdout
+    assert not list(root.rglob("*.rs")), "semantic test-target check emitted Rust"
+
     print("Phase 26.1 C1 reachability and package-rule probes passed")
     return 0
 

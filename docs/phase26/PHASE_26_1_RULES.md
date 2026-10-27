@@ -43,7 +43,8 @@ check work only where needed.
   flags, and its dependencies' semantic `.mossi` interface hashes. Source
   freshness metadata is excluded from those dependency interface hashes.
 - **R7:** `margo build --check` checks each package and writes `.mossi`, without
-  invoking rustc.
+  invoking rustc. It checks the complete application target and, when present,
+  the complete `src + tests` target semantically without executing tests.
 - Output remains deterministic.
 
 ## Measurement and rollout

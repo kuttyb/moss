@@ -10,6 +10,7 @@
 #include <unordered_map>
 #include <vector>
 #include "constraints.hpp"
+#include "diagnostics.hpp"
 #include "functional_ir.hpp"
 #include "synchronization.hpp"
 #include "type_ir.hpp"
@@ -809,6 +810,11 @@ struct Program {
   // that callable bodies have already been reduced to the file's reachable
   // closure and that package-wide rules belong to Margo's build path.
   bool file_check_scope = false;
+  // Oracle-only collection used by the Phase 26.1 file/package diagnostic
+  // comparison. Ordinary checks leave this disabled and remain fail-fast.
+  bool phase26_c1_oracle = false;
+  bool phase26_c1_oracle_complete = false;
+  std::vector<CompileError> phase26_c1_oracle_diagnostics;
   std::set<string> file_scope_objects;
   std::set<string> file_scope_enums;
   std::set<string> file_scope_domains;

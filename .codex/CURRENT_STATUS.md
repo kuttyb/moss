@@ -1,10 +1,14 @@
 # Phase 26.1 working rules (user, 2026-10-26)
 
-- Team of 2: Agent 1 = coordinator, coder and reviewer; Agent 2 = adversarial reviewer, invoked occasionally at frozen checkpoints (not per commit).
-- Checkpoint often: commit and push to `origin/phase26-1-m1` on this same branch.
-- Run all regressions locally on this machine; do not start hosted CI regression jobs.
-- Agents communicate silently (messages), never via PRs.
-- C1 WIP checkpoint `b2015f83`: carried-over uncommitted work plus the partial_reach M1 fixture; not yet gated.
+## Current state — C1 implementation extended, closeout pending
+
+- Active branch and remote: `phase26-1-m1`, base HEAD `ad3276ca`. Current working changes are uncommitted; they add semantic-only checking of the complete Tests target to `margo build --check`, diagnostics/scope identity evidence, callback reachability for `any()` / `all()`, impact snapshot workflow guidance, and C1 regression coverage.
+- C1 review remains **NO-GO**. The 12 changed corpus rows are mapped to rejecting `margo build --check` package diagnostics and traced reachable identities. The user selected the oracle-only diagnostic-enumeration path; scaffolding is started in `src/ast.hpp`, but collection and the corpus-wide set comparison are not implemented yet.
+- `make --jobs="$(nproc)" check`: 145/145 passed after current source/test changes; suite wall time 234.68 s. Fast Debug parity and feedback validation passed in that run.
+- `MOSS_M1_ENFORCE_TARGETS=1 make package-perf`: completed successfully, all 70 scenario rows met after adding M1 wall-time capture. Latest counters: `tmp/compiler-perf/m1-20261026-223914/`. Three paired baseline-main/candidate timing runs are summarized in `docs/phase26/M1_WALL_TIME_RESULTS.md`. Baseline `margo build` includes Rust compilation while candidate `margo build --check` is semantic-only; report the command-mode distinction.
+- `MOSS_PERF_REPS=5 MOSS_PERF_BASELINE=origin/main make compiler-perf`: completed on `DESKTOP-0T772KP`, 57 fixtures, candidate median sum 5.272 s vs baseline 5.337 s (-1.2%); no slowdown exceeded the suite noise floor. Non-certified because the C1 worktree is dirty. Report: `tmp/compiler-perf/20261026-222830/LOCAL_REPORT.md`.
+- Snapshot workflow gap is addressed in `.agents/skills/moss-agent-workflow/SKILL.md` and `docs/AGENT_API.md`: run `moss build` before relying on incremental impact snapshots.
+- Do not start T1 until the corpus-wide diagnostic oracle passes and Architect gives GO. Final exit still needs M1 before/after wall times and a certified compiler-perf result. The three-run M1 wall-time comparison is recorded in `docs/phase26/M1_WALL_TIME_RESULTS.md` and its raw CSVs.
 
 ---
 

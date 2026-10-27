@@ -335,6 +335,13 @@ def package_sources(package: Package) -> list[dict]:
     return rows
 
 
+def package_test_sources(package: Package) -> list[Path]:
+    tests_root = package.root / "tests"
+    if not tests_root.is_dir():
+        return []
+    return sorted(path for path in tests_root.rglob("*.moss") if path.is_file())
+
+
 def dependency_native_artifacts(package: Package, release: bool) -> list[dict]:
     rows = []
     profile = "release" if release else "debug"
@@ -451,6 +458,10 @@ def package_fingerprint(package: Package, release: bool, check_only: bool,
         "version": package.data["version"],
         "manifest_sha256": sha256_file(package.manifest),
         "sources": package_sources(package),
+        "test_sources": ([{"path": path.relative_to(package.root).as_posix(),
+                           "sha256": sha256_file(path)}
+                          for path in package_test_sources(package)]
+                         if check_only else []),
         "dependencies": dependencies,
         "native_dependency_artifacts": [] if check_only else
             dependency_native_artifacts(package, release),
@@ -532,6 +543,17 @@ def build_graph(root: Package, ordered: list[Package], release: bool,
             payload = json.loads(completed.stdout)["result"]
         except (json.JSONDecodeError, KeyError) as error:
             raise MargoError(f"dependency package build produced invalid Moss JSON for {package.data['name']}") from error
+        test_sources = package_test_sources(package)
+        if check_only and test_sources:
+            test_check = subprocess.run(
+                [str(MOSS), "test", "--check", "--json"],
+                cwd=package.root, env=env, text=True,
+                capture_output=True, check=False)
+            if test_check.returncode != 0:
+                diagnostic = test_check.stdout.strip() or test_check.stderr.strip()
+                raise MargoError(
+                    f"test target semantic check failed for {package.data['name']}: "
+                    f"{diagnostic}")
         checked.append(package.data["name"])
         outputs = output_snapshot(package, release, check_only, payload)
         state = {"format": "margo-package-state-v1", "fingerprint": fingerprint,

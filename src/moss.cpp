@@ -11189,12 +11189,14 @@ struct ProjectError : std::runtime_error {
   string source_file;
   int line = 0;
   TeachingDiagnostic teaching;
+  string semantic_identity;
 
   ProjectError(string error_code, string message, string source = {},
-               int source_line = 0, TeachingDiagnostic diagnostic = {})
+               int source_line = 0, TeachingDiagnostic diagnostic = {},
+               string identity = {})
       : std::runtime_error(std::move(message)), code(std::move(error_code)),
         source_file(std::move(source)), line(source_line),
-        teaching(std::move(diagnostic)) {}
+        teaching(std::move(diagnostic)), semantic_identity(std::move(identity)) {}
 };
 
 struct ProjectManifest {
@@ -11776,7 +11778,7 @@ static void add_expression_references(const string& source,
     add_bare_references(by + 3, text.size());
   else if (const auto by = text.find("by="); by != string::npos)
     add_bare_references(by + 3, text.size());
-  for (const char* const operation_text : {"map(", "filter(", "reduce(", "fold(", "each("}) {
+  for (const char* const operation_text : {"map(", "filter(", "reduce(", "fold(", "each(", "any(", "all("}) {
     const string operation = operation_text;
     size_t at = 0;
     while ((at = text.find(operation, at)) != string::npos) {
@@ -12097,6 +12099,72 @@ static void scope_program_to_file(Program& program,
           return matches(reachable.handlers, handler.name);
         }))
       program.file_scope_domains.insert(domain.name);
+  }
+
+  if (const char* trace = std::getenv("MOSS_PHASE26_C1_SCOPE_TRACE");
+      trace && string(trace) == "1") {
+    auto emit = [&](const string& kind, const string& source,
+                    const string& identity) {
+      std::cerr << "MOSS_C1_SCOPE_ID|" << kind << "|" << source << "|"
+                << identity << "\n";
+    };
+    for (size_t i = 0; i < program.functions.size(); ++i) {
+      if (!selected_functions.count(i)) continue;
+      const auto& function = program.functions[i];
+      if (std::filesystem::path(function.source_file).extension() == ".mossi")
+        continue;
+      const string declaration = function.declaration_name.empty()
+          ? function.name : function.declaration_name;
+      emit("function", function.source_file,
+           function.semantic_callable_id.empty()
+               ? "callable-v1:" +
+                     program_module_identity(program,
+                                             function.defining_module) +
+                     ":fn:" + declaration
+               : function.semantic_callable_id);
+    }
+    method_index = 0;
+    for (const auto& object : program.objects) {
+      for (const auto& method : object.methods) {
+        if (selected_methods.count(method_index))
+          emit("method", method.source_file,
+               "method:" + object.name + "." + method.name + "@" +
+                   std::to_string(method.line));
+        ++method_index;
+      }
+    }
+    handler_index = 0;
+    for (const auto& domain : program.domains) {
+      for (const auto& handler : domain.handlers) {
+        if (selected_handlers.count(handler_index))
+          emit("handler", handler.source_file,
+               "handler:" + domain.name + "." + handler.name + "@" +
+                   std::to_string(handler.line));
+        ++handler_index;
+      }
+    }
+    for (const auto& object : program.objects)
+      if (program.file_scope_objects.count(object.name))
+        emit("type", object.source_file, "type:" + object.name + "@" +
+                 std::to_string(object.line));
+    for (const auto& enumeration : program.enums)
+      if (program.file_scope_enums.count(enumeration.name))
+        emit("enum", enumeration.source_file,
+             "enum:" + enumeration.name + "@" +
+                 std::to_string(enumeration.line));
+    for (const auto& domain : program.domains)
+      if (program.file_scope_domains.count(domain.name))
+        emit("domain", domain.source_file,
+             "domain:" + domain.name + "@" + std::to_string(domain.line));
+    for (const auto& test : program.tests)
+      if (is_root(test.source_file))
+        emit("test", test.source_file, test.semantic_identity);
+    for (const auto& benchmark : program.benchmarks)
+      if (is_root(benchmark.source_file))
+        emit("bench", benchmark.source_file, benchmark.semantic_identity);
+    if (program.main && is_root(program.main->source_file))
+      emit("main", program.main->source_file,
+           "main@" + std::to_string(program.main->line));
   }
 
   // Field types of an in-scope object are validated, so the declarations they
@@ -15858,8 +15926,8 @@ static CheckedProjectUnit check_project_sources(
     const std::map<std::filesystem::path, string>* source_overrides = nullptr,
     bool require_native_artifacts = true,
     const std::filesystem::path* file_check_root = nullptr) {
+  Program program;
   try {
-    Program program;
     std::map<string,ParsedModuleUnit> modules;
     std::map<string,ModuleImport> requested_imports;
     std::set<string> loaded_external_modules;
@@ -16078,13 +16146,16 @@ static CheckedProjectUnit check_project_sources(
     return {std::move(program), std::move(warnings),
             std::move(external_module_interfaces)};
   } catch (const CompileError& error) {
+    const string source = error.source_file.empty()
+        ? (sources.empty() ? string() : sources.front().string())
+        : error.source_file;
+    const string identity = !error.semantic_identity.empty()
+        ? error.semantic_identity
+        : semantic_identity_near_source_line(&program, source, error.line);
     throw ProjectError(
         error.code.empty() ? diagnostic_code_for_message(error.what())
                            : error.code,
-        error.what(), error.source_file.empty()
-            ? (sources.empty() ? string() : sources.front().string())
-            : error.source_file,
-        error.line, error.teaching);
+        error.what(), source, error.line, error.teaching, identity);
   }
 }
 
@@ -20490,7 +20561,8 @@ static void write_project_error_json(std::ostream& out,
                                      const string& command,
                                      const ProjectError& error) {
   write_structured_error(out, command, error.code, error.what(),
-                         error.source_file, error.line, {}, {},
+                         error.source_file, error.line,
+                         error.semantic_identity, {},
                          error.teaching.empty() ? nullptr : &error.teaching);
 }
 
@@ -20665,6 +20737,35 @@ static int run_project_interface_check(const ProjectManifest& manifest,
   } else {
     std::cout << "Checked " << manifest.name << " (" << profile
               << "); wrote " << interfaces.size() << " module interface(s)\n";
+  }
+  return 0;
+}
+
+// Semantic-only counterpart to `moss test`: check the complete Tests target
+// (`src + tests`) without building Rust or executing test bodies. Margo uses
+// this while checking package semantics so package checks cover the same
+// declaration universe as the test target.
+static int run_project_test_semantic_check(const ProjectManifest& manifest,
+                                           bool json) {
+  const auto sources = project_declaration_sources(manifest, "tests");
+  if (sources.empty())
+    throw ProjectError("PROJECT_SOURCE_NOT_FOUND",
+                       "test target contains no Moss source files");
+  (void)check_project_semantics(manifest, sources, false,
+                                ProgramGenerationMode::Tests);
+  if (json) {
+    std::cout << "{\"protocol_version\": 1, \"schema_version\": ";
+    write_debug_json_string(std::cout, kAgentSchemaVersion);
+    std::cout << ", \"compiler_version\": ";
+    write_debug_json_string(std::cout, kCompilerVersion);
+    std::cout << ", \"command\": \"test\", \"ok\": true, "
+                 "\"result\": {\"project\": ";
+    write_debug_json_string(std::cout, manifest.name);
+    std::cout << ", \"check_only\": true, \"target\": \"tests\", "
+                 "\"sources_checked\": " << sources.size() << "}}\n";
+  } else {
+    std::cout << "Checked " << sources.size()
+              << " test-target source file(s) (semantic-only)\n";
   }
   return 0;
 }
@@ -22781,6 +22882,7 @@ static void usage() {
             << "  moss fmt [--check] [--json]\n"
             << "  moss edit rename|replace-expression|change-argument ... --json\n"
             << "  moss build [--release] [--json]\n"
+            << "  moss test --check [--json]\n"
             << "  moss clean [--json]\n"
             << "  moss test [filter] [--affected] [--json]\n"
             << "  moss bench [filter] [--json] [--save NAME] [--compare NAME] [--fail-over PERCENT]\n\n"
@@ -23979,6 +24081,46 @@ int main(int argc, char** argv) {
         std::cerr << "moss:" << error.line() << ": interpreter error: "
                   << error.what() << "\n";
         return 1;
+      }
+    }
+
+    if (string(argv[1]) == "test") {
+      bool semantic_check = false;
+      bool test_json = false;
+      bool invalid_arguments = false;
+      for (int index = 2; index < argc; ++index) {
+        const string argument = argv[index];
+        if (argument == "--check") semantic_check = true;
+        else if (argument == "--json") test_json = true;
+        else invalid_arguments = true;
+      }
+      if (semantic_check) {
+        active_command = "test";
+        json_output = test_json;
+        if (invalid_arguments) {
+          std::cerr << "moss: test --check accepts only --json\n";
+          return 2;
+        }
+        const auto root = nearest_moss_project_root(
+            std::filesystem::current_path());
+        if (!root)
+          throw moss::ProjectError(
+              "PROJECT_MANIFEST_ERROR",
+              "no Moss.toml was found in this directory or any parent");
+        const auto manifest = moss::load_project_manifest(*root);
+        try {
+          return moss::run_project_test_semantic_check(manifest, test_json);
+        } catch (const moss::ProjectError& error) {
+          if (test_json)
+            moss::write_project_error_json(std::cout, "test", error);
+          else
+            std::cerr << error.source_file
+                      << (error.line > 0
+                              ? ":" + std::to_string(error.line) : "")
+                      << ": error: [" << error.code << "] "
+                      << error.what() << "\n";
+          return 1;
+        }
       }
     }
 
