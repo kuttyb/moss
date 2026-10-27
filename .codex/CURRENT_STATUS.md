@@ -1,11 +1,12 @@
 # Phase 26.1 working rules (user, 2026-10-27)
 
-## Current state — T1 review fix checkpoint; full gates pending
+## Current state — T1 implementation complete; certification awaits main integration
 
-- Active branch: `phase26-1-m1`; implementation checkpoint `95b81ec1b39129175a971bc0ebc0bab5e316d900` is pushed to `origin/phase26-1-m1`. Architect review on that SHA was NO-GO.
+- Active branch: `phase26-1-m1`; current checkpoint `18c04f2ea965fc71c6b835dd6b8690310e514656` is pushed to `origin/phase26-1-m1`. Architect GO is recorded for this exact SHA.
 - T1 defers method admission only when the open generic arguments prevent a concrete decision. Imported `.mossi` bodies are omitted from declaration-scope checking; concrete specialization still validates calls. The focused generic-import regressions pass.
-- Removed the obsolete dependency-role fingerprint bit and environment flag. Architect noted the successful skip probe must be the first dependency-graph invocation after seeding; the test is reordered accordingly and now proves Margo skips the unchanged geolib at that first root-to-dependency transition. Focused test and `git diff --check` pass.
-- All full gates are pending rerun after this correction. Next: commit/push this checkpoint; rerun `make check`, corpus differential, Fast Debug, package-perf, and compiler-perf; then request Architect GO on the exact new SHA. Run certification only after integration into `main`.
+- Margo no longer includes the obsolete dependency-role flag in package fingerprints or the compiler environment. The first consumer graph after building geolib as a root proves the unchanged provider is skipped. Architect GO reviewed this exact code and test order.
+- Exact-SHA `make check` on `18c04f2e` passed 146/146, including Fast Debug parity. On its production-code-identical parent `af9674af`, corpus differential vs C1 `7bc75969` found exactly three intended generic-poison acceptance flips and no other output differences, package-perf met all 70 targets, and C1 corpus gates passed across 438 roots (G-a 660/660; G-b 67/67). The only intervening source-tree delta is the T1 test-order assertion; focused T1 test passes on the exact SHA.
+- Compiler-perf run `20261027-104141`: 77 fixtures, three interleaved reps; 5.438 s to 5.415 s (-0.4%), no noise-floor slowdowns. It is non-certified: certification requires a clean checkout and candidate source equal to `origin/main`. Exit docs now include T1 outcomes, M1 before/after times, known C1 regression, and the certification constraint. Next: push these report/status/feedback/team records; request integration authorization before attempting the certified run.
 
 
 ## Current state — T1 generic-import rule checkpoint in progress

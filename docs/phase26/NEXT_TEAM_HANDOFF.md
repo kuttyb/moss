@@ -120,3 +120,31 @@ counter set; missing entries mean unavailable, not zero.
 
 Worklist complexity debt: simplify to a plain convergence check unless a real
 package shows partial waves.
+
+## Phase 26.1 T1 closeout handoff — 2026-10-27
+
+T1 implementation and local gates are complete on branch `phase26-1-m1` at
+`18c04f2ea965fc71c6b835dd6b8690310e514656`, pushed to
+`origin/phase26-1-m1`. Architect GO is for this exact implementation SHA. T1
+defers imported generic body checks until concrete instantiation and removes
+the obsolete dependency-role bit from Margo package fingerprints. The focused
+regression verifies that a current geolib interface is skipped on the first
+consumer graph after being built as root.
+
+Evidence: `docs/phase26/T1_RESULTS.md` and
+`docs/phase26/PHASE_26_1_EXIT.md`. Exact-SHA `make check` passed 146/146,
+including Fast Debug parity. The full-hash corpus differential against C1
+`7bc75969` covers 2,064 sources and found exactly three intended
+`generic_poisons_import` acceptance changes. Package-perf (70/70) and corrected
+C1 corpus gates (438 roots, G-a 660/660, G-b 67/67) passed on the production-
+code-identical parent `af9674af`. Compiler-perf guard run `20261027-104141`
+shows 77 fixtures, three repetitions, 5.438 s -> 5.415 s aggregate median sum
+(-0.4%) and no slowdown beyond the noise floor.
+
+Remaining handoff: certification mode requires a clean candidate checkout
+whose compiler source is exactly `origin/main`; no such certified run can be
+produced from this review branch. After integration is authorized and lands,
+run `MOSS_PERF_CERTIFY=1 MOSS_PERF_INCLUDE_REAL_WORLD=1 MOSS_PERF_BASELINE=c66fb76c make compiler-perf` from clean `main`, record the
+report/metadata and host in the Phase 26.1 exit report, and update status to
+`26.1 complete; awaiting Bank review`. The branch currently has the complete
+implementation and review evidence but does not claim certification.

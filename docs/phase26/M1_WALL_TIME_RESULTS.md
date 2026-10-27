@@ -30,4 +30,13 @@ The candidate package counts met the targets across the dependency chain, top ap
 
 These measurements cover the generated M1 files and are not a substitute for the compiler-perf suite's small real-file workloads. The range contains occasional outliers, so use the medians as directional evidence rather than a certification threshold.
 
-A final Phase 26.1 exit report should include this table alongside the final M1 gate result and certified compiler-perf run.
+## Phase 26.1 exit refresh
+
+The three-repetition wall-time sample above remains the published before/after
+measurement; it was not repeated for T1. On final T1 implementation SHA
+`18c04f2ea965fc71c6b835dd6b8690310e514656`, the enforced package-perf suite
+passed all 70 target rows. Its latest single-run work-counter report is under
+`tmp/compiler-perf/m1-20261027-103847/` on the work machine. The exit report
+links the before/after table and separately records the final target-gate
+result. Certified compiler-perf is still pending integration because the
+certification mode requires a clean candidate checkout at `origin/main`.
