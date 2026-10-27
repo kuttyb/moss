@@ -525,7 +525,22 @@ class Checker {
       // Function results and handler replies can constrain each other through an
       // synchronous message or local call. Run non-final inference rounds before the
       // final unresolved-type diagnostics.
+      //
+      // These rounds compute a fixed point over the ordered function and shared
+      // (object field, domain state, handler reply) signatures. A round whose
+      // inputs are unchanged repeats the previous round exactly, so stop once a
+      // complete round leaves that signature unchanged; three remains the cap.
+      // MOSS_LEGACY_INFERENCE_ROUNDS=1 restores the fixed schedule for A/B runs.
+      // MOSS_VERIFY_INFERENCE_ROUNDS=1 keeps running the remaining rounds after
+      // convergence and fails if any of them changes a signature.
+      const bool legacy_inference_rounds =
+          std::getenv("MOSS_LEGACY_INFERENCE_ROUNDS") != nullptr;
+      const bool verify_inference_rounds =
+          std::getenv("MOSS_VERIFY_INFERENCE_ROUNDS") != nullptr;
+      bool inference_rounds_converged = false;
       for (size_t round = 0; round < 3; ++round) {
+        const string signature_before = legacy_inference_rounds
+            ? string() : inferred_checker_signature();
         CompilerTraceRecorder::instance().increment_counter("inference_rounds", 1);
         CompilerTraceRecorder::instance().increment_counter("inference_work_units",
             p_.domains.size() + p_.functions.size());
@@ -535,6 +550,16 @@ class Checker {
         infer_domain_state_fields(false);
         infer_function_signatures(false);
         infer_handler_reply_types(false);
+        if (legacy_inference_rounds) continue;
+        const bool unchanged = inferred_checker_signature() == signature_before;
+        if (inference_rounds_converged && !unchanged)
+          throw std::logic_error(
+              "MOSS_VERIFY_INFERENCE_ROUNDS: inference round " +
+              std::to_string(round) + " changed signatures after convergence");
+        if (unchanged) {
+          inference_rounds_converged = true;
+          if (!verify_inference_rounds) break;
+        }
       }
       CompilerTraceRecorder::instance().increment_counter("inference_rounds", 1);
       CompilerTraceRecorder::instance().increment_counter("inference_work_units",
