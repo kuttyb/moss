@@ -401,17 +401,8 @@ def main() -> int:
             run(["make", f"--jobs={os.cpu_count() or 1}", "moss-opt"], cwd=worktree,
                 log=out / "baseline-build.log")
             baseline_binary = worktree / "build/compiler/moss-opt"
-            # Historical commits may carry stale benchmark directory hashes.
-            # Apply the candidate's manifests in this temporary checkout so its
-            # verifier checks the exact same fixture bytes for both compilers.
-            # Any baseline fixture drift still fails integrity verification.
-            for relative in (
-                "benchmarks/compiler_torture/manifest.json",
-                "benchmarks/compiler_torture/expected/validation_manifest.json",
-                "benchmarks/real_world/manifest.json",
-            ):
-                shutil.copy2(ROOT / relative, worktree / relative)
-            # Preserve profiling output and resource samples from the local runner.
+            # Historical commits do not have the local runner's profiling output
+            # preservation; stage only this benchmark driver after the build.
             shutil.copy2(RUNNER, worktree / "benchmarks/phase25_4/cpp_baseline/run.py")
 
         modules = {"candidate": load_runner(ROOT, out / "candidate", "phase26_b1_candidate")}

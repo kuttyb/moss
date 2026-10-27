@@ -113,23 +113,23 @@
     },
     "mg1_multi_file": {
       "expected_status": "pass",
-      "sha256": "fcd0207d5fdde8f27a92699dba10f904c1165a76b4e2b442d78e35b5774db8de"
+      "sha256": "42ba06d47d547c11a39407d5a1e321ac3793ea7a8d3bf76ecf7788848bf5166c"
     },
     "mg2_multi_module": {
       "expected_status": "pass",
-      "sha256": "3202200cfebb83c18912d82e41b1b6c4da90012e8e5d1fe25f70a63be4f1d4e7"
+      "sha256": "5131e0f1dc4962d49edebb93452233c61a22b82937cc4b2e3b96489f40bbf60e"
     },
     "mg3_deep_chain": {
       "expected_status": "pass",
-      "sha256": "d49229bdb4c95b4bb569a6f6acf267cf8b1bf5fd29937d71e8b176bfe16f3770"
+      "sha256": "ebbc23d6a8c116f10d85558cc8fb155f81d2b01652f4a7041aa428c9b186c66b"
     },
     "mg4_fan_out": {
       "expected_status": "pass",
-      "sha256": "10ce9ccf653881f458592f5abafd11490bd9ef97fecde0ca988f76d6ea41515c"
+      "sha256": "eadb58deb83d15995640f211ca659dadeaf5e93cd32178f5796699c09b8053a8"
     },
     "mg5_diamond": {
       "expected_status": "pass",
-      "sha256": "f9a039f26681713e5f39323fc01879c270b84f51d470b2150f1f755e6da39c7a"
+      "sha256": "1b16203eee98f0095600258ae6a640cc3c274ec2c43c8fe232f3945c95e4f807"
     },
     "example_checkout": {
       "expected_status": "pass",
