@@ -317,7 +317,7 @@ def main() -> int:
     for row in rows[4:]:
         lines.append(f"| {row['scenario']} | `{row['command']}` | {row['packages_checked']} | {row['modules_checked']} | {row['functions_checked']} | {row['inference_function_visits']} |")
     lines += ["", "Scenario definitions: E0 touches the source without changing bytes; E1 changes one function body while preserving its interface; E2 changes another function body so its inferred result type changes; E3 changes an explicit result signature whose type is forwarded through the dependency chain. Each starts from a fresh chain, measures both commands after the edit, restores the original source, and measures both commands after revert.", "",
-              "Functions checked counts source function checker entries, not call-graph reachability. R3 acceptance requires an additional counter for actual reached body checks. Full rows: `benchmarks/phase26_1/results/m1_phase26_main.csv`.", ""]
+              "Functions checked counts source function checker entry occurrences, not unique reachable identities. R3 still requires its diagnostic oracle; any work attribution by reachable function should record identities, not infer them from this aggregate count. Full rows: `benchmarks/phase26_1/results/m1_phase26_main.csv`.", ""]
     (out / "M1_BASELINE.md").write_text("\n".join(lines))
     print(f"M1 baseline: {out / 'M1_BASELINE.md'}")
     print(f"M1 counters: {out / 'm1_work_counters.csv'}")

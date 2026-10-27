@@ -11,10 +11,13 @@ check work only where needed.
   It may read source bytes solely to compute the package hash required by R2.
 - **R2:** A missing or stale `.mossi` is an error: `interface for X is missing or
   stale; run \`margo build\``. Staleness is detected using the package source
-  hash recorded in `.mossi`. Packages always ship with source; binary-only
+  content hash recorded in `.mossi`. This freshness hash is metadata outside
+  the semantic interface hash. Packages always ship with source; binary-only
   packages are unsupported.
-- **R6 (checkstop):** If a rebuilt package's `.mossi` hash is unchanged, its
-  dependents are not re-checked.
+- **R6 (checkstop):** If a rebuilt package's semantic `.mossi` interface hash
+  is unchanged, its dependents are not re-checked. This hash excludes the
+  source-freshness metadata so an implementation-only edit does not trigger
+  dependent checks when the exported interface is unchanged.
 
 ## Check scope
 
@@ -33,7 +36,8 @@ check work only where needed.
 
 - **R5:** `margo build` skips a package whose fingerprint is unchanged. The
   fingerprint covers its Moss sources, compiler and toolchain identity, build
-  flags, and the `.mossi` hashes of its dependencies.
+  flags, and its dependencies' semantic `.mossi` interface hashes. Source
+  freshness metadata is excluded from those dependency interface hashes.
 - **R7:** `margo build --check` checks each package and writes `.mossi`, without
   invoking rustc.
 - Output remains deterministic.
