@@ -25,7 +25,6 @@ class MargoError(Exception):
 
 REPO = Path(__file__).resolve().parent
 MOSS = Path(os.environ.get("MOSS", REPO / "moss")).resolve()
-FAST_DEBUG_SOURCE_ROOT_ENV = "MOSS_FAST_DEBUG_SOURCE_ROOTS"
 
 
 def manifest_at(root: Path) -> Path:
@@ -721,20 +720,15 @@ def main() -> int:
         root, ordered = resolve_graph(root_path)
 
         if args.command == "test" and args.interp:
-            dep_roots = []
-            seen_roots = set()
-            for package in ordered:
-                if package is root:
-                    continue
-                package_root = str(package.root.resolve())
-                if package_root not in seen_roots:
-                    seen_roots.add(package_root)
-                    dep_roots.append(package_root)
-            env = dict(os.environ)
-            env.pop(FAST_DEBUG_SOURCE_ROOT_ENV, None)
-            env.pop("MOSS_SOURCE_ROOTS", None)
-            if dep_roots:
-                env[FAST_DEBUG_SOURCE_ROOT_ENV] = os.pathsep.join(dep_roots)
+            # Fast Debug consumes checked dependency bodies from the same
+            # package snapshots used by ordinary semantic imports. Refresh
+            # dependencies first, without checking unrelated root-package
+            # declarations or invoking rustc.
+            dependency_order = [package for package in ordered
+                                if package is not root]
+            build_graph(root, dependency_order, False, args.json,
+                        check_only=True)
+            env = package_environment(root, ordered, False, check_only=True)
             test_cmd = [str(MOSS), "test", "--interp"]
             if args.filter:
                 test_cmd.append(args.filter)
@@ -745,29 +739,14 @@ def main() -> int:
             return subprocess.run(test_cmd, cwd=root.root, env=env).returncode
 
         if args.command == "debug":
-            # For debug, we do NOT build dependency packages (no rustc needed).
-            # We resolve the package graph to get source roots, then invoke
-            # moss debug with an exact source-provider universe supplied through
-            # the narrowly scoped Margo-to-Fast-Debug handoff.
-            # The root package is NOT included in the source-provider handoff because
-            # moss debug already knows to use the root project's source.
-            dep_roots = []
-            seen_roots = set()
-            for package in ordered:
-                if package is root:
-                    continue
-                package_root = str(package.root.resolve())
-                if package_root not in seen_roots:
-                    seen_roots.add(package_root)
-                    dep_roots.append(package_root)
-            env = dict(os.environ)
-            # This invocation's resolved graph is authoritative. Never let an
-            # unrelated inherited provider list alter package-aware debugging.
-            env.pop(FAST_DEBUG_SOURCE_ROOT_ENV, None)
-            env.pop("MOSS_SOURCE_ROOTS", None)
-            if dep_roots:
-                env[FAST_DEBUG_SOURCE_ROOT_ENV] = os.pathsep.join(dep_roots)
-            # moss debug accepts the project root directory.
+            # Make dependency interfaces and executable bodies current without
+            # a native build. Fast Debug resolves only those .mossi artifacts;
+            # the root package is checked from the selected execution entries.
+            dependency_order = [package for package in ordered
+                                if package is not root]
+            build_graph(root, dependency_order, False, args.json,
+                        check_only=True)
+            env = package_environment(root, ordered, False, check_only=True)
             debug_cmd = [str(MOSS), "debug", str(root.root)]
             if args.trace:
                 debug_cmd.append("--trace")

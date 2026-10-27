@@ -52,9 +52,10 @@ def package(name: str, deps: dict[str, str], module: str, body: str) -> dict:
     return {"name": name, "deps": deps, "module": module, "body": body}
 
 
-# Two-package Fast Debug fixture. The first selected test reaches one library
-# chain; the second test stays entirely in the app. Identities below are the
-# X0 target for R11 and make dependency versus package-wide work measurable.
+# Two-package Fast Debug fixture. The first selected test executes a library
+# chain from its checked .mossi; the second stays entirely in the app. The
+# work identities count root-package functions checked in this run. Provider
+# bodies are checked when their own snapshots are built, not rechecked here.
 FAST_DEBUG_GRAPH = {
     "app": package("m1_fd_app", {"m1_fd_lib": "../library"}, "m1_fd_app_api",
                     "import m1_fd_lib\n"
@@ -241,7 +242,7 @@ def run_profiled_check(root: Path, package_roots: dict[str, Path], target: Path,
     env.update({"MOSS": str(wrapper), "M1_REAL_MOSS": str(MOSS),
                 "M1_PROFILE_DIR": str(logs), "MOSS_PROFILE_COMPILER": "1"})
     target_root = target.parent.parent
-    module_paths = [str(path / "build/debug") for path in package_roots.values()
+    module_paths = [str(path / "build/check-debug") for path in package_roots.values()
                     if path != target_root]
     env["MOSS_MODULE_PATH"] = os.pathsep.join(module_paths)
     status, output, wall_ms = invoke([str(wrapper), "check", str(target)],
@@ -311,9 +312,9 @@ def run_profiled_fast_debug(package_roots: dict[str, Path], test_file: Path,
     env = dict(os.environ)
     env.update({"M1_REAL_MOSS": str(MOSS), "M1_PROFILE_DIR": str(logs),
                 "MOSS_PROFILE_COMPILER": "1",
-                "MOSS_FAST_DEBUG_SOURCE_ROOTS": os.pathsep.join(
-                    str(root) for key, root in package_roots.items()
-                    if key != "app")})
+                "MOSS_MODULE_PATH": os.pathsep.join(
+                    str(root / "build" / "check-debug")
+                    for key, root in package_roots.items() if key != "app")})
     status, output, wall_ms = invoke(
         [str(wrapper), "test", "--interp", str(test_file), selected_test],
         package_roots["app"], env, label)
@@ -398,15 +399,14 @@ def run_fast_debug_scenarios(run_id: str, rows: list[dict], enforce: bool) -> No
     base_hashes = package_artifact_hashes(roots)
     if set(base_hashes.values()) == {""}:
         raise RuntimeError("Fast Debug fixture did not produce package artifacts")
-    # The exact identity sets are explicit by file and semantic function.
+    # Imported non-generic bodies are already checked inputs from .mossi. The
+    # consumer checker visits only the reachable app-level wrapper; dependency
+    # package checks and artifact updates are counted separately below.
     reach = {
         "m1_fd_app_api.moss:m1_fd_app_api__reaches_library",
-        "m1_fd_lib.moss:m1_fd_lib__helper",
-        "m1_fd_lib.moss:m1_fd_lib__target_value",
     }
     reach_explicit = {
         "m1_fd_app_api.moss:m1_fd_app_api__reaches_explicit",
-        "m1_fd_lib.moss:m1_fd_lib__explicit_value",
     }
     local = {
         "m1_fd_app_api.moss:m1_fd_app_api__app_only",

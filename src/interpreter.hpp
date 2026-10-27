@@ -1323,8 +1323,10 @@ class FastInterpreter {
         if (callable_val && callable_val->kind == Value::Kind::Callable) {
           if (auto fn = function(callable_val->string))
             return call(*fn, args, frame, line, output);
-          throw RuntimeError(line, "unresolved callable identity '" +
-              callable_val->string + "'");
+          throw RuntimeError(line, program_.file_check_scope
+              ? "internal error: FAST_DEBUG_UNCHECKED_EXECUTION: callable '" +
+                    callable_val->string + "' was not checked in this run"
+              : "unresolved callable identity '" + callable_val->string + "'");
         }
         if (auto object = object_type(callee)) return construct(*object, args, frame, line, output);
         auto self_it = frame.locals.find("self");
@@ -1334,7 +1336,10 @@ class FastInterpreter {
                                locate("self", frame, line, output));
           }
         }
-        throw RuntimeError(line, "unsupported or unresolved callable '" + callee + "'");
+        throw RuntimeError(line, program_.file_check_scope
+            ? "internal error: FAST_DEBUG_UNCHECKED_EXECUTION: callable '" +
+                  callee + "' was not checked in this run"
+            : "unsupported or unresolved callable '" + callee + "'");
       }
     }
 
@@ -1623,7 +1628,11 @@ class FastInterpreter {
           if (receiver.kind != Value::Kind::Struct || !receiver.object)
             throw RuntimeError(line, "method receiver is not a Moss object");
           auto target = method(receiver.object->type, method_name);
-          if (!target) throw RuntimeError(line, "unresolved method '" + method_name + "'");
+          if (!target)
+            throw RuntimeError(line, program_.file_check_scope
+                ? "internal error: FAST_DEBUG_UNCHECKED_EXECUTION: method '" +
+                      method_name + "' was not checked in this run"
+                : "unresolved method '" + method_name + "'");
           return call_method(*target, receiver, method_args, frame, line, output,
                              locate(member->first, frame, line, output));
         }

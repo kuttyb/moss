@@ -1,9 +1,5 @@
 #!/usr/bin/env python3
-"""Phase 15.8 cross-package Fast Debug regression coverage.
-
-Margo resolves package graphs. Moss sees only resolved source-provider roots and
-remains responsible for module resolution, checking, and interpretation.
-"""
+"""Cross-package Fast Debug coverage through checked dependency .mossi files."""
 import json
 import os
 from pathlib import Path
@@ -59,17 +55,19 @@ def test_path_source_parity_and_no_rustc(compiler):
     if native.stdout != interpreted.stdout or native.stdout.strip() != "42":
         raise AssertionError(f"native/interpreted output mismatch: {native.stdout!r} vs "
                              f"{interpreted.stdout!r}")
+    provider_dir = PKG_GRAPHPKG / "build" / "debug"
     direct = run([str(compiler), "debug", str(PKG_MAIN)], cwd=PKG_MAIN,
-                 env=env_for(compiler, **{SOURCE_ROOT_ENV: str(PKG_GRAPHPKG),
+                 env=env_for(compiler, **{"MOSS_MODULE_PATH": str(provider_dir),
+                                           SOURCE_ROOT_ENV: str(PKG_GRAPHPKG),
                                            "RUSTC": "/definitely/not/rustc"}))
-    require_ok(direct, "direct source-provider Fast Debug")
+    require_ok(direct, "direct .mossi-backed Fast Debug")
     if direct.stdout != native.stdout:
         raise AssertionError("direct source-provider output differed from native output")
     print("  [PASS] path source closure, no-rustc debug, and native/interpreter parity")
 
 
-def test_real_source_free_provider_rejection(compiler):
-    """Build a real interface, resolve it, then require the specific rejection."""
+def test_real_source_free_provider_execution(compiler):
+    """A current checked interface is sufficient without provider source roots."""
     margo = compiler.parent / "margo"
     require_ok(run([str(margo), "build"], cwd=PKG_MAIN, env=env_for(compiler)),
                "build real graphpkg .mossi provider")
@@ -78,12 +76,12 @@ def test_real_source_free_provider_rejection(compiler):
         raise AssertionError(f"native build did not emit graphpkg .mossi in {provider_dir}")
     result = run([str(compiler), "debug", str(PKG_MAIN)], cwd=PKG_MAIN,
                  env=env_for(compiler, MOSS_MODULE_PATH=str(provider_dir),
-                             RUSTC="/definitely/not/rustc"))
-    combined = result.stdout + result.stderr
-    if result.returncode == 0 or "FAST_DEBUG_NATIVE_DEPENDENCY" not in combined or "graphpkg" not in combined:
-        raise AssertionError("expected semantic .mossi selection followed by "
-                             f"FAST_DEBUG_NATIVE_DEPENDENCY for graphpkg:\n{combined}")
-    print("  [PASS] real source-free .mossi provider is rejected before interpreter preparation")
+                             **{SOURCE_ROOT_ENV: str(PKG_GRAPHPKG),
+                                "RUSTC": "/definitely/not/rustc"}))
+    require_ok(result, "source-free .mossi provider execution")
+    if result.stdout.strip() != "42":
+        raise AssertionError(f"source-free provider output was {result.stdout!r}")
+    print("  [PASS] current .mossi Section 2 executes without dependency source roots")
 
 
 def trace_events(result, context):
@@ -99,9 +97,11 @@ def trace_events(result, context):
 
 def test_trace_has_dependency_execution_event(compiler):
     result = run([str(compiler), "debug", "--trace", str(PKG_MAIN)], cwd=PKG_MAIN,
-                 env=env_for(compiler, **{SOURCE_ROOT_ENV: str(PKG_GRAPHPKG),
-                                           "RUSTC": "/definitely/not/rustc"}))
-    events = trace_events(result, "source-backed trace")
+                 env=env_for(compiler, **{
+                     "MOSS_MODULE_PATH": str(PKG_GRAPHPKG / "build" / "debug"),
+                     SOURCE_ROOT_ENV: str(PKG_GRAPHPKG),
+                     "RUSTC": "/definitely/not/rustc"}))
+    events = trace_events(result, ".mossi-backed trace")
     dependency_file = str((PKG_GRAPHPKG / "src" / "graphpkg.moss").resolve())
     if not any(event.get("source_file") == dependency_file and
                event.get("event") == "FunctionEnter" and
@@ -111,12 +111,16 @@ def test_trace_has_dependency_execution_event(compiler):
     print("  [PASS] structured trace includes semantic execution in dependency source")
 
 
-def test_invalid_root_fails_closed(compiler):
-    missing = run([str(compiler), "debug", str(PKG_MAIN)], cwd=PKG_MAIN,
-                  env=env_for(compiler, **{SOURCE_ROOT_ENV: str(PKG_MAIN / "absent")}))
-    if missing.returncode == 0 or "PROJECT_SOURCE_NOT_FOUND" not in (missing.stdout + missing.stderr):
-        raise AssertionError("missing supplied source root was silently ignored")
-    print("  [PASS] invalid Fast Debug source roots fail closed")
+def test_dependency_source_root_is_ignored(compiler):
+    margo = compiler.parent / "margo"
+    result = run([str(margo), "debug"], cwd=PKG_MAIN,
+                 env=env_for(compiler, **{
+                     SOURCE_ROOT_ENV: str(PKG_MAIN / "absent"),
+                     "RUSTC": "/definitely/not/rustc"}))
+    require_ok(result, "Fast Debug with ignored dependency source-root override")
+    if result.stdout.strip() != "42":
+        raise AssertionError(f"ignored source-root override changed output: {result.stdout!r}")
+    print("  [PASS] Margo Fast Debug ignores MOSS_FAST_DEBUG_SOURCE_ROOTS")
 
 
 def test_source_provider_selection_parity(compiler):
@@ -181,7 +185,7 @@ def test_transitive_source_closure_and_identity(compiler):
                     for package in ("middle", "leaf")}
         if not expected <= sources:
             raise AssertionError(f"same local filenames collapsed provenance: {sources}")
-    print("  [PASS] transitive source closure preserves package-aware source identities")
+    print("  [PASS] transitive .mossi execution preserves package-aware source identities")
 
 
 def test_git_source_closure_and_cached_lock(compiler):
@@ -274,12 +278,15 @@ def main():
         return 2
     (REPO / "tmp").mkdir(exist_ok=True)
     print("Phase 15.8 — Cross-Package Fast Debug Source Convergence")
-    tests = [test_path_source_parity_and_no_rustc, test_real_source_free_provider_rejection,
-             test_trace_has_dependency_execution_event, test_invalid_root_fails_closed,
+    tests = [test_path_source_parity_and_no_rustc,
+             test_real_source_free_provider_execution,
+             test_trace_has_dependency_execution_event,
+             test_dependency_source_root_is_ignored,
              test_source_provider_selection_parity,
-             test_transitive_source_closure_and_identity, test_git_source_closure_and_cached_lock,
-             test_margo_cli_and_environment_are_exact, test_standalone_debug_unchanged,
-             test_build_planner_dogfood]
+             test_transitive_source_closure_and_identity,
+             test_git_source_closure_and_cached_lock,
+             test_margo_cli_and_environment_are_exact,
+             test_standalone_debug_unchanged, test_build_planner_dogfood]
     failures = 0
     for test in tests:
         try:

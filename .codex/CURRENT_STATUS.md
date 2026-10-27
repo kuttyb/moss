@@ -1,9 +1,10 @@
-# Phase 26.1.1 — X1 checkpoint — 2026-10-27
+# Phase 26.1.1 — X2 entry-scoped Fast Debug checkpoint — 2026-10-27
 
-- Active branch `phase26-1-m1`, pushed head `424818e6`. Architect GO is recorded for this exact SHA. The Section 1/Section 2 split, ABI-v10 projection parsing, and X1 changes are committed.
-- X1 focused gate passes: non-generic E1 rewrites only the provider's Section 2 with stable interface digests; generic-body edits re-check the consumer; check-only builds emit no rlib; source-free execution covers private object/enum construction, helper, method, handler, and failure arm; corrupt Section 2 is ignored by `moss check` and rejected by Fast Debug. G1 and F1 focused suites also pass.
-- Full local `make --jobs="$(nproc)" check` completed 143/146 on `424818e6`. Remaining failures: Phase 25 G2 gate 11 and Phase 15.8 both expected `FAST_DEBUG_NATIVE_DEPENDENCY` but succeeded from checked `.mossi` bodies; Phase 106 runtime test `48-tmax-physical-thread-slots` failed. These are under triage; no code changes have been made in response yet. Detailed logs: `build/tests/parallel/check_phase25_conformance/`, `check_phase15_8_cross_package_fast_debug/`, and `shard_phase106_runtime/`.
-- No X2 changes have started. Next: classify the three full-suite failures against the intended R8/X1 source-free behavior and baseline, then begin X2 entry-scoped Fast Debug. R10 still needs source-backed trace parity; X3 may supply generic declaration locations. Final full gates remain pending.
+- Active branch `phase26-1-m1`; pushed X1 checkpoint `8dd933aa`. X1's Section 1/Section 2 split is Architect-approved at implementation SHA `424818e6`. X2 implementation is in progress and has not yet been checkpointed.
+- X2 now scopes checks to the selected `main` or tests; filtered tests skip unselected test bodies while no-file mode includes all package tests. Margo `debug` and `test --interp` refresh dependency `.mossi` files with check-only builds and execute with `MOSS_MODULE_PATH`. `MOSS_FAST_DEBUG_SOURCE_ROOTS` and its Emacs handoff are removed.
+- Focused validation: X2 fixture passed; Phase 15.8 cross-package Fast Debug 10/10; Phase 25 G2 11/11; `MOSS_M1_ENFORCE_TARGETS=1 make package-perf` passed 86/86. Isolated Phase 20 executor tests passed 54/54 after a single failure in the previous full run. Details: `docs/phase26/PHASE_26_1_1_X2_RESULTS.md`.
+- Previous full `make check` at X1 SHA `424818e6` was 143/146. The two Fast Debug failures were expectations for the old source-required behavior and now pass their updated focused suites. The thread-slot failure passed in isolation; full `make check` must be rerun.
+- Next: checkpoint and push this X2 implementation for parallel Architect review; then run corpus Fast Debug parity and the remaining final gates. X3 sidecar and X4 edge cases are not started.
 
 ## X1 earlier pushed decoder checkpoint (historical)
 

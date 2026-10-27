@@ -8204,7 +8204,7 @@ static const vector<AgentCapabilityDescriptor>& agent_capability_catalog() {
       {"package_dependencies", "Resolve local path and Git package dependencies declared in Moss.toml.", "Moss.toml [dependencies] with path or git/rev/tag/branch"},
       {"package_lockfile", "Freeze resolved Git dependency commits deterministically.", "Moss.lock"},
       {"module_interfaces", "Generated .mossi semantic interfaces are source-free provider truth, not generated Rust.", "margo build --json -> result.artifacts.module_interfaces"},
-      {"fast_debug", "Direct execution of checked reachable Moss source; use Margo for a resolved package graph.", "moss run --interp <source> | moss debug <project-or-source> | margo debug [--trace]"},
+      {"fast_debug", "Execute checked reachable Moss code; package dependencies use current .mossi bodies, refreshed by Margo.", "moss run --interp <source> | moss debug <project-or-source> | margo debug [--trace]"},
       {"structured_execution_trace", "Bounded deterministic newline-delimited semantic events during Fast Debug.", "moss run --interp --trace <source> | moss debug <target> --trace"},
       {"structured_debug_query", "Bounded deterministic slices over one Fast Debug execution trace: events, subtrees, message subtrees, failures, control paths, and unambiguous recent writes.", "moss debug-query <operation> [selector] --source <source> --json"},
       {"project_workflow", "Margo owns canonical package/project orchestration; Moss remains the module and semantic authority.", "margo build|run|test|bench|clean|debug"},
@@ -8920,7 +8920,7 @@ static void write_bootstrap_json(std::ostream& out,
          "{\"name\":\"package_fast_debug\",\"command\":\"margo debug [--trace]\",\"purpose\":\"resolve package sources then interpret the reachable Moss closure without rustc\"},"
          "{\"name\":\"agent_benchmark\",\"command\":\"moss agent benchmark list|show|validate|run [--json]\",\"purpose\":\"operate the fixed isolated fresh-agent benchmark corpus\"}]";
   out << ",\n    \"debugging_features\": ["
-         "{\"name\":\"fast_debug\",\"command\":\"moss run --interp <source> | moss debug <project-or-source>\",\"purpose\":\"execute checked reachable Moss source without rustc\",\"limitations\":[\"no mixed interpreted/native Moss closure\",\"source-free providers require source\"]},"
+         "{\"name\":\"fast_debug\",\"command\":\"moss run --interp <source> | moss debug <project-or-source>\",\"purpose\":\"execute checked reachable Moss code without rustc; package dependencies use current .mossi bodies\",\"limitations\":[\"no mixed interpreted/native Moss closure\"]},"
          "{\"name\":\"structured_execution_trace\",\"command\":\"moss run --interp --trace <source> | moss debug <target> --trace\",\"format\":\"newline-delimited JSON on stderr\",\"events\":[\"function/handler entry and exit\",\"local/state access\",\"branch\",\"return/reply\",\"message\",\"assertion\"],\"relationships\":[\"event_id\",\"parent_event_id\",\"call_event_id\",\"message_event_id\",\"handler_event_id\",\"control_event_id\"],\"limitations\":[\"no physical lock or schedule simulation\"]},"
          "{\"name\":\"structured_debug_query\",\"command\":\"moss debug-query <operation> [selector] --source <source> --json\",\"operations\":[\"event\",\"semantic\",\"subtree\",\"message-subtree\",\"control-flow\",\"writes\",\"failure-slice\"],\"bounds\":[\"--max-events\",\"--max-depth\",\"--before\",\"--after\",\"--before-event\"],\"limitations\":[\"last-write history, not full dynamic taint provenance\",\"ambiguous local or state write selectors are rejected\",\"one deterministic Fast Debug execution per query\",\"same-project or standalone source closure only; use margo debug for package-resolved unsliced traces\",\"no interactive stepping\"]}]";
   out << ",\n    \"discovery\": {\"capabilities_command\": \"./moss agent capabilities --json\", \"schema_command\": \"./moss agent schema --json\", \"protocol_vendor\": \"Moss\"}";
@@ -12025,19 +12025,34 @@ static void add_statement_callable_references(const vector<Stmt>& body,
 // rooted in the requested file. The checker still receives all nominal and
 // signature declarations as lookup context, but only reachable source bodies.
 // A method name deliberately selects every method with that name.
+enum class FastDebugScopeKind { File, Main, Tests };
+
+struct FastDebugScope {
+  std::filesystem::path root_file;
+  FastDebugScopeKind kind = FastDebugScopeKind::Main;
+  string test_filter;
+  bool all_package_tests = false;
+};
+
 static void scope_program_to_file(Program& program,
-                                 const std::filesystem::path& root_file) {
+                                 const std::filesystem::path& root_file,
+                                 FastDebugScopeKind scope_kind =
+                                     FastDebugScopeKind::File,
+                                 const string& test_filter = {},
+                                 bool all_package_tests = false) {
   const string root = std::filesystem::absolute(root_file).lexically_normal().string();
   auto is_root = [&](const string& source) {
     return !source.empty() &&
         std::filesystem::absolute(source).lexically_normal().string() == root;
   };
-  for (const auto& object : program.objects)
-    if (is_root(object.source_file)) program.file_scope_objects.insert(object.name);
-  for (const auto& enumeration : program.enums)
-    if (is_root(enumeration.source_file)) program.file_scope_enums.insert(enumeration.name);
-  for (const auto& domain : program.domains)
-    if (is_root(domain.source_file)) program.file_scope_domains.insert(domain.name);
+  if (scope_kind == FastDebugScopeKind::File) {
+    for (const auto& object : program.objects)
+      if (is_root(object.source_file)) program.file_scope_objects.insert(object.name);
+    for (const auto& enumeration : program.enums)
+      if (is_root(enumeration.source_file)) program.file_scope_enums.insert(enumeration.name);
+    for (const auto& domain : program.domains)
+      if (is_root(domain.source_file)) program.file_scope_domains.insert(domain.name);
+  }
   std::set<size_t> selected_functions, selected_methods, selected_handlers;
   std::vector<FileCheckReferences> function_refs(program.functions.size());
   std::vector<FileCheckReferences> method_refs;
@@ -12056,7 +12071,8 @@ static void scope_program_to_file(Program& program,
     add_statement_callable_references(function.body, program, refs);
     if (function.result_expression)
       add_callable_argument_references(*function.result_expression, program, refs);
-    if (is_root(function.source_file)) selected_functions.insert(i);
+    if (scope_kind == FastDebugScopeKind::File &&
+        is_root(function.source_file)) selected_functions.insert(i);
   }
   for (const auto& object : program.objects) {
     for (const auto& method : object.methods) {
@@ -12066,7 +12082,8 @@ static void scope_program_to_file(Program& program,
       add_statement_callable_references(method.body, program, refs);
       if (method.result_expression)
         add_callable_argument_references(*method.result_expression, program, refs);
-      if (is_root(method.source_file)) selected_methods.insert(method_index);
+      if (scope_kind == FastDebugScopeKind::File &&
+          is_root(method.source_file)) selected_methods.insert(method_index);
       ++method_index;
     }
   }
@@ -12079,23 +12096,33 @@ static void scope_program_to_file(Program& program,
         add_statement_references(arm.body, refs);
         add_statement_callable_references(arm.body, program, refs);
       }
-      if (is_root(handler.source_file)) selected_handlers.insert(handler_index);
+      if (scope_kind == FastDebugScopeKind::File &&
+          is_root(handler.source_file)) selected_handlers.insert(handler_index);
       ++handler_index;
     }
   }
   FileCheckReferences root_references;
-  if (program.main && is_root(program.main->source_file))
+  if ((scope_kind == FastDebugScopeKind::File ||
+       scope_kind == FastDebugScopeKind::Main) &&
+      program.main && is_root(program.main->source_file))
     {
       add_statement_references(program.main->body, root_references);
       add_statement_callable_references(program.main->body, program, root_references);
     }
   for (const auto& test : program.tests)
-    if (is_root(test.source_file)) {
+    if ((scope_kind == FastDebugScopeKind::File ||
+         (scope_kind == FastDebugScopeKind::Tests &&
+          (test_filter.empty() ||
+           test.name.find(test_filter) != string::npos ||
+           test.semantic_identity.find(test_filter) != string::npos))) &&
+        (scope_kind == FastDebugScopeKind::Tests
+             ? (all_package_tests || is_root(test.source_file))
+             : is_root(test.source_file))) {
       add_statement_references(test.body, root_references);
       add_statement_callable_references(test.body, program, root_references);
     }
   for (const auto& bench : program.benchmarks)
-    if (is_root(bench.source_file)) {
+    if (scope_kind == FastDebugScopeKind::File && is_root(bench.source_file)) {
       add_statement_references(bench.body, root_references);
       add_statement_callable_references(bench.body, program, root_references);
     }
@@ -12340,7 +12367,9 @@ static void scope_program_to_file(Program& program,
         emit("domain", domain.source_file,
              "domain:" + domain.name + "@" + std::to_string(domain.line));
     for (const auto& test : program.tests)
-      if (is_root(test.source_file))
+      if ((all_package_tests || is_root(test.source_file)) &&
+          (test_filter.empty() || test.name.find(test_filter) != string::npos ||
+           test.semantic_identity.find(test_filter) != string::npos))
         emit("test", test.source_file, test.semantic_identity);
     for (const auto& benchmark : program.benchmarks)
       if (is_root(benchmark.source_file))
@@ -12385,9 +12414,16 @@ static void scope_program_to_file(Program& program,
     }
     domain.handlers = std::move(handlers);
   }
-  if (program.main && !is_root(program.main->source_file)) program.main.reset();
+  if (scope_kind == FastDebugScopeKind::Tests ||
+      (program.main && !is_root(program.main->source_file)))
+    program.main.reset();
   program.tests.erase(std::remove_if(program.tests.begin(), program.tests.end(),
-      [&](const TestDecl& test) { return !is_root(test.source_file); }), program.tests.end());
+      [&](const TestDecl& test) {
+        return !(all_package_tests || is_root(test.source_file)) ||
+            (scope_kind == FastDebugScopeKind::Tests && !test_filter.empty() &&
+             test.name.find(test_filter) == string::npos &&
+             test.semantic_identity.find(test_filter) == string::npos);
+      }), program.tests.end());
   program.benchmarks.erase(std::remove_if(program.benchmarks.begin(), program.benchmarks.end(),
       [&](const BenchDecl& bench) { return !is_root(bench.source_file); }), program.benchmarks.end());
   program.file_check_scope = true;
@@ -16840,7 +16876,8 @@ static CheckedProjectUnit check_project_sources(
     const std::map<std::filesystem::path, string>* source_overrides = nullptr,
     bool require_native_artifacts = true,
     const std::filesystem::path* file_check_root = nullptr,
-    bool load_execution_bodies = false) {
+    bool load_execution_bodies = false,
+    const FastDebugScope* fast_debug_scope = nullptr) {
   Program program;
   try {
     std::map<string,ParsedModuleUnit> modules;
@@ -17022,6 +17059,11 @@ static CheckedProjectUnit check_project_sources(
     }
     if (file_check_root)
       scope_program_to_file(program, *file_check_root);
+    else if (fast_debug_scope)
+      scope_program_to_file(program, fast_debug_scope->root_file,
+                            fast_debug_scope->kind,
+                            fast_debug_scope->test_filter,
+                            fast_debug_scope->all_package_tests);
     prepare_and_validate_module_exports(program, false);
     CheckedProgram checker(program);
     checker.run();
@@ -21606,27 +21648,10 @@ static SourceCompilationContext analyze_source_context(
   return context;
 }
 
-// Fast Debug uses the same project source universe as the native compiler,
-// but explicit-module projects can narrow that universe to the transitive
-// source-module closure of the requested entry module.  This is a loading
-// decision only: the selected files still pass through check_project_sources
-// and therefore the ordinary Moss parser/checker remains authoritative.
-// When MOSS_FAST_DEBUG_SOURCE_ROOTS is set (colon-separated list of package
-// root directories, populated by 'margo debug' and 'margo test --interp'),
-// dependency source files are
-// indexed alongside the root project's files so the transitive closure walk
-// can reach them. Providers are only disambiguated when an import makes a
-// module reachable; root project source has precedence over external source
-// providers, matching ordinary native module-provider selection.
-enum class DependencySourceRootAccess {
-  Denied,
-  AllowlistedFastDebug,
-};
-
+// Fast Debug narrows root-package source to the module closure. Imported
+// packages are resolved only through their checked .mossi interfaces.
 static vector<std::filesystem::path> fast_debug_source_closure(
-    const SourceCompilationContext& context,
-    DependencySourceRootAccess source_root_access =
-        DependencySourceRootAccess::Denied) {
+    const SourceCompilationContext& context) {
   if (!context.project ||
       (context.mode != ProgramGenerationMode::Application &&
        context.mode != ProgramGenerationMode::Tests))
@@ -21677,52 +21702,6 @@ static vector<std::filesystem::path> fast_debug_source_closure(
   };
   for (const auto& source : context.sources)
     add_source(source, context.manifest.root, true);
-
-  // Extend the module provider universe with explicitly supplied dependency
-  // source roots (set by Margo's Fast Debug commands via their exact,
-  // invocation-scoped MOSS_FAST_DEBUG_SOURCE_ROOTS handoff).
-  // Dependency source files are indexed here and merged into the same
-  // compilation unit; their module declarations make them self-identifying.
-  if (source_root_access == DependencySourceRootAccess::AllowlistedFastDebug) {
-   if (const char* source_roots_env =
-           std::getenv("MOSS_FAST_DEBUG_SOURCE_ROOTS")) {
-    string roots_value = source_roots_env;
-    size_t begin = 0;
-    while (begin <= roots_value.size()) {
-      size_t end = roots_value.find(':', begin);
-      string root_str = roots_value.substr(
-          begin, end == string::npos ? string::npos : end - begin);
-      begin = (end == string::npos) ? roots_value.size() + 1 : end + 1;
-      if (root_str.empty())
-        throw ProjectError(
-            "PROJECT_SOURCE_NOT_FOUND",
-            "Fast Debug received an empty dependency source root");
-      std::error_code absolute_error;
-      std::filesystem::path dep_root =
-          std::filesystem::absolute(root_str, absolute_error).lexically_normal();
-      if (absolute_error)
-        throw ProjectError(
-            "PROJECT_SOURCE_NOT_FOUND",
-            "cannot resolve Fast Debug dependency source root '" + root_str + "': " +
-                absolute_error.message(), root_str);
-      std::error_code ec;
-      if (ec || !std::filesystem::is_directory(dep_root, ec))
-        throw ProjectError(
-            "PROJECT_SOURCE_NOT_FOUND",
-            "Fast Debug dependency source root is not a directory '" +
-                dep_root.string() + "'", dep_root.string());
-      ProjectManifest dep_manifest = load_project_manifest(dep_root);
-      if (dep_manifest.root != dep_root)
-        throw ProjectError(
-            "PROJECT_MANIFEST_ERROR",
-            "Fast Debug dependency source root must be a package root containing "
-            "Moss.toml: '" + dep_root.string() + "'", dep_root.string());
-      vector<std::filesystem::path> dep_sources = project_source_files(dep_manifest);
-      for (const auto& source : dep_sources)
-        add_source(source, dep_manifest.root, false);
-    }
-   }
-  }
 
   if (!has_explicit_modules) return context.sources;
 
@@ -24606,32 +24585,42 @@ static bool fast_debug_execution_bodies_complete(const moss::Program& program) {
 
 static moss::Program load_checked_interpreter_program(
     const std::filesystem::path& input, bool test_mode = false,
-    std::map<std::string, std::string>* fileio_tests = nullptr) {
+    std::map<std::string, std::string>* fileio_tests = nullptr,
+    const string& test_filter = {}, bool all_package_tests = false) {
   try {
+    const moss::FastDebugScope execution_scope{
+        std::filesystem::absolute(input).lexically_normal(),
+        test_mode ? moss::FastDebugScopeKind::Tests
+                  : moss::FastDebugScopeKind::Main,
+        test_filter, all_package_tests};
     auto context = moss::analyze_source_context(input);
     if (test_mode && context.project) {
       context.mode = moss::ProgramGenerationMode::Tests;
-      context.sources = moss::project_declaration_sources(context.manifest, "tests");
-      if (context.sources.empty())
-        context.sources = moss::project_source_files(context.manifest);
+      context.sources = moss::project_source_files(context.manifest);
+      auto test_sources =
+          moss::project_declaration_sources(context.manifest, "tests");
+      context.sources.insert(context.sources.end(), test_sources.begin(),
+                             test_sources.end());
+      std::sort(context.sources.begin(), context.sources.end());
+      context.sources.erase(
+          std::unique(context.sources.begin(), context.sources.end()),
+          context.sources.end());
     }
     if (context.project) {
-      auto sources = moss::fast_debug_source_closure(
-          context, moss::DependencySourceRootAccess::AllowlistedFastDebug);
+      auto sources = moss::fast_debug_source_closure(context);
       auto checked = moss::check_project_sources(
           context.manifest, sources, context.mode, {}, nullptr, nullptr, false,
-          nullptr, true);
+          nullptr, true, &execution_scope);
       if (!checked.program.external_modules.empty() &&
           !fast_debug_execution_bodies_complete(checked.program)) {
         string missing = *checked.program.external_modules.begin();
         throw moss::ProjectError(
             "FAST_DEBUG_NATIVE_DEPENDENCY",
-            "Fast Debug requires source for all reachable Moss modules; "
-            "module '" + missing + "' is available only as a compiled .mossi "
-            "provider. Use '" +
+            "Fast Debug requires checked executable bodies for reachable Moss "
+            "modules; module '" + missing + "' has no usable Section 2 body in "
+            "its .mossi interface. Run '" +
                 string(test_mode ? "margo test --interp" : "margo debug") +
-                "' so Margo can supply the resolved "
-            "dependency source, or use native execution.",
+                "' to refresh dependency interfaces, or use native execution.",
             context.requested_source.string());
       }
       if (!test_mode) reject_fast_debug_fileio(checked.program);
@@ -24647,6 +24636,29 @@ static moss::Program load_checked_interpreter_program(
     }
     moss::Program program = moss::parse_source(
         source, std::filesystem::absolute(input).lexically_normal().string());
+    const string standalone_source =
+        std::filesystem::absolute(input).lexically_normal().string();
+    for (auto& function : program.functions)
+      if (function.source_file.empty()) function.source_file = standalone_source;
+    for (auto& object : program.objects) {
+      if (object.source_file.empty()) object.source_file = standalone_source;
+      for (auto& method : object.methods)
+        if (method.source_file.empty()) method.source_file = standalone_source;
+    }
+    for (auto& domain : program.domains) {
+      if (domain.source_file.empty()) domain.source_file = standalone_source;
+      for (auto& handler : domain.handlers)
+        if (handler.source_file.empty()) handler.source_file = standalone_source;
+    }
+    for (auto& enumeration : program.enums)
+      if (enumeration.source_file.empty()) enumeration.source_file = standalone_source;
+    if (program.main && program.main->source_file.empty())
+      program.main->source_file = standalone_source;
+    for (auto& test : program.tests)
+      if (test.source_file.empty()) test.source_file = standalone_source;
+    moss::scope_program_to_file(program, input, execution_scope.kind,
+                                execution_scope.test_filter,
+                                execution_scope.all_package_tests);
     moss::CheckedProgram checker(program);
     checker.run();
     if (!test_mode) reject_fast_debug_fileio(program);
@@ -24680,9 +24692,11 @@ static int run_fast_interpreter_source(const std::filesystem::path& input,
 }
 
 static int run_fast_interpreter_tests(const std::filesystem::path& input,
-                                      const string& filter, bool trace) {
+                                      const string& filter, bool trace,
+                                      bool all_package_tests = false) {
   std::map<std::string, std::string> fileio_tests;
-  moss::Program program = load_checked_interpreter_program(input, true, &fileio_tests);
+  moss::Program program = load_checked_interpreter_program(
+      input, true, &fileio_tests, filter, all_package_tests);
   moss::FastInterpreter::Options options;
   options.trace = trace;
   options.unsupported_tests = std::move(fileio_tests);
@@ -25415,10 +25429,13 @@ int main(int argc, char** argv) {
       }
       if (interpreter) {
         std::error_code ec;
+        bool all_package_tests = input.empty() ||
+            std::filesystem::is_directory(input, ec);
         if (!input.empty() && !std::filesystem::exists(input, ec) && filter.empty() &&
             nearest_moss_project_root(std::filesystem::current_path())) {
           filter = input;
           input.clear();
+          all_package_tests = true;
         }
         std::filesystem::path entry = resolve_fast_debug_test_entry(input);
         if (entry.empty()) {
@@ -25426,7 +25443,8 @@ int main(int argc, char** argv) {
           return 2;
         }
         try {
-          return run_fast_interpreter_tests(entry, filter, trace);
+          return run_fast_interpreter_tests(entry, filter, trace,
+                                            all_package_tests);
         } catch (const moss::FastInterpreter::RuntimeError& error) {
           std::cerr << "moss:" << (error.line() > 0 ? std::to_string(error.line()) + ": " : " ")
                     << "interpreter error: " << error.what() << "\n";
@@ -25704,13 +25722,9 @@ int main(int argc, char** argv) {
           else if (query_overlay)
             overrides[std::filesystem::absolute(input).lexically_normal()] =
                 *query_overlay;
-          // The check contract resolves other packages exclusively through
-          // their current .mossi interfaces. Fast Debug intentionally keeps
-          // its dependency-source closure supplied by Margo.
-          // Source-root overrides are opt-in at the Fast Debug call site.
-          // All compiler, query, and emitted-Rust paths deny them by default.
-          auto sources = moss::fast_debug_source_closure(
-              context, moss::DependencySourceRootAccess::Denied);
+          // Queries and check use .mossi interfaces only. Fast Debug also
+          // resolves dependencies through .mossi, after Margo refreshes them.
+          auto sources = moss::fast_debug_source_closure(context);
           // Check and semantic queries stop at semantics, exactly like the
           // standalone path below; only compilation lowers to Rust.
           auto unit = check_only

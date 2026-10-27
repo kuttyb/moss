@@ -419,8 +419,7 @@ fn main():
 ''')
     source_free_run(root, env, "1\n")
     debug = run(MARGO, "debug", cwd=root, env=env)
-    assert debug.returncode != 0, (debug.stdout, debug.stderr)
-    assert "FAST_DEBUG_NATIVE_DEPENDENCY" in debug.stdout + debug.stderr, (debug.stdout, debug.stderr)
+    assert debug.returncode == 0 and debug.stdout == "1\n", (debug.stdout, debug.stderr)
 
 
 GATES = [g1, g2, g3, g4, g5, g6, g7, g8, g9, g10, g11]
