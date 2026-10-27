@@ -11890,6 +11890,153 @@ static string unqualified_callable_name(const string& name) {
   return separator == string::npos ? name : name.substr(separator + width);
 }
 
+// A named function passed as an argument is a callable edge even though it is
+// not followed by `(...)` at the call site. Keep this syntactic and bounded to
+// known declarations: ordinary variable arguments with matching-looking
+// substrings must not pull unrelated bodies into file scope.
+static void add_callable_argument_references(const string& source,
+                                             const Program& program,
+                                             FileCheckReferences& references) {
+  auto canonical_spelling = [](string value) {
+    for (size_t dot = value.find('.'); dot != string::npos;
+         dot = value.find('.', dot + 2))
+      value.replace(dot, 1, "__");
+    return value;
+  };
+  auto callable_parameter_indices = [&](const string& call_name) {
+    vector<size_t> result;
+    std::vector<const Function*> called_functions;
+    const bool qualified = call_name.find('.') != string::npos ||
+        call_name.find("::") != string::npos || call_name.find("__") != string::npos;
+    auto collect = [&](const auto& function) {
+      const string normalized = canonical_spelling(call_name);
+      const string normalized_name = canonical_spelling(function.name);
+      if ((qualified && normalized != normalized_name &&
+           call_name != function.name && call_name != function.semantic_callable_id) ||
+          (!qualified && unqualified_callable_name(call_name) !=
+                             unqualified_callable_name(function.name)))
+        return;
+      called_functions.push_back(&function);
+    };
+    for (const auto& function : program.functions) collect(function);
+    // An unqualified call with several same-leaf declarations is resolved by
+    // module context later; without that context do not infer callback edges
+    // from every candidate's formal signature.
+    if (!qualified && called_functions.size() != 1) return result;
+    for (const Function* function : called_functions) {
+      for (const auto& constraint : function->constraints) {
+        if (constraint.kind != ConstraintKind::Callable) continue;
+        for (size_t index = 0; index < function->params.size(); ++index)
+          if (constraint.subject == function->params[index].name)
+            result.push_back(index);
+      }
+    }
+    return result;
+  };
+  auto add_callable_value = [&](const string& raw_value) {
+    const string value = trim(raw_value);
+    if (value.empty() || !std::all_of(value.begin(), value.end(), [](unsigned char ch) {
+          return std::isalnum(ch) || ch == '_' || ch == '.' || ch == ':';
+        })) return;
+    vector<const Function*> matches;
+    const string normalized = canonical_spelling(value);
+    const bool qualified = value.find('.') != string::npos ||
+        value.find("::") != string::npos || value.find("__") != string::npos;
+    for (const auto& function : program.functions) {
+      const string function_name = canonical_spelling(function.name);
+      if ((qualified && (normalized == function_name || value == function.name ||
+                         value == function.semantic_callable_id)) ||
+          (!qualified && value == function.declaration_name))
+        matches.push_back(&function);
+    }
+    // An unqualified callback is reachable only if name resolution is unique.
+    if (matches.size() == 1)
+      references.functions.insert(matches.front()->name);
+  };
+  std::function<void(const string&)> visit = [&](const string& expression) {
+    string text = expression;
+    char quote = 0;
+    bool escaped = false;
+    for (size_t i = 0; i < text.size(); ++i) {
+      if (quote) {
+        const char ch = text[i];
+        if (escaped) escaped = false;
+        else if (ch == '\\') escaped = true;
+        else if (ch == quote) quote = 0;
+        if (ch != '\n') text[i] = ' ';
+      } else if (text[i] == '"' || text[i] == '\'') {
+        quote = text[i];
+        text[i] = ' ';
+      } else if (text[i] == '#') {
+        while (i < text.size() && text[i] != '\n') text[i++] = ' ';
+      }
+    }
+    // Find call-shaped subexpressions even when followed by operators, a
+    // condition delimiter, or another member call. This keeps the collector
+    // useful for expressions represented in larger AST fields.
+    for (size_t open = 0; open < text.size(); ++open) {
+      if (text[open] != '(') continue;
+      size_t begin = open;
+      while (begin > 0 && (std::isalnum(static_cast<unsigned char>(text[begin - 1])) ||
+                           text[begin - 1] == '_' || text[begin - 1] == '.' ||
+                           text[begin - 1] == ':')) --begin;
+      if (begin == open) continue;
+      int depth = 0;
+      char quote = 0;
+      bool escaped = false;
+      size_t close = open;
+      for (; close < text.size(); ++close) {
+        const char ch = text[close];
+        if (quote) {
+          if (escaped) escaped = false;
+          else if (ch == '\\') escaped = true;
+          else if (ch == quote) quote = 0;
+          continue;
+        }
+        if (ch == '"' || ch == '\'') { quote = ch; continue; }
+        if (ch == '(') ++depth;
+        else if (ch == ')' && --depth == 0) break;
+      }
+      if (close >= text.size()) continue;
+      string call, callee;
+      vector<string> arguments;
+      call = text.substr(begin, close - begin + 1);
+      if (!parse_simple_call(call, callee, arguments)) continue;
+      const auto callback_indices = callable_parameter_indices(callee);
+      for (size_t index = 0; index < arguments.size(); ++index) {
+        if (std::find(callback_indices.begin(), callback_indices.end(), index) !=
+            callback_indices.end()) add_callable_value(arguments[index]);
+        visit(arguments[index]);
+      }
+      open = close;
+    }
+  };
+  visit(source);
+}
+
+static void add_statement_callable_references(const vector<Stmt>& body,
+                                              const Program& program,
+                                              FileCheckReferences& references) {
+  for (const auto& statement : body) {
+    for (const string* text : {&statement.text, &statement.a, &statement.b})
+      add_callable_argument_references(*text, program, references);
+    for (const auto& argument : statement.args)
+      add_callable_argument_references(argument, program, references);
+    if (statement.kind == Stmt::Kind::Call) {
+      const string callee = !statement.b.empty() ? trim(statement.b) : trim(statement.a);
+      if (!callee.empty()) {
+        string call = callee + "(";
+        for (size_t i = 0; i < statement.args.size(); ++i) {
+          if (i) call += ", ";
+          call += statement.args[i];
+        }
+        call += ")";
+        add_callable_argument_references(call, program, references);
+      }
+    }
+  }
+}
+
 // Reduce project-file checking to the conservative syntactic callable closure
 // rooted in the requested file. The checker still receives all nominal and
 // signature declarations as lookup context, but only reachable source bodies.
@@ -11922,6 +12069,9 @@ static void scope_program_to_file(Program& program,
     auto& refs = function_refs[i];
     add_statement_references(function.body, refs);
     if (function.result_expression) add_expression_references(*function.result_expression, refs);
+    add_statement_callable_references(function.body, program, refs);
+    if (function.result_expression)
+      add_callable_argument_references(*function.result_expression, program, refs);
     if (is_root(function.source_file)) selected_functions.insert(i);
   }
   for (const auto& object : program.objects) {
@@ -11929,6 +12079,9 @@ static void scope_program_to_file(Program& program,
       auto& refs = method_refs[method_index];
       add_statement_references(method.body, refs);
       if (method.result_expression) add_expression_references(*method.result_expression, refs);
+      add_statement_callable_references(method.body, program, refs);
+      if (method.result_expression)
+        add_callable_argument_references(*method.result_expression, program, refs);
       if (is_root(method.source_file)) selected_methods.insert(method_index);
       ++method_index;
     }
@@ -11937,22 +12090,30 @@ static void scope_program_to_file(Program& program,
     for (const auto& handler : domain.handlers) {
       auto& refs = handler_refs[handler_index];
       add_statement_references(handler.body, refs);
-      for (const auto& arm : handler.failure_arms)
+      add_statement_callable_references(handler.body, program, refs);
+      for (const auto& arm : handler.failure_arms) {
         add_statement_references(arm.body, refs);
+        add_statement_callable_references(arm.body, program, refs);
+      }
       if (is_root(handler.source_file)) selected_handlers.insert(handler_index);
       ++handler_index;
     }
   }
   FileCheckReferences root_references;
   if (program.main && is_root(program.main->source_file))
-    add_statement_references(program.main->body, root_references);
+    {
+      add_statement_references(program.main->body, root_references);
+      add_statement_callable_references(program.main->body, program, root_references);
+    }
   for (const auto& test : program.tests)
     if (is_root(test.source_file)) {
       add_statement_references(test.body, root_references);
+      add_statement_callable_references(test.body, program, root_references);
     }
   for (const auto& bench : program.benchmarks)
     if (is_root(bench.source_file)) {
       add_statement_references(bench.body, root_references);
+      add_statement_callable_references(bench.body, program, root_references);
     }
 
   auto matches = [](const std::set<string>& references, const string& name) {
@@ -12101,8 +12262,46 @@ static void scope_program_to_file(Program& program,
       program.file_scope_domains.insert(domain.name);
   }
 
+
+
+  // Field types of an in-scope object are validated, so the declarations they
+  // name must be in scope too (transitively); otherwise their fields would be
+  // treated as inferred and the field type could not be resolved.
+  for (bool grew = true; grew;) {
+    grew = false;
+    std::vector<string> scoped_field_types;
+    for (const auto& object : program.objects)
+      if (program.file_scope_objects.count(object.name))
+        for (const auto& field : object.fields)
+          scoped_field_types.push_back(field.type);
+    for (const auto& domain : program.domains)
+      if (program.file_scope_domains.count(domain.name))
+        for (const auto& field : domain.state)
+          scoped_field_types.push_back(field.type);
+    {
+      for (const auto& field_type : scoped_field_types) {
+        const auto refs = type_identifiers(field_type);
+        for (const auto& other : program.objects)
+          if (!program.file_scope_objects.count(other.name) &&
+              (refs.count(other.name) ||
+               refs.count(unqualified_callable_name(other.name))))
+            grew |= program.file_scope_objects.insert(other.name).second;
+        for (const auto& other : program.enums)
+          if (!program.file_scope_enums.count(other.name) &&
+              (refs.count(other.name) ||
+               refs.count(unqualified_callable_name(other.name))))
+            grew |= program.file_scope_enums.insert(other.name).second;
+        for (const auto& other : program.domains)
+          if (!program.file_scope_domains.count(other.name) &&
+              (refs.count(other.name) ||
+               refs.count(unqualified_callable_name(other.name))))
+            grew |= program.file_scope_domains.insert(other.name).second;
+      }
+    }
+  }
   if (const char* trace = std::getenv("MOSS_PHASE26_C1_SCOPE_TRACE");
       trace && string(trace) == "1") {
+    std::cerr << "MOSS_C1_SCOPE_TRACE_COMPLETE|" << root << "\n";
     auto emit = [&](const string& kind, const string& source,
                     const string& identity) {
       std::cerr << "MOSS_C1_SCOPE_ID|" << kind << "|" << source << "|"
@@ -12167,41 +12366,6 @@ static void scope_program_to_file(Program& program,
            "main@" + std::to_string(program.main->line));
   }
 
-  // Field types of an in-scope object are validated, so the declarations they
-  // name must be in scope too (transitively); otherwise their fields would be
-  // treated as inferred and the field type could not be resolved.
-  for (bool grew = true; grew;) {
-    grew = false;
-    std::vector<string> scoped_field_types;
-    for (const auto& object : program.objects)
-      if (program.file_scope_objects.count(object.name))
-        for (const auto& field : object.fields)
-          scoped_field_types.push_back(field.type);
-    for (const auto& domain : program.domains)
-      if (program.file_scope_domains.count(domain.name))
-        for (const auto& field : domain.state)
-          scoped_field_types.push_back(field.type);
-    {
-      for (const auto& field_type : scoped_field_types) {
-        const auto refs = type_identifiers(field_type);
-        for (const auto& other : program.objects)
-          if (!program.file_scope_objects.count(other.name) &&
-              (refs.count(other.name) ||
-               refs.count(unqualified_callable_name(other.name))))
-            grew |= program.file_scope_objects.insert(other.name).second;
-        for (const auto& other : program.enums)
-          if (!program.file_scope_enums.count(other.name) &&
-              (refs.count(other.name) ||
-               refs.count(unqualified_callable_name(other.name))))
-            grew |= program.file_scope_enums.insert(other.name).second;
-        for (const auto& other : program.domains)
-          if (!program.file_scope_domains.count(other.name) &&
-              (refs.count(other.name) ||
-               refs.count(unqualified_callable_name(other.name))))
-            grew |= program.file_scope_domains.insert(other.name).second;
-      }
-    }
-  }
   // Imported providers are loaded through `.mossi` and keep their own
   // (original) source names, so identify them by module, not file extension.
   auto from_interface = [&](const string& owner_name, const string& source) {
@@ -15925,9 +16089,7 @@ static CheckedProjectUnit check_project_sources(
     const std::set<string>* declaration_ids = nullptr,
     const std::map<std::filesystem::path, string>* source_overrides = nullptr,
     bool require_native_artifacts = true,
-    const std::filesystem::path* file_check_root = nullptr,
-    bool phase26_c1_oracle = false,
-    bool phase26_c1_oracle_package_scope = false) {
+    const std::filesystem::path* file_check_root = nullptr) {
   Program program;
   try {
     std::map<string,ParsedModuleUnit> modules;
@@ -16085,10 +16247,10 @@ static CheckedProjectUnit check_project_sources(
         for (auto& file : entry.second.files) {
           for (auto& import : file.first.imports) import.owner_module = entry.first;
           rewrite_module_program(file.first, entry.first, source_modules, public_exports);
-          if (file.first.main && !external &&
-              (!file_check_root ||
-               std::filesystem::absolute(file.second).lexically_normal() ==
-                   std::filesystem::absolute(*file_check_root).lexically_normal()))
+          // Retain the package's main module as identity context for scoped
+          // checks even when its main body is outside the requested file's
+          // reachable closure.
+          if (file.first.main && !external)
             program.main_module = entry.first;
           merge_project_program(program, std::move(file.first), file.second,
                                 file_check_root);
@@ -16099,10 +16261,7 @@ static CheckedProjectUnit check_project_sources(
       // source order-independent whole-project semantics.
       for (auto& entry : modules) {
         for (auto& file : entry.second.files) {
-          if (file.first.main &&
-              (!file_check_root ||
-               std::filesystem::absolute(file.second).lexically_normal() ==
-                   std::filesystem::absolute(*file_check_root).lexically_normal()))
+          if (file.first.main)
             program.main_module = manifest.name;
           merge_project_program(program, std::move(file.first), file.second,
                                 file_check_root);
@@ -16111,52 +16270,10 @@ static CheckedProjectUnit check_project_sources(
     }
     if (file_check_root)
       scope_program_to_file(program, *file_check_root);
-    if (phase26_c1_oracle) {
-      program.phase26_c1_oracle = true;
-      if (phase26_c1_oracle_package_scope && !file_check_root) {
-        // Collect body diagnostics from the whole package while suppressing
-        // R4 whole-package analyses. Keep every source body in the program;
-        // only mark the checker as scoped for package-rule gating.
-        program.file_check_scope = true;
-        for (const auto& object : program.objects)
-          program.file_scope_objects.insert(object.name);
-        for (const auto& enumeration : program.enums)
-          program.file_scope_enums.insert(enumeration.name);
-        for (const auto& domain : program.domains)
-          program.file_scope_domains.insert(domain.name);
-      }
-    }
     prepare_and_validate_module_exports(program, false);
     CheckedProgram checker(program);
-    try {
-      checker.run();
-    } catch (const CompileError& error) {
-      if (!phase26_c1_oracle) throw;
-      program.phase26_c1_oracle_incomplete_code = error.code.empty()
-          ? diagnostic_code_for_message(error.what()) : error.code;
-      program.phase26_c1_oracle_incomplete_message = error.what();
-      program.phase26_c1_oracle_incomplete_source = error.source_file;
-      program.phase26_c1_oracle_incomplete_line = error.line;
-    }
-    if (phase26_c1_oracle &&
-        program.phase26_c1_oracle_incomplete_code.empty()) {
-      try {
-        prepare_and_validate_module_exports(program, true);
-      } catch (const CompileError& error) {
-        program.phase26_c1_oracle_incomplete_code = error.code.empty()
-            ? diagnostic_code_for_message(error.what()) : error.code;
-        program.phase26_c1_oracle_incomplete_message = error.what();
-        program.phase26_c1_oracle_incomplete_source = error.source_file;
-        program.phase26_c1_oracle_incomplete_line = error.line;
-      }
-    } else if (!phase26_c1_oracle) {
-      prepare_and_validate_module_exports(program, true);
-    }
-    if (phase26_c1_oracle) {
-      if (program.phase26_c1_oracle_incomplete_code.empty())
-        program.phase26_c1_oracle_complete = true;
-      return {std::move(program), {}, {}};
-    }
+    checker.run();
+    prepare_and_validate_module_exports(program, true);
     vector<Warning> warnings = checker.warnings();
     if (!declaration_filter.empty() || declaration_ids) {
       if (mode == ProgramGenerationMode::Tests) {
@@ -16241,17 +16358,10 @@ static CompiledProjectUnit check_project_semantics(
     const vector<std::filesystem::path>& sources, bool optimized,
     ProgramGenerationMode mode,
     const std::map<std::filesystem::path, string>* source_overrides = nullptr,
-    const std::filesystem::path* file_check_root = nullptr,
-    bool phase26_c1_oracle = false,
-    bool phase26_c1_oracle_package_scope = false) {
+    const std::filesystem::path* file_check_root = nullptr) {
   CheckedProjectUnit checked = check_project_sources(
       manifest, sources, mode, {}, nullptr, source_overrides, false,
-      file_check_root, phase26_c1_oracle,
-      phase26_c1_oracle_package_scope);
-  if (phase26_c1_oracle &&
-      !checked.program.phase26_c1_oracle_diagnostics.empty())
-    return {std::move(checked.program), {}, std::move(checked.warnings),
-            string(), std::move(checked.external_module_interfaces)};
+      file_check_root);
   try {
     optimize_program(checked.program, optimized);
     OptimizationPlan plan = OptimizationPlan{optimized};
@@ -20436,9 +20546,15 @@ static SourceCompilationContext analyze_source_context(
 // can reach them. Providers are only disambiguated when an import makes a
 // module reachable; root project source has precedence over external source
 // providers, matching ordinary native module-provider selection.
+enum class DependencySourceRootAccess {
+  Denied,
+  AllowlistedFastDebug,
+};
+
 static vector<std::filesystem::path> fast_debug_source_closure(
     const SourceCompilationContext& context,
-    bool include_dependency_source_roots = true) {
+    DependencySourceRootAccess source_root_access =
+        DependencySourceRootAccess::Denied) {
   if (!context.project ||
       (context.mode != ProgramGenerationMode::Application &&
        context.mode != ProgramGenerationMode::Tests))
@@ -20495,7 +20611,7 @@ static vector<std::filesystem::path> fast_debug_source_closure(
   // invocation-scoped MOSS_FAST_DEBUG_SOURCE_ROOTS handoff).
   // Dependency source files are indexed here and merged into the same
   // compilation unit; their module declarations make them self-identifying.
-  if (include_dependency_source_roots) {
+  if (source_root_access == DependencySourceRootAccess::AllowlistedFastDebug) {
    if (const char* source_roots_env =
            std::getenv("MOSS_FAST_DEBUG_SOURCE_ROOTS")) {
     string roots_value = source_roots_env;
@@ -20706,98 +20822,13 @@ static int run_project_build(const ProjectManifest& manifest, bool release,
 // invoking the native toolchain. Keep these interfaces in a separate output
 // profile so a check-only result cannot replace a native provider's .mossi
 // beside an older .rlib.
-static void write_phase26_c1_oracle_json(
-    std::ostream& out, const string& command, const string& target,
-    const Program* program, const ProjectError* incomplete = nullptr) {
-  const bool has_program_incomplete = program &&
-      !program->phase26_c1_oracle_incomplete_code.empty();
-  const bool complete = program && program->phase26_c1_oracle_complete &&
-      !incomplete && !has_program_incomplete;
-  out << "{\"protocol_version\":1,\"schema_version\":\"moss-c1-oracle-1\","
-         "\"command\":";
-  write_debug_json_string(out, command);
-  out << ",\"ok\":" << (complete ? "true" : "false")
-      << ",\"result\":{\"target\":";
-  write_debug_json_string(out, target);
-  out << ",\"complete\":" << (complete ? "true" : "false")
-      << ",\"diagnostics\":[";
-  if (program) {
-    for (size_t index = 0;
-         index < program->phase26_c1_oracle_diagnostics.size(); ++index) {
-      if (index) out << ',';
-      const auto& diagnostic = program->phase26_c1_oracle_diagnostics[index];
-      out << "{\"code\":";
-      write_debug_json_string(
-          out, diagnostic.code.empty()
-              ? diagnostic_code_for_message(diagnostic.what())
-              : diagnostic.code);
-      out << ",\"message\":";
-      write_debug_json_string(out, diagnostic.what());
-      out << ",\"source_file\":";
-      write_debug_json_string(out, diagnostic.source_file);
-      out << ",\"line\":" << diagnostic.line << ",\"semantic_identity\":";
-      write_debug_json_string(out, diagnostic.semantic_identity);
-      out << ",\"package_only\":false}";
-    }
-  }
-  out << ']';
-  if (incomplete || has_program_incomplete) {
-    const string code = incomplete ? incomplete->code
-        : program->phase26_c1_oracle_incomplete_code;
-    const string message = incomplete ? incomplete->what()
-        : program->phase26_c1_oracle_incomplete_message;
-    const string source = incomplete ? incomplete->source_file
-        : program->phase26_c1_oracle_incomplete_source;
-    const int line = incomplete ? incomplete->line
-        : program->phase26_c1_oracle_incomplete_line;
-    out << ",\"incomplete_error\":{\"code\":";
-    write_debug_json_string(out, code);
-    out << ",\"message\":";
-    write_debug_json_string(out, message);
-    out << ",\"source_file\":";
-    write_debug_json_string(out, source);
-    out << ",\"line\":" << line << '}';
-  }
-  out << "}}\n";
-}
-
-static int run_project_file_c1_oracle(
-    const ProjectManifest& manifest,
-    const vector<std::filesystem::path>& sources,
-    ProgramGenerationMode mode,
-    const std::filesystem::path& root) {
-  try {
-    auto checked = check_project_semantics(
-        manifest, sources, false, mode, nullptr, &root, true, false);
-    write_phase26_c1_oracle_json(std::cout, "check", "file",
-                                 &checked.program);
-  } catch (const ProjectError& error) {
-    write_phase26_c1_oracle_json(std::cout, "check", "file", nullptr,
-                                 &error);
-  }
-  return 0;
-}
-
 static int run_project_interface_check(const ProjectManifest& manifest,
-                                       bool release, bool json,
-                                       bool phase26_c1_oracle = false) {
+                                       bool release, bool json) {
   vector<std::filesystem::path> sources = project_source_files(manifest);
   if (sources.empty())
     throw ProjectError("PROJECT_SOURCE_NOT_FOUND",
                        "project target contains no Moss source files");
   const auto mode = ProgramGenerationMode::Application;
-  if (phase26_c1_oracle) {
-    try {
-      auto checked = check_project_semantics(
-          manifest, sources, release, mode, nullptr, nullptr, true, true);
-      write_phase26_c1_oracle_json(std::cout, "build", "application",
-                                   &checked.program);
-    } catch (const ProjectError& error) {
-      write_phase26_c1_oracle_json(std::cout, "build", "application",
-                                   nullptr, &error);
-    }
-    return 0;
-  }
   CompiledProjectUnit checked = check_project_semantics(
       manifest, sources, release, mode);
   // Legacy source sets have no declared Moss module owner. Give their
@@ -20882,27 +20913,13 @@ static int run_project_interface_check(const ProjectManifest& manifest,
 // this while checking package semantics so package checks cover the same
 // declaration universe as the test target.
 static int run_project_test_semantic_check(const ProjectManifest& manifest,
-                                           bool json,
-                                           bool phase26_c1_oracle = false) {
+                                           bool json) {
   const auto sources = project_declaration_sources(manifest, "tests");
   if (sources.empty())
     throw ProjectError("PROJECT_SOURCE_NOT_FOUND",
                        "test target contains no Moss source files");
-  if (phase26_c1_oracle) {
-    try {
-      auto checked = check_project_semantics(
-          manifest, sources, false, ProgramGenerationMode::Tests, nullptr,
-          nullptr, true, true);
-      write_phase26_c1_oracle_json(std::cout, "test", "tests",
-                                   &checked.program);
-    } catch (const ProjectError& error) {
-      write_phase26_c1_oracle_json(std::cout, "test", "tests",
-                                   nullptr, &error);
-    }
-    return 0;
-  }
-  auto checked = check_project_semantics(
-      manifest, sources, false, ProgramGenerationMode::Tests);
+  (void)check_project_semantics(manifest, sources, false,
+                                ProgramGenerationMode::Tests);
   if (json) {
     std::cout << "{\"protocol_version\": 1, \"schema_version\": ";
     write_debug_json_string(std::cout, kAgentSchemaVersion);
@@ -20916,25 +20933,6 @@ static int run_project_test_semantic_check(const ProjectManifest& manifest,
   } else {
     std::cout << "Checked " << sources.size()
               << " test-target source file(s) (semantic-only)\n";
-  }
-  return 0;
-}
-
-static int run_project_benchmark_semantic_check(
-    const ProjectManifest& manifest) {
-  const auto sources = project_declaration_sources(manifest, "benches");
-  if (sources.empty())
-    throw ProjectError("PROJECT_SOURCE_NOT_FOUND",
-                       "project target contains no Moss benchmark sources");
-  try {
-    auto checked = check_project_semantics(
-        manifest, sources, false, ProgramGenerationMode::Benchmarks, nullptr,
-        nullptr, true, true);
-    write_phase26_c1_oracle_json(std::cout, "bench", "benches",
-                                 &checked.program);
-  } catch (const ProjectError& error) {
-    write_phase26_c1_oracle_json(std::cout, "bench", "benches", nullptr,
-                                 &error);
   }
   return 0;
 }
@@ -22765,23 +22763,16 @@ static int run_project_command(int argc, char** argv) {
     if (command == "build") {
       bool release = false;
       bool check_only = false;
-      bool phase26_c1_oracle = false;
       for (int index = 2; index < argc; ++index) {
         string argument = argv[index];
         if (argument == "--release") release = true;
         else if (argument == "--check") check_only = true;
-        else if (argument == "--phase26-c1-oracle")
-          phase26_c1_oracle = true;
         else if (argument != "--json")
           throw ProjectError("BUILD_PROFILE_ERROR",
                              "unexpected build argument '" + argument + "'");
       }
-      if (phase26_c1_oracle && !check_only)
-        throw ProjectError("BUILD_PROFILE_ERROR",
-                           "--phase26-c1-oracle requires --check");
       if (check_only)
-        return run_project_interface_check(manifest, release, json,
-                                           phase26_c1_oracle);
+        return run_project_interface_check(manifest, release, json);
       return run_project_build(manifest, release, json);
     }
     if (command == "fmt") {
@@ -22899,17 +22890,10 @@ static int run_project_command(int argc, char** argv) {
       string filter;
       string save_name;
       string compare_name;
-      bool check_only = false;
-      bool phase26_c1_oracle = false;
       std::optional<double> fail_over;
       for (int index = 2; index < argc; ++index) {
         string argument = argv[index];
         if (argument == "--json") continue;
-        if (argument == "--check") { check_only = true; continue; }
-        if (argument == "--phase26-c1-oracle") {
-          phase26_c1_oracle = true;
-          continue;
-        }
         if (argument == "--save" || argument == "--compare" ||
             argument == "--fail-over") {
           if (++index >= argc)
@@ -22928,17 +22912,6 @@ static int run_project_command(int argc, char** argv) {
               "moss bench accepts at most one filter");
         filter = argument;
       }
-      if (phase26_c1_oracle) {
-        if (!check_only || !filter.empty() || !save_name.empty() ||
-            !compare_name.empty() || fail_over)
-          throw ProjectError(
-              "BENCHMARK_CONFIGURATION_ERROR",
-              "--phase26-c1-oracle requires moss bench --check --json");
-        return run_project_benchmark_semantic_check(manifest);
-      }
-      if (check_only)
-        throw ProjectError("BENCHMARK_CONFIGURATION_ERROR",
-                           "moss bench --check requires --phase26-c1-oracle");
       if (fail_over && compare_name.empty())
         throw ProjectError(
             "BENCHMARK_CONFIGURATION_ERROR",
@@ -23548,7 +23521,8 @@ static moss::Program load_checked_interpreter_program(
         context.sources = moss::project_source_files(context.manifest);
     }
     if (context.project) {
-      auto sources = moss::fast_debug_source_closure(context);
+      auto sources = moss::fast_debug_source_closure(
+          context, moss::DependencySourceRootAccess::AllowlistedFastDebug);
       auto checked = moss::check_project_sources(
           context.manifest, sources, context.mode);
       if (!checked.program.external_modules.empty()) {
@@ -24281,14 +24255,11 @@ int main(int argc, char** argv) {
     if (string(argv[1]) == "test") {
       bool semantic_check = false;
       bool test_json = false;
-      bool phase26_c1_oracle = false;
       bool invalid_arguments = false;
       for (int index = 2; index < argc; ++index) {
         const string argument = argv[index];
         if (argument == "--check") semantic_check = true;
         else if (argument == "--json") test_json = true;
-        else if (argument == "--phase26-c1-oracle")
-          phase26_c1_oracle = true;
         else invalid_arguments = true;
       }
       if (semantic_check) {
@@ -24306,8 +24277,7 @@ int main(int argc, char** argv) {
               "no Moss.toml was found in this directory or any parent");
         const auto manifest = moss::load_project_manifest(*root);
         try {
-          return moss::run_project_test_semantic_check(
-              manifest, test_json, phase26_c1_oracle);
+          return moss::run_project_test_semantic_check(manifest, test_json);
         } catch (const moss::ProjectError& error) {
           if (test_json)
             moss::write_project_error_json(std::cout, "test", error);
@@ -24476,7 +24446,6 @@ int main(int argc, char** argv) {
     bool explain_fusion = false;
     bool debug_build = false;
     bool diagnostic_paths = false;
-    bool phase26_c1_oracle = false;
     string input, output, debug_map_output, native_output;
     string query_command, query_target, query_source, query_kind,
         query_enclosing, query_overlay_source;
@@ -24518,7 +24487,6 @@ int main(int argc, char** argv) {
       else if (a == "--explain-fusion") explain_fusion = true;
       else if (a == "--debug") debug_build = true;
       else if (a == "--diagnostic-paths") diagnostic_paths = true;
-      else if (a == "--phase26-c1-oracle") phase26_c1_oracle = true;
       else if (a == "--emit-debug-map") {
         if (++i >= argc) { usage(); return 2; }
         debug_map_output = argv[i];
@@ -24642,19 +24610,10 @@ int main(int argc, char** argv) {
           // The check contract resolves other packages exclusively through
           // their current .mossi interfaces. Fast Debug intentionally keeps
           // its dependency-source closure supplied by Margo.
-          auto sources = active_command == "check"
-              ? moss::fast_debug_source_closure(context, false)
-              : moss::fast_debug_source_closure(context);
-          if (phase26_c1_oracle) {
-            if (!json_output || active_command != "check") {
-              std::cerr << "moss: --phase26-c1-oracle requires moss check "
-                           "<file> --json\n";
-              return 2;
-            }
-            return moss::run_project_file_c1_oracle(
-                context.manifest, sources, context.mode,
-                context.requested_source);
-          }
+          // Source-root overrides are opt-in at the Fast Debug call site.
+          // All compiler, query, and emitted-Rust paths deny them by default.
+          auto sources = moss::fast_debug_source_closure(
+              context, moss::DependencySourceRootAccess::Denied);
           // Check and semantic queries stop at semantics, exactly like the
           // standalone path below; only compilation lowers to Rust.
           auto unit = check_only
@@ -24709,42 +24668,12 @@ int main(int argc, char** argv) {
           ? static_cast<std::istream&>(recovered_input)
           : query_overlay ? static_cast<std::istream&>(overlay_input)
                           : static_cast<std::istream&>(f);
-      try {
-        active_program = moss::parse_source(
-            source_stream,
-            std::filesystem::absolute(input).lexically_normal().string());
-      } catch (const moss::CompileError& error) {
-        if (!phase26_c1_oracle) throw;
-        moss::ProjectError incomplete(
-            error.code.empty() ? moss::diagnostic_code_for_message(error.what())
-                               : error.code,
-            error.what(), error.source_file, error.line, error.teaching,
-            error.semantic_identity);
-        moss::write_phase26_c1_oracle_json(
-            std::cout, "check", "standalone", nullptr, &incomplete);
-        return 0;
-      }
+      active_program = moss::parse_source(
+          source_stream,
+          std::filesystem::absolute(input).lexically_normal().string());
       auto& standalone_program = *active_program;
-      if (phase26_c1_oracle) standalone_program.phase26_c1_oracle = true;
       moss::CheckedProgram checker(standalone_program);
-      try {
-        checker.run();
-      } catch (const moss::CompileError& error) {
-        if (!phase26_c1_oracle) throw;
-        moss::ProjectError incomplete(
-            error.code.empty() ? moss::diagnostic_code_for_message(error.what())
-                               : error.code,
-            error.what(), error.source_file, error.line, error.teaching,
-            error.semantic_identity);
-        moss::write_phase26_c1_oracle_json(
-            std::cout, "check", "standalone", nullptr, &incomplete);
-        return 0;
-      }
-      if (phase26_c1_oracle) {
-        moss::write_phase26_c1_oracle_json(
-            std::cout, "check", "standalone", &standalone_program);
-        return 0;
-      }
+      checker.run();
       warnings = checker.warnings();
       if (!json_output) {
         for (const auto& warning : warnings)

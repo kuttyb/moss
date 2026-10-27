@@ -810,15 +810,6 @@ struct Program {
   // that callable bodies have already been reduced to the file's reachable
   // closure and that package-wide rules belong to Margo's build path.
   bool file_check_scope = false;
-  // Oracle-only collection used by the Phase 26.1 file/package diagnostic
-  // comparison. Ordinary checks leave this disabled and remain fail-fast.
-  bool phase26_c1_oracle = false;
-  bool phase26_c1_oracle_complete = false;
-  std::vector<CompileError> phase26_c1_oracle_diagnostics;
-  string phase26_c1_oracle_incomplete_code;
-  string phase26_c1_oracle_incomplete_message;
-  string phase26_c1_oracle_incomplete_source;
-  int phase26_c1_oracle_incomplete_line = 0;
   std::set<string> file_scope_objects;
   std::set<string> file_scope_enums;
   std::set<string> file_scope_domains;

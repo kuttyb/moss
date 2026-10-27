@@ -6,4 +6,4 @@ version = "0.1.0"
 source = "src"
 
 [dependencies]
-geolib = { path = "../geolib" }
+geolib = { path = "../natural_geolib_attempt" }

@@ -1181,11 +1181,21 @@
   "Verify Emacs xref, calls, callers, callees, and symbol search cross dependent package boundaries."
   (let* ((root (moss--repo-root default-directory))
          (planner-main (expand-file-name "projects/build_planner/planner/src/main.moss" root))
+         (planner-root (expand-file-name "projects/build_planner/planner" root))
          (planner-buffer (find-file-noselect planner-main))
-         (moss-compiler-command (expand-file-name "moss" root)))
+         (moss-compiler-command (expand-file-name "moss" root))
+         (moss-margo-command (expand-file-name "margo" root)))
     (unwind-protect
         (with-current-buffer planner-buffer
           (moss-mode)
+          ;; Semantic queries resolve dependent packages through .mossi only.
+          ;; Seed the native-profile interfaces before testing cross-package
+          ;; navigation; this test must not depend on source-root fallback.
+          (let ((default-directory planner-root)
+                (process-environment
+                 (cons (concat "MOSS=" moss-compiler-command)
+                       process-environment)))
+            (should (= 0 (call-process moss-margo-command nil nil nil "build"))))
           ;; Verify project-wide symbols include both local planner and dependent graphlib symbols
           (let* ((symbols (moss--json-get 'symbols (moss--semantic-query "symbols" nil)))
                  (graphlib-symbols
@@ -1204,7 +1214,9 @@
             (let ((apropos-graph (xref-backend-apropos 'moss "make_graph")))
               (should apropos-graph)
               (let ((loc (xref-item-location (car apropos-graph))))
-                (should (string-match-p "graph\\.moss" (xref-file-location-file loc)))))
+                ;; Imported declarations come from the checked interface, so
+                ;; navigation must not depend on opening provider source.
+                (should (string-match-p "graph\\.mossi" (xref-file-location-file loc)))))
             ;; Move point to 'model.summary_total_cost' in main.moss and jump to definition in graphlib/src/model.moss
             (goto-char (point-min))
             (search-forward "summary_total_cost")
@@ -1212,8 +1224,9 @@
             (let* ((xrefs (xref-backend-definitions 'moss "summary_total_cost"))
                    (def-loc (xref-item-location (car xrefs))))
               (should def-loc)
-              (should (string-match-p "graphlib/src/model\\.moss" (xref-file-location-file def-loc)))
-              (should (= 64 (xref-file-location-line def-loc))))
+              (should (string-match-p "graphlib/build/debug/model\\.mossi"
+                                      (xref-file-location-file def-loc)))
+              (should (= 0 (xref-file-location-line def-loc))))
             ;; Test callers and callees on main function
             (goto-char (point-min))
             (search-forward "fn main")

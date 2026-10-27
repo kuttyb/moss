@@ -131,6 +131,37 @@ def main() -> int:
     check_env["MOSS_FAST_DEBUG_SOURCE_ROOTS"] = str(SCRATCH / "not-a-package")
     passed = check(consumer, provider, check_env)
     assert json.loads(passed.stdout)["ok"] is True, passed.stdout
+
+    # The query/compiler path must ignore dependency source-root overrides.
+    # Use an invalid source provider for the same module: if any query loads
+    # that .moss as semantic input, it fails parsing. The current .mossi remains
+    # the only dependency semantic input, after its required freshness check.
+    decoy = SCRATCH / "query-source-root-decoy"
+    (decoy / "src").mkdir(parents=True)
+    (decoy / "Moss.toml").write_text(manifest("f1_decoy"))
+    (decoy / "src/lib.moss").write_text(
+        "module f1_lib\nthis dependency source must not be parsed\n")
+    query_env = dict(env)
+    query_env["MOSS_MODULE_PATH"] = str(provider / "build/debug")
+    query_env["MOSS_FAST_DEBUG_SOURCE_ROOTS"] = str(decoy)
+    query_source = consumer / "src/main.moss"
+    query_specs = (
+        ("type", "main"),
+        ("effects", "main"),
+        ("why", "main"),
+        ("complete", "at:4:16"),
+    )
+    for command, target in query_specs:
+        args = [COMPILER, command, target, "--source", query_source, "--json"]
+        unset_env = dict(query_env)
+        unset_env.pop("MOSS_FAST_DEBUG_SOURCE_ROOTS", None)
+        unset = run(args, consumer, unset_env)
+        overridden = run(args, consumer, query_env)
+        assert json.loads(unset.stdout)["ok"] is True, (command, unset.stdout)
+        assert json.loads(overridden.stdout)["ok"] is True, (
+            command, overridden.stdout, overridden.stderr)
+        assert json.loads(unset.stdout) == json.loads(overridden.stdout), (
+            command, unset.stdout, overridden.stdout)
     direct_debug = run([COMPILER, "debug", consumer], consumer, check_env, ok=False)
     assert "Fast Debug dependency source root is not a directory" in (
         direct_debug.stdout + direct_debug.stderr), (
@@ -215,7 +246,8 @@ def main() -> int:
     v10_stale = check(v10_consumer, v10_provider, v10_env, ok=False)
     assert_interface_error(v10_stale, "f1_provider")
 
-    print("Phase 26.1 F1 .mossi staleness, source-root, own-output, and missing-interface checks passed")
+    print("Phase 26.1 F1 .mossi staleness, query source-root isolation, "
+          "Fast Debug source-root, own-output, and missing-interface checks passed")
     return 0
 
 

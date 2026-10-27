@@ -87,6 +87,65 @@ def main() -> int:
     assert "absent" in result.stdout + result.stderr, (
         result.stdout, result.stderr)
 
+    # A bare argument that shadows a sibling function is data when the callee
+    # has no callable parameter. It must not create a false scope edge.
+    root, entry, env = new_package("c1_callable_argument_shadowing")
+    entry.write_text(
+        "module c1_callable_argument_shadowing\n"
+        "fn main():\n"
+        "  broken = 42\n"
+        "  echo consume(broken)\n"
+        "fn consume(value: Int) -> Int:\n"
+        "  return value\n")
+    (root / "src/unrelated.moss").write_text(
+        "module c1_callable_argument_shadowing\n"
+        "fn broken() -> Int:\n"
+        "  return absent()\n")
+    check_file(entry, env, ok=True)
+    check_package(root, env, ok=False)
+
+    # Qualified callback arguments retain module identity. A broken B.f must
+    # stay outside the closure when this file passes A.f to a callable slot.
+    provider, provider_source, env = new_package("c1_qualified_callback_provider")
+    provider_source.write_text(
+        "module DataTools\n"
+        "export fn filter_by(items, predicate):\n"
+        "  return items |> filter(predicate)\n")
+    run([MARGO, "build"], provider, env, ok=True)
+    root, entry, env = new_package("c1_qualified_callback_identity")
+    provider_path = os.path.relpath(provider, root).replace(os.sep, "/")
+    (root / "Moss.toml").write_text(
+        '[package]\nname = "c1_qualified_callback_identity"\n'
+        'version = "0.1.0"\n\n[build]\nsource = "src"\n\n'
+        '[dependencies]\nc1_qualified_callback_provider = '
+        f'{{ path = "{provider_path}" }}\n')
+    env["MOSS_MODULE_PATH"] = str(provider / "build/debug")
+    entry.write_text(
+        "module App\n"
+        "import DataTools\n"
+        "import A\n"
+        "fn main():\n"
+        "  values = Vector[Int]()\n"
+        "  echo DataTools.filter_by(values, A.f)\n")
+    (root / "src/a.moss").write_text(
+        "module A\n"
+        "export fn f(value: Int) -> Bool:\n"
+        "  return value > 0\n")
+    (root / "src/b.moss").write_text(
+        "module B\n"
+        "export fn f(value: Int) -> Bool:\n"
+        "  return absent()\n")
+    trace_env = env | {"MOSS_PHASE26_C1_SCOPE_TRACE": "1"}
+    traced = run([COMPILER, "check", entry, "--json"], root, trace_env,
+                 ok=True)
+    callback_edges = [
+        row.split("|", 3)[3] for row in traced.stderr.splitlines()
+        if row.startswith("MOSS_C1_SCOPE_ID|function|") and
+        len(row.split("|", 3)) == 4
+    ]
+    assert any("::A:fn:f" in identity for identity in callback_edges), callback_edges
+    assert not any("::B:fn:f" in identity for identity in callback_edges), callback_edges
+
     # Name mentions are not call edges. A local value called `broken` and a
     # string containing `read()` must not select same-named sibling callables.
     # Unrelated object and enum declaration errors are also package-only for
