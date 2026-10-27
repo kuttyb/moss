@@ -1,5 +1,13 @@
 # Phase 26.1 F1 gates green — 2026-10-26
 
+## G1 local gate checkpoint — 2026-10-26
+
+- Active branch: `phase26-1-m1`; G1 implementation commits are `25cde222` and `59ebbd5d`, both pushed to `origin/phase26-1-m1`.
+- First full `make --jobs="$(nproc)" check` on `59ebbd5d`: 137/143 passed. Six failures traced to Margo attempting UTF-8 decoding of ABI-v10 binary `.mossi` records while fingerprinting providers. Fixed the fingerprint to hash raw interface bytes; focused reruns passed for all six failing test programs plus nested inherited providers, source deletion/change/restoration, and package-local `deps/`.
+- G1 Architect review approved recursive ambient fingerprinting; requested nested-path fixture correction, which was made and verified. Final review of the raw-byte correction remains pending.
+- Current working-tree changes after `59ebbd5d`: Margo raw-byte fingerprint fix plus feedback/status updates; local full `make check` must be rerun on the eventual committed tree. No G1 result report, corpus differential, Fast Debug parity, or compiler-perf gate is final yet.
+- Next: commit and push the raw-byte fix checkpoint, rerun full local regression, then finish G1 differential/performance/M1 target gates before beginning C1.
+
 - Active branch: `phase26-1-m1`; F1 implementation SHA `b0744694e08ddf2809bf4dd6705d616f6c6c28ba`, pushed to `origin/phase26-1-m1`. Every imported `.mossi` load validates provider source freshness, including direct `moss build`. F1 also enforces per-file source closure, excludes Fast Debug dependency source-root overrides, and ignores the checking package's own build outputs as interfaces.
 - Full corpus differential against main `d109b8f1`: 2,064 sources; 1,325 accepted on both sides; zero verdict, diagnostic-code, or generated-Rust hash changes; baseline and candidate TSVs are byte-identical.
 - `make --jobs="$(nproc)" check` passed 142/142 on `b0744694`; `shard_fast_debug` passed. Focused F1 and borrowed-read checks pass. Feedback, Python compilation, and whitespace validation pass.

@@ -414,25 +414,14 @@ def ambient_provider_inputs(package: Package, ordered: list[Package],
                          if key != "path"}, "path": str(interface),
                       "interface_sha256": sha256_file(interface)}
             try:
-                fields = dict(line.split(" ", 1) for line in
-                              interface.read_text(encoding="utf-8").splitlines()
-                              if " " in line)
-                record["module_id"] = fields.get("module_id", "")
-                record["package_source_hash"] = fields.get("package_source_hash", "")
-                if fields.get("schema_version") == "10":
-                    record["semantic_hash"] = fields.get("semantic_contract_hash", "")
-                else:
-                    record["semantic_hash"] = [
-                        fields.get("concrete_interface_hash", ""),
-                        fields.get("generic_semantic_hash", "")]
                 # The compiler discovers interfaces recursively and checks
                 # source freshness at load time. Record both current and
                 # missing-source states so restoration cannot hit an old key.
                 record["provider_source_state"] = \
                     ambient_provider_source_state(interface)
-            except (OSError, UnicodeDecodeError, ValueError):
+            except (OSError, ValueError) as error:
                 raise MargoError(
-                    f"cannot fingerprint ambient provider interface {interface}")
+                    f"cannot fingerprint ambient provider interface {interface}: {error}")
             if not check_only:
                 candidates = [interface.with_suffix(".rlib"),
                               interface.parent / ("lib" + interface.stem + ".rlib")]
