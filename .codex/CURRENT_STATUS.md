@@ -1,5 +1,16 @@
 # Phase 26.1.1 — ABI-v10 Section 2 checkpoint — 2026-10-27
 
+- The current X3 checkpoint emits declaration locations and imported
+  semantic facts restore them; the restored cross-package Emacs xref
+  regression passes (source path and line 64). X3 is not complete: a two-package
+  `margo build --check` probe showed that inserting one blank line changes both
+  the provider `.mossi` and `.locations`, and checks both provider and consumer.
+  This conflicts with X3's sidecar-only/no-downstream-recheck acceptance. The
+  raw source freshness hash, Margo package fingerprint, and Section 2 line
+  metadata currently depend on source bytes/line numbers. Resolve that boundary
+  before claiming X3 or starting X4. No implementation gates have been rerun
+  after the sidecar edit.
+
 - Active branch `phase26-1-m1`; latest pushed checkpoint `39d4f282`. The frozen code checkpoint `8ddf97e0` passed uninterrupted `make --jobs="$(nproc)" check`: **148/148 jobs, 0 failures, 0 skipped**, 240.58s wall time. The later full run at documentation-only `39d4f282` completed 147/148; its sole failure was `shard_phase5_tooling`, where the installed LLDB-DAP timed out. An isolated rerun of that shard also timed out. The earlier implementation checkpoint `beb27000` passed 148/148 as well.
 - Focused evidence also passes: C1 scope/package probes, Phase 21 A–F/root-totality, Phase 20 Executor/FileIO, Phase 25 S1/S2/S-B, typed semantic API, Team A, builtin generic typing (129/129), X1 ABI-v9/v10, Phase 15.9, Phase 22.4, Phase 106, G2 conformance (11/11), R2 WP1/WP2/WP3, ABI-v10 units, and SDK text-encoding Fast Debug (3/3).
 - Frozen Architect review: X1+X2 code GO at `8ddf97e0`, carried forward to `39d4f282` because the intervening commit is docs-only. The Architect explicitly accepted all six dependency/interface expectation audits and the S2 fixture correction.

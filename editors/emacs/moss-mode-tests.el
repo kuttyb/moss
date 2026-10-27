@@ -1216,7 +1216,8 @@
               (let ((loc (xref-item-location (car apropos-graph))))
                 ;; Imported declarations come from the checked interface, so
                 ;; navigation must not depend on opening provider source.
-                (should (string-match-p "graph\\.mossi" (xref-file-location-file loc)))))
+                (should (string-match-p "graphlib/src/.*\\.moss"
+                                        (xref-file-location-file loc)))))
             ;; Move point to 'model.summary_total_cost' in main.moss and jump to definition in graphlib/src/model.moss
             (goto-char (point-min))
             (search-forward "summary_total_cost")
@@ -1224,9 +1225,9 @@
             (let* ((xrefs (xref-backend-definitions 'moss "summary_total_cost"))
                    (def-loc (xref-item-location (car xrefs))))
               (should def-loc)
-              (should (string-match-p "graphlib/build/debug/model\\.mossi"
+              (should (string-match-p "graphlib/src/model\\.moss"
                                       (xref-file-location-file def-loc)))
-              (should (= 0 (xref-file-location-line def-loc))))
+              (should (= 64 (xref-file-location-line def-loc))))
             ;; Test callers and callees on main function
             (goto-char (point-min))
             (search-forward "fn main")
@@ -1242,8 +1243,7 @@
         (kill-buffer planner-buffer)))))
 
 (ert-deftest moss-mode-cross-package-xref-source-location-known-regression ()
-  "Expected failure until Phase 26.1.1 stores declaration locations in a sidecar."
-  :expected-result :failed
+  "Cross-package xref resolves declaration locations from the sidecar."
   (let* ((root (moss--repo-root default-directory))
          (planner-main (expand-file-name "projects/build_planner/planner/src/main.moss" root))
          (planner-root (expand-file-name "projects/build_planner/planner" root))

@@ -11632,38 +11632,46 @@ static void assign_project_declaration_identities(
 // linking annotates the already parsed nodes instead of concatenating source
 // text, so diagnostics and debug/provenance consumers retain the origin file.
 static void annotate_program_source(Program& program, const string& source_file) {
+  auto annotate_declaration = [&](string& current) {
+    // A source-location sidecar may already have restored a real declaration
+    // location for an imported interface. Keep that metadata while retaining
+    // the .mossi origin on executable statements and diagnostics.
+    if (std::filesystem::path(source_file).extension() == ".mossi" &&
+        std::filesystem::path(current).extension() == ".moss") return;
+    current = source_file;
+  };
   auto annotate_body = [&](vector<Stmt>& body) {
     for (auto& statement : body) statement.source_file = source_file;
   };
   for (auto& function : program.functions) {
-    function.source_file = source_file;
+    annotate_declaration(function.source_file);
     annotate_body(function.body);
   }
   for (auto& object : program.objects) {
-    object.source_file = source_file;
+    annotate_declaration(object.source_file);
     for (auto& field : object.fields) field.source_file = source_file;
     for (auto& method : object.methods) {
-      method.source_file = source_file;
+      annotate_declaration(method.source_file);
       for (auto& field : method.body) field.source_file = source_file;
     }
   }
   for (auto& enumeration : program.enums) {
-    enumeration.source_file = source_file;
+    annotate_declaration(enumeration.source_file);
     for (auto& item : enumeration.cases) {
       item.source_file = source_file;
       for (auto& field : item.fields) field.source_file = source_file;
     }
   }
   for (auto& trait : program.traits) {
-    trait.source_file = source_file;
+    annotate_declaration(trait.source_file);
     for (auto& method : trait.methods) method.source_file = source_file;
   }
   for (auto& domain : program.domains) {
-    domain.source_file = source_file;
+    annotate_declaration(domain.source_file);
     for (auto& field : domain.state) field.source_file = source_file;
     for (auto& route : domain.routes) route.source_file = source_file;
     for (auto& handler : domain.handlers) {
-      handler.source_file = source_file;
+      annotate_declaration(handler.source_file);
       annotate_body(handler.body);
     }
   }
@@ -16970,6 +16978,85 @@ static ParsedModuleUnit load_module_interface(
   if (v10_interface)
     validate_abi_v10_nominal_declarations(
         sealed, unit.module_identity, provider);
+  // Declaration locations are editor metadata, separate from the checked
+  // interface and executable-body artifact.
+  {
+    std::ifstream locations(file.parent_path() /
+        (file.stem().string() + ".locations"));
+    string version;
+    if (locations && std::getline(locations, version) &&
+        version == "moss-location-sidecar-v1") {
+      std::map<string, std::pair<string, int>> by_identity;
+      string identity, source;
+      int source_line = 0;
+      while (locations >> std::quoted(identity) >> std::quoted(source) >> source_line)
+        by_identity.emplace(identity, std::make_pair(source, source_line));
+      auto restore = [&](const string& identity, string& target_source,
+                         int& target_line) {
+        auto found = by_identity.find(identity);
+        const auto separator = identity.find(':');
+        if (found == by_identity.end() && separator != string::npos) {
+          const string prefix = identity.substr(0, separator + 1);
+          const string name = identity.substr(separator + 1);
+          found = by_identity.find(prefix + unit.name + "__" + name);
+        }
+        if (found == by_identity.end() && separator != string::npos) {
+          const string prefix = identity.substr(0, separator + 1);
+          const string suffix = "__" + identity.substr(separator + 1);
+          found = std::find_if(by_identity.begin(), by_identity.end(),
+              [&](const auto& candidate) {
+                return starts_with(candidate.first, prefix) &&
+                    candidate.first.size() >= suffix.size() &&
+                    candidate.first.compare(candidate.first.size() -
+                        suffix.size(), suffix.size(), suffix) == 0;
+              });
+        }
+        if (found == by_identity.end()) return;
+        target_source = found->second.first;
+        target_line = found->second.second;
+      };
+      for (auto& function : provider.functions)
+        restore("fn:" + function.name, function.source_file, function.line);
+      for (auto& object : provider.objects)
+        {
+          restore("object:" + object.name, object.source_file, object.line);
+          for (auto& field : object.fields)
+            restore("field:" + object.name + "." + field.name,
+                    field.source_file, field.line);
+        }
+      for (auto& enumeration : provider.enums)
+        {
+          restore("enum:" + enumeration.name, enumeration.source_file,
+                  enumeration.line);
+          for (auto& item : enumeration.cases) {
+            restore("case:" + enumeration.name + "." + item.name,
+                    item.source_file, item.line);
+            for (auto& field : item.fields)
+              restore("field:" + enumeration.name + "." + item.name + "." +
+                          field.name, field.source_file, field.line);
+          }
+        }
+      for (auto& domain : provider.domains) {
+        restore("domain:" + domain.name, domain.source_file, domain.line);
+        for (auto& field : domain.state)
+          restore("state:" + domain.name + "." + field.name,
+                  field.source_file, field.line);
+        for (auto& handler : domain.handlers)
+          restore("handler:" + domain.name + "." + handler.name,
+                  handler.source_file, handler.line);
+      }
+      for (auto& object : provider.objects)
+        for (auto& method : object.methods)
+          restore("method:" + object.name + "." + method.name,
+                  method.source_file, method.line);
+      for (auto& trait : provider.traits) {
+        restore("trait:" + trait.name, trait.source_file, trait.line);
+        for (auto& method : trait.methods)
+          restore("trait_method:" + trait.name + "." + method.name,
+                  method.source_file, method.line);
+      }
+    }
+  }
   unit.files.push_back({std::move(provider), file.string()});
   return unit;
 }
@@ -21361,6 +21448,72 @@ static vector<std::filesystem::path> write_module_interfaces(
         material.substr(first_line + 1);
     text += append_execution_body_section(
         manifest, program, entry.first, digest, package_source_hash, backend);
+    std::ostringstream location_text;
+    location_text << "moss-location-sidecar-v1\n";
+    auto add_location = [&](const string& identity, const string& source,
+                            int source_line) {
+      if (source.empty() || source_line <= 0) return;
+      location_text << std::quoted(identity) << " " << std::quoted(source)
+                    << " " << source_line << "\n";
+    };
+    for (const auto& function : program.functions)
+      if (belongs_to_module(function.name, entry.first))
+        add_location("fn:" + function.name, function.source_file, function.line);
+    for (const auto& object : program.objects)
+      if (belongs_to_module(object.name, entry.first)) {
+        add_location("object:" + object.name, object.source_file, object.line);
+        for (const auto& field : object.fields)
+          add_location("field:" + object.name + "." + field.name,
+                       field.source_file, field.line);
+        for (const auto& method : object.methods)
+          add_location("method:" + object.name + "." + method.name,
+                       method.source_file, method.line);
+      }
+    for (const auto& enumeration : program.enums)
+      if (belongs_to_module(enumeration.name, entry.first))
+        {
+          add_location("enum:" + enumeration.name, enumeration.source_file,
+                       enumeration.line);
+          for (const auto& item : enumeration.cases) {
+            add_location("case:" + enumeration.name + "." + item.name,
+                         item.source_file, item.line);
+            for (const auto& field : item.fields)
+              add_location("field:" + enumeration.name + "." + item.name +
+                               "." + field.name,
+                           field.source_file, field.line);
+          }
+        }
+    for (const auto& domain : program.domains)
+      if (belongs_to_module(domain.name, entry.first)) {
+        add_location("domain:" + domain.name, domain.source_file, domain.line);
+        for (const auto& field : domain.state)
+          add_location("state:" + domain.name + "." + field.name,
+                       field.source_file, field.line);
+        for (const auto& handler : domain.handlers)
+          add_location("handler:" + domain.name + "." + handler.name,
+                       handler.source_file, handler.line);
+      }
+    for (const auto& trait : program.traits)
+      if (belongs_to_module(trait.name, entry.first)) {
+        add_location("trait:" + trait.name, trait.source_file, trait.line);
+        for (const auto& method : trait.methods)
+          add_location("trait_method:" + trait.name + "." + method.name,
+                       trait.source_file, method.line);
+      }
+    const auto location_file = directory /
+        (tooling_name(entry.first) + ".locations");
+    const string location_bytes = location_text.str();
+    std::ifstream old_locations(location_file, std::ios::binary);
+    std::ostringstream old_location_bytes;
+    if (old_locations) old_location_bytes << old_locations.rdbuf();
+    if (!old_locations || old_location_bytes.str() != location_bytes) {
+      std::ofstream locations(location_file, std::ios::binary);
+      if (!locations)
+        throw ProjectError("MOSS_INTERFACE_ERROR",
+            "cannot write Moss location sidecar '" + location_file.string() + "'",
+            location_file.string());
+      locations << location_bytes;
+    }
     if (!prior || prior_text.str() != text) {
       std::ofstream output(file, std::ios::binary);
       if (!output)

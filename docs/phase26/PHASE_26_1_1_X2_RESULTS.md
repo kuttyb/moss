@@ -1,5 +1,23 @@
 # Phase 26.1.1 X2 — entry-scoped Fast Debug checkpoint
 
+## X3 sidecar investigation — in progress
+
+- Compiler emission now writes adjacent `.locations` metadata for functions,
+  objects and fields, enums and cases, domains and state, methods, handlers,
+  and traits. Imported declaration identities restore source file and line
+  metadata from this sidecar. The cross-package Emacs xref expected-failure
+  annotation was removed; its focused ERT now passes and resolves
+  `summary_total_cost` to `graphlib/src/model.moss:64`.
+- The X3 blank-line acceptance is not met. A two-package `margo build --check`
+  probe inserted one blank line at the start of a dependency module. Both
+  packages were checked, `.mossi` bytes changed, and `.locations` bytes changed.
+  The current provider freshness hash and Margo package fingerprint include
+  source bytes; Section 2 also serializes statement line numbers. The sidecar
+  implementation is therefore incomplete pending a solution that keeps source
+  freshness and execution metadata valid while making a location-only edit
+  sidecar-only and preserving downstream skip behavior.
+- No X4 work or full-suite validation has been performed after these changes.
+
 ## Implementation
 
 Fast Debug now scopes project checking from the selected `main` or test entries.
