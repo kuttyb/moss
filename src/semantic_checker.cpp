@@ -551,7 +551,7 @@ class Checker {
       }
       check_domain_handle_declarations();
       check_objects();
-      if (!p_.file_check_scope) check_declared_map_key_types();
+      check_declared_map_key_types();
       check_local_call_cycles();
       // The first summary pass seeds result relations for call-cycle analysis.
       // A second pass can bind straight-line private-call results to the exact

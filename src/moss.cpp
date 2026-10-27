@@ -12104,10 +12104,18 @@ static void scope_program_to_file(Program& program,
   // treated as inferred and the field type could not be resolved.
   for (bool grew = true; grew;) {
     grew = false;
-    for (const auto& object : program.objects) {
-      if (!program.file_scope_objects.count(object.name)) continue;
-      for (const auto& field : object.fields) {
-        const auto refs = type_identifiers(field.type);
+    std::vector<string> scoped_field_types;
+    for (const auto& object : program.objects)
+      if (program.file_scope_objects.count(object.name))
+        for (const auto& field : object.fields)
+          scoped_field_types.push_back(field.type);
+    for (const auto& domain : program.domains)
+      if (program.file_scope_domains.count(domain.name))
+        for (const auto& field : domain.state)
+          scoped_field_types.push_back(field.type);
+    {
+      for (const auto& field_type : scoped_field_types) {
+        const auto refs = type_identifiers(field_type);
         for (const auto& other : program.objects)
           if (!program.file_scope_objects.count(other.name) &&
               (refs.count(other.name) ||
