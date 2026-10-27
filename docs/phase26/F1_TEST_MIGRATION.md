@@ -19,6 +19,7 @@ contract.
 | `tests/run_parallel.py` | **E — registration:** adds the focused F1 interface freshness regression to the local suite. |
 | `tests/tooling/check_domain_handle_closure.py` | **B — source-removal assertion retired:** keeps provider source and continues checking that the package's own build output cannot replace it. |
 | `tests/tooling/check_handler_2pl.py` | **A — interface case separated:** ABI-v9 imported-interface validation uses an external consumer; the other handler behavior remains source-backed. |
+| `tests/tooling/check_phase20c_executor.py` | **B — source-removal assertion retired:** the explicit-module provider wrapper/runtime test keeps package sources; cross-package interface freshness is covered separately. |
 | `tests/tooling/check_phase21_abi_v9_external_cache.py` | **A — imported interface retained:** uses complete provider and consumer projects; artifact tampering still tests warm-cache binding. |
 | `tests/tooling/check_phase21_abi_v9_migration.py` | **A — imported interface retained:** legacy ABI migration and consumer checks use a separate source-backed provider package. |
 | `tests/tooling/check_phase21_absolute_root_boundary.py` | **B — source-removal setup retired:** retains provider package sources while preserving the absolute-root boundary assertions. |
