@@ -196,7 +196,7 @@ help:
 	@echo "  make check-parallel - Run tests concurrently with tests/run_parallel.py (TEST_JOBS=N)"
 	@echo "  make check-serial - Run original serial regression runner (tests/run.sh)"
 	@echo "  make check-perf   - Run Phase 25.4 B1 permanent compiler performance regression gate"
-	@echo "  make compiler-perf - Run interleaved B1 timing (3 reps) and profiling suite; MOSS_PERF_CERTIFY=1 enables clean main-source certification"
+	@echo "  make compiler-perf - Run compiler timing/profiling and Phase 26.1 package work-counter scenarios; MOSS_PERF_INCLUDE_REAL_WORLD=1 adds curated Moss workloads"
 	@echo "  make bench-torture - Run full portable compiler torture benchmark suite"
 	@echo "  make examples     - Build and verify optimized examples"
 	@echo "  make clean        - Remove build artifacts and binaries"

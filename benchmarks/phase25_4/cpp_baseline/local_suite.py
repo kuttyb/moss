@@ -534,6 +534,11 @@ def main() -> int:
         if baseline_ref and worktree.exists():
             run(["git", "worktree", "remove", "--force", str(worktree)])
 
+    # Package graph, edit/revert, and per-package work-counter workloads are
+    # part of the default compiler-perf suite. Their temporary project trees
+    # and detailed results are isolated under tmp/.
+    subprocess.run([sys.executable, str(ROOT / "benchmarks/phase26_1/m1_suite.py")],
+                   cwd=ROOT, check=True)
     print(f"Report: {out / 'LOCAL_REPORT.md'}")
     print(f"Candidate medians: {out / 'phase26_candidate_medians.csv'}")
     print(f"Per-fixture work counters: {out / 'phase26_work_counters.csv'}")
