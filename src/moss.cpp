@@ -273,7 +273,9 @@ void build_type_context(Program& program) {
     for (const auto& field : object.fields) {
       const bool inferred = field.inferred || field.type.empty() ||
           (program.file_check_scope &&
-           !program.file_scope_objects.count(object.name));
+           !program.file_scope_objects.count(object.name) &&
+           !program.external_modules.count(
+               module_name_from_symbol(object.name)));
       fields.push_back({field.name, inferred ? string() : trim(field.type), inferred});
     }
     declare(moss::DeclarationKind::Record, object.name, object.defining_module,
@@ -11774,7 +11776,8 @@ static void add_expression_references(const string& source,
     add_bare_references(by + 3, text.size());
   else if (const auto by = text.find("by="); by != string::npos)
     add_bare_references(by + 3, text.size());
-  for (const string& operation : {"map(", "filter(", "reduce(", "fold(", "each("}) {
+  for (const char* const operation_text : {"map(", "filter(", "reduce(", "fold(", "each("}) {
+    const string operation = operation_text;
     size_t at = 0;
     while ((at = text.find(operation, at)) != string::npos) {
       const size_t begin = at + operation.size();
@@ -11820,7 +11823,11 @@ static void add_expression_references(const string& source,
       }
     }
     if (member && message_handler) references.handlers.insert(std::move(name));
-    else if (member) references.methods.insert(std::move(name));
+    else if (member) {
+      // `module.fn(...)` is syntactically a member call; select both kinds.
+      references.functions.insert(name);
+      references.methods.insert(std::move(name));
+    }
     else references.functions.insert(std::move(name));
   }
 }
@@ -11828,6 +11835,12 @@ static void add_expression_references(const string& source,
 static void add_statement_references(const vector<Stmt>& body,
                                      FileCheckReferences& references) {
   for (const auto& statement : body) {
+    // `for x in value` calls the iterator protocol implicitly; method
+    // reachability is by name, so select every `next`/`iter` method.
+    if (statement.kind == Stmt::Kind::For) {
+      references.methods.insert("next");
+      references.methods.insert("iter");
+    }
     if (statement.kind == Stmt::Kind::Message) {
       if (!statement.b.empty()) references.handlers.insert(trim(statement.b));
       for (const auto& argument : statement.args)
@@ -11843,8 +11856,10 @@ static void add_statement_references(const vector<Stmt>& body,
         const string source = trim(statement.text);
         if (starts_with(source, "message "))
           references.handlers.insert(trim(statement.b));
-        else
+        else {
           references.methods.insert(trim(statement.b));
+          references.functions.insert(trim(statement.b));
+        }
       } else if (!statement.a.empty()) {
         references.functions.insert(trim(statement.a));
       }
@@ -12081,10 +12096,16 @@ static void scope_program_to_file(Program& program,
       program.file_scope_domains.insert(domain.name);
   }
 
+  // Imported providers are loaded through `.mossi` and keep their own
+  // (original) source names, so identify them by module, not file extension.
+  auto from_interface = [&](const string& owner_name, const string& source) {
+    return std::filesystem::path(source).extension() == ".mossi" ||
+           program.external_modules.count(module_name_from_symbol(owner_name)) != 0;
+  };
   std::vector<Function> functions;
   for (size_t i = 0; i < program.functions.size(); ++i) {
     if (selected_functions.count(i) ||
-        std::filesystem::path(program.functions[i].source_file).extension() == ".mossi")
+        from_interface(program.functions[i].name, program.functions[i].source_file))
       functions.push_back(std::move(program.functions[i]));
   }
   program.functions = std::move(functions);
@@ -12093,7 +12114,7 @@ static void scope_program_to_file(Program& program,
     std::vector<Method> methods;
     for (auto& method : object.methods) {
       if (selected_methods.count(method_index) ||
-          std::filesystem::path(method.source_file).extension() == ".mossi")
+          from_interface(object.name, method.source_file))
         methods.push_back(std::move(method));
       ++method_index;
     }
@@ -12104,7 +12125,7 @@ static void scope_program_to_file(Program& program,
     std::vector<Handler> handlers;
     for (auto& handler : domain.handlers) {
       if (selected_handlers.count(handler_index) ||
-          std::filesystem::path(handler.source_file).extension() == ".mossi")
+          from_interface(domain.name, handler.source_file))
         handlers.push_back(std::move(handler));
       ++handler_index;
     }

@@ -49,6 +49,10 @@ def main() -> int:
     checked = run(compiler, project, "check", "src/main.moss", "--json")
     assert checked["ok"] is True
     run(compiler, project, "test", "--json")
+    # Phase 26.1 C1 (R3): `moss check <file>` is semantic-only and no longer
+    # persists the native-lowering snapshot that impact compares against.
+    # `moss build` seeds the baseline.
+    run(compiler, project, "build", "--json")
     unchanged = run(compiler, project, "impact", "fn:add", "--json")
     assert unchanged["result"]["change_kind"] == "unchanged"
     assert unchanged["result"]["changed_semantic_unit"]["durable_identity"] == \
