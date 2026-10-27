@@ -1,6 +1,6 @@
 # Phase 26.1 C1 Results — Function-Scoped Check & Package Rules
 
-- Implementation SHA: C1 source checkpoint `9e4b54c8`; closeout documentation/test update pending
+- Implementation SHA: `4b14c07a35e44ab3977f6f9eb2ef62e9eb9241f0`
 - Branch: `phase26-1-m1`
 
 ## Scope and Invariants
@@ -10,14 +10,11 @@
 - **Partial-reach fixture**: Verifies file check visits exactly reachable functions by identity (`m1_partial.moss:main`, `reached_top`, `reached_leaf`), whereas package mode checks all 6 functions.
 
 ## Validation Gates
-1. `make --jobs="$(nproc)" check`: 145/145 passed after the current source/test changes; suite wall time 234.68 s. Fast Debug parity passed as part of the suite.
-2. `MOSS_M1_ENFORCE_TARGETS=1 make package-perf`: all 70 scenario rows met on the prior C1 checkpoint; rerun on the final C1 commit remains required.
-3. Fail-fast corpus scope gate: 2,064 tracked sources, 421 package roots, 335 accepted and 86 rejected packages; 2,032 target files checked. G-a accepted-package sources: **633/633**. G-b reachable first package diagnostics: **68/68** rejected with the same code. There were 17 rejected packages with no file trace reaching their first error (vacuous under G-b), nine missing/stale interface terminal packages, 12 individually main-reproduced baseline package errors, and **zero gate failures**. Output: `tmp/phase26-1-m1/c1-one-way-gates-final.out`.
+1. `make --jobs="$(nproc)" check`: **145/145 passed**, 0 skipped, suite wall time 234.27 s. Fast Debug parity passed as part of the suite.
+2. `MOSS_M1_ENFORCE_TARGETS=1 make package-perf`: **70 scenario rows passed** on `4b14c07a`; generated report `tmp/compiler-perf/m1-20261027-073227/M1_BASELINE.md`.
+3. `make c1-corpus-gates`: **passed with zero failures** on `4b14c07a`. It checked 2,064 tracked sources, 421 package roots, 335 accepted and 86 rejected packages, and 2,032 target files. G-a accepted-package sources: **633/633**. G-b reachable first package diagnostics: **68/68** rejected with the same code. There were 17 rejected packages with no file trace reaching their first error, nine missing/stale interface terminal packages, and 12 individually main-reproduced baseline package errors. Output: `tmp/phase26-1-m1/c1-one-way-gates-final.out`.
 4. Source-root allowlist regressions passed in `check_phase26_1_f1_interface_rules.py`; the 12-row C1 package case gate passed with all six Calc and six Toolkit rows mapped to the expected package diagnostic. The geometry mismatch and malformed Margo dependency path are corrected.
-5. Full Corpus Differential (2,064 sources):
-   - The original C1 run recorded 12 differences versus the pre-C1 branch; these are still under review and are listed below.
-   - A closeout differential against frozen C1 checkpoint `ad3276ca` checked all 2,064 sources with generated-Rust hashes: 1,336 accepted on both sides, byte-identical verdict/hash rows, zero additional differences.
-   - No hangs / timeouts in either run. The `ad3276ca` comparison proves closeout changes add no corpus differences; it does not classify the original 12.
+5. Full Corpus Differential against `origin/main` (`d109b8f17276f70b591432fd345d57e727f17501`), 2,064 sources including diagnostic codes and generated-Rust hashes: **FAIL / 14 differences**. The six Calc and six Toolkit rows below are the documented 12 package-scope omissions. Two additional sources now reject with `MODULE_IDENTITY_UNRESOLVED` although `origin/main` accepts them: `examples/priority_queue/src/main.moss` (`python-priority-queue`) and `examples/swarm/Julia/CircularBuffer/src/main.moss` (`julia-circular-buffer`). This was observed on the unchanged C1 code commit `4b14c07a`; no additional C1 compiler edits were made. The extra rows are unresolved and prevent claiming a green full corpus differential. Results: `tmp/phase26-1-m1/corpus-origin-main.tsv` and `tmp/phase26-1-m1/corpus-candidate-origin-main.tsv`.
 6. Package test-target check: `margo build --check` checks the complete Tests target (`src + tests`) semantically without executing tests or emitting Rust. Test-source contents are included in the check fingerprint. Focused probes cover a bad sibling test body and duplicate declarations across separate test files.
 7. Snapshot workflow: updated the agent workflow skill and API guide to state that `moss check <file>` does not persist the native-lowering snapshot. Run `moss build` before relying on incremental impact results; absent snapshots fall back conservatively.
 

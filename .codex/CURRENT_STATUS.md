@@ -1,12 +1,12 @@
 # Phase 26.1 working rules (user, 2026-10-27)
 
-## Current state — C1 closeout gates in progress; T1 not started
+## Current state — C1 gates run; full differential has 2 unresolved extra rows; T1 not started
 
 - Active branch: `phase26-1-m1`, remote `origin/phase26-1-m1`, checkpoint `624d43ce`. The oracle-only multi-error scaffolding is removed. F1's Fast Debug source-root allowlist, geometry identity fix, and malformed Margo dependency correction are included in prior pushed work.
 - The ambiguous-callback fallback includes every same-leaf candidate for callable callee slots and callback values. `make --jobs="$(nproc)"`, the focused C1 scope script, and the isolated xref expected-failure ERT passed.
 - The 17 G-b no-hit package roots and first error codes are documented in `docs/phase26/C1_RESULTS.md`. `geolib`'s own `margo build --check` rejects `Triangle.area` at `shapes.moss:48`; Triangle.area and unused imported `util.fill` are classified as dependency bodies re-evaluated in consumer package checks (T1 scope), not C1 reach defects.
 - Cross-package xref remains a known regression: `.mossi` returns interface-file locations. The expected-failure test points to Phase 26.1.1, where declaration locations will go in a sidecar outside the interface digest. No C1 compiler changes are planned for this.
-- Closeout gates are now running on the final C1 code/test tree: full `make check`, full corpus differential against `origin/main`, enforced package-perf, and `make c1-corpus-gates`. Architect GO on the exact final commit remains pending; T1 has not started.
+- Closeout gates on implementation `4b14c07a` now show `make check` 145/145, enforced `package-perf` 70/70, and `make c1-corpus-gates` zero failures. The full corpus differential against `origin/main` has 14 differences: the documented 12 Calc/Toolkit rows plus two extra `MODULE_IDENTITY_UNRESOLVED` rows (`priority_queue` and Julia `CircularBuffer`). These extra rows are unresolved; no further C1 compiler changes were made. Architect review on the exact documentation checkpoint and push remain pending; T1 has not started.
 - The historical oracle attempt remains evidence only, not a passing gate; see the history below. All authorized regression gates run on this work machine. No hosted CI or PRs.
 
 ---
