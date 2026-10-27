@@ -486,8 +486,15 @@ def ambient_provider_inputs(package: Package, ordered: list[Package],
 
 
 def ambient_semantic_interface(interface: Path) -> dict:
+    raw = interface.read_bytes()
+    section_marker = b"\nexecution_body_version "
+    section2 = raw.find(section_marker)
+    section1 = raw[:section2] + b"\n" if section2 >= 0 else raw
+    section1 = b"".join(
+        line for line in section1.splitlines(keepends=True)
+        if not line.startswith(b"package_source_hash "))
     fields = {}
-    for line in interface.read_text(encoding="utf-8").splitlines():
+    for line in section1.decode("utf-8").splitlines():
         key, separator, value = line.partition(" ")
         if separator and key in {"module_id", "native_abi", "schema_version",
                                  "concrete_interface_hash", "generic_semantic_hash",
@@ -501,7 +508,8 @@ def ambient_semantic_interface(interface: Path) -> dict:
             raise MargoError(f"missing semantic contract hash in {interface}")
         return {"module_id": fields["module_id"],
                 "native_abi": fields.get("native_abi", ""),
-                "semantic_contract_hash": semantic}
+                "semantic_contract_hash": semantic,
+                "section1_sha256": hashlib.sha256(section1).hexdigest()}
     concrete = fields.get("concrete_interface_hash")
     generic = fields.get("generic_semantic_hash")
     if not concrete or not generic:
@@ -509,7 +517,8 @@ def ambient_semantic_interface(interface: Path) -> dict:
     return {"module_id": fields["module_id"],
             "native_abi": fields.get("native_abi", ""),
             "concrete_interface_hash": concrete,
-            "generic_semantic_hash": generic}
+            "generic_semantic_hash": generic,
+            "section1_sha256": hashlib.sha256(section1).hexdigest()}
 
 
 def execution_body_package_fingerprint(interface: Path) -> str | None:

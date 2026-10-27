@@ -13650,6 +13650,13 @@ static string interface_module_identity(const string& text, const string& module
   return moss::module_identity(package.empty() ? "unknown" : package, version, module);
 }
 
+struct ExecutionBodySectionView {
+  bool present = false;
+  size_t section_begin = 0;
+  string payload;
+  string package_fingerprint;
+};
+
 static void parse_generic_ir_line(const string& line, Function& function) {
   std::istringstream input(line);
   string record;
@@ -13706,6 +13713,385 @@ static void parse_generic_ir_line(const string& line, Function& function) {
       if (input >> std::quoted(expression)) function.result_expression = std::move(expression);
     }
   }
+}
+
+static bool execution_body_read_statement(const string& record,
+                                         Stmt& statement) {
+  if (!starts_with(record, "stmt ")) return false;
+  std::istringstream fields(record.substr(5));
+  int kind = -1;
+  size_t argument_count = 0, raise_count = 0;
+  if (!(fields >> kind >> statement.line >> statement.indent >>
+        std::quoted(statement.text) >> std::quoted(statement.a) >>
+        std::quoted(statement.b) >> std::quoted(statement.semantic_type) >>
+        std::quoted(statement.message_result) >> argument_count) ||
+      kind < static_cast<int>(Stmt::Kind::Raw) ||
+      kind > static_cast<int>(Stmt::Kind::Raise) ||
+      argument_count > 100000)
+    throw CompileError(std::max(statement.line, 0),
+        "invalid statement in ABI-v9 execution-body section",
+        "SOURCE_FREE_EXECUTION_BODY_INVALID");
+  statement.kind = static_cast<Stmt::Kind>(kind);
+  for (size_t index = 0; index < argument_count; ++index) {
+    string argument;
+    if (!(fields >> std::quoted(argument)))
+      throw CompileError(std::max(statement.line, 0),
+          "truncated statement arguments in ABI-v9 execution-body section",
+          "SOURCE_FREE_EXECUTION_BODY_INVALID");
+    statement.args.push_back(std::move(argument));
+  }
+  if (!(fields >> raise_count) || raise_count > 100000)
+    throw CompileError(std::max(statement.line, 0),
+        "invalid statement raise set in ABI-v9 execution-body section",
+        "SOURCE_FREE_EXECUTION_BODY_INVALID");
+  for (size_t index = 0; index < raise_count; ++index) {
+    string identity;
+    if (!(fields >> std::quoted(identity)) ||
+        !statement.exceptional_alternatives.insert(
+            parse_interface_raise_identity(identity)).second)
+      throw CompileError(std::max(statement.line, 0),
+          "invalid or duplicate statement raise identity in ABI-v9 execution-body section",
+          "SOURCE_FREE_EXECUTION_BODY_INVALID");
+  }
+  string trailing;
+  if (fields >> trailing)
+    throw CompileError(std::max(statement.line, 0),
+        "trailing data in ABI-v9 execution-body statement",
+        "SOURCE_FREE_EXECUTION_BODY_INVALID");
+  return true;
+}
+
+static string execution_body_short_name(const string& qualified) {
+  const size_t moss_separator = qualified.rfind("__");
+  if (moss_separator != string::npos)
+    return qualified.substr(moss_separator + 2);
+  const size_t type_separator = qualified.rfind("::");
+  return type_separator == string::npos
+      ? qualified : qualified.substr(type_separator + 2);
+}
+
+static void parse_execution_body_payload(const ExecutionBodySectionView& section,
+                                         Program& provider,
+                                         const std::filesystem::path& file) {
+  if (!section.present) return;
+  std::istringstream input(section.payload);
+  string line;
+  for (const char* expected : {"package_fingerprint ", "interface_digest ",
+                               "package_source_hash "}) {
+    if (!std::getline(input, line) || !starts_with(line, expected))
+      throw CompileError(0, "truncated ABI-v9 execution-body metadata",
+                         "SOURCE_FREE_EXECUTION_BODY_INVALID");
+  }
+  std::set<string> function_bodies, method_bodies, handler_bodies;
+  while (std::getline(input, line)) {
+    if (line.empty())
+      throw CompileError(0, "empty record in ABI-v9 execution-body section",
+                         "SOURCE_FREE_EXECUTION_BODY_INVALID");
+    if (starts_with(line, "function ")) {
+      std::istringstream header(line.substr(9));
+      string name, source_file, return_type, effects_text;
+      int exported = 0, declaration_line = 0, result_line = 0, has_result = 0;
+      size_t parameter_count = 0;
+      if (!(header >> std::quoted(name) >> exported >> declaration_line >>
+            result_line >> parameter_count >> std::quoted(return_type) >>
+            std::quoted(effects_text) >> std::quoted(source_file) >>
+            has_result) || name.empty() ||
+          (exported != 0 && exported != 1) ||
+          (has_result != 0 && has_result != 1) || parameter_count > 100000 ||
+          !function_bodies.insert(execution_body_short_name(name)).second)
+        throw CompileError(std::max(declaration_line, 0),
+            "invalid or duplicate function in ABI-v9 execution-body section",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      string result_expression;
+      if (!(header >> std::quoted(result_expression)))
+        throw CompileError(std::max(declaration_line, 0),
+            "missing function result in ABI-v9 execution-body section",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      string trailing;
+      if (header >> trailing)
+        throw CompileError(std::max(declaration_line, 0),
+            "trailing function metadata in ABI-v9 execution-body section",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      auto function = std::find_if(provider.functions.begin(),
+          provider.functions.end(), [&](const Function& candidate) {
+            return candidate.name == name ||
+                execution_body_short_name(candidate.name) ==
+                    execution_body_short_name(name);
+          });
+      if (function == provider.functions.end()) {
+        if (exported)
+          throw CompileError(std::max(declaration_line, 0),
+              "execution body has no Section 1 function declaration",
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+        Function private_function;
+        private_function.name = execution_body_short_name(name);
+        private_function.exported = false;
+        private_function.set_return_type(return_type == "unit"
+            ? std::optional<string>() : std::optional<string>(return_type));
+        private_function.observable_effects =
+            interface_effects("effects=" + effects_text);
+        provider.functions.push_back(std::move(private_function));
+        function = std::prev(provider.functions.end());
+      } else if (function->exported != static_cast<bool>(exported)) {
+        throw CompileError(std::max(declaration_line, 0),
+            "execution body visibility disagrees with Section 1 declaration",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      }
+      if (function->generic || function->static_dispatch ||
+          (function->name.find("::") != string::npos &&
+           module_name_from_symbol(function->name) != provider.module_name))
+        throw CompileError(std::max(declaration_line, 0),
+            "execution body attempts to replace a generic or foreign function",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      if (function->exported && function->params.size() != parameter_count)
+        throw CompileError(std::max(declaration_line, 0),
+            "execution-body function parameters disagree with Section 1",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      if (function->return_type.value_or("unit") != return_type)
+        throw CompileError(std::max(declaration_line, 0),
+            "execution-body function result disagrees with Section 1",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      vector<Param> private_parameters;
+      vector<Effect> private_effects;
+      for (size_t index = 0; index < parameter_count; ++index) {
+        if (!std::getline(input, line) || !starts_with(line, "param "))
+          throw CompileError(std::max(declaration_line, 0),
+              "missing execution-body function parameter",
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+        std::istringstream parameter(line.substr(6));
+        size_t ordinal = 0;
+        Param parsed;
+        string effect_text, parameter_trailing;
+        if (!(parameter >> ordinal >> std::quoted(parsed.name) >>
+              std::quoted(parsed.type) >> effect_text) || ordinal != index ||
+            (parameter >> parameter_trailing))
+          throw CompileError(std::max(declaration_line, 0),
+              "invalid execution-body function parameter",
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+        auto effect = interface_effect(effect_text);
+        if (!effect)
+          throw CompileError(std::max(declaration_line, 0),
+              "invalid execution-body parameter effect",
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+        if (function->exported) {
+          if (function->params[index].name != parsed.name ||
+              function->params[index].type != parsed.type ||
+              index >= function->parameter_effects.size() ||
+              function->parameter_effects[index] != *effect)
+            throw CompileError(std::max(declaration_line, 0),
+                "execution-body function parameter disagrees with Section 1",
+                "SOURCE_FREE_EXECUTION_BODY_INVALID");
+        }
+        private_parameters.push_back(std::move(parsed));
+        private_effects.push_back(*effect);
+      }
+      if (!function->exported) {
+        function->params = std::move(private_parameters);
+        function->parameter_effects = std::move(private_effects);
+      }
+      function->line = declaration_line;
+      function->result_line = result_line;
+      function->source_file = file.string();
+      function->header = "fn " + function->name;
+      if (has_result) {
+        function->result_expression = std::move(result_expression);
+        function->expression_body = true;
+      }
+      while (std::getline(input, line) && line != "function_end") {
+        Stmt statement;
+        std::istringstream statement_input(line);
+        string tag;
+        statement_input >> tag;
+        if (tag != "stmt" || !execution_body_read_statement(
+                line, statement))
+          throw CompileError(std::max(declaration_line, 0),
+              "invalid function body record in ABI-v9 execution-body section",
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+        statement.source_file = file.string();
+        function->body.push_back(std::move(statement));
+      }
+      if (line != "function_end")
+        throw CompileError(std::max(declaration_line, 0),
+            "unterminated function body in ABI-v9 execution-body section",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      continue;
+    }
+    if (starts_with(line, "method ")) {
+      std::istringstream header(line.substr(7));
+      string owner, name, source_file;
+      int declaration_line = 0, result_line = 0, has_result = 0;
+      if (!(header >> std::quoted(owner) >> std::quoted(name) >>
+            declaration_line >> result_line >> std::quoted(source_file) >>
+            has_result) || (has_result != 0 && has_result != 1))
+        throw CompileError(std::max(declaration_line, 0),
+            "invalid method in ABI-v9 execution-body section",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      string result_expression;
+      if (!(header >> std::quoted(result_expression)))
+        throw CompileError(std::max(declaration_line, 0),
+            "missing method result in ABI-v9 execution-body section",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      string trailing;
+      if (header >> trailing)
+        throw CompileError(std::max(declaration_line, 0),
+            "trailing method metadata in ABI-v9 execution-body section",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      auto object = std::find_if(provider.objects.begin(), provider.objects.end(),
+          [&](const ObjectType& candidate) {
+            return candidate.name == owner ||
+                execution_body_short_name(candidate.name) ==
+                    execution_body_short_name(owner);
+          });
+      if (object == provider.objects.end())
+        throw CompileError(std::max(declaration_line, 0),
+            "execution-body method has no Section 1 object declaration",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      auto method = std::find_if(object->methods.begin(), object->methods.end(),
+          [&](const Method& candidate) { return candidate.name == name; });
+      if (method == object->methods.end() ||
+          !method_bodies.insert(execution_body_short_name(owner) + "::" + name).second)
+        throw CompileError(std::max(declaration_line, 0),
+            "execution-body method is undeclared or duplicated",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      method->line = declaration_line;
+      method->result_line = result_line;
+      method->source_file = file.string();
+      if (has_result) method->result_expression = std::move(result_expression);
+      while (std::getline(input, line) && line != "method_end") {
+        Stmt statement;
+        std::istringstream statement_input(line);
+        string tag;
+        statement_input >> tag;
+        if (tag != "stmt" || !execution_body_read_statement(
+                line, statement))
+          throw CompileError(std::max(declaration_line, 0),
+              "invalid method body record in ABI-v9 execution-body section",
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+        statement.source_file = file.string();
+        method->body.push_back(std::move(statement));
+      }
+      if (line != "method_end")
+        throw CompileError(std::max(declaration_line, 0),
+            "unterminated method body in ABI-v9 execution-body section",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      continue;
+    }
+    if (starts_with(line, "handler ")) {
+      std::istringstream header(line.substr(8));
+      string owner, name, source_file;
+      int declaration_line = 0;
+      size_t statement_count = 0, failure_arm_count = 0;
+      if (!(header >> std::quoted(owner) >> std::quoted(name) >>
+            declaration_line >> std::quoted(source_file) >> statement_count >>
+            failure_arm_count) || statement_count > 100000 ||
+          failure_arm_count > 100000)
+        throw CompileError(std::max(declaration_line, 0),
+            "invalid handler in ABI-v9 execution-body section",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      auto domain = std::find_if(provider.domains.begin(), provider.domains.end(),
+          [&](const Domain& candidate) {
+            return candidate.name == owner ||
+                execution_body_short_name(candidate.name) ==
+                    execution_body_short_name(owner);
+          });
+      if (domain == provider.domains.end())
+        throw CompileError(std::max(declaration_line, 0),
+            "execution-body handler has no Section 1 domain declaration",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      auto handler = std::find_if(domain->handlers.begin(), domain->handlers.end(),
+          [&](const Handler& candidate) { return candidate.name == name; });
+      if (handler == domain->handlers.end() ||
+          !handler_bodies.insert(execution_body_short_name(owner) + "::" + name).second)
+        throw CompileError(std::max(declaration_line, 0),
+            "execution-body handler is undeclared or duplicated",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      handler->line = declaration_line;
+      handler->source_file = file.string();
+      if (handler->failure_arms.size() != failure_arm_count)
+        throw CompileError(std::max(declaration_line, 0),
+            "execution-body failure-arm count disagrees with Section 1",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      for (size_t index = 0; index < statement_count; ++index) {
+        if (!std::getline(input, line))
+          throw CompileError(std::max(declaration_line, 0),
+              "truncated handler body in ABI-v9 execution-body section",
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+        Stmt statement;
+        std::istringstream statement_input(line);
+        string tag;
+        statement_input >> tag;
+        if (tag != "stmt" || !execution_body_read_statement(
+                line, statement))
+          throw CompileError(std::max(declaration_line, 0),
+              "invalid handler body record in ABI-v9 execution-body section",
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+        statement.source_file = file.string();
+        handler->body.push_back(std::move(statement));
+      }
+      for (size_t arm_index = 0; arm_index < failure_arm_count; ++arm_index) {
+        if (!std::getline(input, line) || !starts_with(line, "failure_arm "))
+          throw CompileError(std::max(declaration_line, 0),
+              "missing execution-body handler failure arm",
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+        std::istringstream arm_header(line.substr(12));
+        size_t declared_index = 0, arm_statement_count = 0;
+        int arm_line = 0;
+        if (!(arm_header >> declared_index >> arm_line >> arm_statement_count) ||
+            declared_index != arm_index || arm_statement_count > 100000)
+          throw CompileError(std::max(declaration_line, 0),
+              "invalid execution-body handler failure arm",
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+        auto& arm = handler->failure_arms[arm_index];
+        arm.line = arm_line;
+        arm.source_file = file.string();
+        for (size_t index = 0; index < arm_statement_count; ++index) {
+          if (!std::getline(input, line))
+            throw CompileError(std::max(arm_line, 0),
+                "truncated handler failure-arm body",
+                "SOURCE_FREE_EXECUTION_BODY_INVALID");
+          Stmt statement;
+          if (!execution_body_read_statement(line, statement))
+            throw CompileError(std::max(arm_line, 0),
+                "invalid handler failure-arm statement",
+                "SOURCE_FREE_EXECUTION_BODY_INVALID");
+          statement.source_file = file.string();
+          arm.body.push_back(std::move(statement));
+        }
+        if (!std::getline(input, line) || line != "failure_arm_end")
+          throw CompileError(std::max(arm_line, 0),
+              "unterminated handler failure-arm body",
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      }
+      if (!std::getline(input, line) || line != "handler_end")
+        throw CompileError(std::max(declaration_line, 0),
+            "unterminated handler body in ABI-v9 execution-body section",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      continue;
+    }
+    throw CompileError(0, "unknown record in ABI-v9 execution-body section",
+                       "SOURCE_FREE_EXECUTION_BODY_INVALID");
+  }
+  for (const auto& function : provider.functions) {
+    if (function.generic || function.static_dispatch) continue;
+    if (!function_bodies.count(execution_body_short_name(function.name)))
+      throw CompileError(std::max(function.line, 0),
+          "ABI-v9 execution-body section omits a concrete function body",
+          "SOURCE_FREE_EXECUTION_BODY_INVALID");
+  }
+  for (const auto& object : provider.objects)
+    for (const auto& method : object.methods)
+      if (!method_bodies.count(execution_body_short_name(object.name) +
+                               "::" + method.name))
+        throw CompileError(std::max(method.line, 0),
+            "ABI-v9 execution-body section omits an object method body",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+  for (const auto& domain : provider.domains)
+    for (const auto& handler : domain.handlers)
+      if (!handler_bodies.count(execution_body_short_name(domain.name) +
+                                "::" + handler.name))
+        throw CompileError(std::max(handler.line, 0),
+            "ABI-v9 execution-body section omits a handler body",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
 }
 
 static FailurePatternAbi parse_failure_pattern_text(const string& text);
@@ -13943,13 +14329,6 @@ static string source_free_declared_package_hash(const string& text) {
   if (end == string::npos) return {};
   return string(section1.substr(value_begin, end - value_begin));
 }
-
-struct ExecutionBodySectionView {
-  bool present = false;
-  size_t section_begin = 0;
-  string payload;
-  string package_fingerprint;
-};
 
 static bool execution_body_hash(const string& value) {
   return value.size() == 64 &&
@@ -15577,6 +15956,10 @@ static ParsedModuleUnit load_module_interface(
             "compiled provider has invalid ABI-v9 handler contract");
     }
   }
+  // Section 2 is admitted only after Section 1 signatures and provider
+  // contracts have passed validation. It supplies executable non-generic
+  // bodies without reopening the provider source tree.
+  parse_execution_body_payload(execution_bodies, provider, file);
   for (auto& function : provider.functions) {
     function.source_file = file.string();
     function.header = "fn " + function.name;
@@ -19445,6 +19828,7 @@ static string encode_execution_body_payload(
             << (function->exported ? 1 : 0) << " " << function->line << " "
             << function->result_line << " " << function->params.size() << " "
             << std::quoted(function->return_type.value_or("unit")) << " "
+            << std::quoted(interface_effects_text(function->observable_effects)) << " "
             << std::quoted(std::filesystem::path(function->source_file)
                                .filename().string()) << " "
             << (function->result_expression ? 1 : 0) << " "
@@ -19511,9 +19895,18 @@ static string encode_execution_body_payload(
               << std::quoted(handler->name) << " " << handler->line << " "
               << std::quoted(std::filesystem::path(handler->source_file)
                                  .filename().string()) << " "
-              << handler->body.size() << "\n";
+              << handler->body.size() << " "
+              << handler->failure_arms.size() << "\n";
       for (const auto& statement : handler->body)
         write_execution_body_statement(payload, statement);
+      for (size_t index = 0; index < handler->failure_arms.size(); ++index) {
+        const auto& arm = handler->failure_arms[index];
+        payload << "failure_arm " << index << " " << arm.line << " "
+                << arm.body.size() << "\n";
+        for (const auto& statement : arm.body)
+          write_execution_body_statement(payload, statement);
+        payload << "failure_arm_end\n";
+      }
       payload << "handler_end\n";
     }
   }
