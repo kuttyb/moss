@@ -538,8 +538,11 @@ now asserts that, on the same implicit-root fixture:
   and the native test executes the dependency-import test.
 
 The focused X2 test and `make c1-corpus-gates` pass after this change. The C1
-gate reports G-a **669/669**, G-b **67/67**, and zero failures. Full `make
-check` and frozen Architect review for this follow-up are pending.
+gate reports G-a **669/669**, G-b **67/67**, and zero failures. The frozen
+Architect review issued GO on exact commit `e0b8dcc23351a1f119117bdaa8aa39648b101d57`
+for the native implicit-import fix. Uninterrupted `make
+--jobs="$(nproc)" check` on that commit completed **150/150 jobs, 0 failures,
+0 skipped** (241.06s suite wall time).
 
 The Fast Debug/native corpus audit was rerun after the native lookup change.
 Counts below are for rows where the native command failed while the matching
@@ -591,7 +594,8 @@ the durable classification is:
   `sdk/text-encoding-acceptance` main/tests). These remain unresolved interface
   and tooling failures.
 
-The native implicit-root mismatch is fixed in the current working tree, but
-the reachable native errors and ABI-v10 interface/tooling rows block marking
-this branch as awaiting Bank go. Do not merge. Full-suite rerun and exact-SHA
-Architect review for the fix remain pending.
+The native implicit-root mismatch is fixed and reviewed, but the reachable
+native errors and ABI-v10 interface/tooling rows block marking this branch as
+awaiting Bank go. Do not merge. The issue has been reported to Bank for
+direction; no further broad native backend changes are authorized by this
+follow-up.
