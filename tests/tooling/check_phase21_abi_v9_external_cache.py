@@ -138,8 +138,9 @@ rejected = json.loads(run(consumer_project, MARGO, "build", "--json",
 assert_error_code(rejected, "SOURCE_FREE_ARTIFACT_CONTRACT_INVALID",
                   "corrupt provider rlib")
 
-# A genuinely external provider has only its copied interface and rlib. A
-# tampered freshness marker must fail specifically and remain untouched.
+# A genuinely external provider has only its copied interface and rlib. Its
+# altered source hash disagrees with the selected rlib contract and must be
+# rejected before source freshness is considered, without rewriting either file.
 external_source = OUT / "external-provider-source"
 (external_source / "src").mkdir(parents=True)
 (external_source / "moss.toml").write_text(
@@ -151,16 +152,14 @@ export fn answer() -> Int:
 run(external_source, MARGO, "build", "--json")
 external_path = OUT / "external-provider-artifacts"
 external_path.mkdir()
-for artifact in (external_source / "build/debug").glob("external.*"):
+external_build = external_source / "build/debug"
+for artifact in [*external_build.glob("external.*"),
+                 external_build / "libexternal.rlib"]:
+    assert artifact.is_file(), f"missing external provider artifact: {artifact}"
     shutil.copy2(artifact, external_path / artifact.name)
 external_interface = external_path / "external.mossi"
 shutil.rmtree(external_source)
 external_original = external_interface.read_text()
-external_tampered = re.sub(
-    r"(?m)^package_source_hash sha256:[0-9a-f]{64}$",
-    "package_source_hash sha256:" + "0" * 64, external_original)
-assert external_tampered != external_original
-external_interface.write_text(external_tampered)
 external_consumer = OUT / "external-consumer"
 (external_consumer / "src").mkdir(parents=True)
 (external_consumer / "moss.toml").write_text(
@@ -172,7 +171,20 @@ fn main():
 ''')
 rejected = json.loads(run(external_consumer, MARGO, "build", "--json",
                           provider_path=external_path, expected=1).stdout)
-assert_error_code(rejected, "MOSS_INTERFACE_STALE",
+assert_error_code(rejected, "SOURCE_FREE_PROVIDER_SOURCE_MISSING",
+                  "valid external provider without source")
+assert "provider source is missing" in str(rejected)
+assert external_interface.read_text() == external_original, \
+    "Margo must not recreate an external provider from an unavailable source"
+
+external_tampered = re.sub(
+    r"(?m)^package_source_hash sha256:[0-9a-f]{64}$",
+    "package_source_hash sha256:" + "0" * 64, external_original)
+assert external_tampered != external_original
+external_interface.write_text(external_tampered)
+rejected = json.loads(run(external_consumer, MARGO, "build", "--json",
+                          provider_path=external_path, expected=1).stdout)
+assert_error_code(rejected, "SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH",
                   "tampered source-free external provider")
 assert external_interface.read_text() == external_tampered, \
     "Margo must leave external provider artifacts untouched"

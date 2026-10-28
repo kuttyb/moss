@@ -15029,13 +15029,23 @@ static void validate_provider_source_freshness(
   auto root = find_project_root(interface_file.parent_path());
   string package_name = interface_file.stem().string();
   if (!root)
-    throw CompileError(0, stale_interface_message(package_name),
-                       "MOSS_INTERFACE_STALE");
+    throw CompileError(0, "provider source is missing for '" + package_name +
+                       "'; source-free artifact freshness cannot be verified",
+                       "SOURCE_FREE_PROVIDER_SOURCE_MISSING");
   try {
     const ProjectManifest manifest = load_project_manifest(*root);
     package_name = manifest.name;
-    if (package_hash.empty() ||
-        package_hash != package_source_freshness_hash(manifest))
+    string current_hash;
+    try {
+      current_hash = package_source_freshness_hash(manifest);
+    } catch (const ProjectError& error) {
+      if (error.code == "PROJECT_SOURCE_NOT_FOUND")
+        throw CompileError(0, "provider source is missing for '" + package_name +
+                           "'; source-free artifact freshness cannot be verified",
+                           "SOURCE_FREE_PROVIDER_SOURCE_MISSING");
+      throw;
+    }
+    if (package_hash.empty() || package_hash != current_hash)
       throw CompileError(0, stale_interface_message(package_name),
                          "MOSS_INTERFACE_STALE");
   } catch (const CompileError&) {
@@ -15054,9 +15064,17 @@ static void verify_source_free_provider_binding(
   if (source_free_contract_sha256(material) != declared)
     throw CompileError(0, "ABI-v9 provider metadata does not match its declared contract digest",
                        "SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH");
-  validate_provider_source_freshness(
-      interface_file, source_free_declared_package_hash(text));
-  if (!require_native_artifact) return;
+  const bool provider_source_available =
+      find_project_root(interface_file.parent_path()).has_value();
+  if (provider_source_available)
+    validate_provider_source_freshness(
+        interface_file, source_free_declared_package_hash(text));
+  if (!require_native_artifact) {
+    if (!provider_source_available)
+      validate_provider_source_freshness(
+          interface_file, source_free_declared_package_hash(text));
+    return;
+  }
   const auto rlib = selected_provider_rlib(interface_file);
   std::ifstream input(rlib, std::ios::binary);
   std::ostringstream archive;
@@ -15072,6 +15090,9 @@ static void verify_source_free_provider_binding(
   // binding; metadata copies are not evidence that the selected code matches.
   if (!starts_with(bytes, "!<arch>\n"))
     throw CompileError(0, "selected provider artifact is not a Rust rlib archive",
+                       "SOURCE_FREE_ARTIFACT_CONTRACT_INVALID");
+  if (bytes.size() == 8)
+    throw CompileError(0, "selected provider rlib archive has no members",
                        "SOURCE_FREE_ARTIFACT_CONTRACT_INVALID");
   std::size_t count = 0;
   string embedded;
@@ -15118,17 +15139,20 @@ static void verify_source_free_provider_binding(
       throw CompileError(0, "selected provider rlib has a truncated archive pad",
                          "SOURCE_FREE_ARTIFACT_CONTRACT_INVALID");
   }
-  if (count != 1)
+  if (count > 1)
     throw CompileError(0,
-        "selected provider artifact has missing or ambiguous ABI-v9 contract binding",
+        "selected provider artifact has ambiguous ABI-v9 contract binding",
         "SOURCE_FREE_ARTIFACT_CONTRACT_INVALID");
   const string expected = source_free_contract_marker(
       interface_file.stem().string(), declared,
       source_free_declared_package_hash(text));
-  if (embedded != expected)
+  if (count == 0 || embedded != expected)
     throw CompileError(0,
         "ABI-v9 provider metadata does not match the selected compiled artifact",
         "SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH");
+  if (!provider_source_available)
+    validate_provider_source_freshness(
+        interface_file, source_free_declared_package_hash(text));
 }
 
 // Staged ABI v10 carries the declaration records in canonical, sealed
