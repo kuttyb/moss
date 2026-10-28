@@ -11,7 +11,8 @@ import subprocess
 import sys
 
 from phase26_1_1_mossi_test_helpers import (
-    refresh_v9_execution_section, section1_digest_material,
+    normalize_section1_locations, refresh_v9_execution_section,
+    section1_digest_material,
     section1_semantic_exports)
 
 
@@ -219,7 +220,8 @@ for key, section in (("concrete_interface_hash", contract + "\n"),
                      ("interface_hash", contract + "\n"),
                      ("generic_semantic_hash", semantic)):
     tampered = re.sub(rf"(?m)^{key} [0-9a-f]{{16}}$",
-                      f"{key} {stable_hash(section)}", tampered)
+                      f"{key} {stable_hash(normalize_section1_locations(section))}",
+                      tampered)
 material = section1_digest_material(tampered)
 tampered = re.sub(r"(?m)^provider_contract_digest sha256:[0-9a-f]{64}$",
                   "provider_contract_digest sha256:" +

@@ -507,11 +507,11 @@ def ambient_semantic_interface(interface: Path) -> dict:
     if fields.get("schema_version") == "10":
         semantic = fields.get("semantic_contract_hash")
         binary = fields.get("binary_contract_hash")
-        if not semantic or not binary:
+        if not semantic:
             raise MargoError(f"missing ABI-v10 semantic or binary contract hash in {interface}")
         consumer_contract = "\n".join((fields["module_id"],
                                          fields.get("native_abi", ""),
-                                         binary, semantic)) + "\n"
+                                         binary or "", semantic)) + "\n"
         return {"module_id": fields["module_id"],
                 "native_abi": fields.get("native_abi", ""),
                 "semantic_contract_hash": semantic,

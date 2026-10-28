@@ -7,7 +7,7 @@ import re
 
 
 def section1_digest_material(text: str) -> str:
-    """Return provider seal bytes, excluding its self fields and Section 2."""
+    """Return normalized provider seal bytes, excluding self fields/S2."""
     material = re.sub(
         r"(?m)^provider_contract_digest sha256:[0-9a-f]{64}\n", "", text)
     material = re.sub(r"(?m)^package_source_hash [^\n]*\n", "", material)
@@ -15,7 +15,31 @@ def section1_digest_material(text: str) -> str:
     section2 = material.find(marker)
     if section2 >= 0:
         material = material[:section2 + 1]
-    return material
+    return normalize_section1_locations(material)
+
+
+def normalize_section1_locations(material: str) -> str:
+    """Mirror the compiler's Section 1 absolute-position normalization."""
+    normalized = []
+    for line in material.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("generic_stmt "):
+            line = re.sub(r"^(\s*generic_stmt\s+\S+\s+)\S+",
+                          r"\g<1>0", line, count=1)
+        elif stripped.startswith("generic_result "):
+            line = re.sub(r"^(\s*generic_result\s+)\S+",
+                          r"\g<1>0", line, count=1)
+        elif "_warning " in stripped:
+            if stripped.startswith(("object_method_warning ", "handler_warning ")):
+                line = re.sub(
+                    r'^(\s*\S+\s+"(?:\\.|[^"])*"\s+)\S+',
+                    r"\g<1>0", line, count=1)
+            else:
+                line = re.sub(r"^(\s*\S+\s+)\S+", r"\g<1>0", line)
+        elif stripped.startswith("generic_entity_id "):
+            line = re.sub(r"@(\d+)(?=\D|$)", "@0", line)
+        normalized.append(line)
+    return "\n".join(normalized) + ("\n" if material.endswith("\n") else "")
 
 
 def section1_semantic_exports(text: str) -> str:
@@ -24,7 +48,7 @@ def section1_semantic_exports(text: str) -> str:
     section2 = semantic.find(marker)
     if section2 >= 0:
         semantic = semantic[:section2] + "\n"
-    return semantic
+    return normalize_section1_locations(semantic)
 
 
 def refresh_v9_execution_section(text: str) -> str:

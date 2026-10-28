@@ -47,6 +47,30 @@
   the historical failed run remains recorded above.
 - Full `make check` and other final gates remain pending.
 
+## Exact-commit full-suite triage — `ba24a3a6`
+
+- Uninterrupted `make --jobs="$(nproc)" check` completed **141/150 passed,
+  9 failed, 0 skipped**, in 229.86 seconds. Failed jobs:
+  `check_phase21_imported_effects`, `check_phase25_nominal_identity`,
+  `check_phase25_typed_semantic_api`, `check_phase25_conformance`,
+  `check_phase25_r2_wp1_call_chain`, `check_phase25_r2_wp2_member`,
+  `check_phase25_r2_wp3_nominal`, `check_phase25_team_a_semantics`, and
+  `shard_abi_v10_units`.
+- Seven ABI-v10 package failures came from Margo's X3 fingerprint projection
+  requiring `binary_contract_hash` on older supported schema-v10 interfaces
+  that carry only `semantic_contract_hash`. The projection now accepts the
+  established semantic-only form and includes the binary hash when present.
+- `shard_abi_v10_units` uses opaque provenance payloads in codec fixtures.
+  Position normalization now changes only recognized v1 SourceProvenance
+  payloads and retains other payload bytes unchanged.
+- `check_phase21_imported_effects` reseals a synthetic ABI-v9 forgery. Its test
+  helper now mirrors normalized generic IR and quoted entity-position fields
+  when recomputing interface hashes.
+- Focused reruns pass: imported effects, ABI-v10 unit shard, X1 ABI-v10,
+  Phase 21 forgery, and Phase 21 source-free ABI. No failure required reading
+  dependency source or expanding ABI-v10 checked-body coverage. Full check
+  must be rerun on the next frozen commit.
+
 ## Implementation
 
 Fast Debug now scopes project checking from the selected `main` or test entries.

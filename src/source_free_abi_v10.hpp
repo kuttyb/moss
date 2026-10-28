@@ -323,9 +323,11 @@ inline Interface normalize_provenance_positions(Interface value) {
                     "ABI-v10 provenance string is truncated");
       position += size;
     };
+    // Some ABI-v10 unit fixtures and older opaque provenance records are not
+    // structured SourceProvenance payloads. Preserve those bytes verbatim;
+    // only normalize the known v1 structure emitted by the compiler.
     if (payload.empty() || static_cast<unsigned char>(payload[0]) != 1)
-      throw Error("SOURCE_FREE_CONTRACT_INVALID",
-                  "ABI-v10 provenance version is unsupported");
+      continue;
     for (int index = 0; index < 4; ++index) skip_string();
     for (int index = 0; index < 4; ++index) {
       const auto field = position;

@@ -16,7 +16,15 @@
   `.locations`, so deleting a sidecar could incorrectly skip its regeneration.
   Margo now tracks sidecars as outputs; the X1 regression deletes one and
   confirms provider-only repair with stable Section 1 hashes. Focused X1 passes.
-  Next: checkpoint/push and frozen Architect re-review, then final gates.
+  Architect GO at `ba24a3a6`; its first full check completed 141/150 with nine
+  failures. Triage found fixture/hash-normalizer compatibility issues: Margo's
+  v10 fingerprint path required binary hashes absent from supported legacy
+  v10 interfaces; the ABI-v10 location normalizer rejected opaque provenance
+  records used by unit fixtures; and the ABI-v9 forgery helper recomputed raw
+  rather than normalized hashes. Compatibility handling and helper updates
+  are in the worktree. Focused imported-effects, forgery, source-free ABI, X1
+  v10 and ABI-v10 unit shard checks pass. Next: commit/push, exact-SHA Architect
+  re-review, then rerun the full suite and remaining final gates.
 
 - Active branch `phase26-1-m1`; latest pushed checkpoint `39d4f282`, current X3/X4 changes uncommitted. The frozen code checkpoint `8ddf97e0` passed uninterrupted `make --jobs="$(nproc)" check`: **148/148 jobs, 0 failures, 0 skipped**, 240.58s wall time. The later full run at documentation-only `39d4f282` completed 147/148; its sole failure was `shard_phase5_tooling`, where LLDB-DAP timed out. An isolated rerun of that shard also timed out. On the current worktree, the isolated shard now passes completely, including live DAP with `/usr/bin/lldb-dap-18`. The earlier implementation checkpoint `beb27000` passed 148/148 as well.
 - Focused evidence also passes: C1 scope/package probes, Phase 21 A–F/root-totality, Phase 20 Executor/FileIO, Phase 25 S1/S2/S-B, typed semantic API, Team A, builtin generic typing (129/129), X1 ABI-v9/v10, Phase 15.9, Phase 22.4, Phase 106, G2 conformance (11/11), R2 WP1/WP2/WP3, ABI-v10 units, and SDK text-encoding Fast Debug (3/3).
