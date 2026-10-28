@@ -1,11 +1,10 @@
 # 26.1 + 26.1.1 complete; awaiting Bank go
 
-- Frozen docs-only candidate `647487e1` is pushed on `phase26-1-m1`.
-  Architect GO on the prior docs-only checkpoint confirms no implementation,
-  test, or build files changed; exact review of this final gate record is
-  pending. The full Bank gate set is recorded at the end of
-  `docs/phase26/PHASE_26_1_1_X2_RESULTS.md`. No merge to `main` until Bank's
-  explicit go.
+- Frozen docs-only checkpoint `e8c273f8` is pushed on `phase26-1-m1` and has
+  exact-SHA Architect GO. No implementation, test, build, or Margo files
+  changed since `e0b8dcc2`; final gate evidence carries as documented in
+  `docs/phase26/PHASE_26_1_1_X2_RESULTS.md`. Await Bank's explicit go before
+  merging to `main`.
 - The implicit-root fixture now passes native `margo build` and `margo test`;
   `moss check <file>` rejects without `MOSS_MODULE_PATH` and accepts with the
   provider path. Focused X2 and `make c1-corpus-gates` pass (G-a 669/669,
@@ -22,8 +21,9 @@
   differences against `origin/main`, 12 C1 + 3 T1 compiler-corpus rows,
   enforced package-perf, and compiler-perf with no slowdowns beyond noise.
   Fresh differential, C1, package-perf, compiler-perf, and v9 R12 results were
-  recorded on `647487e1`; full `make check` carries from implementation
-  checkpoint `e0b8dcc2` under Bank's docs-only exception.
+  recorded on `647487e1`; full `make check` passed 150/150 at implementation
+  checkpoint `e0b8dcc2`. Architect confirmed that these results carry to
+  `e8c273f8` under Bank's docs-only exception.
 
 ## Previous checkpoint notes
 

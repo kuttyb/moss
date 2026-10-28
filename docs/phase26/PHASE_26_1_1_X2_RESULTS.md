@@ -610,9 +610,9 @@ backend/package-resolution issues and are catalogued in Known issues in
 
 No implementation, test, build, or Margo files changed between implementation
 commit `e0b8dcc2` and this docs-only candidate. Architect confirmed the
-docs-only carry rule at `a3954019`; exact review of this final record is
-pending. The full `make check` at `e0b8dcc2` passed **150/150 jobs, 0 failed,
-0 skipped**, including the ABI-v10 suites.
+docs-only carry rule and issued exact-SHA GO at `e8c273f8`. The full `make
+check` at `e0b8dcc2` passed **150/150 jobs, 0 failed, 0 skipped**, including
+the ABI-v10 suites; that evidence carries to the final docs-only checkpoint.
 
 - Compiler corpus differential against `origin/main` `543722a9`: **2,064
   sources**, exactly **12 C1 + 3 T1** changed verdicts. Of 1,325 sources

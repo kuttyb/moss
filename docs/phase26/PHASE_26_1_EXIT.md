@@ -14,10 +14,10 @@ not Fast Debug defects. The frozen docs-only candidate `647487e1` has fresh
 corpus differential, C1, package-perf, compiler-perf, and v9 R12 evidence
 recorded in the X2 results. Uninterrupted `make check` passed 150/150 on
 implementation checkpoint `e0b8dcc2` and carries under Bank's docs-only
-exception. Architect GO at `a3954019` confirmed the intervening audit changed
-no implementation, test, or build files; exact review of `647487e1` is pending.
-Do not merge until Bank explicitly authorizes it; certified compiler-perf on
-clean `main` remains post-merge.
+exception. Architect issued exact-SHA GO on `e8c273f8`, confirming no
+implementation, test, build, or Margo files changed through this checkpoint
+and that the gate evidence carries. Do not merge until Bank explicitly
+authorizes it; certified compiler-perf on clean `main` remains post-merge.
 
 ## Known issues
 
