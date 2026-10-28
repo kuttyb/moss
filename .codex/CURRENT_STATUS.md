@@ -2,15 +2,15 @@
 
 - Branch `phase26-1-m1`; implementation commit `e0b8dcc2` is pushed.
   Uninterrupted `make --jobs="$(nproc)" check` passed 150/150 jobs, 0 failed,
-  0 skipped. The Bank-directed native baseline and backlog audit changed docs
-  only. Exact-SHA Architect confirmation of that fact is pending before
-  considering the prior final gates carried over. No merge to `main` until
+  0 skipped. The Bank-directed native baseline/backlog checkpoint `a3954019`
+  received Architect GO. It changes only status/results/exit docs relative to
+  the task base; no implementation, test, or build files changed. Prior gate
+  evidence carries under Bank's docs-only exception. No merge to `main` until
   Bank's explicit go.
 - The implicit-root fixture now passes native `margo build` and `margo test`;
   `moss check <file>` rejects without `MOSS_MODULE_PATH` and accepts with the
   provider path. Focused X2 and `make c1-corpus-gates` pass (G-a 669/669,
-  G-b 67/67). Full `make check` and Architect review of the follow-up remain
-  pending.
+  G-b 67/67). Full `make check` and Architect review of the code change passed.
 - The post-fix exact-entry C1 trace audit found v9: 14 native-fail / Fast-
   Debug-pass rows, of which 12 are reachable native backend failures also
   present on `origin/main` and 2 are confirmed unreachable; v10 additionally
@@ -22,6 +22,9 @@
   results: full check 150/150, zero R12 hits, the documented 3 Fast Debug
   differences against `origin/main`, 12 C1 + 3 T1 compiler-corpus rows,
   enforced package-perf, and compiler-perf with no slowdowns beyond noise.
+  The post-fix e0 checkpoint separately records full check, C1 gates, focused
+  X2/native agreement, and the v9/v10 corpus audit. No gate or timing study was
+  rerun for the docs-only a395 checkpoint; carryover is under Bank's exception.
 
 ## Previous checkpoint notes
 
