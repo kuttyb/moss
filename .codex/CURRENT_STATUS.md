@@ -12672,3 +12672,18 @@ merge commit itself, never only on either parent. Phase 26.1 was certified on
 parent `2223dfb` instead of merge commit `ac977ce`, leaving W2 red on main.
 Compiler-perf is a slowdown guard; report regressions and do not run timing
 studies.
+
+## Phase 26.2 delivered
+
+- Merge commit: `ff8d8f4ea2e856875f49eaa616d38c7d98693ae8`.
+- Merge-commit `make --jobs="$(nproc)" check`: 150/151 passed. The sole failure,
+  `moss-mode-cross-package-xref-source-location-known-regression` in
+  `shard_phase5_tooling`, is the permitted Emacs xref parallel flake.
+- Merge-commit compiler-perf: 77-input comparison against `c66fb76c`; aggregate
+  median -94.6%; no slowdowns beyond the noise floor. One +0.16 ms negative-
+  fixture increase was below the guard threshold.
+- ready-queue scheduler; one Cargo workspace per graph.
+- `moss build` rejects packages (`MOSS_PACKAGE_BUILD_REQUIRES_MARGO`).
+- W2 updated for inference convergence.
+- verify-mode inference gate.
+- cap-reached counter.
