@@ -16,8 +16,24 @@
   check passes. This is the expected R1 precedence for an invalid user-supplied
   root.
 - Item 1 commits: `a599a536` plus its test expectation follow-up (below).
-- Remaining stabilization items: deterministic parallel Emacs xref fixture,
-  compiler-perf merge-baseline documentation, and final branch/merge gates.
+- Item 3's historical expected-failure test (added by `4b14c07a`) tracked
+  cross-package xref returning `.mossi` interface locations. The `.locations`
+  sidecar from 26.1.1 closed that regression. The active fixture now caught a
+  separate Emacs cache defect: the cache key omitted dependency artifact
+  contents, so rebuilding a provider could leave the consumer's xref line
+  stale until the one-second cache expired. Dependency `.mossi` and
+  `.locations` content hashes are now part of the semantic-query cache key.
+- Before the fix, isolated ERT failed 10/10 on the provider line shift; in five
+  full parallel checks the xref ERT failed 3 times and passed 2 times (one other
+  shard failure was an unrelated `lldb-dap` timeout). After the fix, the focused
+  ERT passed and all 7 completed isolated ERT runs passed. Five complete full
+  parallel checks after the fix are still required.
+- No shared package build directory, Emacs server/socket, fixed port, or HOME
+  caused the xref result: the parallel runner isolates each job's worktree,
+  output directory, `MARGO_HOME`, and `TMPDIR`; Emacs runs in batch `-Q` mode.
+- Item 3 code is validated by the direct xref ERT and seven isolated ERT runs;
+  its repeated full parallel gate remains pending. Item 4 documentation is in
+  commit `5b85d68c`.
 
 ### Standing merge and delivery rules
 
