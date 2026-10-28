@@ -12989,3 +12989,23 @@ Tag `phase26-3-m1` targets the gated merge commit. No PR was created.
 - Native test executables are per test-file scope; package src is lowered and
   compiled once per test file. Accepted for now; revisit when a real package has
   many test files (options: namespace-aware lowering, or a test-profile src rlib).
+
+## Phase 26.3 item 2 delivered
+
+- Merge commit: `2134c10f1509b98fb6ee3b8a827407fd009771a9`; first parent and
+  compiler-perf baseline: `f554e4ae35b51d9390a0b8d856b110e09207ccc0`.
+- On the exact merge commit, `make --jobs="$(nproc)" check` passed 154/154,
+  with zero failures and zero skips.
+- `MOSS_PERF_BASELINE=f554e4ae35b51d9390a0b8d856b110e09207ccc0
+  MOSS_PERF_INCLUDE_REAL_WORLD=1 make compiler-perf` completed the full 77
+  fixtures with three interleaved repetitions. Aggregate medians: baseline
+  5.070 s, candidate 5.142 s (+1.4%).
+- Same-code aggregate repetition spread was 149 ms for baseline trials
+  (5.198, 5.071, 5.049 s) and 83 ms for candidate trials (5.203, 5.120,
+  5.141 s). The 72 ms candidate increase is within the 83 ms same-code spread.
+  No fixture exceeded the compiler-perf noise floor. Report:
+  `tmp/compiler-perf/20261028-122007/LOCAL_REPORT.md`.
+- R1-R6: file-scoped helpers, explicit imported test modules, and consistent
+  checker/Fast Debug/native behavior are delivered. `--interp --json`, F1-F6,
+  and the five-package native gate are included and passing.
+- Delivery tag `phase26-3-m2` targets the gated merge commit.
