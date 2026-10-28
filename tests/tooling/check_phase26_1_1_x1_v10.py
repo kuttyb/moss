@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import runpy
 import subprocess
 import sys
 import time
@@ -50,7 +51,29 @@ def build_check(app: Path, env: dict[str, str]) -> dict:
     return json.loads(result.stdout)
 
 
+def check_v10_fingerprint_projection() -> None:
+    margo_module = runpy.run_path(str(MARGO))
+    WORK.mkdir(parents=True, exist_ok=True)
+    probe = WORK / "fingerprint-probe.mossi"
+    base = ("moss-module-interface-v3\nmodule_id module-v1:provider\n"
+            "schema_version 10\nnative_abi 10\n"
+            "semantic_contract_hash sha256:" + "a" * 64 + "\n")
+    probe.write_text(base, encoding="utf-8")
+    semantic_only = margo_module["ambient_semantic_interface"](probe)
+    probe.write_text(base + "binary_contract_hash sha256:" + "b" * 64 + "\n",
+                     encoding="utf-8")
+    binary_b = margo_module["ambient_semantic_interface"](probe)
+    probe.write_text(base + "binary_contract_hash sha256:" + "c" * 64 + "\n",
+                     encoding="utf-8")
+    binary_c = margo_module["ambient_semantic_interface"](probe)
+    if binary_b["section1_sha256"] == binary_c["section1_sha256"]:
+        raise AssertionError("ABI-v10 binary contract hash is absent from fingerprint input")
+    if semantic_only["section1_sha256"] == binary_b["section1_sha256"]:
+        raise AssertionError("present ABI-v10 binary contract hash was not fingerprinted")
+
+
 def main() -> int:
+    check_v10_fingerprint_projection()
     library = WORK / "library"
     app = WORK / "app"
     for root, package, dependency in (

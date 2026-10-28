@@ -70,6 +70,12 @@
   Phase 21 forgery, and Phase 21 source-free ABI. No failure required reading
   dependency source or expanding ABI-v10 checked-body coverage. Full check
   must be rerun on the next frozen commit.
+- The next Architect review at `c861efc2` found that Margo's ABI-v10 parser
+  omitted `binary_contract_hash` from its field allowlist, so present binary
+  hashes were not included in consumer fingerprints. The parser now collects
+  the field. X1 v10 directly verifies that semantic-only legacy interfaces are
+  accepted and distinct present binary hashes produce distinct fingerprint
+  inputs; the focused gate passes.
 
 ## Implementation
 

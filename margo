@@ -500,7 +500,7 @@ def ambient_semantic_interface(interface: Path) -> dict:
         key, separator, value = line.partition(" ")
         if separator and key in {"module_id", "native_abi", "schema_version",
                                  "concrete_interface_hash", "generic_semantic_hash",
-                                 "semantic_contract_hash"}:
+                                 "semantic_contract_hash", "binary_contract_hash"}:
             fields[key] = value
     if "module_id" not in fields:
         raise MargoError(f"invalid module interface identity in {interface}")
