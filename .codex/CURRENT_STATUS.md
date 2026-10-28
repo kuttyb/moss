@@ -1,29 +1,23 @@
-# Phase 26.1.1 — final gate continuation — 2026-10-27
+# Phase 26.1 + 26.1.1 complete; awaiting Bank review — 2026-10-27
 
-- Active branch: `phase26-1-m1`. Last frozen/pushed code SHA before the current
-  parity repairs: `0d205f1c`. X1–X4 are implemented and Architect GO was recorded
-  at that SHA. Bank accepted the `[FAST_DEBUG_FILEIO]` test relaxation at
-  `b81bdb4d`; the Phase 5 tooling shard was rerun successfully with
-  `/usr/bin/lldb-dap-18` (the earlier timeout remains recorded historically).
-- The full `make check` passed 150/150, C1 corpus gates passed, package-perf
-  passed with target enforcement, and the 5-repetition compiler-perf rerun
-  passed the noise-floor rule at `0d205f1c`. Compiler-to-compiler differential
-  against `origin/main` found exactly the intended 12 C1 and 3 T1 rows; Rust
-  output is byte-identical where both revisions emit it.
-- The subsequent Fast Debug corpus sweep exposed an R12 hit in HashMap and
-  runtime failures in deque and data_pipeline. Those fixes are in the current
-  worktree; the complete 438-package / 127-test-file sweep now reports zero
-  R12 hits. Its only native-pass/Fast-Debug-fail entries are the three
-  `[FAST_DEBUG_FILEIO]` examples accepted by the Architect. These edits
-  invalidate earlier final gates for the current code.
-- `861fb2a9` is pushed; its uninterrupted `make check` passed 150/150. Frozen
-  Architect review was NO-GO: executable lookup must not return bodyless
-  `file_scope_pruned_functions`. The worktree now separates signature-only
-  lookup for map result typing from executable function lookup. Add a regression
-  that protects the R12 guard, then commit/push and obtain a new frozen review.
-- All final gates must be rerun on the repaired exact SHA; earlier corpus,
-  differential, C1, package-perf, and compiler-perf results are historical
-  because code changed after `0d205f1c`.
+- Active branch `phase26-1-m1`, final implementation SHA `6b1ae847`, pushed to
+  origin. Architect GO for X1+X2 is exact at this SHA. X1–X4 are implemented.
+- Final gates at `6b1ae847`: uninterrupted `make check` 150/150; Fast Debug
+  corpus 438 packages / 349 mains / 127 test files with zero R12 hits (only
+  three Architect-accepted `[FAST_DEBUG_FILEIO]` native-pass exceptions);
+  corpus differential 2,064 sources with exactly 12 C1 + 3 T1 rows and
+  unchanged Rust hashes for all 1,325 unchanged accepted rows; `make
+  c1-corpus-gates` passed G-a 668/668 and G-b 68/68; target-enforced
+  `package-perf` passed; five-repetition compiler-perf against `0872d642`
+  passed with no slowdown beyond the noise floor (aggregate +0.6%).
+- Nonblocking `MOSS_STAGED_ABI=v10` Fast Debug corpus run completed: 438
+  packages, 349 mains, 127 test files, zero R12 hits. It had 120 strict harness
+  failures; only two were native-pass/Fast-Debug-fail, both Architect-accepted
+  FileIO guards. See X2 results for details.
+- The Phase 5 tooling shard passes with `/usr/bin/lldb-dap-18`; the earlier
+  timeout remains recorded historically. The `[FAST_DEBUG_FILEIO]` relaxation
+  was explicitly accepted by the Architect at `b81bdb4d`. No merge to main;
+  awaiting Bank review and explicit go.
 
 ## Previous checkpoint notes
 

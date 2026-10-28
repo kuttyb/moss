@@ -414,3 +414,40 @@ shard_phase25_int_payloads
 shard_enum_modules
 shard_phase5_tooling
 ```
+
+## Final X1–X4 checkpoint — `6b1ae847` — 2026-10-27
+
+The final implementation is pushed on `phase26-1-m1`. Architect reviewed the
+frozen X1+X2 tree at `6b1ae847` and returned GO. A prior NO-GO at `861fb2a9`
+identified bodyless pruned declarations being visible to executable lookup;
+the final commit separates signature lookup from executable dispatch, leaving
+the R12 guard intact.
+
+Final gates at the exact implementation SHA:
+
+- Uninterrupted `make --jobs="$(nproc)" check`: **150 passed, 0 failed,
+  0 skipped** (242.38 s wall). `shard_phase5_tooling` passed; the previously
+  recorded LLDB-DAP timeout has been resolved on this work machine with
+  `/usr/bin/lldb-dap-18`.
+- Fast Debug corpus sweep: **438 packages, 349 mains, 127 test files**. The R12
+  guard fired zero times. The only native-success/Fast-Debug-failure cases were
+  `sdk/foundations/bytes/examples/range_copy`, `sdk/fs/examples/basic`, and
+  `sdk/host/io/feasibility/consumer`, each guarded by `[FAST_DEBUG_FILEIO]` and
+  covered by the Architect-accepted expectation at `b81bdb4d`.
+- Compiler-to-compiler differential against `origin/main`: **2,064 sources**,
+  baseline 1,325 accepted and candidate 1,339 accepted; exactly 15 changed
+  verdicts (12 C1 and 3 T1). All 1,325 unchanged accepted rows have identical
+  Rust hashes. The 3 T1 rows newly emit Rust; the changed C1 package-context
+  rows are fail-fast and emit none.
+- `make c1-corpus-gates`: passed; 2,064 tracked sources, 438 packages,
+  G-a **668/668**, G-b **68/68**, zero failures.
+- `MOSS_M1_ENFORCE_TARGETS=1 make package-perf`: passed with target enforcement
+  on; report `tmp/compiler-perf/m1-20261027-183253/M1_BASELINE.md`.
+- `MOSS_PERF_BASELINE=0872d642 MOSS_PERF_REPS=5 make compiler-perf`: 57
+  fixtures, aggregate median +0.6%, **no slowdown beyond the noise floor**.
+- Nonblocking `MOSS_STAGED_ABI=v10` Fast Debug corpus run completed across the
+  same 438 packages / 349 mains / 127 test files; R12 fired zero times. The
+  strict harness recorded 120 failures, of which only two were
+  native-success/Fast-Debug-failure, both Architect-accepted FileIO guards.
+
+Bank review is pending. No merge to `main` has occurred.
