@@ -12577,3 +12577,14 @@ selected linker, omit that unrelated absolute threshold, and replace it with
 a same-runner main/W1 comparison on both target workloads. The revised CI and
 final Architect review are pending. Callgrind attribution remains blocked
 because it is unavailable locally.
+
+## Phase 26.2 checkpoint (2026-10-27)
+
+Work is on `phase26-2-work`. Cargo now builds the generated per-package crates as a
+workspace, and this checkpoint fixes ambient provider discovery for binary v10
+`.mossi` interfaces by parsing textual header rows without decoding binary payloads.
+The focused checks `check_margo.py`, Phase 25 R2 WP2, Phase 25 R2 WP3, shared
+String linkage, and Phase 24 same-module type resolution pass after this fix.
+The earlier full suite result was 137/150 on `bb4b3f77`; it has not yet been
+rerun against the current working tree. The remaining Phase 26.2 work includes
+re-running the complete suite and reviewing retired source-free code paths.

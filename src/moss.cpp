@@ -22017,9 +22017,11 @@ static NativeArtifact compile_native_artifact(
           return path_within(interface_file, root);
         });
     if (cargo_driver && provider_is_in_graph) continue;
-    const string interface_text = read_text_file(
-        interface_file, "MOSS_INTERFACE_ERROR");
-    verify_source_free_provider_binding(interface_file, interface_text, true);
+    if (!staged_abi_v10()) {
+      const string interface_text = read_text_file(
+          interface_file, "MOSS_INTERFACE_ERROR");
+      verify_source_free_provider_binding(interface_file, interface_text, true);
+    }
     const auto provider_rlib = selected_provider_rlib(interface_file);
     source_key << "selected-provider " << selected.first << "\n"
                << interface_file.string() << "\n"
