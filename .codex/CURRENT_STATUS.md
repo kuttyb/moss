@@ -36,7 +36,7 @@
   its repeated full parallel gate remains pending. Item 4 documentation is in
   commit `5b85d68c`.
 
-## Phase 26.2 stabilization final report — stopped before merge
+## Phase 26.2 stabilization final report — branch gates green
 
 1. **Item 1:** Before the fix, Fast Debug exited 0 and printed `42` despite an
    explicitly supplied nonexistent source root. The code now rejects it with
@@ -57,28 +57,33 @@
    Emacs cache-key omission left rebuilt provider locations stale. Including
    provider `.mossi` and `.locations` hashes fixes it. Before: isolated ERT 0/10
    and full-parallel ERT 2/5 passed (3 failed). After: focused ERT and 7/7
-   completed isolated ERT runs passed; the single post-fix full check reached
-   the fixture and it passed, then hung later in LLDB. No open xref defect.
-   Commit: `e6866021`.
+   completed isolated ERT runs passed. No open xref defect. Commit: `e6866021`.
 4. **Item 4:** Merge and compiler-perf baseline rules are documented in
    `5b85d68c`.
-5. **Branch gate:** Pending after the attribution and harness changes; run five
-   complete parallel `make check` gates with no waivers before merging.
+5. **Branch gates:** Five consecutive full parallel `make check` runs on branch
+   head `2120ab48` passed **152/152 each**, with zero failures and zero skips.
+   In all five, `shard_phase5_tooling` and the source-location xref ERT passed.
 6. **LLDB attribution and timeout harness:** The former stall was a single LLDB
    CLI run where the debuggee remained in `ptrace_stop`. It did not reproduce in
-   five complete `shard_phase5_tooling` runs on either `d95188b0` or the branch.
-   The machine reports LLDB 18.1.3 and `kernel.yama.ptrace_scope=1`. No branch
-   only cause was found; this remains an intermittent, unclassified LLDB/ptrace
-   event. Commit `fe939c59` adds 600-second per-check timeouts by default, a
-   900-second override for the longest release-semantics check, a 300-second
+   five complete tooling-shard runs on `d95188b0` or five on the stabilization
+   head (5/5 pass on each). The machine reports LLDB 18.1.3 and
+   `kernel.yama.ptrace_scope=1`. No branch-only cause was found; the event
+   remains unclassified. Commit `fe939c59` adds 600-second per-check timeouts by
+   default, a 900-second override for the release-semantics check, a 300-second
    override for the live LLDB/DAP shard, process-group termination, and a
-   self-test proving the check name, 20-line output tail, and descendant cleanup.
+   self-test for the named failure, 20-line output tail, and descendant cleanup.
 7. **Item 2 diagnostic correction:** The external fixture now copies the actual
    `libexternal.rlib`. With no provider source, a valid external artifact reports
    `SOURCE_FREE_PROVIDER_SOURCE_MISSING`; a tampered `.mossi` whose contract no
    longer matches its rlib reports `SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH`.
    Available but changed provider source continues to report
    `MOSS_INTERFACE_STALE`. Commit `dcaa8969`.
+8. **Item E:** Doc-only commits to `main` are exempt from gates; all other
+   changes use a branch and gated merge. This rule is recorded above and in
+   `docs/phase26/PHASE_26_1_RULES.md`, commit `2120ab48`.
+9. **Merge:** Pending a final branch-head `make check`, then a merge commit with
+   `d95188b0` as first parent. Merge-commit `make check` and compiler-perf
+   against that first-parent hash remain required.
 
 ### Standing merge and delivery rules
 
