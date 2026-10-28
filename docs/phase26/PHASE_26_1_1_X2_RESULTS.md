@@ -415,7 +415,7 @@ shard_enum_modules
 shard_phase5_tooling
 ```
 
-## Final X1–X4 checkpoint — `6b1ae847` — 2026-10-27
+## Previous X1–X4 checkpoint — `6b1ae847` — 2026-10-27
 
 The final implementation is pushed on `phase26-1-m1`. Architect reviewed the
 frozen X1+X2 tree at `6b1ae847` and returned GO. A prior NO-GO at `861fb2a9`
@@ -455,3 +455,69 @@ Final gates at the exact implementation SHA:
   native-success/Fast-Debug-failure, both Architect-accepted FileIO guards.
 
 Bank review is pending. No merge to `main` has occurred.
+
+## Final repair and gates — `f4b1686a` — 2026-10-27
+
+The C1 corpus gate exposed a real package-check regression for implicit root
+modules importing dependency modules. Per-file check and Fast Debug resolved
+the checked dependency interface, but `margo build --check` skipped interface
+lookup and rejected the same reachable call. The fix enables interface lookup
+for semantic-only checks when Margo supplies `MOSS_MODULE_PATH`; native
+Rust-emitting analysis keeps its existing package behavior. The X2 fixture now
+asserts `margo build --check` accepts an implicit-root dependency import. The
+Architect reviewed frozen commit `f4b1686a` and returned GO. This commit is
+pushed to `origin/phase26-1-m1`.
+
+Final gates at the exact implementation commit:
+
+- Uninterrupted `make --jobs="$(nproc)" check`: **150 passed, 0 failed,
+  0 skipped**, 238.59 seconds wall time. `shard_phase5_tooling` passed,
+  including live DAP with `/usr/bin/lldb-dap-18`. The earlier timeout remains
+  recorded historically; the successful rerun resolves it for gate readiness.
+- Fast Debug against `origin/main`: **421 packages, 334 mains, 127 test
+  files**; exactly three differences: the two documented T1 generic-import
+  examples and the source-free dependency test case.
+- Native-vs-Fast-Debug corpus run: **438 packages, 349 mains, 127 test files**;
+  R12 guard hits **0**. The strict harness reported 98 raw rows; the three
+  native-success/Fast-Debug-failure rows are the Architect-accepted
+  `[FAST_DEBUG_FILEIO]` cases. Architect acceptance is recorded at
+  `b81bdb4d`.
+- Compiler corpus differential: **2,064 sources**; exactly **12 C1 + 3 T1**
+  changed rows. All **1,325** sources accepted by both revisions have
+  byte-identical generated Rust hashes. The changed rows are the 12 Calc /
+  Toolkit C1 cases and the three generic-import T1 cases.
+- `make c1-corpus-gates`: **G-a 669/669, G-b 67/67**, 438 packages, zero
+  failures (10 no-hit packages, 9 terminal stale-interface cases, 12 known
+  baseline packages).
+- `MOSS_M1_ENFORCE_TARGETS=1 make package-perf`: passed with enforcement on;
+  report is `tmp/compiler-perf/m1-20261027-200214/M1_BASELINE.md`.
+- Five-repetition `MOSS_PERF_BASELINE=0872d642 make compiler-perf`: 57
+  fixtures; aggregate medians **5.110 s baseline / 5.135 s candidate (+0.5%)**;
+  no slowdown beyond the noise floor. Report:
+  `tmp/compiler-perf/20261027-200238/LOCAL_REPORT.md`.
+- Nonblocking ABI-v10 Fast Debug corpus run: **438 packages, 349 mains, 127
+  test files**; R12 guard hits **0**. The strict harness reported 120 raw
+  rows; only two were native-success/Fast-Debug-failure, both accepted FileIO
+  guards.
+
+X3's corrected acceptance is covered: a dependency blank-line edit rewrites
+that provider's `.mossi`, Section 2 and `.locations`; normalized Section 1
+digests stay stable, no consumers are rechecked, and xref advances from line
+64 to 65. Real signature and generic-body edits still change Section 1.
+X4 covers dependency edits between runs, dependency domains, compatible and
+incompatible dependency generic instantiations, cross-package callbacks,
+ambiguous callbacks, empty filters and no-file test execution. Focused X1 v9,
+X1 v10, X2 and X4 gates pass.
+
+The final compiler-perf report's `rw_packages_regex` and
+`rw_sdk_datastructures` workloads measured 683.78 ms and 261.51 ms candidate
+medians. These are compiler-perf check workloads, not separate Fast Debug
+timings. No standalone Fast Debug timing study was run under Bank's no-timing-
+studies instruction. M1 E0–E3 single-run Margo check wall observations are in
+the package-perf report; for dependency-chain/core they were 37.565, 58.472,
+76.954 and 119.787 ms. The report's Fast Debug identity/count table is also
+included there.
+
+The branch is pushed and awaits Bank review. Do not merge to `main` until
+Bank's explicit go; certified compiler-perf remains a post-merge gate on clean
+`main`.

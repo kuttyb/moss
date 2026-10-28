@@ -1,6 +1,65 @@
 # Phase 26.1 exit status
 
-**Status: T1 implementation gates passed; Architect GO is recorded. Certified post-integration compiler-perf remains.**
+**Status: Phase 26.1 + 26.1.1 implementation gates passed; awaiting Bank review.**
+
+The Phase 26.1.1 X1–X4 closeout and exact-commit gates are recorded in
+[PHASE_26_1_1_X2_RESULTS.md](PHASE_26_1_1_X2_RESULTS.md). The completed branch
+is `phase26-1-m1`, implementation commit `f4b1686a`, pushed to origin. No merge
+to `main` has occurred. Bank's explicit go is required before a no-ff merge;
+certified compiler-perf on clean `main` remains post-merge.
+
+At `f4b1686a`, uninterrupted `make check` passed 150/150, C1 corpus gates
+passed G-a 669/669 and G-b 67/67, package-perf passed with target enforcement,
+the Fast Debug comparison against origin/main had only the documented three
+differences, and the compiler corpus differential contained only the 12 C1
+and 3 T1 rows with unchanged Rust hashes for 1,325 jointly accepted sources.
+Five-repetition compiler-perf against `0872d642` measured 5.110 s baseline and
+5.135 s candidate (+0.5%), with no slowdown beyond the noise floor. The
+nonblocking ABI-v10 Fast Debug run had zero R12 guard hits. The earlier
+LLDB-DAP timeout is retained in the historical record; the full Phase 5
+tooling shard later passed with `/usr/bin/lldb-dap-18`.
+
+No standalone Fast Debug timing study was run under Bank's no-timing-studies
+instruction. Compiler-perf's `rw_packages_regex` and `rw_sdk_datastructures`
+candidate medians were 683.78 ms and 261.51 ms; they are compiler check
+workloads, not Fast Debug timings. M1's single-run E0–E3 Margo check times and
+the Fast Debug identity/count table are in the linked X2 results and package-
+perf report.
+
+M1 dependency-chain/core E-scenario observations from package-perf were:
+
+| Edit | `margo build --check` wall time |
+|---|---:|
+| E0 | 37.565 ms |
+| E1 | 58.472 ms |
+| E2 | 76.954 ms |
+| E3 | 119.787 ms |
+
+Fast Debug count and artifact targets from the package-perf report:
+
+| Scenario | Functions / target | Dependency functions | Dependency packages fully checked | Artifacts changed / target |
+|---|---:|---:|---:|---:|
+| baseline reach | 1 / 1 | 0 | 0 | 0 / 0 |
+| baseline local | 1 / 1 | 0 | 0 | 0 / 0 |
+| dependency E0 | 0 / package | 0 | 0 | 0 / 0 |
+| E0 reach | 1 / 1 | 0 | 0 | 0 / 0 |
+| E0 local | 1 / 1 | 0 | 0 | 0 / 0 |
+| dependency E1 | 4 / package | 0 | 0 | 1 / 1 |
+| E1 reach | 1 / 1 | 0 | 0 | 0 / 0 |
+| E1 local | 1 / 1 | 0 | 0 | 0 / 0 |
+| dependency E2 | 8 / package | 0 | 0 | 2 / 2 |
+| E2 reach | 1 / 1 | 0 | 0 | 0 / 0 |
+| E2 local | 1 / 1 | 0 | 0 | 0 / 0 |
+| dependency E3 | 8 / package | 0 | 0 | 2 / 2 |
+| E3 reach | 1 / 1 | 0 | 0 | 0 / 0 |
+| E3 local | 1 / 1 | 0 | 0 | 0 / 0 |
+| app-only edit | 4 / package | 0 | 0 | 1 / 1 |
+| app-only reach | 1 / 1 | 0 | 0 | 0 / 0 |
+
+---
+
+## Prior Phase 26.1 / T1 status
+
 The C1 implementation checkpoint is `7bc75969ceea7988d45ed9ae619d17c4cde5f970`; Architect GO is for T1 SHA `18c04f2ea965fc71c6b835dd6b8690310e514656`.
 
 ## T1 outcome

@@ -1,25 +1,29 @@
-# Phase 26.1 + 26.1.1 complete; awaiting Bank review — 2026-10-27
+# 26.1 + 26.1.1 complete; awaiting Bank review.
 
-- Active branch `phase26-1-m1`, final implementation SHA `6b1ae847`, pushed to
-  origin. Architect GO for X1+X2 is exact at this SHA. X1–X4 are implemented.
-- Final gates at `6b1ae847`: uninterrupted `make check` 150/150; Fast Debug
-  corpus 438 packages / 349 mains / 127 test files with zero R12 hits (raw
-  native-vs-Fast-Debug strict harness reported 98 rows, with three
-  native-pass/Fast-Debug-fail rows, all Architect-accepted
-  `[FAST_DEBUG_FILEIO]` exceptions);
-  corpus differential 2,064 sources with exactly 12 C1 + 3 T1 rows and
-  unchanged Rust hashes for all 1,325 unchanged accepted rows; `make
-  c1-corpus-gates` passed G-a 668/668 and G-b 68/68; target-enforced
-  `package-perf` passed; five-repetition compiler-perf against `0872d642`
-  passed with no slowdown beyond the noise floor (aggregate +0.6%).
-- Nonblocking `MOSS_STAGED_ABI=v10` Fast Debug corpus run completed: 438
-  packages, 349 mains, 127 test files, zero R12 hits. It had 120 strict harness
-  failures; only two were native-pass/Fast-Debug-fail, both Architect-accepted
-  FileIO guards. See X2 results for details.
-- The Phase 5 tooling shard passes with `/usr/bin/lldb-dap-18`; the earlier
-  timeout remains recorded historically. The `[FAST_DEBUG_FILEIO]` relaxation
-  was explicitly accepted by the Architect at `b81bdb4d`. No merge to main;
-  awaiting Bank review and explicit go.
+- Active branch `phase26-1-m1`; final implementation commit `f4b1686a` is
+  pushed to origin. Architect GO for X1+X2 is exact at this SHA. X1–X4 are
+  implemented; no merge to `main` has occurred.
+- Final gates at `f4b1686a`: uninterrupted `make --jobs="$(nproc)" check`
+  passed 150/150, 0 failed, 0 skipped; `make c1-corpus-gates` passed G-a
+  669/669 and G-b 67/67; target-enforced `package-perf` passed.
+- Fast Debug comparison against `origin/main` completed over 421 packages,
+  334 mains and 127 test files. It found the three documented differences:
+  two T1 generic-import examples and the source-free dependency test case.
+  Current native-vs-Fast-Debug sweep covered 438 packages, 349 mains and 127
+  test files, with zero R12 guard hits. Its strict harness recorded 98 rows;
+  the three native-success/Fast-Debug-failure cases are Architect-accepted
+  `[FAST_DEBUG_FILEIO]` guards.
+- Compiler corpus differential: 2,064 sources; exactly 12 C1 + 3 T1 changed
+  rows; all 1,325 sources accepted by both revisions have byte-identical Rust
+  hashes. Five-repetition compiler-perf against `0872d642` had aggregate +0.5%
+  and no slowdowns beyond the noise floor.
+- Nonblocking ABI-v10 Fast Debug corpus run completed: 438 packages, 349
+  mains, 127 test files, 0 R12 hits. Its strict harness recorded 120 rows;
+  only two were native-success/Fast-Debug-failure, both accepted FileIO guards.
+- The Phase 5 tooling shard passed, including live DAP with
+  `/usr/bin/lldb-dap-18`; the earlier timeout remains recorded historically.
+  The FileIO expectation relaxation was explicitly accepted at `b81bdb4d`.
+  Awaiting Bank review and explicit authorization before any merge.
 
 ## Previous checkpoint notes
 
