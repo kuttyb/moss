@@ -1,15 +1,17 @@
-# Moss: Phase 26.3 — open issues and the ownership invariant
+# Moss: Phase 27 (Language Stabilization) — the ownership invariant and open issues
 
-Status: Oct 28 2026, round 3. **The ownership model is frozen.** Both peer reviewers gave GO; what remains is proof obligations, API semantics and implementation work, not reasons to reopen the model. Companion to `MOSS_PHASE_26_2_DECISIONS.md` and `MOSS_LAZY_EXPRESSION_TREE.md`.
+Status: Oct 28 2026, round 4. **The ownership model is frozen** (round 3; both peer reviewers GO). Round 4 records Phase 27 ownership of this work and the serial D3 order. This file keeps its Phase 26.3 name until renamed in git; it is the Phase 27 ownership doc. Companion to `MOSS_PHASE_26_2_DECISIONS.md` and `MOSS_LAZY_EXPRESSION_TREE.md`.
+
+**Phase 27 scope:** implement the frozen model below; update the spec, the other language docs, the examples, the Gentle Introduction and the SDK libraries (written under copy-snapshot semantics, some will be rejected rather than silently changed); move Moss from v0.1 to v0.9. The language version is a language contract (spec, docs, `moss --version`) and is kept separate from the ABI and `.mossi` format versions, which have their own compatibility rules. A language change may *cause* an ABI format change (per-parameter inferred effects in `.mossi`, M1); a documentation change never does. The Graph DSL is Phase 28.
 
 **Bottom line:**
 - **No open issue is Phase 26 fallout.** All of them predate Phase 26 code changes. Phase 26 work *surfaced* them: the 26.1.1 reachability audit found the borrow-checker rows, and the 26.3 `let` change found the optimizer's reliance on `let`. The one Phase 26 gap is in a gate: the corpus differential didn't compare `-O` output.
 - **S3 is a language correction first and a compiler cleanup second.** The current spec requires duplication in several operations. Removing `.clone()` from the emitter can't establish S3 while those operations remain.
-- **S3 is its own ownership workstream, not Phase 26 cleanup.** Order is in "Workstream order" below.
+- **S3 is its own ownership workstream.** Order is in "Workstream order" below.
 
 ## Frozen decisions
 
-- **S1. `let` is an alias for `var`.** Local mutability is inferred, never declared. The parser emits `Stmt::Kind::Var` for both keywords. Branch `phase26-3-let-alias` (`498d72f9`), being merged separately from S3.
+- **S1. `let` is an alias for `var`.** Local mutability is inferred, never declared. The parser emits `Stmt::Kind::Var` for both keywords. Delivered to `main` (`0ecfa51`, branch `phase26-3-let-alias`).
 - **S2. Assignment moves.** `b = a` on a non-`Copy` value consumes `a`, and any later use is `OWNERSHIP_USE_AFTER_CONSUME`. This is the existing spec (`LANGUAGE_SYNTAX.md` §Ownership and §Pipelines: "rejected rather than cloned implicitly").
 - **S3. Zero implicit duplication of non-trivial values.**
   - Every access to an existing Moss value has exactly one ownership effect: READ, WRITE or CONSUME. There is no fourth, implicit "duplicate" effect.
@@ -27,11 +29,12 @@ Status: Oct 28 2026, round 3. **The ownership model is frozen.** Both peer revie
   - Only designated built-in primitive types are implicitly `Copy`.
   - User-defined records are never `Copy`, even when every field is primitive. There is no user-defined `Copy` mechanism.
   - Adding or changing a field must never silently change a type's ownership semantics.
-- **D3. Sequencing.**
-  - The expression-tree foundation (per-occurrence identity and side tables) comes first. `MOSS_LAZY_EXPRESSION_TREE.md` already says new features such as the Graph DSL are built on the tree, so it is a prerequisite either way.
-  - Then S3 enforcement and the Graph DSL run in parallel on top of it.
-  - **Neither track defines ownership rules on its own.** Graph DSL lowering consumes the same checked ownership facts as every other Moss feature.
-  - Graph construction is exactly the indexed-borrow workload (`nxt.push(head[u])` is how adjacency lists are built), which makes the Graph DSL a natural validation target for S3.
+- **D3. Sequencing — serial (round 4; decided with the Phase 28 placement of the Graph DSL, confirmed by both peers).**
+  - **27.1:** expression tree — syntax and per-occurrence identity, validated in shadow mode, no consumer cut over (`MOSS_LAZY_EXPRESSION_TREE.md` §10).
+  - **27.2:** semantic side-table API keyed by (occurrence, specialization context) with usable, validated facts: specialization results, `TypeRef`s and the S3 ownership effect per occurrence. Empty infrastructure does not satisfy it. Consumer migration begins here.
+  - **S3 enforcement** (Phase 27), consuming those facts.
+  - **Phase 28:** the Graph DSL, built tree-first on a finished tree and a finished S3.
+  - D3's prerequisite is the tree **plus** the side tables; 27.1 alone does not satisfy it. Neither track defines ownership rules on its own: Graph DSL lowering consumes the same checked ownership facts as every other Moss feature. Graph construction is exactly the indexed-borrow workload (`nxt.push(head[u])` is how adjacency lists are built), which makes the Graph DSL a natural validation target for S3.
 - **M1. Ownership at call boundaries follows the callee's inferred effect.** No boundary ever duplicates a value.
 
 | Boundary | Callee effect on the parameter | Caller | Rust |
@@ -45,18 +48,18 @@ Status: Oct 28 2026, round 3. **The ownership model is frozen.** Both peer revie
   - A handler that replies with its payload gets CONSUME inferred on that parameter, so the value travels in and back out with no copy. With conditional replies, the effect joins to CONSUME if any path consumes.
   - `tests/payload_reply_record.moss` stays positive (the caller doesn't use `data` afterwards). Using the original after a consuming message becomes a negative test.
   - **Domain-state arguments:** passing a domain-state field to a handler that CONSUMEs it is rejected, because a value can't be moved out of locked state. It becomes legal through `replace` on that field (issue 7).
-  - **Across packages:** the inferred mode for each message parameter must be visible in `.mossi`. Check handler ABI generation and source-free interfaces.
+  - **Across packages:** the inferred mode for each message parameter must be visible in `.mossi`. Check handler ABI generation and source-free interfaces. A `.mossi` produced under v0.1 semantics is not interface-compatible with a v0.9 consumer even if its format is unchanged, so the effects (or the language-semantics version) must be carried explicitly.
 
 ## Open issues
 
 | # | Issue | Phase 26 fallout? | Next step |
 |---|---|---|---|
-| 1 | S3 enforcement (spec operations, check location, proof obligations) | No (pre-existing spec and emitter) | Workstream step 4–5 |
+| 1 | S3 enforcement (spec operations, check location, proof obligations) | No (pre-existing spec and emitter) | Workstream step 5 |
 | 2 | Group A: E0502 through the field-accessor trait | No (fails identically on pre-26.1 main) | Parked by Bank; candidate fix recorded |
 | 3 | T6: untyped `for` parameter inferred WRITE | No (found Sept 23 in the language-surface swarm) | Deferred |
 | 4 | `mutate_loop_element`: E0596 | No (fixture added Oct 27; fails identically on pre-26.1 main) | Agents: diagnose |
 | 5 | Conformance gates | Partly: the `-O` gap was in a Phase 26 gate | Workstream steps 2–3 |
-| 6 | Optimizer trusted `let` for fusion | No (pre-existing); surfaced by 26.3 | Done on branch; merging |
+| 6 | Optimizer trusted `let` for fusion | No (pre-existing); surfaced by 26.3 | **Done, on main (`0ecfa51`)** |
 | 7 | `swap` / `replace` built-ins | No (language gap) | Small follow-on; not a prerequisite for S3 |
 
 ### 1. S3 enforcement
@@ -90,8 +93,8 @@ Status: Oct 28 2026, round 3. **The ownership model is frozen.** Both peer revie
 
 **1c. Where the check lives.**
 - **In the semantic IR, before code generation.** The checker attaches an ownership effect to every evaluated expression occurrence; the emitter only translates it. There is no `clone_if_needed`-style escape.
-- **Ownership facts live on the lazy expression tree,** in side tables keyed by occurrence.
-- **Facts are authoritative across checking, optimization and lowering.** An expression the optimizer creates must derive valid ownership facts for its new context. It must never blindly inherit facts from an occurrence whose context has changed, or fusion could bypass the source's checks.
+- **Ownership facts live on the lazy expression tree,** in the 27.2 side table keyed by (occurrence, specialization context), because `Copy`-ness and M1 boundary modes depend on instantiated types.
+- **Facts are authoritative across checking, optimization and lowering.** An expression the optimizer creates is a new occurrence (new `ExprId`, per the tree's copy contract) and must derive valid ownership facts for its new context. It must never inherit facts from an occurrence whose context has changed, or fusion could bypass the source's checks.
 - **Payoff:** today the emitter decides whether to clone from the shape of an expression (indexed access, object view, borrowed parameter, cross-crate representation, message boundary). With authoritative facts, all of these lower uniformly.
 - **Second line of defence:** an audit of the generated Rust that flags any duplication of an existing non-`Copy` value not traced to a source operation, including copies hidden in helpers such as `__moss_value()`. It must be semantic; an emitter-side witness (a source clone ID required by the clone helper) is one way to implement it.
 
@@ -148,10 +151,10 @@ Three separate gates, made permanent parts of `make check`:
 - **Count in the harness, not inside the callback.** An observable counter inside a pure callback would change which optimizations are legal.
 - **The `-O` gap:** the corpus differential reported only `let`→`let mut` changes when `-O` output had also changed; only `shard_phase4_diff` caught it. The equivalence gate closes this.
 
-### 6. The optimizer trusted `let` for cross-binding fusion (done, merging)
+### 6. The optimizer trusted `let` for cross-binding fusion (done)
 
 - **What was wrong:** fusion needs a binding assigned exactly once. The optimizer took that from `let` by trusting the declaration (`explicitly_immutable`), and from a bare binding by inference; `var` got neither.
-- **Fix (branch `phase26-3-let-alias`, `498d72f9`):**
+- **Fix (`phase26-3-let-alias`, on main at `0ecfa51`):**
   - single-assignment inference for `var`, as for a bare binding; `explicitly_immutable` deleted;
   - the emitter's virtualized-producer skip covers `var` (without it, callbacks ran twice);
   - checker join and binding-ledger paths recognize `var`;
@@ -172,15 +175,18 @@ Three separate gates, made permanent parts of `make check`:
 ## Workstream order
 
 1. Freeze S3, D1, D2 and M1. **Done (round 3).**
-2. Finish the `let`/`var` branch (merging) and close the `-O` gap with the equivalence gate.
+2. `let`/`var` branch merged (**done**, `0ecfa51`); close the `-O` gap with the equivalence gate.
 3. Build the accepts-vs-rustc gate, with the ratcheting allowlist.
-4. Build the expression-tree foundation: per-occurrence identity and side tables.
-5. In parallel, both consuming the same ownership facts:
-   - S3 enforcement: checker first (reclassify or reject operations that need duplication), then remove emitter workarounds (collection, accessor, ABI, callback, message, return and recovery paths), with tests spanning source-backed and cross-package builds;
-   - the Graph DSL.
-6. Independent adversarial review: Rust borrow correctness, cross-domain locking and re-entry, ownership on exceptional paths, and duplication introduced by optimization.
+4. **Phase 27.1:** expression tree — syntax and occurrence identity, shadow-validated, no consumer cut over (`MOSS_LAZY_EXPRESSION_TREE.md` §10). **Kicked off Oct 28.**
+5. **Phase 27.2:** semantic side tables with validated facts, including the ownership effect per occurrence; consumer migration begins.
+6. S3 enforcement: checker first (reclassify or reject operations that need duplication), then remove emitter workarounds (collection, accessor, ABI, callback, message, return and recovery paths), with tests spanning source-backed and cross-package builds; SDK libraries migrated to the new semantics.
+7. Independent adversarial review: Rust borrow correctness, cross-domain locking and re-entry, ownership on exceptional paths, and duplication introduced by optimization.
+8. Spec, docs, examples, Gentle Introduction updated; `moss --version` to v0.9.
+9. **Phase 28:** the Graph DSL.
 
-## Implementation notes for steps 3–5 (not spec changes)
+Steps 2–3 are independent of 27.1 and can run beside it.
+
+## Implementation notes for steps 3–6 (not spec changes)
 
 - **`replace` is a compiler intrinsic, not an ordinary `&mut` function.** Called as a function, `replace(&mut self.nxt[u], …)` takes the mutable borrow of the place first and reproduces Group A's E0502. Evaluate `new_value` and every index expression into temporaries before borrowing the place.
 - **Inferred effects are part of the exported interface.** A handler refactor can flip a parameter from READ to CONSUME (for example, by starting to reply with it or `invoke` with it), which silently breaks callers in other packages.
@@ -198,6 +204,7 @@ Three separate gates, made permanent parts of `make check`:
 
 ## Revision log
 
+- Oct 28 2026 (round 4): Phase 27 ownership and scope (spec/docs/examples/SDK, v0.1→v0.9, language version separate from ABI/`.mossi` versions); D3 made serial — 27.1 tree → 27.2 side tables → S3 → Phase 28 Graph DSL — decided with the Phase 28 placement and confirmed by both peers; 27.1 alone does not satisfy D3's prerequisite; ownership facts keyed by (occurrence, specialization context); optimizer-created expressions are new occurrences; S1 and issue 6 recorded as delivered (`0ecfa51`); workstream order renumbered.
 - Oct 28 2026 (round 3): model frozen; both reviewers GO. S3 renamed "zero implicit duplication." D1 kept with per-type clone eligibility; D2 primitives-only; D3 resolved with the expression-tree foundation first, then S3 and the Graph DSL in parallel. 1a and 1b merged into M1, with `invoke` always CONSUME. `Map.delete` consumes `fallback` unconditionally. Re-entry: no path back to the sender in any mode; verify routing assumptions (alternate handles, host callbacks). Optimizer-created occurrences derive their own ownership facts. Issue 2: why the accessor trait exists, and a candidate projection fix. `swap` doesn't prove `i != j`; `replace` works on fields. Gates: three permanent gates with a ratcheting allowlist, counted in the harness.
 - Oct 28 2026 (round 2): S3 as a semantic invariant with "reject, never copy"; D1–D3 opened; static proof obligations; re-entrancy as a deadlock rule; reply ownership by inferred CONSUME; check moved to the semantic IR; `swap`/`replace` proposed.
 - Oct 28 2026 (round 1): messages are zero-copy; issue 1 expanded into five spec-level categories.
