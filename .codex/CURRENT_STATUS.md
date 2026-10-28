@@ -1,5 +1,18 @@
 # Phase 26.2 — Cargo package graph checkpoint
 
+## Phase 26.2 stabilization progress
+
+- Item 1 fixed on `phase26-2-stab`. Before the fix, `moss debug` with a valid
+  provider `.mossi` and `MOSS_FAST_DEBUG_SOURCE_ROOTS` naming a missing
+  directory exited 0 and printed `42`. It now exits 1 with
+  `PROJECT_SOURCE_NOT_FOUND`. The lost assertion was dropped in `3a22c1f5`.
+- Restored the direct Fast Debug assertion and made its `.mossi` case omit
+  source roots; that case still executes successfully. Margo strips obsolete
+  source-root overrides before invoking Moss. Focused Phase 15.8 check passes
+  11/11; `make moss-dev -j` and `python3 -m py_compile margo` pass.
+- Remaining stabilization items: R2 diagnostic specificity, deterministic
+  parallel Emacs xref fixture, and compiler-perf merge-baseline documentation.
+
 - Active branch: `phase26-2-work`, based on local `main` at `e97751ec`; no PR
   or merge to `main` is in scope. User authorized frequent local commits and
   normal pushes on this dev branch.

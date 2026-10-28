@@ -25334,6 +25334,34 @@ static bool fast_debug_execution_bodies_complete(const moss::Program& program) {
   return true;
 }
 
+static void validate_fast_debug_source_root_override() {
+  const char* roots_env = std::getenv("MOSS_FAST_DEBUG_SOURCE_ROOTS");
+  if (!roots_env) return;
+  const string roots = roots_env;
+  size_t begin = 0;
+  while (begin <= roots.size()) {
+    const size_t end = roots.find(':', begin);
+    const string root_text = roots.substr(
+        begin, end == string::npos ? string::npos : end - begin);
+    begin = end == string::npos ? roots.size() + 1 : end + 1;
+    if (root_text.empty())
+      throw moss::ProjectError(
+          "PROJECT_SOURCE_NOT_FOUND",
+          "Fast Debug received an empty dependency source root");
+    std::error_code absolute_error;
+    const auto root = std::filesystem::absolute(root_text, absolute_error)
+                          .lexically_normal();
+    std::error_code status_error;
+    if (absolute_error ||
+        !std::filesystem::is_directory(root, status_error) || status_error)
+      throw moss::ProjectError(
+          "PROJECT_SOURCE_NOT_FOUND",
+          "Fast Debug dependency source root is not a directory '" +
+              root.string() + "'",
+          root.string());
+  }
+}
+
 static moss::Program load_checked_interpreter_program(
     const std::filesystem::path& input, bool test_mode = false,
     std::map<std::string, std::string>* fileio_tests = nullptr,
@@ -25345,6 +25373,7 @@ static moss::Program load_checked_interpreter_program(
                   : moss::FastDebugScopeKind::Main,
         test_filter, all_package_tests};
     auto context = moss::analyze_source_context(input);
+    if (context.project) validate_fast_debug_source_root_override();
     if (test_mode && context.project) {
       context.mode = moss::ProgramGenerationMode::Tests;
       context.sources = moss::project_source_files(context.manifest);
