@@ -1,5 +1,6 @@
 module cbor_test
 import cbor
+import test_support
 
 fn decoded_int(input: Vector[Int]) -> Int:
   doc = cbor.decode(input)
@@ -23,17 +24,17 @@ test "decoder fixed RFC 8949 integer vectors and boundaries":
 
   nonpreferred = cbor.decode([24, 0])
   assertEqual(cbor.int_value(nonpreferred, cbor.root_id(nonpreferred)), 0)
-  assert(same_ints(cbor.encode(nonpreferred), [0]))
+  assert(test_support.same_ints(cbor.encode(nonpreferred), [0]))
 
 test "decoder fixed RFC payload primitive and container vectors":
   bytes_doc = cbor.decode([68, 1, 2, 3, 4])
-  assert(same_ints(cbor.byte_string(bytes_doc, cbor.root_id(bytes_doc)), [1, 2, 3, 4]))
+  assert(test_support.same_ints(cbor.byte_string(bytes_doc, cbor.root_id(bytes_doc)), [1, 2, 3, 4]))
 
   text_doc = cbor.decode([100, 73, 69, 84, 70])
-  assert(same_ints(cbor.text_bytes(text_doc, cbor.root_id(text_doc)), [73, 69, 84, 70]))
+  assert(test_support.same_ints(cbor.text_bytes(text_doc, cbor.root_id(text_doc)), [73, 69, 84, 70]))
 
   unicode_doc = cbor.decode([98, 195, 188])
-  assert(same_ints(cbor.text_scalars(unicode_doc, cbor.root_id(unicode_doc)), [252]))
+  assert(test_support.same_ints(cbor.text_scalars(unicode_doc, cbor.root_id(unicode_doc)), [252]))
 
   primitive_doc = cbor.decode([131, 245, 244, 246])
   primitive_root = cbor.root_id(primitive_doc)
@@ -45,14 +46,14 @@ test "decoder fixed RFC payload primitive and container vectors":
   map_doc = cbor.decode([162, 97, 97, 1, 97, 98, 131, 245, 246, 130, 2, 3])
   map_root = cbor.root_id(map_doc)
   assertEqual(cbor.map_length(map_doc, map_root), 2)
-  assert(same_ints(cbor.text_bytes(map_doc, cbor.map_key(map_doc, map_root, 0)), [97]))
+  assert(test_support.same_ints(cbor.text_bytes(map_doc, cbor.map_key(map_doc, map_root, 0)), [97]))
   assertEqual(cbor.int_value(map_doc, cbor.map_value(map_doc, map_root, 0)), 1)
   nested = cbor.map_value(map_doc, map_root, 1)
   assertEqual(cbor.array_length(map_doc, nested), 3)
   inner = cbor.array_get(map_doc, nested, 2)
   assertEqual(cbor.int_value(map_doc, cbor.array_get(map_doc, inner, 0)), 2)
   assertEqual(cbor.int_value(map_doc, cbor.array_get(map_doc, inner, 1)), 3)
-  assert(same_ints(cbor.encode(map_doc), [162, 97, 97, 1, 97, 98, 131, 245, 246, 130, 2, 3]))
+  assert(test_support.same_ints(cbor.encode(map_doc), [162, 97, 97, 1, 97, 98, 131, 245, 246, 130, 2, 3]))
 
 test "decoder advances past every additional argument width":
   integer_doc = cbor.decode([132, 24, 24, 25, 1, 0, 26, 0, 1, 0, 0, 27, 0, 0, 0, 1, 0, 0, 0, 0])
@@ -64,8 +65,8 @@ test "decoder advances past every additional argument width":
 
   nested_doc = cbor.decode([132, 88, 2, 1, 2, 121, 0, 2, 104, 105, 154, 0, 0, 0, 1, 0, 187, 0, 0, 0, 0, 0, 0, 0, 1, 1, 2])
   nested_root = cbor.root_id(nested_doc)
-  assert(same_ints(cbor.byte_string(nested_doc, cbor.array_get(nested_doc, nested_root, 0)), [1, 2]))
-  assert(same_ints(cbor.text_bytes(nested_doc, cbor.array_get(nested_doc, nested_root, 1)), [104, 105]))
+  assert(test_support.same_ints(cbor.byte_string(nested_doc, cbor.array_get(nested_doc, nested_root, 0)), [1, 2]))
+  assert(test_support.same_ints(cbor.text_bytes(nested_doc, cbor.array_get(nested_doc, nested_root, 1)), [104, 105]))
   nested_array = cbor.array_get(nested_doc, nested_root, 2)
   assertEqual(cbor.int_value(nested_doc, cbor.array_get(nested_doc, nested_array, 0)), 0)
   nested_map = cbor.array_get(nested_doc, nested_root, 3)
@@ -91,7 +92,7 @@ test "decoder linked ownership survives nested interleaving":
   assertEqual(cbor.parent_of(doc, one), nested)
   assertEqual(cbor.parent_of(doc, key), mapping)
   assertEqual(cbor.parent_of(doc, value), mapping)
-  assert(same_ints(cbor.encode(doc), [131, 129, 1, 161, 2, 3, 4]))
+  assert(test_support.same_ints(cbor.encode(doc), [131, 129, 1, 161, 2, 3, 4]))
 
 test "decoder rejects truncation trailing data reserved and indefinite forms":
   var caught_empty = false
@@ -346,8 +347,8 @@ test "encoder decoder semantic round trip":
   decoded_values = cbor.map_value(decoded, decoded_root, 0)
   assert(cbor.validate_complete(decoded))
   assertEqual(cbor.int_value(decoded, cbor.map_key(decoded, decoded_root, 0)), -7)
-  assert(same_ints(cbor.text_scalars(decoded, cbor.array_get(decoded, decoded_values, 0)), [128578]))
-  assert(same_ints(cbor.byte_string(decoded, cbor.array_get(decoded, decoded_values, 1)), [0, 127, 128, 255]))
+  assert(test_support.same_ints(cbor.text_scalars(decoded, cbor.array_get(decoded, decoded_values, 0)), [128578]))
+  assert(test_support.same_ints(cbor.byte_string(decoded, cbor.array_get(decoded, decoded_values, 1)), [0, 127, 128, 255]))
   assert(cbor.bool_value(decoded, cbor.array_get(decoded, decoded_values, 2)))
   assertEqual(cbor.node_kind(decoded, cbor.map_value(decoded, decoded_root, 1)), cbor.kind_null())
-  assert(same_ints(cbor.encode(decoded), wire))
+  assert(test_support.same_ints(cbor.encode(decoded), wire))

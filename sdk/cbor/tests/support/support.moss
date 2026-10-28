@@ -1,0 +1,12 @@
+module test_support
+
+export fn same_ints(left: Vector[Int], right: Vector[Int]) -> Bool:
+  if (left |> count) != (right |> count):
+    return false
+  count = left |> count
+  var index = 0
+  while index < count:
+    if left[index] != right[index]:
+      return false
+    index = index + 1
+  return true

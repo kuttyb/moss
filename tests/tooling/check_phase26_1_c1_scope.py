@@ -379,8 +379,8 @@ def main() -> int:
     assert consumer_debug.stdout == "42\n", (
         consumer_debug.stdout, consumer_debug.stderr)
 
-    # Whole-target test mode retains package-wide duplicate declarations
-    # across separate test files; file-by-file scoped checks cannot prove this.
+    # R3: same-named helpers in distinct test files are file-scoped and allowed,
+    # even when these helper files do not themselves declare test bodies.
     root, entry, env = new_package("c1_test_target_duplicates")
     entry.write_text("module c1_test_target_duplicates\nfn main():\n  pass\n")
     tests = root / "tests"
@@ -389,9 +389,8 @@ def main() -> int:
         (tests / f"{name}.moss").write_text(
             "module c1_test_target_duplicates\n"
             f"fn shared() -> Int:\n  return {value}\n")
-    duplicate_check = run([MARGO, "build", "--check"], root, env, ok=False)
-    duplicate_output = duplicate_check.stdout + duplicate_check.stderr
-    assert "shared" in duplicate_output, duplicate_output
+    duplicate_check = run([MARGO, "build", "--check"], root, env, ok=True)
+    assert "Checked 1 package" in duplicate_check.stdout, duplicate_check.stdout
 
     root, entry, env = new_package("c1_test_target_clean")
     entry.write_text("module c1_test_target_clean\nfn main():\n  pass\n")

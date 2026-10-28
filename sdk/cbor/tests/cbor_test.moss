@@ -1,16 +1,6 @@
 module cbor_test
 import cbor
-
-fn same_ints(left: Vector[Int], right: Vector[Int]) -> Bool:
-  if (left |> count) != (right |> count):
-    return false
-  count = left |> count
-  var index = 0
-  while index < count:
-    if left[index] != right[index]:
-      return false
-    index = index + 1
-  return true
+import test_support
 
 fn encode_int(value: Int) -> Vector[Int]:
   var doc = cbor.new_doc()
@@ -22,55 +12,55 @@ test "RFC 8949 primitive and shortest integer encodings":
   var null_doc = cbor.new_doc()
   null_node = cbor.add_null(null_doc)
   cbor.set_root(null_doc, null_node)
-  assert(same_ints(cbor.encode(null_doc), [246]))
+  assert(test_support.same_ints(cbor.encode(null_doc), [246]))
 
   var false_doc = cbor.new_doc()
   false_node = cbor.add_bool(false_doc, false)
   cbor.set_root(false_doc, false_node)
-  assert(same_ints(cbor.encode(false_doc), [244]))
+  assert(test_support.same_ints(cbor.encode(false_doc), [244]))
 
   var true_doc = cbor.new_doc()
   true_node = cbor.add_bool(true_doc, true)
   cbor.set_root(true_doc, true_node)
-  assert(same_ints(cbor.encode(true_doc), [245]))
+  assert(test_support.same_ints(cbor.encode(true_doc), [245]))
 
-  assert(same_ints(encode_int(0), [0]))
-  assert(same_ints(encode_int(23), [23]))
-  assert(same_ints(encode_int(24), [24, 24]))
-  assert(same_ints(encode_int(255), [24, 255]))
-  assert(same_ints(encode_int(256), [25, 1, 0]))
-  assert(same_ints(encode_int(65535), [25, 255, 255]))
-  assert(same_ints(encode_int(65536), [26, 0, 1, 0, 0]))
-  assert(same_ints(encode_int(4294967296), [27, 0, 0, 0, 1, 0, 0, 0, 0]))
-  assert(same_ints(encode_int(9223372036854775807), [27, 127, 255, 255, 255, 255, 255, 255, 255]))
-  assert(same_ints(encode_int(-1), [32]))
-  assert(same_ints(encode_int(-24), [55]))
-  assert(same_ints(encode_int(-25), [56, 24]))
-  assert(same_ints(encode_int(-1000), [57, 3, 231]))
-  assert(same_ints(encode_int((-9223372036854775807 - 1)), [59, 127, 255, 255, 255, 255, 255, 255, 255]))
+  assert(test_support.same_ints(encode_int(0), [0]))
+  assert(test_support.same_ints(encode_int(23), [23]))
+  assert(test_support.same_ints(encode_int(24), [24, 24]))
+  assert(test_support.same_ints(encode_int(255), [24, 255]))
+  assert(test_support.same_ints(encode_int(256), [25, 1, 0]))
+  assert(test_support.same_ints(encode_int(65535), [25, 255, 255]))
+  assert(test_support.same_ints(encode_int(65536), [26, 0, 1, 0, 0]))
+  assert(test_support.same_ints(encode_int(4294967296), [27, 0, 0, 0, 1, 0, 0, 0, 0]))
+  assert(test_support.same_ints(encode_int(9223372036854775807), [27, 127, 255, 255, 255, 255, 255, 255, 255]))
+  assert(test_support.same_ints(encode_int(-1), [32]))
+  assert(test_support.same_ints(encode_int(-24), [55]))
+  assert(test_support.same_ints(encode_int(-25), [56, 24]))
+  assert(test_support.same_ints(encode_int(-1000), [57, 3, 231]))
+  assert(test_support.same_ints(encode_int((-9223372036854775807 - 1)), [59, 127, 255, 255, 255, 255, 255, 255, 255]))
 
 test "empty definite-length payloads and containers":
   var text_doc = cbor.new_doc()
   text = cbor.add_text_bytes(text_doc, Vector[Int]())
   cbor.set_root(text_doc, text)
-  assert(same_ints(cbor.encode(text_doc), [96]))
+  assert(test_support.same_ints(cbor.encode(text_doc), [96]))
 
   var bytes_doc = cbor.new_doc()
   data = cbor.add_byte_string(bytes_doc, Vector[Int]())
   cbor.set_root(bytes_doc, data)
-  assert(same_ints(cbor.encode(bytes_doc), [64]))
+  assert(test_support.same_ints(cbor.encode(bytes_doc), [64]))
 
   var array_doc = cbor.new_doc()
   array = cbor.add_array(array_doc)
   cbor.set_root(array_doc, array)
   assertEqual(cbor.array_length(array_doc, array), 0)
-  assert(same_ints(cbor.encode(array_doc), [128]))
+  assert(test_support.same_ints(cbor.encode(array_doc), [128]))
 
   var map_doc = cbor.new_doc()
   mapping = cbor.add_map(map_doc)
   cbor.set_root(map_doc, mapping)
   assertEqual(cbor.map_length(map_doc, mapping), 0)
-  assert(same_ints(cbor.encode(map_doc), [160]))
+  assert(test_support.same_ints(cbor.encode(map_doc), [160]))
 
 test "owned UTF-8 text and byte strings":
   var text_source = [97, 195, 169, 240, 159, 153, 130, 122]
@@ -78,9 +68,9 @@ test "owned UTF-8 text and byte strings":
   text = cbor.add_text_bytes(doc, text_source)
   text_source[0] = 120
   cbor.set_root(doc, text)
-  assert(same_ints(cbor.text_bytes(doc, text), [97, 195, 169, 240, 159, 153, 130, 122]))
-  assert(same_ints(cbor.text_scalars(doc, text), [97, 233, 128578, 122]))
-  assert(same_ints(cbor.encode(doc), [104, 97, 195, 169, 240, 159, 153, 130, 122]))
+  assert(test_support.same_ints(cbor.text_bytes(doc, text), [97, 195, 169, 240, 159, 153, 130, 122]))
+  assert(test_support.same_ints(cbor.text_scalars(doc, text), [97, 233, 128578, 122]))
+  assert(test_support.same_ints(cbor.encode(doc), [104, 97, 195, 169, 240, 159, 153, 130, 122]))
 
   var snapshot = cbor.text_bytes(doc, text)
   snapshot[0] = 99
@@ -89,8 +79,8 @@ test "owned UTF-8 text and byte strings":
   var bytes_doc = cbor.new_doc()
   data = cbor.add_byte_string(bytes_doc, [1, 2, 255])
   cbor.set_root(bytes_doc, data)
-  assert(same_ints(cbor.byte_string(bytes_doc, data), [1, 2, 255]))
-  assert(same_ints(cbor.encode(bytes_doc), [67, 1, 2, 255]))
+  assert(test_support.same_ints(cbor.byte_string(bytes_doc, data), [1, 2, 255]))
+  assert(test_support.same_ints(cbor.encode(bytes_doc), [67, 1, 2, 255]))
 
 test "linked edges preserve interleaved nested ownership":
   var doc = cbor.new_doc()
@@ -121,7 +111,7 @@ test "linked edges preserve interleaved nested ownership":
   assertEqual(cbor.map_value(doc, mapping, 0), value)
   assertEqual(cbor.parent_of(doc, one), nested)
   assertEqual(cbor.parent_of(doc, mapping), root)
-  assert(same_ints(cbor.encode(doc), [131, 129, 1, 161, 2, 3, 4]))
+  assert(test_support.same_ints(cbor.encode(doc), [131, 129, 1, 161, 2, 3, 4]))
 
 test "maps preserve insertion order with Int and text keys":
   var doc = cbor.new_doc()
@@ -136,7 +126,7 @@ test "maps preserve insertion order with Int and text keys":
   assertEqual(cbor.map_length(doc, root), 2)
   assertEqual(cbor.map_key(doc, root, 0), int_key)
   assertEqual(cbor.map_value(doc, root, 1), bool_value)
-  assert(same_ints(cbor.encode(doc), [162, 1, 2, 97, 97, 245]))
+  assert(test_support.same_ints(cbor.encode(doc), [162, 1, 2, 97, 97, 245]))
 
 test "duplicate map keys are typed and atomic":
   var int_doc = cbor.new_doc()

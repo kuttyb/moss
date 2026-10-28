@@ -12869,6 +12869,77 @@ studies.
 - verify-mode inference gate.
 - cap-reached counter.
 
+## Phase 26.3 native test helpers — Step 1 measurements (2026-10-28)
+
+Branch `phase26-3-native-tests` starts at `origin/main` `5e3c7506`. Step 1 was
+measurement-only; no compiler or test-source changes were made.
+
+| Package | Native `margo test --json` | Interpreter | First error |
+|---|---:|---:|---|
+| `sdk/encoding` | 5/0/5 | 5/0/5 | none |
+| `sdk/cbor` | 34/0/34 | 34/0/34 | none |
+| `packages/compress` | 8/0/8 | 8/0/8 | none |
+| `sdk/text-encoding-acceptance` | 3/0/3 | 3/0/3 | none |
+| `sdk/binary` | 9/0/9 | 9/0/9 | none |
+
+`margo test --interp --json` is unsupported (Moss reports that interpreter
+tests do not yet support `--json`), so interpreter counts use
+`../../margo test --interp` output. Native results used the requested JSON mode.
+The only cross-test-file helper use found in `sdk/`, `packages/`, `examples/`,
+and `tests/fixtures/` is `sdk/cbor/tests/cbor_decoder_test.moss` calling
+`same_ints`, declared in `sdk/cbor/tests/cbor_test.moss` (four calls in the
+decoder's first two tests and further calls later in that file). The requested
+`tests/fixtures/` directory is absent on this branch. Other scanned helper
+references are local to their declaring test file; the apparent `key` match in
+the heap example is only prose in a test title. This is the sole Step 1
+migration candidate; Step 2 will move it into an explicit test module.
+
+Correction from the Phase 26.3 follow-up: the backlog claim that native
+`moss test` failed to emit test helpers/types/rlibs is false. Native `margo test`
+passed the five measured helper-bearing packages. The decisions-doc backlog
+entry has been removed; test helpers already lower natively.
+
+Phase 26.3 implementation checkpoint: the cbor helper was moved to
+`tests/support/support.moss` as `test_support.same_ints`, with explicit imports
+and qualified calls in both cbor test files. Native cbor tests pass 34/34 and
+interpreter cbor tests pass 34/34. `make moss-dev -j` passes. A temporary
+two-file project probe confirmed that `moss check` rejects a cross-file helper
+reference as `UNKNOWN_SYMBOL_OR_TYPE` and gives the requested move/import hint.
+The file-scope checker path now filters unimported test-file function helpers.
+
+The earlier incomplete checkpoint above is superseded by the Phase 26.3
+continuation below.
+
+## Phase 26.3 item 2 continuation (from 4601a468)
+
+- Confirmed native `margo test` already passes the five helper-bearing packages;
+  removed the incorrect “native test helpers are not emitted” backlog item from
+  the decisions doc and corrected the cheat sheet.
+- Implemented test-file helper scoping and cross-file
+  `UNKNOWN_SYMBOL_OR_TYPE` diagnostics with the move-to-import hint. Native
+  execution and Fast Debug run test-file scopes independently; source tests
+  retain their shared R6 scope. Test-only imported modules are available to the
+  test target but excluded from package interfaces.
+- Native tests currently use one generated executable per test-file scope.
+  Combining scoped units into one Rust executable is not supported by the
+  current lowering interface: it accepts one checked `Program`, and combining
+  those programs requires a new compiler-level namespace/remapping pass to
+  disambiguate Rust declarations and test harness entry points. Keep the
+  approved semantics and current separate-link fallback; do not broaden this
+  task into a new lowering architecture.
+- Added matching JSON result output for `margo test --interp --json` and
+  `moss test --interp --json`.
+- F1-F6 fixtures pass in native, Margo interpreter, and direct Moss interpreter
+  modes. Five-package native gate passes: encoding 5/5, cbor 34/34, compress
+  8/8, text-encoding-acceptance 3/3, binary 9/9; all report 0 failures and the
+  declared test count.
+- Updated TESTING.md and BUILD_SYSTEM.md for R1-R6 and included an explicit
+  test-module example. `make --jobs="$(nproc)" check` passes 154/154 with zero
+  failures and zero skips. The earlier full runs exposed the worktree-path
+  scope bug and Fast Debug output/diagnostic mismatches; these were corrected,
+  and the final run is green. Feedback validation passes. Push the completed
+  branch after committing this closeout.
+
 ## Phase 26.3 item 7 — parse-cache purity — delivered (2026-10-28)
 
 Branch `phase26-3-work` was created from `origin/main` at `5e3c7506` and
@@ -12911,3 +12982,10 @@ against the first parent:
   reproduction rerun was required.
 
 Tag `phase26-3-m1` targets the gated merge commit. No PR was created.
+
+
+### Phase 26.3 item 2 follow-up backlog
+
+- Native test executables are per test-file scope; package src is lowered and
+  compiled once per test file. Accepted for now; revisit when a real package has
+  many test files (options: namespace-aware lowering, or a test-profile src rlib).

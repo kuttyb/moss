@@ -23471,6 +23471,28 @@ class Checker {
         auto method = resolve_method(current_object_->name, name, argument_types);
         if (method) return;
       }
+      for (const auto& pruned : p_.file_scope_pruned_functions) {
+        if (pruned.name != name || pruned.source_file.empty()) continue;
+        auto source = std::filesystem::path(pruned.source_file)
+                          .lexically_normal();
+        auto test_dir = source.parent_path();
+        while (!test_dir.empty() && test_dir.filename() != "tests")
+          test_dir = test_dir.parent_path();
+        auto current = std::filesystem::path(current_source_file_)
+                           .lexically_normal();
+        auto current_test_dir = current.parent_path();
+        while (!current_test_dir.empty() &&
+               current_test_dir.filename() != "tests")
+          current_test_dir = current_test_dir.parent_path();
+        if (test_dir.empty() || current_test_dir.empty() ||
+            test_dir != current_test_dir || source == current)
+          continue;
+        auto relative = source.lexically_relative(test_dir).generic_string();
+        err(line, "unknown local function '" + name +
+            "'; hint: declared in tests/" + relative +
+            "; move it into a test module and import it",
+            "UNKNOWN_SYMBOL_OR_TYPE");
+      }
       err(line, "unknown local function '" + name + "'");
     }
     if (resolved_target) *resolved_target = function_target;

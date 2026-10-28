@@ -84,7 +84,6 @@ Not in the delivered merge. Assigned to `phase26-2-work`, then a new merge with 
 ## 9. Backlog (not 26.2)
 
 - Ownership analysis accepts code Rust's borrow checker rejects (E0502/E0596).
-- Native `moss test` doesn't emit test helpers, test types or test rlibs.
 - Implicit-module identity has two keys.
 - Consumer-local view adapters (`*View`) must never cross a crate boundary.
 - Emacs xref fixture flaky under parallel `make check` only; the fixture's name says "known-regression", so check what regression it tracks.

@@ -33,22 +33,22 @@ Tests can appear in:
 The configured application source is always considered during test discovery.
 The `tests/` directory itself is optional.
 
-### Temporary uber-module compilation
+### Test target visibility
 
-For legacy projects without explicit `module` declarations, `moss test`
-parses application files and recursively discovered test files as one logical
-compilation unit:
+The test target includes `src/**/*.moss + tests/**/*.moss`, with these rules:
 
-```text
-src/**/*.moss + tests/**/*.moss
-```
+- Every test file can access all declarations in `src/`, exported or not.
+- A helper in `tests/foo.moss` is visible only in that file. Another test file
+  cannot use it implicitly; Moss reports `UNKNOWN_SYMBOL_OR_TYPE` with a hint
+  to move the helper into an imported test module.
+- Different test files may declare same-named helpers. A test helper that
+  collides with a source declaration remains a duplicate-symbol error.
+- Shared helpers live in an explicit module under `tests/`; each consuming test
+  file imports it. Test modules are excluded from package `.mossi` files and
+  are not visible to dependent packages. There are no test rlibs.
+- Tests declared inside `src/` retain their existing behavior.
 
-Therefore `tests/arithmetic.moss` can call a function defined in any `src` file
-without an import. Files are loaded in deterministic path order, but ordinary
-declarations are resolved across the complete set and do not depend on that
-order. Duplicate global names remain errors.
-
-For a self-contained example, helpers may still be declared in the test file:
+For a self-contained example, declare a helper in the test file:
 
 ```moss
 fn doubled(value: int) -> int:
@@ -58,22 +58,38 @@ test "external arithmetic":
   assertEqual(doubled(21), 42)
 ```
 
-If a test needs application-local declarations, place that test in the
-configured application source beside those declarations. This is a current
-project-model limitation, not a requirement to duplicate generated Rust.
+For helpers shared by multiple test files, use an explicit test module:
+
+```moss
+// tests/support/support.moss
+module test_support
+export fn expected_answer() -> Int:
+  return 42
+```
+
+```moss
+// tests/arithmetic.moss
+module arithmetic_tests
+import test_support
+test "shared expected value":
+  assertEqual(test_support.expected_answer(), 42)
+```
+
+Each consuming test file must import `test_support`.
 
 `margo test --release` builds the package and its path dependencies with the
 optimized profile and runs the same tests.
 
 Ordinary `moss build` and `moss build --release` do not include test files or
-generate a test harness. Test declarations are included only when `moss test`
-builds its combined target under `build/test/`.
+generate a test harness. Tests are included only when `moss test` builds the
+test target under `build/test/`; each test-file scope currently gets its own
+native executable.
 
 When a project test constructs or calls domains, it uses the same temporary
 static-composition model as the application target. Domain instances must be
 constructed in the application's `main` composition prefix; test files add test
-declarations to the `src/**/*.moss + tests/**/*.moss` logical compilation unit,
-but do not create a second domain universe.
+declarations to the test target under the visibility rules above, but do not
+create a second domain universe.
 
 ## Assertions
 
@@ -310,7 +326,8 @@ Common checks:
 - Confirm that the declaration is top-level, quoted, ends in `:`, and has a
   nonempty indented body.
 - Remember that filters are case-sensitive substrings.
-- Keep external-test helpers in the same file until Moss has modules/imports.
+- Put helpers shared across test files in a module under `tests/` and import it
+  from each consumer.
 - Run project commands sequentially; Phase 7 does not lock shared artifact
   directories against concurrent invocations.
 - Use `moss clean` to discard generated harness caches if an artifact was

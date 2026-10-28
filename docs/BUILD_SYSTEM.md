@@ -198,15 +198,24 @@ moss test  -> all src/**/*.moss + all tests/**/*.moss
 moss bench -> all src/**/*.moss + all benches/**/*.moss
 ```
 
-Each target is one logical compilation unit with one global namespace. There
-are no implicit directory namespaces; duplicate top-level names are ordinary
-Moss duplicate-symbol errors. Physical source paths remain attached to
-diagnostics, `.mossmap` entries, tests, and benchmarks.
+Build and benchmark targets retain their existing package-wide declaration
+scope. The test target has file-scoped helpers: every test file sees all `src/`
+declarations, while a declaration in one `tests/` file is private to that file.
+Same-named helpers in separate test files are allowed, but a helper colliding
+with a source declaration is a duplicate-symbol error. Shared test helpers
+must live in an explicit module under `tests/` and be imported by each consumer;
+these test-only modules never enter package `.mossi` interfaces or cross-package
+rlibs. Tests declared inside `src/` retain their existing behavior. Physical
+source paths remain attached to diagnostics, `.mossmap` entries, tests, and
+benchmarks. Native `margo test` currently lowers and executes each test-file
+scope as a separate test executable; the current lowering pipeline accepts one
+checked `Program` per generated executable, so combining private scopes needs a
+future namespace-aware lowering step.
 
 The compiler oracle follows this same target composition: semantic queries and
 edits against a `src` file analyze all application sources, while queries against
-`tests` or `benches` analyze the corresponding source plus that target directory.
-This temporary linkage is not an import/module system.
+`tests` or `benches` analyze the corresponding target using its applicable
+visibility rules. Test modules under `tests/` require explicit imports.
 
 ### Static domain composition (temporary)
 

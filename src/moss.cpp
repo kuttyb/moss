@@ -12237,13 +12237,63 @@ static void scope_program_to_file(Program& program,
     return !source.empty() &&
         std::filesystem::absolute(source).lexically_normal().string() == root;
   };
+  auto test_root_directory = [](const std::filesystem::path& source) {
+    auto absolute = std::filesystem::absolute(source).lexically_normal();
+    auto package = absolute.parent_path();
+    while (!package.empty() &&
+           !std::filesystem::is_regular_file(package / "Moss.toml")) {
+      auto next = package.parent_path();
+      if (next == package) break;
+      package = std::move(next);
+    }
+    if (package.empty() ||
+        !std::filesystem::is_regular_file(package / "Moss.toml"))
+      return std::filesystem::path();
+    const auto tests = (package / "tests").lexically_normal();
+    auto relative = absolute.lexically_relative(tests);
+    if (relative.empty() || relative.is_absolute() ||
+        *relative.begin() == "..")
+      return std::filesystem::path();
+    return tests;
+  };
+  const auto root_tests = test_root_directory(root_file);
+  auto visible_test_declaration = [&](const string& source_file,
+                                     const string& defining_module) {
+    if (root_tests.empty()) return true;
+    const auto declaration_tests = test_root_directory(source_file);
+    if (declaration_tests.empty()) return true;  // R1: all src declarations.
+    if (is_root(source_file)) return true;
+    // An explicitly imported module under tests/ is shared only with
+    // test files that name that module in an import declaration.
+    return std::any_of(program.imports.begin(), program.imports.end(),
+        [&](const ModuleImport& import) {
+          return is_root(import.source_file) &&
+              import.name == defining_module;
+        });
+  };
+  auto visible_test_function = [&](const Function& function) {
+    return visible_test_declaration(function.source_file,
+                                    function.defining_module);
+  };
   if (scope_kind == FastDebugScopeKind::File) {
     for (const auto& object : program.objects)
-      if (is_root(object.source_file)) program.file_scope_objects.insert(object.name);
+      if ((root_tests.empty() && is_root(object.source_file)) ||
+          (!root_tests.empty() &&
+           visible_test_declaration(object.source_file,
+                                    object.defining_module)))
+        program.file_scope_objects.insert(object.name);
     for (const auto& enumeration : program.enums)
-      if (is_root(enumeration.source_file)) program.file_scope_enums.insert(enumeration.name);
+      if ((root_tests.empty() && is_root(enumeration.source_file)) ||
+          (!root_tests.empty() &&
+           visible_test_declaration(enumeration.source_file,
+                                    enumeration.defining_module)))
+        program.file_scope_enums.insert(enumeration.name);
     for (const auto& domain : program.domains)
-      if (is_root(domain.source_file)) program.file_scope_domains.insert(domain.name);
+      if ((root_tests.empty() && is_root(domain.source_file)) ||
+          (!root_tests.empty() &&
+           visible_test_declaration(domain.source_file,
+                                    domain.defining_module)))
+        program.file_scope_domains.insert(domain.name);
   }
   std::set<size_t> selected_functions, selected_methods, selected_handlers;
   std::vector<FileCheckReferences> function_refs(program.functions.size());
@@ -12390,7 +12440,9 @@ static void scope_program_to_file(Program& program,
           std::filesystem::path(function.source_file).extension() == ".mossi";
       if (from_interface && !(function.generic || function.static_dispatch))
         continue;
-      if (matches(active.functions, function.name)) changed |= selected_functions.insert(i).second;
+      if (matches(active.functions, function.name) &&
+          visible_test_function(function))
+        changed |= selected_functions.insert(i).second;
     }
     method_index = 0;
     for (const auto& object : program.objects) {
@@ -12408,6 +12460,77 @@ static void scope_program_to_file(Program& program,
           changed |= selected_handlers.insert(handler_index).second;
         }
         ++handler_index;
+      }
+    }
+  }
+
+  if (!root_tests.empty()) {
+    auto duplicate_with_source = [&](const string& name,
+                                     const string& source_file,
+                                     int line, const string& kind) {
+      if (test_root_directory(source_file).empty()) return;
+      auto source_declaration = [&](const string& candidate,
+                                    const string& candidate_source) {
+        return candidate == name &&
+            test_root_directory(candidate_source).empty();
+      };
+      bool duplicate = false;
+      for (const auto& function : program.functions)
+        duplicate |= source_declaration(function.name, function.source_file);
+      for (const auto& object : program.objects)
+        duplicate |= source_declaration(object.name, object.source_file);
+      for (const auto& enumeration : program.enums)
+        duplicate |= source_declaration(enumeration.name,
+                                        enumeration.source_file);
+      for (const auto& domain : program.domains)
+        duplicate |= source_declaration(domain.name, domain.source_file);
+      if (duplicate) {
+        CompileError error(line, "duplicate " + kind + ": " + name,
+                          "DUPLICATE_SYMBOL");
+        error.source_file = source_file;
+        throw error;
+      }
+    };
+    for (const auto& function : program.functions)
+      if (is_root(function.source_file))
+        duplicate_with_source(function.name, function.source_file,
+                              function.line, "function");
+    for (const auto& object : program.objects)
+      if (is_root(object.source_file))
+        duplicate_with_source(object.name, object.source_file,
+                              object.line, "object type");
+    for (const auto& enumeration : program.enums)
+      if (is_root(enumeration.source_file))
+        duplicate_with_source(enumeration.name, enumeration.source_file,
+                              enumeration.line, "enum type");
+    for (const auto& domain : program.domains)
+      if (is_root(domain.source_file))
+        duplicate_with_source(domain.name, domain.source_file,
+                              domain.line, "domain");
+    for (const auto& function : program.functions) {
+      if (!test_root_directory(function.source_file).empty() &&
+          !visible_test_function(function) &&
+          matches(root_references.functions, function.name)) {
+        const bool visible_same_name = std::any_of(
+            program.functions.begin(), program.functions.end(),
+            [&](const Function& candidate) {
+              return candidate.name == function.name &&
+                  visible_test_function(candidate);
+            });
+        if (visible_same_name) continue;
+        auto source = std::filesystem::path(function.source_file)
+                          .lexically_normal();
+        auto relative = source.lexically_relative(root_tests).generic_string();
+        int line = 0;
+        for (const auto& test : program.tests)
+          if (is_root(test.source_file)) { line = test.line; break; }
+        CompileError error(line,
+            "unknown local function '" + function.name +
+            "'; hint: declared in tests/" + relative +
+            "; move it into a test module and import it",
+            "UNKNOWN_SYMBOL_OR_TYPE");
+        error.source_file = root;
+        throw error;
       }
     }
   }
@@ -12664,6 +12787,26 @@ static void scope_program_to_file(Program& program,
       ++handler_index;
     }
     domain.handlers = std::move(handlers);
+  }
+  if (!root_tests.empty()) {
+    program.objects.erase(std::remove_if(program.objects.begin(),
+        program.objects.end(), [&](const ObjectType& object) {
+          return !test_root_directory(object.source_file).empty() &&
+              !visible_test_declaration(object.source_file,
+                                        object.defining_module);
+        }), program.objects.end());
+    program.enums.erase(std::remove_if(program.enums.begin(),
+        program.enums.end(), [&](const EnumType& enumeration) {
+          return !test_root_directory(enumeration.source_file).empty() &&
+              !visible_test_declaration(enumeration.source_file,
+                                        enumeration.defining_module);
+        }), program.enums.end());
+    program.domains.erase(std::remove_if(program.domains.begin(),
+        program.domains.end(), [&](const Domain& domain) {
+          return !test_root_directory(domain.source_file).empty() &&
+              !visible_test_declaration(domain.source_file,
+                                        domain.defining_module);
+        }), program.domains.end());
   }
   if (scope_kind == FastDebugScopeKind::Tests ||
       (program.main && !is_root(program.main->source_file)))
@@ -17605,10 +17748,11 @@ static CompiledProjectUnit analyze_project_sources(
     const string& declaration_filter = {},
     const std::set<string>* declaration_ids = nullptr,
     const std::map<std::filesystem::path, string>* source_overrides = nullptr,
-    bool require_native_artifacts = true) {
+    bool require_native_artifacts = true,
+    const std::filesystem::path* file_check_root = nullptr) {
   CheckedProjectUnit checked = check_project_sources(
       manifest, sources, mode, declaration_filter, declaration_ids,
-      source_overrides, require_native_artifacts);
+      source_overrides, require_native_artifacts, file_check_root);
   try {
     optimize_program(checked.program, optimized);
     OptimizationPlan plan = OptimizationPlan{optimized};
@@ -17696,6 +17840,55 @@ static SemanticSnapshot analyze_project_snapshot(
       manifest, sources, true, false, ProgramGenerationMode::Application,
       {}, nullptr, nullptr, require_native_artifacts);
   return make_semantic_snapshot(manifest, sources, unit.program, unit.plan);
+}
+
+static vector<std::filesystem::path> project_source_files(
+    const ProjectManifest& manifest);
+static vector<std::filesystem::path> project_test_scope_sources(
+    const ProjectManifest& manifest, const std::filesystem::path& file);
+static bool project_source_has_tests(const std::filesystem::path& source);
+
+static SemanticSnapshot analyze_project_test_snapshot(
+    const ProjectManifest& manifest,
+    const vector<std::filesystem::path>& sources) {
+  SemanticSnapshot combined;
+  combined.relative_source = source_set_key(manifest, sources);
+  combined.source_hash = source_set_content_hash(manifest, sources);
+  auto append_scope = [&](const vector<std::filesystem::path>& scope_sources,
+                          const std::filesystem::path* root) {
+    CompiledProjectUnit unit = analyze_project_sources(
+        manifest, scope_sources, true, false, ProgramGenerationMode::Tests,
+        {}, nullptr, nullptr, true, root);
+    SemanticSnapshot part = make_semantic_snapshot(
+        manifest, scope_sources, unit.program, unit.plan);
+    combined.units.insert(combined.units.end(), part.units.begin(),
+                          part.units.end());
+    combined.route_edges.insert(combined.route_edges.end(),
+                                part.route_edges.begin(),
+                                part.route_edges.end());
+  };
+  const auto application_sources = project_source_files(manifest);
+  if (std::any_of(application_sources.begin(), application_sources.end(),
+                  project_source_has_tests))
+    append_scope(application_sources, nullptr);
+  for (const auto& file : moss_files_under(manifest.root / "tests",
+                                           "TEST_DISCOVERY_ERROR"))
+    if (project_source_has_tests(file))
+      append_scope(project_test_scope_sources(manifest, file), &file);
+  std::sort(combined.units.begin(), combined.units.end(),
+            [](const auto& left, const auto& right) {
+              return left.durable_identity < right.durable_identity;
+            });
+  std::sort(combined.route_edges.begin(), combined.route_edges.end(),
+            [](const auto& left, const auto& right) {
+              return std::tie(left.source_domain, left.target_domain,
+                              left.source_instance, left.target_instance,
+                              left.line) <
+                     std::tie(right.source_domain, right.target_domain,
+                              right.source_instance, right.target_instance,
+                              right.line);
+            });
+  return combined;
 }
 
 static const SemanticSnapshotUnit* resolve_snapshot_unit(
@@ -21766,7 +21959,8 @@ static NativeArtifact compile_native_artifact(
     bool debug_build, ProgramGenerationMode mode,
     const std::optional<string>& name_override = std::nullopt,
     const string& declaration_filter = {},
-    const std::set<string>* declaration_ids = nullptr) {
+    const std::set<string>* declaration_ids = nullptr,
+    const std::filesystem::path* file_check_root = nullptr) {
   std::error_code error;
   std::filesystem::create_directories(directory, error);
   if (error)
@@ -21907,6 +22101,10 @@ static NativeArtifact compile_native_artifact(
              << "\nmode\n"
              << static_cast<int>(mode) << "\nfilter\n" << declaration_filter
              << "\n";
+  if (file_check_root)
+    source_key << "file-check-root\n"
+               << std::filesystem::absolute(*file_check_root)
+                      .lexically_normal().string() << "\n";
   if (declaration_ids)
     for (const auto& identity : *declaration_ids)
       source_key << identity << "\n";
@@ -21950,7 +22148,7 @@ static NativeArtifact compile_native_artifact(
 
   CompiledProjectUnit unit = analyze_project_sources(
       manifest, sources, optimized, debug_build, mode, declaration_filter,
-      declaration_ids, nullptr, !cargo_driver);
+      declaration_ids, nullptr, !cargo_driver, file_check_root);
   if (staged_abi_v10())
     for (const auto& operation : unit.program.key_operation_specialization_ids)
       source_key << "key-operation " << operation.first << " "
@@ -22318,6 +22516,35 @@ static vector<std::filesystem::path> project_declaration_sources(
   std::sort(sources.begin(), sources.end());
   sources.erase(std::unique(sources.begin(), sources.end()), sources.end());
   return sources;
+}
+
+static vector<std::filesystem::path> project_test_scope_sources(
+    const ProjectManifest& manifest,
+    const std::filesystem::path&) {
+  // Keep every declaration available to the checker so it can report the
+  // origin of a forbidden cross-file reference. scope_program_to_file prunes
+  // non-visible test helpers before native projection.
+  return project_declaration_sources(manifest, "tests");
+}
+
+static bool project_source_has_tests(const std::filesystem::path& source) {
+  std::ifstream input(source);
+  if (!input) return false;
+  Program parsed = parse_source(input, source.string());
+  return !parsed.tests.empty();
+}
+
+static bool project_source_has_matching_tests(
+    const std::filesystem::path& source, const string& filter) {
+  if (filter.empty()) return project_source_has_tests(source);
+  std::ifstream input(source);
+  if (!input) return false;
+  Program parsed = parse_source(input, source.string());
+  return std::any_of(parsed.tests.begin(), parsed.tests.end(),
+      [&](const TestDecl& test) {
+        return test.name.find(filter) != string::npos ||
+            test.semantic_identity.find(filter) != string::npos;
+      });
 }
 
 // The semantic oracle and semantic edits use the same logical source universe
@@ -22738,8 +22965,20 @@ static int run_project_test_semantic_check(const ProjectManifest& manifest,
   if (sources.empty())
     throw ProjectError("PROJECT_SOURCE_NOT_FOUND",
                        "test target contains no Moss source files");
-  (void)check_project_semantics(manifest, sources, false,
-                                ProgramGenerationMode::Tests);
+  const auto application_sources = project_source_files(manifest);
+  size_t scopes_checked = 0;
+  for (const auto& file : moss_files_under(manifest.root / "tests",
+                                           "TEST_DISCOVERY_ERROR")) {
+    (void)check_project_semantics(manifest, sources, false,
+                                  ProgramGenerationMode::Tests, nullptr, &file);
+    ++scopes_checked;
+  }
+  if (std::any_of(application_sources.begin(), application_sources.end(),
+                  project_source_has_tests)) {
+    (void)check_project_semantics(manifest, application_sources, false,
+                                  ProgramGenerationMode::Tests);
+    ++scopes_checked;
+  }
   if (json) {
     std::cout << "{\"protocol_version\": 1, \"schema_version\": ";
     write_debug_json_string(std::cout, kAgentSchemaVersion);
@@ -22749,7 +22988,8 @@ static int run_project_test_semantic_check(const ProjectManifest& manifest,
                  "\"result\": {\"project\": ";
     write_debug_json_string(std::cout, manifest.name);
     std::cout << ", \"check_only\": true, \"target\": \"tests\", "
-                 "\"sources_checked\": " << sources.size() << "}}\n";
+                 "\"sources_checked\": " << sources.size()
+              << ", \"scopes_checked\": " << scopes_checked << "}}\n";
   } else {
     std::cout << "Checked " << sources.size()
               << " test-target source file(s) (semantic-only)\n";
@@ -22963,12 +23203,13 @@ static void parse_test_failure_detail(ProjectTestResult& result) {
       expected_marker + string(", expected=").size());
 }
 
-static vector<ProjectTestResult> run_project_tests(
-    const ProjectManifest& manifest, const string& filter,
-    const AffectedTestPlan* affected = nullptr, bool release = false) {
+static vector<ProjectTestResult> run_project_tests_unit(
+    const ProjectManifest& manifest,
+    const vector<std::filesystem::path>& sources,
+    const std::filesystem::path& directory, const string& artifact_name,
+    const string& filter, const AffectedTestPlan* affected, bool release,
+    const std::filesystem::path* file_check_root) {
   vector<ProjectTestResult> results;
-  auto sources = project_declaration_sources(manifest, "tests");
-  std::filesystem::path directory = manifest.root / "build" / (release ? "test_release" : "test");
   std::set<string> selected_ids;
   if (affected)
     for (const auto& entry : affected->selected_by_source)
@@ -22976,16 +23217,9 @@ static vector<ProjectTestResult> run_project_tests(
   if (affected && selected_ids.empty()) return results;
   NativeArtifact artifact = compile_native_artifact(
       manifest, sources, directory, release, !release, ProgramGenerationMode::Tests,
-      tooling_name(manifest.name) + "_tests", filter,
-      affected ? &selected_ids : nullptr);
-  if (artifact.tests.empty()) {
-    if (affected) return results;
-    throw ProjectError(
-        "TEST_DISCOVERY_ERROR",
-        filter.empty() ? "no Moss tests were found"
-                       : "no Moss tests matched filter '" + filter + "'",
-        sources.front().string());
-  }
+      artifact_name, filter, affected ? &selected_ids : nullptr,
+      file_check_root);
+  if (artifact.tests.empty()) return results;
   std::unordered_map<string, const TestDecl*> declarations;
   for (const auto& test : artifact.tests)
     declarations[test.semantic_identity] = &test;
@@ -23031,9 +23265,44 @@ static vector<ProjectTestResult> run_project_tests(
         "test executable exited unexpectedly with status " +
             std::to_string(process.exit_code),
         sources.front().string());
-  if (results.empty() && !affected)
-    throw ProjectError(
-        "TEST_DISCOVERY_ERROR",
+  std::sort(results.begin(), results.end(),
+            [](const ProjectTestResult& left,
+               const ProjectTestResult& right) { return left.id < right.id; });
+  return results;
+}
+
+static vector<ProjectTestResult> run_project_tests(
+    const ProjectManifest& manifest, const string& filter,
+    const AffectedTestPlan* affected = nullptr, bool release = false) {
+  vector<ProjectTestResult> results;
+  const auto application_sources = project_source_files(manifest);
+  const auto test_files = moss_files_under(manifest.root / "tests",
+                                           "TEST_DISCOVERY_ERROR");
+  const auto directory = manifest.root / "build" /
+      (release ? "test_release" : "test");
+  size_t scope_index = 0;
+  auto run_scope = [&](const vector<std::filesystem::path>& sources,
+                       const std::filesystem::path* root) {
+    auto scoped = run_project_tests_unit(
+        manifest, sources, directory,
+        tooling_name(manifest.name + "_tests_scope_" +
+                     std::to_string(scope_index++)),
+        filter, affected, release, root);
+    results.insert(results.end(), std::make_move_iterator(scoped.begin()),
+                   std::make_move_iterator(scoped.end()));
+  };
+  // R6: tests declared in src keep their existing shared source namespace.
+  if (std::any_of(application_sources.begin(), application_sources.end(),
+                  project_source_has_tests))
+    run_scope(application_sources, nullptr);
+  // One executable per test file gives each file a private declaration scope.
+  // Other test modules enter the scope only through explicit imports.
+  for (const auto& file : test_files) {
+    if (!project_source_has_tests(file)) continue;
+    run_scope(project_test_scope_sources(manifest, file), &file);
+  }
+  if (results.empty())
+    throw ProjectError("TEST_DISCOVERY_ERROR",
         filter.empty() ? "no Moss tests were found"
                        : "no Moss tests matched filter '" + filter + "'");
   std::sort(results.begin(), results.end(),
@@ -23155,7 +23424,7 @@ static int report_project_tests(const ProjectManifest& manifest,
     } else {
       auto test_sources = project_declaration_sources(manifest, "tests");
       write_semantic_snapshot(manifest, test_sources,
-                              analyze_project_snapshot(manifest, test_sources));
+                              analyze_project_test_snapshot(manifest, test_sources));
     }
   }
   return failed == 0 ? 0 : 1;
@@ -25499,7 +25768,108 @@ static int run_fast_interpreter_source(const std::filesystem::path& input,
 
 static int run_fast_interpreter_tests(const std::filesystem::path& input,
                                       const string& filter, bool trace,
-                                      bool all_package_tests = false) {
+                                      bool all_package_tests = false,
+                                      bool json = false,
+                                      vector<moss::FastInterpreter::TestResult>*
+                                          aggregate_results = nullptr) {
+  if (all_package_tests) {
+    auto root = moss::find_project_root(input);
+    if (root) {
+      const auto manifest = moss::load_project_manifest(*root);
+      // Validate the complete test target before executing per-file scopes so
+      // module/import diagnostics are independent of which test runs first.
+      std::ostringstream discarded_check_output;
+      auto* prior_output = std::cout.rdbuf(discarded_check_output.rdbuf());
+      try {
+        (void)moss::run_project_test_semantic_check(manifest, false);
+      } catch (...) {
+        std::cout.rdbuf(prior_output);
+        throw;
+      }
+      std::cout.rdbuf(prior_output);
+      vector<std::filesystem::path> scopes;
+      for (const auto& source : moss::project_source_files(manifest))
+        if (moss::project_source_has_matching_tests(source, filter))
+          scopes.push_back(source);
+      for (const auto& source : moss::moss_files_under(
+               manifest.root / "tests", "TEST_DISCOVERY_ERROR"))
+        if (moss::project_source_has_matching_tests(source, filter))
+          scopes.push_back(source);
+      vector<moss::FastInterpreter::TestResult> gathered;
+      int status = 0;
+      for (const auto& scope : scopes)
+        status |= run_fast_interpreter_tests(scope, filter, trace, false,
+                                              false, &gathered);
+      if (aggregate_results) {
+        aggregate_results->insert(aggregate_results->end(), gathered.begin(),
+                                  gathered.end());
+        return status;
+      }
+      if (gathered.empty())
+        throw moss::FastInterpreter::RuntimeError(0,
+            filter.empty() ? "no Moss tests were found"
+                           : "no Moss tests matched filter '" + filter + "'");
+      if (json) {
+        std::sort(gathered.begin(), gathered.end(),
+            [](const auto& left, const auto& right) { return left.id < right.id; });
+        const size_t passed = static_cast<size_t>(std::count_if(
+            gathered.begin(), gathered.end(),
+            [](const auto& result) { return result.passed; }));
+        moss::write_agent_envelope_begin(std::cout, "test", status == 0);
+        std::cout << "  \"result\": {\"project\": ";
+        moss::write_debug_json_string(std::cout, manifest.name);
+        std::cout << ", \"filter\": ";
+        if (filter.empty()) std::cout << "null";
+        else moss::write_debug_json_string(std::cout, filter);
+        std::cout << ", \"affected_only\": false, \"tests\": [";
+        for (size_t index = 0; index < gathered.size(); ++index) {
+          if (index) std::cout << ", ";
+          const auto& result = gathered[index];
+          std::cout << "{\"id\": ";
+          moss::write_debug_json_string(std::cout, result.id);
+          std::cout << ", \"name\": ";
+          moss::write_debug_json_string(std::cout, result.name);
+          std::cout << ", \"status\": \""
+                    << (result.passed ? "pass" : "fail")
+                    << "\", \"source_file\": ";
+          moss::write_debug_json_string(std::cout, result.source_file);
+          std::cout << ", \"line\": " << result.line
+                    << ", \"diagnostic\": ";
+          if (result.passed) std::cout << "null";
+          else {
+            std::cout << "{\"code\": \"TEST_ASSERTION_FAILED\", "
+                         "\"severity\": \"error\", \"message\": ";
+            moss::write_debug_json_string(std::cout, result.diagnostic);
+            std::cout << ", \"details\": {\"expression\": null, "
+                         "\"actual\": null, \"expected\": null}, "
+                         "\"fixes\": [], \"legal_alternatives\": []}";
+          }
+          std::cout << "}";
+        }
+        std::cout << "], \"selection\": null, \"summary\": {\"passed\": "
+                  << passed << ", \"failed\": " << gathered.size() - passed
+                  << ", \"total\": " << gathered.size() << "}}\n}\n";
+      } else {
+        for (const auto& result : gathered) {
+          std::cout << result.output;
+          if (result.passed)
+            std::cout << "PASS " << result.name << "\n";
+          else
+            std::cout << "FAIL " << result.name << ": "
+                      << result.diagnostic << "\n";
+        }
+        const size_t passed = static_cast<size_t>(std::count_if(
+            gathered.begin(), gathered.end(),
+            [](const auto& result) { return result.passed; }));
+        if (passed == gathered.size())
+          std::cout << passed << " passed\n";
+        else
+          std::cout << passed << " passed, "
+                    << gathered.size() - passed << " failed\n";
+      }
+      return status;
+    }
+  }
   std::map<std::string, std::string> fileio_tests;
   moss::Program program = load_checked_interpreter_program(
       input, true, &fileio_tests, filter, all_package_tests);
@@ -25509,13 +25879,70 @@ static int run_fast_interpreter_tests(const std::filesystem::path& input,
   options.source_file = std::filesystem::absolute(input).lexically_normal().string();
   moss::FastInterpreter interpreter(program, options);
   int status = 0;
+  vector<moss::FastInterpreter::TestResult> test_results;
+  std::ostringstream text_results;
   try {
-    status = interpreter.run_tests(std::cout, filter);
+    status = interpreter.run_tests((json || aggregate_results)
+                                       ? text_results : std::cout,
+                                   filter,
+                                   (json || aggregate_results)
+                                       ? &test_results : nullptr);
   } catch (...) {
     if (trace) interpreter.write_trace(std::cerr);
     throw;
   }
   if (trace) interpreter.write_trace(std::cerr);
+  if (aggregate_results) {
+    aggregate_results->insert(aggregate_results->end(), test_results.begin(),
+                              test_results.end());
+    return status;
+  }
+  if (json) {
+    std::sort(test_results.begin(), test_results.end(),
+        [](const auto& left, const auto& right) {
+          return left.id < right.id;
+        });
+    const size_t passed = static_cast<size_t>(std::count_if(
+        test_results.begin(), test_results.end(),
+        [](const auto& result) { return result.passed; }));
+    string project_name = input.stem().string();
+    if (auto root = moss::find_project_root(input))
+      project_name = moss::load_project_manifest(*root).name;
+    moss::write_agent_envelope_begin(std::cout, "test", status == 0);
+    std::cout << "  \"result\": {\"project\": ";
+    moss::write_debug_json_string(std::cout, project_name);
+    std::cout << ", \"filter\": ";
+    if (filter.empty()) std::cout << "null";
+    else moss::write_debug_json_string(std::cout, filter);
+    std::cout << ", \"affected_only\": false, \"tests\": [";
+    for (size_t index = 0; index < test_results.size(); ++index) {
+      if (index) std::cout << ", ";
+      const auto& result = test_results[index];
+      std::cout << "{\"id\": ";
+      moss::write_debug_json_string(std::cout, result.id);
+      std::cout << ", \"name\": ";
+      moss::write_debug_json_string(std::cout, result.name);
+      std::cout << ", \"status\": \""
+                << (result.passed ? "pass" : "fail")
+                << "\", \"source_file\": ";
+      moss::write_debug_json_string(std::cout, result.source_file);
+      std::cout << ", \"line\": " << result.line
+                << ", \"diagnostic\": ";
+      if (result.passed) std::cout << "null";
+      else {
+        std::cout << "{\"code\": \"TEST_ASSERTION_FAILED\", "
+                     "\"severity\": \"error\", \"message\": ";
+        moss::write_debug_json_string(std::cout, result.diagnostic);
+        std::cout << ", \"details\": {\"expression\": null, "
+                     "\"actual\": null, \"expected\": null}, "
+                     "\"fixes\": [], \"legal_alternatives\": []}";
+      }
+      std::cout << "}";
+    }
+    std::cout << "], \"selection\": null, \"summary\": {\"passed\": "
+              << passed << ", \"failed\": " << test_results.size() - passed
+              << ", \"total\": " << test_results.size() << "}}\n}\n";
+  }
   return status;
 }
 
@@ -26217,22 +26644,22 @@ int main(int argc, char** argv) {
           test_requests_interpreter = true;
     }
     if (test_requests_interpreter) {
-      bool interpreter = false, trace = false;
+      bool interpreter = false, trace = false, test_json = false;
+      active_command = "test";
       string input, filter;
       for (int index = 2; index < argc; ++index) {
         string argument = argv[index];
         if (argument == "--interp" || argument == "--debug") interpreter = true;
         else if (argument == "--trace") trace = true;
-        else if (argument == "--json") {
-          std::cerr << "moss: test --interp does not yet support --json\n";
-          return 2;
-        } else if (input.empty()) input = argument;
+        else if (argument == "--json") test_json = true;
+        else if (input.empty()) input = argument;
         else if (filter.empty()) filter = argument;
         else {
           std::cerr << "moss: test accepts one source path and one filter\n";
           return 2;
         }
       }
+      json_output = test_json;
       if (interpreter) {
         std::error_code ec;
         bool all_package_tests = input.empty() ||
@@ -26250,7 +26677,17 @@ int main(int argc, char** argv) {
         }
         try {
           return run_fast_interpreter_tests(entry, filter, trace,
-                                            all_package_tests);
+                                            all_package_tests, test_json);
+        } catch (const moss::ProjectError& error) {
+          if (test_json)
+            moss::write_project_error_json(std::cout, "test", error);
+          else
+            std::cerr << (error.source_file.empty() ? "moss" : error.source_file)
+                      << (error.line > 0
+                              ? ":" + std::to_string(error.line) : "")
+                      << ": error: [" << error.code << "] "
+                      << error.what() << "\n";
+          return 1;
         } catch (const moss::FastInterpreter::RuntimeError& error) {
           std::cerr << "moss:" << (error.line() > 0 ? std::to_string(error.line()) + ": " : " ")
                     << "interpreter error: " << error.what() << "\n";
