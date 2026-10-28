@@ -14,8 +14,10 @@ import os
 from pathlib import Path
 import re
 import shutil
+import shlex
 import subprocess
 import sys
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 import tomllib
 
 
@@ -83,6 +85,14 @@ def run(command: list[str], *, cwd: Path | None = None, env: dict | None = None,
     except (OSError, subprocess.CalledProcessError) as error:
         detail = ((error.stderr or error.stdout or "").strip()
                   if isinstance(error, subprocess.CalledProcessError) else str(error))
+        if (isinstance(error, subprocess.CalledProcessError) and
+                command[-2:] in (["build", "--json"], ["--check", "--json"])):
+            try:
+                payload = json.loads(error.stdout or "")
+                if isinstance(payload, dict) and payload.get("ok") is False:
+                    detail = (error.stdout or "").strip()
+            except json.JSONDecodeError:
+                pass
         raise MargoError(f"command failed ({' '.join(command)}): {detail}") from error
 
 
@@ -128,6 +138,82 @@ class Package:
         self.root, self.manifest, self.data = root, manifest, data
         self.identity, self.source = identity, source
         self.dependencies: list[Package] = []
+
+
+def run_ready_queue(ordered: list[Package], jobs: int, worker):
+    """Run each package when its own providers finish, with deterministic events."""
+    if jobs < 1:
+        raise MargoError("package build job count must be at least 1")
+    indexes = {package.identity: index for index, package in enumerate(ordered)}
+    by_identity = {package.identity: package for package in ordered}
+    dependencies = {
+        package.identity: {dependency.identity for dependency in package.dependencies
+                           if dependency.identity in by_identity}
+        for package in ordered
+    }
+    dependents = {package.identity: [] for package in ordered}
+    for package in ordered:
+        for dependency_id in dependencies[package.identity]:
+            dependents[dependency_id].append(package.identity)
+    for values in dependents.values():
+        values.sort(key=indexes.__getitem__)
+
+    states = {package.identity: "pending" for package in ordered}
+    results, errors, events = {}, {}, []
+    ready = [package.identity for package in ordered
+             if not dependencies[package.identity]]
+    futures = {}
+    completed = set()
+
+    def cancel_dependents(failed_id: str) -> None:
+        queue = [(failed_id, by_identity[failed_id].data["name"])]
+        while queue:
+            provider_id, provider_name = queue.pop(0)
+            for dependent_id in dependents[provider_id]:
+                if states[dependent_id] != "pending":
+                    continue
+                states[dependent_id] = "cancelled"
+                dependent = by_identity[dependent_id]
+                errors[dependent_id] = MargoError(
+                    f"package {dependent.data['name']} cancelled because "
+                    f"dependency {provider_name} failed")
+                events.append({"event": "cancel", "package": dependent.data["name"],
+                               "because": provider_name})
+                queue.append((dependent_id, dependent.data["name"]))
+
+    with ThreadPoolExecutor(max_workers=jobs, thread_name_prefix="margo-package") as pool:
+        while ready or futures:
+            ready.sort(key=indexes.__getitem__)
+            while ready and len(futures) < jobs:
+                identity = ready.pop(0)
+                if states[identity] != "pending":
+                    continue
+                package = by_identity[identity]
+                states[identity] = "running"
+                events.append({"event": "start", "package": package.data["name"]})
+                futures[pool.submit(worker, package)] = package
+            if not futures:
+                break
+            done, _ = wait(futures, return_when=FIRST_COMPLETED)
+            for future in sorted(done, key=lambda item: indexes[futures[item].identity]):
+                package = futures.pop(future)
+                identity = package.identity
+                try:
+                    results[identity] = future.result()
+                except Exception as error:
+                    states[identity] = "failed"
+                    errors[identity] = error
+                    events.append({"event": "fail", "package": package.data["name"]})
+                    cancel_dependents(identity)
+                    continue
+                states[identity] = "finished"
+                completed.add(identity)
+                events.append({"event": "finish", "package": package.data["name"]})
+                for dependent_id in dependents[identity]:
+                    if (states[dependent_id] == "pending" and
+                            dependencies[dependent_id] <= completed):
+                        ready.append(dependent_id)
+    return results, errors, events, states
 
 
 def load_lock(root: Path) -> dict:
@@ -238,6 +324,9 @@ def package_environment(root: Package, ordered: list[Package], release: bool,
     # The opt-in ABI-v10 compiler uses one content-addressed shared runtime
     # artifact across every package in this dependency graph.
     env.setdefault("MOSS_RUNTIME_SOURCE_DIR", str(REPO / "runtime" / "moss_runtime"))
+    env["MOSS_MARGO_PACKAGE_BUILD_ROOTS"] = os.pathsep.join(
+        str((package.root / "build" / profile_name(release, check_only)).resolve())
+        for package in ordered)
     if paths:
         existing = [p for p in env.get("MOSS_MODULE_PATH", "").split(os.pathsep) if p]
         pkg_build_dirs = {str((pkg.root / "build").resolve()) for pkg in ordered}
@@ -613,8 +702,9 @@ def package_fingerprint(package: Package, release: bool, check_only: bool,
                           for path in package_test_sources(package)]
                          if check_only and include_test_sources else []),
         "dependencies": dependencies,
-        "native_dependency_artifacts": [] if check_only else
-            dependency_native_artifacts(package, release),
+        # Cargo owns Rust dependency freshness. Moss semantic packages are
+        # invalidated by the provider interfaces above, not rlib byte hashes.
+        "native_dependency_artifacts": [],
         "ambient_providers": ambient_provider_inputs(
             package, ordered, release, check_only),
         "compiler_and_toolchain": toolchain,
@@ -650,6 +740,319 @@ def output_snapshot(package: Package, release: bool,
             for path in sorted(files) if path.is_file()}
 
 
+def cargo_package_name(package: Package, kind: str, module: str = "") -> str:
+    if kind == "bin":
+        stable_name = re.sub(r"[^A-Za-z0-9_]", "_", package.data["name"]).rstrip("_")
+        return "moss_package_" + (stable_name or "anonymous")
+    identity = package.identity + "\n" + kind + "\n" + module
+    return "margo_" + kind + "_" + hashlib.sha256(
+        identity.encode("utf-8")).hexdigest()[:20]
+
+
+def rust_crate_name(module: str) -> str:
+    value = re.sub(r"[^A-Za-z0-9_]", "_", "moss_" + module).rstrip("_")
+    return value or "anonymous"
+
+
+def write_if_changed(path: Path, contents: str) -> None:
+    if path.is_file() and path.read_text(encoding="utf-8") == contents:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(contents, encoding="utf-8")
+
+
+def cargo_build_graph(root: Package, packages: list[Package],
+                      artifacts: dict[str, dict], release: bool,
+                      jobs: int) -> tuple[list[str], list[str]]:
+    """Compile all emitted Rust for one resolved graph in a stable Cargo workspace."""
+    profile = profile_name(release)
+    for package in packages:
+        stale_workspace = package.root / "build" / profile / ".margo-cargo"
+        if stale_workspace.is_dir():
+            shutil.rmtree(stale_workspace)
+    legacy_workspace = root.root / "build" / profile / ".margo-cargo"
+    if legacy_workspace.is_dir():
+        shutil.rmtree(legacy_workspace)
+    workspace = root.root / "build" / ".margo-cargo" / profile
+    crates_dir = workspace / "crates"
+    crates_dir.mkdir(parents=True, exist_ok=True)
+    records = []
+    modules_by_package = {}
+    binary_names = [cargo_package_name(package, "bin") for package in packages]
+    if len(binary_names) != len(set(binary_names)):
+        raise MargoError("Moss package names collide after Cargo name normalization")
+    for package in packages:
+        artifact_data = artifacts[package.identity].get("artifacts", {})
+        modules = {}
+        for raw_rlib in artifact_data.get("module_rlibs", []):
+            stem = Path(raw_rlib).name
+            if not stem.startswith("lib") or not stem.endswith(".rlib"):
+                raise MargoError(f"unexpected module rlib path: {raw_rlib}")
+            module = stem[3:-5]
+            source = package.root / "build" / profile_name(release) / f"{module}.rs"
+            if not source.is_file():
+                raise MargoError(f"generated Rust is missing for {module}: {source}")
+            name = cargo_package_name(package, "lib", module)
+            record = {"package": package, "module": module,
+                      "crate_name": rust_crate_name(module), "source": source,
+                      "cargo_name": name, "crate_dir": crates_dir / name,
+                      "kind": "lib"}
+            modules[module] = record
+            records.append(record)
+        modules_by_package[package.identity] = modules
+        source = Path(artifact_data.get("generated_rust", ""))
+        executable = Path(artifact_data.get("executable", ""))
+        if not source.is_file() or not executable.name:
+            raise MargoError(f"generated root Rust or executable path is missing for {package.data['name']}")
+        name = cargo_package_name(package, "bin")
+        records.append({"package": package, "module": "", "crate_name": "",
+                        "source": source, "cargo_name": name,
+                        "crate_dir": crates_dir / name, "kind": "bin",
+                        "executable": executable})
+
+    graph_modules = {module for modules in modules_by_package.values()
+                     for module in modules}
+    ambient_modules: dict[str, dict] = {}
+    ambient_packages: dict[str, Package] = {}
+    ambient_candidates: dict[str, list[tuple[Path, str, str]]] = {}
+    ambient_roots = [Path(raw_root) for raw_root in
+                     os.environ.get("MOSS_MODULE_PATH", "").split(os.pathsep)
+                     if raw_root]
+    ambient_roots.extend(package.root / "deps" for package in packages)
+    for ambient_root in ambient_roots:
+        if not ambient_root.is_dir():
+            continue
+        for interface in ambient_root.rglob("*.mossi"):
+            try:
+                # v10 interfaces include length-delimited binary payloads after
+                # the textual header, so decode only the individual header rows.
+                interface_lines = [line.decode("ascii") for line in
+                                   interface.read_bytes().splitlines()
+                                   if line.isascii()]
+            except OSError:
+                continue
+            module_id = next((line.split(maxsplit=1)[1]
+                              for line in interface_lines
+                              if line.startswith("module_id ")), "")
+            module = module_id.rsplit("::", 1)[-1] if module_id else interface.stem
+            if module in graph_modules:
+                continue
+            contract = next((line for line in interface_lines
+                             if line.startswith("provider_contract_digest ") or
+                             line.startswith("semantic_contract_hash ")), "")
+            ambient_candidates.setdefault(module, []).append(
+                (interface.resolve(), module_id, contract))
+
+    def provider_for(package: Package, module: str) -> dict:
+        local = modules_by_package[package.identity].get(module)
+        if local:
+            return local
+        candidates = []
+        visited = set()
+        def visit(current: Package) -> None:
+            for dependency in current.dependencies:
+                if dependency.identity in visited:
+                    continue
+                visited.add(dependency.identity)
+                found = modules_by_package.get(dependency.identity, {}).get(module)
+                if found:
+                    candidates.append(found)
+                visit(dependency)
+        visit(package)
+        if not candidates and module in ambient_modules:
+            candidates.append(ambient_modules[module])
+        if len(candidates) != 1:
+            reason = "missing" if not candidates else "ambiguous"
+            raise MargoError(f"Cargo provider for module {module} is {reason} in {package.data['name']}")
+        return candidates[0]
+
+    def materialize_ambient(module: str) -> None:
+        if module in graph_modules or module in ambient_modules:
+            return
+        choices = ambient_candidates.get(module, [])
+        contracts = {(module_id, contract) for _, module_id, contract in choices}
+        if not choices:
+            raise MargoError(f"Cargo provider for module {module} is missing from ambient module paths")
+        if len(contracts) > 1:
+            raise MargoError(f"ambiguous ambient Cargo provider for module {module}")
+        interface = choices[0][0]
+        owner = next((parent for parent in interface.parents
+                      if (parent / "Moss.toml").is_file() or
+                      (parent / "moss.toml").is_file()), None)
+        if owner is None:
+            raise MargoError(f"source-backed Cargo provider {module} has no package manifest")
+        manifest, data = read_manifest(owner)
+        stale_workspace = owner / "build" / profile / ".margo-cargo"
+        if stale_workspace.is_dir():
+            shutil.rmtree(stale_workspace)
+        identity = "ambient-path:" + str(owner.resolve())
+        package = ambient_packages.setdefault(identity, Package(
+            owner.resolve(), manifest, data, identity,
+            {"kind": "ambient", "path": str(owner.resolve())}))
+        source = owner / "build" / profile_name(release) / f"{module}.rs"
+        if not source.is_file():
+            source = interface.parent / f"{module}.rs"
+        if not source.is_file():
+            emit_env = dict(os.environ)
+            emit_env["MOSS_MARGO_CARGO_DRIVER"] = "1"
+            emit_env["MOSS_MARGO_PACKAGE_BUILD_ROOTS"] = os.pathsep.join(
+                [*(str((item.root / "build" / profile_name(release)).resolve())
+                  for item in packages),
+                 str((owner / "build" / profile_name(release)).resolve())])
+            run([str(MOSS), "build", "--json"], cwd=owner, env=emit_env,
+                capture=True)
+            source = owner / "build" / profile_name(release) / f"{module}.rs"
+            if not source.is_file():
+                raise MargoError(
+                    f"source-backed Cargo provider {module} has no generated Rust artifact")
+        name = cargo_package_name(package, "lib", module)
+        record = {"package": package, "module": module,
+                  "crate_name": rust_crate_name(module), "source": source,
+                  "cargo_name": name, "crate_dir": crates_dir / name,
+                  "kind": "lib", "ambient": True}
+        ambient_modules[module] = record
+        modules_by_package.setdefault(identity, {})[module] = record
+        records.append(record)
+        imports = set(re.findall(
+            r"(?m)^\s*extern crate (moss_[A-Za-z_][A-Za-z0-9_]*);",
+            source.read_text(encoding="utf-8")))
+        for crate in sorted(imports):
+            if crate != "moss_runtime" and crate.startswith("moss_"):
+                dependency = crate[5:]
+                if dependency not in graph_modules:
+                    materialize_ambient(dependency)
+
+    initial_imports = set()
+    for record in records:
+        initial_imports.update(re.findall(
+            r"(?m)^\s*extern crate (moss_[A-Za-z_][A-Za-z0-9_]*);",
+            record["source"].read_text(encoding="utf-8")))
+    for crate in sorted(initial_imports):
+        module = crate[5:]
+        if module not in graph_modules:
+            materialize_ambient(module)
+
+    record_by_name = {record["cargo_name"]: record for record in records}
+    for existing in crates_dir.iterdir():
+        if existing.is_dir() and existing.name not in record_by_name:
+            shutil.rmtree(existing)
+
+    # Build manifests after the ambient module closure has been added.
+
+    runtime_dir = Path(os.environ.get("MOSS_RUNTIME_SOURCE_DIR",
+                                     REPO / "runtime" / "moss_runtime")).resolve()
+    external_crates: dict[str, Path] = {}
+    for record in records:
+        imports = sorted(set(re.findall(
+            r"(?m)^\s*extern crate ([A-Za-z_][A-Za-z0-9_]*);",
+            record["source"].read_text(encoding="utf-8"))))
+        source_text = record["source"].read_text(encoding="utf-8")
+        if "moss_runtime::" in source_text and "moss_runtime" not in imports:
+            imports.append("moss_runtime")
+        dependencies = []
+        for crate in imports:
+            if crate == "moss_runtime" and (runtime_dir / "Cargo.toml").is_file():
+                dependencies.append((crate, "moss_runtime", runtime_dir))
+            elif crate.startswith("moss_"):
+                module = crate[5:]
+                try:
+                    provider = provider_for(record["package"], module)
+                except MargoError as error:
+                    raise
+                else:
+                    dependencies.append((crate, provider["cargo_name"], provider["crate_dir"]))
+            else:
+                raise MargoError(f"unsupported generated Rust dependency {crate} in {record['source']}")
+        crate_dir = record["crate_dir"]
+        cargo_source = record["source"]
+        manifest = ["[package]", f"name = {json.dumps(record['cargo_name'])}",
+                    f"version = {json.dumps(record['package'].data['version'])}",
+                    'edition = "2021"', 'build = "build.rs"',
+                    'publish = false', ""]
+        source_rel = os.path.relpath(record["source"].resolve(), crate_dir.resolve())
+        if record["kind"] == "lib":
+            manifest += ["[lib]", f"name = {json.dumps(record['crate_name'])}",
+                         f"path = {json.dumps(source_rel)}", ""]
+        else:
+            manifest += ["[[bin]]", f"name = {json.dumps(record['executable'].name)}",
+                         f"path = {json.dumps(source_rel)}", ""]
+        if dependencies:
+            manifest.append("[dependencies]")
+            for alias, name, dependency_dir in dependencies:
+                dependency_path = os.path.relpath(dependency_dir.resolve(), crate_dir.resolve())
+                manifest.append(f"{alias} = {{ package = {json.dumps(name)}, path = {json.dumps(dependency_path)} }}")
+            manifest.append("")
+        write_if_changed(crate_dir / "Cargo.toml", "\n".join(manifest))
+        build_rs = ('fn main() { println!("cargo:rerun-if-env-changed=MOSS_EXTERNAL_RLIB_FINGERPRINT"); '
+                    'println!("cargo:rustc-env=MOSS_EXTERNAL_RLIB_FINGERPRINT={}", '
+                    'std::env::var("MOSS_EXTERNAL_RLIB_FINGERPRINT").unwrap_or_default()); '
+                    'println!("cargo:rustc-check-cfg=cfg(moss_process_root)"); '
+                    'println!("cargo:rustc-check-cfg=cfg(moss_perf)"); '
+                    + ('println!("cargo:rustc-cfg=moss_process_root"); ' if record["kind"] == "bin" else '')
+                    + '}\n')
+        write_if_changed(crate_dir / "build.rs", build_rs)
+
+    members = sorted(os.path.relpath(record["crate_dir"], workspace)
+                     for record in records)
+    workspace_manifest = "[workspace]\nmembers = [\n" + "".join(
+        f"  {json.dumps(member)},\n" for member in members) + "]\nresolver = \"2\"\n"
+    write_if_changed(workspace / "Cargo.toml", workspace_manifest)
+    env = dict(os.environ)
+    encoded_flags = env.get("CARGO_ENCODED_RUSTFLAGS")
+    flags = encoded_flags.split("\x1f") if encoded_flags else shlex.split(env.get("RUSTFLAGS", ""))
+    flags.extend(["-D", "warnings"])
+    env["MOSS_EXTERNAL_RLIB_FINGERPRINT"] = ""
+    env["CARGO_ENCODED_RUSTFLAGS"] = "\x1f".join(flags)
+    command = [os.environ.get("CARGO", "cargo"), "build", "--workspace",
+               "--manifest-path", str(workspace / "Cargo.toml"),
+               "--jobs", str(jobs), "--message-format=json-render-diagnostics"]
+    completed = subprocess.run(command, cwd=root.root, env=env, text=True,
+                               capture_output=True, check=False)
+    if completed.returncode != 0:
+        raise MargoError(f"Cargo package build failed: {(completed.stderr or completed.stdout).strip()}")
+    metadata = json.loads(run([os.environ.get("CARGO", "cargo"), "metadata",
+                              "--format-version", "1", "--manifest-path",
+                              workspace / "Cargo.toml"], cwd=root.root,
+                              env=env, capture=True).stdout)
+    id_to_name = {item["id"]: item["name"] for item in metadata.get("packages", [])}
+    freshness = {package.data["name"]: [] for package in packages}
+    for line in completed.stdout.splitlines():
+        try:
+            message = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if message.get("reason") != "compiler-artifact":
+            continue
+        record = record_by_name.get(id_to_name.get(message.get("package_id"), ""))
+        if not record:
+            continue
+        kinds = message.get("target", {}).get("kind", [])
+        if any(kind in ("lib", "bin") for kind in kinds):
+            freshness.setdefault(record["package"].data["name"], []).append(
+                bool(message.get("fresh", False)))
+        filenames = [Path(path) for path in message.get("filenames", [])]
+        if record["kind"] == "lib" and not record.get("ambient", False):
+            rlib = next((path for path in filenames if path.suffix == ".rlib"), None)
+            if rlib is not None:
+                stable = record["package"].root / "build" / profile_name(release) / f"lib{record['module']}.rlib"
+                stable.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(rlib, stable)
+                alias = stable.parent / f"lib{record['crate_name']}.rlib"
+                if alias != stable:
+                    shutil.copyfile(rlib, alias)
+        elif record["kind"] == "bin":
+            binary = next((path for path in filenames if path.is_file()), None)
+            if binary is not None:
+                record["executable"].parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(binary, record["executable"])
+    package_names = [package.data["name"] for package in packages]
+    checked = [name for name in package_names
+               if freshness.get(name) and not all(freshness[name])]
+    skipped = [name for name in package_names
+               if freshness.get(name) and all(freshness[name])]
+    return checked, skipped
+
+
 def atomic_json(path: Path, payload: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(path.name + f".{os.getpid()}.tmp")
@@ -659,12 +1062,14 @@ def atomic_json(path: Path, payload: dict) -> None:
 
 
 def build_graph(root: Package, ordered: list[Package], release: bool,
-                json_mode: bool, check_only: bool = False) -> tuple[list[dict], list[str], list[str]]:
-    artifacts: list[dict] = []
-    checked: list[str] = []
-    skipped: list[str] = []
+                json_mode: bool, check_only: bool = False,
+                jobs: int = 1,
+                scheduling_events: list[dict] | None = None) -> tuple[list[dict], list[str], list[str], list[str], list[str]]:
+    if jobs < 1:
+        raise MargoError("package build job count must be at least 1")
     toolchain = package_toolchain_identity(check_only)
-    for package in ordered:
+
+    def build_one(package: Package) -> tuple[dict, bool]:
         profile = profile_name(release, check_only)
         state_path = package.root / "build" / profile / ".margo-fingerprint.json"
         is_root_package = package.root.resolve() == root.root.resolve()
@@ -685,14 +1090,12 @@ def build_graph(root: Package, ordered: list[Package], release: bool,
                 prior.get("outputs") == current_outputs and
                 (not check_only or has_check_interface) and
                 (check_only or isinstance(prior_result, dict))):
-            skipped.append(package.data["name"])
             if isinstance(prior_result, dict):
-                artifacts.append(prior_result)
-            else:
-                artifacts.append({})
-            continue
+                return prior_result, False
+            return {}, False
         env = package_environment(package, ordered, release, check_only)
         env["MARGO_PACKAGE_FINGERPRINT"] = fingerprint
+        env["MOSS_MARGO_CARGO_DRIVER"] = "1"
         command = [str(MOSS), "build"] + (["--release"] if release else []) + \
                   (["--check"] if check_only else []) + ["--json"]
         completed = run(command, cwd=package.root, env=env, capture=True)
@@ -711,7 +1114,6 @@ def build_graph(root: Package, ordered: list[Package], release: bool,
                 raise MargoError(
                     f"test target semantic check failed for {package.data['name']}: "
                     f"{diagnostic}")
-        checked.append(package.data["name"])
         outputs = output_snapshot(package, release, check_only, payload)
         if check_only:
             for output in outputs:
@@ -729,22 +1131,81 @@ def build_graph(root: Package, ordered: list[Package], release: bool,
         state = {"format": "margo-package-state-v1", "fingerprint": fingerprint,
                  "outputs": outputs, "result": payload}
         atomic_json(state_path, state)
-        artifacts.append(payload)
-    return artifacts, checked, skipped
+        return payload, True
+
+    artifacts_by_identity: dict[str, dict] = {}
+    checked_identities: set[str] = set()
+    native_checked: set[str] = set()
+    native_skipped: set[str] = set()
+    results, failures, events, states = run_ready_queue(ordered, jobs, build_one)
+    if scheduling_events is not None:
+        scheduling_events.extend(events)
+    failed_packages = [package for package in ordered
+                       if states[package.identity] == "failed"]
+    if failed_packages:
+        package = failed_packages[0]
+        error = failures[package.identity]
+        if isinstance(error, MargoError):
+            raise error
+        raise MargoError(f"package build failed for {package.data['name']}: {error}") from error
+    for package in ordered:
+        if states[package.identity] != "finished":
+            raise MargoError(f"internal error: package {package.data['name']} was not scheduled")
+        artifact, was_checked = results[package.identity]
+        artifacts_by_identity[package.identity] = artifact
+        if was_checked:
+            checked_identities.add(package.identity)
+    if not check_only:
+        native_checked_list, native_skipped_list = cargo_build_graph(
+            root, ordered, artifacts_by_identity, release, jobs)
+        native_checked.update(native_checked_list)
+        native_skipped.update(native_skipped_list)
+        # Cargo owns native outputs. Refresh fingerprints after it writes
+        # stable provider rlibs and executable paths.
+        for package in ordered:
+            profile = profile_name(release)
+            state_path = package.root / "build" / profile / ".margo-fingerprint.json"
+            try:
+                state = json.loads(state_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            result = state.get("result")
+            if isinstance(result, dict):
+                state["outputs"] = output_snapshot(package, release,
+                                                    False, result)
+                atomic_json(state_path, state)
+    artifacts = [artifacts_by_identity[package.identity] for package in ordered]
+    checked = [package.data["name"] for package in ordered
+               if package.identity in checked_identities]
+    skipped = [package.data["name"] for package in ordered
+               if package.identity not in checked_identities]
+    native_checked_ordered = [package.data["name"] for package in ordered
+                              if package.data["name"] in native_checked]
+    native_skipped_ordered = [package.data["name"] for package in ordered
+                              if package.data["name"] in native_skipped]
+    return artifacts, checked, skipped, native_checked_ordered, native_skipped_ordered
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(prog="margo")
     parser.add_argument("command", choices=("build", "run", "test", "bench", "clean", "debug"))
     parser.add_argument("filter", nargs="?")
+    parser.add_argument("--root", type=Path,
+                        help="package root (defaults to the current directory or a parent)")
     parser.add_argument("--release", action="store_true")
     parser.add_argument("--check", action="store_true",
                         help="check package semantics and write .mossi interfaces without rustc")
     parser.add_argument("--json", action="store_true")
+    parser.add_argument("--moss-json", action="store_true",
+                        help=argparse.SUPPRESS)
     parser.add_argument("--trace", action="store_true")
     parser.add_argument("--interp", action="store_true")
+    parser.add_argument("-j", "--jobs", type=int, default=max(1, os.cpu_count() or 1),
+                        help="maximum number of independent package builds (default: CPU count)")
     args = parser.parse_args()
     try:
+        if args.jobs < 1:
+            raise MargoError("-j/--jobs must be at least 1")
         if args.command == "debug" and (args.filter or args.release or args.json or args.interp):
             unsupported = []
             if args.filter:
@@ -760,6 +1221,8 @@ def main() -> int:
                 "unsupported arguments: " + " ".join(unsupported))
         if args.check and args.command != "build":
             raise MargoError("--check is supported only by 'margo build'")
+        if args.moss_json and args.command != "build":
+            raise MargoError("--moss-json is supported only by 'margo build'")
         if args.command != "debug" and args.command != "test" and args.trace:
             raise MargoError("--trace is supported only by margo debug and margo test --interp")
         if args.command != "test" and args.interp:
@@ -768,7 +1231,7 @@ def main() -> int:
             raise MargoError("--trace with margo test requires --interp")
         if args.command == "test" and args.interp and args.release:
             raise MargoError("margo test --interp does not support --release")
-        root_path = find_root(Path.cwd())
+        root_path = find_root(args.root if args.root is not None else Path.cwd())
         root, ordered = resolve_graph(root_path)
 
         if args.command == "test" and args.interp:
@@ -779,7 +1242,7 @@ def main() -> int:
             dependency_order = [package for package in ordered
                                 if package is not root]
             build_graph(root, dependency_order, False, args.json,
-                        check_only=True)
+                        check_only=True, jobs=args.jobs)
             env = package_environment(root, ordered, False, check_only=True)
             test_cmd = [str(MOSS), "test", "--interp"]
             if args.filter:
@@ -797,7 +1260,7 @@ def main() -> int:
             dependency_order = [package for package in ordered
                                 if package is not root]
             build_graph(root, dependency_order, False, args.json,
-                        check_only=True)
+                        check_only=True, jobs=args.jobs)
             env = package_environment(root, ordered, False, check_only=True)
             debug_cmd = [str(MOSS), "debug", str(root.root)]
             if args.trace:
@@ -807,8 +1270,10 @@ def main() -> int:
         if args.command == "clean":
             run([str(MOSS), "clean"] + (["--json"] if args.json else []), cwd=root.root)
             return 0
-        artifacts, checked_packages, skipped_packages = build_graph(
-            root, ordered, args.release, args.json, args.check)
+        scheduling_events: list[dict] = []
+        artifacts, checked_packages, skipped_packages, native_checked, native_skipped = build_graph(
+            root, ordered, args.release, args.json, args.check, args.jobs,
+            scheduling_events)
         if args.check:
             if args.json:
                 print(json.dumps({"schema_version": "margo-1", "ok": True,
@@ -818,18 +1283,29 @@ def main() -> int:
                                  for p in ordered],
                     "check_only": True,
                     "checked": checked_packages,
-                    "skipped": skipped_packages}, sort_keys=True))
+                    "skipped": skipped_packages,
+                    "scheduling_events": scheduling_events}, sort_keys=True))
             else:
                 print("Checked " + str(len(checked_packages)) + " package(s); " +
                       "skipped " + str(len(skipped_packages)) + " unchanged package(s)")
             return 0
         environment = package_environment(root, ordered, args.release)
         if args.command == "build":
+            if args.moss_json:
+                print(json.dumps({"protocol_version": 1,
+                    "schema_version": "moss-agent-1", "command": "build",
+                    "ok": True, "result": artifacts[-1]}, sort_keys=True))
+                return 0
             if args.json:
                 print(json.dumps({"schema_version": "margo-1", "ok": True,
                     "root_package": root.data["name"], "build_order": [p.data["name"] for p in ordered],
                     "packages": [{"name": p.data["name"], "source": p.source} for p in ordered],
-                    "artifacts": artifacts[-1]}, sort_keys=True))
+                    "checked": checked_packages,
+                    "skipped": skipped_packages,
+                    "artifacts": artifacts[-1],
+                    "native_checked": native_checked,
+                    "native_skipped": native_skipped,
+                    "scheduling_events": scheduling_events}, sort_keys=True))
             return 0
         if args.command == "run":
             executable = artifacts[-1]["artifacts"]["executable"]
@@ -841,6 +1317,21 @@ def main() -> int:
         if args.json: command.append("--json")
         return subprocess.run(command, cwd=root.root, env=environment).returncode
     except MargoError as error:
+        if 'args' in locals() and args.moss_json:
+            detail = str(error)
+            embedded = re.search(r"(\{\s*\"protocol_version\"\s*:.*\})\s*$",
+                                 detail, re.DOTALL)
+            if embedded:
+                try:
+                    print(json.dumps(json.loads(embedded.group(1)), sort_keys=True))
+                    return 1
+                except json.JSONDecodeError:
+                    pass
+            print(json.dumps({"protocol_version": 1,
+                "schema_version": "moss-agent-1", "command": "build",
+                "ok": False, "error": {"code": "MARGO_PACKAGE_BUILD_ERROR",
+                    "severity": "error", "message": detail}}, sort_keys=True))
+            return 1
         if 'args' in locals() and args.json:
             print(json.dumps({"schema_version": "margo-1", "ok": False, "error": str(error)}))
         else:

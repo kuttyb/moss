@@ -38,7 +38,7 @@ with tempfile.TemporaryDirectory(prefix="collections-source-free-", dir=SCRATCH)
     check = subprocess.run([str(MOSS), "check", "src/main.moss", "--json"],
                            cwd=app, env=source_free_env, check=True, capture_output=True, text=True)
     assert json.loads(check.stdout)["ok"] is True, check.stdout
-    subprocess.run([str(MOSS), "build", "--json"], cwd=app, env=source_free_env,
+    subprocess.run([str(MARGO), "build", "--moss-json"], cwd=app, env=source_free_env,
                    check=True, capture_output=True, text=True)
     result = subprocess.run([str(app / "build" / "debug" / "collections_source_free_smoke")],
                             cwd=app, env=source_free_env, check=True, capture_output=True, text=True)

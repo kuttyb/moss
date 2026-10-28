@@ -149,7 +149,7 @@ export fn relay(b: Box):
                 "module Main\nimport Service\n\nfn main():\n"
                 f"  item = Service.identity_chain(1)\n"
                 "  echo Service.relay(item)\n")
-        rejected = subprocess.run([str(MOSS), "build", "--json"], cwd=negative,
+        rejected = subprocess.run([str(MARGO), "build", "--moss-json"], cwd=negative,
                                   env=bad_env, capture_output=True, text=True)
         assert rejected.returncode != 0, (rejected.stdout, rejected.stderr)
         diagnostic = json.loads(rejected.stdout)["error"]

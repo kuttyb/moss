@@ -244,7 +244,7 @@ def test_provider_and_source_free(root):
     imported = root / "imported-interface"
     package(imported, "imported", app_sources("Consumer"))
     imported_env = env_for(MOSS_MODULE_PATH=str(provider / "build" / "debug"))
-    build = run([COMPILER, "build", "--json"], imported, env=imported_env)
+    build = run([MARGO, "build", "--moss-json"], imported, env=imported_env)
     artifact = json.loads(build.stdout)["result"]["artifacts"]
     require_output([artifact["executable"]], imported, "42\n14\n5\n11\n42\n",
                    env=imported_env)

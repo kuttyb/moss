@@ -83,7 +83,7 @@ with tempfile.TemporaryDirectory(prefix="phase24-type-resolution-", dir=SCRATCH)
     assert interp.returncode == 0, f"moss run --interp failed:\n{interp.stderr}\n{interp.stdout}"
 
     # 3. moss build (native debug)
-    build = subprocess.run([str(MOSS), "build"],
+    build = subprocess.run([str(MARGO), "build"],
                            cwd=pkg, capture_output=True, text=True)
     assert build.returncode == 0, f"moss build failed:\n{build.stderr}\n{build.stdout}"
 

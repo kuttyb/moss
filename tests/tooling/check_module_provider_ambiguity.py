@@ -10,6 +10,7 @@ import sys
 
 repo = Path(__file__).resolve().parents[2]
 compiler = Path(sys.argv[1]).resolve()
+margo = repo / "margo"
 root = repo / "tmp" / "module-provider-ambiguity"
 shutil.rmtree(root, ignore_errors=True)
 root.mkdir(parents=True)
@@ -31,7 +32,7 @@ def write_package(path, name, source):
 
 
 def build(path):
-    return run([compiler, "build", "--json"], path)
+    return run([margo, "build", "--moss-json"], path)
 
 
 def module_path(*packages):
@@ -56,7 +57,7 @@ for provider in (alpha, beta, utils_a, utils_b, math_a, math_b):
 # Different provider names resolve normally.
 different = app("different", "module App\nimport Alpha\nimport Beta\n\nfn main():\n  first = Alpha.value()\n  second = Beta.value()\n  echo first + second\n")
 different_env = dict(os.environ, MOSS_MODULE_PATH=module_path(alpha, beta))
-different_result = run([compiler, "build", "--json"], different, env=different_env)
+different_result = run([margo, "build", "--moss-json"], different, env=different_env)
 different_build = json.loads(different_result.stdout)
 assert different_build["ok"] is True
 assert run([different_build["result"]["artifacts"]["executable"]],
@@ -65,14 +66,14 @@ assert run([different_build["result"]["artifacts"]["executable"]],
 # Duplicate modules stay legal until an import asks Moss to resolve them.
 unused = app("unused", "module App\n\nfn main():\n  echo 7\n")
 unused_env = dict(os.environ, MOSS_MODULE_PATH=module_path(utils_a, utils_b))
-assert json.loads(run([compiler, "build", "--json"], unused, env=unused_env).stdout)["ok"] is True
+assert json.loads(run([margo, "build", "--moss-json"], unused, env=unused_env).stdout)["ok"] is True
 
 # A local source module keeps its established precedence over external
 # providers of the same declared module identity.
 local = app("local", "module App\nimport Utils\n\nfn main():\n  echo Utils.value()\n")
 (local / "src" / "utils.moss").write_text(
     "module Utils\n\nexport fn value() -> Int:\n  42\n", encoding="utf-8")
-local_build = json.loads(run([compiler, "build", "--json"], local,
+local_build = json.loads(run([margo, "build", "--moss-json"], local,
                              env=unused_env).stdout)
 assert local_build["ok"] is True
 assert run([local_build["result"]["artifacts"]["executable"]],
@@ -80,8 +81,8 @@ assert run([local_build["result"]["artifacts"]["executable"]],
 
 
 def ambiguity(path, environment, module, paths):
-    first = run([compiler, "build", "--json"], path, env=environment, expected=1)
-    second = run([compiler, "build", "--json"], path, env=environment, expected=1)
+    first = run([margo, "build", "--moss-json"], path, env=environment, expected=1)
+    second = run([margo, "build", "--moss-json"], path, env=environment, expected=1)
     assert first.stdout == second.stdout
     payload = json.loads(first.stdout)
     assert payload["error"]["code"] == "MODULE_IMPORT_AMBIGUOUS"
@@ -105,7 +106,7 @@ same = app("same", "module App\nimport Utils\n\nfn main():\n  echo Utils.value()
 same_root = utils_a / "build" / "debug"
 same_env = dict(os.environ, MOSS_MODULE_PATH=os.pathsep.join(
     [str(same_root), str(same_root / ".." / "debug"), str(same_root)]))
-same_build = json.loads(run([compiler, "build", "--json"], same, env=same_env).stdout)
+same_build = json.loads(run([margo, "build", "--moss-json"], same, env=same_env).stdout)
 assert same_build["ok"] is True
 assert run([same_build["result"]["artifacts"]["executable"]], same).stdout.strip() == "1"
 
@@ -113,7 +114,7 @@ assert run([same_build["result"]["artifacts"]["executable"]], same).stdout.strip
 # .mossi closure loading; Geometry itself is compiled once against Math A.
 geometry = app("geometry", "module Geometry\nimport Math\n\nexport fn answer() -> Int:\n  Math.value() + 2\n")
 build_geometry_env = dict(os.environ, MOSS_MODULE_PATH=module_path(math_a))
-assert json.loads(run([compiler, "build", "--json"], geometry,
+assert json.loads(run([margo, "build", "--moss-json"], geometry,
                       env=build_geometry_env).stdout)["ok"] is True
 transitive = app("transitive", "module App\nimport Geometry\n\nfn main():\n  echo Geometry.answer()\n")
 transitive_env = dict(os.environ, MOSS_MODULE_PATH=module_path(geometry, math_b, math_a))

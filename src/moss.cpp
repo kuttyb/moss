@@ -11214,6 +11214,7 @@ struct ProjectManifest {
   string name;
   string version;
   std::filesystem::path source = "src";
+  bool package_manifest = false;
 };
 
 static std::optional<std::filesystem::path> find_project_root(
@@ -11283,6 +11284,7 @@ static ProjectManifest load_project_manifest(
     if (line.empty()) continue;
     if (line.front() == '[' && line.back() == ']') {
       section = trim(line.substr(1, line.size() - 2));
+      if (section == "package") manifest.package_manifest = true;
       if (section != "project" && section != "package" && section != "build" &&
           section != "dependencies")
         throw ProjectError(
@@ -14769,9 +14771,10 @@ static std::filesystem::path selected_provider_rlib(
 }
 
 static string source_free_contract_marker(const string& module,
-                                          const string& digest) {
+                                          const string& digest,
+                                          const string& package_hash) {
   return "MOSS_ABI_V9_CONTRACT::" + tooling_name(module) + "::" + digest +
-         "::END";
+         "::SOURCE::" + package_hash + "::END";
 }
 
 static string normalize_section1_locations(std::string_view input);
@@ -15050,6 +15053,8 @@ static void verify_source_free_provider_binding(
   if (source_free_contract_sha256(material) != declared)
     throw CompileError(0, "ABI-v9 provider metadata does not match its declared contract digest",
                        "SOURCE_FREE_CONTRACT_MISMATCH");
+  validate_provider_source_freshness(
+      interface_file, source_free_declared_package_hash(text));
   if (!require_native_artifact) return;
   const auto rlib = selected_provider_rlib(interface_file);
   std::ifstream input(rlib, std::ios::binary);
@@ -15095,7 +15100,9 @@ static void verify_source_free_provider_binding(
                          "SOURCE_FREE_ARTIFACT_CONTRACT_INVALID");
     if (name.find(".rmeta") == string::npos && name != "/" && name != "//") {
       const size_t found = bytes.find(prefix, member_begin);
-      const std::size_t marker_size = prefix.size() + 64 + string("::END").size();
+      const std::size_t marker_size = source_free_contract_marker(
+          interface_file.stem().string(), declared,
+          source_free_declared_package_hash(text)).size();
       if (found != string::npos && found < member_begin + member_size &&
           marker_size <= member_begin + member_size - found) {
         ++count;
@@ -15115,7 +15122,8 @@ static void verify_source_free_provider_binding(
         "selected provider artifact has missing or ambiguous ABI-v9 contract binding",
         "SOURCE_FREE_ARTIFACT_CONTRACT_INVALID");
   const string expected = source_free_contract_marker(
-      interface_file.stem().string(), declared);
+      interface_file.stem().string(), declared,
+      source_free_declared_package_hash(text));
   if (embedded != expected)
     throw CompileError(0,
         "ABI-v9 provider metadata does not match the selected compiled artifact",
@@ -17359,6 +17367,27 @@ static CheckedProjectUnit check_project_sources(
       // than requiring a package driver to fold provider source into this
       // compilation unit.
       const auto providers = compiled_module_providers(manifest);
+      auto native_provider_required = [&](const std::filesystem::path& file) {
+        if (require_native_artifacts) return true;
+        const char* raw_roots = std::getenv("MOSS_MARGO_PACKAGE_BUILD_ROOTS");
+        if (!raw_roots || !*raw_roots) return false;
+        std::error_code error;
+        const auto candidate = std::filesystem::weakly_canonical(file, error);
+        if (error) return true;
+        std::istringstream roots(raw_roots);
+        string root;
+        while (std::getline(roots, root, ':')) {
+          if (root.empty()) continue;
+          error.clear();
+          const auto canonical_root = std::filesystem::weakly_canonical(root, error);
+          if (error) continue;
+          const auto relative = candidate.lexically_relative(canonical_root);
+          const string text = relative.generic_string();
+          if (relative.empty()) continue;
+          if (text != ".." && !starts_with(text, "../")) return false;
+        }
+        return true;
+      };
       bool loaded = true;
       while (loaded) {
         loaded = false;
@@ -17369,7 +17398,8 @@ static CheckedProjectUnit check_project_sources(
               providers, requested.second);
           if (!selected) continue;
           ParsedModuleUnit provider = load_module_interface(
-              selected->interface_file, require_native_artifacts,
+              selected->interface_file,
+              native_provider_required(selected->interface_file),
               load_execution_bodies);
           // The provider map was indexed by the interface's module_id; retain
           // that invariant here rather than accepting a filename coincidence.
@@ -17549,10 +17579,11 @@ static CompiledProjectUnit analyze_project_sources(
     bool optimized, bool debug_build, ProgramGenerationMode mode,
     const string& declaration_filter = {},
     const std::set<string>* declaration_ids = nullptr,
-    const std::map<std::filesystem::path, string>* source_overrides = nullptr) {
+    const std::map<std::filesystem::path, string>* source_overrides = nullptr,
+    bool require_native_artifacts = true) {
   CheckedProjectUnit checked = check_project_sources(
       manifest, sources, mode, declaration_filter, declaration_ids,
-      source_overrides);
+      source_overrides, require_native_artifacts);
   try {
     optimize_program(checked.program, optimized);
     OptimizationPlan plan = OptimizationPlan{optimized};
@@ -17634,9 +17665,11 @@ static SemanticSnapshot analyze_project_snapshot(
 
 static SemanticSnapshot analyze_project_snapshot(
     const ProjectManifest& manifest,
-    const vector<std::filesystem::path>& sources) {
+    const vector<std::filesystem::path>& sources,
+    bool require_native_artifacts = true) {
   CompiledProjectUnit unit = analyze_project_sources(
-      manifest, sources, true, false, ProgramGenerationMode::Application);
+      manifest, sources, true, false, ProgramGenerationMode::Application,
+      {}, nullptr, nullptr, require_native_artifacts);
   return make_semantic_snapshot(manifest, sources, unit.program, unit.plan);
 }
 
@@ -21721,6 +21754,9 @@ static NativeArtifact compile_native_artifact(
   const std::filesystem::path& primary_source = sources.front();
   string stem = name_override.value_or(artifact_stem(manifest, primary_source));
   NativeArtifact artifact;
+  const char* cargo_driver_setting = std::getenv("MOSS_MARGO_CARGO_DRIVER");
+  const bool cargo_driver = cargo_driver_setting &&
+      string(cargo_driver_setting) == "1";
   artifact.rust = directory / (stem + ".rs");
   artifact.debug_map = directory / (stem + ".mossmap");
   artifact.executable = directory / stem;
@@ -21807,7 +21843,7 @@ static NativeArtifact compile_native_artifact(
         return local_source_modules.empty() ||
                local_source_modules.count(file.stem().string()) != 0;
       }), artifact.module_interfaces.end());
-  for (const auto& interface_file : artifact.module_interfaces) {
+  if (!cargo_driver) for (const auto& interface_file : artifact.module_interfaces) {
     std::error_code provider_error;
     auto rlib = interface_file;
     rlib.replace_extension(".rlib");
@@ -21820,7 +21856,7 @@ static NativeArtifact compile_native_artifact(
   // Compiled providers are semantic inputs too.  Their .mossi contract (and
   // backend fingerprint below) must invalidate a consumer even when the
   // consumer's Moss source is unchanged.
-  for (const auto& interface_file : artifact.module_interfaces) {
+  if (!cargo_driver) for (const auto& interface_file : artifact.module_interfaces) {
     std::ifstream interface_input(interface_file, std::ios::binary);
     std::ostringstream interface_text;
     if (interface_input) interface_text << interface_input.rdbuf();
@@ -21889,7 +21925,7 @@ static NativeArtifact compile_native_artifact(
 
   CompiledProjectUnit unit = analyze_project_sources(
       manifest, sources, optimized, debug_build, mode, declaration_filter,
-      declaration_ids);
+      declaration_ids, nullptr, !cargo_driver);
   if (staged_abi_v10())
     for (const auto& operation : unit.program.key_operation_specialization_ids)
       source_key << "key-operation " << operation.first << " "
@@ -21927,8 +21963,28 @@ static NativeArtifact compile_native_artifact(
       }
     }
   }
+  std::set<std::filesystem::path> graph_build_roots;
+  if (cargo_driver) {
+    if (const char* roots = std::getenv("MOSS_MARGO_PACKAGE_BUILD_ROOTS")) {
+      std::istringstream paths(roots);
+      string root;
+      while (std::getline(paths, root, ':'))
+        if (!root.empty()) graph_build_roots.insert(root);
+    }
+  }
   for (const auto& selected : unit.external_module_interfaces) {
     const auto& interface_file = selected.second;
+    const bool provider_is_in_graph = std::any_of(
+        graph_build_roots.begin(), graph_build_roots.end(),
+        [&](const auto& root) {
+          return path_within(interface_file, root);
+        });
+    if (cargo_driver && provider_is_in_graph) continue;
+    if (!staged_abi_v10()) {
+      const string interface_text = read_text_file(
+          interface_file, "MOSS_INTERFACE_ERROR");
+      verify_source_free_provider_binding(interface_file, interface_text, true);
+    }
     const auto provider_rlib = selected_provider_rlib(interface_file);
     source_key << "selected-provider " << selected.first << "\n"
                << interface_file.string() << "\n"
@@ -21939,8 +21995,9 @@ static NativeArtifact compile_native_artifact(
     std::ifstream rlib_input(provider_rlib, std::ios::binary);
     std::ostringstream rlib_text;
     rlib_text << rlib_input.rdbuf();
-    source_key << native_cache::artifact_identity(rlib_text.str(), stable_hash)
-               << "\n";
+    if (!cargo_driver)
+      source_key << native_cache::artifact_identity(rlib_text.str(), stable_hash)
+                 << "\n";
   }
   source_fingerprint = source_free_contract_sha256(source_key.str());
   cache_text = backend_cache_metadata(
@@ -22048,7 +22105,8 @@ static NativeArtifact compile_native_artifact(
               provider_interface.string());
         const string marker = v10
             ? abi_v10::provider_marker(tooling_name(module), digest)
-            : source_free_contract_marker(module, digest);
+            : source_free_contract_marker(
+                  module, digest, package_source_freshness_hash(manifest));
         generated += string("\n#[used]\n#[no_mangle]\npub static __moss_abi_") +
             (v10 ? "v10" : "v9") + "_contract_" +
             tooling_name(module) + ": [u8; " +
@@ -22057,7 +22115,7 @@ static NativeArtifact compile_native_artifact(
       rust_changed = update_file(rust_file, generated) || rust_changed;
       if (module == root_module) artifact.rust = rust_file;
     }
-    for (const auto& external : unit.program.external_modules) {
+  if (!cargo_driver) for (const auto& external : unit.program.external_modules) {
       // Pair native code with the exact .mossi interface selected during
       // semantic import resolution. Never re-scan by filename here: another
       // package may legitimately publish a different artifact with the same
@@ -22088,7 +22146,10 @@ static NativeArtifact compile_native_artifact(
   // never receives or regenerates a dependency's Moss implementation.
   artifact.module_rlibs.clear();
   if (unit.program.explicit_module) {
-    for (const auto& module : module_order) {
+    if (cargo_driver) {
+      for (const auto& module : module_order)
+        artifact.module_rlibs.push_back(module_rlib.at(module));
+    } else for (const auto& module : module_order) {
       std::filesystem::path rlib = module_rlib.at(module);
       vector<string> module_command = {artifact.backend_toolchain.rustc_executable};
       module_command.insert(module_command.end(),
@@ -22149,7 +22210,7 @@ static NativeArtifact compile_native_artifact(
 
   // The final executable is the root Moss module and links its dependency
   // rlibs through ordinary rustc --extern options.
-  if (unit.program.explicit_module) {
+  if (unit.program.explicit_module && !cargo_driver) {
     std::filesystem::remove(artifact.executable, error);
     if (error)
       throw ProjectError("MOSS_INTERNAL_OR_IO_ERROR",
@@ -22191,7 +22252,7 @@ static NativeArtifact compile_native_artifact(
     return artifact;
   }
 
-  if (!unit.program.explicit_module) {
+  if (!unit.program.explicit_module && !cargo_driver) {
     std::filesystem::remove(artifact.executable, error);
     if (error)
       throw ProjectError("MOSS_INTERNAL_OR_IO_ERROR",
@@ -22485,7 +22546,7 @@ static int run_project_build(const ProjectManifest& manifest, bool release,
     units_reused = previous_snapshot->units.size();
   } else {
     SemanticSnapshot current_snapshot = analyze_project_snapshot(
-        manifest, sources);
+        manifest, sources, std::getenv("MOSS_MARGO_CARGO_DRIVER") == nullptr);
     units_analyzed = current_snapshot.units.size();
     if (previous_snapshot) {
       std::unordered_map<string,const SemanticSnapshotUnit*> prior;
@@ -24505,6 +24566,13 @@ static int run_project_command(int argc, char** argv) {
           throw ProjectError("BUILD_PROFILE_ERROR",
                              "unexpected build argument '" + argument + "'");
       }
+      const char* cargo_driver = std::getenv("MOSS_MARGO_CARGO_DRIVER");
+      const bool invoked_by_margo =
+          cargo_driver && string(cargo_driver) == "1";
+      if (manifest.package_manifest && !invoked_by_margo)
+        throw ProjectError("MOSS_PACKAGE_BUILD_REQUIRES_MARGO",
+            manifest.name + " is a package; run `margo build`",
+            manifest.manifest_file.string());
       if (check_only)
         return run_project_interface_check(manifest, release, json);
       return run_project_build(manifest, release, json);

@@ -32,6 +32,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
 MOSS = Path(sys.argv[1] if len(sys.argv) > 1 else "./moss").resolve()
+MARGO = ROOT / "margo"
 SCRATCH = ROOT / "tmp"
 SCRATCH.mkdir(exist_ok=True)
 ENV = {k: v for k, v in os.environ.items() if k != "MOSS_STAGED_STRING_REPR"}
@@ -516,7 +517,7 @@ def test_compiled_only_provider():
         (project / "Moss.toml").write_text('[package]\nname = "sfkeys"\nversion = "0.1.0"\n')
         (project / "src" / "keys.moss").write_text(PROVIDER)
         (project / "src" / "main.moss").write_text(CONSUMER)
-        first = run([str(MOSS), "build", "--json"], cwd=project)
+        first = run([str(MARGO), "build", "--moss-json"], cwd=project)
         assert first.returncode == 0, first.stdout + first.stderr
         mossi = (project / "build" / "debug" / "keys.mossi").read_text()
         for prefix, panic in (("export fn digit ", "0"), ("export fn tens ", "0"),
@@ -527,7 +528,7 @@ def test_compiled_only_provider():
             assert facts["unresolved"] == "0" and facts["raise_set"] == "-", (prefix, facts)
         passed("keys.mossi: digit/tens/isequal/hash may_panic=0, risky may_panic=1")
         # Keep package source available for R2 interface freshness validation.
-        second = run([str(MOSS), "build", "--json"], cwd=project)
+        second = run([str(MARGO), "build", "--moss-json"], cwd=project)
         assert second.returncode == 0, second.stdout + second.stderr
         artifact = json.loads(second.stdout)["result"]["artifacts"]["executable"]
         result = run([artifact])
@@ -536,7 +537,7 @@ def test_compiled_only_provider():
         passed("source-free consumer sorts by imported % and / keys")
         (project / "src" / "main.moss").write_text(
             "module app\nimport keys\n\nfn main():\n  var v = [2, 1]\n  sort(v, by: keys.risky)\n")
-        third = run([str(MOSS), "build", "--json"], cwd=project)
+        third = run([str(MARGO), "build", "--moss-json"], cwd=project)
         assert third.returncode != 0 and "SORT_KEY_IMPURE" in third.stdout + third.stderr, (
             third.stdout + third.stderr)
         passed("source-free imported x / -1 key -> SORT_KEY_IMPURE")

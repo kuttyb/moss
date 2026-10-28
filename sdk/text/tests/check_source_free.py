@@ -56,7 +56,7 @@ with tempfile.TemporaryDirectory(prefix="text-source-free-", dir=SCRATCH) as tem
                              cwd=app, env=source_free_env, check=True,
                              capture_output=True, text=True)
     assert json.loads(checked.stdout)["ok"] is True, checked.stdout
-    subprocess.run([str(MOSS), "build", "--json"], cwd=app,
+    subprocess.run([str(MARGO), "build", "--moss-json"], cwd=app,
                    env=source_free_env, check=True, capture_output=True, text=True)
     result = subprocess.run([str(app / "build" / "debug" / "text_source_free_smoke")],
                             cwd=app, env=source_free_env, check=True,

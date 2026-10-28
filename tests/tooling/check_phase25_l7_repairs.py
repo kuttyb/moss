@@ -811,10 +811,10 @@ fn main():
   echo provider.before(-0.0, 0.0)
   echo provider.key_hash("a") == hash("a")
 """)
-        first = run([str(MOSS), "build", "--json"], cwd=proj)
+        first = run([str(MARGO), "build", "--moss-json"], cwd=proj)
         assert first.returncode == 0, first.stdout + first.stderr
         # Keep package source available for R2 freshness validation.
-        second = run([str(MOSS), "build", "--json"], cwd=proj)
+        second = run([str(MARGO), "build", "--moss-json"], cwd=proj)
         assert second.returncode == 0, second.stdout + second.stderr
         artifact = json.loads(second.stdout)["result"]["artifacts"]["executable"]
         result = run([artifact])

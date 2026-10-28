@@ -273,7 +273,7 @@ def test_representations_never_mix():
             "module provider\nexport fn shout(s: String) -> String:\n  return s + \"!\"\n")
         (src / "main.moss").write_text(
             "module app\nimport provider\nfn main():\n  echo provider.shout(\"é\")\n")
-        plain = run([str(MOSS), "build", "--json"], cwd=proj)
+        plain = run([str(MARGO), "build", "--moss-json"], cwd=proj)
         assert plain.returncode == 0, plain.stdout + plain.stderr
         interface = (proj / "build" / "debug" / "provider.mossi").read_text()
         assert "string_representation" not in interface
@@ -299,7 +299,7 @@ def test_representations_never_mix():
                 "STRING_REPRESENTATION_MISMATCH"), mixed.stdout
             print("  PASS: staged multi-crate execution and plain/indexed mismatch rejection")
             return
-        staged = run([str(MOSS), "build", "--json"], cwd=proj, env=STAGED)
+        staged = run([str(MARGO), "build", "--moss-json"], cwd=proj, env=STAGED)
         assert staged.returncode != 0
         assert "STRING_REPRESENTATION_STAGED_SINGLE_CRATE" in staged.stdout, staged.stdout
         # Keep package source available for R2 freshness validation.

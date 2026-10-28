@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """Hermetic package-DAG, Git-cache, lockfile, and compatibility checks."""
 import json
+import importlib.util
+import importlib.machinery
 import os
 from pathlib import Path
 import shutil
 import subprocess
 import sys
+import threading
 
 repo = Path(__file__).resolve().parents[2]
 margo = repo / "margo"
@@ -31,6 +34,62 @@ def write_package(path, name, source, dependencies=""):
         f'[build]\nsource = "src"\n{dependencies}', encoding="utf-8")
     (path / "src").mkdir(exist_ok=True)
     (path / "src" / "main.moss").write_text(source, encoding="utf-8")
+
+
+# Exercise package scheduling with controlled worker events. The slow root
+# package cannot finish until the fast package's dependent has started.
+margo_loader = importlib.machinery.SourceFileLoader("margo_scheduler", str(margo))
+margo_spec = importlib.util.spec_from_loader("margo_scheduler", margo_loader)
+margo_module = importlib.util.module_from_spec(margo_spec)
+margo_spec.loader.exec_module(margo_module)
+
+def scheduler_package(name):
+    return margo_module.Package(root, root / "Moss.toml", {"name": name},
+                                name, {"kind": "test"})
+
+fast = scheduler_package("Fast")
+slow = scheduler_package("Slow")
+fast_dependent = scheduler_package("FastDependent")
+fast_dependent.dependencies = [fast]
+release_slow = threading.Event()
+
+def scheduled_worker(package):
+    if package is slow:
+        assert release_slow.wait(10), "fast dependent did not release slow worker"
+    elif package is fast_dependent:
+        release_slow.set()
+    return package.data["name"], True
+
+scheduler_results, scheduler_errors, scheduler_events, scheduler_states = (
+    margo_module.run_ready_queue([fast, slow, fast_dependent], 2, scheduled_worker))
+assert not scheduler_errors and len(scheduler_results) == 3
+event_positions = {(event["event"], event["package"]): index
+                   for index, event in enumerate(scheduler_events)}
+assert event_positions[("start", "Fast")] < event_positions[("finish", "Fast")]
+assert event_positions[("start", "Slow")] < event_positions[("finish", "Slow")]
+assert event_positions[("start", "FastDependent")] < event_positions[("finish", "Slow")]
+
+# A worker failure cancels its dependent while allowing an independent worker
+# to finish and be recorded.
+broken = scheduler_package("Broken")
+broken_dependent = scheduler_package("BrokenDependent")
+broken_dependent.dependencies = [broken]
+independent_worker = scheduler_package("StillRunning")
+
+def failure_worker(package):
+    if package is broken:
+        raise RuntimeError("expected fixture failure")
+    return package.data["name"], True
+
+failure_results, failure_errors, failure_events, failure_states = (
+    margo_module.run_ready_queue([broken, independent_worker, broken_dependent],
+                                 2, failure_worker))
+assert failure_states[broken.identity] == "failed"
+assert failure_states[broken_dependent.identity] == "cancelled"
+assert failure_states[independent_worker.identity] == "finished"
+assert any(event == {"event": "cancel", "package": "BrokenDependent",
+                     "because": "Broken"} for event in failure_events)
+assert failure_results[independent_worker.identity][0] == "StillRunning"
 
 
 # A tagged local Git package is intentionally used instead of public network
@@ -64,6 +123,16 @@ import Geometry
 fn main():
   echo Geometry.answer()
 """, '''\n[dependencies]\nGeometry = { path = "../geometry" }\n''')
+independent = root / "independent"
+write_package(independent, "Independent", """module Independent
+
+export fn value() -> Int:
+  7
+""")
+app_manifest = app / "Moss.toml"
+app_manifest.write_text(app_manifest.read_text(encoding="utf-8") +
+                        'Independent = { path = "../independent" }\n',
+                        encoding="utf-8")
 (app / "tests").mkdir()
 (app / "tests" / "answer.moss").write_text('import Geometry\n\ntest "dependency answer":\n  assertEqual(Geometry.answer(), 42)\n', encoding="utf-8")
 (app / "benches").mkdir()
@@ -71,10 +140,16 @@ fn main():
 env = dict(os.environ)
 env.update(MARGO_HOME=str(home), MOSS=str(moss))
 
-first = run([margo, "build", "--json"], app, env=env)
+first = run([margo, "build", "--json", "-j", "2"], app, env=env)
 result = json.loads(first.stdout)
 assert result["ok"] is True
-assert result["build_order"] == ["Math", "Geometry", "App"]
+assert result["build_order"] == ["Math", "Geometry", "Independent", "App"]
+actual_events = result["scheduling_events"]
+event_index = {(event["event"], event["package"]): index
+               for index, event in enumerate(actual_events)}
+assert event_index[("finish", "Math")] < event_index[("start", "Geometry")]
+assert event_index[("finish", "Geometry")] < event_index[("start", "App")]
+assert event_index[("finish", "Independent")] < event_index[("start", "App")]
 assert result["packages"][0]["source"]["commit"] == commit
 # These are compiled provider contracts, not a folded Moss source unit.  The
 # concrete Rust consumers name their imported module crate and do not contain
@@ -102,17 +177,28 @@ run([margo, "bench", "dependency answer"], app, env=env)
 # Once the exact revision is cached, a repeat must not need a changing tag or
 # branch resolution. Removing the original remote proves cache/lock reuse.
 shutil.rmtree(math)
-second = run([margo, "build", "--json"], app, env=env)
-assert json.loads(second.stdout)["build_order"] == ["Math", "Geometry", "App"]
+second = run([margo, "build", "--json", "--jobs", "1"], app, env=env)
+second_result = json.loads(second.stdout)
+assert second_result["build_order"] == ["Math", "Geometry", "Independent", "App"]
+assert second_result["native_checked"] == []
+assert second_result["native_skipped"] == second_result["build_order"]
+invalid_jobs = run([margo, "build", "-j", "0"], app, expected=1, env=env)
+assert "-j/--jobs must be at least 1" in invalid_jobs.stderr
 assert (app / "Moss.lock").read_text(encoding="utf-8") == lock
+
+# Moss refuses to drive a package build; Margo owns package graph resolution
+# and drives the generated crates through Cargo.
+shutil.rmtree(independent / "build")
+direct_build = run([moss, "build", "--json"], independent, expected=1, env=env)
+direct_error = json.loads(direct_build.stdout)
+assert direct_build.returncode == 1
+assert direct_error["error"]["code"] == "MOSS_PACKAGE_BUILD_REQUIRES_MARGO"
+assert direct_error["error"]["message"] == "Independent is a package; run `margo build`"
+assert not (independent / "build" / "debug" / "Independent.rs").exists()
+package_build = run([margo, "build", "--json"], independent, env=env)
+assert json.loads(package_build.stdout)["ok"] is True
 run([margo, "clean"], app, env=env)
 assert not (app / "build").exists()
-
-# The existing compiler command remains a direct compatibility path for a
-# package manifest; Margo owns dependency acquisition, Moss owns compilation.
-shutil.rmtree(geometry / "build")
-cached_math = next((home / "git" / "checkouts").glob("*/*/build/debug"))
-run([moss, "build"], geometry, env=dict(env, MOSS_MODULE_PATH=str(cached_math)))
 
 # Margo exposes package artifact roots but does not resolve Moss imports. Two
 # packages may publish the same module until App asks Moss to import it.

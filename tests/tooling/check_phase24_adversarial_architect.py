@@ -180,7 +180,7 @@ with tempfile.TemporaryDirectory(prefix="p24-adversarial-gate-") as temp_dir:
         main_file.write_text(f"module app\nimport probe\nimport collections\nfn main():\n{indent(code)}", encoding="utf-8")
         ok, out = run_cmd([str(MOSS), "check", "src/main.moss", "--json"], cwd=source_free_dir, env=sf_env)
         assert ok, f"Part A Source-Free [{name}] check failed:\n{out}"
-        ok, out = run_cmd([str(MOSS), "build", "--json"], cwd=source_free_dir, env=sf_env)
+        ok, out = run_cmd([str(MARGO), "build", "--moss-json"], cwd=source_free_dir, env=sf_env)
         assert ok, f"Part A Source-Free [{name}] build failed:\n{out}"
         exe = Path(json.loads(out)["result"]["artifacts"]["executable"])
         ok, out = run_cmd([str(exe)], cwd=source_free_dir, env=sf_env)

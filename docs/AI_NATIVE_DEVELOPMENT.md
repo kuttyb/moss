@@ -16,8 +16,8 @@ fresh agent can learn the repository workflow without reverse-engineering genera
 8. moss test when a full validation run is appropriate
 ```
 
-Inside a project, `moss build`, `moss test`, and `moss bench` reuse the same manifest,
-compiler facts, durable project IDs, artifact cache, and JSON envelope. `moss test
+Inside a package, use `margo build`, `margo test`, and `margo bench`; Margo owns
+the package graph while Moss provides semantic queries and diagnostics. `moss test
 --affected` is a development accelerator; the full suite remains authoritative.
 
 Semantic queries and edits use the same temporary uber-module context as the target

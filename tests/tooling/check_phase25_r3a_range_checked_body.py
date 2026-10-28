@@ -117,7 +117,7 @@ fn main():
         bad_env = env | {"MOSS_MODULE_PATH": str(mutated),
                          "MARGO_HOME": str(scratch / f"margo-{mode}"),
                          "MOSS_PHASE25_CHECKED_BODY_TRACE": "1"}
-        result = subprocess.run([str(MOSS), "build", "--json"], cwd=consumer,
+        result = subprocess.run([str(MARGO), "build", "--moss-json"], cwd=consumer,
                                 env=bad_env, capture_output=True, text=True,
                                 timeout=300)
         diagnostic = result.stdout + result.stderr

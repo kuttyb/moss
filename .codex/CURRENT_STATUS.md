@@ -1,3 +1,66 @@
+# Phase 26.2 — Cargo package graph checkpoint
+
+- Active branch: `phase26-2-work`, based on local `main` at `e97751ec`; no PR
+  or merge to `main` is in scope. User authorized frequent local commits and
+  normal pushes on this dev branch.
+- Margo now emits a stable Cargo workspace for the resolved package graph,
+  builds it with Cargo using the selected `-j` cap, and copies provider rlibs
+  and the root executable to established package artifact paths. Generated
+  manifests are content-stable. Moss package workers emit Rust in dependency
+  waves before the single graph Cargo build.
+- Validation completed after this implementation slice: `make moss-dev -j`,
+  `python3 -m py_compile margo`, `python3 tests/tooling/check_margo.py ./moss`,
+  and `python3 tests/tooling/check_agent_feedback.py` passed. From
+  `packages/numerics_integration`, `../../margo build --json -j 4` built all
+  five packages; the immediate repeat reported all five native artifacts
+  skipped. `../../margo test` passed 3/3 tests and `../../margo run` succeeded.
+  The exact root invocation `./margo build packages/numerics_integration`
+  is not accepted from repository root because there is no root `Moss.toml`.
+- D4 standalone package-build routing is implemented: `moss build` delegates
+  to Margo, and Margo accepts `--root` so the delegation can name the loaded
+  package manifest. Margo's internal Moss emitter call remains marked to avoid
+  recursive delegation. `tests/tooling/check_margo.py` exercises the direct
+  Moss path. `make moss-dev -j` and that check passed after this change.
+- Source-backed ambient `.mossi` providers from `MOSS_MODULE_PATH` and
+  package-local `deps/` are emitted as Cargo workspace module crates when their
+  generated Rust artifact is absent. This keeps Rust crate identities coherent
+  across transitive imported modules. ABI-v9 provider artifact markers now
+  include the provider source freshness hash, so a different provider rlib
+  paired with an unchanged `.mossi` fails before native linking.
+- Initial full `make --jobs="$(nproc)" check` (before the ambient-provider and
+  direct-build compatibility fixes below) completed 112/150 with 38 failures.
+  Focused reruns now pass for `check_margo.py`, ABI-v9 external cache binding,
+  source-free cache binding, source-free ABI, and forged `.mossi` metadata.
+  Full suite rerun is pending on the current worktree.
+- Remaining Phase 26.2 work: identify and remove only retired source-free
+  implementation paths (keep ABI v10 masked and `checked_body_ir` intact); run
+  full regression gates and compiler-perf no-regression guard; obtain frozen
+  architecture review before final delivery.
+- Pushed checkpoints: `63985761` (parallel package waves), `75fbbf32` (Cargo
+  package graph and native skip), and `1ea17fc1` (direct Moss build routing).
+  Ambient provider Cargo workspace support and ABI-v9 provider source binding
+  are the current uncommitted slice.
+
+# Phase 26.2 — Margo package parallelism checkpoint (initial)
+
+- Active branch: `phase26-2-work`, based on local `main` at `e97751ec` (the
+  Phase 26.1 delivery merge). User authorized scoped local commits and normal
+  pushes on this branch; no PR or merge to `main` is in scope.
+- Kickoff decisions: package-level parallel builds are principled; no timing
+  study, with compiler-perf used only as a no-regression guard. Cargo is the
+  package native-build driver, Margo owns generated stable manifests and the
+  package graph, and one Moss process per package is capped by `-j`. ABI v10
+  remains masked; no ABI-v10-only work is pulled forward.
+- First implementation slice adds Margo `-j`/`--jobs` and executes dependency
+  DAG waves concurrently while keeping dependency interfaces dependency-first
+  and result/build-order reporting deterministic. `tests/tooling/check_margo.py`
+  now exercises a graph with independent leaves, both jobs spellings, and
+  invalid zero jobs.
+- Validation on this checkpoint: `python3 -m py_compile margo` and
+  `python3 tests/tooling/check_margo.py ./moss` passed. Cargo integration,
+  native artifact skip validation, retired source-free path removal, full
+  regression gates, compiler-perf guard, and Architect review remain pending.
+
 # Phase 26.1 + 26.1.1 merged and certified.
 
 - Merged `phase26-1-m1` at `2223dfb7` into `main` with `--no-ff` at merge
@@ -12514,3 +12577,98 @@ selected linker, omit that unrelated absolute threshold, and replace it with
 a same-runner main/W1 comparison on both target workloads. The revised CI and
 final Architect review are pending. Callgrind attribution remains blocked
 because it is unavailable locally.
+
+## Phase 26.2 checkpoint (2026-10-27)
+
+Work is on `phase26-2-work`. Cargo now builds the generated per-package crates as a
+workspace, and this checkpoint fixes ambient provider discovery for binary v10
+`.mossi` interfaces by parsing textual header rows without decoding binary payloads.
+The focused checks `check_margo.py`, Phase 25 R2 WP2, Phase 25 R2 WP3, shared
+String linkage, and Phase 24 same-module type resolution pass after this fix.
+The earlier full suite result was 137/150 on `bb4b3f77`; it has not yet been
+rerun against the current working tree. The remaining Phase 26.2 work includes
+re-running the complete suite and reviewing retired source-free code paths.
+
+Phase 26.2 follow-up: full `make --jobs="$(nproc)" check` completed with
+148/150 passing. Both failures were isolated: the R2 WP1 hostile provider case
+lost its structured Moss diagnostic because Margo preferred stderr trace output;
+Margo now preserves a failed command's Moss JSON response, and the focused WP1
+script passes. The other failure is `check_phase26_w2_inference_worklist`, which
+observed `inference_rounds=3` against its expected 5; this profile is not touched
+by Phase 26.2 changes. Focused Margo, R2 WP1, WP2, WP3, shared String, and Phase
+24 module type checks pass. Full suite has not been rerun after the diagnostic
+wrapper adjustment.
+
+Latest Phase 26.2 full suite run after the Margo JSON fix: 148/150 again.
+`check_phase25_r2_wp1_call_chain` now passes in the full suite. Remaining failures:
+`check_phase26_w2_inference_worklist` (inference rounds 3 vs expected 5) and
+`shard_phase5_tooling` (existing Emacs xref fixture expects source line 65 while
+the current Moss source declares `summary_total_cost` on line 64; isolated rerun
+reproduces the same result). The full Margo cache test confirms unchanged native
+artifacts are skipped. No dead-code deletion was made because the Phase 26.1
+source-free fixture premise is already retired, while the remaining ABI v10
+implementation is explicitly retained by the kickoff decision.
+
+## Phase 26.2 review follow-up (2026-10-27)
+
+Baseline comparison in isolated worktree `tmp/phase26-1-main` at `2223dfb7`:
+`make moss-dev -j` passed; W2 passed with `inference_rounds=5`; the Emacs
+cross-package xref check passed with source line 65. On this branch W2 reports 3
+rounds due to `34082a83`'s documented convergence stop; `MOSS_VERIFY_INFERENCE_ROUNDS=1`
+passes, confirming later rounds leave the inferred signature unchanged. W2 now
+expects 3 rounds and also asserts that W5 does not reach the inference round cap.
+
+Phase 26.2 scheduler now uses a bounded ready queue and emits start/finish/fail/
+cancel events in JSON build results. `check_margo.py` uses controlled worker
+barriers and event-order assertions to verify a dependent starts while an
+unrelated slow package is still blocked, and that failures cancel dependents
+while independent work completes. `check_margo.py`, Python compilation,
+feedback validation, and diff checks pass.
+
+Cargo audit: one shared target directory per package graph at
+`<root>/build/.margo-cargo/<profile>/target`; one `cargo build --workspace` is
+invoked per Margo graph with `--jobs <Margo -j>`. A two-root same-ready-set
+fixture was built with `-j 2`; captured Cargo stderr had no build-directory lock
+wait. Two concurrent Cargo invocations on that target did block on Cargo's build
+lock. A rustc wrapper observed a maximum of two active rustc jobs. Generated
+Cargo path dependencies and rustc `--extern` arguments show consumers link the
+provider rlibs from that same target directory.
+
+F1 audit found no implementation path made unreachable by the source-less
+provider retirement. The ABI-v9/v10 interface loader remains used for current
+source-backed package interfaces; `source_free_abi_v10.hpp`, `checked_body_ir`,
+and Fast Debug execution-body paths remain live, with v10 explicitly retained.
+No code was deleted under item 4.
+
+Latest full `make --jobs="$(nproc)" check`: 149/150. Only
+`check_phase26_w2_inference_worklist` fails because it asserts the pre-convergence
+round count; it passes at the Phase 26.1 baseline. The Emacs xref fixture passed
+in this latest full run and also passed at baseline.
+
+ABI-v9 freshness note: `validate_provider_source_freshness` was defined in
+`e78b6a22` (F1). On this branch, commit `bb4b3f7` added its call inside
+`verify_source_free_provider_binding` and added the package source hash to the
+v9 contract marker. This enforces the stale-`.mossi` rule that a consumer
+rejects a provider interface whose recorded package source hash is missing or
+does not match the current provider package source, with `MOSS_INTERFACE_STALE`.
+
+The Emacs xref fixture passes in isolation on baseline `2223dfb` and this
+branch, but is flaky under parallel `make check` (most likely shared state
+between checks). It is recorded for follow-up and was not changed in this phase.
+
+Inference signature completeness review: see
+[Phase 26.2 audit](../docs/phase26/PHASE_26_2_INFERENCE_SIGNATURE_AUDIT.md).
+The audit's main finding is that all 16 written semantic members were already
+in `inferred_checker_signature()` when `34082a83` added early convergence, so
+that early exit was sound as merged. The parse-cache counter and signature
+dependency worklist additions are conservative scheduling/memo-state inputs,
+not defect fixes; the corrected criterion requires that a missing item is
+written, read by a later round, and able to alter that round's semantic output.
+The signature also controls inner convergence loops. The verify gate produced
+identical check results in default and verify modes for all 77 inputs.
+
+Merge rule: run `make --jobs="$(nproc)" check` and `make compiler-perf` on the
+merge commit itself, never only on either parent. Phase 26.1 was certified on
+parent `2223dfb` instead of merge commit `ac977ce`, leaving W2 red on main.
+Compiler-perf is a slowdown guard; report regressions and do not run timing
+studies.
