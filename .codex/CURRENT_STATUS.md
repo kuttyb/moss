@@ -12608,3 +12608,39 @@ reproduces the same result). The full Margo cache test confirms unchanged native
 artifacts are skipped. No dead-code deletion was made because the Phase 26.1
 source-free fixture premise is already retired, while the remaining ABI v10
 implementation is explicitly retained by the kickoff decision.
+
+## Phase 26.2 review follow-up (2026-10-27)
+
+Baseline comparison in isolated worktree `tmp/phase26-1-main` at `2223dfb7`:
+`make moss-dev -j` passed; W2 passed with `inference_rounds=5`; the Emacs
+cross-package xref check passed with source line 65. On this branch W2 reports 3
+rounds due to `34082a83`'s documented convergence stop; `MOSS_VERIFY_INFERENCE_ROUNDS=1`
+passes, confirming later rounds leave the inferred signature unchanged. The test
+expectation is stale; it was not edited.
+
+Phase 26.2 scheduler now uses a bounded ready queue and emits start/finish/fail/
+cancel events in JSON build results. `check_margo.py` uses controlled worker
+barriers and event-order assertions to verify a dependent starts while an
+unrelated slow package is still blocked, and that failures cancel dependents
+while independent work completes. `check_margo.py`, Python compilation,
+feedback validation, and diff checks pass.
+
+Cargo audit: one shared target directory per package graph at
+`<root>/build/.margo-cargo/<profile>/target`; one `cargo build --workspace` is
+invoked per Margo graph with `--jobs <Margo -j>`. A two-root same-ready-set
+fixture was built with `-j 2`; captured Cargo stderr had no build-directory lock
+wait. Two concurrent Cargo invocations on that target did block on Cargo's build
+lock. A rustc wrapper observed a maximum of two active rustc jobs. Generated
+Cargo path dependencies and rustc `--extern` arguments show consumers link the
+provider rlibs from that same target directory.
+
+F1 audit found no implementation path made unreachable by the source-less
+provider retirement. The ABI-v9/v10 interface loader remains used for current
+source-backed package interfaces; `source_free_abi_v10.hpp`, `checked_body_ir`,
+and Fast Debug execution-body paths remain live, with v10 explicitly retained.
+No code was deleted under item 4.
+
+Latest full `make --jobs="$(nproc)" check`: 149/150. Only
+`check_phase26_w2_inference_worklist` fails because it asserts the pre-convergence
+round count; it passes at the Phase 26.1 baseline. The Emacs xref fixture passed
+in this latest full run and also passed at baseline.

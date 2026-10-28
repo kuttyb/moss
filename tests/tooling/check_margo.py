@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """Hermetic package-DAG, Git-cache, lockfile, and compatibility checks."""
 import json
+import importlib.util
+import importlib.machinery
 import os
 from pathlib import Path
 import shutil
 import subprocess
 import sys
+import threading
 
 repo = Path(__file__).resolve().parents[2]
 margo = repo / "margo"
@@ -31,6 +34,62 @@ def write_package(path, name, source, dependencies=""):
         f'[build]\nsource = "src"\n{dependencies}', encoding="utf-8")
     (path / "src").mkdir(exist_ok=True)
     (path / "src" / "main.moss").write_text(source, encoding="utf-8")
+
+
+# Exercise package scheduling with controlled worker events. The slow root
+# package cannot finish until the fast package's dependent has started.
+margo_loader = importlib.machinery.SourceFileLoader("margo_scheduler", str(margo))
+margo_spec = importlib.util.spec_from_loader("margo_scheduler", margo_loader)
+margo_module = importlib.util.module_from_spec(margo_spec)
+margo_spec.loader.exec_module(margo_module)
+
+def scheduler_package(name):
+    return margo_module.Package(root, root / "Moss.toml", {"name": name},
+                                name, {"kind": "test"})
+
+fast = scheduler_package("Fast")
+slow = scheduler_package("Slow")
+fast_dependent = scheduler_package("FastDependent")
+fast_dependent.dependencies = [fast]
+release_slow = threading.Event()
+
+def scheduled_worker(package):
+    if package is slow:
+        assert release_slow.wait(10), "fast dependent did not release slow worker"
+    elif package is fast_dependent:
+        release_slow.set()
+    return package.data["name"], True
+
+scheduler_results, scheduler_errors, scheduler_events, scheduler_states = (
+    margo_module.run_ready_queue([fast, slow, fast_dependent], 2, scheduled_worker))
+assert not scheduler_errors and len(scheduler_results) == 3
+event_positions = {(event["event"], event["package"]): index
+                   for index, event in enumerate(scheduler_events)}
+assert event_positions[("start", "Fast")] < event_positions[("finish", "Fast")]
+assert event_positions[("start", "Slow")] < event_positions[("finish", "Slow")]
+assert event_positions[("start", "FastDependent")] < event_positions[("finish", "Slow")]
+
+# A worker failure cancels its dependent while allowing an independent worker
+# to finish and be recorded.
+broken = scheduler_package("Broken")
+broken_dependent = scheduler_package("BrokenDependent")
+broken_dependent.dependencies = [broken]
+independent_worker = scheduler_package("StillRunning")
+
+def failure_worker(package):
+    if package is broken:
+        raise RuntimeError("expected fixture failure")
+    return package.data["name"], True
+
+failure_results, failure_errors, failure_events, failure_states = (
+    margo_module.run_ready_queue([broken, independent_worker, broken_dependent],
+                                 2, failure_worker))
+assert failure_states[broken.identity] == "failed"
+assert failure_states[broken_dependent.identity] == "cancelled"
+assert failure_states[independent_worker.identity] == "finished"
+assert any(event == {"event": "cancel", "package": "BrokenDependent",
+                     "because": "Broken"} for event in failure_events)
+assert failure_results[independent_worker.identity][0] == "StillRunning"
 
 
 # A tagged local Git package is intentionally used instead of public network
@@ -85,6 +144,12 @@ first = run([margo, "build", "--json", "-j", "2"], app, env=env)
 result = json.loads(first.stdout)
 assert result["ok"] is True
 assert result["build_order"] == ["Math", "Geometry", "Independent", "App"]
+actual_events = result["scheduling_events"]
+event_index = {(event["event"], event["package"]): index
+               for index, event in enumerate(actual_events)}
+assert event_index[("finish", "Math")] < event_index[("start", "Geometry")]
+assert event_index[("finish", "Geometry")] < event_index[("start", "App")]
+assert event_index[("finish", "Independent")] < event_index[("start", "App")]
 assert result["packages"][0]["source"]["commit"] == commit
 # These are compiled provider contracts, not a folded Moss source unit.  The
 # concrete Rust consumers name their imported module crate and do not contain

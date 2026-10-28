@@ -17,7 +17,7 @@ import shutil
 import shlex
 import subprocess
 import sys
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 import tomllib
 
 
@@ -138,6 +138,82 @@ class Package:
         self.root, self.manifest, self.data = root, manifest, data
         self.identity, self.source = identity, source
         self.dependencies: list[Package] = []
+
+
+def run_ready_queue(ordered: list[Package], jobs: int, worker):
+    """Run each package when its own providers finish, with deterministic events."""
+    if jobs < 1:
+        raise MargoError("package build job count must be at least 1")
+    indexes = {package.identity: index for index, package in enumerate(ordered)}
+    by_identity = {package.identity: package for package in ordered}
+    dependencies = {
+        package.identity: {dependency.identity for dependency in package.dependencies
+                           if dependency.identity in by_identity}
+        for package in ordered
+    }
+    dependents = {package.identity: [] for package in ordered}
+    for package in ordered:
+        for dependency_id in dependencies[package.identity]:
+            dependents[dependency_id].append(package.identity)
+    for values in dependents.values():
+        values.sort(key=indexes.__getitem__)
+
+    states = {package.identity: "pending" for package in ordered}
+    results, errors, events = {}, {}, []
+    ready = [package.identity for package in ordered
+             if not dependencies[package.identity]]
+    futures = {}
+    completed = set()
+
+    def cancel_dependents(failed_id: str) -> None:
+        queue = [(failed_id, by_identity[failed_id].data["name"])]
+        while queue:
+            provider_id, provider_name = queue.pop(0)
+            for dependent_id in dependents[provider_id]:
+                if states[dependent_id] != "pending":
+                    continue
+                states[dependent_id] = "cancelled"
+                dependent = by_identity[dependent_id]
+                errors[dependent_id] = MargoError(
+                    f"package {dependent.data['name']} cancelled because "
+                    f"dependency {provider_name} failed")
+                events.append({"event": "cancel", "package": dependent.data["name"],
+                               "because": provider_name})
+                queue.append((dependent_id, dependent.data["name"]))
+
+    with ThreadPoolExecutor(max_workers=jobs, thread_name_prefix="margo-package") as pool:
+        while ready or futures:
+            ready.sort(key=indexes.__getitem__)
+            while ready and len(futures) < jobs:
+                identity = ready.pop(0)
+                if states[identity] != "pending":
+                    continue
+                package = by_identity[identity]
+                states[identity] = "running"
+                events.append({"event": "start", "package": package.data["name"]})
+                futures[pool.submit(worker, package)] = package
+            if not futures:
+                break
+            done, _ = wait(futures, return_when=FIRST_COMPLETED)
+            for future in sorted(done, key=lambda item: indexes[futures[item].identity]):
+                package = futures.pop(future)
+                identity = package.identity
+                try:
+                    results[identity] = future.result()
+                except Exception as error:
+                    states[identity] = "failed"
+                    errors[identity] = error
+                    events.append({"event": "fail", "package": package.data["name"]})
+                    cancel_dependents(identity)
+                    continue
+                states[identity] = "finished"
+                completed.add(identity)
+                events.append({"event": "finish", "package": package.data["name"]})
+                for dependent_id in dependents[identity]:
+                    if (states[dependent_id] == "pending" and
+                            dependencies[dependent_id] <= completed):
+                        ready.append(dependent_id)
+    return results, errors, events, states
 
 
 def load_lock(root: Path) -> dict:
@@ -987,7 +1063,8 @@ def atomic_json(path: Path, payload: dict) -> None:
 
 def build_graph(root: Package, ordered: list[Package], release: bool,
                 json_mode: bool, check_only: bool = False,
-                jobs: int = 1) -> tuple[list[dict], list[str], list[str], list[str], list[str]]:
+                jobs: int = 1,
+                scheduling_events: list[dict] | None = None) -> tuple[list[dict], list[str], list[str], list[str], list[str]]:
     if jobs < 1:
         raise MargoError("package build job count must be at least 1")
     toolchain = package_toolchain_identity(check_only)
@@ -1057,63 +1134,47 @@ def build_graph(root: Package, ordered: list[Package], release: bool,
         atomic_json(state_path, state)
         return payload, True
 
-    # Each wave contains packages whose direct providers have completed. Packages
-    # in a wave write separate build roots, so they can safely use separate Moss
-    # processes while preserving the dependency-first interface contract.
     artifacts_by_identity: dict[str, dict] = {}
     checked_identities: set[str] = set()
     native_checked: set[str] = set()
     native_skipped: set[str] = set()
-    pending = list(ordered)
-    completed: set[str] = set()
-    with ThreadPoolExecutor(max_workers=jobs, thread_name_prefix="margo-package") as pool:
-        while pending:
-            ready = [package for package in pending
-                     if all(dependency.identity in completed
-                            for dependency in package.dependencies)]
-            if not ready:
-                raise MargoError("internal error: package graph has no buildable package")
-            futures = {pool.submit(build_one, package): package for package in ready}
-            failures = []
-            results = {}
-            for future in as_completed(futures):
-                package = futures[future]
-                try:
-                    results[package.identity] = future.result()
-                except Exception as error:
-                    failures.append((package, error))
-            if failures:
-                package, error = sorted(failures,
-                    key=lambda item: ordered.index(item[0]))[0]
-                if isinstance(error, MargoError):
-                    raise error
-                raise MargoError(f"package build failed for {package.data['name']}: {error}") from error
-            for package in ready:
-                artifact, was_checked = results[package.identity]
-                artifacts_by_identity[package.identity] = artifact
-                if was_checked:
-                    checked_identities.add(package.identity)
-                completed.add(package.identity)
-                pending.remove(package)
-        if not check_only:
-            native_checked_list, native_skipped_list = cargo_build_graph(
-                root, ordered, artifacts_by_identity, release, jobs)
-            native_checked.update(native_checked_list)
-            native_skipped.update(native_skipped_list)
-            # Cargo owns native outputs. Refresh fingerprints after it writes
-            # stable provider rlibs and executable paths.
-            for package in ordered:
-                profile = profile_name(release)
-                state_path = package.root / "build" / profile / ".margo-fingerprint.json"
-                try:
-                    state = json.loads(state_path.read_text(encoding="utf-8"))
-                except (OSError, json.JSONDecodeError):
-                    continue
-                result = state.get("result")
-                if isinstance(result, dict):
-                    state["outputs"] = output_snapshot(package, release,
-                                                        False, result)
-                    atomic_json(state_path, state)
+    results, failures, events, states = run_ready_queue(ordered, jobs, build_one)
+    if scheduling_events is not None:
+        scheduling_events.extend(events)
+    failed_packages = [package for package in ordered
+                       if states[package.identity] == "failed"]
+    if failed_packages:
+        package = failed_packages[0]
+        error = failures[package.identity]
+        if isinstance(error, MargoError):
+            raise error
+        raise MargoError(f"package build failed for {package.data['name']}: {error}") from error
+    for package in ordered:
+        if states[package.identity] != "finished":
+            raise MargoError(f"internal error: package {package.data['name']} was not scheduled")
+        artifact, was_checked = results[package.identity]
+        artifacts_by_identity[package.identity] = artifact
+        if was_checked:
+            checked_identities.add(package.identity)
+    if not check_only:
+        native_checked_list, native_skipped_list = cargo_build_graph(
+            root, ordered, artifacts_by_identity, release, jobs)
+        native_checked.update(native_checked_list)
+        native_skipped.update(native_skipped_list)
+        # Cargo owns native outputs. Refresh fingerprints after it writes
+        # stable provider rlibs and executable paths.
+        for package in ordered:
+            profile = profile_name(release)
+            state_path = package.root / "build" / profile / ".margo-fingerprint.json"
+            try:
+                state = json.loads(state_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            result = state.get("result")
+            if isinstance(result, dict):
+                state["outputs"] = output_snapshot(package, release,
+                                                    False, result)
+                atomic_json(state_path, state)
     artifacts = [artifacts_by_identity[package.identity] for package in ordered]
     checked = [package.data["name"] for package in ordered
                if package.identity in checked_identities]
@@ -1210,8 +1271,10 @@ def main() -> int:
         if args.command == "clean":
             run([str(MOSS), "clean"] + (["--json"] if args.json else []), cwd=root.root)
             return 0
+        scheduling_events: list[dict] = []
         artifacts, checked_packages, skipped_packages, native_checked, native_skipped = build_graph(
-            root, ordered, args.release, args.json, args.check, args.jobs)
+            root, ordered, args.release, args.json, args.check, args.jobs,
+            scheduling_events)
         if args.check:
             if args.json:
                 print(json.dumps({"schema_version": "margo-1", "ok": True,
@@ -1221,7 +1284,8 @@ def main() -> int:
                                  for p in ordered],
                     "check_only": True,
                     "checked": checked_packages,
-                    "skipped": skipped_packages}, sort_keys=True))
+                    "skipped": skipped_packages,
+                    "scheduling_events": scheduling_events}, sort_keys=True))
             else:
                 print("Checked " + str(len(checked_packages)) + " package(s); " +
                       "skipped " + str(len(skipped_packages)) + " unchanged package(s)")
@@ -1241,7 +1305,8 @@ def main() -> int:
                     "skipped": skipped_packages,
                     "artifacts": artifacts[-1],
                     "native_checked": native_checked,
-                    "native_skipped": native_skipped}, sort_keys=True))
+                    "native_skipped": native_skipped,
+                    "scheduling_events": scheduling_events}, sort_keys=True))
             return 0
         if args.command == "run":
             executable = artifacts[-1]["artifacts"]["executable"]
