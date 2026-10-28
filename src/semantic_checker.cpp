@@ -565,6 +565,9 @@ class Checker {
           if (!verify_inference_rounds) break;
         }
       }
+      if (!inference_rounds_converged)
+        CompilerTraceRecorder::instance().increment_counter(
+            "inference_rounds_cap_reached", 1);
       CompilerTraceRecorder::instance().increment_counter("inference_rounds", 1);
       CompilerTraceRecorder::instance().increment_counter("inference_work_units",
           p_.domains.size() + p_.functions.size());
@@ -14331,7 +14334,40 @@ class Checker {
   }
 
   string inferred_checker_signature() const {
-    return inferred_all_function_signatures() + inferred_shared_signature();
+    std::ostringstream out;
+    auto append = [&](const string& value) {
+      out << value.size() << ':' << value;
+    };
+    append(inferred_all_function_signatures());
+    append(inferred_shared_signature());
+
+    // Parser memo tables and the signature dependency worklist persist across
+    // cross-family rounds. Include their deterministic contents so the outer
+    // convergence check cannot overlook state that a later round reads.
+    // These memo tables are append-only: every insertion site increments this
+    // monotonic count. The count detects cache-state changes without walking
+    // the potentially large tables at every inner inference iteration.
+    append(std::to_string(parse_cache_entries_));
+
+    for (size_t index = 0; index < p_.functions.size(); ++index) {
+      auto found = signature_function_indices_.find(&p_.functions[index]);
+      append(std::to_string(index));
+      append(found == signature_function_indices_.end()
+          ? string("<missing>") : std::to_string(found->second));
+    }
+    for (size_t index = 0; index < signature_callers_by_function_.size(); ++index) {
+      append(std::to_string(index));
+      for (size_t caller : signature_callers_by_function_[index])
+        append(std::to_string(caller));
+    }
+    for (size_t index = 0; index < signature_callees_by_function_.size(); ++index) {
+      append(std::to_string(index));
+      for (size_t callee : signature_callees_by_function_[index])
+        append(std::to_string(callee));
+    }
+    for (size_t unresolved : signature_unresolved_consumers_)
+      append(std::to_string(unresolved));
+    return out.str();
   }
 
   void infer_function_signatures(bool finalize) {

@@ -12651,3 +12651,6 @@ hash. Commit `e78b6a22` added `validate_provider_source_freshness` to
 missing or stale provider `.mossi` when its recorded package source hash does
 not match the provider's current package source, reporting
 `MOSS_INTERFACE_STALE` and directing the user to run `margo build`.
+
+Inference signature completeness review: see
+[Phase 26.2 audit](../docs/phase26/PHASE_26_2_INFERENCE_SIGNATURE_AUDIT.md).
