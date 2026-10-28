@@ -30,7 +30,9 @@ Use `margo test`. It builds the package graph through Cargo and runs the tests n
 | Cap parallel jobs | `margo test -j N` | Default is the core count |
 | Machine-readable output | add `--json` |  |
 
-Known gap: `margo test` builds the graph and then runs `moss test`, and native `moss test` doesn't yet emit test helpers, test types or test rlibs. Tests that need them won't run natively until that backlog item lands. Use `margo test --interp` for those.
+`margo test` runs the package's tests fully native. Test-file helpers are scoped
+to their declaring file, and shared test helpers belong in an explicitly
+imported module under `tests/`. The same rules apply to `margo test --interp`.
 
 ## Release builds
 

@@ -229,7 +229,9 @@ test "second":
         if (all_with_error.returncode == 0 or
                 "interface for definitely_missing_module is missing or stale"
                 not in all_with_error.stderr):
-            raise AssertionError("no-file test run failed to resolve every package test module")
+            raise AssertionError(
+                "no-file test run failed to resolve every package test module: "
+                + all_with_error.stdout + all_with_error.stderr)
 
         # The removed source-root variable cannot supply dependency source.
         # Once the checked interface becomes stale, Moss must stop at that

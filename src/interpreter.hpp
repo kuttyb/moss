@@ -173,7 +173,18 @@ class FastInterpreter {
     execute(program_.main->body, frame, output);
   }
 
-  int run_tests(std::ostream& output, const std::string& filter = {}) {
+  struct TestResult {
+    std::string id;
+    std::string name;
+    std::string source_file;
+    int line = 0;
+    bool passed = false;
+    std::string diagnostic;
+    std::string output;
+  };
+
+  int run_tests(std::ostream& output, const std::string& filter = {},
+                std::vector<TestResult>* results = nullptr) {
     size_t discovered = 0;
     size_t passed = 0;
     size_t failed = 0;
@@ -185,6 +196,8 @@ class FastInterpreter {
       if (auto unsupported = options_.unsupported_tests.find(test.semantic_identity);
           unsupported != options_.unsupported_tests.end()) {
         output << "FAIL " << test.name << ": " << unsupported->second << "\n";
+        if (results) results->push_back({test.semantic_identity, test.name,
+            test.source_file, test.line, false, unsupported->second, {}});
         ++failed;
         continue;
       }
@@ -193,20 +206,35 @@ class FastInterpreter {
       frame.functional_context = frame.function;
       frame.source_file = test.source_file;
       frame.semantic_identity = test.semantic_identity;
+      std::ostringstream test_output;
       try {
-        execute(test.body, frame, output);
+        execute(test.body, frame, test_output);
+        output << test_output.str();
         output << "PASS " << test.name << "\n";
+        if (results) results->push_back({test.semantic_identity, test.name,
+            test.source_file, test.line, true, {}, test_output.str()});
         ++passed;
       } catch (const RuntimeError& error) {
+        output << test_output.str();
         output << "FAIL " << test.name << ": " << error.what() << "\n";
+        if (results) results->push_back({test.semantic_identity, test.name,
+            test.source_file, error.line(), false, error.what(), test_output.str()});
         ++failed;
       } catch (const RaisedSignal& raised) {
+        const std::string detail = "unhandled typed raise " +
+            raised.identity.canonical() + " at " +
+            (!raised.source_file.empty() ? raised.source_file :
+             !test.source_file.empty() ? test.source_file :
+             options_.source_file) + ":" + std::to_string(raised.line);
+        output << test_output.str();
         output << "FAIL " << test.name << ": unhandled typed raise "
                << raised.identity.canonical() << " at "
                << (!raised.source_file.empty() ? raised.source_file :
                    !test.source_file.empty() ? test.source_file :
                    options_.source_file)
                << ":" << raised.line << "\n";
+        if (results) results->push_back({test.semantic_identity, test.name,
+            test.source_file, raised.line, false, detail, test_output.str()});
         ++failed;
       }
     }

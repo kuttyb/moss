@@ -30,6 +30,7 @@ CHECK_TIMEOUT_OVERRIDES = {
     # The tooling shard runs live LLDB and DAP sessions; allow several minutes
     # for them while still bounding a debugger that never resumes.
     "shard_phase5_tooling": 300.0,
+    "check_phase26_3_native_packages": 1800.0,
 }
 
 
@@ -128,6 +129,8 @@ TOOLING_TESTS: list[tuple] = [
     ("check_phase25_recursive_layout", [sys.executable, "tests/tooling/check_phase25_recursive_layout.py", "{compiler}"]),
     ("check_phase26_w1_parse_cache", [sys.executable, "tests/tooling/check_phase26_w1_parse_cache.py", "{compiler}"]),
     ("check_phase26_w2_inference_worklist", [sys.executable, "tests/tooling/check_phase26_w2_inference_worklist.py", "{compiler}"]),
+    ("check_phase26_3_test_scopes", [sys.executable, "tests/tooling/check_phase26_3_test_scopes.py", "{compiler}"]),
+    ("check_phase26_3_native_packages", [sys.executable, "tests/tooling/check_phase26_3_native_packages.py", "{compiler}"]),
     ("check_phase26_inference_verify_modes", [sys.executable, "tests/tooling/check_phase26_inference_verify_modes.py", "{compiler}"]),
     ("check_phase26_1_f1_interface_rules", [sys.executable, "tests/tooling/check_phase26_1_f1_interface_rules.py", "{compiler}"]),
     ("check_phase26_1_1_x1_v9", [sys.executable, "tests/tooling/check_phase26_1_1_x1.py", "{compiler}"]),
