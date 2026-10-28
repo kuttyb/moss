@@ -142,6 +142,11 @@ fn main():
         require_ok(implicit_debug, "implicit-module source-free dependency import")
         if implicit_debug.stdout.strip() != "43":
             raise AssertionError(f"implicit-module dependency execution produced {implicit_debug.stdout!r}")
+        implicit_check = run(
+            [str(margo), "build", "--check", "--json"],
+            cwd=implicit_app, env=env)
+        require_ok(implicit_check,
+                   "implicit-module package semantic check with dependency interface")
 
         main_source = app / "src" / "main.moss"
         main_source.write_text(main_source.read_text() +

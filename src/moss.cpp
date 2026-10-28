@@ -17345,6 +17345,7 @@ static CheckedProjectUnit check_project_sources(
     // declaration set so its Rust implementation is consumed from its rlib.
     const char* module_path_env = std::getenv("MOSS_MODULE_PATH");
     const bool scoped_interface_lookup = fast_debug_scope ||
+        (!require_native_artifacts && module_path_env && *module_path_env) ||
         (file_check_root && module_path_env && *module_path_env);
     if (has_explicit_modules || scoped_interface_lookup) {
       CompilerStageTimer timer("module_resolution");
