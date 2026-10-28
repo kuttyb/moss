@@ -35,6 +35,40 @@
   its repeated full parallel gate remains pending. Item 4 documentation is in
   commit `5b85d68c`.
 
+## Phase 26.2 stabilization final report — stopped before merge
+
+1. **Item 1:** Before the fix, Fast Debug exited 0 and printed `42` despite an
+   explicitly supplied nonexistent source root. The code now rejects it with
+   `PROJECT_SOURCE_NOT_FOUND`; the direct test and the F1 expectation were
+   restored. Commits: `a599a536`, test follow-up `ab081a7a`. The removed check
+   was in `3a22c1f5`.
+2. **Item 2:** Specific errors are asserted: re-digested forged `.mossi` →
+   `SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH`; swapped rlib →
+   `SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH`; corrupt rlib →
+   `SOURCE_FREE_ARTIFACT_CONTRACT_INVALID`; tampered imported-effects provider
+   → `SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH`; tampered external provider with
+   no source → `MOSS_INTERFACE_STALE`. Verifier fixes and tests are in
+   `c8ef5fae`.
+3. **Item 3:** The old expected failure tracked cross-package xref resolving to
+   `.mossi` locations; `.locations` sidecars closed it in 26.1.1. A separate
+   Emacs cache-key omission left rebuilt provider locations stale. Including
+   provider `.mossi` and `.locations` hashes fixes it. Before: isolated ERT 0/10
+   and full-parallel ERT 2/5 passed (3 failed). After: focused ERT and 7/7
+   completed isolated ERT runs passed; the single post-fix full check reached
+   the fixture and it passed, then hung later in LLDB. No open xref defect.
+   Commit: `e6866021`.
+4. **Item 4:** Merge and compiler-perf baseline rules are documented in
+   `5b85d68c`.
+5. **Branch gate / STOP:** The post-fix
+   `make --jobs="$(nproc)" check` did not complete. In `shard_phase5_tooling`,
+   LLDB CLI stopped at the source breakpoint and left the debuggee in
+   `ptrace_stop`; the shard and make remained blocked for more than six minutes.
+   I stopped those processes. This is not a green branch gate, so I did not
+   merge, run merge-commit gates, push `main`, or create the tag. STOP: the
+   required branch `make check` gate is not green/completed. Decision needed:
+   whether to expand scope to diagnose and repair the separate LLDB hang before
+   resuming the required five full parallel checks and merge sequence.
+
 ### Standing merge and delivery rules
 
 - Run all merge gates on the merge commit itself, not either parent. Do not
