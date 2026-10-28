@@ -36,7 +36,7 @@
   its repeated full parallel gate remains pending. Item 4 documentation is in
   commit `5b85d68c`.
 
-## Phase 26.2 stabilization final report — branch gates green
+## Phase 26.2 stabilization final report — stopped before main push
 
 1. **Item 1:** Before the fix, Fast Debug exited 0 and printed `42` despite an
    explicitly supplied nonexistent source root. The code now rejects it with
@@ -62,7 +62,9 @@
    `5b85d68c`.
 5. **Branch gates:** Five consecutive full parallel `make check` runs on branch
    head `2120ab48` passed **152/152 each**, with zero failures and zero skips.
-   In all five, `shard_phase5_tooling` and the source-location xref ERT passed.
+   The final documentation head `1009f110` also passed **152/152**, with zero
+   failures and zero skips. `shard_phase5_tooling` and the source-location xref
+   ERT passed in all full branch checks.
 6. **LLDB attribution and timeout harness:** The former stall was a single LLDB
    CLI run where the debuggee remained in `ptrace_stop`. It did not reproduce in
    five complete tooling-shard runs on `d95188b0` or five on the stabilization
@@ -81,9 +83,18 @@
 8. **Item E:** Doc-only commits to `main` are exempt from gates; all other
    changes use a branch and gated merge. This rule is recorded above and in
    `docs/phase26/PHASE_26_1_RULES.md`, commit `2120ab48`.
-9. **Merge:** Pending a final branch-head `make check`, then a merge commit with
-   `d95188b0` as first parent. Merge-commit `make check` and compiler-perf
-   against that first-parent hash remain required.
+9. **Merge commit:** Local merge commit `6a78f7387923a311dcfbaee2e27d0f72e0653ecf`
+   has first parent `d95188b037a989e2486ca52ffd355795658175ad` and passed
+   `make --jobs="$(nproc)" check` **152/152**, with zero failures and skips.
+10. **Compiler-perf STOP:** `MOSS_PERF_BASELINE=d95188b0 make compiler-perf`
+    ran on that merge commit. Aggregate medians improved 0.2%, but
+    `w6_types_count_t050` regressed 8.5% (+3.00 ms) beyond the noise floor
+    (baseline range 34.92–35.77 ms; candidate range 36.77–41.30 ms). This fires
+    the slowdown STOP rule. Do not push `main`, tag the merge, or add the
+    delivery record until the regression is addressed and the gates are rerun.
+    Report: `tmp/compiler-perf/20261028-095842/LOCAL_REPORT.md`.
+    The merge exists only in the local `main` ref; `origin/main` remains
+    `d95188b0`. No `phase26-2-stab-m1` tag or delivery-record commit was created.
 
 ### Standing merge and delivery rules
 
