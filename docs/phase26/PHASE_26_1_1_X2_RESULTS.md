@@ -433,7 +433,11 @@ Final gates at the exact implementation SHA:
   guard fired zero times. The only native-success/Fast-Debug-failure cases were
   `sdk/foundations/bytes/examples/range_copy`, `sdk/fs/examples/basic`, and
   `sdk/host/io/feasibility/consumer`, each guarded by `[FAST_DEBUG_FILEIO]` and
-  covered by the Architect-accepted expectation at `b81bdb4d`.
+  covered by the Architect-accepted expectation at `b81bdb4d`. The raw strict
+  return-code/output harness reported 98 failure rows; it compares native
+  package-mode failures directly with selected-entry Fast Debug, so rows where
+  native rejects unrelated package code are expected scope differences. The
+  sweep summary and row log are under `tmp/phase26-1-1-fastdebug-corpus-6b1ae847.log`.
 - Compiler-to-compiler differential against `origin/main`: **2,064 sources**,
   baseline 1,325 accepted and candidate 1,339 accepted; exactly 15 changed
   verdicts (12 C1 and 3 T1). All 1,325 unchanged accepted rows have identical

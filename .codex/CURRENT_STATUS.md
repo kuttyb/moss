@@ -3,8 +3,10 @@
 - Active branch `phase26-1-m1`, final implementation SHA `6b1ae847`, pushed to
   origin. Architect GO for X1+X2 is exact at this SHA. X1–X4 are implemented.
 - Final gates at `6b1ae847`: uninterrupted `make check` 150/150; Fast Debug
-  corpus 438 packages / 349 mains / 127 test files with zero R12 hits (only
-  three Architect-accepted `[FAST_DEBUG_FILEIO]` native-pass exceptions);
+  corpus 438 packages / 349 mains / 127 test files with zero R12 hits (raw
+  native-vs-Fast-Debug strict harness reported 98 rows, with three
+  native-pass/Fast-Debug-fail rows, all Architect-accepted
+  `[FAST_DEBUG_FILEIO]` exceptions);
   corpus differential 2,064 sources with exactly 12 C1 + 3 T1 rows and
   unchanged Rust hashes for all 1,325 unchanged accepted rows; `make
   c1-corpus-gates` passed G-a 668/668 and G-b 68/68; target-enforced
