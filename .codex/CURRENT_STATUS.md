@@ -13,6 +13,24 @@
 - Remaining stabilization items: R2 diagnostic specificity, deterministic
   parallel Emacs xref fixture, and compiler-perf merge-baseline documentation.
 
+### Stabilization item 2 — specific artifact errors
+
+| Rejection case | Observed before correction | Asserted code |
+| --- | --- | --- |
+| Re-digested forged `.mossi` | `SOURCE_FREE_CONTRACT_MISMATCH` | `SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH` |
+| Swapped provider rlib | `SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH` | `SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH` |
+| Corrupt provider rlib | `SOURCE_FREE_ARTIFACT_CONTRACT_INVALID` | `SOURCE_FREE_ARTIFACT_CONTRACT_INVALID` |
+| Tampered imported-effects provider | `MOSS_COMPILE_ERROR` | `SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH` |
+| Tampered external provider with no source | `MOSS_INTERFACE_STALE` | `MOSS_INTERFACE_STALE` |
+
+The ABI-v9 verifier now reports digest and missing-required-effect tampering as
+`SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH`; this changes only diagnostic codes.
+The external provider is copied to `MOSS_MODULE_PATH`, its source project is
+removed, and Margo rejects its altered source hash without rewriting it. The
+swapped-rlib `moss check` acceptance and source-present Margo regeneration are
+retained with comments explaining their behavior. The external-cache,
+imported-effects, and Phase 21C branch-error focused checks pass.
+
 - Active branch: `phase26-2-work`, based on local `main` at `e97751ec`; no PR
   or merge to `main` is in scope. User authorized frequent local commits and
   normal pushes on this dev branch.

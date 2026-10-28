@@ -234,10 +234,11 @@ build_and_run("17\n23\n")
 interface.write_text(tampered)
 checked = json.loads(run([compiler, "check", consumer, "--json"],
                           expected=1).stdout)
-assert checked["error"]["code"] == "MOSS_COMPILE_ERROR" and \
-    "lacks Phase 21 observable effects" in checked["error"]["message"], checked
+assert checked["error"]["code"] == "SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH", checked
+assert "lacks Phase 21 observable effects" in checked["error"]["message"], checked
 rebuilt = json.loads(run([margo, "build", "--json"]).stdout)
 assert rebuilt["ok"], rebuilt
+# Margo owns this provider's present source, so its next build regenerates the tampered output.
 assert interface.read_text() == original, "Margo must restore tampered provider output"
 
 # Old local output metadata must not be mistaken for a compiled provider when

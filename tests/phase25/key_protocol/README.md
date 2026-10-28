@@ -48,7 +48,7 @@ when the API is frozen.
 | `04-two-consumers-shared-map-control` | same four-package topology with String keys | passes |
 | `05-coherence-mismatch-*` | a free-only key with no provider methods is `KEY_PROOF_INVALID`; proof-shaped consumer free callables alongside canonical provider methods are `KEY_PROOF_COHERENCE_MISMATCH` | staged ABI-v10 checker negatives |
 | `06a`–`06i` | malformed (wrong result/arity/operand), impure (I/O, raise, divergence), missing, and partial proofs | fail-closed in the checker (P25-S3-D2 interim fix) |
-| `06j-proof-forged-interface` | compiled-only provider whose `.mossi` claims an I/O `hash` is pure | fail-closed (`SOURCE_FREE_CONTRACT_MISMATCH`) |
+| `06j-proof-forged-interface` | compiled-only provider whose `.mossi` claims an I/O `hash` is pure | fail-closed (`SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH`) |
 | `07-keys-snapshot-*` | `keys()` is an eager owned snapshot (Float, nominal; String control) | fail-closed / fail-closed / passes |
 | `08-map-and-set-same-protocol` | one nominal key in a Map and a Set agrees on identity | fail-closed |
 | `09a`–`09h` | S1.5 unpinned empty `Map()` (Team G Option B handoff) | see below |

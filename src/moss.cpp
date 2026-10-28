@@ -13886,7 +13886,8 @@ static ObservableEffects interface_effects(const string& text) {
   for (const auto& key : required_fields)
     if (interface_field(text, key).empty())
       throw CompileError(0,
-          "compiled provider lacks Phase 21 observable effects; rebuild its .mossi provider");
+          "compiled provider lacks Phase 21 observable effects; rebuild its .mossi provider",
+          "SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH");
   auto flag = [&](const string& key) {
     string value = interface_field(text, key);
     if (value != "0" && value != "1")
@@ -15052,7 +15053,7 @@ static void verify_source_free_provider_binding(
   const string declared = source_free_declared_digest(text);
   if (source_free_contract_sha256(material) != declared)
     throw CompileError(0, "ABI-v9 provider metadata does not match its declared contract digest",
-                       "SOURCE_FREE_CONTRACT_MISMATCH");
+                       "SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH");
   validate_provider_source_freshness(
       interface_file, source_free_declared_package_hash(text));
   if (!require_native_artifact) return;

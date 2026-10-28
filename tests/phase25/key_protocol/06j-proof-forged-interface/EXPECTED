@@ -5,7 +5,7 @@ entry: app
 source-free: keyprov
 tamper: keyprov.mossi | object_method hash | external_io=1 | external_io=0
 expect: reject PROVISIONAL
-expect-note: today the ABI-v9 digest rejects it (SOURCE_FREE_CONTRACT_MISMATCH); ABI v10 must keep rejecting a forged MapKeyProof
-current: fail-closed SOURCE_FREE_CONTRACT_MISMATCH
+expect-note: today the ABI-v9 digest rejects it (SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH); ABI v10 must keep rejecting a forged MapKeyProof
+current: fail-closed SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH
 owner: Team G ABI v10 MapKeyProof validation
 ---
