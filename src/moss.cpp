@@ -13886,7 +13886,8 @@ static ObservableEffects interface_effects(const string& text) {
   for (const auto& key : required_fields)
     if (interface_field(text, key).empty())
       throw CompileError(0,
-          "compiled provider lacks Phase 21 observable effects; rebuild its .mossi provider");
+          "compiled provider lacks Phase 21 observable effects; rebuild its .mossi provider",
+          "SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH");
   auto flag = [&](const string& key) {
     string value = interface_field(text, key);
     if (value != "0" && value != "1")
@@ -15028,13 +15029,23 @@ static void validate_provider_source_freshness(
   auto root = find_project_root(interface_file.parent_path());
   string package_name = interface_file.stem().string();
   if (!root)
-    throw CompileError(0, stale_interface_message(package_name),
-                       "MOSS_INTERFACE_STALE");
+    throw CompileError(0, "provider source is missing for '" + package_name +
+                       "'; source-free artifact freshness cannot be verified",
+                       "SOURCE_FREE_PROVIDER_SOURCE_MISSING");
   try {
     const ProjectManifest manifest = load_project_manifest(*root);
     package_name = manifest.name;
-    if (package_hash.empty() ||
-        package_hash != package_source_freshness_hash(manifest))
+    string current_hash;
+    try {
+      current_hash = package_source_freshness_hash(manifest);
+    } catch (const ProjectError& error) {
+      if (error.code == "PROJECT_SOURCE_NOT_FOUND")
+        throw CompileError(0, "provider source is missing for '" + package_name +
+                           "'; source-free artifact freshness cannot be verified",
+                           "SOURCE_FREE_PROVIDER_SOURCE_MISSING");
+      throw;
+    }
+    if (package_hash.empty() || package_hash != current_hash)
       throw CompileError(0, stale_interface_message(package_name),
                          "MOSS_INTERFACE_STALE");
   } catch (const CompileError&) {
@@ -15052,10 +15063,18 @@ static void verify_source_free_provider_binding(
   const string declared = source_free_declared_digest(text);
   if (source_free_contract_sha256(material) != declared)
     throw CompileError(0, "ABI-v9 provider metadata does not match its declared contract digest",
-                       "SOURCE_FREE_CONTRACT_MISMATCH");
-  validate_provider_source_freshness(
-      interface_file, source_free_declared_package_hash(text));
-  if (!require_native_artifact) return;
+                       "SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH");
+  const bool provider_source_available =
+      find_project_root(interface_file.parent_path()).has_value();
+  if (provider_source_available)
+    validate_provider_source_freshness(
+        interface_file, source_free_declared_package_hash(text));
+  if (!require_native_artifact) {
+    if (!provider_source_available)
+      validate_provider_source_freshness(
+          interface_file, source_free_declared_package_hash(text));
+    return;
+  }
   const auto rlib = selected_provider_rlib(interface_file);
   std::ifstream input(rlib, std::ios::binary);
   std::ostringstream archive;
@@ -15071,6 +15090,9 @@ static void verify_source_free_provider_binding(
   // binding; metadata copies are not evidence that the selected code matches.
   if (!starts_with(bytes, "!<arch>\n"))
     throw CompileError(0, "selected provider artifact is not a Rust rlib archive",
+                       "SOURCE_FREE_ARTIFACT_CONTRACT_INVALID");
+  if (bytes.size() == 8)
+    throw CompileError(0, "selected provider rlib archive has no members",
                        "SOURCE_FREE_ARTIFACT_CONTRACT_INVALID");
   std::size_t count = 0;
   string embedded;
@@ -15117,17 +15139,20 @@ static void verify_source_free_provider_binding(
       throw CompileError(0, "selected provider rlib has a truncated archive pad",
                          "SOURCE_FREE_ARTIFACT_CONTRACT_INVALID");
   }
-  if (count != 1)
+  if (count > 1)
     throw CompileError(0,
-        "selected provider artifact has missing or ambiguous ABI-v9 contract binding",
+        "selected provider artifact has ambiguous ABI-v9 contract binding",
         "SOURCE_FREE_ARTIFACT_CONTRACT_INVALID");
   const string expected = source_free_contract_marker(
       interface_file.stem().string(), declared,
       source_free_declared_package_hash(text));
-  if (embedded != expected)
+  if (count == 0 || embedded != expected)
     throw CompileError(0,
         "ABI-v9 provider metadata does not match the selected compiled artifact",
         "SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH");
+  if (!provider_source_available)
+    validate_provider_source_freshness(
+        interface_file, source_free_declared_package_hash(text));
 }
 
 // Staged ABI v10 carries the declaration records in canonical, sealed
@@ -25334,6 +25359,34 @@ static bool fast_debug_execution_bodies_complete(const moss::Program& program) {
   return true;
 }
 
+static void validate_fast_debug_source_root_override() {
+  const char* roots_env = std::getenv("MOSS_FAST_DEBUG_SOURCE_ROOTS");
+  if (!roots_env) return;
+  const string roots = roots_env;
+  size_t begin = 0;
+  while (begin <= roots.size()) {
+    const size_t end = roots.find(':', begin);
+    const string root_text = roots.substr(
+        begin, end == string::npos ? string::npos : end - begin);
+    begin = end == string::npos ? roots.size() + 1 : end + 1;
+    if (root_text.empty())
+      throw moss::ProjectError(
+          "PROJECT_SOURCE_NOT_FOUND",
+          "Fast Debug received an empty dependency source root");
+    std::error_code absolute_error;
+    const auto root = std::filesystem::absolute(root_text, absolute_error)
+                          .lexically_normal();
+    std::error_code status_error;
+    if (absolute_error ||
+        !std::filesystem::is_directory(root, status_error) || status_error)
+      throw moss::ProjectError(
+          "PROJECT_SOURCE_NOT_FOUND",
+          "Fast Debug dependency source root is not a directory '" +
+              root.string() + "'",
+          root.string());
+  }
+}
+
 static moss::Program load_checked_interpreter_program(
     const std::filesystem::path& input, bool test_mode = false,
     std::map<std::string, std::string>* fileio_tests = nullptr,
@@ -25345,6 +25398,7 @@ static moss::Program load_checked_interpreter_program(
                   : moss::FastDebugScopeKind::Main,
         test_filter, all_package_tests};
     auto context = moss::analyze_source_context(input);
+    if (context.project) validate_fast_debug_source_root_override();
     if (test_mode && context.project) {
       context.mode = moss::ProgramGenerationMode::Tests;
       context.sources = moss::project_source_files(context.manifest);

@@ -321,6 +321,11 @@ def package_environment(root: Package, ordered: list[Package], release: bool,
     paths = [str(package.root / "build" / profile_name(release, check_only))
              for package in ordered if package is not root]
     env = dict(os.environ)
+    # Fast Debug package sources are resolved by Margo and no longer use the
+    # legacy Moss source-root handoff. Prevent a caller's stale override from
+    # contaminating the compiler invocation.
+    env.pop("MOSS_FAST_DEBUG_SOURCE_ROOTS", None)
+    env.pop("MOSS_SOURCE_ROOTS", None)
     # The opt-in ABI-v10 compiler uses one content-addressed shared runtime
     # artifact across every package in this dependency graph.
     env.setdefault("MOSS_RUNTIME_SOURCE_DIR", str(REPO / "runtime" / "moss_runtime"))

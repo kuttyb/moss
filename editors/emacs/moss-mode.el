@@ -645,6 +645,22 @@ sources, compile with debug options directly."
   "Invalidate semantic results for the current Moss buffer."
   (when moss--semantic-cache (clrhash moss--semantic-cache)))
 
+(defun moss--dependency-artifact-signature (module-paths)
+  "Return a content signature for interface artifacts in MODULE-PATHS.
+This keeps cached cross-package navigation fresh after a dependency rebuild."
+  (when module-paths
+    (let (artifacts)
+      (dolist (directory (split-string module-paths path-separator t))
+        (when (file-directory-p directory)
+          (dolist (file (directory-files directory t
+                                         "\\.\\(mossi\\|locations\\)\\'" t))
+            (push (cons file
+                        (with-temp-buffer
+                          (insert-file-contents-literally file)
+                          (secure-hash 'sha256 (current-buffer))))
+                  artifacts))))
+      (nreverse artifacts))))
+
 (defun moss--semantic-source ()
   "Return the current physical Moss source without saving it."
   (unless (and buffer-file-name
@@ -710,6 +726,7 @@ ordinary navigation overlays are strict.  This function never invokes a shell."
                       '("resolve" "references" "symbols" "calls"
                         "complete"))))
          (key (list command target extra (buffer-chars-modified-tick)
+                    (moss--dependency-artifact-signature mod-paths)
                     (and use-overlay (point))))
          (now (float-time))
          (cached (and moss--semantic-cache

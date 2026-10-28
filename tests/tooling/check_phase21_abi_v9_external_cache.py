@@ -43,6 +43,23 @@ fn main():
 ''')
 
 
+def error_code(payload):
+    error = payload.get("error")
+    if isinstance(error, dict):
+        return error.get("code")
+    if isinstance(error, str):
+        match = re.search(r'"code"\s*:\s*"([A-Z0-9_]+)"', error)
+        if match:
+            return match.group(1)
+    return None
+
+
+def assert_error_code(payload, expected, label):
+    actual = error_code(payload)
+    assert actual == expected, f"{label}: expected {expected}, got {actual}: {payload}"
+    print(f"  [PASS] {label}: {actual}")
+
+
 def run(project, *args, provider_path=None, expected=0):
     env = os.environ.copy()
     env.pop("MOSS_MODULE_PATH", None)
@@ -82,7 +99,8 @@ forged = re.sub(r"(?m)^provider_contract_digest sha256:[0-9a-f]{64}$",
 interface.write_text(forged)
 rejected = json.loads(run(consumer_project, MARGO, "build", "--json",
                           provider_path=build, expected=1).stdout)
-assert not rejected["ok"], rejected
+assert_error_code(rejected, "SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH",
+                  "forged re-digested .mossi")
 interface.write_text(original)
 
 # A different, valid provider build with the same module and exported symbol
@@ -103,18 +121,73 @@ fn main():
 ''')
 run(alternate, MARGO, "build", "--json")
 shutil.copy2(alternate / "build/debug/libprovider.rlib", rlib)
+# Moss check reads the .mossi contract only, so it intentionally does not
+# validate whether a native rlib was swapped.
 checked = json.loads(run(consumer_project, MOSS, "check", consumer, "--json",
                          provider_path=build).stdout)
 assert checked["ok"], checked
 rejected = json.loads(run(consumer_project, MARGO, "build", "--json",
                           provider_path=build, expected=1).stdout)
-assert not rejected["ok"], rejected
+assert_error_code(rejected, "SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH",
+                  "swapped provider rlib")
 
 # A selected stale provider artifact must also invalidate the warm consumer.
 rlib.write_bytes(b"!<arch>\n")
 rejected = json.loads(run(consumer_project, MARGO, "build", "--json",
                           provider_path=build, expected=1).stdout)
-assert not rejected["ok"], rejected
+assert_error_code(rejected, "SOURCE_FREE_ARTIFACT_CONTRACT_INVALID",
+                  "corrupt provider rlib")
+
+# A genuinely external provider has only its copied interface and rlib. Its
+# altered source hash disagrees with the selected rlib contract and must be
+# rejected before source freshness is considered, without rewriting either file.
+external_source = OUT / "external-provider-source"
+(external_source / "src").mkdir(parents=True)
+(external_source / "moss.toml").write_text(
+    '[project]\nname="external_provider"\nversion="0.1.0"\n')
+(external_source / "src/external.moss").write_text('''module external
+export fn answer() -> Int:
+  return 9
+''')
+run(external_source, MARGO, "build", "--json")
+external_path = OUT / "external-provider-artifacts"
+external_path.mkdir()
+external_build = external_source / "build/debug"
+for artifact in [*external_build.glob("external.*"),
+                 external_build / "libexternal.rlib"]:
+    assert artifact.is_file(), f"missing external provider artifact: {artifact}"
+    shutil.copy2(artifact, external_path / artifact.name)
+external_interface = external_path / "external.mossi"
+shutil.rmtree(external_source)
+external_original = external_interface.read_text()
+external_consumer = OUT / "external-consumer"
+(external_consumer / "src").mkdir(parents=True)
+(external_consumer / "moss.toml").write_text(
+    '[project]\nname="external_consumer"\nversion="0.1.0"\n')
+(external_consumer / "src/main.moss").write_text('''module app
+import external
+fn main():
+  echo external.answer()
+''')
+rejected = json.loads(run(external_consumer, MARGO, "build", "--json",
+                          provider_path=external_path, expected=1).stdout)
+assert_error_code(rejected, "SOURCE_FREE_PROVIDER_SOURCE_MISSING",
+                  "valid external provider without source")
+assert "provider source is missing" in str(rejected)
+assert external_interface.read_text() == external_original, \
+    "Margo must not recreate an external provider from an unavailable source"
+
+external_tampered = re.sub(
+    r"(?m)^package_source_hash sha256:[0-9a-f]{64}$",
+    "package_source_hash sha256:" + "0" * 64, external_original)
+assert external_tampered != external_original
+external_interface.write_text(external_tampered)
+rejected = json.loads(run(external_consumer, MARGO, "build", "--json",
+                          provider_path=external_path, expected=1).stdout)
+assert_error_code(rejected, "SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH",
+                  "tampered source-free external provider")
+assert external_interface.read_text() == external_tampered, \
+    "Margo must leave external provider artifacts untouched"
 
 # The compiler recursively searches MOSS_MODULE_PATH. A nested interface must
 # therefore participate in Margo's fingerprint even though it is not at the
@@ -140,7 +213,7 @@ assert nested_stale != nested_original
 nested_interface.write_text(nested_stale)
 rejected = json.loads(run(consumer_project, MARGO, "build", "--json",
                           provider_path=nested_root, expected=1).stdout)
-assert not rejected["ok"] and "stale" in rejected["error"], rejected
+assert_error_code(rejected, "MOSS_INTERFACE_STALE", "stale nested source hash")
 nested_interface.write_text(nested_original)
 
 # R2 freshness must be rechecked when an ambient provider loses its source and
@@ -150,12 +223,12 @@ provider_source_bytes = provider_project.joinpath("src/provider.moss").read_text
 provider_project.joinpath("src/provider.moss").unlink()
 missing_source = json.loads(run(consumer_project, MARGO, "build", "--json",
                                 provider_path=nested_root, expected=1).stdout)
-assert not missing_source["ok"] and "stale" in missing_source["error"], missing_source
+assert_error_code(missing_source, "MOSS_INTERFACE_STALE", "missing provider source")
 provider_project.joinpath("src/provider.moss").write_text(
     provider_source_bytes.replace("return 42", "return 44"))
 changed_source = json.loads(run(consumer_project, MARGO, "build", "--json",
                                 provider_path=nested_root, expected=1).stdout)
-assert not changed_source["ok"] and "stale" in changed_source["error"], changed_source
+assert_error_code(changed_source, "MOSS_INTERFACE_STALE", "changed provider source")
 provider_project.joinpath("src/provider.moss").write_text(provider_source_bytes)
 restored = json.loads(run(consumer_project, MARGO, "build", "--json",
                           provider_path=nested_root).stdout)
@@ -187,6 +260,6 @@ embedded_interface.write_text(re.sub(
     "package_source_hash sha256:" + "0" * 64, embedded_text))
 deps_stale = json.loads(run(deps_consumer, MARGO, "build", "--json",
                             expected=1).stdout)
-assert not deps_stale["ok"] and "stale" in deps_stale["error"], deps_stale
+assert_error_code(deps_stale, "MOSS_INTERFACE_STALE", "stale package-local source hash")
 
 print("ABI-v9 transitive external-provider warm-cache revalidation passed")

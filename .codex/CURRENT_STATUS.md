@@ -1,5 +1,122 @@
 # Phase 26.2 — Cargo package graph checkpoint
 
+## Phase 26.2 stabilization progress
+
+- Item 1 fixed on `phase26-2-stab`. Before the fix, `moss debug` with a valid
+  provider `.mossi` and `MOSS_FAST_DEBUG_SOURCE_ROOTS` naming a missing
+  directory exited 0 and printed `42`. It now exits 1 with
+  `PROJECT_SOURCE_NOT_FOUND`. The lost assertion was dropped in `3a22c1f5`.
+- Restored the direct Fast Debug assertion and made its `.mossi` case omit
+  source roots; that case still executes successfully. Margo strips obsolete
+  source-root overrides before invoking Moss. Focused Phase 15.8 check passes
+  11/11; `make moss-dev -j` and `python3 -m py_compile margo` pass.
+- Follow-up: `check_phase26_1_f1_interface_rules.py` also expected the previous
+  missing-interface diagnostic when it deliberately supplied a nonexistent
+  source root. Updated that assertion to `PROJECT_SOURCE_NOT_FOUND`; the focused
+  check passes. This is the expected R1 precedence for an invalid user-supplied
+  root.
+- Item 1 commits: `a599a536` plus its test expectation follow-up (below).
+- Item 3's historical expected-failure test (added by `4b14c07a`) tracked
+  cross-package xref returning `.mossi` interface locations. The `.locations`
+  sidecar from 26.1.1 closed that regression. The active fixture now caught a
+  separate Emacs cache defect: the cache key omitted dependency artifact
+  contents, so rebuilding a provider could leave the consumer's xref line
+  stale until the one-second cache expired. Dependency `.mossi` and
+  `.locations` content hashes are now part of the semantic-query cache key.
+- Before the fix, isolated ERT failed 10/10 on the provider line shift; in five
+  full parallel checks the xref ERT failed 3 times and passed 2 times (one other
+  shard failure was an unrelated `lldb-dap` timeout). After the fix, the focused
+  ERT passed and all 7 completed isolated ERT runs passed. Attribution runs then
+  passed the complete tooling shard 5/5 on `d95188b0` and 5/5 on the
+  stabilization head, including the live LLDB and DAP checks.
+- No shared package build directory, Emacs server/socket, fixed port, or HOME
+  caused the xref result: the parallel runner isolates each job's worktree,
+  output directory, `MARGO_HOME`, and `TMPDIR`; Emacs runs in batch `-Q` mode.
+- Item 3 code is validated by the direct xref ERT and seven isolated ERT runs;
+  its repeated full parallel gate remains pending. Item 4 documentation is in
+  commit `5b85d68c`.
+
+## Phase 26.2 stabilization final report — branch gates green
+
+1. **Item 1:** Before the fix, Fast Debug exited 0 and printed `42` despite an
+   explicitly supplied nonexistent source root. The code now rejects it with
+   `PROJECT_SOURCE_NOT_FOUND`; the direct test and the F1 expectation were
+   restored. Commits: `a599a536`, test follow-up `ab081a7a`. The removed check
+   was in `3a22c1f5`.
+2. **Item 2:** Specific errors are asserted: re-digested forged `.mossi` →
+   `SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH`; swapped rlib →
+   `SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH`; corrupt rlib →
+   `SOURCE_FREE_ARTIFACT_CONTRACT_INVALID`; tampered imported-effects provider
+   → `SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH`; valid external provider without
+   source → `SOURCE_FREE_PROVIDER_SOURCE_MISSING`; tampered external provider
+   without source → `SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH`. Available but
+   changed source → `MOSS_INTERFACE_STALE`. The original verifier/test work is
+   in `c8ef5fae`, corrected in `dcaa8969`.
+3. **Item 3:** The old expected failure tracked cross-package xref resolving to
+   `.mossi` locations; `.locations` sidecars closed it in 26.1.1. A separate
+   Emacs cache-key omission left rebuilt provider locations stale. Including
+   provider `.mossi` and `.locations` hashes fixes it. Before: isolated ERT 0/10
+   and full-parallel ERT 2/5 passed (3 failed). After: focused ERT and 7/7
+   completed isolated ERT runs passed. No open xref defect. Commit: `e6866021`.
+4. **Item 4:** Merge and compiler-perf baseline rules are documented in
+   `5b85d68c`.
+5. **Branch gates:** Five consecutive full parallel `make check` runs on branch
+   head `2120ab48` passed **152/152 each**, with zero failures and zero skips.
+   In all five, `shard_phase5_tooling` and the source-location xref ERT passed.
+6. **LLDB attribution and timeout harness:** The former stall was a single LLDB
+   CLI run where the debuggee remained in `ptrace_stop`. It did not reproduce in
+   five complete tooling-shard runs on `d95188b0` or five on the stabilization
+   head (5/5 pass on each). The machine reports LLDB 18.1.3 and
+   `kernel.yama.ptrace_scope=1`. No branch-only cause was found; the event
+   remains unclassified. Commit `fe939c59` adds 600-second per-check timeouts by
+   default, a 900-second override for the release-semantics check, a 300-second
+   override for the live LLDB/DAP shard, process-group termination, and a
+   self-test for the named failure, 20-line output tail, and descendant cleanup.
+7. **Item 2 diagnostic correction:** The external fixture now copies the actual
+   `libexternal.rlib`. With no provider source, a valid external artifact reports
+   `SOURCE_FREE_PROVIDER_SOURCE_MISSING`; a tampered `.mossi` whose contract no
+   longer matches its rlib reports `SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH`.
+   Available but changed provider source continues to report
+   `MOSS_INTERFACE_STALE`. Commit `dcaa8969`.
+8. **Item E:** Doc-only commits to `main` are exempt from gates; all other
+   changes use a branch and gated merge. This rule is recorded above and in
+   `docs/phase26/PHASE_26_1_RULES.md`, commit `2120ab48`.
+9. **Merge:** Pending a final branch-head `make check`, then a merge commit with
+   `d95188b0` as first parent. Merge-commit `make check` and compiler-perf
+   against that first-parent hash remain required.
+
+### Standing merge and delivery rules
+
+- Doc-only commits to `main` are exempt from merge gates. All other changes go
+  through a branch and a gated merge; run the gates on the merge commit itself,
+  not either parent. Do not commit code or behavior changes directly to `main`.
+- For `make compiler-perf` on a merge commit, set the baseline to the merge's
+  first parent (the previous `main` head) and include that baseline hash in the
+  report. A candidate-only run without a baseline does not satisfy the gate.
+- Compiler-perf is a slowdown guard; report regressions beyond the noise floor
+  and do not run timing studies.
+
+### Stabilization item 2 — specific artifact errors
+
+| Rejection case | Observed before correction | Asserted code |
+| --- | --- | --- |
+| Re-digested forged `.mossi` | `SOURCE_FREE_CONTRACT_MISMATCH` | `SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH` |
+| Swapped provider rlib | `SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH` | `SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH` |
+| Corrupt provider rlib | `SOURCE_FREE_ARTIFACT_CONTRACT_INVALID` | `SOURCE_FREE_ARTIFACT_CONTRACT_INVALID` |
+| Tampered imported-effects provider | `MOSS_COMPILE_ERROR` | `SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH` |
+| Valid external provider with no source | — | `SOURCE_FREE_PROVIDER_SOURCE_MISSING` |
+| Tampered external provider with no source | `MOSS_INTERFACE_STALE` | `SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH` |
+
+The ABI-v9 verifier reports digest and missing-required-effect tampering as
+`SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH`. The external fixture copies both
+`external.mossi` and `libexternal.rlib` to `MOSS_MODULE_PATH`, then removes its
+source. An intact provider is rejected with the explicit source-missing code;
+tampering the interface source hash is rejected as a contract mismatch before
+freshness checking, and Margo leaves both provider artifacts unchanged. The
+swapped-rlib `moss check` acceptance and source-present Margo regeneration are
+retained with comments explaining their behavior. The external-cache,
+imported-effects, and Phase 21C branch-error focused checks pass.
+
 - Active branch: `phase26-2-work`, based on local `main` at `e97751ec`; no PR
   or merge to `main` is in scope. User authorized frequent local commits and
   normal pushes on this dev branch.

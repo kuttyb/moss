@@ -76,12 +76,29 @@ def test_real_source_free_provider_execution(compiler):
         raise AssertionError(f"native build did not emit graphpkg .mossi in {provider_dir}")
     result = run([str(compiler), "debug", str(PKG_MAIN)], cwd=PKG_MAIN,
                  env=env_for(compiler, MOSS_MODULE_PATH=str(provider_dir),
-                             **{SOURCE_ROOT_ENV: str(PKG_GRAPHPKG),
-                                "RUSTC": "/definitely/not/rustc"}))
+                             RUSTC="/definitely/not/rustc"))
     require_ok(result, "source-free .mossi provider execution")
     if result.stdout.strip() != "42":
         raise AssertionError(f"source-free provider output was {result.stdout!r}")
     print("  [PASS] current .mossi Section 2 executes without dependency source roots")
+
+
+def test_invalid_root_fails_closed(compiler):
+    margo = compiler.parent / "margo"
+    require_ok(run([str(margo), "build"], cwd=PKG_MAIN,
+                   env=env_for(compiler)), "build .mossi for invalid-root regression")
+    provider_dir = PKG_GRAPHPKG / "build" / "debug"
+    missing_root = PKG_MAIN / "absent"
+    result = run([str(compiler), "debug", str(PKG_MAIN)], cwd=PKG_MAIN,
+                 env=env_for(compiler, MOSS_MODULE_PATH=str(provider_dir),
+                             **{SOURCE_ROOT_ENV: str(missing_root)}))
+    combined = result.stdout + result.stderr
+    if result.returncode == 0 or "PROJECT_SOURCE_NOT_FOUND" not in combined:
+        raise AssertionError(
+            "missing supplied Fast Debug source root was not rejected with "
+            f"PROJECT_SOURCE_NOT_FOUND (exit {result.returncode}):\n{combined}"
+        )
+    print("  [PASS] invalid Fast Debug source roots fail closed")
 
 
 def trace_events(result, context):
@@ -280,6 +297,7 @@ def main():
     print("Phase 15.8 — Cross-Package Fast Debug Source Convergence")
     tests = [test_path_source_parity_and_no_rustc,
              test_real_source_free_provider_execution,
+             test_invalid_root_fails_closed,
              test_trace_has_dependency_execution_event,
              test_dependency_source_root_is_ignored,
              test_source_provider_selection_parity,
