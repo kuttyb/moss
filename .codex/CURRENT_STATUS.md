@@ -12644,3 +12644,10 @@ Latest full `make --jobs="$(nproc)" check`: 149/150. Only
 `check_phase26_w2_inference_worklist` fails because it asserts the pre-convergence
 round count; it passes at the Phase 26.1 baseline. The Emacs xref fixture passed
 in this latest full run and also passed at baseline.
+
+ABI-v9 freshness note: the v9 contract marker now includes the package source
+hash. Commit `e78b6a22` added `validate_provider_source_freshness` to
+`verify_source_free_provider_binding`; this enforces that a consumer rejects a
+missing or stale provider `.mossi` when its recorded package source hash does
+not match the provider's current package source, reporting
+`MOSS_INTERFACE_STALE` and directing the user to run `margo build`.
