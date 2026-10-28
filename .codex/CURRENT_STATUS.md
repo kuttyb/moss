@@ -1,29 +1,23 @@
-# 26.1 + 26.1.1 complete; awaiting Bank review.
+# Phase 26.1.1 Bank follow-up audit — merge blocked
 
-- Active branch `phase26-1-m1`; final implementation commit `f4b1686a` is
-  pushed to origin. Architect GO for X1+X2 is exact at this SHA. X1–X4 are
-  implemented; no merge to `main` has occurred.
-- Final gates at `f4b1686a`: uninterrupted `make --jobs="$(nproc)" check`
-  passed 150/150, 0 failed, 0 skipped; `make c1-corpus-gates` passed G-a
-  669/669 and G-b 67/67; target-enforced `package-perf` passed.
-- Fast Debug comparison against `origin/main` completed over 421 packages,
-  334 mains and 127 test files. It found the three documented differences:
-  two T1 generic-import examples and the source-free dependency test case.
-  Current native-vs-Fast-Debug sweep covered 438 packages, 349 mains and 127
-  test files, with zero R12 guard hits. Its strict harness recorded 98 rows;
-  the three native-success/Fast-Debug-failure cases are Architect-accepted
-  `[FAST_DEBUG_FILEIO]` guards.
-- Compiler corpus differential: 2,064 sources; exactly 12 C1 + 3 T1 changed
-  rows; all 1,325 sources accepted by both revisions have byte-identical Rust
-  hashes. Five-repetition compiler-perf against `0872d642` had aggregate +0.5%
-  and no slowdowns beyond the noise floor.
-- Nonblocking ABI-v10 Fast Debug corpus run completed: 438 packages, 349
-  mains, 127 test files, 0 R12 hits. Its strict harness recorded 120 rows;
-  only two were native-success/Fast-Debug-failure, both accepted FileIO guards.
-- The Phase 5 tooling shard passed, including live DAP with
-  `/usr/bin/lldb-dap-18`; the earlier timeout remains recorded historically.
-  The FileIO expectation relaxation was explicitly accepted at `b81bdb4d`.
-  Awaiting Bank review and explicit authorization before any merge.
+- Branch `phase26-1-m1`; prior implementation commit `f4b1686a` remains pushed.
+  The new native-agreement fix and X2 assertions are being validated. No merge
+  to `main`; do not mark this branch as awaiting Bank go yet.
+- The implicit-root fixture now passes native `margo build` and `margo test`;
+  `moss check <file>` rejects without `MOSS_MODULE_PATH` and accepts with the
+  provider path. Focused X2 and `make c1-corpus-gates` pass (G-a 669/669,
+  G-b 67/67). Full `make check` and Architect review of the follow-up remain
+  pending.
+- The post-fix exact-entry C1 trace audit found v9: 14 native-fail / Fast-
+  Debug-pass rows, 12 reachable native defects and 2 confirmed unreachable
+  errors; v10: 32 rows, 13 reachable errors, 2 confirmed unreachable errors,
+  and 17 ABI-v10 interface/tooling errors with no source-body location. Details
+  and every package are in `docs/phase26/PHASE_26_1_1_X2_RESULTS.md`. These
+  findings block Bank go.
+- The prior final gates at `f4b1686a` remain recorded below/history in the X2
+  results: full check 150/150, zero R12 hits, the documented 3 Fast Debug
+  differences against `origin/main`, 12 C1 + 3 T1 compiler-corpus rows,
+  enforced package-perf, and compiler-perf with no slowdowns beyond noise.
 
 ## Previous checkpoint notes
 

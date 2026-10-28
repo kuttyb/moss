@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Phase 26.1.1 X2 Fast Debug scope, snapshot, and source-boundary gates."""
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -142,11 +143,67 @@ fn main():
         require_ok(implicit_debug, "implicit-module source-free dependency import")
         if implicit_debug.stdout.strip() != "43":
             raise AssertionError(f"implicit-module dependency execution produced {implicit_debug.stdout!r}")
+
+        implicit_main = implicit_app / "src" / "main.moss"
+        without_module_path = dict(env)
+        without_module_path.pop("MOSS_MODULE_PATH", None)
+        check_without_path = run(
+            [str(moss), "check", str(implicit_main), "--json"],
+            cwd=implicit_app, env=without_module_path)
+        try:
+            without_path_payload = json.loads(check_without_path.stdout)
+        except json.JSONDecodeError as error:
+            raise AssertionError(
+                "moss check without MOSS_MODULE_PATH returned invalid JSON:\n" +
+                check_without_path.stdout + check_without_path.stderr) from error
+        if (check_without_path.returncode == 0 or
+                without_path_payload.get("ok") is not False or
+                without_path_payload.get("error", {}).get("code") !=
+                "UNKNOWN_SYMBOL_OR_TYPE"):
+            raise AssertionError(
+                "implicit dependency import unexpectedly checked without "
+                "MOSS_MODULE_PATH:\n" + check_without_path.stdout)
+        check_with_path = run(
+            [str(moss), "check", str(implicit_main), "--json"],
+            cwd=implicit_app, env=env)
+        require_ok(check_with_path,
+                   "implicit-module moss check with MOSS_MODULE_PATH")
+
+        implicit_tests = implicit_app / "tests"
+        implicit_tests.mkdir()
+        (implicit_tests / "dep_test.moss").write_text('''module implicit_tests
+import dep
+test "implicit dependency import":
+  assertEqual(dep.value(), 41)
+''', encoding="utf-8")
         implicit_check = run(
             [str(margo), "build", "--check", "--json"],
             cwd=implicit_app, env=env)
         require_ok(implicit_check,
                    "implicit-module package semantic check with dependency interface")
+
+        native_env = dict(env)
+        native_env.pop("RUSTC", None)
+        native_build = run([str(margo), "build", "--json"],
+                           cwd=implicit_app, env=native_env)
+        require_ok(native_build,
+                   "native build of implicit-module dependency import")
+        native_test = run([str(margo), "test", "--json"],
+                          cwd=implicit_app, env=native_env)
+        require_ok(native_test,
+                   "native test of implicit-module dependency import")
+        try:
+            native_test_payload = json.loads(native_test.stdout)
+        except json.JSONDecodeError as error:
+            raise AssertionError(
+                "native margo test returned invalid JSON:\n" +
+                native_test.stdout) from error
+        native_tests = native_test_payload.get("result", {}).get("tests", [])
+        if not any(test.get("name") == "implicit dependency import" and
+                   test.get("status") == "pass" for test in native_tests):
+            raise AssertionError(
+                "native margo test did not execute the implicit dependency test:\n" +
+                native_test.stdout)
 
         main_source = app / "src" / "main.moss"
         main_source.write_text(main_source.read_text() +

@@ -17345,8 +17345,7 @@ static CheckedProjectUnit check_project_sources(
     // declaration set so its Rust implementation is consumed from its rlib.
     const char* module_path_env = std::getenv("MOSS_MODULE_PATH");
     const bool scoped_interface_lookup = fast_debug_scope ||
-        (!require_native_artifacts && module_path_env && *module_path_env) ||
-        (file_check_root && module_path_env && *module_path_env);
+        (module_path_env && *module_path_env);
     if (has_explicit_modules || scoped_interface_lookup) {
       CompilerStageTimer timer("module_resolution");
       auto request_import = [&](const ModuleImport& import) {
@@ -17391,10 +17390,9 @@ static CheckedProjectUnit check_project_sources(
               stale_interface_message(name.first));
         }
     }
-    // A legacy root module can import a dependency interface in file-scoped
-    // and Fast Debug modes. Materialize that provider through the same module
-    // rewriting path as explicit modules, while leaving package-wide native
-    // compilation's legacy source rules unchanged.
+    // A legacy root module can import a dependency interface in package checks,
+    // native builds, file-scoped checks, and Fast Debug. Materialize that
+    // provider through the same module rewriting path as explicit modules.
     if (!has_explicit_modules && scoped_interface_lookup &&
         !loaded_external_modules.empty())
       has_explicit_modules = true;

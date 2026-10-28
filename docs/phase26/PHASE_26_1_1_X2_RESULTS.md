@@ -521,3 +521,77 @@ included there.
 The branch is pushed and awaits Bank review. Do not merge to `main` until
 Bank's explicit go; certified compiler-perf remains a post-merge gate on clean
 `main`.
+
+## Bank pre-merge native agreement and G-b audit — follow-up in progress
+
+At `f4b1686a`, Bank's native-agreement probe found that `margo build --check`
+accepted the synthetic implicit-root dependency import while native
+`margo build` and `margo test` rejected it as an unknown identifier. The cause
+was that implicit compiled-interface lookup was enabled only for check-only,
+file-scoped, or Fast Debug analysis. The current follow-up enables lookup
+whenever Margo supplies a nonempty `MOSS_MODULE_PATH`. `check_phase26_1_1_x2.py`
+now asserts that, on the same implicit-root fixture:
+
+- `moss check <file>` rejects with `UNKNOWN_SYMBOL_OR_TYPE` without
+  `MOSS_MODULE_PATH` and accepts with the current provider path;
+- `margo build --check`, native `margo build`, and native `margo test` accept,
+  and the native test executes the dependency-import test.
+
+The focused X2 test and `make c1-corpus-gates` pass after this change. The C1
+gate reports G-a **669/669**, G-b **67/67**, and zero failures. Full `make
+check` and frozen Architect review for this follow-up are pending.
+
+The Fast Debug/native corpus audit was rerun after the native lookup change.
+Counts below are for rows where the native command failed while the matching
+Fast Debug command passed; the strict harness had 97 such mismatch rows in v9
+and 119 in v10 overall, including reverse-direction mismatches.
+
+| ABI mode | Native-fail / Fast-Debug-pass rows | Reachable native errors | Confirmed unreachable errors | Interface/tooling errors without a source-body location |
+|---|---:|---:|---:|---:|
+| v9 | 14 | 12 | 2 | 0 |
+| v10 | 32 | 13 | 2 | 17 |
+
+The exact-entry C1 scope traces came from `margo debug` for main entries and
+`margo test --interp` for package tests, with `MOSS_PHASE26_C1_SCOPE_TRACE=1`.
+They are preserved in the disposable v9/v10 classification JSON under `tmp/`;
+the durable classification is:
+
+- The two confirmed scope-only rows in both modes are
+  `examples/swarm/Julia/Accumulator` (`Accumulator.merge@25` is absent from
+  the `margo debug` trace) and
+  `examples/swarm/modules/lib_and_app/sceneapp` (`report.print_header` is absent
+  from the package test trace).
+- Twelve v9 rows have native errors in code or dependency resolution present
+  in the Fast Debug entry trace: `exported_generic_typed_callee/split`
+  (`f`/`addone` link failure), `push_self_field_read/single` (`Links.link`,
+  Rust E0502), `test_helper_fn/split` (reached test helper missing from Rust),
+  `test_imports_not_in_main` (reached `other.triple`, missing test rlib),
+  `test_module_mismatch/implicit_test` (reached `fa.helper` missing from Rust),
+  `test_import/split` (reached `util.double`, missing test rlib),
+  `test_local_type/split` (reached `Blob` type missing from Rust),
+  `trait_only_module/split` (the traced `main`/`app.describe` needs the missing
+  `traits` provider), `field_self_assign_struct/single` (`Holder.shift`, Rust
+  E0502), both `mutate_loop_element` variants (reached `take_all`, Rust E0596),
+  and `test_file_helper/split` (reached test helper missing from Rust). These
+  are defects under Bank's reachability criterion, not accepted scope
+  differences.
+- ABI v10 adds one more reachable error:
+  `tests/phase25/key_protocol/06j-proof-forged-interface/app`. Its native
+  `KEY_PROOF_INVALID` is triggered by the reached `main` using
+  `keyprov.name(...)` as a map key.
+- The other 17 v10 rows are not source-body errors that can be shown
+  unreachable: five `SOURCE_FREE_CONTRACT_INVALID` failures in
+  `data_pipeline/analytics`, `data_pipeline/records`,
+  `data_pipeline/repro/analytics_natural`, `lib_and_app/geolib`, and
+  `sdk/ndarray`; plus twelve Margo `UnicodeDecodeError` failures while reading
+  ABI-v10 `.mossi` data (`packages/compress`, `packages/hash`, `sdk/binary`,
+  `sdk/foundations/acceptance` main/tests, its `nested_generic_int`,
+  `nested_generic_string`, and `source_free_generics` repros,
+  `sdk/foundations/collections/examples/basic` and `contains_only`, and
+  `sdk/text-encoding-acceptance` main/tests). These remain unresolved interface
+  and tooling failures.
+
+The native implicit-root mismatch is fixed in the current working tree, but
+the reachable native errors and ABI-v10 interface/tooling rows block marking
+this branch as awaiting Bank go. Do not merge. Full-suite rerun and exact-SHA
+Architect review for the fix remain pending.

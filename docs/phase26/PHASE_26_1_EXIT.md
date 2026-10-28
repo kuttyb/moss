@@ -1,12 +1,15 @@
 # Phase 26.1 exit status
 
-**Status: Phase 26.1 + 26.1.1 implementation gates passed; awaiting Bank review.**
+**Status: Prior Phase 26.1.1 gates passed at `f4b1686a`; Bank's follow-up audit found unresolved native parity defects. Merge is blocked.**
 
 The Phase 26.1.1 X1–X4 closeout and exact-commit gates are recorded in
-[PHASE_26_1_1_X2_RESULTS.md](PHASE_26_1_1_X2_RESULTS.md). The completed branch
-is `phase26-1-m1`, implementation commit `f4b1686a`, pushed to origin. No merge
-to `main` has occurred. Bank's explicit go is required before a no-ff merge;
-certified compiler-perf on clean `main` remains post-merge.
+[PHASE_26_1_1_X2_RESULTS.md](PHASE_26_1_1_X2_RESULTS.md). The branch is
+`phase26-1-m1`; implementation commit `f4b1686a` is pushed to origin. The
+subsequent Bank audit found reachable native errors in the Fast Debug corpus
+and ABI-v10 interface/tooling failures. The X2 results record the evidence and
+current status. Do not merge to `main` until these blockers are resolved and
+Bank explicitly authorizes it; certified compiler-perf on clean `main` remains
+post-merge.
 
 At `f4b1686a`, uninterrupted `make check` passed 150/150, C1 corpus gates
 passed G-a 669/669 and G-b 67/67, package-perf passed with target enforcement,
