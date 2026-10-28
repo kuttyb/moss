@@ -12598,3 +12598,13 @@ observed `inference_rounds=3` against its expected 5; this profile is not touche
 by Phase 26.2 changes. Focused Margo, R2 WP1, WP2, WP3, shared String, and Phase
 24 module type checks pass. Full suite has not been rerun after the diagnostic
 wrapper adjustment.
+
+Latest Phase 26.2 full suite run after the Margo JSON fix: 148/150 again.
+`check_phase25_r2_wp1_call_chain` now passes in the full suite. Remaining failures:
+`check_phase26_w2_inference_worklist` (inference rounds 3 vs expected 5) and
+`shard_phase5_tooling` (existing Emacs xref fixture expects source line 65 while
+the current Moss source declares `summary_total_cost` on line 64; isolated rerun
+reproduces the same result). The full Margo cache test confirms unchanged native
+artifacts are skipped. No dead-code deletion was made because the Phase 26.1
+source-free fixture premise is already retired, while the remaining ABI v10
+implementation is explicitly retained by the kickoff decision.
