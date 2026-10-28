@@ -169,7 +169,7 @@ def main() -> None:
             source_free_env,
         )
         assert json.loads(formatted.stdout)["result"]["would_change"] is False
-        run([str(MOSS), "build", "--json", *release_args], app, source_free_env)
+        run([str(MARGO), "build", "--moss-json", *release_args], app, source_free_env)
         executable = app / "build" / profile / "advanced_data_source_free"
         executed = run(
             [str(executable)],

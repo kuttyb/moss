@@ -43,7 +43,7 @@ fn main():
                              cwd=app, env=source_free_env, check=True,
                              capture_output=True, text=True)
     assert json.loads(checked.stdout)["ok"] is True, checked.stdout
-    subprocess.run([str(MOSS), "build", "--json"], cwd=app,
+    subprocess.run([str(MARGO), "build", "--moss-json"], cwd=app,
                    env=source_free_env, check=True, capture_output=True, text=True)
     result = subprocess.run([str(app / "build" / "debug" / "path_source_free")],
                             cwd=ROOT, env=source_free_env, check=True,

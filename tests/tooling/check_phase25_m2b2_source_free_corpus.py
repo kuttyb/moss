@@ -320,7 +320,7 @@ with tempfile.TemporaryDirectory(prefix="phase25-m2b2-corpus-", dir=TMP) as temp
                     "MARGO_HOME": str(case_root / "margo-invalid-specialization"),
                 }
                 invalid_build = subprocess.run(
-                    [str(MOSS), "build", "--json"], cwd=invalid_consumer,
+                    [str(MARGO), "build", "--moss-json"], cwd=invalid_consumer,
                     env=invalid_env, capture_output=True, text=True, timeout=240)
                 invalid_output = invalid_build.stdout + invalid_build.stderr
                 assert (invalid_build.returncode != 0 and
@@ -466,7 +466,7 @@ with tempfile.TemporaryDirectory(prefix="phase25-m2b2-corpus-", dir=TMP) as temp
                         "MARGO_HOME": str(case_root / f"margo-{mutation_id}"),
                     }
                     rejected = subprocess.run(
-                        [str(MOSS), "build", "--json"], cwd=bad_consumer, env=bad_env,
+                        [str(MARGO), "build", "--moss-json"], cwd=bad_consumer, env=bad_env,
                         capture_output=True, text=True, timeout=240)
                     reject_output = rejected.stdout + rejected.stderr
                     assert rejected.returncode != 0 and any(

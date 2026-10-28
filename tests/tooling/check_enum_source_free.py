@@ -46,7 +46,7 @@ def main():
     environment = os.environ.copy()
     environment["MOSS_MODULE_PATH"] = str(provider)
     build = subprocess.run(
-        [str(ROOT / "moss"), "build", "--json"],
+        [str(ROOT / "margo"), "build", "--moss-json"],
         cwd=project,
         env=environment,
         text=True,

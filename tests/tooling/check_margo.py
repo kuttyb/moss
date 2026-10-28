@@ -186,11 +186,17 @@ invalid_jobs = run([margo, "build", "-j", "0"], app, expected=1, env=env)
 assert "-j/--jobs must be at least 1" in invalid_jobs.stderr
 assert (app / "Moss.lock").read_text(encoding="utf-8") == lock
 
-# A direct Moss package build delegates through Margo, which resolves the
-# package root and drives the generated crates through Cargo.
+# Moss refuses to drive a package build; Margo owns package graph resolution
+# and drives the generated crates through Cargo.
 shutil.rmtree(independent / "build")
-direct_build = run([moss, "build", "--json"], independent, env=env)
-assert json.loads(direct_build.stdout)["ok"] is True
+direct_build = run([moss, "build", "--json"], independent, expected=1, env=env)
+direct_error = json.loads(direct_build.stdout)
+assert direct_build.returncode == 1
+assert direct_error["error"]["code"] == "MOSS_PACKAGE_BUILD_REQUIRES_MARGO"
+assert direct_error["error"]["message"] == "Independent is a package; run `margo build`"
+assert not (independent / "build" / "debug" / "Independent.rs").exists()
+package_build = run([margo, "build", "--json"], independent, env=env)
+assert json.loads(package_build.stdout)["ok"] is True
 run([margo, "clean"], app, env=env)
 assert not (app / "build").exists()
 

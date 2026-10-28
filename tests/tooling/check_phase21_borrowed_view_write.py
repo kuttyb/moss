@@ -105,7 +105,7 @@ fn main():
   echo value
 ''')
 built = subprocess.run(
-    [str(compiler), "build", "--json"], cwd=consumer,
+    [str(repo / "margo"), "build", "--moss-json"], cwd=consumer,
     env=environment, capture_output=True, text=True, timeout=120)
 assert built.returncode == 0, (built.stdout, built.stderr)
 binary = json.loads(built.stdout)["result"]["artifacts"]["executable"]

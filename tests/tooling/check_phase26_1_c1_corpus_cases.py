@@ -101,7 +101,7 @@ def main() -> int:
     calc_target_error = json.loads(calc_target.stdout)["error"]
     assert calc_target_error["semantic_identity"].startswith(
         "test:tests/parser_test.moss:"), calc_target_error
-    toolkit_target = invoke([COMPILER, "build", "--check", "--json"],
+    toolkit_target = invoke([MARGO, "build", "--check", "--moss-json"],
                             TOOLKIT, env)
     toolkit_target_error = json.loads(toolkit_target.stdout)["error"]
     assert toolkit_target_error["semantic_identity"].endswith(

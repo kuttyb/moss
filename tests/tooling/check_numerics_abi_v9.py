@@ -173,7 +173,7 @@ fn main():
 
         print("Building consumer against compiled-only providers with moss build...")
         bld = subprocess.run(
-            [str(MOSS_BIN), "build", "--json"],
+            [str(MARGO_BIN), "build", "--json"],
             cwd=app_dir,
             env=source_free_env,
             capture_output=True,

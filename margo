@@ -1095,8 +1095,7 @@ def build_graph(root: Package, ordered: list[Package], release: bool,
             return {}, False
         env = package_environment(package, ordered, release, check_only)
         env["MARGO_PACKAGE_FINGERPRINT"] = fingerprint
-        if not check_only:
-            env["MOSS_MARGO_CARGO_DRIVER"] = "1"
+        env["MOSS_MARGO_CARGO_DRIVER"] = "1"
         command = [str(MOSS), "build"] + (["--release"] if release else []) + \
                   (["--check"] if check_only else []) + ["--json"]
         completed = run(command, cwd=package.root, env=env, capture=True)

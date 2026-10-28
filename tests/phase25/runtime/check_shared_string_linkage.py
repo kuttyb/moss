@@ -12,6 +12,7 @@ import subprocess
 
 ROOT = Path(__file__).resolve().parents[3]
 MOSS = ROOT / "moss"
+MARGO = ROOT / "margo"
 RUNTIME = ROOT / "runtime" / "moss_runtime"
 SCRATCH = ROOT / "tmp" / "phase25-shared-string-linkage"
 
@@ -32,7 +33,7 @@ def build(path: Path, profile: str, provider_artifacts: Path | None = None,
     if provider_artifacts:
         env["MOSS_MODULE_PATH"] = str(provider_artifacts)
     return subprocess.run(
-        [str(MOSS), "build", "--json", *(["--release"] if profile == "release" else [])],
+        [str(MARGO), "build", "--moss-json", *(["--release"] if profile == "release" else [])],
         cwd=path, env=env, text=True, capture_output=True, check=False,
     )
 

@@ -176,7 +176,7 @@ class Runner:
             if check.returncode != 0:
                 code = first_code(check.stdout)
                 return {"status": f"fail-closed {code}", "code": code}
-            build = self.run([self.moss, "build", *profile, "--json"], consumer, env)
+            build = self.run([self.margo, "build", *profile, "--moss-json"], consumer, env)
             if build.returncode != 0:
                 code = first_code(build.stdout + build.stderr)
                 if code in BACKEND_CODES:

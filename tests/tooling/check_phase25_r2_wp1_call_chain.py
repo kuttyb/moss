@@ -170,7 +170,7 @@ export fn relay():
                         MOSS_MODULE_PATH=str(artifact_dir),
                         MOSS_STAGED_ABI="v10",
                         MOSS_PHASE25_CHECKED_BODY_TRACE="1")
-        rejected = run([MOSS, "build", "--json"], cwd=consumer, env=env, ok=False)
+        rejected = run([MARGO, "build", "--moss-json"], cwd=consumer, env=env, ok=False)
         diagnostic = json.loads(rejected.stdout)["error"]
         assert rejected.returncode != 0 and diagnostic["code"].startswith("SOURCE_FREE_"), (
             mutation, diagnostic, rejected.stderr)

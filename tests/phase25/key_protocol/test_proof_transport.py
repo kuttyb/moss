@@ -13,6 +13,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[3]
 HERE = Path(__file__).resolve().parent
 MOSS = ROOT / "moss"
+MARGO = ROOT / "margo"
 
 
 def run(args, cwd, env):
@@ -49,7 +50,7 @@ def operation_ids(rust, key_type):
 
 
 def build(package, env):
-    result = json.loads(run([MOSS, "build", "--json"], package, env))
+    result = json.loads(run([MARGO, "build", "--moss-json"], package, env))
     if not result["ok"]:
         raise AssertionError(f"build failed for {package}: {result}")
 

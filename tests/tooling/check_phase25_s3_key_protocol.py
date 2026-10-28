@@ -218,10 +218,10 @@ def test_imported_key_functions():
             "src/keys.moss": KEYS_MODULE,
             "src/main.moss": KEYS_CONSUMER,
         })
-        first = run([str(MOSS), "build", "--json"], cwd=project)
+        first = run([str(MARGO), "build", "--moss-json"], cwd=project)
         assert first.returncode == 0, first.stdout + first.stderr
         # Keep package source available for R2 interface freshness validation.
-        second = run([str(MOSS), "build", "--json"], cwd=project)
+        second = run([str(MARGO), "build", "--moss-json"], cwd=project)
         assert second.returncode == 0, second.stdout + second.stderr
         artifact = json.loads(second.stdout)["result"]["artifacts"]["executable"]
         result = run([artifact])

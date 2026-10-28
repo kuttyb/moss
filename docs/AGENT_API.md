@@ -287,11 +287,11 @@ resolution, not fuzzy search; unrelated missing names receive no guessed candida
 Phase 7 reuses the same protocol rather than defining a second automation format:
 
 ```sh
-moss build --json
-moss build --release --json
-moss test parser --json
-moss test --check --json
-moss bench normalize --json
+margo build --json
+margo build --release --json
+margo test parser --json
+margo test --check --json
+margo bench normalize --json
 ```
 
 Build results identify the profile, deterministic artifact paths, and the resolved Rust
@@ -307,7 +307,7 @@ with reasons. A missing snapshot is handled conservatively by selecting all test
 `moss test --check` checks the complete Tests target semantically without executing
 test bodies or emitting Rust; Margo uses it as part of `margo build --check`.
 `moss check <file>` does not persist the native-lowering snapshot used by `moss impact`;
-run `moss build` to seed that snapshot before relying on incremental impact results.
+run `margo build` for a package (or `moss build` for a legacy `[project]`) to seed that snapshot before relying on incremental impact results.
 
 ### Project semantic context
 

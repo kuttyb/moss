@@ -184,7 +184,7 @@ def test_no_unilateral_abi_bump():
             "module provider\nexport fn initial(s: String) -> Char:\n  return s.char_at(0)\n")
         (src_dir / "main.moss").write_text(
             "module app\nimport provider\nfn main():\n  echo provider.initial(\"é\")\n")
-        res_bld = run_cmd([str(MOSS), "build", "--json"], cwd=proj)
+        res_bld = run_cmd([str(MARGO), "build", "--moss-json"], cwd=proj)
         assert res_bld.returncode == 0, f"Build failed: {res_bld.stdout}{res_bld.stderr}"
         mossi_text = (proj / "build" / "debug" / "provider.mossi").read_text()
         assert "\nnative_abi 9\n" in mossi_text, "provider must still declare native_abi 9"

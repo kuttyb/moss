@@ -11214,7 +11214,7 @@ struct ProjectManifest {
   string name;
   string version;
   std::filesystem::path source = "src";
-  bool canonical_package = false;
+  bool package_manifest = false;
 };
 
 static std::optional<std::filesystem::path> find_project_root(
@@ -11284,7 +11284,7 @@ static ProjectManifest load_project_manifest(
     if (line.empty()) continue;
     if (line.front() == '[' && line.back() == ']') {
       section = trim(line.substr(1, line.size() - 2));
-      if (section == "package") manifest.canonical_package = true;
+      if (section == "package") manifest.package_manifest = true;
       if (section != "project" && section != "package" && section != "build" &&
           section != "dependencies")
         throw ProjectError(
@@ -11472,43 +11472,6 @@ static ProcessResult run_process(const vector<string>& arguments) {
   if (WIFEXITED(status)) result.exit_code = WEXITSTATUS(status);
   else if (WIFSIGNALED(status)) result.exit_code = 128 + WTERMSIG(status);
   return result;
-}
-
-static int run_margo_package_build(const ProjectManifest& manifest,
-                                  bool release, bool json) {
-  vector<string> command;
-  if (const char* configured = std::getenv("MARGO");
-      configured && *configured) {
-    command.emplace_back(configured);
-  } else {
-    auto directory = manifest.root;
-    bool found = false;
-    while (!directory.empty()) {
-      const auto candidate = directory / "margo";
-      if (::access(candidate.c_str(), X_OK) == 0) {
-        command.push_back(candidate.string());
-        found = true;
-        break;
-      }
-      const auto parent = directory.parent_path();
-      if (parent == directory) break;
-      directory = parent;
-    }
-    if (!found) command.emplace_back("margo");
-  }
-  command.insert(command.end(), {"build", "--root", manifest.root.string()});
-  if (json) command.push_back("--moss-json");
-  if (release) command.push_back("--release");
-  ProcessResult result = run_process(command);
-  if (result.exit_code == 0 && !json) {
-    const string profile = release ? "release" : "debug";
-    std::cout << "Built " << manifest.name << " (" << profile << ")\n"
-              << "  " << (manifest.root / "build" / profile /
-                             tooling_name(manifest.name)).string() << "\n";
-  } else if (!result.output.empty()) {
-    std::cout << result.output;
-  }
-  return result.exit_code;
 }
 
 struct BackendToolchainIdentity {
@@ -24603,12 +24566,15 @@ static int run_project_command(int argc, char** argv) {
           throw ProjectError("BUILD_PROFILE_ERROR",
                              "unexpected build argument '" + argument + "'");
       }
+      const char* cargo_driver = std::getenv("MOSS_MARGO_CARGO_DRIVER");
+      const bool invoked_by_margo =
+          cargo_driver && string(cargo_driver) == "1";
+      if (manifest.package_manifest && !invoked_by_margo)
+        throw ProjectError("MOSS_PACKAGE_BUILD_REQUIRES_MARGO",
+            manifest.name + " is a package; run `margo build`",
+            manifest.manifest_file.string());
       if (check_only)
         return run_project_interface_check(manifest, release, json);
-      const char* cargo_driver = std::getenv("MOSS_MARGO_CARGO_DRIVER");
-      if ((!cargo_driver || string(cargo_driver) != "1") &&
-          manifest.canonical_package)
-        return run_margo_package_build(manifest, release, json);
       return run_project_build(manifest, release, json);
     }
     if (command == "fmt") {
