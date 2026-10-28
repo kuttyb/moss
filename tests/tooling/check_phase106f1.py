@@ -3,6 +3,7 @@
 Timings are deliberately not correctness thresholds.
 """
 import json
+import os
 from pathlib import Path
 import re
 import shutil
@@ -10,9 +11,12 @@ import subprocess
 import sys
 repo = Path(__file__).resolve().parents[2]
 compiler = Path(sys.argv[1]).resolve()
+margo = repo/'margo'
 out = Path(sys.argv[2]).resolve(); out.mkdir(parents=True, exist_ok=True)
 def run(args, cwd=None):
-    p = subprocess.run(list(map(str,args)),cwd=cwd,text=True,capture_output=True,timeout=180)
+    env = dict(os.environ)
+    env['MOSS'] = str(compiler)
+    p = subprocess.run(list(map(str,args)),cwd=cwd,env=env,text=True,capture_output=True,timeout=180)
     assert p.returncode == 0, (args,p.stdout,p.stderr)
     return p.stdout
 source = repo/'tests/phase106f1_typed.moss'
@@ -71,9 +75,10 @@ for root in ('probe_empty','probe_read','probe_write','probe_two','probe_mixed',
         assert not re.search(r'(?:call\w*|jmp)\s+[^\n]*(?:__rust_alloc|malloc|realloc|BTree|HashMap|memcmp|strcmp)',body), (root,name)
         for callee in re.findall(r'(?:call\w*|jmp)\s+([A-Za-z_][\w.$]*)',body):
             if callee in functions:pending.append(callee)
-# Provider built without any concrete instance. Consumer later creates two and
-# routes through it with source removed. The application generates its layout;
-# only semantic body access is imported from the provider rlib.
+# Provider built without any concrete instance. A separate consumer later
+# creates two instances and routes through imported .mossi semantics. Provider
+# source remains available only for R2 freshness hashing; the consumer
+# generates its own concrete layout.
 project=out/'provider'
 if project.exists():shutil.rmtree(project)
 (project/'src').mkdir(parents=True)
@@ -89,14 +94,13 @@ export domain Counter:
   fn Read() -> Int:
     reply value
 ''')
-main=project/'src/main.moss'
-main.write_text('''module app
-import provider
-fn main():
-  echo 1
-''')
-run([compiler,'build','--json'],cwd=project)
-provider.rename(provider.with_suffix('.hidden'))
+run([margo,'build','--json'],cwd=project)
+consumer=out/'consumer'
+(consumer/'src').mkdir(parents=True, exist_ok=True)
+(consumer/'moss.toml').write_text(
+    '[project]\nname="typed_consumer"\nversion="0.1.0"\n'
+    '\n[dependencies]\ntyped_provider = { path = "../provider" }\n')
+main=consumer/'src/main.moss'
 main.write_text('''module app
 import provider
 domain Root:
@@ -111,10 +115,10 @@ fn main():
   message left.Bump()
   echo message left.Read(), message root.Run()
 ''')
-built=json.loads(run([compiler,'build','--json'],cwd=project))['result']
+built=json.loads(run([margo,'build','--json'],cwd=consumer))['artifacts']
 assert run([built['artifacts']['executable']]).strip()=='4 11'
 provider_rust=(project/'build/debug/provider.rs').read_text()
-application_rust=(project/'build/debug/app.rs').read_text()
+application_rust=(consumer/'build/debug/app.rs').read_text()
 assert 'struct provider__CounterRuntime' not in provider_rust
 assert 'struct provider__CounterRuntime' in application_rust
 assert '__moss_body_provider__Counter_Bump' in provider_rust
@@ -129,10 +133,13 @@ legacy=re.sub(r'(?m)^provider_contract_digest sha256:[0-9a-f]{64}\n', '', interf
 legacy=legacy.replace('native_abi 9\n', 'native_abi 8\n')
 assert legacy != interface
 interface_path.write_text(legacy)
-checked=subprocess.run([str(compiler),'check',str(main),'--json'],cwd=project,
-                       text=True,capture_output=True,timeout=180)
+check_env=dict(os.environ)
+check_env['MOSS']=str(compiler)
+check_env['MOSS_MODULE_PATH']=str(project/'build/debug')
+checked=subprocess.run([str(compiler),'check',str(main),'--json'],cwd=consumer,
+                       env=check_env,text=True,capture_output=True,timeout=180)
 assert checked.returncode != 0, (checked.stdout,checked.stderr)
 diagnostic=json.loads(checked.stdout)['error']['code']
 assert diagnostic == 'SOURCE_FREE_ABI_REBUILD_REQUIRED', diagnostic
 interface_path.write_text(interface)
-print('10.6F.1 typed class layouts, exact direct acquisitions, no metadata/heap work, optimized assembly, independent instances, source-free ABI-v9 execution, and ABI-v8 rejection passed.')
+print('10.6F.1 typed class layouts, exact direct acquisitions, no metadata/heap work, optimized assembly, independent instances, source-backed imported ABI-v9 execution, and ABI-v8 rejection passed.')

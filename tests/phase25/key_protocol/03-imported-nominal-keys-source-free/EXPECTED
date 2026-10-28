@@ -1,8 +1,7 @@
-title: Map keyed by a provider-owned nominal type with custom isequal/hash methods (compiled-only provider)
-covers: 2 (imported nominal keys), source-free
+title: Map keyed by a provider-owned nominal type with custom isequal/hash methods
+covers: 2 (imported nominal keys), source-backed provider interface
 layout: packages
 entry: app
-source-free: keyprov
 expect: stdout
 current: fail-closed RECORD_MAP_KEY_UNSUPPORTED
 defect: P25-S3-D2: a Map keyed by a record/nominal type passes moss check; native rustc rejects the HashMap (no Eq/Hash) and Fast Debug ignores custom isequal/hash [interim: fail-closed in the checker since the Coordinator S1 fix (RECORD_MAP_KEY_UNSUPPORTED); activation still needs MossMap/KeyProof]

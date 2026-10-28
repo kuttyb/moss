@@ -1,3 +1,153 @@
+# 26.1 + 26.1.1 complete; awaiting Bank go
+
+- Frozen docs-only checkpoint `e8c273f8` is pushed on `phase26-1-m1` and has
+  exact-SHA Architect GO. No implementation, test, build, or Margo files
+  changed since `e0b8dcc2`; final gate evidence carries as documented in
+  `docs/phase26/PHASE_26_1_1_X2_RESULTS.md`. Await Bank's explicit go before
+  merging to `main`.
+- The implicit-root fixture now passes native `margo build` and `margo test`;
+  `moss check <file>` rejects without `MOSS_MODULE_PATH` and accepts with the
+  provider path. Focused X2 and `make c1-corpus-gates` pass (G-a 669/669,
+  G-b 67/67). Full `make check` and Architect review of the code change passed.
+- The post-fix exact-entry C1 trace audit found v9: 14 native-fail / Fast-
+  Debug-pass rows, of which 12 are reachable native backend failures also
+  present on `origin/main` and 2 are confirmed unreachable; v10 additionally
+  had 13 reachable rows, 2 unreachable rows, and 17 interface/tooling errors.
+  Bank classifies the v10 corpus-only rows as out of scope. The v9 baseline
+  comparison and all row details are in `docs/phase26/PHASE_26_1_1_X2_RESULTS.md`.
+  The implicit-root mismatch is fixed and reviewed.
+- The prior final gates at `f4b1686a` remain recorded below/history in the X2
+  results: full check 150/150, zero R12 hits, the documented 3 Fast Debug
+  differences against `origin/main`, 12 C1 + 3 T1 compiler-corpus rows,
+  enforced package-perf, and compiler-perf with no slowdowns beyond noise.
+  Fresh differential, C1, package-perf, compiler-perf, and v9 R12 results were
+  recorded on `647487e1`; full `make check` passed 150/150 at implementation
+  checkpoint `e0b8dcc2`. Architect confirmed that these results carry to
+  `e8c273f8` under Bank's docs-only exception.
+
+## Previous checkpoint notes
+
+- X3 now follows Bank's corrected gate: a dependency blank-line edit rewrites
+  its `.mossi`, Section 2, and `.locations`, while normalized Section 1 hashes
+  stay stable and consumers are skipped. Focused X1 v9 and v10 blank-line,
+  generic-body, Section 2, and consumer-reach checks pass. Cross-package Emacs
+  xref passes before and after a blank-line edit (line 64→65). Architect
+  explicitly accepted the `[FAST_DEBUG_FILEIO]` test expectation relaxation at
+  frozen commit `b81bdb4d`; restoration is not required. X4 edge-case fixture and
+  focused X1 v9/v10, X2, X4, C1 scope, feedback checks and the full Phase 5
+  tooling shard pass. The shard's live DAP test succeeds with the installed
+  `/usr/bin/lldb-dap-18`; the earlier timeout remains recorded as historical
+  evidence and does not need a Bank waiver after the successful rerun. The
+  Architect's frozen review at `0f48db37` found that Margo did not snapshot
+  `.locations`, so deleting a sidecar could incorrectly skip its regeneration.
+  Margo now tracks sidecars as outputs; the X1 regression deletes one and
+  confirms provider-only repair with stable Section 1 hashes. Focused X1 passes.
+  Architect GO at `ba24a3a6`; its first full check completed 141/150 with nine
+  failures. Triage found fixture/hash-normalizer compatibility issues: Margo's
+  v10 fingerprint path required binary hashes absent from supported legacy
+  v10 interfaces; the ABI-v10 location normalizer rejected opaque provenance
+  records used by unit fixtures; and the ABI-v9 forgery helper recomputed raw
+  rather than normalized hashes. Compatibility handling and helper updates
+  are in the worktree. Focused imported-effects, forgery, source-free ABI, X1
+  v10 and ABI-v10 unit shard checks pass. Architect review at `c861efc2` found
+  `binary_contract_hash` missing from Margo's ABI-v10 field parser, which
+  omitted present binary hashes from consumer fingerprints. The parser now
+  collects it; X1 v10 checks semantic-only legacy acceptance and fingerprint
+  sensitivity to binary-hash changes. Focused X1 v10 passes. Next:
+  commit/push, exact-SHA Architect re-review, then rerun the full suite and
+  remaining final gates.
+
+- Active branch `phase26-1-m1`; latest pushed checkpoint `c861efc2`, with the Architect's latest binary-hash finding fixed but not yet committed. The frozen code checkpoint `8ddf97e0` passed uninterrupted `make --jobs="$(nproc)" check`: **148/148 jobs, 0 failures, 0 skipped**, 240.58s wall time. The later full run at documentation-only `39d4f282` completed 147/148; its sole failure was `shard_phase5_tooling`, where LLDB-DAP timed out. An isolated rerun of that shard also timed out. On the current worktree, the isolated shard now passes completely, including live DAP with `/usr/bin/lldb-dap-18`. The earlier implementation checkpoint `beb27000` passed 148/148 as well.
+- Focused evidence also passes: C1 scope/package probes, Phase 21 A–F/root-totality, Phase 20 Executor/FileIO, Phase 25 S1/S2/S-B, typed semantic API, Team A, builtin generic typing (129/129), X1 ABI-v9/v10, Phase 15.9, Phase 22.4, Phase 106, G2 conformance (11/11), R2 WP1/WP2/WP3, ABI-v10 units, and SDK text-encoding Fast Debug (3/3).
+- Frozen Architect review: X1+X2 code GO at `8ddf97e0`, carried forward to `39d4f282` because the intervening commit is docs-only. The Architect explicitly accepted all six dependency/interface expectation audits and the S2 fixture correction.
+- The uninterrupted baseline at `fc6331d08146f7150378ee3728b228e915e078e5` remains 130/146 passed, 16 failed, 0 skipped. Baseline triage and repair dispositions are in `docs/phase26/PHASE_26_1_1_X2_RESULTS.md`.
+- Next: commit and push the binary-hash fix, obtain exact-SHA Architect re-review, and rerun the full suite before remaining final gates.
+
+## Baseline and triage — 2026-10-27
+
+- Active branch `phase26-1-m1`, exact baseline SHA `fc6331d08146f7150378ee3728b228e915e078e5`. `./moss agent bootstrap --json` reports `moss-0.1`.
+- Uninterrupted `make --jobs="$(nproc)" check`: **130/146 passed, 16 failed, 0 skipped**. The full pass/fail lists and first triage are in `docs/phase26/PHASE_26_1_1_X2_RESULTS.md`.
+- All 16 observed failures are provisionally bucketed (b), Fast Debug scope or Section 2 coverage. None asserts that Fast Debug should read dependency `.moss` source; no failed job is identified as an ABI-v10-specific case. `shard_abi_v10_units` passed, but it does not exercise the required v10 Section 2 path.
+- A focused X2 and F1 run on this baseline passed earlier; the full baseline supersedes the previous interrupted run and exposed broader failures. The prior Architect NO-GO at `3a22c1f5` remains unresolved.
+- Added `docs/phase26/PHASE_26_1_1_X1_RESULTS.md` from the historical X1 status entries. X1+X2 are not accepted; v10 Section 2 write/read, the narrowed private-body closure, six test-expectation audits, fixes, focused gates, and exact-SHA Architect review remain outstanding. X3/X4 are not started.
+
+## X1 earlier pushed decoder checkpoint (historical)
+
+- Active branch `phase26-1-m1`; last pushed checkpoint `46f08087` is the Section 2 producer/fingerprint milestone. X0 is complete and Architect-approved at implementation SHA `44ee82331080c0072a9c2416913e6a0fe66660c8`; see `docs/phase26/PHASE_26_1_1_X0_RESULTS.md` and `benchmarks/phase26_1/results/m1_phase26_1_1_x0.csv`.
+- X1 now writes and decodes the `.mossi` Section 2 records for concrete/private functions, methods, handlers, and handler failure-arm bodies. The loader validates Section 1 first, then validates section length/hash and source/interface bindings before attaching bodies. Margo passes and verifies the package fingerprint.
+- Check-only direct-provider fingerprints include a canonical hash of the actual Section 1 bytes (excluding only the package source freshness line and Section 2), plus source-current status. Body-only rebuilds can skip consumers; stale or modified Section 1 cannot be skipped as valid.
+- `tests/tooling/check_phase26_1_1_x1.py` passes the initial graph, non-generic E1 provider-only rewrite with stable Section 1 digest, and generic-body propagation to the consumer. `make moss-opt`, Python compilation, and whitespace checks passed before the current full-suite run.
+- Full local `make --jobs="$(nproc)" check` is still running. Failures have appeared in source-free ABI/cache/migration, imported effects, G1 fingerprint, F1 interface rules, typed semantic API, source-free SDK and other package checks; results are not green and need triage when the run completes. X1 is not complete; X2 has not started. Architect's latest review of `46f08087` is NO-GO for X1 completion because ambient fingerprinting needed actual Section 1 bytes. That finding is fixed in this checkpoint; a new exact-SHA review is pending.
+
+### 26.1 base status
+
+- Phase 26.1 implementation SHA `18c04f2ea965fc71c6b835dd6b8690310e514656` has Architect GO; delivery head `0872d642` is pushed. T1 and all pre-integration local gates are complete.
+- Certified compiler-perf and merge remain explicitly gated on Bank authorization under the new 26.1.1 instruction.
+
+<!-- Historical status follows. -->
+
+## Prior T1 implementation summary
+
+- Active branch: `phase26-1-m1`; implementation SHA `18c04f2ea965fc71c6b835dd6b8690310e514656` has Architect GO. Delivery head `6ec0561d` is pushed to `origin/phase26-1-m1`; it is documentation, feedback, handoff, and status only.
+- T1 defers method admission only when the open generic arguments prevent a concrete decision. Imported `.mossi` bodies are omitted from declaration-scope checking; concrete specialization still validates calls. The focused generic-import regressions pass.
+- Margo no longer includes the obsolete dependency-role flag in package fingerprints or the compiler environment. The first consumer graph after building geolib as a root proves the unchanged provider is skipped. Architect GO reviewed this exact code and test order.
+- Exact-SHA `make check` on `18c04f2e` passed 146/146, including Fast Debug parity. On its production-code-identical parent `af9674af`, corpus differential vs C1 `7bc75969` found exactly three intended generic-poison acceptance flips and no other output differences, package-perf met all 70 targets, and C1 corpus gates passed across 438 roots (G-a 660/660; G-b 67/67). The only intervening source-tree delta is the T1 test-order assertion; focused T1 test passes on the exact SHA. The delivery diff at `6ec0561d` contains no code/tests/benchmarks/ABI changes.
+- Compiler-perf run `20261027-104141`: 77 fixtures, three interleaved reps; 5.438 s to 5.415 s (-0.4%), no noise-floor slowdowns. It is non-certified: certification requires a clean checkout and candidate source equal to `origin/main`. Exit docs now include T1 outcomes, M1 before/after times, known C1 regression, and the certification constraint. Next: obtain authorization/integration to `main`, then run the certified benchmark and mark Phase 26.1 complete for Bank review.
+
+
+## Current state — T1 generic-import rule checkpoint in progress
+
+- Active branch: `phase26-1-m1`, currently pushed through `622d7642` before this T1 checkpoint.
+- T1 now defers only method admission that depends on open generic argument types; concrete specialization checking still rejects incompatible use. Imported `.mossi` function/method bodies are not rechecked at declaration scope. `check_phase26_1_t1_generic_imports.py` passes unused `util.fill`, compatible `fill(Int)`, incompatible `fill(String)`, a current seeded geolib interface, and the original geolib owner rejection.
+- The broad initial checkpoint `6a27532e` produced 19 corpus changes and was corrected in working code; graph-position-specific Margo deferral was also reverted. Current C1 baseline differential is exactly three newly accepted generic-poison rows: `.../generic_poisons_import/single/src/main.moss`, `.../single/src/util.moss`, and `.../split/provider/src/util.moss`; all other 2,061 sources retain verdict, diagnostic code, and generated-Rust hash.
+- `make c1-corpus-gates` passes with 438 roots: G-a 660/660 and G-b 67/67, zero failures. The scratch geolib interface is freshly generated and source-hash-current for the corrected scratch provider; the original provider remains rejected at `Triangle.area`. The consumer reports an existing app-side `UNKNOWN_SYMBOL_OR_TYPE`, with no geolib body diagnostic.
+- Latest code checkpoint is pushed through `22bb869c`; the selective generic method-admission correction and expanded test are validated locally but not yet checkpointed. Next: checkpoint/push, run final `make check`, corpus differential, Fast Debug, package-perf, compiler-perf, request Architect GO, then publish the exit report and resolve certification constraints.
+
+
+## Current state — T1 Architect finding fixed; final gates pending
+
+- Active branch: `phase26-1-m1`, remote `origin/phase26-1-m1`. C1 is closed and frozen at reviewed implementation `7bc75969`, with Architect GO recorded in `4150ee94`.
+- T1 implementation checkpoint before review was `14f025e1`. Architect returned NO-GO because the transient imported method-validation view cleared all constraints, dropping non-Method requirements. The fix now preserves every non-Method constraint and replaces only Method constraints from the sealed summary; imported member requirement IDs use summary member order.
+- A focused C++ regression constructs an imported function with both Operator and Method constraints and asserts the view retains the Operator while replacing the body-derived Method. The existing hostile ABI-v10 member tests and typed semantic API test pass after the fix. Compiler build, feedback validation, and `git diff --check` pass.
+- T1 gates before this Architect finding were green: `make check` 145/145; corpus differential vs `4150ee94` 2,064 sources and zero verdict/code/generated-Rust-hash differences; Fast Debug parity passed; enforced package-perf 70/70; compiler-perf 77 fixtures, 3 repetitions, +0.6% aggregate, no slowdowns past the noise floor. These validate the prior implementation but must be rerun after the fix.
+- Next: checkpoint and push the mixed-constraint repair; rerun `make check`, corpus differential, Fast Debug, package-perf, and compiler-perf; request Architect review on the exact final implementation SHA. Do not claim T1 complete until GO arrives.
+- No GitHub-hosted regression jobs or PRs. All authorized gates run on this work machine. Historical C1 oracle attempts remain evidence only, not passing gates.
+
+---
+
+# Phase 26.1 current status — 2026-10-26
+
+## G1 gates green — 2026-10-26
+
+- Active branch: `phase26-1-m1`; G1 code commits `25cde222`, `59ebbd5d`, and `76101e6b` are pushed to `origin/phase26-1-m1`.
+- `make --jobs="$(nproc)" check`: 143/143 passed on `76101e6b`. Full corpus differential against main `d109b8f1`: 2,064 sources, 1,325 accepted; no verdict/diagnostic changes and byte-identical TSVs including generated-Rust hashes. Fast Debug parity passed.
+- Enforced M1 suite: 68 scenario rows, all targets met. The fan-in hub E2 case checks exactly 9 packages; chain and generic E3 propagate through their full expected closures. See `docs/phase26/G1_RESULTS.md` and `docs/phase26/G1_M1_RESULTS.md`.
+- Compiler-perf run `20261026-195844`: 77 fixtures, 3 repetitions, 5.551 s main vs 5.559 s candidate (+0.2%), no slowdowns beyond the noise floor. Architect final GO for exact SHA `76101e6be2ee216e467e25b1df569571c9ff4d67`.
+- G1 ambient-provider fingerprints conservatively cover all inherited and package-local provider interfaces; unrelated ambient changes may recheck packages. No G1 result gate remains.
+- Next: begin C1, with this G1 implementation and report as its baseline. Final Phase 26.1 certified compiler-perf and one PR to main remain for after C1/T1.
+
+## F1 closeout — 2026-10-26
+
+- Active branch: `phase26-1-m1`; F1 implementation SHA `b0744694e08ddf2809bf4dd6705d616f6c6c28ba`, pushed to `origin/phase26-1-m1`. Every imported `.mossi` load validates provider source freshness, including direct `moss build`. F1 also enforces per-file source closure, excludes Fast Debug dependency source-root overrides, and ignores the checking package's own build outputs as interfaces.
+- Full corpus differential against main `d109b8f1`: 2,064 sources; 1,325 accepted on both sides; zero verdict, diagnostic-code, or generated-Rust hash changes; baseline and candidate TSVs are byte-identical.
+- `make --jobs="$(nproc)" check` passed 142/142 on `b0744694`; `shard_fast_debug` passed. Focused F1 and borrowed-read checks pass. Feedback, Python compilation, and whitespace validation pass.
+- Compiler-perf run `20261026-192030`: baseline `d109b8f1` vs `b0744694`, 77 fixtures, 3 interleaved timing repetitions. Sum of fixture medians 5.258s vs 5.292s (+0.7%); no fixture exceeded the noise floor. See `docs/phase26/F1_RESULTS.md`; full artifacts are under `tmp/compiler-perf/20261026-192030/`.
+- Source-free provider retirement and every modified test classification are recorded in `PHASE_26_1_RULES.md` and `F1_TEST_MIGRATION.md`. Architect final review is GO for implementation SHA `b0744694`; post-review docs sentence was repaired. No GitHub regression jobs were launched.
+- Next: begin G1. Require the complete local regression to pass before beginning C1, then T1. At exit, enforce every M1 target, publish the certified compiler-perf result, and open one PR to main.
+
+---
+
+# Current task status — Phase 26.1 M1 expansion
+
+- Active branch: `phase26-1-m1`; baseline main is `d109b8f17276f70b591432fd345d57e727f17501`.
+- M1 harness now separates R-rule `expected_packages` from observed `packages_checked`, covers E0–E3 edit/revert on the dependency-chain core, top app, fan-in hub, and generic provider, and gives package work its own `make package-perf` target. `compiler-perf` remains timing-only; Make help again documents `MOSS_PERF_CERTIFY`.
+- E3 signatures are forwarded through downstream inferred exports. Latest package-perf run passed 68 measurement rows on implementation SHA `17578988310d1ec501d2f9cad35b71622a852191`; observed E3 checks matched 4/4 chain, 10/10 fan-in, and 4/4 generic package target. Margo build currently checks all packages, and mismatches remain reported as data by default; `MOSS_M1_ENFORCE_TARGETS=1` enables hard assertions for post-G1.
+- Full local `make check` passed 141/141 while the fixture-only E3 correction was being made. Python compilation, `git diff --check`, Make help inspection, and agent-feedback validation passed. No GitHub CI/regression jobs were launched.
+- Expanded baseline report and 68-row CSV are now copied into tracked paths but not yet committed. The Architect reviewed implementation SHA `17578988`: fixture semantics GO; final delivery remains pending review of the newly published report/CSV.
+- Next: commit report, CSV, team record, feedback, and this status; request final Architect review on exact artifact SHA; push approved M1 checkpoint. Then begin F1.
+
+---
+
 # Phase 26.0.1 integration — C1–C4 merged locally — 2026-10-26
 
 - Integration is on `phase26-0-1-integration`, based on main `274f848`. C1–C4 are merged locally. Next: run the combined corpus differential, Fast Debug parity, `make check`, compiler-perf, and feedback validation on this machine; send the frozen tree and gate outputs to the Architect; then push the approved main merge with GitHub CI skipped.

@@ -798,6 +798,13 @@ class FastInterpreter {
     return nullptr;
   }
 
+  const Function* function_signature(const std::string& name) const {
+    if (const auto* executable = function(name)) return executable;
+    for (const auto& candidate : program_.file_scope_pruned_functions)
+      if (candidate.name == name) return &candidate;
+    return nullptr;
+  }
+
   const FunctionSpecialization* specialization_for_call(
       const Function& target, const Frame& caller, int line) const {
     if (!target.static_dispatch) return nullptr;
@@ -953,14 +960,47 @@ class FastInterpreter {
         if (current.kind != Value::Kind::Vector || args.size() != 1)
           throw RuntimeError(line, "invalid checked pipeline stage '" + callee + "'");
         std::vector<Value> values;
+        std::optional<std::string> inferred_map_element_type;
         for (const auto& value : *current.vector) {
           Value transformed = invoke_pipeline_callable(args.front(), {value}, frame, line, output);
-          if (callee == "map" || transformed.truthy()) values.push_back(callee == "map" ? transformed : value);
+          if (callee == "map") {
+            switch (transformed.kind) {
+              case Value::Kind::Bool: inferred_map_element_type = "bool"; break;
+              case Value::Kind::Int: inferred_map_element_type = "int"; break;
+              case Value::Kind::Float: inferred_map_element_type = "float"; break;
+              case Value::Kind::String: inferred_map_element_type = "string"; break;
+              case Value::Kind::Char: inferred_map_element_type = "char"; break;
+              case Value::Kind::Vector: inferred_map_element_type = "vector[" + transformed.element_type + "]"; break;
+              case Value::Kind::Struct: if (transformed.object) inferred_map_element_type = transformed.object->type; break;
+              default: break;
+            }
+            values.push_back(std::move(transformed));
+          } else if (transformed.truthy()) values.push_back(value);
         }
         std::string element_type = current.element_type;
         if (callee == "map") {
           auto output_type = checked_pipeline_stage_output_type(stages, stage_index, frame, line);
+          if (!output_type && !args.empty()) {
+            std::string callback = trim_copy(args.front());
+            std::string callback_name = callback;
+            std::vector<std::string> callback_args;
+            parse_call(callback, callback_name, callback_args);
+            for (std::size_t separator = callback_name.find('.');
+                 separator != std::string::npos;
+                 separator = callback_name.find('.', separator + 2))
+              callback_name.replace(separator, 1, "__");
+            auto callback_function = function_signature(callback_name);
+            if (!callback_function) {
+              auto local = frame.locals.find(callback_name);
+              if (local != frame.locals.end() && local->second.kind == Value::Kind::Callable)
+                callback_function = function_signature(local->second.string);
+            }
+            if (callback_function && callback_function->return_type)
+              output_type = "vector[" + *callback_function->return_type + "]";
+          }
           auto output_element = output_type ? checked_vector_element_type(*output_type) : std::nullopt;
+          if (!output_element && inferred_map_element_type)
+            output_element = inferred_map_element_type;
           if (!output_element)
             throw RuntimeError(line, "internal error: missing checked map output type");
           element_type = *output_element;
@@ -997,6 +1037,13 @@ class FastInterpreter {
     std::string e = trim_copy(expression);
     while (outer_parentheses(e)) e = trim_copy(e.substr(1, e.size() - 2));
     if (e.empty()) return Value::unit();
+    if (e.size() >= 9 && e.compare(e.size() - 2, 2, "()") == 0) {
+      std::string constructor = e.substr(0, e.size() - 2);
+      constructor.erase(std::remove_if(constructor.begin(), constructor.end(),
+          [](unsigned char ch) { return std::isspace(ch); }), constructor.end());
+      if (constructor.rfind("Vector[", 0) == 0 && constructor.back() == ']')
+        return Value::vector_value({}, constructor.substr(7, constructor.size() - 8));
+    }
     if (auto stages = split_pipeline(e); !stages.empty())
       return eval_pipeline(stages, frame, line, output);
     if (e.rfind("message ", 0) == 0) return message(e.substr(8), frame, line, output);
@@ -1152,6 +1199,14 @@ class FastInterpreter {
 
     std::string callee; std::vector<std::string> args;
     if (parse_call(e, callee, args)) {
+      // Fast Debug may see the whitespace-preserving spelling used by typed
+      // empty-vector construction through a callable expression.
+      std::string compact_callee = callee;
+      compact_callee.erase(std::remove_if(compact_callee.begin(), compact_callee.end(),
+          [](unsigned char ch) { return std::isspace(ch); }), compact_callee.end());
+      if (args.empty() && compact_callee.rfind("Vector[", 0) == 0 &&
+          compact_callee.size() > 8 && compact_callee.back() == ']')
+        return Value::vector_value({}, compact_callee.substr(7, compact_callee.size() - 8));
       if (callee.find('.') == std::string::npos) {
         if (callee == "replace" && args.size() == 2) {
           Value replacement = eval(args[1], frame, line, output);
@@ -1323,8 +1378,10 @@ class FastInterpreter {
         if (callable_val && callable_val->kind == Value::Kind::Callable) {
           if (auto fn = function(callable_val->string))
             return call(*fn, args, frame, line, output);
-          throw RuntimeError(line, "unresolved callable identity '" +
-              callable_val->string + "'");
+          throw RuntimeError(line, program_.file_check_scope
+              ? "internal error: FAST_DEBUG_UNCHECKED_EXECUTION: callable '" +
+                    callable_val->string + "' was not checked in this run"
+              : "unresolved callable identity '" + callable_val->string + "'");
         }
         if (auto object = object_type(callee)) return construct(*object, args, frame, line, output);
         auto self_it = frame.locals.find("self");
@@ -1334,7 +1391,10 @@ class FastInterpreter {
                                locate("self", frame, line, output));
           }
         }
-        throw RuntimeError(line, "unsupported or unresolved callable '" + callee + "'");
+        throw RuntimeError(line, program_.file_check_scope
+            ? "internal error: FAST_DEBUG_UNCHECKED_EXECUTION: callable '" +
+                  callee + "' was not checked in this run"
+            : "unsupported or unresolved callable '" + callee + "'");
       }
     }
 
@@ -1345,28 +1405,28 @@ class FastInterpreter {
           if ((method_name == "reserve" || method_name == "append") &&
               method_args.size() == 1) {
             Place receiver_place = locate(member->first, frame, line, output);
-            if (!receiver_place.value ||
-                receiver_place.value->kind != Value::Kind::String)
-              throw RuntimeError(line, "mutable String method requires writable receiver");
-            Value argument = eval(method_args.front(), frame, line, output);
-            const std::string before = summary(*receiver_place.value);
-            if (method_name == "reserve") {
-              if (argument.kind != Value::Kind::Int)
-                throw RuntimeError(line, "String reserve requires an Int capacity");
-              if (argument.integer > 0)
-                receiver_place.value->string.reserve(
-                    static_cast<size_t>(argument.integer));
-            } else {
-              if (argument.kind != Value::Kind::String)
-                throw RuntimeError(line, "String append requires a String part");
-              receiver_place.value->string += argument.string;
+            if (receiver_place.value &&
+                receiver_place.value->kind == Value::Kind::String) {
+              Value argument = eval(method_args.front(), frame, line, output);
+              const std::string before = summary(*receiver_place.value);
+              if (method_name == "reserve") {
+                if (argument.kind != Value::Kind::Int)
+                  throw RuntimeError(line, "String reserve requires an Int capacity");
+                if (argument.integer > 0)
+                  receiver_place.value->string.reserve(
+                      static_cast<size_t>(argument.integer));
+              } else {
+                if (argument.kind != Value::Kind::String)
+                  throw RuntimeError(line, "String append requires a String part");
+                receiver_place.value->string += argument.string;
+              }
+              if (receiver_place.domain)
+                state_event("state_write", frame, line, receiver_place, before,
+                            summary(*receiver_place.value));
+              else
+                emit("LocalWrite", frame, line, member->first);
+              return Value::unit();
             }
-            if (receiver_place.domain)
-              state_event("state_write", frame, line, receiver_place, before,
-                          summary(*receiver_place.value));
-            else
-              emit("LocalWrite", frame, line, member->first);
-            return Value::unit();
           }
           if (member->first == "Int" || member->first == "Float" || member->first == "Char" ||
               member->first == "String" || member->first == "Bool") {
@@ -1623,7 +1683,11 @@ class FastInterpreter {
           if (receiver.kind != Value::Kind::Struct || !receiver.object)
             throw RuntimeError(line, "method receiver is not a Moss object");
           auto target = method(receiver.object->type, method_name);
-          if (!target) throw RuntimeError(line, "unresolved method '" + method_name + "'");
+          if (!target)
+            throw RuntimeError(line, program_.file_check_scope
+                ? "internal error: FAST_DEBUG_UNCHECKED_EXECUTION: method '" +
+                      method_name + "' was not checked in this run"
+                : "unresolved method '" + method_name + "'");
           return call_method(*target, receiver, method_args, frame, line, output,
                              locate(member->first, frame, line, output));
         }
@@ -2016,7 +2080,8 @@ class FastInterpreter {
     frame.function = target.name;
     const auto* specialization = specialization_for_call(target, caller, line);
     frame.functional_context = functional_function_context(target, specialization);
-    frame.source_file = target.source_file;
+    frame.source_file = target.execution_source_file.empty()
+        ? target.source_file : target.execution_source_file;
     frame.semantic_identity = "fn:" + target.name + "@" +
         std::to_string(target.line);
     if (specialization)
@@ -2028,9 +2093,15 @@ class FastInterpreter {
                     specialization ? &specialization->parameter_types : nullptr);
     int enter_id = emit("FunctionEnter", frame, target.line);
     EventScope function_scope(*this, enter_id, true);
-    Flow flow = execute(target.body, frame, output);
+    const auto& executable_body = target.execution_body
+        ? *target.execution_body : target.body;
+    Flow flow = execute(executable_body, frame, output);
     Value result = flow.returned ? flow.value :
-        (target.result_expression ? eval(*target.result_expression, frame, target.result_line, output) : Value::unit());
+        (target.execution_result_expression
+             ? eval(*target.execution_result_expression, frame, target.result_line, output)
+             : target.result_expression
+                 ? eval(*target.result_expression, frame, target.result_line, output)
+                 : Value::unit());
     if (!flow.returned)
       emit("Return", frame, target.result_line ? target.result_line : target.line,
            result.display());
@@ -2045,7 +2116,8 @@ class FastInterpreter {
     Frame frame;
     frame.function = target.owner + "." + target.name;
     frame.functional_context = functional_method_context(target);
-    frame.source_file = target.source_file;
+    frame.source_file = target.execution_source_file.empty()
+        ? target.source_file : target.execution_source_file;
     frame.semantic_identity = "method:" + target.owner + "." +
         target.name + "@" + std::to_string(target.line);
     frame.locals["self"] = receiver;
@@ -2060,9 +2132,15 @@ class FastInterpreter {
     bind_parameters(target.params, target.parameter_effects, arguments, caller, frame, line, output);
     int enter_id = emit("MethodEnter", frame, target.line);
     EventScope method_scope(*this, enter_id, true);
-    Flow flow = execute(target.body, frame, output);
+    const auto& executable_body = target.execution_body
+        ? *target.execution_body : target.body;
+    Flow flow = execute(executable_body, frame, output);
     Value result = flow.returned ? flow.value :
-        (target.result_expression ? eval(*target.result_expression, frame, target.result_line, output) : Value::unit());
+        (target.execution_result_expression
+             ? eval(*target.execution_result_expression, frame, target.result_line, output)
+             : target.result_expression
+                 ? eval(*target.result_expression, frame, target.result_line, output)
+                 : Value::unit());
     if (!flow.returned)
       emit("Return", frame, target.result_line ? target.result_line : target.line,
            result.display());

@@ -104,6 +104,8 @@ with tempfile.TemporaryDirectory(prefix="phase25-r3f-raise-recover-", dir=TMP) a
     assert count == 1 and forged != original
     material = re.sub(
         r"(?m)^provider_contract_digest sha256:[0-9a-f]{64}\n", "", forged)
+    material = re.sub(
+        r"(?m)^package_source_hash sha256:[0-9a-f]{64}\n", "", material)
     forged, count = re.subn(
         r"(?m)^provider_contract_digest sha256:[0-9a-f]{64}$",
         "provider_contract_digest sha256:" + hashlib.sha256(

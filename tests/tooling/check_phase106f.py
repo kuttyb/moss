@@ -102,17 +102,17 @@ built=json.loads(run([compiler,'build','--json'],cwd=project).stdout)
 assert built['compiler_version']=='0.1.0'
 assert run([built['result']['artifacts']['executable']]).stdout==expected
 assert run([compiler,'run','--interp','src/main.moss'],cwd=project).stdout==expected
-(project/'src/model.moss').rename(project/'model.hidden')
 # Provisioning only Moss-named provider rlibs must also work: reconstruct rustc
-# aliases instead of depending on a preceding build's incidental files.
+# aliases instead of depending on a preceding build's incidental files while
+# keeping every package source available under the R2 freshness contract.
 for alias in (project/'build/debug').glob('libmoss_*.rlib'): alias.unlink()
 Path(built['result']['artifacts']['executable']).unlink()
 built=json.loads(run([compiler,'build','--json'],cwd=project).stdout)
 assert run([built['result']['artifacts']['executable']]).stdout==expected
-assert 'source' in run([compiler,'debug','app'],cwd=project,expected=1).stderr
+assert run([compiler,'debug','app'],cwd=project).stdout==expected
 
 # Compile/run physical instrumentation and benchmark structure with tiny work.
 # Correctness has no wall-clock acceptance threshold.
 run([sys.executable,repo/'benchmarks/synchronization/run.py','--compiler',compiler,'--out',out/'bench-structure','--repeats','1','--threads','1','--iterations','2'])
 run([sys.executable,repo/'benchmarks/synchronization/instrument.py','--compiler',compiler,'--out',out/'instrument'])
-print('10.6F plan metrics/conflict witnesses/partition explanations, deterministic output, expanded engine equivalence, trace bounds, clean multi-module/source-free seed, and optional instrumentation/benchmark structural checks passed.')
+print('10.6F plan metrics/conflict witnesses/partition explanations, deterministic output, expanded engine equivalence, trace bounds, clean multi-module source-backed seed, and optional instrumentation/benchmark structural checks passed.')

@@ -220,7 +220,7 @@ def test_imported_key_functions():
         })
         first = run([str(MOSS), "build", "--json"], cwd=project)
         assert first.returncode == 0, first.stdout + first.stderr
-        (project / "src" / "keys.moss").unlink()
+        # Keep package source available for R2 interface freshness validation.
         second = run([str(MOSS), "build", "--json"], cwd=project)
         assert second.returncode == 0, second.stdout + second.stderr
         artifact = json.loads(second.stdout)["result"]["artifacts"]["executable"]

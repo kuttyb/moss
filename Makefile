@@ -66,7 +66,7 @@ RUSTC ?= rustc
 EXAMPLE_BUILD_DIR ?= build/examples/optimized
 TEST_JOBS ?= $(shell nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 16)
 
-.PHONY: all moss moss-dev moss-opt moss-release check check-parallel check-serial check-perf compiler-perf examples examples-optimized clean help FORCE
+.PHONY: all moss moss-dev moss-opt moss-release check check-parallel check-serial check-perf compiler-perf package-perf c1-corpus-gates examples examples-optimized clean help FORCE
 
 # Default target: build fast development compiler (-O0) and update ./moss
 all: moss-dev
@@ -159,6 +159,12 @@ check-perf: moss-opt
 compiler-perf: moss-opt
 	python3 benchmarks/phase25_4/cpp_baseline/local_suite.py
 
+package-perf: moss-opt
+	python3 benchmarks/phase26_1/m1_suite.py
+
+c1-corpus-gates: moss-dev
+	python3 tests/tooling/check_phase26_1_c1_corpus_scope_gates.py $(MOSS_DEV)
+
 bench-torture: moss-opt
 	python3 benchmarks/phase25_4/cpp_baseline/run.py --moss $(MOSS_OPT)
 
@@ -196,7 +202,9 @@ help:
 	@echo "  make check-parallel - Run tests concurrently with tests/run_parallel.py (TEST_JOBS=N)"
 	@echo "  make check-serial - Run original serial regression runner (tests/run.sh)"
 	@echo "  make check-perf   - Run Phase 25.4 B1 permanent compiler performance regression gate"
-	@echo "  make compiler-perf - Run interleaved B1 timing (3 reps) and profiling suite; MOSS_PERF_CERTIFY=1 enables clean main-source certification"
+	@echo "  make compiler-perf - Run compiler timing/profiling; MOSS_PERF_INCLUDE_REAL_WORLD=1 adds curated Moss workloads; MOSS_PERF_CERTIFY=1 enables certification"
+	@echo "  make package-perf  - Run Phase 26.1 package edit/revert work-counter scenarios"
+	@echo "  make c1-corpus-gates - Run Phase 26.1 G-a/G-b file/package scope gates"
 	@echo "  make bench-torture - Run full portable compiler torture benchmark suite"
 	@echo "  make examples     - Build and verify optimized examples"
 	@echo "  make clean        - Remove build artifacts and binaries"

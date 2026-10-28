@@ -1181,11 +1181,21 @@
   "Verify Emacs xref, calls, callers, callees, and symbol search cross dependent package boundaries."
   (let* ((root (moss--repo-root default-directory))
          (planner-main (expand-file-name "projects/build_planner/planner/src/main.moss" root))
+         (planner-root (expand-file-name "projects/build_planner/planner" root))
          (planner-buffer (find-file-noselect planner-main))
-         (moss-compiler-command (expand-file-name "moss" root)))
+         (moss-compiler-command (expand-file-name "moss" root))
+         (moss-margo-command (expand-file-name "margo" root)))
     (unwind-protect
         (with-current-buffer planner-buffer
           (moss-mode)
+          ;; Semantic queries resolve dependent packages through .mossi only.
+          ;; Seed the native-profile interfaces before testing cross-package
+          ;; navigation; this test must not depend on source-root fallback.
+          (let ((default-directory planner-root)
+                (process-environment
+                 (cons (concat "MOSS=" moss-compiler-command)
+                       process-environment)))
+            (should (= 0 (call-process moss-margo-command nil nil nil "build"))))
           ;; Verify project-wide symbols include both local planner and dependent graphlib symbols
           (let* ((symbols (moss--json-get 'symbols (moss--semantic-query "symbols" nil)))
                  (graphlib-symbols
@@ -1204,7 +1214,10 @@
             (let ((apropos-graph (xref-backend-apropos 'moss "make_graph")))
               (should apropos-graph)
               (let ((loc (xref-item-location (car apropos-graph))))
-                (should (string-match-p "graph\\.moss" (xref-file-location-file loc)))))
+                ;; Imported declarations come from the checked interface, so
+                ;; navigation must not depend on opening provider source.
+                (should (string-match-p "graphlib/src/.*\\.moss"
+                                        (xref-file-location-file loc)))))
             ;; Move point to 'model.summary_total_cost' in main.moss and jump to definition in graphlib/src/model.moss
             (goto-char (point-min))
             (search-forward "summary_total_cost")
@@ -1212,7 +1225,8 @@
             (let* ((xrefs (xref-backend-definitions 'moss "summary_total_cost"))
                    (def-loc (xref-item-location (car xrefs))))
               (should def-loc)
-              (should (string-match-p "graphlib/src/model\\.moss" (xref-file-location-file def-loc)))
+              (should (string-match-p "graphlib/src/model\\.moss"
+                                      (xref-file-location-file def-loc)))
               (should (= 64 (xref-file-location-line def-loc))))
             ;; Test callers and callees on main function
             (goto-char (point-min))
@@ -1225,6 +1239,59 @@
                                callees)))))
       (when (get-buffer "*Moss Call Tree*")
         (kill-buffer "*Moss Call Tree*"))
+      (when (buffer-live-p planner-buffer)
+        (kill-buffer planner-buffer)))))
+
+(ert-deftest moss-mode-cross-package-xref-source-location-known-regression ()
+  "Cross-package xref resolves declaration locations from the sidecar."
+  (let* ((root (moss--repo-root default-directory))
+         (planner-main (expand-file-name "projects/build_planner/planner/src/main.moss" root))
+         (planner-root (expand-file-name "projects/build_planner/planner" root))
+         (graphlib-source (expand-file-name "projects/build_planner/graphlib/src/model.moss" root))
+         (planner-buffer (find-file-noselect planner-main))
+         (moss-compiler-command (expand-file-name "moss" root))
+         (moss-margo-command (expand-file-name "margo" root))
+         (original-source
+          (with-temp-buffer
+            (insert-file-contents graphlib-source)
+            (buffer-string))))
+    (unwind-protect
+        (progn
+          (with-current-buffer planner-buffer
+            (moss-mode)
+            (let ((default-directory planner-root)
+                  (process-environment
+                   (cons (concat "MOSS=" moss-compiler-command)
+                         process-environment)))
+              (should (= 0 (call-process moss-margo-command nil nil nil "build"))))
+            (goto-char (point-min))
+            (search-forward "summary_total_cost")
+            (backward-char (length "summary_total_cost"))
+            (let* ((xrefs (xref-backend-definitions 'moss "summary_total_cost"))
+                   (location (xref-item-location (car xrefs))))
+              (should (string-match-p "graphlib/src/model\\.moss"
+                                      (xref-file-location-file location)))
+              (should (= 64 (xref-file-location-line location))))
+            (with-temp-file graphlib-source
+              (insert "\n" original-source))
+            (let ((default-directory planner-root)
+                  (process-environment
+                   (cons (concat "MOSS=" moss-compiler-command)
+                         process-environment)))
+              (should (= 0 (call-process moss-margo-command nil nil nil "build"))))
+            (let* ((xrefs (xref-backend-definitions 'moss "summary_total_cost"))
+                   (location (xref-item-location (car xrefs))))
+              (should (string-match-p "graphlib/src/model\\.moss"
+                                      (xref-file-location-file location)))
+              (should (= 65 (xref-file-location-line location))))))
+      (with-temp-file graphlib-source
+        (insert original-source))
+      (let ((default-directory planner-root)
+            (process-environment
+             (cons (concat "MOSS=" moss-compiler-command)
+                   process-environment)))
+        (ignore-errors
+          (call-process moss-margo-command nil nil nil "build")))
       (when (buffer-live-p planner-buffer)
         (kill-buffer planner-buffer)))))
 

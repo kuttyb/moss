@@ -480,7 +480,7 @@ export fn size(value):
         cwd=provider, env=env, text=True, capture_output=True)
     assert built.returncode == 0 and json.loads(built.stdout)["ok"], (
         built.stdout, built.stderr)
-    (provider / "src" / "provider.moss").unlink()
+    # Keep package source available for R2 freshness validation.
     (consumer / "src" / "main.moss").write_text("""module Main
 import Provider
 fn main():
@@ -596,7 +596,7 @@ export fn unsupported(value):
         cwd=strict_provider, env=v10_env, text=True, capture_output=True)
     assert strict_built.returncode == 0 and json.loads(strict_built.stdout)["ok"], (
         strict_built.stdout, strict_built.stderr)
-    (strict_provider / "src" / "provider.moss").unlink()
+    # Keep package source available for R2 freshness validation.
     (strict_consumer / "src" / "main.moss").write_text("""module Main
 import StrictProvider
 fn main():

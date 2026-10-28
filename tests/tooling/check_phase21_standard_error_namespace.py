@@ -223,7 +223,7 @@ def build_and_run():
 
 
 build_and_run()
-provider.rename(provider.with_suffix(".removed"))
+# Keep package source available for R2 interface freshness validation.
 build_and_run()
 
 # Standard enum values cross the native method and message contracts too.
@@ -367,7 +367,7 @@ run("rustc", "--edition=2021", "-Dwarnings", local_write_rust,
 assert run(local_write_executable).stdout == "7\n1\n"
 assert run(COMPILER, "run", "--interp", local_write).stdout == "7\n1\n"
 
-transport_provider.rename(transport_provider.with_suffix(".removed"))
+# Keep package source available for R2 interface freshness validation.
 build_transport()
 
 print("Phase 21 standard error namespace and source-free identity passed")

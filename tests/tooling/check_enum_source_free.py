@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise an enum exported through a source-free .mossi provider."""
+"""Exercise an enum exported through a source-backed .mossi provider."""
 
 import json
 import os
@@ -34,11 +34,7 @@ def main():
         [str(ROOT / "margo"), "run"], cwd=FIXTURE, text=True,
         capture_output=True, check=True,
     )
-    scratch = Path(tempfile.mkdtemp(prefix="express005-source-free-", dir=ROOT / "tmp"))
-    artifacts = scratch / "artifacts"
-    artifacts.mkdir()
-    for name in ("tags.mossi", "libtags.rlib"):
-        shutil.copy2(provider / name, artifacts / name)
+    scratch = Path(tempfile.mkdtemp(prefix="express005-imported-interface-", dir=ROOT / "tmp"))
     project = scratch / "consumer"
     (project / "src").mkdir(parents=True)
     (project / "Moss.toml").write_text(
@@ -48,7 +44,7 @@ def main():
     )
     shutil.copy2(FIXTURE / "src" / "main.moss", project / "src" / "main.moss")
     environment = os.environ.copy()
-    environment["MOSS_MODULE_PATH"] = str(artifacts)
+    environment["MOSS_MODULE_PATH"] = str(provider)
     build = subprocess.run(
         [str(ROOT / "moss"), "build", "--json"],
         cwd=project,
@@ -72,7 +68,7 @@ def main():
     if run.stdout != "4\n1\n" or run.stdout != source_run.stdout:
         raise AssertionError(
             f"enum source/source-free disagreement: {source_run.stdout!r}, {run.stdout!r}")
-    print("source-free enum .mossi provider passed")
+    print("source-backed imported enum .mossi provider passed")
 
 
 if __name__ == "__main__":

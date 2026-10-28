@@ -32,7 +32,7 @@ def check_case(g2, root, env, name, source_text, code, consumer_line,
                require_provider=True, forbid_provider=False,
                strict_unavailable=False):
     _, source = g2.consumer(root, name, source_text)
-    assert not (root / "provider" / "src").exists(), "provider source remained available"
+    assert (root / "provider" / "src").exists(), "provider source is required for R2 freshness validation"
     result = g2.run(g2.MOSS, "check", source, "--json", env=env)
     try:
         data = json.loads(result.stdout)
@@ -88,7 +88,7 @@ def check_case(g2, root, env, name, source_text, code, consumer_line,
     return {
         "case": name,
         "consumer_source": str(source),
-        "provider_source_removed": not (root / "provider" / "src").exists(),
+        "provider_source_present_for_hash": (root / "provider" / "src").exists(),
         "expected_code": code,
         "expected_consumer_line": consumer_line,
         "expect_provider_provenance": require_provider,
@@ -115,7 +115,7 @@ def main():
         assert compiled_mutator.returncode == 0, (
             compiled_mutator.stdout, compiled_mutator.stderr)
         env, artifacts = g2.source_free(scratch / "provider_setup", g2.PROVIDER_OPEN)
-        assert not (scratch / "provider_setup" / "provider" / "src").exists()
+        assert (scratch / "provider_setup" / "provider" / "src").exists()
 
         evidence["provider_artifacts"] = [path.name for path in artifacts.iterdir()]
         evidence["cases"].append(check_case(
@@ -135,7 +135,7 @@ export fn fresh():
         fresh_env, fresh_artifacts = g2.source_free(
             scratch / "fresh_provider_setup", fresh_only)
         fresh_env["MOSS_PHASE25_CHECKED_BODY_TRACE"] = "1"
-        assert not (scratch / "fresh_provider_setup" / "provider" / "src").exists()
+        assert (scratch / "fresh_provider_setup" / "provider" / "src").exists()
         evidence["cases"].append(check_case(
             g2, scratch / "fresh_provider_setup", fresh_env, "conflicting_fresh_use",
             """module Consumer
@@ -150,7 +150,8 @@ fn main():
         for name, mode in (
                 ("missing_generic_source", "generic-source-missing"),
                 ("forged_generic_source", "generic-source-forged")):
-            variant_artifacts = scratch / f"artifacts-{name}"
+            variant_artifacts = (fresh_artifacts.parents[1] / "test-artifacts" / name)
+            variant_artifacts.parent.mkdir(parents=True, exist_ok=True)
             shutil.copytree(fresh_artifacts, variant_artifacts)
             mutated = g2.run(mutator, variant_artifacts / "Provider.mossi",
                              variant_artifacts / "libProvider.rlib", mode)

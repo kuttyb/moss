@@ -38,8 +38,12 @@ def project_tree_sha256(dir_path: Path) -> str:
     """Computes deterministic hash across all files in directory tree in sorted order."""
     h = hashlib.sha256()
     for p in sorted(dir_path.rglob("*")):
-        if p.is_file():
-            h.update(p.relative_to(dir_path).as_posix().encode())
+        relative = p.relative_to(dir_path)
+        # Margo's ignored build outputs are local cache state, not fixture
+        # inputs. They are created by running the compiler-perf workloads and
+        # must not change a fixture's integrity hash.
+        if p.is_file() and "build" not in relative.parts:
+            h.update(relative.as_posix().encode())
             h.update(p.read_bytes())
     return h.hexdigest()
 

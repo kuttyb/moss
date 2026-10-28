@@ -514,15 +514,13 @@ for compilation; when omitted, uses PACKAGE-ROOT, or REPO-ROOT for standalone."
          (is-margo (string-match-p "\\(?:\\`\\|[[:space:]/]\\)margo\\(?:\\'\\|[[:space:]]\\)" command))
          (compiler (moss--compiler repo-root))
          (rustc (or moss-rustc-command "rustc"))
-         (dep-roots (and src (not is-margo) (moss--dependency-source-roots src)))
          (mod-paths (and src (not is-margo) (moss--dependency-module-paths src)))
          (margo-env (and is-margo
                          (list (format "MOSS=%s" compiler)
                                (format "RUSTC=%s" rustc))))
          (editor-env (and (not is-margo)
-                          (list
-                           (and dep-roots (format "MOSS_FAST_DEBUG_SOURCE_ROOTS=%s" dep-roots))
-                           (and mod-paths (format "MOSS_MODULE_PATH=%s" mod-paths)))))
+                          (list (and mod-paths
+                                     (format "MOSS_MODULE_PATH=%s" mod-paths)))))
          (env-vars (delq nil (append margo-env editor-env)))
          (compilation-environment (append env-vars compilation-environment))
          (process-environment (append env-vars process-environment))
@@ -654,27 +652,6 @@ sources, compile with debug options directly."
     (user-error "Current buffer is not visiting a .moss file"))
   (expand-file-name buffer-file-name))
 
-(defun moss--dependency-source-roots (source)
-  "Return colon-separated dependency roots for SOURCE based on its manifest."
-  (let* ((manifest-dir (moss--package-root source))
-         roots)
-    (when manifest-dir
-      (let ((manifest-file (or (let ((f (expand-file-name "Moss.toml" manifest-dir)))
-                                 (and (file-readable-p f) f))
-                               (let ((f (expand-file-name "moss.toml" manifest-dir)))
-                                 (and (file-readable-p f) f)))))
-        (when manifest-file
-          (with-temp-buffer
-            (insert-file-contents manifest-file)
-            (goto-char (point-min))
-            (while (re-search-forward "^[ \t]*[A-Za-z0-9_.-]+[ \t]*=[ \t]*{[ \t]*path[ \t]*=[ \t]*\"\\([^\"]+\\)\"" nil t)
-              (let* ((rel-path (match-string 1))
-                     (dep-root (expand-file-name rel-path manifest-dir)))
-                (when (file-directory-p dep-root)
-                  (push (file-truename dep-root) roots))))))))
-    (when roots
-      (mapconcat #'identity (delete-dups (nreverse roots)) ":"))))
-
 (defun moss--dependency-module-paths (source)
   "Return colon-separated module paths for dependencies of SOURCE."
   (let* ((manifest-dir (moss--package-root source))
@@ -721,12 +698,10 @@ retained for compatibility with callers that explicitly request this.  Only
 the compiler's `complete' operation performs incomplete-source recovery;
 ordinary navigation overlays are strict.  This function never invokes a shell."
   (let* ((source (moss--semantic-source))
-         (dep-roots (moss--dependency-source-roots source))
          (mod-paths (moss--dependency-module-paths source))
          (process-environment
           (append
            (delq nil (list
-                      (and dep-roots (format "MOSS_FAST_DEBUG_SOURCE_ROOTS=%s" dep-roots))
                       (and mod-paths (format "MOSS_MODULE_PATH=%s" mod-paths))))
            process-environment))
          (use-overlay

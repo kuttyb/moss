@@ -95,7 +95,7 @@ assert run([margo, "run"], app, env=env).stdout.strip() == "42"
 without_dependencies = dict(env)
 without_dependencies.pop("MOSS_MODULE_PATH", None)
 missing = run([moss, "test"], app, expected=1, env=without_dependencies)
-assert "imported module 'Geometry' was not found" in missing.stderr
+assert "interface for Geometry is missing or stale; run `margo build`" in missing.stderr
 run([margo, "test"], app, env=env)
 run([margo, "bench", "dependency answer"], app, env=env)
 

@@ -9,6 +9,7 @@ import json
 import hashlib
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -157,11 +158,10 @@ def source_free(scratch, provider_source):
     write_package(provider, "g2provider", provider_source)
     built = run(MARGO, "build", "--json", cwd=provider)
     assert built.returncode == 0 and payload(built).get("ok"), (built.stdout, built.stderr)
-    artifacts = scratch / "artifacts"
-    artifacts.mkdir()
-    # Publish each interface with its selected provider rlib. The build's
-    # `libmoss_<Module>.rlib` is a rustc discovery alias that every consumer
-    # build recreates from the selected rlib; it is not provider ABI data.
+    # Consumers resolve the provider's current interface in place. Keeping
+    # the source tree lets check validate the out-of-band R2 source hash while
+    # still loading imported semantics only from .mossi.
+    artifacts = provider / "build/debug"
     interfaces = list((provider / "build/debug").glob("*.mossi"))
     files = interfaces + [file.with_name(f"lib{file.stem}.rlib") for file in interfaces]
     assert interfaces and all(file.exists() for file in files), \
@@ -171,10 +171,6 @@ def source_free(scratch, provider_source):
         and b"\nschema_version 10\n" in file.read_bytes()
         and b"\nnative_abi 10\n" in file.read_bytes()
         for file in interfaces), "provider did not emit ABI-v10 .mossi"
-    for file in files:
-        shutil.copy2(file, artifacts / file.name)
-    shutil.rmtree(provider / "src")
-    assert not (provider / "src").exists(), "provider source directory still reachable"
     env = os.environ.copy()
     env["MOSS_MODULE_PATH"] = str(artifacts)
     env["MOSS_STAGED_ABI"] = "v10"
@@ -205,11 +201,17 @@ def artifact_error(source, artifacts, code):
 
 
 def clone_artifacts(source, destination):
+    # Keep mutated interfaces under the producer package root so freshness
+    # validation can still read its source hash.
+    package_root = source.parents[1]
+    destination = package_root / "test-artifacts" / destination.name
+    destination.parent.mkdir(parents=True, exist_ok=True)
     shutil.copytree(source, destination)
     interfaces = list(destination.glob("*.mossi"))
-    libraries = list(destination.glob("*.rlib"))
-    assert len(interfaces) == len(libraries) == 1, (interfaces, libraries)
-    return interfaces[0], libraries[0]
+    assert len(interfaces) == 1, interfaces
+    selected_library = destination / f"lib{interfaces[0].stem}.rlib"
+    assert selected_library.is_file(), (interfaces, list(destination.glob("*.rlib")))
+    return interfaces[0], selected_library
 
 
 def replace_one(source, before, after):
@@ -228,7 +230,14 @@ fn main():
 
     corrupt, _ = clone_artifacts(pristine, s / "corrupt")
     raw = corrupt.read_bytes()
-    corrupt.write_bytes(raw[:-1] + bytes([raw[-1] ^ 1]))
+    section2 = raw.find(b"\nexecution_body_version ")
+    section1_end = len(raw) if section2 < 0 else section2
+    semantic = raw.find(b"semantic_contract\n")
+    assert 0 <= semantic < section1_end, "missing Section 1 semantic contract"
+    corrupt_at = semantic + len(b"semantic_contract\n")
+    assert corrupt_at < section1_end, "empty Section 1 semantic contract"
+    corrupt.write_bytes(raw[:corrupt_at] + bytes([raw[corrupt_at] ^ 1]) +
+                        raw[corrupt_at + 1:])
     artifact_error(consumer_source, corrupt.parent, "SOURCE_FREE_CONTRACT_INVALID")
 
     v9, _ = clone_artifacts(pristine, s / "v9")
@@ -243,11 +252,13 @@ fn main():
     digest_line = next(line for line in changed.splitlines(keepends=True)
                        if line.startswith(b"provider_contract_digest sha256:"))
     changed = changed.replace(digest_line, b"", 1)
+    changed = re.sub(rb"(?m)^package_source_hash sha256:[0-9a-f]{64}\n",
+                     b"", changed, count=1)
     digest = hashlib.sha256(changed).hexdigest().encode()
     forged.write_bytes(changed.replace(b"moss-module-interface-v3\n",
         b"moss-module-interface-v3\nprovider_contract_digest sha256:" + digest + b"\n", 1))
     artifact_error(consumer_source, forged.parent,
-                   "SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH")
+                   "SOURCE_FREE_CONTRACT_INVALID")
 
     _, newer = source_free(s / "record-provider-new", PROVIDER_SIMPLE.replace("42", "43"))
     stale, stale_lib = clone_artifacts(pristine, s / "stale")
@@ -255,7 +266,7 @@ fn main():
     stale.write_bytes(newer_interface.read_bytes())
     assert stale_lib.exists()
     artifact_error(consumer_source, stale.parent,
-                   "SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH")
+                   "MOSS_INTERFACE_STALE")
 
 
 def g1(s):
@@ -415,8 +426,7 @@ fn main():
 ''')
     source_free_run(root, env, "1\n")
     debug = run(MARGO, "debug", cwd=root, env=env)
-    assert debug.returncode != 0, (debug.stdout, debug.stderr)
-    assert "FAST_DEBUG_NATIVE_DEPENDENCY" in debug.stdout + debug.stderr, (debug.stdout, debug.stderr)
+    assert debug.returncode == 0 and debug.stdout == "1\n", (debug.stdout, debug.stderr)
 
 
 GATES = [g1, g2, g3, g4, g5, g6, g7, g8, g9, g10, g11]

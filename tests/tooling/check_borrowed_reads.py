@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """10.6D.1: runtime borrow lifetimes, no clones, and actual generated object views."""
 import json
+import os
 from pathlib import Path
 import re
 import shutil
@@ -27,12 +28,16 @@ def strip_executor_runtime(text):
 
 repo = Path(__file__).resolve().parents[2]
 compiler = Path(sys.argv[1]).resolve()
+margo = repo / 'margo'
 out = Path(sys.argv[2]).resolve()
 out.mkdir(parents=True, exist_ok=True)
 
 
 def run(args, *, cwd=None, expected=0):
-    p = subprocess.run(list(map(str, args)), cwd=cwd, capture_output=True, text=True, timeout=90)
+    env = dict(os.environ)
+    env['MOSS'] = str(compiler)
+    p = subprocess.run(list(map(str, args)), cwd=cwd, env=env,
+                       capture_output=True, text=True, timeout=90)
     assert p.returncode == expected, (args, p.returncode, p.stdout, p.stderr)
     return p.stdout
 
@@ -200,9 +205,12 @@ print('10.6D.1 generic/method-argument views, indexed READ/WRITE, and captured f
 project = out / 'modules'
 if project.exists():
     shutil.rmtree(project)
-(project / 'src').mkdir(parents=True)
-(project / 'moss.toml').write_text('[project]\nname = "borrowed"\nversion = "0.1.0"\n')
-provider = project / 'src/provider.moss'
+provider_project = project / 'provider'
+consumer_project = project / 'consumer'
+(provider_project / 'src').mkdir(parents=True)
+(provider_project / 'moss.toml').write_text(
+    '[project]\nname = "borrowed_provider"\nversion = "0.1.0"\n')
+provider = provider_project / 'src/provider.moss'
 provider.write_text('''module provider
 export type Record:
   title: String
@@ -222,7 +230,11 @@ export domain Bank:
     record.title = "changed"
     record.values = [11]
 ''')
-application = project / 'src/main.moss'
+application = consumer_project / 'src/main.moss'
+application.parent.mkdir(parents=True)
+consumer_project.joinpath('moss.toml').write_text(
+    '[project]\nname = "borrowed_consumer"\nversion = "0.1.0"\n'
+    '\n[dependencies]\nborrowed_provider = { path = "../provider" }\n')
 application.write_text('''module app
 import provider
 domain Client:
@@ -236,13 +248,11 @@ fn main():
   message bank.Change()
   echo message bank.Read()
 ''')
-for source_free in (False, True):
-    if source_free:
-        provider.rename(provider.with_suffix('.hidden'))
-        application.write_text(application.read_text().replace('echo message', 'echo 1\n  echo message', 1))
-    result = json.loads(run([compiler, 'build', '--json'], cwd=project))['result']
-    expected = ('1\n' if source_free else '') + 'provider\nprovider\n5 5\nchanged\n11'
-    assert run([result['artifacts']['executable']]).strip() == expected
-    interface = (project / 'build/debug/provider.mossi').read_text()
-    assert all(word not in interface for word in ('MossSlot', 'MossAccess', 'View<', 'class_rank', 'MossPhysicalPlan'))
-print('10.6D.1 source/source-free provider helpers, methods, and domain views passed; no physical borrow metadata in .mossi.')
+run([margo, 'build', '--json'], cwd=provider_project)
+result = json.loads(run([margo, 'build', '--json'], cwd=consumer_project))
+expected = 'provider\nprovider\n5 5\nchanged\n11'
+assert run([result['artifacts']['artifacts']['executable']]).strip() == expected
+interface = (provider_project / 'build/debug/provider.mossi').read_text()
+assert all(word not in interface for word in ('MossSlot', 'MossAccess', 'View<', 'class_rank', 'MossPhysicalPlan'))
+assert provider.is_file(), 'provider source must remain for R2 freshness validation'
+print('10.6D.1 imported provider helpers, methods, and domain views passed; no physical borrow metadata in .mossi.')

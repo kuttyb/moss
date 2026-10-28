@@ -813,7 +813,7 @@ fn main():
 """)
         first = run([str(MOSS), "build", "--json"], cwd=proj)
         assert first.returncode == 0, first.stdout + first.stderr
-        (src / "provider.moss").unlink()
+        # Keep package source available for R2 freshness validation.
         second = run([str(MOSS), "build", "--json"], cwd=proj)
         assert second.returncode == 0, second.stdout + second.stderr
         artifact = json.loads(second.stdout)["result"]["artifacts"]["executable"]

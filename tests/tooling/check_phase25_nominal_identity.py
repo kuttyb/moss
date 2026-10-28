@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
-"""G-A3 stable nominal identities (TYPE_IR_CONTRACT §3.1) in real Moss programs.
-
-Cases A-E of the L7 G-A3 decision, using Margo-built packages. Compiled-only
-cases delete provider source before the consumer is checked or built, and every
-negative must fail with a Moss diagnostic before rustc runs.
-"""
+"""G-A3 stable nominal identities across source-backed package interfaces."""
 
 import json
 import os
@@ -56,18 +51,15 @@ def build(root, env=None):
     return data
 
 
-def publish(root, destination):
-    """Copy each interface with its selected rlib, then remove the source."""
-    destination.mkdir(parents=True)
+def publish(root):
+    """Return the producer build directory while retaining its source root."""
     interfaces = list((root / "build/debug").glob("*.mossi"))
     assert interfaces, root
     for interface in interfaces:
         assert interface.read_bytes().startswith(b"moss-module-interface-v3\n"), interface
-        shutil.copy2(interface, destination / interface.name)
         rlib = interface.with_name(f"lib{interface.stem}.rlib")
-        shutil.copy2(rlib, destination / rlib.name)
-    shutil.rmtree(root / "src")
-    return destination
+        assert rlib.is_file(), rlib
+    return root / "build/debug"
 
 
 def execute(root, env, expected):
@@ -159,8 +151,7 @@ def case_b(scratch):
     package(beta, "beta", "2.0.0", "beta.moss", TOKEN.format(module="Beta", id=2))
     build(alpha)
     build(beta)
-    env = module_env(publish(alpha, scratch / "alpha-artifacts"),
-                     publish(beta, scratch / "beta-artifacts"))
+    env = module_env(publish(alpha), publish(beta))
     ok = scratch / "token-ok"
     ok_source = package(ok, "tokenok", "0.1.0", "main.moss", '''module Consumer
 import Alpha
@@ -199,16 +190,16 @@ export fn answer() -> Int:
 
 
 def case_c_e(scratch):
-    """One provider, two separately compiled consumers; provider source absent."""
+    """One provider, two separately compiled consumers through current interfaces."""
     provider = scratch / "provider"
     provider_source = package(provider, "g2provider", "0.1.0", "provider.moss",
                               PROVIDER.format(answer=42))
     expected = template_id("g2provider", "0.1.0", "Provider", "Box")
-    # The provider's own source-backed identity, before its source is removed.
+    # The provider's own source-backed identity.
     assert nominal("entity-v1:type:Provider__Box", provider_source)["declaration_id"] == expected
     build(provider)
-    provider_artifacts = publish(provider, scratch / "provider-artifacts")
-    assert not provider_source.exists()
+    provider_artifacts = publish(provider)
+    assert provider_source.exists(), "provider source must back its interface hash"
 
     consumer_a = scratch / "consumera"
     package(consumer_a, "consumera", "0.1.0", "consumera.moss", '''module ConsumerA
@@ -217,7 +208,7 @@ export fn make():
   return Provider.Box(value: 7)
 ''')
     build(consumer_a, module_env(provider_artifacts))
-    consumer_a_artifacts = publish(consumer_a, scratch / "consumera-artifacts")
+    consumer_a_artifacts = publish(consumer_a)
 
     consumer_b = scratch / "consumerb"
     b_source = package(consumer_b, "consumerb", "0.1.0", "main.moss", '''module ConsumerB
@@ -231,7 +222,7 @@ fn main():
     # Case C: a value produced by compiled Consumer A crosses into Consumer B
     # through the provider-owned type, and both crates link one provider rlib.
     execute(consumer_b, env, "7\n")
-    # Case E: with provider source absent, B binds the exact provider identity.
+    # Case E: a source-backed provider interface preserves exact identity.
     facts = nominal("item", b_source, env, "binding", "main")
     assert facts["declaration_id"] == expected, facts
     assert facts["module_identity"] == "module-v1:g2provider@0.1.0::Provider", facts
@@ -242,9 +233,12 @@ fn main():
 def case_d(scratch, provider_artifacts, consumer_a_artifacts, b_source):
     """Incompatible providers claiming one module identity are rejected."""
     impostor = scratch / "impostor"
-    package(impostor, "g2provider", "0.1.0", "provider.moss", PROVIDER.format(answer=43))
+    incompatible = (PROVIDER.format(answer=43)
+                    .replace("answer() -> Int:", "answer() -> Bool:")
+                    .replace("return 43", "return true"))
+    package(impostor, "g2provider", "0.1.0", "provider.moss", incompatible)
     build(impostor)
-    impostor_artifacts = publish(impostor, scratch / "impostor-artifacts")
+    impostor_artifacts = publish(impostor)
     probe = scratch / "probe"
     probe_source = package(probe, "probe", "0.1.0", "main.moss", '''module Probe
 import Provider
@@ -255,9 +249,10 @@ fn main():
     rejected(probe_source, {"SOURCE_FREE_MODULE_ID_CONFLICT"},
              module_env(provider_artifacts, impostor_artifacts))
     # A byte-identical copy of the same bound provider is the same provider.
-    duplicate = scratch / "duplicate-artifacts"
-    shutil.copytree(provider_artifacts, duplicate)
-    execute(probe, module_env(provider_artifacts, duplicate), "42\n")
+    duplicate = scratch / "duplicate-package"
+    shutil.copytree(provider_artifacts.parents[1], duplicate)
+    execute(probe, module_env(provider_artifacts,
+                              duplicate / "build/debug"), "42\n")
     # Consumer A was built against the original provider; substituting the
     # impostor under the same identity must not link.
     rejected(b_source, {"SOURCE_FREE_MODULE_ID_CONFLICT"},
@@ -368,12 +363,12 @@ def main():
         print("G-A3 case B (same name in two packages): PASS")
         artifacts = case_c_e(scratch / "c")
         print("G-A3 case C (one provider, two compiled consumers): PASS")
-        print("G-A3 case E (provider source removed): PASS")
+        print("G-A3 case E (source-backed provider interface): PASS")
         case_d(scratch / "d", *artifacts)
         print("G-A3 case D (provider impersonation): PASS")
         case_f(scratch / "f")
         print("G-A3 case F (declaration-module identity, one name per declaration): PASS")
-    print("Phase 25 G-A3 nominal identity: PASS")
+        print("Phase 25 G-A3 nominal identity: PASS")
     return 0
 
 

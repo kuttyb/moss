@@ -1104,8 +1104,7 @@ export fn add_one(value: Int) -> Int:
         assert built.returncode == 0 and json.loads(built.stdout)["ok"], (
             built.stdout, built.stderr)
         artifacts = scratch / "provider" / "build" / "debug"
-        for provider_source in (scratch / "provider" / "src").glob("*.moss"):
-            provider_source.unlink()
+        assert list((scratch / "provider" / "src").glob("*.moss"))
         package(scratch / "consumer", "team_a_consumer", "0.1.0", {
             "main": '''module Main
 import Provider
@@ -1255,9 +1254,9 @@ fn main():
         assert source_free_range.returncode == 0, (
             source_free_range.stdout, source_free_range.stderr)
         range_data = json.loads(source_free_range.stdout)
-        assert range_data["source_removed"] and (
+        assert range_data["provider_source_present"] and (
             range_data["range_output"] == "329"), range_data
-        print("PASS source-free generic Range return keeps owned Vector type",
+        print("PASS imported-interface generic Range return keeps owned Vector type",
               flush=True)
 
         # Staged ABI-v10 admits the checked empty-vector callable while
@@ -1282,9 +1281,7 @@ export fn size(value):
         assert strict_build.returncode == 0 and json.loads(
             strict_build.stdout)["ok"], (strict_build.stdout, strict_build.stderr)
         strict_artifacts = strict_provider / "build" / "debug"
-        for provider_source in (strict_provider / "src").glob("*.moss"):
-            provider_source.unlink()
-        assert not list((strict_provider / "src").glob("*.moss"))
+        assert list((strict_provider / "src").glob("*.moss"))
 
         strict_fresh = scratch / "strict_fresh_consumer"
         package(strict_fresh, "team_a_strict_fresh_consumer", "0.1.0", {

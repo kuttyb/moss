@@ -239,37 +239,26 @@ def test_provider_and_source_free(root):
     if "dyn " in lowered or "vtable" in lowered:
         raise AssertionError("trait specialization introduced runtime dispatch")
 
-    # Preserve only normal provider artifacts, then make its Moss source
-    # unavailable.  The consumer gets semantic generic IR from .mossi and
-    # concrete provider implementation from .rlib; no provider source is
-    # folded into this compilation.
-    artifact_root = root / "provider-artifacts"
-    artifact_root.mkdir()
-    for artifact_name in ("Provider.mossi", "libProvider.rlib"):
-        shutil.copy2(provider / "build" / "debug" / artifact_name,
-                     artifact_root / artifact_name)
-    artifact_names = {path.name for path in artifact_root.iterdir()}
-    if artifact_names != {"Provider.mossi", "libProvider.rlib"}:
-        raise AssertionError(f"source-free fixture exposed unexpected provider files: {artifact_names}")
-    (provider / "src").rename(provider / "src.hidden")
-    source_free = root / "source-free"
-    package(source_free, "sourcefree", app_sources("Consumer"))
-    source_free_env = env_for(MOSS_MODULE_PATH=str(artifact_root))
-    build = run([COMPILER, "build", "--json"], source_free, env=source_free_env)
+    # Keep the provider package source-backed for R2 freshness while resolving
+    # semantic generic IR from its .mossi and native code from its .rlib.
+    imported = root / "imported-interface"
+    package(imported, "imported", app_sources("Consumer"))
+    imported_env = env_for(MOSS_MODULE_PATH=str(provider / "build" / "debug"))
+    build = run([COMPILER, "build", "--json"], imported, env=imported_env)
     artifact = json.loads(build.stdout)["result"]["artifacts"]
-    require_output([artifact["executable"]], source_free, "42\n14\n5\n11\n42\n",
-                   env=source_free_env)
+    require_output([artifact["executable"]], imported, "42\n14\n5\n11\n42\n",
+                   env=imported_env)
     consumer_rust = Path(artifact["generated_rust"]).read_text(encoding="utf-8")
     if str(provider / "src") in consumer_rust or "fn Provider__append" in consumer_rust:
-        raise AssertionError("source-free consumer folded provider Moss implementation")
+        raise AssertionError("imported-interface consumer folded provider Moss implementation")
     if "extern crate moss_Provider;" not in consumer_rust:
-        raise AssertionError("source-free consumer did not retain provider rlib linkage")
+        raise AssertionError("imported-interface consumer did not retain provider rlib linkage")
     for specialization in ("outer", "inner", "private_outer", "private_inner",
                            "score_outer", "score_inner"):
         if f"fn __moss_specialize_Provider__{specialization}_0" not in consumer_rust:
             raise AssertionError(
-                f"source-free consumer did not project {specialization} from .mossi")
-    print("  [PASS] provider-owned wrapper, static trait, repeated use, and source-free .mossi + .rlib")
+                f"imported-interface consumer did not project {specialization} from .mossi")
+    print("  [PASS] provider-owned wrapper, static trait, repeated use, and imported .mossi + .rlib")
 
 
 with tempfile.TemporaryDirectory(prefix="moss-phase159-", dir=REPO / "tmp") as temp:

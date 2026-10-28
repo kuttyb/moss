@@ -93,7 +93,7 @@ build_and_run("2\n")
 build_and_run("2\n", release=True)
 assert run(margo, "debug").stdout == "2\n"
 
-provider.rename(provider.with_suffix(".removed"))
+# Keep package source available for R2 interface freshness validation.
 # Force a fresh consumer build against the paired .mossi/.rlib contract.
 consumer.write_text(consumer.read_text().replace(
     "  echo message worker.Run()\n",

@@ -1,13 +1,18 @@
 #!/usr/bin/env python3
-"""Exercise ABI-v9 .mossi loading with provider source removed."""
+"""Exercise ABI-v9 imported .mossi validation for source-backed packages."""
 
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import shutil
 import subprocess
 import sys
+
+from phase26_1_1_mossi_test_helpers import (
+    refresh_v9_execution_section, section1_digest_material,
+    section1_semantic_exports)
 
 
 repo = Path(__file__).resolve().parents[2]
@@ -15,9 +20,9 @@ compiler = Path(sys.argv[1]).resolve()
 out = Path(sys.argv[2]).resolve()
 
 
-def run(args, *, cwd=None, expected=0):
+def run(args, *, cwd=None, env=None, expected=0):
     completed = subprocess.run(
-        [str(item) for item in args], cwd=cwd, text=True,
+        [str(item) for item in args], cwd=cwd, env=env, text=True,
         capture_output=True, timeout=180)
     assert completed.returncode == expected, (
         args, completed.returncode, completed.stdout, completed.stderr)
@@ -43,8 +48,9 @@ def write_interface(path, text):
             path.read_text()).group(1)
         write_interface.baselines[path] = (rlib, original_bytes, original_digest)
     rlib, original_bytes, original_digest = write_interface.baselines[path]
-    contract, semantic = text.split("\ncontract\n", 1)[1].split(
+    contract, _ = text.split("\ncontract\n", 1)[1].split(
         "\nsemantic_exports\n", 1)
+    semantic = section1_semantic_exports(text)
     def hash_section(section):
         value = 14695981039346656037
         for byte in section.encode():
@@ -56,14 +62,12 @@ def write_interface(path, text):
         text, count = re.subn(rf"(?m)^{key} [0-9a-f]{{16}}$",
                               f"{key} {hash_section(section)}", text)
         assert count == 1, (key, count)
-    material, count = re.subn(
-        r"(?m)^provider_contract_digest sha256:[0-9a-f]{64}\n", "", text)
-    assert count == 1
-    digest = hashlib.sha256(material.encode()).hexdigest()
+    digest = hashlib.sha256(section1_digest_material(text).encode()).hexdigest()
     text, count = re.subn(
         r"(?m)^provider_contract_digest sha256:[0-9a-f]{64}$",
         "provider_contract_digest sha256:" + digest, text)
     assert count == 1
+    text = refresh_v9_execution_section(text)
     path.write_text(text)
     sealed = original_bytes.replace(original_digest.encode(), digest.encode())
     assert sealed != original_bytes or digest == original_digest
@@ -151,7 +155,7 @@ fn main():
     assert run([first["result"]["artifacts"]["executable"]]).stdout.strip() == "4"
     interface_path = raised_out / "build/debug/service.mossi"
     assert 'handler_raise_tags "Run" 1' in interface_path.read_text()
-    provider.rename(provider.with_suffix(".removed"))
+    # Keep the package source available for R2 freshness validation.
     rebuilt = json.loads(run([compiler, "build", "--json"], cwd=raised_out).stdout)
     assert run([rebuilt["result"]["artifacts"]["executable"]]).stdout.strip() == "4"
     main.write_text('''module app
@@ -203,7 +207,7 @@ fn main():
     interface = (capture_out / "build/debug/service.mossi").read_text()
     assert 'handler_failure_capture "Run" 0 "attempt" "string"' in interface
     assert 'handler_failure_capture "Join" 0 "joined" "string"' in interface
-    provider.rename(provider.with_suffix(".removed"))
+    # Keep the package source available for R2 freshness validation.
     rebuilt = json.loads(run([compiler, "build", "--json"], cwd=capture_out).stdout)
     assert run([rebuilt["result"]["artifacts"]["executable"]]).stdout == (
         "hello\nyes\nno\n")
@@ -244,7 +248,7 @@ fn main():
 ''')
     source_backed = json.loads(run([compiler, "build", "--json"], cwd=trailer_out).stdout)
     assert run([source_backed["result"]["artifacts"]["executable"]]).stdout == "4\n4\n"
-    provider.rename(provider.with_suffix(".removed"))
+    # Keep the package source available for R2 freshness validation.
     # The provider artifact exports a real typed arm body independently of
     # its Moss source.
     arm_probe = trailer_out / "arm_probe.rs"
@@ -342,7 +346,7 @@ fn main():
 ''')
     backed = json.loads(run([compiler, "build", "--json"], cwd=route_out).stdout)
     assert run([backed["result"]["artifacts"]["executable"]]).stdout == "1\n"
-    provider.rename(provider.with_suffix(".removed"))
+    # Keep the package source available for R2 freshness validation.
     source_free = json.loads(run([compiler, "build", "--json"], cwd=route_out).stdout)
     assert run([source_free["result"]["artifacts"]["executable"]]).stdout == "1\n"
 
@@ -381,10 +385,18 @@ fn main():
 ''')
     backed = json.loads(run([compiler, "build", "--json"], cwd=multi_out).stdout)
     assert run([backed["result"]["artifacts"]["executable"]]).stdout == "1\n3\n"
-    provider.rename(provider.with_suffix(".removed"))
+    # Keep the package source available for R2 freshness validation.
     source_free = json.loads(run([compiler, "build", "--json"], cwd=multi_out).stdout)
     assert run([source_free["result"]["artifacts"]["executable"]]).stdout == "1\n3\n"
     interface_path = multi_out / "build/debug/service.mossi"
+    consumer_project = multi_out / "consumer"
+    (consumer_project / "src").mkdir(parents=True)
+    (consumer_project / "moss.toml").write_text(
+        '[project]\nname="phase21_multi_enum_consumer"\nversion="0.1.0"\n')
+    consumer = consumer_project / "src/main.moss"
+    consumer.write_text(main.read_text())
+    consumer_env = dict(os.environ)
+    consumer_env["MOSS_MODULE_PATH"] = str(multi_out / "build/debug")
     original = interface_path.read_text()
     switched = original.replace(
         '"__moss_on_fail_service__Worker_Run_0"',
@@ -396,11 +408,13 @@ fn main():
     assert switched != original
     # A same-shape symbol swap previously compiled and aborted at runtime.
     interface_path.write_text(switched)
-    tampered = run([compiler, "--check", main], cwd=multi_out, expected=1)
+    tampered = run([compiler, "--check", consumer], cwd=consumer_project,
+                   env=consumer_env, expected=1)
     assert "provider metadata does not match its declared contract digest" in tampered.stderr
     # Recomputing the stored hashes must still fail the canonical symbol check.
     write_interface(interface_path, switched)
-    forged = run([compiler, "--check", main], cwd=multi_out, expected=1)
+    forged = run([compiler, "--check", consumer], cwd=consumer_project,
+                 env=consumer_env, expected=1)
     assert "invalid ABI-v9 failure-arm symbol" in forged.stderr
     interface_path.write_text(original)
 
@@ -485,6 +499,14 @@ first = json.loads(run([compiler, "build", "--json"], cwd=out).stdout)
 assert run([first["result"]["artifacts"]["executable"]]).stdout.strip() == "4"
 interface_path = out / "build/debug/provider.mossi"
 original = interface_path.read_text()
+consumer_project = out / "abi-consumer"
+(consumer_project / "src").mkdir(parents=True)
+(consumer_project / "moss.toml").write_text(
+    '[project]\nname="phase21_abi_consumer"\nversion="0.1.0"\n')
+consumer_main = consumer_project / "src/main.moss"
+consumer_main.write_text(main.read_text())
+consumer_env = dict(os.environ)
+consumer_env["MOSS_MODULE_PATH"] = str(out / "build/debug")
 assert "native_abi 9\n" in original
 for required in (
     'handler_abi "Bump"',
@@ -574,23 +596,27 @@ synthetic = synthetic.replace(
 )
 assert synthetic != original
 write_interface(interface_path, synthetic)
-provider.rename(provider.with_suffix(".removed"))
+# Keep the package source available so compatibility diagnostics remain
+# observable after freshness validation.
 # A forged interface is structurally parseable but has no matching provider
 # symbols. Native linking remains the materialization boundary.
-forged = run([compiler, "build", "--json"], cwd=out, expected=1)
+forged = run([compiler, "build", "--json"], cwd=consumer_project,
+             env=consumer_env, expected=1)
 assert "error" in forged.stdout or forged.stderr, forged
 
 # v7 is intentionally incompatible because projection, bridge, structural
 # type, CFG and Root contracts changed. It must request a full provider rebuild.
 write_interface(interface_path, synthetic.replace("native_abi 9\n", "native_abi 7\n"))
-v7 = run([compiler, "--check", main], cwd=out, expected=1)
+v7 = run([compiler, "--check", consumer_main], cwd=consumer_project,
+         env=consumer_env, expected=1)
 assert "incompatible native calling convention" in v7.stderr
 assert "rebuild its .mossi provider" in v7.stderr
 
 # ABI-v9 with missing exceptional-consumer metadata also fails closed.
 write_interface(interface_path, synthetic.replace(
     '  handler_exceptional_consumers "Bump" 63\n', ""))
-missing = run([compiler, "--check", main], cwd=out, expected=1)
+missing = run([compiler, "--check", consumer_main], cwd=consumer_project,
+              env=consumer_env, expected=1)
 assert "lacks ABI-v9 handler metadata" in missing.stderr
 
 for required_record in (
@@ -602,22 +628,26 @@ for required_record in (
     '  handler_exceptional_destinations "Bump" 1\n',
 ):
     write_interface(interface_path, synthetic.replace(required_record, ""))
-    missing = run([compiler, "--check", main], cwd=out, expected=1)
+    missing = run([compiler, "--check", consumer_main], cwd=consumer_project,
+                  env=consumer_env, expected=1)
     assert "lacks ABI-v9 handler metadata" in missing.stderr
 
 # Every effect fact is mandatory in v8, even when its value is false.
 write_interface(interface_path, synthetic.replace(";fileio=0", "", 1))
-missing_effect = run([compiler, "--check", main], cwd=out, expected=1)
+missing_effect = run([compiler, "--check", consumer_main],
+                     cwd=consumer_project, env=consumer_env, expected=1)
 assert "lacks Phase 21 observable effects" in missing_effect.stderr
 
 write_interface(interface_path, synthetic)
-run([compiler, "--check", main], cwd=out)
+run([compiler, "--check", consumer_main], cwd=consumer_project,
+    env=consumer_env)
 
 invalid_destination = synthetic.replace(
     'handler_exceptional_edge "Bump" 77 0 1 63 1',
     'handler_exceptional_edge "Bump" 77 99 1 63 1')
 write_interface(interface_path, invalid_destination)
-invalid = run([compiler, "--check", main], cwd=out, expected=1)
+invalid = run([compiler, "--check", consumer_main], cwd=consumer_project,
+              env=consumer_env, expected=1)
 assert "invalid ABI-v9 handler contract" in invalid.stderr
 
 impossible_route = synthetic.replace(
@@ -625,7 +655,8 @@ impossible_route = synthetic.replace(
     '"enum:provider::FileError:Full"',
     'handler_exceptional_edge "Bump" 77 0 1 63 1 "scalar:Int"')
 write_interface(interface_path, impossible_route)
-invalid = run([compiler, "--check", main], cwd=out, expected=1)
+invalid = run([compiler, "--check", consumer_main], cwd=consumer_project,
+              env=consumer_env, expected=1)
 assert "invalid ABI-v9 handler contract" in invalid.stderr
 
 duplicate_route = synthetic.replace(
@@ -634,7 +665,8 @@ duplicate_route = synthetic.replace(
     'handler_exceptional_edge "Bump" 77 0 1 63 2 '
     '"enum:provider::FileError:Full" "enum:provider::FileError:Full"')
 write_interface(interface_path, duplicate_route)
-invalid = run([compiler, "--check", main], cwd=out, expected=1)
+invalid = run([compiler, "--check", consumer_main], cwd=consumer_project,
+              env=consumer_env, expected=1)
 assert "duplicate or incomplete exceptional edge" in invalid.stderr
 
 # The loader derives legality from the resolved type graph. Claimed owned and
@@ -643,13 +675,15 @@ bad_nested_payload = synthetic.replace(
     '"code" "Int" 0 1 1',
     '"code" "provider::BadPayload" 1 1 1')
 write_interface(interface_path, bad_nested_payload)
-bad = run([compiler, "--check", main], cwd=out, expected=1)
+bad = run([compiler, "--check", consumer_main], cwd=consumer_project,
+          env=consumer_env, expected=1)
 assert "type shape disagrees with its resolved type" in bad.stderr
 
 bad_borrowed_payload = synthetic.replace(
     '"code" "Int" 0 1 1', '"code" "&Int" 0 1 1')
 write_interface(interface_path, bad_borrowed_payload)
-bad = run([compiler, "--check", main], cwd=out, expected=1)
+bad = run([compiler, "--check", consumer_main], cwd=consumer_project,
+          env=consumer_env, expected=1)
 assert "type shape disagrees with its resolved type" in bad.stderr
 
 unknown_scalar_payload = synthetic.replace(
@@ -662,21 +696,24 @@ unknown_scalar_payload = unknown_scalar_payload.replace(
     '  handler_owned_type_shape "Bump" "Int" "0:3:Int:0:"\n'
     '  handler_owned_type_shape "Bump" "Secret" "0:6:Secret:0:"\n')
 write_interface(interface_path, unknown_scalar_payload)
-bad = run([compiler, "--check", main], cwd=out, expected=1)
+bad = run([compiler, "--check", consumer_main], cwd=consumer_project,
+          env=consumer_env, expected=1)
 assert "type shape disagrees with its resolved type" in bad.stderr
 
 wrong_variant_field = synthetic.replace(
     '"code" "Int" 0 1 1 "0:3:Int:0:"',
     '"other" "Int" 0 1 1 "0:3:Int:0:"')
 write_interface(interface_path, wrong_variant_field)
-bad = run([compiler, "--check", main], cwd=out, expected=1)
+bad = run([compiler, "--check", consumer_main], cwd=consumer_project,
+          env=consumer_env, expected=1)
 assert "disagrees with its enum variant" in bad.stderr
 
 bad_nested_capture = synthetic.replace(
     '"attempt" "Int" "attempt" 1 1',
     '"attempt" "provider::BadCapture" "attempt" 1 1')
 write_interface(interface_path, bad_nested_capture)
-bad = run([compiler, "--check", main], cwd=out, expected=1)
+bad = run([compiler, "--check", consumer_main], cwd=consumer_project,
+          env=consumer_env, expected=1)
 assert "type shape disagrees with its resolved type" in bad.stderr
 
 # Owned unbounded non-capability values remain legal for on_fail captures.
@@ -690,7 +727,8 @@ owned_string_capture = owned_string_capture.replace(
     '  handler_owned_type_shape "Bump" "Int" "0:3:Int:0:"\n'
     '  handler_owned_type_shape "Bump" "String" "3:6:String:0:"\n')
 write_interface(interface_path, owned_string_capture)
-run([compiler, "--check", main], cwd=out)
+run([compiler, "--check", consumer_main], cwd=consumer_project,
+    env=consumer_env)
 
 # A provider-private aggregate remains legal source-free when its complete,
 # counted declaration includes every dependency. The loader independently
@@ -708,7 +746,8 @@ private_capture = private_capture.replace(
     '"2:15:ProviderPrivate:2:0:3:Int:0:3:6:String:0:"\n'
     '  handler_owned_type_shape "Bump" "String" "3:6:String:0:"\n')
 write_interface(interface_path, private_capture)
-run([compiler, "--check", main], cwd=out)
+run([compiler, "--check", consumer_main], cwd=consumer_project,
+    env=consumer_env)
 
 write_interface(interface_path, synthetic)
 run_two_crate_rust_abi_fixture()

@@ -164,7 +164,7 @@ with tempfile.TemporaryDirectory(prefix="p24-adversarial-gate-") as temp_dir:
 
     # Source-free execution
     provider_source = provider_dir / "src/probe.moss"
-    provider_source.rename(provider_dir / "src/probe.removed")
+    # Keep package source available for R2 interface freshness validation.
     compiled_provider = provider_dir / "build/debug"
     assert (compiled_provider / "probe.mossi").exists()
     assert (compiled_provider / "libprobe.rlib").exists()
@@ -186,7 +186,7 @@ with tempfile.TemporaryDirectory(prefix="p24-adversarial-gate-") as temp_dir:
         ok, out = run_cmd([str(exe)], cwd=source_free_dir, env=sf_env)
         assert ok and out == expected, f"Part A Source-Free [{name}] output mismatch:\n{out}"
 
-    provider_source.with_name("probe.removed").rename(provider_source)
+    # Provider source was kept in place for current interface freshness.
 
     # --- Part B: Ownership, Mutation, and Aliasing ---
     own_dir = temp_path / "own_test"

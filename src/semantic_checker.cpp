@@ -32,6 +32,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 #include "ast.hpp"
+#include "imported_method_validation.hpp"
 #include "type_ir.hpp"
 #include "typed_semantic_api.hpp"
 #include "checked_body_ir.hpp"
@@ -363,22 +364,22 @@ class Checker {
       p_.enums.push_back(std::move(declaration));
     }
     for (auto& f : p_.functions) {
-      if (f.name == "assert" || f.name == "assertEqual")
+      if (!p_.file_check_scope && (f.name == "assert" || f.name == "assertEqual"))
         err(f.source_file, f.line, "function name '" + f.name +
                         "' is reserved by Moss test assertions");
-      if (!functions_.emplace(f.name, &f).second)
+      if (!functions_.emplace(f.name, &f).second && !p_.file_check_scope)
         err(f.source_file, f.line, "duplicate function: " + f.name);
       if (!f.semantic_callable_id.empty())
         callable_id_to_function_[f.semantic_callable_id] = &f;
     }
     for (auto& d : p_.domains) {
-      if (!domains_.emplace(d.name, &d).second)
+      if (!domains_.emplace(d.name, &d).second && !p_.file_check_scope)
         err(d.source_file, d.line, "duplicate domain: " + d.name);
     }
     for (auto& o : p_.objects) {
-      if (!objects_.emplace(o.name, &o).second)
+      if (!objects_.emplace(o.name, &o).second && !p_.file_check_scope)
         err(o.source_file, o.line, "duplicate object type: " + o.name);
-      if (domains_.count(o.name))
+      if (domains_.count(o.name) && !p_.file_check_scope)
         err(o.source_file, o.line, "type '" + o.name +
             "' has the same name as a domain; one name names one declaration",
             "DUPLICATE_SYMBOL");
@@ -386,7 +387,7 @@ class Checker {
     for (auto& e : p_.enums) {
       const bool clash = !enums_.emplace(e.name, &e).second ||
           objects_.count(e.name) || domains_.count(e.name);
-      if (!clash) continue;
+      if (!clash || p_.file_check_scope) continue;
       // Report a collision with a compiler standard error at the user's
       // declaration, naming the standard type it would redeclare.
       if (e.source_file == "<moss-std>") {
@@ -470,8 +471,9 @@ class Checker {
     }
     p_.assert_declaration_type_consistency();
     for (auto& t : p_.traits) {
-      if (!traits_.emplace(t.name, &t).second)
+      if (!traits_.emplace(t.name, &t).second && !p_.file_check_scope)
         err(t.source_file, t.line, "duplicate trait: " + t.name);
+      if (p_.file_check_scope) continue;
       if (auto standard = enums_.find(t.name);
           standard != enums_.end() && standard->second->source_file == "<moss-std>")
         err(t.source_file, t.line, "'" + standard->second->declaration_name +
@@ -485,13 +487,13 @@ class Checker {
     }
     // `Iterator` names the standard iteration trait.
     const string reserved = "Iterator";
-    if (auto object = objects_.find(reserved); object != objects_.end())
+    if (!p_.file_check_scope) if (auto object = objects_.find(reserved); object != objects_.end())
       err(object->second->source_file, object->second->line,
           "'Iterator' is reserved by the standard iteration trait", "DUPLICATE_SYMBOL");
-    if (auto enumeration = enums_.find(reserved); enumeration != enums_.end())
+    if (!p_.file_check_scope) if (auto enumeration = enums_.find(reserved); enumeration != enums_.end())
       err(enumeration->second->source_file, enumeration->second->line,
           "'Iterator' is reserved by the standard iteration trait", "DUPLICATE_SYMBOL");
-    if (auto domain = domains_.find(reserved); domain != domains_.end())
+    if (!p_.file_check_scope) if (auto domain = domains_.find(reserved); domain != domains_.end())
       err(domain->second->source_file, domain->second->line,
           "'Iterator' is reserved by the standard iteration trait", "DUPLICATE_SYMBOL");
     iterator_trait_.name = "Iterator";
@@ -500,13 +502,15 @@ class Checker {
     next.name = "next";
     next.set_return_type("option[_]");
     iterator_trait_.methods.push_back(std::move(next));
-    if (!traits_.emplace(iterator_trait_.name, &iterator_trait_).second)
+    if (!traits_.emplace(iterator_trait_.name, &iterator_trait_).second &&
+        !p_.file_check_scope && !p_.traits.empty())
       err(p_.traits.front().source_file, p_.traits.front().line,
           "trait name 'Iterator' is reserved by the standard iteration contract");
   }
 
   void run() {
     CompilerStageTimer semantic_timer("semantic_analysis");
+    const auto imported_signatures = imported_function_signatures();
     {
       CompilerStageTimer timer("type_inference");
       CompilerTraceRecorder::instance().increment_counter("inference_rounds", 1);
@@ -518,9 +522,9 @@ class Checker {
       // Seed internal structural/generic parameter relations before cross-reference inference.
       infer_function_signatures(false);
       infer_object_fields();
-      check_object_layout_cycles();
+      if (!p_.file_check_scope) check_object_layout_cycles();
       check_enums();
-      check_traits();
+      if (!p_.file_check_scope) check_traits();
       check_objects();
       // Function results and handler replies can constrain each other through an
       // synchronous message or local call. Run non-final inference rounds before the
@@ -601,6 +605,8 @@ class Checker {
         }
       }
     }
+    assert_imported_function_signatures_unchanged(
+        imported_signatures, "type inference");
     {
       CompilerStageTimer timer("effects");
       invalidate_concrete_effect_cache();
@@ -611,7 +617,8 @@ class Checker {
       concrete_effect_cache_enabled_ = true;
       validate_imported_h3_summary_closure(p_);
       for (auto& function : p_.functions)
-        if (function.open_summary) {
+        if (!compiled_interface_file(function.source_file) &&
+            function.open_summary) {
           function.open_summary->observable_effects = function.observable_effects;
           for (const auto effect : function.parameter_effects)
             function.open_summary->parameter_access.push_back(
@@ -634,7 +641,15 @@ class Checker {
       concrete_effect_cache_enabled_ = true;
       validate_borrowed_view_write_effects();
     }
-    { CompilerStageTimer timer("concrete_graph"); build_concrete_domain_graph(); }
+    assert_imported_function_signatures_unchanged(
+        imported_signatures, "effect inference");
+    // A file check with a root main still needs its static composition to
+    // validate messages issued from that file. Only package-wide duplicate
+    // route checks are suppressed by the scoped declaration mode.
+    if (!p_.file_check_scope || p_.main) {
+      CompilerStageTimer timer("concrete_graph");
+      build_concrete_domain_graph();
+    }
     {
       CompilerStageTimer timer("specialization_checking");
       check_method_ownership();
@@ -666,7 +681,7 @@ class Checker {
       for (const auto& d : p_.domains) check_domain(d);
       if (p_.main) check_main(*p_.main);
       check_test_and_benchmark_declarations();
-      validate_staged_nominal_map_key_proofs();
+      if (!p_.file_check_scope) validate_staged_nominal_map_key_proofs();
     }
     p_.concrete_domain_graph.closed = true;
     std::ostringstream graph_material;
@@ -1688,6 +1703,10 @@ class Checker {
 
       if (std::getenv("MOSS_PROFILE_COMPILER") != nullptr) {
         std::cerr << "MOSS_PROFILE|functions_analyzed|" << recorder.get_counter("functions_analyzed") << '\n';
+        std::cerr << "MOSS_PROFILE|source_function_checks|"
+                  << source_function_checks_ << '\n';
+        for (const auto& identity : source_function_identities_)
+          std::cerr << "MOSS_PROFILE_ID|source_function|" << identity << '\n';
         std::cerr << "MOSS_PROFILE|types_analyzed|" << recorder.get_counter("types_analyzed") << '\n';
         std::cerr << "MOSS_PROFILE|specialization_requests|" << specialization_requests_ << '\n';
         std::cerr << "MOSS_PROFILE|distinct_specialization_keys|" << recorder.get_counter("distinct_specialization_keys") << '\n';
@@ -1896,6 +1915,9 @@ class Checker {
   mutable size_t concrete_effect_active_depth_ = 0;
   mutable size_t concrete_effect_max_depth_ = 0;
   bool profile_concrete_effect_work_ = false;
+  uint64_t source_function_checks_ = 0;
+  // Distinct source function identities (`<file>:<name>`), profile-only.
+  std::set<string> source_function_identities_;
   bool specialization_effect_profile_active_ = false;
   uint64_t observable_effects_function_evaluations_ = 0;
   uint64_t specialization_effect_function_evaluations_ = 0;
@@ -5740,51 +5762,10 @@ class Checker {
           summary.effect_requirement_ids.push_back(
               summary.requirements[dependency - 1].id);
         }
-        if (!summary.member_requirements.empty()) {
-          function.constraints.erase(std::remove_if(
-              function.constraints.begin(), function.constraints.end(),
-              [](const Constraint& constraint) {
-            return constraint.kind == ConstraintKind::Method;
-          }), function.constraints.end());
-          for (std::size_t ordinal = 0;
-               ordinal < summary.member_requirements.size(); ++ordinal) {
-            const auto& member = summary.member_requirements[ordinal];
-            std::optional<std::size_t> parameter_ordinal;
-            for (std::size_t index = 0;
-                 index < summary.parameter_types.size(); ++index) {
-              if (!summary.parameter_types[index] || !member.receiver ||
-                  !summary.parameter_types[index]->structurally_equal(
-                      *member.receiver)) continue;
-              if (parameter_ordinal)
-                invalid("checked ABI-v10 member receiver matches multiple parameters");
-              parameter_ordinal = index;
-            }
-            if (!parameter_ordinal)
-              invalid("checked ABI-v10 member receiver is detached from parameters");
-            Constraint constraint(ConstraintKind::Method,
-                function.params[*parameter_ordinal].name,
-                member.member_name,
-                "_method_result:" + std::to_string(ordinal));
-            constraint.arity = member.argument_types.size();
-            for (const auto& argument_type : member.argument_types) {
-              std::optional<std::size_t> argument_parameter;
-              for (std::size_t index = 0;
-                   index < summary.parameter_types.size(); ++index) {
-                if (!summary.parameter_types[index] || !argument_type ||
-                    !summary.parameter_types[index]->structurally_equal(
-                        *argument_type)) continue;
-                if (argument_parameter)
-                  invalid("checked ABI-v10 member argument matches multiple parameters");
-                argument_parameter = index;
-              }
-              if (!argument_parameter)
-                invalid("checked ABI-v10 member argument is detached from parameters");
-              constraint.arguments.push_back(
-                  function.params[*argument_parameter].name);
-            }
-            function.constraints.push_back(std::move(constraint));
-          }
-        }
+        // Keep the imported declaration's serialized constraints immutable.
+        // The sealed summary carries the richer TypeRef member requirements
+        // used by imported call checking; do not project them back into the
+        // Function signature during Checker::run().
         for (const auto& dependency : sealed.dependencies)
           summary.semantic_dependencies.push_back(dependency.first);
         summary.observable_effects = function.observable_effects;
@@ -6348,6 +6329,15 @@ class Checker {
           std::all_of(summary.parameter_types.begin(),
                       summary.parameter_types.end(),
                       [](const moss::TypeRef& type) { return type != nullptr; });
+      if (compiled_interface_file(function.source_file)) {
+        // Legacy ABI-v9 interfaces carry resolved effect signatures but no
+        // typed open summary. Preserve their declared effects when deriving
+        // the consumer-side summary; imported functions are no longer revisited
+        // by the later effect-inference projection.
+        summary.observable_effects = function.observable_effects;
+        for (const auto effect : function.parameter_effects)
+          summary.parameter_access.push_back(requirement_access(effect));
+      }
       summary.complete = false;
       const bool checked_concrete_dependency = function.exported &&
           !function.generic && !function.static_dispatch &&
@@ -6375,6 +6365,7 @@ class Checker {
   // the actual constructor identity and the shared open field term.
   void refresh_open_nominal_constructor_results_from_checked_types() {
     for (auto& function : p_.functions) {
+      if (compiled_interface_file(function.source_file)) continue;
       if (!function.constraints.empty() || function.body.size() != 1 ||
           function.body.front().kind != Stmt::Kind::Return)
         continue;
@@ -6525,6 +6516,7 @@ class Checker {
     };
     const auto int_type = moss::Type::primitive("int");
     for (auto& function : p_.functions) {
+      if (compiled_interface_file(function.source_file)) continue;
       if (!function.open_summary || function.open_summary->scheme_complete ||
           function.body.size() != 1 ||
           function.body.front().kind != Stmt::Kind::Return)
@@ -6676,6 +6668,7 @@ class Checker {
 
   void refresh_open_collection_summaries_from_checked_types() {
     for (auto& function : p_.functions) {
+      if (compiled_interface_file(function.source_file)) continue;
       if (!function.imported_checked_summary_payload.empty() ||
           !function.open_summary || function.params.size() != 2) continue;
       auto retained = checked_body_states_.find(&function.body);
@@ -6892,6 +6885,7 @@ class Checker {
   // obligation; the open operator fact owns callback-result specialization.
   void refresh_open_pipeline_map_summaries_from_checked_types() {
     for (auto& function : p_.functions) {
+      if (compiled_interface_file(function.source_file)) continue;
       if (!function.exported || !function.generic ||
           !function.imported_checked_summary_payload.empty() ||
           !function.open_summary || function.params.size() != 1 ||
@@ -7165,6 +7159,7 @@ class Checker {
   // TypeRefs as a SameType requirement instead of guessing from names.
   void refresh_open_map_mutation_summaries_from_checked_types() {
     for (auto& function : p_.functions) {
+      if (compiled_interface_file(function.source_file)) continue;
       if (!function.exported || !function.generic ||
           !function.imported_checked_summary_payload.empty() ||
           !function.open_summary || function.params.size() != 3 ||
@@ -7339,6 +7334,7 @@ class Checker {
   // checker has retained the exact For binding TypeRef and identity.
   void refresh_open_for_summaries_from_checked_types() {
     for (auto& function : p_.functions) {
+      if (compiled_interface_file(function.source_file)) continue;
       if (!function.imported_checked_summary_payload.empty() ||
           !function.open_summary || function.params.size() != 1 ||
           !function.open_summary->scheme_complete)
@@ -7423,6 +7419,7 @@ class Checker {
     const auto int_type = moss::Type::primitive("int");
     const auto bool_type = moss::Type::primitive("bool");
     for (auto& function : p_.functions) {
+      if (compiled_interface_file(function.source_file)) continue;
       // A direct enum payload read constrains the otherwise-open parameter to
       // the declared field type. Preserve that existing checker relation in
       // the open summary before lowering; this is not a new generic rule.
@@ -7869,6 +7866,7 @@ class Checker {
   // become an explicit row dependency on its unique Callable requirement.
   void refresh_open_callback_effect_dependencies_from_checked_types() {
     for (auto& function : p_.functions) {
+      if (compiled_interface_file(function.source_file)) continue;
       if (!function.exported || !function.open_summary ||
           !function.observable_effects.unresolved ||
           function.body.size() != 1 || function.params.size() != 2 ||
@@ -8141,6 +8139,7 @@ class Checker {
       }
     }
     for (const auto& domain : p_.domains) {
+      if (p_.file_check_scope && !p_.file_scope_domains.count(domain.name)) continue;
       for (const auto& field : domain.state)
         check_declared_map_keys(domain.source_file, field.line, field.type);
       for (const auto& handler : domain.handlers)
@@ -8971,6 +8970,7 @@ class Checker {
 
   void check_objects() {
     for (const auto& object : p_.objects) {
+      if (p_.file_check_scope && !p_.file_scope_objects.count(object.name)) continue;
       current_source_file_ = object.source_file;
       std::set<string> field_names;
       std::set<string> method_signatures;
@@ -8987,7 +8987,7 @@ class Checker {
                 "MALFORMED_TYPE_EXPRESSION");
           err(field_source, field.line, "unknown field type '" + field.type + "'");
         }
-        if (!field_names.insert(field.name).second)
+        if (!field_names.insert(field.name).second && !p_.file_check_scope)
           err(field_source, field.line, "duplicate object field '" + field.name + "' in " + object.name);
       }
       current_object_ = &object;
@@ -9010,12 +9010,14 @@ class Checker {
           signature += ":" + canonical_type_name(param.type);
           env[param.name] = param.type;
         }
-        if (!method_signatures.insert(signature).second)
+        if (!method_signatures.insert(signature).second && !p_.file_check_scope)
           err(method_source, method.line, "duplicate method signature '" + object.name + "." +
               method.name + "'");
         if (method.return_type && !valid_type(*method.return_type))
           err(method_source, method.line, "unknown result type '" + *method.return_type +
               "' in method '" + object.name + "." + method.name + "'");
+        if (compiled_interface_file(method_source))
+          continue;
         TypeEnv entry_env = env;
         TypeEnv inferred_env = env;
         infer_statement_expressions(method.body, inferred_env);
@@ -9196,9 +9198,12 @@ class Checker {
                  name.substr(bracket + 1, name.size() - bracket - 2), ','))
           visit_type(argument, file, line);
     };
-    for (const auto& enumeration : p_.enums)
+    for (const auto& enumeration : p_.enums) {
+      if (p_.file_check_scope && !p_.file_scope_enums.count(enumeration.name)) continue;
       visit(enumeration.name, enumeration.source_file, enumeration.line);
-    for (const auto& declaration : p_.enums)
+    }
+    for (const auto& declaration : p_.enums) {
+      if (p_.file_check_scope && !p_.file_scope_enums.count(declaration.name)) continue;
       for (const auto& item : declaration.cases)
         for (const auto& field : item.fields) {
           if (!valid_type(field.type))
@@ -9209,7 +9214,9 @@ class Checker {
             err(field.source_file, field.line,
                 "trait types are static structural constraints and cannot be stored in enum payloads");
         }
+    }
     for (const auto& declaration : p_.enums) {
+      if (p_.file_check_scope && !p_.file_scope_enums.count(declaration.name)) continue;
       string short_name = declaration.name;
       if (auto separator = short_name.rfind("__"); separator != string::npos)
         short_name = short_name.substr(separator + 2);
@@ -9303,6 +9310,7 @@ class Checker {
             "; declare an immutable domainroutes dependency instead");
     };
     for (const auto& domain : p_.domains) {
+      if (p_.file_check_scope && !p_.file_scope_domains.count(domain.name)) continue;
       for (const auto& field : domain.state)
         reject(field.type, field.source_file.empty() ? domain.source_file : field.source_file, field.line, "stored as ordinary state");
       for (const auto& handler : domain.handlers) {
@@ -9320,6 +9328,7 @@ class Checker {
         reject(*function.return_type, function.source_file, function.line, "returned as ordinary values");
     }
     for (const auto& object : p_.objects) {
+      if (p_.file_check_scope && !p_.file_scope_objects.count(object.name)) continue;
       for (const auto& field : object.fields)
         reject(field.type, field.source_file.empty() ? object.source_file : field.source_file, field.line, "stored in aggregates");
       for (const auto& method : object.methods) {
@@ -9330,7 +9339,8 @@ class Checker {
           reject(*method.return_type, method_source, method.line, "returned as ordinary values");
       }
     }
-    for (const auto& trait : p_.traits)
+    for (const auto& trait : p_.traits) {
+      if (p_.file_check_scope) continue;
       for (const auto& method : trait.methods) {
         string method_source = method.source_file.empty() ? trait.source_file : method.source_file;
         for (const auto& parameter : method.params)
@@ -9338,6 +9348,7 @@ class Checker {
         if (method.return_type)
           reject(*method.return_type, method_source, trait.line, "returned as ordinary values");
       }
+    }
   }
 
   void check_static_message_receiver(int line, const string& receiver,
@@ -9409,6 +9420,7 @@ class Checker {
   }
 
   void check_domain(const Domain& d) {
+    if (p_.file_check_scope && !p_.file_scope_domains.count(d.name)) return;
     current_source_file_ = d.source_file;
     std::set<string> state_names, handler_names;
     for (const auto& f : d.state) {
@@ -9421,7 +9433,8 @@ class Checker {
       if (canonical_type_name(f.type) == "FileIO" && !f.init.empty())
         err(f.line, "domain-field FileIO begins closed and is opened in place",
             "FILEIO_PINNED_OWNERSHIP");
-      if (!state_names.insert(f.name).second) err(f_source, f.line, "duplicate state field '" + f.name + "'");
+      if (!state_names.insert(f.name).second && !p_.file_check_scope)
+        err(f_source, f.line, "duplicate state field '" + f.name + "'");
       if (!f.init.empty()) {
         ObservableEffects initializer_effects =
             observable_expression_effects(f.init, {});
@@ -9441,7 +9454,7 @@ class Checker {
       if (!domains_.count(route.type))
         err(route.source_file, route.line,
             "unknown domain route type '" + route.type + "'");
-      if (!route_names.insert(route.name).second)
+      if (!route_names.insert(route.name).second && !p_.file_check_scope)
         err(route.source_file, route.line,
             "duplicate domain route '" + route.name + "'");
       if (state_names.count(route.name))
@@ -9454,7 +9467,8 @@ class Checker {
       SourceFileScope semantic_context(
           current_semantic_context_,
           "handler:" + d.name + "." + h.name);
-      if (!handler_names.insert(h.name).second) err(h_source, h.line, "duplicate handler '" + h.name + "' in domain " + d.name);
+      if (!handler_names.insert(h.name).second && !p_.file_check_scope)
+        err(h_source, h.line, "duplicate handler '" + h.name + "' in domain " + d.name);
       if (h.reply_type && !valid_type(*h.reply_type)) err(h_source, h.line, "unknown reply type '" + *h.reply_type + "'");
       if (h.reply_type && fileio_contains_scoped_type(*h.reply_type))
         err(h.line,
@@ -9626,6 +9640,9 @@ class Checker {
   }
 
   void check_main(const MainProc& m) {
+    if (profile_concrete_effect_work_)
+      source_function_identities_.insert(
+          std::filesystem::path(m.source_file).filename().string() + ":main");
     current_source_file_ = m.source_file;
     SourceFileScope semantic_context(current_semantic_context_, "main");
     TypeEnv env;
@@ -9902,7 +9919,10 @@ class Checker {
   void check_test_and_benchmark_declarations() {
     std::set<string> test_names;
     for (const auto& test : p_.tests) {
-      if (!test_names.insert(test.name).second)
+      SourceFileScope source_scope(current_source_file_, test.source_file);
+      SourceFileScope semantic_context(
+          current_semantic_context_, "test:" + test.name);
+      if (!test_names.insert(test.name).second && !p_.file_check_scope)
         err(test.source_file, test.line,
             "duplicate test name '" + test.name + "'");
       TypeEnv env;
@@ -9910,14 +9930,15 @@ class Checker {
       check_closed_body_types(test.body, env, test.line);
       OwnershipEnv ownership;
       ownership.types = std::move(env);
-      SourceFileScope source_scope(current_source_file_, test.source_file);
-      SourceFileScope semantic_context(
-          current_semantic_context_, "test:" + test.name);
       check_ownership(test.body, std::move(ownership), nullptr, nullptr);
     }
     std::set<string> benchmark_names;
     for (const auto& benchmark : p_.benchmarks) {
-      if (!benchmark_names.insert(benchmark.name).second)
+      SourceFileScope source_scope(current_source_file_, benchmark.source_file);
+      SourceFileScope semantic_context(
+          current_semantic_context_, "bench:" + benchmark.name);
+      if (!benchmark_names.insert(benchmark.name).second &&
+          !p_.file_check_scope)
         err(benchmark.source_file, benchmark.line,
             "duplicate benchmark name '" + benchmark.name + "'");
       TypeEnv env;
@@ -9925,15 +9946,23 @@ class Checker {
       check_closed_body_types(benchmark.body, env, benchmark.line);
       OwnershipEnv ownership;
       ownership.types = std::move(env);
-      SourceFileScope source_scope(current_source_file_, benchmark.source_file);
-      SourceFileScope semantic_context(
-          current_semantic_context_, "bench:" + benchmark.name);
       check_ownership(benchmark.body, std::move(ownership), nullptr, nullptr);
     }
   }
 
-  void check_function(const Function& f) {
+  void check_function(const Function& source_function) {
+    // A `.mossi` body is a provider artifact. Its signature and checked-body
+    // records are validated at import, and generic bodies are checked only by
+    // register_static_specialization when a consumer supplies concrete types.
+    if (compiled_interface_file(source_function.source_file)) return;
+    auto imported_validation = imported_method_validation_view(source_function);
+    const Function& f = imported_validation
+        ? *imported_validation : source_function;
     ScopedOpTimer t_fn("check_function", f.name);
+    if (profile_concrete_effect_work_ &&
+        std::filesystem::path(f.source_file).extension() != ".mossi")
+      source_function_checks_ += 1, source_function_identities_.insert(
+          std::filesystem::path(f.source_file).filename().string() + ":" + f.name);
     current_source_file_ = f.source_file;
     SourceFileScope semantic_context(
         current_semantic_context_, "fn:" + f.name);
@@ -10009,6 +10038,24 @@ class Checker {
       if (!f.generic && !f.static_dispatch)
         const_cast<Function&>(f).set_return_type("unit");
     }
+  }
+
+  bool defer_generic_method_admission(
+      const vector<string>& argument_types,
+      MethodResolutionFailure failure) const {
+    if (checking_specialization_ ||
+        failure != MethodResolutionFailure::IncompatibleArguments ||
+        !starts_with(current_semantic_context_, "fn:"))
+      return false;
+    auto enclosing = functions_.find(current_semantic_context_.substr(3));
+    if (enclosing == functions_.end() ||
+        !(enclosing->second->generic || enclosing->second->static_dispatch))
+      return false;
+    return std::any_of(argument_types.begin(), argument_types.end(),
+        [](const string& type) {
+          return type.empty() || open_generic(type) ||
+              contains_internal_placeholder(type);
+        });
   }
 
   std::optional<string> domain_constructor(const string& expr) const {
@@ -12757,8 +12804,11 @@ class Checker {
         if (concrete) {
           // Adapt the existing checker admission/visibility decision to the
           // solver worklist. Team S will supply this callback at integration.
+          const auto validation_view = imported_method_validation_view(
+              *function->second);
           const auto selected = validate_method_requirements(
-              line, *function->second, concrete_parameters);
+              line, validation_view ? *validation_view : *function->second,
+              concrete_parameters);
           auto admit = [&](const moss::MemberDispatchRequirement& open)
               -> moss::MemberAdmission {
             moss::MemberAdmission decision;
@@ -13513,6 +13563,7 @@ class Checker {
          round <= p_.objects.size() + p_.functions.size() + p_.domains.size() + 2; ++round) {
       const string before = inferred_checker_signature();
       for (const auto& function : p_.functions) {
+        if (compiled_interface_file(function.source_file)) continue;
         SourceFileScope function_source(current_source_file_, function.source_file);
         TypeEnv env;
         for (const auto& parameter : function.params)
@@ -13523,6 +13574,7 @@ class Checker {
           constrain_constructor_fields(function.result_line, *function.result_expression, env);
       }
       for (auto& domain : p_.domains) {
+        if (p_.file_check_scope && !p_.file_scope_domains.count(domain.name)) continue;
         SourceFileScope domain_source(current_source_file_, domain.source_file);
         for (const auto& field : domain.state) {
           string field_source = field.source_file.empty()
@@ -13568,6 +13620,7 @@ class Checker {
     }
     infer_object_fields_rounds_ += rounds_run;
     for (const auto& object : p_.objects) {
+      if (p_.file_check_scope && !p_.file_scope_objects.count(object.name)) continue;
       bool is_generic = std::any_of(object.fields.begin(), object.fields.end(),
           [](const Field& f) { return f.inferred; });
       if (is_generic) continue;
@@ -13869,6 +13922,7 @@ class Checker {
          round <= p_.domains.size() * 3 + p_.objects.size() + 3; ++round) {
       const string before = inferred_checker_signature();
       for (auto& domain : p_.domains) {
+        if (p_.file_check_scope && !p_.file_scope_domains.count(domain.name)) continue;
         SourceFileScope domain_source(current_source_file_, domain.source_file);
         TypeEnv initializer_env;
         initializer_env["self"] = domain.name;
@@ -13985,6 +14039,7 @@ class Checker {
     infer_domain_state_fields_rounds_ += rounds_run;
     if (!finalize) return;
     for (const auto& domain : p_.domains) {
+      if (p_.file_check_scope && !p_.file_scope_domains.count(domain.name)) continue;
       for (const auto& field : domain.state) {
         if (field.type.empty()) {
           string field_source = field.source_file.empty()
@@ -14003,6 +14058,7 @@ class Checker {
          round <= p_.domains.size() * 3 + p_.functions.size() + 3; ++round) {
       const string before = inferred_checker_signature();
       for (auto& domain : p_.domains) {
+        if (p_.file_check_scope && !p_.file_scope_domains.count(domain.name)) continue;
         for (auto& handler : domain.handlers) {
           string handler_source = handler.source_file.empty()
               ? domain.source_file : handler.source_file;
@@ -14129,6 +14185,103 @@ class Checker {
     return out.str();
   }
 
+  using ImportedFunctionSignatureParts = std::map<string, string>;
+  using ImportedFunctionSignatures =
+      vector<std::pair<const Function*, ImportedFunctionSignatureParts>>;
+
+  ImportedFunctionSignatureParts imported_function_signature_parts(
+      const Function& function) const {
+    ImportedFunctionSignatureParts parts;
+    parts["parameters"] = inferred_parameter_signature(function.params);
+    parts["return type"] = function.return_type.value_or("<none>");
+    parts["return TypeRef"] = function.return_type_ref
+        ? function.return_type_ref->to_canonical_string() : string();
+    parts["dispatch"] = string(function.generic ? "generic" : "concrete") + ":" +
+        (function.static_dispatch ? "static" : "dynamic");
+    std::ostringstream generic_results;
+    vector<std::pair<string, string>> sorted_results(
+        function.generic_results.begin(), function.generic_results.end());
+    std::sort(sorted_results.begin(), sorted_results.end());
+    for (const auto& [name, result] : sorted_results)
+      generic_results << std::quoted(name) << std::quoted(result);
+    parts["generic results"] = generic_results.str();
+    std::ostringstream constraints;
+    for (const auto& constraint : function.constraints) {
+      constraints << static_cast<int>(constraint.kind) << ':'
+                  << std::quoted(constraint.subject)
+                  << std::quoted(constraint.detail)
+                  << std::quoted(constraint.result) << ':' << constraint.arity;
+      for (const auto& argument : constraint.arguments)
+        constraints << std::quoted(argument);
+      for (const auto& expectation : constraint.result_expectations)
+        constraints << std::quoted(expectation);
+    }
+    parts["constraints"] = constraints.str();
+    std::ostringstream parameter_effects;
+    for (const auto effect : function.parameter_effects)
+      parameter_effects << static_cast<int>(effect) << ',';
+    parts["parameter effects"] = parameter_effects.str();
+    std::ostringstream parameter_mutations;
+    for (const bool mutation : function.parameter_mutations)
+      parameter_mutations << (mutation ? '1' : '0');
+    parts["parameter mutations"] = parameter_mutations.str();
+    std::ostringstream parameter_leaves;
+    if (function.parameter_leaf_effects) {
+      for (const auto* leaves : {&function.parameter_leaf_effects->reads,
+                                 &function.parameter_leaf_effects->writes,
+                                 &function.parameter_leaf_effects->consumes}) {
+        parameter_leaves << '[';
+        for (const auto& leaf : *leaves) parameter_leaves << std::quoted(leaf);
+        parameter_leaves << ']';
+      }
+    }
+    parts["parameter leaf effects"] = parameter_leaves.str();
+    const auto& effects = function.observable_effects;
+    std::ostringstream observable_effects;
+    for (const bool flag : {effects.local_capture_read, effects.local_mutation,
+                            effects.domain_read, effects.domain_write,
+                            effects.message, effects.external_io, effects.fileio,
+                            effects.fileio_unknown, effects.may_panic,
+                            effects.may_diverge, effects.unresolved})
+      observable_effects << (flag ? '1' : '0');
+    for (const auto& raised : effects.raise_set)
+      observable_effects << std::quoted(raised.canonical());
+    parts["observable effects"] = observable_effects.str();
+    return parts;
+  }
+
+  ImportedFunctionSignatures imported_function_signatures() const {
+    ImportedFunctionSignatures signatures;
+    for (const auto& function : p_.functions)
+      if (compiled_interface_file(function.source_file))
+        signatures.emplace_back(&function,
+                                imported_function_signature_parts(function));
+    return signatures;
+  }
+
+  void assert_imported_function_signatures_unchanged(
+      const ImportedFunctionSignatures& before, const char* phase) const {
+    for (const auto& [function, signature] : before) {
+      const auto after = imported_function_signature_parts(*function);
+      vector<string> changed_parts;
+      for (const auto& [part, value] : signature) {
+        auto found = after.find(part);
+        if (found == after.end() || found->second != value)
+          changed_parts.push_back(part);
+      }
+      if (!changed_parts.empty()) {
+        std::ostringstream changed;
+        for (size_t index = 0; index < changed_parts.size(); ++index) {
+          if (index) changed << ", ";
+          changed << changed_parts[index];
+        }
+        throw std::logic_error(
+            string("internal error: inference rewrote imported .mossi signature during ") +
+            phase + ": " + function->name + " (" + changed.str() + ")");
+      }
+    }
+  }
+
   string inferred_shared_signature() const {
     std::ostringstream out;
     auto append = [&](const string& value) {
@@ -14170,6 +14323,7 @@ class Checker {
   string inferred_all_function_signatures() const {
     std::ostringstream out;
     for (const auto& function : p_.functions) {
+      if (compiled_interface_file(function.source_file)) continue;
       const string signature = inferred_function_signature(function);
       out << signature.size() << ':' << signature;
     }
@@ -14181,6 +14335,7 @@ class Checker {
   }
 
   void infer_function_signatures(bool finalize) {
+    const auto imported_signatures = imported_function_signatures();
     const size_t invocation_index = inference_signature_invocations_++;
     const size_t invocation_wave_begin = inference_signature_wave_counts_.size();
     string legacy_projection;
@@ -14214,6 +14369,7 @@ class Checker {
     {
       ScopedOpTimer t_prelude("sig_infer_prelude_constraints");
       for (auto& function : p_.functions) {
+        if (compiled_interface_file(function.source_file)) continue;
         SourceFileScope function_source(current_source_file_, function.source_file);
         if (std::any_of(function.params.begin(), function.params.end(),
                         [](const Param& parameter) { return parameter.type.empty(); })) {
@@ -14443,31 +14599,39 @@ class Checker {
     }
     ensure_signature_dependency_storage();
     for (size_t index = 0; index < p_.functions.size(); ++index)
-      if (std::any_of(p_.functions[index].constraints.begin(),
+      if (!compiled_interface_file(p_.functions[index].source_file) &&
+          std::any_of(p_.functions[index].constraints.begin(),
                       p_.functions[index].constraints.end(),
                       [](const Constraint& constraint) {
                         return constraint.kind == ConstraintKind::Callable;
                       }))
         signature_unresolved_consumers_.insert(index);
 
-    vector<size_t> scheduled_functions(p_.functions.size());
-    std::iota(scheduled_functions.begin(), scheduled_functions.end(), 0);
+    vector<size_t> scheduled_functions;
+    for (size_t index = 0; index < p_.functions.size(); ++index)
+      if (!compiled_interface_file(p_.functions[index].source_file))
+        scheduled_functions.push_back(index);
+    const size_t local_function_count = scheduled_functions.size();
     bool shared_signature_dirty = false;
-    const size_t max_rounds = p_.functions.size() * 3 + 4;
+    const size_t max_rounds = local_function_count * 3 + 4;
     for (size_t round = 0;
          round < max_rounds &&
              (legacy_signature_inference_ || round == 0 ||
               !scheduled_functions.empty() || shared_signature_dirty);
          ++round) {
       if (legacy_signature_inference_) {
-        scheduled_functions.resize(p_.functions.size());
-        std::iota(scheduled_functions.begin(), scheduled_functions.end(), 0);
+        scheduled_functions.clear();
+        for (size_t index = 0; index < p_.functions.size(); ++index)
+          if (!compiled_interface_file(p_.functions[index].source_file))
+            scheduled_functions.push_back(index);
       }
       // Match the old bounded loop's final full scan if convergence has not
       // quiesced by its last permitted iteration.
       if (round + 1 == max_rounds) {
-        scheduled_functions.resize(p_.functions.size());
-        std::iota(scheduled_functions.begin(), scheduled_functions.end(), 0);
+        scheduled_functions.clear();
+        for (size_t index = 0; index < p_.functions.size(); ++index)
+          if (!compiled_interface_file(p_.functions[index].source_file))
+            scheduled_functions.push_back(index);
       }
       ScopedOpTimer t_round("sig_infer_round_body");
       if (CompilerTraceRecorder::instance().is_enabled() &&
@@ -14476,7 +14640,9 @@ class Checker {
       vector<string> signatures_before;
       signatures_before.reserve(p_.functions.size());
       for (const auto& function : p_.functions)
-        signatures_before.push_back(inferred_function_signature(function));
+        signatures_before.push_back(
+            compiled_interface_file(function.source_file)
+                ? string() : inferred_function_signature(function));
       const string shared_signature_before = inferred_shared_signature();
       signature_dependency_graph_changed_ = false;
       shared_signature_dirty = false;
@@ -14672,7 +14838,8 @@ class Checker {
 
       vector<size_t> changed_functions;
       for (size_t index = 0; index < p_.functions.size(); ++index)
-        if (signatures_before[index] !=
+        if (!compiled_interface_file(p_.functions[index].source_file) &&
+            signatures_before[index] !=
             inferred_function_signature(p_.functions[index]))
           changed_functions.push_back(index);
       const bool shared_signature_changed =
@@ -14684,12 +14851,15 @@ class Checker {
       if (legacy_signature_inference_ || signature_dependency_graph_changed_ ||
           shared_signature_changed) {
         for (size_t index = 0; index < p_.functions.size(); ++index)
-          next_functions.insert(index);
+          if (!compiled_interface_file(p_.functions[index].source_file))
+            next_functions.insert(index);
         shared_signature_dirty = shared_signature_changed;
       } else if (!changed_functions.empty()) {
         for (size_t changed : changed_functions) {
           const auto& callers = signature_callers_by_function_[changed];
-          next_functions.insert(callers.begin(), callers.end());
+          for (size_t caller : callers)
+            if (!compiled_interface_file(p_.functions[caller].source_file))
+              next_functions.insert(caller);
         }
         next_functions.insert(signature_unresolved_consumers_.begin(),
                               signature_unresolved_consumers_.end());
@@ -14701,9 +14871,12 @@ class Checker {
           invocation_index, invocation_wave_begin,
           inference_signature_wave_counts_.size());
       verify_legacy_result();
+      assert_imported_function_signatures_unchanged(
+          imported_signatures, "signature inference");
       return;
     }
     for (auto& function : p_.functions) {
+      if (compiled_interface_file(function.source_file)) continue;
       SourceFileScope function_source(current_source_file_, function.source_file);
       if (function.generic && !function.static_dispatch &&
           std::all_of(function.params.begin(), function.params.end(),
@@ -14799,6 +14972,8 @@ class Checker {
         invocation_index, invocation_wave_begin,
         inference_signature_wave_counts_.size());
     verify_legacy_result();
+    assert_imported_function_signatures_unchanged(
+        imported_signatures, "signature inference");
   }
 
   static Effect join_effect(Effect left, Effect right) {
@@ -20475,8 +20650,11 @@ class Checker {
                                                !traits_.count(canonical_type_name(type));
                                          });
           if (concrete_cb && (fn_it->second->generic || fn_it->second->static_dispatch)) {
+            const auto validation_view = imported_method_validation_view(
+                *fn_it->second);
             auto requirements = validate_method_requirements(
-                line, *fn_it->second, callback_input_types);
+                line, validation_view ? *validation_view : *fn_it->second,
+                callback_input_types);
             register_static_specialization(line, *fn_it->second,
                                            callback_input_types,
                                            std::move(requirements));
@@ -20718,6 +20896,7 @@ class Checker {
     for (const auto& object : p_.objects) {
       current_object_ = &object;
       for (const auto& method : object.methods) {
+        if (compiled_interface_file(method.source_file)) continue;
         SourceFileScope source_scope(current_source_file_, method.source_file);
         SourceFileScope semantic_context(
             current_semantic_context_,
@@ -22328,15 +22507,25 @@ class Checker {
     return moss::AccessMode::Read;
   }
 
+  std::optional<Function> imported_method_validation_view(
+      const Function& function) const {
+    if (!compiled_interface_file(function.source_file)) return std::nullopt;
+    return moss::imported_method_validation_view(function);
+  }
+
   vector<moss::MemberDispatchRequirement> validate_method_requirements(
       int line, const Function& function,
       const vector<string>& parameter_types) const {
     auto instantiated = instantiated_function_env(function, parameter_types);
     std::optional<string> related_function_result;
     vector<moss::MemberDispatchRequirement> resolved_requirements;
+    size_t imported_member_ordinal = 0;
     for (size_t ordinal = 0; ordinal < function.constraints.size(); ++ordinal) {
       const auto& requirement = function.constraints[ordinal];
       if (requirement.kind != ConstraintKind::Method) continue;
+      const size_t member_ordinal =
+          compiled_interface_file(function.source_file) && function.open_summary
+              ? imported_member_ordinal++ : ordinal;
       auto receiver = instantiated.find(requirement.subject);
       string receiver_type = receiver != instantiated.end() ? canonical_type_name(receiver->second) : string();
       if (receiver == instantiated.end() ||
@@ -22379,7 +22568,7 @@ class Checker {
           method ? method->return_type.value_or("unit") : "unit"));
       moss::MemberDispatchRequirement closed;
       closed.requirement_id = function.semantic_callable_id + ":member:" +
-          std::to_string(ordinal);
+          std::to_string(member_ordinal);
       closed.member_name = requirement.detail;
       closed.receiver = moss::Type::parse_canonical(
           canonical_type_name(receiver->second)).value_or(nullptr);
@@ -22391,7 +22580,7 @@ class Checker {
                        function.source_file, function.line, 1,
                        function.semantic_callable_id,
                        function.semantic_callable_id + ":member:" +
-                           std::to_string(ordinal)};
+                           std::to_string(member_ordinal)};
       if (const auto* operation = builtin_operation(receiver->second,
                                                     requirement.detail)) {
         closed.admitted_template_or_builtin_family =
@@ -22661,6 +22850,15 @@ class Checker {
       string caller_module = p_.main_module.empty()
           ? p_.module_name : p_.main_module;
       string caller_id = current_semantic_context_;
+      // Test and benchmark bodies are not functions, so they have no
+      // defining_module to override the package's main-module context. In an
+      // implicit-module package the parser/identity table uses the empty key;
+      // main_module is the manifest name and is not a valid lookup key.
+      if ((starts_with(current_semantic_context_, "test:") ||
+           starts_with(current_semantic_context_, "bench:")) &&
+          !p_.module_identities.count(caller_module) &&
+          p_.module_identities.count(""))
+        caller_module.clear();
       if (starts_with(current_semantic_context_, "fn:")) {
         const string caller_name = current_semantic_context_.substr(3);
         auto caller = functions_.find(caller_name);
@@ -23033,8 +23231,7 @@ class Checker {
             origin.module_id + "\n" + origin.source_file_display);
         const string expected_provenance = abi_v10::hash(
             "moss-abi-v10-provenance",
-            origin.declaration_id + "\n" + origin.logical_source_id + "\n" +
-                std::to_string(origin.start_line));
+            origin.declaration_id + "\n" + origin.logical_source_id);
         if (origin.module_id != callable->module_id ||
             origin.declaration_id != callable_id ||
             origin.logical_source_id != expected_logical_source ||
@@ -23580,8 +23777,11 @@ class Checker {
           name + "'; give empty collections a typed constructor such as Vector[Int]()",
           "TYPE_INFERENCE_FAILED");
     if (concrete_call) {
+      const auto validation_view = imported_method_validation_view(
+          *function->second);
       auto requirements = validate_method_requirements(
-          line, *function->second, actual_types);
+          line, validation_view ? *validation_view : *function->second,
+          actual_types);
       if (current_check_statement_ &&
           current_check_statement_->line == line) {
         const auto& statement = *current_check_statement_;
@@ -24056,8 +24256,11 @@ class Checker {
                                       !traits_.count(canonical_type_name(type));
                                 });
     if (concrete) {
+      const auto validation_view = imported_method_validation_view(
+          *function->second);
       auto requirements = validate_method_requirements(
-          line, *function->second, input_types);
+          line, validation_view ? *validation_view : *function->second,
+          input_types);
       register_static_specialization(line, *function->second, input_types,
                                      std::move(requirements));
     }
@@ -25683,13 +25886,16 @@ class Checker {
         vector<string> argument_types;
         for (const auto& arg : args)
           argument_types.push_back(inferred_expr_type(arg, env).value_or(""));
+        MethodResolutionFailure failure = MethodResolutionFailure::None;
         const Method* method = resolve_method(
-            canonical_type_name(it->second), handler, argument_types);
-        if (!method)
+            canonical_type_name(it->second), handler, argument_types,
+            false, &failure);
+        if (!method && !defer_generic_method_admission(argument_types, failure))
           err(line, "no matching method '" + canonical_type_name(it->second) + "." +
               handler + "' for supplied arguments");
-        retain_active_expression_target(
-            "method:" + method->owner + "." + method->name);
+        if (method)
+          retain_active_expression_target(
+              "method:" + method->owner + "." + method->name);
       }
       string canon_recv = canonical_type_name(receiver);
       if (canon_recv == "int" || canon_recv == "float" || canon_recv == "char" ||
@@ -27092,8 +27298,12 @@ class Checker {
               for (const auto& argument : statement.args)
                 argument_types.push_back(
                     inferred_expr_type(argument, current_env).value_or(""));
-              if (!resolve_method(canonical_type_name(*receiver_type), statement.b,
-                                  argument_types))
+              MethodResolutionFailure failure = MethodResolutionFailure::None;
+              const Method* method = resolve_method(
+                  canonical_type_name(*receiver_type), statement.b,
+                  argument_types, false, &failure);
+              if (!method &&
+                  !defer_generic_method_admission(argument_types, failure))
                 err(statement.line, "no matching method '" + *receiver_type + "." +
                     statement.b + "' for supplied arguments");
             } else if (receiver_type && current_function &&

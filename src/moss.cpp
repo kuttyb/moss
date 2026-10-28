@@ -271,7 +271,11 @@ void build_type_context(Program& program) {
   for (const auto& object : program.objects) {
     vector<moss::NominalFieldSlot> fields;
     for (const auto& field : object.fields) {
-      const bool inferred = field.inferred || field.type.empty();
+      const bool inferred = field.inferred || field.type.empty() ||
+          (program.file_check_scope &&
+           !program.file_scope_objects.count(object.name) &&
+           !program.external_modules.count(
+               module_name_from_symbol(object.name)));
       fields.push_back({field.name, inferred ? string() : trim(field.type), inferred});
     }
     declare(moss::DeclarationKind::Record, object.name, object.defining_module,
@@ -1928,8 +1932,7 @@ vector<moss::Requirement> imported_abi_v10_requirements(
         origin.module_id + "\n" + origin.source_file_display);
     const string expected_provenance = abi_v10::hash(
         "moss-abi-v10-provenance",
-        origin.declaration_id + "\n" + expected_logical_source + "\n" +
-            std::to_string(origin.start_line));
+        origin.declaration_id + "\n" + expected_logical_source);
     if (origin.logical_source_id != expected_logical_source ||
         origin.provenance_id != expected_provenance)
       invalid("checked ABI-v10 requirement provenance identity is forged");
@@ -4122,21 +4125,6 @@ static bool abi_v10_checked_arithmetic_body_candidate(
 // Every target is selected by exact provider identity before inference starts.
 void project_imported_h3_checked_bodies(Program& program) {
   if (!staged_abi_v10() || !program.type_context) return;
-  // Private generic_dependency declarations do not have the public v9 param
-  // mode lines. Seed their declared access from the sealed v10 summary before
-  // resolving a caller; the checker compares its derived access after closure.
-  for (auto& function : program.functions)
-    if (!function.imported_checked_summary_payload.empty() &&
-        !function.exported && function.parameter_effects.empty()) {
-      auto summary = abi_v10::read_summary(
-          function.imported_checked_summary_payload);
-      if (summary.parameters.size() != function.params.size())
-        throw CompileError(0, "private checked ABI-v10 parameter count is mismatched",
-                           "SOURCE_FREE_CHECKED_BODY_INVALID");
-      for (const auto access : summary.parameter_access)
-        function.parameter_effects.push_back(
-            imported_abi_v10_effect(access));
-    }
   // Validate/project direct member leaves before any forwarding caller. A
   // caller can authenticate the leaf artifact hash and summary shape, but only
   // the leaf body validator can confirm its exact MemberCall identity. If a
@@ -4316,10 +4304,8 @@ void project_imported_h3_checked_bodies(Program& program) {
           declared.domain_read || declared.domain_write || declared.message ||
           declared.external_io || declared.fileio || declared.fileio_unknown ||
           declared.may_panic || !declared.raise_set.empty() ||
-          declared.may_diverge)
+          declared.may_diverge || declared.unresolved)
         invalid("checked ABI-v10 callback summary omits direct effects declared by the provider");
-      function.observable_effects = ObservableEffects{};
-      function.observable_effects.unresolved = false;
     }
     const bool vector_literal_body_candidate =
         vector_literal_summary_candidate &&
@@ -7304,7 +7290,8 @@ static vector<SemanticTargetFact> semantic_target_facts(
     fact.name = function.name;
     fact.type = function.return_type.value_or("unit");
     fact.line = function.line;
-    fact.source_file = function.source_file;
+    fact.source_file = function.provider_origin_file.empty()
+        ? function.source_file : function.provider_origin_file;
     fact.module_identity = semantic_module_name(function.name);
     fact.export_visibility = function.exported ? "exported" : "private";
     fact.export_kind = function.exported
@@ -7349,6 +7336,32 @@ static vector<SemanticTargetFact> semantic_target_facts(
                                 fact.semantic_identity};
       targets.push_back(std::move(specialized));
     }
+  }
+
+  for (const auto& function : program.file_scope_pruned_functions) {
+    SemanticTargetFact fact;
+    fact.semantic_identity = "fn:" + function.name + "@" +
+        std::to_string(function.line);
+    fact.context = "fn:" + function.name;
+    fact.kind = "function";
+    fact.name = function.name;
+    fact.type = function.return_type.value_or("unit");
+    fact.line = function.line;
+    fact.source_file = function.source_file;
+    fact.module_identity = semantic_module_name(function.name);
+    fact.export_visibility = function.exported ? "exported" : "private";
+    fact.export_kind = function.exported
+        ? (function.generic ? "generic" : "concrete") : "private";
+    fact.observable_effects = function.observable_effects;
+    fact.has_observable_effects = true;
+    fact.provenance.push_back(fact.semantic_identity);
+    for (size_t index = 0; index < function.params.size(); ++index) {
+      Effect effect = index < function.parameter_effects.size()
+          ? function.parameter_effects[index] : Effect::Read;
+      fact.parameters.push_back(
+          {function.params[index].name, function.params[index].type, effect});
+    }
+    targets.push_back(std::move(fact));
   }
 
   for (const auto& enumeration : program.enums) {
@@ -8217,7 +8230,7 @@ static const vector<AgentCapabilityDescriptor>& agent_capability_catalog() {
       {"package_dependencies", "Resolve local path and Git package dependencies declared in Moss.toml.", "Moss.toml [dependencies] with path or git/rev/tag/branch"},
       {"package_lockfile", "Freeze resolved Git dependency commits deterministically.", "Moss.lock"},
       {"module_interfaces", "Generated .mossi semantic interfaces are source-free provider truth, not generated Rust.", "margo build --json -> result.artifacts.module_interfaces"},
-      {"fast_debug", "Direct execution of checked reachable Moss source; use Margo for a resolved package graph.", "moss run --interp <source> | moss debug <project-or-source> | margo debug [--trace]"},
+      {"fast_debug", "Execute checked reachable Moss code; package dependencies use current .mossi bodies, refreshed by Margo.", "moss run --interp <source> | moss debug <project-or-source> | margo debug [--trace]"},
       {"structured_execution_trace", "Bounded deterministic newline-delimited semantic events during Fast Debug.", "moss run --interp --trace <source> | moss debug <target> --trace"},
       {"structured_debug_query", "Bounded deterministic slices over one Fast Debug execution trace: events, subtrees, message subtrees, failures, control paths, and unambiguous recent writes.", "moss debug-query <operation> [selector] --source <source> --json"},
       {"project_workflow", "Margo owns canonical package/project orchestration; Moss remains the module and semantic authority.", "margo build|run|test|bench|clean|debug"},
@@ -8933,7 +8946,7 @@ static void write_bootstrap_json(std::ostream& out,
          "{\"name\":\"package_fast_debug\",\"command\":\"margo debug [--trace]\",\"purpose\":\"resolve package sources then interpret the reachable Moss closure without rustc\"},"
          "{\"name\":\"agent_benchmark\",\"command\":\"moss agent benchmark list|show|validate|run [--json]\",\"purpose\":\"operate the fixed isolated fresh-agent benchmark corpus\"}]";
   out << ",\n    \"debugging_features\": ["
-         "{\"name\":\"fast_debug\",\"command\":\"moss run --interp <source> | moss debug <project-or-source>\",\"purpose\":\"execute checked reachable Moss source without rustc\",\"limitations\":[\"no mixed interpreted/native Moss closure\",\"source-free providers require source\"]},"
+         "{\"name\":\"fast_debug\",\"command\":\"moss run --interp <source> | moss debug <project-or-source>\",\"purpose\":\"execute checked reachable Moss code without rustc; package dependencies use current .mossi bodies\",\"limitations\":[\"no mixed interpreted/native Moss closure\"]},"
          "{\"name\":\"structured_execution_trace\",\"command\":\"moss run --interp --trace <source> | moss debug <target> --trace\",\"format\":\"newline-delimited JSON on stderr\",\"events\":[\"function/handler entry and exit\",\"local/state access\",\"branch\",\"return/reply\",\"message\",\"assertion\"],\"relationships\":[\"event_id\",\"parent_event_id\",\"call_event_id\",\"message_event_id\",\"handler_event_id\",\"control_event_id\"],\"limitations\":[\"no physical lock or schedule simulation\"]},"
          "{\"name\":\"structured_debug_query\",\"command\":\"moss debug-query <operation> [selector] --source <source> --json\",\"operations\":[\"event\",\"semantic\",\"subtree\",\"message-subtree\",\"control-flow\",\"writes\",\"failure-slice\"],\"bounds\":[\"--max-events\",\"--max-depth\",\"--before\",\"--after\",\"--before-event\"],\"limitations\":[\"last-write history, not full dynamic taint provenance\",\"ambiguous local or state write selectors are rejected\",\"one deterministic Fast Debug execution per query\",\"same-project or standalone source closure only; use margo debug for package-resolved unsliced traces\",\"no interactive stepping\"]}]";
   out << ",\n    \"discovery\": {\"capabilities_command\": \"./moss agent capabilities --json\", \"schema_command\": \"./moss agent schema --json\", \"protocol_vendor\": \"Moss\"}";
@@ -11185,12 +11198,14 @@ struct ProjectError : std::runtime_error {
   string source_file;
   int line = 0;
   TeachingDiagnostic teaching;
+  string semantic_identity;
 
   ProjectError(string error_code, string message, string source = {},
-               int source_line = 0, TeachingDiagnostic diagnostic = {})
+               int source_line = 0, TeachingDiagnostic diagnostic = {},
+               string identity = {})
       : std::runtime_error(std::move(message)), code(std::move(error_code)),
         source_file(std::move(source)), line(source_line),
-        teaching(std::move(diagnostic)) {}
+        teaching(std::move(diagnostic)), semantic_identity(std::move(identity)) {}
 };
 
 struct ProjectManifest {
@@ -11617,38 +11632,46 @@ static void assign_project_declaration_identities(
 // linking annotates the already parsed nodes instead of concatenating source
 // text, so diagnostics and debug/provenance consumers retain the origin file.
 static void annotate_program_source(Program& program, const string& source_file) {
+  auto annotate_declaration = [&](string& current) {
+    // A source-location sidecar may already have restored a real declaration
+    // location for an imported interface. Keep that metadata while retaining
+    // the .mossi origin on executable statements and diagnostics.
+    if (std::filesystem::path(source_file).extension() == ".mossi" &&
+        std::filesystem::path(current).extension() == ".moss") return;
+    current = source_file;
+  };
   auto annotate_body = [&](vector<Stmt>& body) {
     for (auto& statement : body) statement.source_file = source_file;
   };
   for (auto& function : program.functions) {
-    function.source_file = source_file;
+    annotate_declaration(function.source_file);
     annotate_body(function.body);
   }
   for (auto& object : program.objects) {
-    object.source_file = source_file;
+    annotate_declaration(object.source_file);
     for (auto& field : object.fields) field.source_file = source_file;
     for (auto& method : object.methods) {
-      method.source_file = source_file;
+      annotate_declaration(method.source_file);
       for (auto& field : method.body) field.source_file = source_file;
     }
   }
   for (auto& enumeration : program.enums) {
-    enumeration.source_file = source_file;
+    annotate_declaration(enumeration.source_file);
     for (auto& item : enumeration.cases) {
       item.source_file = source_file;
       for (auto& field : item.fields) field.source_file = source_file;
     }
   }
   for (auto& trait : program.traits) {
-    trait.source_file = source_file;
+    annotate_declaration(trait.source_file);
     for (auto& method : trait.methods) method.source_file = source_file;
   }
   for (auto& domain : program.domains) {
-    domain.source_file = source_file;
+    annotate_declaration(domain.source_file);
     for (auto& field : domain.state) field.source_file = source_file;
     for (auto& route : domain.routes) route.source_file = source_file;
     for (auto& handler : domain.handlers) {
-      handler.source_file = source_file;
+      annotate_declaration(handler.source_file);
       annotate_body(handler.body);
     }
   }
@@ -11667,7 +11690,8 @@ static void annotate_program_source(Program& program, const string& source_file)
 }
 
 static void merge_project_program(Program& destination, Program source,
-                                  const string& source_file) {
+                                  const string& source_file,
+                                  const std::filesystem::path* file_check_root = nullptr) {
   // Each physical file was parsed independently, but all declarations are
   // checked together below.  This is temporary global linkage until Moss has
   // explicit modules/imports; no synthetic source file or implicit namespace
@@ -11701,6 +11725,12 @@ static void merge_project_program(Program& destination, Program source,
                                 std::make_move_iterator(source.benchmarks.begin()),
                                 std::make_move_iterator(source.benchmarks.end()));
   if (source.main) {
+    if (file_check_root) {
+      if (std::filesystem::absolute(source_file).lexically_normal() ==
+          std::filesystem::absolute(*file_check_root).lexically_normal())
+        destination.main = std::move(source.main);
+      return;
+    }
     if (destination.main) {
       CompileError error(source.main->line, "duplicate proc main()");
       error.source_file = source_file;
@@ -11708,6 +11738,955 @@ static void merge_project_program(Program& destination, Program source,
     }
     destination.main = std::move(source.main);
   }
+}
+
+struct FileCheckReferences {
+  std::set<string> functions, methods, handlers;
+};
+
+static std::set<string> type_identifiers(const string& text) {
+  std::set<string> result;
+  string name;
+  for (unsigned char ch : text) {
+    if (std::isalnum(ch) || ch == '_') name.push_back(static_cast<char>(ch));
+    else if (!name.empty()) { result.insert(std::move(name)); name.clear(); }
+  }
+  if (!name.empty()) result.insert(std::move(name));
+  return result;
+}
+
+static void add_expression_references(const string& source,
+                                      FileCheckReferences& references) {
+  string text = source;
+  enum class Quote { None, Single, Double } quote = Quote::None;
+  bool escaped = false;
+  for (size_t i = 0; i < text.size(); ++i) {
+    char ch = text[i];
+    if (quote != Quote::None) {
+      if (escaped) escaped = false;
+      else if (ch == '\\') escaped = true;
+      else if ((quote == Quote::Single && ch == '\'') ||
+               (quote == Quote::Double && ch == '"')) quote = Quote::None;
+      else text[i] = ' ';
+      continue;
+    }
+    if (ch == '#') {
+      while (i < text.size() && text[i] != '\n') text[i++] = ' ';
+      if (i == text.size()) break;
+      continue;
+    }
+    if (ch == '\'') { quote = Quote::Single; text[i] = ' '; continue; }
+    if (ch == '"') { quote = Quote::Double; text[i] = ' '; continue; }
+  }
+  auto add_bare_references = [&](size_t begin, size_t end) {
+    for (size_t at = begin; at < end;) {
+      if (!(std::isalpha(static_cast<unsigned char>(text[at])) || text[at] == '_')) {
+        ++at;
+        continue;
+      }
+      const size_t start = at++;
+      while (at < end &&
+             (std::isalnum(static_cast<unsigned char>(text[at])) || text[at] == '_')) ++at;
+      if (at < end && text[at] == '.') continue;
+      references.functions.insert(text.substr(start, at - start));
+    }
+  };
+  if (const auto by = text.find("by:"); by != string::npos)
+    add_bare_references(by + 3, text.size());
+  else if (const auto by = text.find("by="); by != string::npos)
+    add_bare_references(by + 3, text.size());
+  for (const char* const operation_text : {"map(", "filter(", "reduce(", "fold(", "each(", "any(", "all("}) {
+    const string operation = operation_text;
+    size_t at = 0;
+    while ((at = text.find(operation, at)) != string::npos) {
+      const size_t begin = at + operation.size();
+      size_t end = text.find(')', begin);
+      if (end == string::npos) end = text.size();
+      add_bare_references(begin, end);
+      at = begin;
+    }
+  }
+  for (size_t i = 0; i < text.size();) {
+    if (!(std::isalpha(static_cast<unsigned char>(text[i])) || text[i] == '_')) {
+      ++i;
+      continue;
+    }
+    const size_t begin = i++;
+    while (i < text.size() &&
+           (std::isalnum(static_cast<unsigned char>(text[i])) || text[i] == '_')) ++i;
+    string name = text.substr(begin, i - begin);
+    size_t next = i;
+    while (next < text.size() && std::isspace(static_cast<unsigned char>(text[next]))) ++next;
+    if (next == text.size() || text[next] != '(') continue;
+    size_t previous = begin;
+    while (previous > 0 && std::isspace(static_cast<unsigned char>(text[previous - 1]))) --previous;
+    const bool member = previous > 0 && text[previous - 1] == '.';
+    bool message_handler = false;
+    if (member) {
+      const size_t dot = previous - 1;
+      const auto message = text.rfind("message", dot);
+      if (message != string::npos &&
+          (message == 0 ||
+           !(std::isalnum(static_cast<unsigned char>(text[message - 1])) ||
+             text[message - 1] == '_')) &&
+          (message + 7 == text.size() ||
+           std::isspace(static_cast<unsigned char>(text[message + 7])))) {
+        message_handler = true;
+        for (size_t between = message + 7; between < begin; ++between)
+          if (!(std::isalnum(static_cast<unsigned char>(text[between])) ||
+                text[between] == '_' || text[between] == '.' ||
+                std::isspace(static_cast<unsigned char>(text[between])))) {
+            message_handler = false;
+            break;
+          }
+      }
+    }
+    if (member && message_handler) references.handlers.insert(std::move(name));
+    else if (member) {
+      // `module.fn(...)` is syntactically a member call; select both kinds.
+      references.functions.insert(name);
+      references.methods.insert(std::move(name));
+    }
+    else {
+      // A bare call inside a method may name a sibling method (implicit
+      // receiver), so it selects both kinds of callable by name.
+      references.methods.insert(name);
+      references.functions.insert(std::move(name));
+    }
+  }
+}
+
+static void add_statement_references(const vector<Stmt>& body,
+                                     FileCheckReferences& references) {
+  for (const auto& statement : body) {
+    // `for x in value` calls the iterator protocol implicitly; method
+    // reachability is by name, so select every `next`/`iter` method.
+    if (statement.kind == Stmt::Kind::For) {
+      references.methods.insert("next");
+      references.methods.insert("iter");
+    }
+    if (statement.kind == Stmt::Kind::Message) {
+      if (!statement.b.empty()) references.handlers.insert(trim(statement.b));
+      for (const auto& argument : statement.args)
+        add_expression_references(argument, references);
+      continue;
+    }
+    auto callable_leaf = [](const string& name) {
+      size_t separator = name.rfind("__");
+      size_t width = 2;
+      const auto dot = name.rfind('.');
+      if (dot != string::npos && (separator == string::npos || dot > separator)) {
+        separator = dot;
+        width = 1;
+      }
+      return separator == string::npos ? name : name.substr(separator + width);
+    };
+    for (const string* candidate : {&statement.text, &statement.a}) {
+      string callee;
+      vector<string> arguments;
+      if (!parse_simple_call(*candidate, callee, arguments) ||
+          callable_leaf(callee) != "invoke" || arguments.empty())
+        continue;
+      string handler_call;
+      vector<string> handler_arguments;
+      if (!parse_simple_call(arguments.front(), handler_call, handler_arguments))
+        continue;
+      references.handlers.insert(callable_leaf(handler_call));
+    }
+    for (const string* text : {&statement.text, &statement.a, &statement.b})
+      add_expression_references(*text, references);
+    for (const auto& argument : statement.args)
+      add_expression_references(argument, references);
+    if (statement.kind == Stmt::Kind::Call) {
+      if (!statement.b.empty()) {
+        const string source = trim(statement.text);
+        if (starts_with(source, "message "))
+          references.handlers.insert(trim(statement.b));
+        else {
+          references.methods.insert(trim(statement.b));
+          references.functions.insert(trim(statement.b));
+        }
+      } else if (!statement.a.empty()) {
+        references.functions.insert(trim(statement.a));
+      }
+    }
+  }
+}
+
+static string unqualified_callable_name(const string& name) {
+  size_t separator = name.rfind("__");
+  size_t width = 2;
+  const auto dot = name.rfind('.');
+  if (dot != string::npos && (separator == string::npos || dot > separator)) {
+    separator = dot;
+    width = 1;
+  }
+  const auto colon = name.rfind("::");
+  if (colon != string::npos && (separator == string::npos || colon > separator)) {
+    separator = colon;
+    width = 2;
+  }
+  return separator == string::npos ? name : name.substr(separator + width);
+}
+
+// A named function passed as an argument is a callable edge even though it is
+// not followed by `(...)` at the call site. Keep this syntactic and bounded to
+// known declarations: ordinary variable arguments with matching-looking
+// substrings must not pull unrelated bodies into file scope.
+static void add_callable_argument_references(const string& source,
+                                             const Program& program,
+                                             FileCheckReferences& references) {
+  auto canonical_spelling = [](string value) {
+    for (size_t dot = value.find('.'); dot != string::npos;
+         dot = value.find('.', dot + 2))
+      value.replace(dot, 1, "__");
+    return value;
+  };
+  auto callable_parameter_indices = [&](const string& call_name) {
+    vector<size_t> result;
+    std::vector<const Function*> called_functions;
+    const bool qualified = call_name.find('.') != string::npos ||
+        call_name.find("::") != string::npos || call_name.find("__") != string::npos;
+    auto collect = [&](const auto& function) {
+      const string normalized = canonical_spelling(call_name);
+      const string normalized_name = canonical_spelling(function.name);
+      if ((qualified && normalized != normalized_name &&
+           call_name != function.name && call_name != function.semantic_callable_id) ||
+          (!qualified && unqualified_callable_name(call_name) !=
+                             unqualified_callable_name(function.name)))
+        return;
+      called_functions.push_back(&function);
+    };
+    for (const auto& function : program.functions) collect(function);
+    // File checking must be conservative when this syntactic pass cannot know
+    // which same-leaf declaration name resolution will choose. Include every
+    // candidate's callable slots so an ambiguous or context-sensitive call
+    // cannot hide a reachable callback body.
+    for (const Function* function : called_functions) {
+      for (const auto& constraint : function->constraints) {
+        if (constraint.kind != ConstraintKind::Callable) continue;
+        for (size_t index = 0; index < function->params.size(); ++index)
+          if (constraint.subject == function->params[index].name)
+            result.push_back(index);
+      }
+      // Scoped checking runs before CheckedProgram has inferred callable
+      // constraints. Also recognize parameters invoked as callees in the
+      // candidate body's source syntax so named callback arguments remain in
+      // reachability until their static specializations are checked.
+      FileCheckReferences body_references;
+      add_statement_references(function->body, body_references);
+      if (function->result_expression)
+        add_expression_references(*function->result_expression, body_references);
+      std::set<string> pipeline_callable_parameters;
+      auto inspect_pipeline = [&](const string& expression) {
+        auto pipeline = parse_functional_pipeline(expression);
+        if (!pipeline) return;
+        for (const auto& stage : pipeline->stages) {
+          size_t callback_index = std::numeric_limits<size_t>::max();
+          switch (stage.kind) {
+            case FunctionalNodeKind::Map:
+            case FunctionalNodeKind::Filter:
+            case FunctionalNodeKind::Any:
+            case FunctionalNodeKind::All:
+              callback_index = 0;
+              break;
+            case FunctionalNodeKind::Reduce:
+              callback_index = 1;
+              break;
+            case FunctionalNodeKind::Source:
+            case FunctionalNodeKind::Sum:
+            case FunctionalNodeKind::Count:
+              break;
+          }
+          if (callback_index < stage.arguments.size())
+            pipeline_callable_parameters.insert(
+                trim(stage.arguments[callback_index]));
+        }
+      };
+      for (const auto& statement : function->body) {
+        inspect_pipeline(statement.text);
+        inspect_pipeline(statement.a);
+        inspect_pipeline(statement.b);
+        for (const auto& argument : statement.args) inspect_pipeline(argument);
+      }
+      if (function->result_expression)
+        inspect_pipeline(*function->result_expression);
+      for (size_t index = 0; index < function->params.size(); ++index) {
+        const auto& parameter = function->params[index].name;
+        if (body_references.functions.count(parameter) ||
+            body_references.functions.count(
+                unqualified_callable_name(parameter)) ||
+            pipeline_callable_parameters.count(parameter))
+          result.push_back(index);
+      }
+    }
+    std::sort(result.begin(), result.end());
+    result.erase(std::unique(result.begin(), result.end()), result.end());
+    return result;
+  };
+  auto add_callable_value = [&](const string& raw_value) {
+    const string value = trim(raw_value);
+    if (value.empty() || !std::all_of(value.begin(), value.end(), [](unsigned char ch) {
+          return std::isalnum(ch) || ch == '_' || ch == '.' || ch == ':';
+        })) return;
+    vector<const Function*> matches;
+    const string normalized = canonical_spelling(value);
+    const bool qualified = value.find('.') != string::npos ||
+        value.find("::") != string::npos || value.find("__") != string::npos;
+    for (const auto& function : program.functions) {
+      const string function_name = canonical_spelling(function.name);
+      if ((qualified && (normalized == function_name || value == function.name ||
+                         value == function.semantic_callable_id)) ||
+          (!qualified && (value == function.declaration_name ||
+                          value == function.name ||
+                          value == unqualified_callable_name(function.name))))
+        matches.push_back(&function);
+    }
+    // Preserve every candidate on ambiguity. Selecting too many bodies is
+    // safer than letting file mode omit a callback that the checker resolves.
+    for (const Function* function : matches)
+      references.functions.insert(function->name);
+  };
+  std::function<void(const string&)> visit = [&](const string& expression) {
+    string text = expression;
+    char quote = 0;
+    bool escaped = false;
+    for (size_t i = 0; i < text.size(); ++i) {
+      if (quote) {
+        const char ch = text[i];
+        if (escaped) escaped = false;
+        else if (ch == '\\') escaped = true;
+        else if (ch == quote) quote = 0;
+        if (ch != '\n') text[i] = ' ';
+      } else if (text[i] == '"' || text[i] == '\'') {
+        quote = text[i];
+        text[i] = ' ';
+      } else if (text[i] == '#') {
+        while (i < text.size() && text[i] != '\n') text[i++] = ' ';
+      }
+    }
+    // Find call-shaped subexpressions even when followed by operators, a
+    // condition delimiter, or another member call. This keeps the collector
+    // useful for expressions represented in larger AST fields.
+    for (size_t open = 0; open < text.size(); ++open) {
+      if (text[open] != '(') continue;
+      size_t begin = open;
+      while (begin > 0 && (std::isalnum(static_cast<unsigned char>(text[begin - 1])) ||
+                           text[begin - 1] == '_' || text[begin - 1] == '.' ||
+                           text[begin - 1] == ':')) --begin;
+      if (begin == open) continue;
+      int depth = 0;
+      char quote = 0;
+      bool escaped = false;
+      size_t close = open;
+      for (; close < text.size(); ++close) {
+        const char ch = text[close];
+        if (quote) {
+          if (escaped) escaped = false;
+          else if (ch == '\\') escaped = true;
+          else if (ch == quote) quote = 0;
+          continue;
+        }
+        if (ch == '"' || ch == '\'') { quote = ch; continue; }
+        if (ch == '(') ++depth;
+        else if (ch == ')' && --depth == 0) break;
+      }
+      if (close >= text.size()) continue;
+      string call, callee;
+      vector<string> arguments;
+      call = text.substr(begin, close - begin + 1);
+      if (!parse_simple_call(call, callee, arguments)) continue;
+      const auto callback_indices = callable_parameter_indices(callee);
+      const auto functional_kind = functional_stage_kind(callee);
+      for (size_t index = 0; index < arguments.size(); ++index) {
+        bool callback_value = std::find(callback_indices.begin(),
+            callback_indices.end(), index) != callback_indices.end();
+        if (functional_kind) {
+          switch (*functional_kind) {
+            case FunctionalNodeKind::Map:
+            case FunctionalNodeKind::Filter:
+            case FunctionalNodeKind::Any:
+            case FunctionalNodeKind::All:
+              callback_value = callback_value || index == 0;
+              break;
+            case FunctionalNodeKind::Reduce:
+              callback_value = callback_value || index == 1;
+              break;
+            case FunctionalNodeKind::Source:
+            case FunctionalNodeKind::Sum:
+            case FunctionalNodeKind::Count:
+              break;
+          }
+        }
+        if (callback_value) add_callable_value(arguments[index]);
+        visit(arguments[index]);
+      }
+      open = close;
+    }
+  };
+  visit(source);
+}
+
+static void add_bare_callable_value_reference(
+    const string& raw_value, const Program& program,
+    const std::set<string>& local_names, FileCheckReferences& references) {
+  const string value = trim(raw_value);
+  if (value.empty() || local_names.count(value) ||
+      !std::all_of(value.begin(), value.end(), [](unsigned char ch) {
+        return std::isalnum(ch) || ch == '_' || ch == '.' || ch == ':';
+      })) return;
+  string normalized = value;
+  for (size_t dot = normalized.find('.'); dot != string::npos;
+       dot = normalized.find('.', dot + 2))
+    normalized.replace(dot, 1, "__");
+  const bool qualified = value.find('.') != string::npos ||
+      value.find("::") != string::npos || value.find("__") != string::npos;
+  for (const auto& function : program.functions) {
+    const string function_name = function.name;
+    if ((qualified && (normalized == function_name || value == function.name ||
+                       value == function.semantic_callable_id)) ||
+        (!qualified && (value == function.declaration_name ||
+                        value == function.name ||
+                        value == unqualified_callable_name(function.name))))
+      references.functions.insert(function.name);
+  }
+}
+
+static void add_statement_callable_references(
+    const vector<Stmt>& body, const Program& program,
+    FileCheckReferences& references, std::set<string> local_names = {}) {
+  std::vector<std::pair<int,string>> block_local_bindings;
+  for (const auto& statement : body) {
+    while (!block_local_bindings.empty() &&
+           block_local_bindings.back().first > statement.indent) {
+      local_names.erase(block_local_bindings.back().second);
+      block_local_bindings.pop_back();
+    }
+    if (statement.kind == Stmt::Kind::Echo) {
+      if (!statement.args.empty()) {
+        for (const auto& argument : statement.args)
+          add_bare_callable_value_reference(argument, program, local_names,
+                                            references);
+      } else {
+        string expression = trim(statement.a.empty() ? statement.text : statement.a);
+        if (starts_with(expression, "echo ")) expression = trim(expression.substr(5));
+        for (const auto& argument : split_top_level(expression, ','))
+          add_bare_callable_value_reference(argument, program, local_names,
+                                            references);
+      }
+    }
+    if ((statement.kind == Stmt::Kind::Let ||
+         statement.kind == Stmt::Kind::Var ||
+         statement.kind == Stmt::Kind::Assign) && !statement.b.empty())
+      add_bare_callable_value_reference(statement.b, program, local_names,
+                                        references);
+    for (const string* text : {&statement.text, &statement.a, &statement.b})
+      add_callable_argument_references(*text, program, references);
+    for (const auto& argument : statement.args)
+      add_callable_argument_references(argument, program, references);
+    if (statement.kind == Stmt::Kind::Call) {
+      const string callee = !statement.b.empty() ? trim(statement.b) : trim(statement.a);
+      if (!callee.empty()) {
+        string call = callee + "(";
+        for (size_t i = 0; i < statement.args.size(); ++i) {
+          if (i) call += ", ";
+          call += statement.args[i];
+        }
+        call += ")";
+        add_callable_argument_references(call, program, references);
+      }
+    }
+    if ((statement.kind == Stmt::Kind::Let ||
+         statement.kind == Stmt::Kind::Var ||
+         statement.kind == Stmt::Kind::Assign ||
+         statement.kind == Stmt::Kind::For) && !statement.a.empty()) {
+      local_names.insert(trim(statement.a));
+      block_local_bindings.emplace_back(statement.indent, trim(statement.a));
+    }
+    if (!statement.message_result.empty()) {
+      local_names.insert(trim(statement.message_result));
+      block_local_bindings.emplace_back(statement.indent,
+                                        trim(statement.message_result));
+    }
+  }
+}
+
+// Reduce project-file checking to the conservative syntactic callable closure
+// rooted in the requested file. The checker still receives all nominal and
+// signature declarations as lookup context, but only reachable source bodies.
+// A method name deliberately selects every method with that name.
+enum class FastDebugScopeKind { File, Main, Tests };
+
+struct FastDebugScope {
+  std::filesystem::path root_file;
+  FastDebugScopeKind kind = FastDebugScopeKind::Main;
+  string test_filter;
+  bool all_package_tests = false;
+};
+
+static void scope_program_to_file(Program& program,
+                                 const std::filesystem::path& root_file,
+                                 FastDebugScopeKind scope_kind =
+                                     FastDebugScopeKind::File,
+                                 const string& test_filter = {},
+                                 bool all_package_tests = false) {
+  const string root = std::filesystem::absolute(root_file).lexically_normal().string();
+  auto is_root = [&](const string& source) {
+    return !source.empty() &&
+        std::filesystem::absolute(source).lexically_normal().string() == root;
+  };
+  if (scope_kind == FastDebugScopeKind::File) {
+    for (const auto& object : program.objects)
+      if (is_root(object.source_file)) program.file_scope_objects.insert(object.name);
+    for (const auto& enumeration : program.enums)
+      if (is_root(enumeration.source_file)) program.file_scope_enums.insert(enumeration.name);
+    for (const auto& domain : program.domains)
+      if (is_root(domain.source_file)) program.file_scope_domains.insert(domain.name);
+  }
+  std::set<size_t> selected_functions, selected_methods, selected_handlers;
+  std::vector<FileCheckReferences> function_refs(program.functions.size());
+  std::vector<FileCheckReferences> method_refs;
+  std::vector<FileCheckReferences> handler_refs;
+  size_t method_count = 0, handler_count = 0;
+  for (const auto& object : program.objects) method_count += object.methods.size();
+  for (const auto& domain : program.domains) handler_count += domain.handlers.size();
+  method_refs.resize(method_count);
+  handler_refs.resize(handler_count);
+  size_t method_index = 0, handler_index = 0;
+  for (size_t i = 0; i < program.functions.size(); ++i) {
+    const auto& function = program.functions[i];
+    auto& refs = function_refs[i];
+    add_statement_references(function.body, refs);
+    if (function.result_expression) add_expression_references(*function.result_expression, refs);
+    std::set<string> function_locals;
+    for (const auto& parameter : function.params)
+      function_locals.insert(parameter.name);
+    add_statement_callable_references(function.body, program, refs,
+                                      std::move(function_locals));
+    if (function.result_expression)
+      add_callable_argument_references(*function.result_expression, program, refs);
+    if (scope_kind == FastDebugScopeKind::File &&
+        is_root(function.source_file)) selected_functions.insert(i);
+  }
+  for (const auto& object : program.objects) {
+    for (const auto& method : object.methods) {
+      auto& refs = method_refs[method_index];
+      add_statement_references(method.body, refs);
+      if (method.result_expression) add_expression_references(*method.result_expression, refs);
+      std::set<string> method_locals{"self"};
+      for (const auto& field : object.fields) method_locals.insert(field.name);
+      for (const auto& parameter : method.params)
+        method_locals.insert(parameter.name);
+      add_statement_callable_references(method.body, program, refs,
+                                        std::move(method_locals));
+      if (method.result_expression)
+        add_callable_argument_references(*method.result_expression, program, refs);
+      if (scope_kind == FastDebugScopeKind::File &&
+          is_root(method.source_file)) selected_methods.insert(method_index);
+      ++method_index;
+    }
+  }
+  for (const auto& domain : program.domains) {
+    for (const auto& handler : domain.handlers) {
+      auto& refs = handler_refs[handler_index];
+      add_statement_references(handler.body, refs);
+      std::set<string> handler_locals{"self"};
+      for (const auto& field : domain.state) handler_locals.insert(field.name);
+      for (const auto& route : domain.routes) handler_locals.insert(route.name);
+      for (const auto& parameter : handler.params)
+        handler_locals.insert(parameter.name);
+      add_statement_callable_references(handler.body, program, refs,
+                                        handler_locals);
+      for (const auto& arm : handler.failure_arms) {
+        add_statement_references(arm.body, refs);
+        add_statement_callable_references(arm.body, program, refs,
+                                          handler_locals);
+      }
+      if (scope_kind == FastDebugScopeKind::File &&
+          is_root(handler.source_file)) selected_handlers.insert(handler_index);
+      ++handler_index;
+    }
+  }
+  FileCheckReferences root_references;
+  if ((scope_kind == FastDebugScopeKind::File ||
+       scope_kind == FastDebugScopeKind::Main) &&
+      program.main && is_root(program.main->source_file))
+    {
+      add_statement_references(program.main->body, root_references);
+      add_statement_callable_references(program.main->body, program, root_references);
+    }
+  for (const auto& test : program.tests)
+    if ((scope_kind == FastDebugScopeKind::File ||
+         (scope_kind == FastDebugScopeKind::Tests &&
+          (test_filter.empty() ||
+           test.name.find(test_filter) != string::npos ||
+           test.semantic_identity.find(test_filter) != string::npos))) &&
+        (scope_kind == FastDebugScopeKind::Tests
+             ? (all_package_tests || is_root(test.source_file))
+             : is_root(test.source_file))) {
+      add_statement_references(test.body, root_references);
+      add_statement_callable_references(test.body, program, root_references);
+    }
+  for (const auto& bench : program.benchmarks)
+    if (scope_kind == FastDebugScopeKind::File && is_root(bench.source_file)) {
+      add_statement_references(bench.body, root_references);
+      add_statement_callable_references(bench.body, program, root_references);
+    }
+
+  auto matches = [](const std::set<string>& references, const string& name) {
+    return references.count(name) || references.count(unqualified_callable_name(name));
+  };
+  bool changed = true;
+  while (changed) {
+    changed = false;
+    FileCheckReferences active = root_references;
+    auto merge = [&](const FileCheckReferences& refs) {
+      active.functions.insert(refs.functions.begin(), refs.functions.end());
+      active.methods.insert(refs.methods.begin(), refs.methods.end());
+      active.handlers.insert(refs.handlers.begin(), refs.handlers.end());
+    };
+    for (auto index : selected_functions) merge(function_refs[index]);
+    method_index = handler_index = 0;
+    for (const auto& object : program.objects) {
+      for (size_t i = 0; i < object.methods.size(); ++i) {
+        if (selected_methods.count(method_index))
+          merge(method_refs[method_index]);
+        ++method_index;
+      }
+    }
+    for (const auto& domain : program.domains) {
+      for (size_t i = 0; i < domain.handlers.size(); ++i) {
+        if (selected_handlers.count(handler_index))
+          merge(handler_refs[handler_index]);
+        ++handler_index;
+      }
+    }
+    // `active` is rebuilt every round, so initializer references are re-added
+    // each time; convergence is judged only by newly selected declarations.
+    for (const auto& object : program.objects) {
+      const bool selected_object = matches(active.functions, object.name) ||
+          std::any_of(object.methods.begin(), object.methods.end(), [&](const Method& method) {
+            return matches(active.methods, method.name);
+          });
+      if (!selected_object) continue;
+      for (const auto& field : object.fields)
+        if (!field.init.empty()) add_expression_references(field.init, active);
+    }
+    for (const auto& domain : program.domains) {
+      const bool selected_domain = matches(active.functions, domain.name) ||
+          std::any_of(domain.handlers.begin(), domain.handlers.end(), [&](const Handler& handler) {
+            return matches(active.handlers, handler.name);
+          });
+      if (!selected_domain) continue;
+      for (const auto& field : domain.state)
+        if (!field.init.empty()) add_expression_references(field.init, active);
+    }
+    for (size_t i = 0; i < program.functions.size(); ++i) {
+      const auto& function = program.functions[i];
+      if (selected_functions.count(i)) continue;
+      const bool from_interface =
+          std::filesystem::path(function.source_file).extension() == ".mossi";
+      if (from_interface && !(function.generic || function.static_dispatch))
+        continue;
+      if (matches(active.functions, function.name)) changed |= selected_functions.insert(i).second;
+    }
+    method_index = 0;
+    for (const auto& object : program.objects) {
+      for (const auto& method : object.methods) {
+        if (!selected_methods.count(method_index) && matches(active.methods, method.name)) {
+          changed |= selected_methods.insert(method_index).second;
+        }
+        ++method_index;
+      }
+    }
+    handler_index = 0;
+    for (const auto& domain : program.domains) {
+      for (const auto& handler : domain.handlers) {
+        if (!selected_handlers.count(handler_index) && matches(active.handlers, handler.name)) {
+          changed |= selected_handlers.insert(handler_index).second;
+        }
+        ++handler_index;
+      }
+    }
+  }
+
+  FileCheckReferences reachable = root_references;
+  auto add_reachable_refs = [&](const FileCheckReferences& refs) {
+    reachable.functions.insert(refs.functions.begin(), refs.functions.end());
+    reachable.methods.insert(refs.methods.begin(), refs.methods.end());
+    reachable.handlers.insert(refs.handlers.begin(), refs.handlers.end());
+  };
+  for (auto index : selected_functions) add_reachable_refs(function_refs[index]);
+  method_index = handler_index = 0;
+  for (const auto& object : program.objects) {
+    for (size_t i = 0; i < object.methods.size(); ++i) {
+      if (selected_methods.count(method_index)) add_reachable_refs(method_refs[method_index]);
+      ++method_index;
+    }
+  }
+  for (const auto& domain : program.domains) {
+    for (size_t i = 0; i < domain.handlers.size(); ++i) {
+      if (selected_handlers.count(handler_index)) add_reachable_refs(handler_refs[handler_index]);
+      ++handler_index;
+    }
+  }
+  auto signature_mentions = [&](const string& type) {
+    auto refs = type_identifiers(type);
+    for (const auto& object : program.objects)
+      if (refs.count(object.name) || refs.count(unqualified_callable_name(object.name)))
+        program.file_scope_objects.insert(object.name);
+    for (const auto& enumeration : program.enums)
+      if (refs.count(enumeration.name) || refs.count(unqualified_callable_name(enumeration.name)))
+        program.file_scope_enums.insert(enumeration.name);
+    for (const auto& domain : program.domains)
+      if (refs.count(domain.name) || refs.count(unqualified_callable_name(domain.name)))
+        program.file_scope_domains.insert(domain.name);
+  };
+  for (size_t i = 0; i < program.functions.size(); ++i) {
+    if (!selected_functions.count(i)) continue;
+    for (const auto& parameter : program.functions[i].params)
+      signature_mentions(parameter.type);
+    if (program.functions[i].return_type)
+      signature_mentions(*program.functions[i].return_type);
+  }
+  method_index = handler_index = 0;
+  for (const auto& object : program.objects) {
+    for (const auto& method : object.methods) {
+      if (selected_methods.count(method_index)) {
+        program.file_scope_objects.insert(object.name);
+        for (const auto& parameter : method.params) signature_mentions(parameter.type);
+        if (method.return_type) signature_mentions(*method.return_type);
+      }
+      ++method_index;
+    }
+  }
+  for (const auto& domain : program.domains) {
+    for (const auto& handler : domain.handlers) {
+      if (selected_handlers.count(handler_index)) {
+        program.file_scope_domains.insert(domain.name);
+        for (const auto& parameter : handler.params) signature_mentions(parameter.type);
+        if (handler.reply_type) signature_mentions(*handler.reply_type);
+      }
+      ++handler_index;
+    }
+  }
+  for (const auto& object : program.objects)
+    if (matches(reachable.functions, object.name))
+      program.file_scope_objects.insert(object.name);
+  for (const auto& domain : program.domains) {
+    if (matches(reachable.functions, domain.name))
+      program.file_scope_domains.insert(domain.name);
+    if (std::any_of(domain.handlers.begin(), domain.handlers.end(), [&](const Handler& handler) {
+          return matches(reachable.handlers, handler.name);
+        }))
+      program.file_scope_domains.insert(domain.name);
+  }
+
+  // Inferred object/domain state types have no signature string to retain.
+  // Keep the nominal declarations named by initializers of reached state so
+  // reply inference, display checks, and semantic queries retain their type
+  // identities after unrelated callable bodies are pruned.
+  for (bool grew = true; grew;) {
+    grew = false;
+    FileCheckReferences initializer_references;
+    for (const auto& object : program.objects)
+      if (program.file_scope_objects.count(object.name))
+        for (const auto& field : object.fields)
+          if (!field.init.empty())
+            add_expression_references(field.init, initializer_references);
+    for (const auto& domain : program.domains)
+      if (program.file_scope_domains.count(domain.name))
+        for (const auto& field : domain.state)
+          if (!field.init.empty())
+            add_expression_references(field.init, initializer_references);
+    for (const auto& object : program.objects)
+      if (!program.file_scope_objects.count(object.name) &&
+          matches(initializer_references.functions, object.name))
+        grew |= program.file_scope_objects.insert(object.name).second;
+    for (const auto& enumeration : program.enums)
+      if (!program.file_scope_enums.count(enumeration.name) &&
+          matches(initializer_references.functions, enumeration.name))
+        grew |= program.file_scope_enums.insert(enumeration.name).second;
+    for (const auto& domain : program.domains)
+      if (!program.file_scope_domains.count(domain.name) &&
+          matches(initializer_references.functions, domain.name))
+        grew |= program.file_scope_domains.insert(domain.name).second;
+  }
+
+
+
+  // Field types of an in-scope object are validated, so the declarations they
+  // name must be in scope too (transitively); otherwise their fields would be
+  // treated as inferred and the field type could not be resolved.
+  for (bool grew = true; grew;) {
+    grew = false;
+    std::vector<string> scoped_field_types;
+    for (const auto& object : program.objects)
+      if (program.file_scope_objects.count(object.name))
+        for (const auto& field : object.fields)
+          scoped_field_types.push_back(field.type);
+    for (const auto& domain : program.domains)
+      if (program.file_scope_domains.count(domain.name))
+        for (const auto& field : domain.state)
+          scoped_field_types.push_back(field.type);
+    {
+      for (const auto& field_type : scoped_field_types) {
+        const auto refs = type_identifiers(field_type);
+        for (const auto& other : program.objects)
+          if (!program.file_scope_objects.count(other.name) &&
+              (refs.count(other.name) ||
+               refs.count(unqualified_callable_name(other.name))))
+            grew |= program.file_scope_objects.insert(other.name).second;
+        for (const auto& other : program.enums)
+          if (!program.file_scope_enums.count(other.name) &&
+              (refs.count(other.name) ||
+               refs.count(unqualified_callable_name(other.name))))
+            grew |= program.file_scope_enums.insert(other.name).second;
+        for (const auto& other : program.domains)
+          if (!program.file_scope_domains.count(other.name) &&
+              (refs.count(other.name) ||
+               refs.count(unqualified_callable_name(other.name))))
+            grew |= program.file_scope_domains.insert(other.name).second;
+      }
+    }
+  }
+  if (const char* trace = std::getenv("MOSS_PHASE26_C1_SCOPE_TRACE");
+      trace && string(trace) == "1") {
+    std::cerr << "MOSS_C1_SCOPE_TRACE_COMPLETE|" << root << "\n";
+    auto emit = [&](const string& kind, const string& source,
+                    const string& identity) {
+      std::cerr << "MOSS_C1_SCOPE_ID|" << kind << "|" << source << "|"
+                << identity << "\n";
+    };
+    for (size_t i = 0; i < program.functions.size(); ++i) {
+      if (!selected_functions.count(i)) continue;
+      const auto& function = program.functions[i];
+      if (std::filesystem::path(function.source_file).extension() == ".mossi")
+        continue;
+      const string declaration = function.declaration_name.empty()
+          ? function.name : function.declaration_name;
+      emit("function", function.source_file,
+           function.semantic_callable_id.empty()
+               ? "callable-v1:" +
+                     program_module_identity(program,
+                                             function.defining_module) +
+                     ":fn:" + declaration
+               : function.semantic_callable_id);
+    }
+    method_index = 0;
+    for (const auto& object : program.objects) {
+      for (const auto& method : object.methods) {
+        if (selected_methods.count(method_index))
+          emit("method", method.source_file,
+               "method:" + object.name + "." + method.name + "@" +
+                   std::to_string(method.line));
+        ++method_index;
+      }
+    }
+    handler_index = 0;
+    for (const auto& domain : program.domains) {
+      for (const auto& handler : domain.handlers) {
+        if (selected_handlers.count(handler_index))
+          emit("handler", handler.source_file,
+               "handler:" + domain.name + "." + handler.name + "@" +
+                   std::to_string(handler.line));
+        ++handler_index;
+      }
+    }
+    for (const auto& object : program.objects)
+      if (program.file_scope_objects.count(object.name))
+        emit("type", object.source_file, "type:" + object.name + "@" +
+                 std::to_string(object.line));
+    for (const auto& enumeration : program.enums)
+      if (program.file_scope_enums.count(enumeration.name))
+        emit("enum", enumeration.source_file,
+             "enum:" + enumeration.name + "@" +
+                 std::to_string(enumeration.line));
+    for (const auto& domain : program.domains)
+      if (program.file_scope_domains.count(domain.name))
+        emit("domain", domain.source_file,
+             "domain:" + domain.name + "@" + std::to_string(domain.line));
+    for (const auto& test : program.tests)
+      if ((all_package_tests || is_root(test.source_file)) &&
+          (test_filter.empty() || test.name.find(test_filter) != string::npos ||
+           test.semantic_identity.find(test_filter) != string::npos))
+        emit("test", test.source_file, test.semantic_identity);
+    for (const auto& benchmark : program.benchmarks)
+      if (is_root(benchmark.source_file))
+        emit("bench", benchmark.source_file, benchmark.semantic_identity);
+    if (program.main && is_root(program.main->source_file))
+      emit("main", program.main->source_file,
+           "main@" + std::to_string(program.main->line));
+  }
+
+  // Imported providers are loaded through `.mossi` and keep their own
+  // (original) source names, so identify them by module, not file extension.
+  auto from_interface = [&](const string& owner_name, const string& source) {
+    return std::filesystem::path(source).extension() == ".mossi" ||
+           program.external_modules.count(module_name_from_symbol(owner_name)) != 0;
+  };
+  program.file_scope_pruned_functions.clear();
+  std::vector<Function> functions;
+  for (size_t i = 0; i < program.functions.size(); ++i) {
+    if (selected_functions.count(i) ||
+        from_interface(program.functions[i].name, program.functions[i].source_file))
+      functions.push_back(std::move(program.functions[i]));
+    else {
+      Function identity = program.functions[i];
+      identity.body.clear();
+      identity.result_expression.reset();
+      identity.execution_body.reset();
+      identity.execution_result_expression.reset();
+      program.file_scope_pruned_functions.push_back(std::move(identity));
+    }
+  }
+  program.functions = std::move(functions);
+  method_index = 0;
+  for (auto& object : program.objects) {
+    std::vector<Method> methods;
+    for (auto& method : object.methods) {
+      if (selected_methods.count(method_index) ||
+          from_interface(object.name, method.source_file))
+        methods.push_back(std::move(method));
+      ++method_index;
+    }
+    object.methods = std::move(methods);
+  }
+  handler_index = 0;
+  for (auto& domain : program.domains) {
+    std::vector<Handler> handlers;
+    for (auto& handler : domain.handlers) {
+      if (selected_handlers.count(handler_index) ||
+          from_interface(domain.name, handler.source_file))
+        handlers.push_back(std::move(handler));
+      ++handler_index;
+    }
+    domain.handlers = std::move(handlers);
+  }
+  if (scope_kind == FastDebugScopeKind::Tests ||
+      (program.main && !is_root(program.main->source_file)))
+    program.main.reset();
+  if (scope_kind == FastDebugScopeKind::Main) {
+    program.tests.clear();
+    program.benchmarks.clear();
+  } else {
+    program.tests.erase(std::remove_if(program.tests.begin(), program.tests.end(),
+        [&](const TestDecl& test) {
+          return !(all_package_tests || is_root(test.source_file)) ||
+              (scope_kind == FastDebugScopeKind::Tests && !test_filter.empty() &&
+               test.name.find(test_filter) == string::npos &&
+               test.semantic_identity.find(test_filter) == string::npos);
+        }), program.tests.end());
+    if (scope_kind == FastDebugScopeKind::Tests)
+      program.benchmarks.clear();
+    else
+      program.benchmarks.erase(
+          std::remove_if(program.benchmarks.begin(), program.benchmarks.end(),
+              [&](const BenchDecl& bench) {
+                return !is_root(bench.source_file);
+              }), program.benchmarks.end());
+  }
+  program.file_check_scope = true;
 }
 
 // Phase 6 persists a compact view of the authoritative semantic model.  The
@@ -11770,6 +12749,19 @@ static string source_set_content_hash(
     content << project_relative_path(manifest, source) << "\n"
             << read_text_file(source, "PROJECT_SOURCE_NOT_FOUND") << "\n";
   return stable_hash(content.str());
+}
+
+static string package_source_freshness_hash(const ProjectManifest& manifest) {
+  const auto sources = project_source_files(manifest);
+  std::ostringstream content;
+  content << sources.size() << "\n";
+  for (const auto& source : sources) {
+    const string relative = project_relative_path(manifest, source);
+    const string bytes = read_text_file(source, "PROJECT_SOURCE_NOT_FOUND");
+    content << relative.size() << "\n" << relative
+            << bytes.size() << "\n" << bytes;
+  }
+  return "sha256:" + source_free_contract_sha256(content.str());
 }
 
 static string source_set_key(const ProjectManifest& manifest,
@@ -12594,12 +13586,24 @@ static void rewrite_module_program(
         if (!arm.binding.empty()) arm_locals.insert(arm.binding);
         body(arm.body, arm_locals);
       }
+      if (handler.execution_failure_arms) {
+        for (auto& arm : *handler.execution_failure_arms) {
+          auto arm_locals = initial_locals;
+          body(arm.body, arm_locals);
+        }
+      }
       if (handler.provider_abi) {
         RaiseSet remaining = handler.observable_effects.raise_set;
-        for (const auto& record : handler.provider_abi->failure_arms) {
+        for (size_t arm_index = 0;
+             arm_index < handler.provider_abi->failure_arms.size(); ++arm_index) {
+          const auto& record = handler.provider_abi->failure_arms[arm_index];
           FailureArm arm;
           arm.line = handler.line;
           arm.source_file = handler.source_file;
+          if (handler.execution_failure_arms &&
+              arm_index < handler.execution_failure_arms->size())
+            arm.execution_body = std::move(
+                (*handler.execution_failure_arms)[arm_index].body);
           if (record.pattern.kind == FailurePatternKind::CatchAll) {
             arm.exceptional_alternatives = remaining;
             remaining.clear();
@@ -12629,7 +13633,8 @@ static void rewrite_module_program(
 }
 
 static void validate_module_exports(const std::map<string,ParsedModuleUnit>& modules,
-                                    const std::map<string,std::set<string>>& public_exports) {
+                                    const std::map<string,std::set<string>>& public_exports,
+                                    bool file_check_scope = false) {
   for (const auto& entry : modules) {
     const string& module = entry.first;
     std::map<string,int> export_counts;
@@ -12646,7 +13651,7 @@ static void validate_module_exports(const std::map<string,ParsedModuleUnit>& mod
         if (domain.exported) ++export_counts[domain.name];
     }
     for (const auto& exported : export_counts) {
-      if (exported.second > 1)
+      if (!file_check_scope && exported.second > 1)
         throw CompileError(1, "duplicate exported name '" + exported.first +
                            "' in module '" + module + "'");
     }
@@ -12953,6 +13958,14 @@ static string interface_module_identity(const string& text, const string& module
   return moss::module_identity(package.empty() ? "unknown" : package, version, module);
 }
 
+struct ExecutionBodySectionView {
+  bool present = false;
+  size_t section_begin = 0;
+  string payload;
+  string package_fingerprint;
+  string interface_digest;
+};
+
 static void parse_generic_ir_line(const string& line, Function& function) {
   std::istringstream input(line);
   string record;
@@ -13009,6 +14022,599 @@ static void parse_generic_ir_line(const string& line, Function& function) {
       if (input >> std::quoted(expression)) function.result_expression = std::move(expression);
     }
   }
+}
+
+static bool execution_body_read_statement(const string& record,
+                                         Stmt& statement) {
+  if (!starts_with(record, "stmt ")) return false;
+  std::istringstream fields(record.substr(5));
+  int kind = -1;
+  size_t argument_count = 0, raise_count = 0;
+  if (!(fields >> kind >> statement.line >> statement.indent >>
+        std::quoted(statement.text) >> std::quoted(statement.a) >>
+        std::quoted(statement.b) >> std::quoted(statement.semantic_type) >>
+        std::quoted(statement.message_result) >> argument_count) ||
+      kind < static_cast<int>(Stmt::Kind::Raw) ||
+      kind > static_cast<int>(Stmt::Kind::Raise) ||
+      argument_count > 100000)
+    throw CompileError(std::max(statement.line, 0),
+        "invalid statement in ABI-v9 execution-body section",
+        "SOURCE_FREE_EXECUTION_BODY_INVALID");
+  statement.kind = static_cast<Stmt::Kind>(kind);
+  for (size_t index = 0; index < argument_count; ++index) {
+    string argument;
+    if (!(fields >> std::quoted(argument)))
+      throw CompileError(std::max(statement.line, 0),
+          "truncated statement arguments in ABI-v9 execution-body section",
+          "SOURCE_FREE_EXECUTION_BODY_INVALID");
+    statement.args.push_back(std::move(argument));
+  }
+  if (!(fields >> raise_count) || raise_count > 100000)
+    throw CompileError(std::max(statement.line, 0),
+        "invalid statement raise set in ABI-v9 execution-body section",
+        "SOURCE_FREE_EXECUTION_BODY_INVALID");
+  for (size_t index = 0; index < raise_count; ++index) {
+    string identity;
+    if (!(fields >> std::quoted(identity)) ||
+        !statement.exceptional_alternatives.insert(
+            parse_interface_raise_identity(identity)).second)
+      throw CompileError(std::max(statement.line, 0),
+          "invalid or duplicate statement raise identity in ABI-v9 execution-body section",
+          "SOURCE_FREE_EXECUTION_BODY_INVALID");
+  }
+  string trailing;
+  if (fields >> trailing)
+    throw CompileError(std::max(statement.line, 0),
+        "trailing data in ABI-v9 execution-body statement",
+        "SOURCE_FREE_EXECUTION_BODY_INVALID");
+  return true;
+}
+
+static string execution_body_short_name(const string& qualified) {
+  const size_t moss_separator = qualified.rfind("__");
+  if (moss_separator != string::npos)
+    return qualified.substr(moss_separator + 2);
+  const size_t type_separator = qualified.rfind("::");
+  return type_separator == string::npos
+      ? qualified : qualified.substr(type_separator + 2);
+}
+
+static string execution_body_resolve_source_path(
+    const std::filesystem::path& interface_file, const string& relative) {
+  const std::filesystem::path path(relative);
+  if (relative.empty() || path.is_absolute() ||
+      std::any_of(path.begin(), path.end(), [](const auto& component) {
+        return component == "..";
+      }))
+    throw CompileError(0, "invalid source path in ABI-v9 execution-body section",
+                       "SOURCE_FREE_EXECUTION_BODY_INVALID");
+  auto root = find_project_root(interface_file.parent_path());
+  if (!root)
+    throw CompileError(0, "execution-body source has no package root",
+                       "SOURCE_FREE_EXECUTION_BODY_INVALID");
+  return (*root / path).lexically_normal().string();
+}
+
+static void parse_execution_body_payload(const ExecutionBodySectionView& section,
+                                         Program& provider,
+                                         const std::filesystem::path& file) {
+  if (!section.present) return;
+  std::istringstream input(section.payload);
+  string line;
+  for (const char* expected : {"package_fingerprint ", "interface_digest "}) {
+    if (!std::getline(input, line) || !starts_with(line, expected))
+      throw CompileError(0, "truncated ABI-v9 execution-body metadata",
+                         "SOURCE_FREE_EXECUTION_BODY_INVALID");
+  }
+  std::set<string> function_bodies, method_bodies, handler_bodies;
+  while (std::getline(input, line)) {
+    if (line.empty())
+      throw CompileError(0, "empty record in ABI-v9 execution-body section",
+                         "SOURCE_FREE_EXECUTION_BODY_INVALID");
+    if (starts_with(line, "private_enum ")) {
+      std::istringstream header(line.substr(13));
+      string name, source_path, trailing;
+      int declaration_line = 0;
+      size_t case_count = 0;
+      if (!(header >> std::quoted(name) >> declaration_line >>
+            std::quoted(source_path) >> case_count) || name.empty() ||
+          case_count > 100000 || (header >> trailing))
+        throw CompileError(std::max(declaration_line, 0),
+            "invalid private enum in ABI-v9 execution-body section",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      if (std::any_of(provider.enums.begin(), provider.enums.end(),
+              [&](const EnumType& enumeration) {
+                return execution_body_short_name(enumeration.name) ==
+                    execution_body_short_name(name);
+              }))
+        throw CompileError(std::max(declaration_line, 0),
+            "duplicate private enum in ABI-v9 execution-body section",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      EnumType enumeration;
+      enumeration.name = execution_body_short_name(name);
+      enumeration.exported = false;
+      enumeration.line = declaration_line;
+      enumeration.source_file = execution_body_resolve_source_path(
+          file, source_path);
+      std::set<string> case_names;
+      for (size_t index = 0; index < case_count; ++index) {
+        if (!std::getline(input, line) ||
+            !starts_with(line, "private_enum_case "))
+          throw CompileError(std::max(declaration_line, 0),
+              "missing private enum case in ABI-v9 execution-body section",
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+        std::istringstream case_header(line.substr(18));
+        EnumCase item;
+        size_t field_count = 0;
+        if (!(case_header >> std::quoted(item.name) >> item.line >>
+              field_count) || item.name.empty() || field_count > 100000 ||
+            !case_names.insert(item.name).second || (case_header >> trailing))
+          throw CompileError(std::max(declaration_line, 0),
+              "invalid private enum case in ABI-v9 execution-body section",
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+        std::set<string> field_names;
+        for (size_t field_index = 0; field_index < field_count;
+             ++field_index) {
+          if (!std::getline(input, line) ||
+              !starts_with(line, "private_enum_field "))
+            throw CompileError(std::max(item.line, 0),
+                "missing private enum field in ABI-v9 execution-body section",
+                "SOURCE_FREE_EXECUTION_BODY_INVALID");
+          std::istringstream field_header(line.substr(19));
+          Field field;
+          if (!(field_header >> std::quoted(field.name) >>
+                std::quoted(field.type) >> field.line) || field.name.empty() ||
+              field.type.empty() || !field_names.insert(field.name).second ||
+              (field_header >> trailing))
+            throw CompileError(std::max(item.line, 0),
+                "invalid private enum field in ABI-v9 execution-body section",
+                "SOURCE_FREE_EXECUTION_BODY_INVALID");
+          field.source_file = enumeration.source_file;
+          item.source_file = enumeration.source_file;
+          item.fields.push_back(std::move(field));
+        }
+        enumeration.cases.push_back(std::move(item));
+      }
+      if (!std::getline(input, line) || line != "private_enum_end")
+        throw CompileError(std::max(declaration_line, 0),
+            "unterminated private enum in ABI-v9 execution-body section",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      provider.enums.push_back(std::move(enumeration));
+      continue;
+    }
+    if (starts_with(line, "private_object ")) {
+      std::istringstream header(line.substr(15));
+      string name, source_path;
+      int declaration_line = 0;
+      size_t field_count = 0;
+      if (!(header >> std::quoted(name) >> declaration_line >>
+            std::quoted(source_path) >> field_count) || field_count > 100000)
+        throw CompileError(std::max(declaration_line, 0),
+            "invalid private object in ABI-v9 execution-body section",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      if (std::any_of(provider.objects.begin(), provider.objects.end(),
+              [&](const ObjectType& object) {
+                return execution_body_short_name(object.name) ==
+                    execution_body_short_name(name);
+              }))
+        throw CompileError(std::max(declaration_line, 0),
+            "duplicate private object in ABI-v9 execution-body section",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      ObjectType object;
+      object.name = execution_body_short_name(name);
+      object.exported = false;
+      object.line = declaration_line;
+      object.execution_source_file =
+          execution_body_resolve_source_path(file, source_path);
+      object.source_file = file.string();
+      for (size_t index = 0; index < field_count; ++index) {
+        if (!std::getline(input, line) || !starts_with(line, "private_field "))
+          throw CompileError(std::max(declaration_line, 0),
+              "missing private object field in ABI-v9 execution-body section",
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+        std::istringstream field_input(line.substr(14));
+        Field field;
+        if (!(field_input >> std::quoted(field.name) >>
+              std::quoted(field.type) >> std::quoted(field.init) >> field.line) ||
+            field.name.empty() || field.type.empty())
+          throw CompileError(std::max(declaration_line, 0),
+              "invalid private object field in ABI-v9 execution-body section",
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+        field.source_file = object.execution_source_file;
+        object.fields.push_back(std::move(field));
+      }
+      if (!std::getline(input, line) || line != "private_object_end")
+        throw CompileError(std::max(declaration_line, 0),
+            "unterminated private object in ABI-v9 execution-body section",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      provider.objects.push_back(std::move(object));
+      continue;
+    }
+    if (starts_with(line, "function ")) {
+      std::istringstream header(line.substr(9));
+      string name, source_file, return_type, effects_text;
+      int exported = 0, declaration_line = 0, result_line = 0, has_result = 0;
+      size_t parameter_count = 0;
+      if (!(header >> std::quoted(name) >> exported >> declaration_line >>
+            result_line >> parameter_count >> std::quoted(return_type) >>
+            std::quoted(effects_text) >> std::quoted(source_file) >>
+            has_result) || name.empty() ||
+          (exported != 0 && exported != 1) ||
+          (has_result != 0 && has_result != 1) || parameter_count > 100000 ||
+          !function_bodies.insert(execution_body_short_name(name)).second)
+        throw CompileError(std::max(declaration_line, 0),
+            "invalid or duplicate function in ABI-v9 execution-body section",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      string result_expression;
+      if (!(header >> std::quoted(result_expression)))
+        throw CompileError(std::max(declaration_line, 0),
+            "missing function result in ABI-v9 execution-body section",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      string trailing;
+      if (header >> trailing)
+        throw CompileError(std::max(declaration_line, 0),
+            "trailing function metadata in ABI-v9 execution-body section",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      auto function = std::find_if(provider.functions.begin(),
+          provider.functions.end(), [&](const Function& candidate) {
+            return candidate.name == name ||
+                execution_body_short_name(candidate.name) ==
+                    execution_body_short_name(name);
+          });
+      if (function == provider.functions.end()) {
+        if (exported)
+          throw CompileError(std::max(declaration_line, 0),
+              "execution body has no Section 1 function declaration",
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+        Function private_function;
+        private_function.name = execution_body_short_name(name);
+        private_function.exported = false;
+        private_function.set_return_type(return_type == "unit"
+            ? std::optional<string>() : std::optional<string>(return_type));
+        private_function.observable_effects =
+            interface_effects("effects=" + effects_text);
+        provider.functions.push_back(std::move(private_function));
+        function = std::prev(provider.functions.end());
+      } else if (function->exported != static_cast<bool>(exported)) {
+        throw CompileError(std::max(declaration_line, 0),
+            "execution body visibility disagrees with Section 1 declaration",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      }
+      if (function->generic || function->static_dispatch ||
+          (function->name.find("::") != string::npos &&
+           module_name_from_symbol(function->name) != provider.module_name))
+        throw CompileError(std::max(declaration_line, 0),
+            "execution body attempts to replace a generic or foreign function",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      if (function->exported && function->params.size() != parameter_count)
+        throw CompileError(std::max(declaration_line, 0),
+            "execution-body function parameters disagree with Section 1",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      if (function->return_type.value_or("unit") != return_type)
+        throw CompileError(std::max(declaration_line, 0),
+            "execution-body function result disagrees with Section 1",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      vector<Param> private_parameters;
+      vector<Effect> private_effects;
+      for (size_t index = 0; index < parameter_count; ++index) {
+        if (!std::getline(input, line) || !starts_with(line, "param "))
+          throw CompileError(std::max(declaration_line, 0),
+              "missing execution-body function parameter",
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+        std::istringstream parameter(line.substr(6));
+        size_t ordinal = 0;
+        Param parsed;
+        string effect_text, parameter_trailing;
+        if (!(parameter >> ordinal >> std::quoted(parsed.name) >>
+              std::quoted(parsed.type) >> effect_text) || ordinal != index ||
+            (parameter >> parameter_trailing))
+          throw CompileError(std::max(declaration_line, 0),
+              "invalid execution-body function parameter",
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+        auto effect = interface_effect(effect_text);
+        if (!effect)
+          throw CompileError(std::max(declaration_line, 0),
+              "invalid execution-body parameter effect",
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+        if (function->exported) {
+          if (function->params[index].name != parsed.name ||
+              function->params[index].type != parsed.type ||
+              index >= function->parameter_effects.size() ||
+              function->parameter_effects[index] != *effect)
+            throw CompileError(std::max(declaration_line, 0),
+                "execution-body function parameter disagrees with Section 1",
+                "SOURCE_FREE_EXECUTION_BODY_INVALID");
+        }
+        private_parameters.push_back(std::move(parsed));
+        private_effects.push_back(*effect);
+      }
+      if (!function->exported) {
+        function->params = std::move(private_parameters);
+        function->parameter_effects = std::move(private_effects);
+      }
+      function->line = declaration_line;
+      function->result_line = result_line;
+      function->execution_source_file =
+          execution_body_resolve_source_path(file, source_file);
+      function->header = "fn " + function->name;
+      if (has_result) {
+        function->execution_result_expression = std::move(result_expression);
+      }
+      vector<Stmt> execution_statements;
+      while (std::getline(input, line) && line != "function_end") {
+        Stmt statement;
+        std::istringstream statement_input(line);
+        string tag;
+        statement_input >> tag;
+        if (tag != "stmt" || !execution_body_read_statement(
+                line, statement))
+          throw CompileError(std::max(declaration_line, 0),
+              "invalid function body record in ABI-v9 execution-body section",
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+        statement.source_file = function->execution_source_file;
+        execution_statements.push_back(std::move(statement));
+      }
+      if (line != "function_end")
+        throw CompileError(std::max(declaration_line, 0),
+            "unterminated function body in ABI-v9 execution-body section",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      function->execution_body = std::move(execution_statements);
+      continue;
+    }
+    if (starts_with(line, "method ")) {
+      std::istringstream header(line.substr(7));
+      string owner, name, source_file, return_type, receiver_text, effects_text;
+      int declaration_line = 0, result_line = 0, has_result = 0;
+      size_t parameter_count = 0;
+      if (!(header >> std::quoted(owner) >> std::quoted(name) >>
+            declaration_line >> result_line >> std::quoted(source_file) >>
+            std::quoted(return_type) >> receiver_text >>
+            std::quoted(effects_text) >> parameter_count >> has_result) ||
+          parameter_count > 100000 || (has_result != 0 && has_result != 1))
+        throw CompileError(std::max(declaration_line, 0),
+            "invalid method in ABI-v9 execution-body section",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      string result_expression;
+      if (!(header >> std::quoted(result_expression)))
+        throw CompileError(std::max(declaration_line, 0),
+            "missing method result in ABI-v9 execution-body section",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      string trailing;
+      if (header >> trailing)
+        throw CompileError(std::max(declaration_line, 0),
+            "trailing method metadata in ABI-v9 execution-body section",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      auto object = std::find_if(provider.objects.begin(), provider.objects.end(),
+          [&](const ObjectType& candidate) {
+            return candidate.name == owner ||
+                execution_body_short_name(candidate.name) ==
+                    execution_body_short_name(owner);
+          });
+      if (object == provider.objects.end())
+        throw CompileError(std::max(declaration_line, 0),
+            "execution-body method has no Section 1 object declaration",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      auto method = std::find_if(object->methods.begin(), object->methods.end(),
+          [&](const Method& candidate) { return candidate.name == name; });
+      if (method == object->methods.end() && object->exported)
+        throw CompileError(std::max(declaration_line, 0),
+            "execution-body method has no Section 1 method declaration",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      if (method == object->methods.end()) {
+        Method private_method;
+        private_method.owner = object->name;
+        private_method.name = name;
+        private_method.set_return_type(return_type == "unit"
+            ? std::optional<string>() : std::optional<string>(return_type));
+        auto receiver = interface_effect(receiver_text);
+        if (!receiver)
+          throw CompileError(std::max(declaration_line, 0),
+              "invalid private method receiver effect",
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+        private_method.receiver_effect = *receiver;
+        private_method.observable_effects =
+            interface_effects("effects=" + effects_text);
+        object->methods.push_back(std::move(private_method));
+        method = std::prev(object->methods.end());
+      }
+      if (!method_bodies.insert(execution_body_short_name(owner) + "::" + name).second)
+        throw CompileError(std::max(declaration_line, 0),
+            "execution-body method is undeclared or duplicated",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      if (object->exported &&
+          (method->return_type.value_or("unit") != return_type ||
+           ownership_effect_name(method->receiver_effect) != receiver_text ||
+           method->params.size() != parameter_count))
+        throw CompileError(std::max(declaration_line, 0),
+            "execution-body method signature disagrees with Section 1",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      vector<Param> private_parameters;
+      vector<Effect> private_effects;
+      for (size_t index = 0; index < parameter_count; ++index) {
+        if (!std::getline(input, line) || !starts_with(line, "method_param "))
+          throw CompileError(std::max(declaration_line, 0),
+              "missing execution-body method parameter",
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+        std::istringstream parameter(line.substr(13));
+        size_t ordinal = 0;
+        Param parsed;
+        string effect_text, parameter_trailing;
+        if (!(parameter >> ordinal >> std::quoted(parsed.name) >>
+              std::quoted(parsed.type) >> effect_text) || ordinal != index ||
+            (parameter >> parameter_trailing))
+          throw CompileError(std::max(declaration_line, 0),
+              "invalid execution-body method parameter",
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+        auto effect = interface_effect(effect_text);
+        if (!effect)
+          throw CompileError(std::max(declaration_line, 0),
+              "invalid execution-body method parameter effect",
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+        if (object->exported &&
+            (method->params[index].name != parsed.name ||
+             method->params[index].type != parsed.type ||
+             index >= method->parameter_effects.size() ||
+             method->parameter_effects[index] != *effect))
+          throw CompileError(std::max(declaration_line, 0),
+              "execution-body method parameter disagrees with Section 1",
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+        private_parameters.push_back(std::move(parsed));
+        private_effects.push_back(*effect);
+      }
+      if (!object->exported) {
+        method->params = std::move(private_parameters);
+        method->parameter_effects = std::move(private_effects);
+      }
+      method->line = declaration_line;
+      method->result_line = result_line;
+      method->execution_source_file =
+          execution_body_resolve_source_path(file, source_file);
+      if (has_result)
+        method->execution_result_expression = std::move(result_expression);
+      vector<Stmt> execution_statements;
+      while (std::getline(input, line) && line != "method_end") {
+        Stmt statement;
+        std::istringstream statement_input(line);
+        string tag;
+        statement_input >> tag;
+        if (tag != "stmt" || !execution_body_read_statement(
+                line, statement))
+          throw CompileError(std::max(declaration_line, 0),
+              "invalid method body record in ABI-v9 execution-body section",
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+        statement.source_file = method->execution_source_file;
+        execution_statements.push_back(std::move(statement));
+      }
+      if (line != "method_end")
+        throw CompileError(std::max(declaration_line, 0),
+            "unterminated method body in ABI-v9 execution-body section",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      method->execution_body = std::move(execution_statements);
+      continue;
+    }
+    if (starts_with(line, "handler ")) {
+      std::istringstream header(line.substr(8));
+      string owner, name, source_file;
+      int declaration_line = 0;
+      size_t statement_count = 0, failure_arm_count = 0;
+      if (!(header >> std::quoted(owner) >> std::quoted(name) >>
+            declaration_line >> std::quoted(source_file) >> statement_count >>
+            failure_arm_count) || statement_count > 100000 ||
+          failure_arm_count > 100000)
+        throw CompileError(std::max(declaration_line, 0),
+            "invalid handler in ABI-v9 execution-body section",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      auto domain = std::find_if(provider.domains.begin(), provider.domains.end(),
+          [&](const Domain& candidate) {
+            return candidate.name == owner ||
+                execution_body_short_name(candidate.name) ==
+                    execution_body_short_name(owner);
+          });
+      if (domain == provider.domains.end())
+        throw CompileError(std::max(declaration_line, 0),
+            "execution-body handler has no Section 1 domain declaration",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      auto handler = std::find_if(domain->handlers.begin(), domain->handlers.end(),
+          [&](const Handler& candidate) { return candidate.name == name; });
+      if (handler == domain->handlers.end() ||
+          !handler_bodies.insert(execution_body_short_name(owner) + "::" + name).second)
+        throw CompileError(std::max(declaration_line, 0),
+            "execution-body handler is undeclared or duplicated",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      handler->line = declaration_line;
+      handler->execution_source_file =
+          execution_body_resolve_source_path(file, source_file);
+      if (!handler->provider_abi ||
+          handler->provider_abi->failure_arms.size() != failure_arm_count)
+        throw CompileError(std::max(declaration_line, 0),
+            "execution-body failure-arm count disagrees with Section 1",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      vector<Stmt> handler_execution_statements;
+      for (size_t index = 0; index < statement_count; ++index) {
+        if (!std::getline(input, line))
+          throw CompileError(std::max(declaration_line, 0),
+              "truncated handler body in ABI-v9 execution-body section",
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+        Stmt statement;
+        std::istringstream statement_input(line);
+        string tag;
+        statement_input >> tag;
+        if (tag != "stmt" || !execution_body_read_statement(
+                line, statement))
+          throw CompileError(std::max(declaration_line, 0),
+              "invalid handler body record in ABI-v9 execution-body section",
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+        statement.source_file = handler->execution_source_file;
+        handler_execution_statements.push_back(std::move(statement));
+      }
+      handler->execution_body = std::move(handler_execution_statements);
+      vector<FailureArm> execution_arms(failure_arm_count);
+      for (size_t arm_index = 0; arm_index < failure_arm_count; ++arm_index) {
+        if (!std::getline(input, line) || !starts_with(line, "failure_arm "))
+          throw CompileError(std::max(declaration_line, 0),
+              "missing execution-body handler failure arm",
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+        std::istringstream arm_header(line.substr(12));
+        size_t declared_index = 0, arm_statement_count = 0;
+        int arm_line = 0;
+        if (!(arm_header >> declared_index >> arm_line >> arm_statement_count) ||
+            declared_index != arm_index || arm_statement_count > 100000)
+          throw CompileError(std::max(declaration_line, 0),
+              "invalid execution-body handler failure arm",
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+        auto& arm = execution_arms[arm_index];
+        arm.line = arm_line;
+        arm.source_file = handler->execution_source_file;
+        for (size_t index = 0; index < arm_statement_count; ++index) {
+          if (!std::getline(input, line))
+            throw CompileError(std::max(arm_line, 0),
+                "truncated handler failure-arm body",
+                "SOURCE_FREE_EXECUTION_BODY_INVALID");
+          Stmt statement;
+          if (!execution_body_read_statement(line, statement))
+            throw CompileError(std::max(arm_line, 0),
+                "invalid handler failure-arm statement",
+                "SOURCE_FREE_EXECUTION_BODY_INVALID");
+          statement.source_file = handler->execution_source_file;
+          arm.body.push_back(std::move(statement));
+        }
+        if (!std::getline(input, line) || line != "failure_arm_end")
+          throw CompileError(std::max(arm_line, 0),
+              "unterminated handler failure-arm body",
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      }
+      if (!std::getline(input, line) || line != "handler_end")
+        throw CompileError(std::max(declaration_line, 0),
+            "unterminated handler body in ABI-v9 execution-body section",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      handler->execution_failure_arms = std::move(execution_arms);
+      continue;
+    }
+    throw CompileError(0, "unknown record in ABI-v9 execution-body section",
+                       "SOURCE_FREE_EXECUTION_BODY_INVALID");
+  }
+  for (const auto& function : provider.functions) {
+    if (function.generic || function.static_dispatch ||
+        !function.provider_origin_file.empty()) continue;
+    if (!function_bodies.count(execution_body_short_name(function.name)))
+      throw CompileError(std::max(function.line, 0),
+          "ABI-v9 execution-body section omits a concrete function body",
+          "SOURCE_FREE_EXECUTION_BODY_INVALID");
+  }
+  for (const auto& object : provider.objects)
+    for (const auto& method : object.methods)
+      if (!method_bodies.count(execution_body_short_name(object.name) +
+                               "::" + method.name))
+        throw CompileError(std::max(method.line, 0),
+            "ABI-v9 execution-body section omits an object method body",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+  for (const auto& domain : provider.domains)
+    for (const auto& handler : domain.handlers)
+      if (!handler_bodies.count(execution_body_short_name(domain.name) +
+                                "::" + handler.name))
+        throw CompileError(std::max(handler.line, 0),
+            "ABI-v9 execution-body section omits a handler body",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
 }
 
 static FailurePatternAbi parse_failure_pattern_text(const string& text);
@@ -13168,6 +14774,8 @@ static string source_free_contract_marker(const string& module,
          "::END";
 }
 
+static string normalize_section1_locations(std::string_view input);
+
 static string source_free_contract_material(const string& text) {
   static const string prefix = "provider_contract_digest sha256:";
   if (!starts_with(text, "moss-module-interface-v2\n"))
@@ -13196,7 +14804,33 @@ static string source_free_contract_material(const string& text) {
       }))
     throw CompileError(0, "ABI-v9 provider contract digest is malformed",
                        "SOURCE_FREE_CONTRACT_INVALID");
-  return text.substr(0, begin + 1) + text.substr(end + 1);
+  string material = text.substr(0, begin + 1) + text.substr(end + 1);
+  const string execution_marker = "\nexecution_body_version ";
+  const size_t execution_section = material.find(execution_marker);
+  if (execution_section != string::npos) {
+    if (material.find(execution_marker,
+                      execution_section + execution_marker.size()) !=
+        string::npos)
+      throw CompileError(0, "ABI-v9 execution-body section is repeated",
+                         "SOURCE_FREE_EXECUTION_BODY_INVALID");
+    material.resize(execution_section + 1);
+  }
+  const string freshness_marker = "\npackage_source_hash ";
+  const size_t freshness = material.find(freshness_marker);
+  if (freshness != string::npos) {
+    if (material.find(freshness_marker, freshness + freshness_marker.size()) !=
+        string::npos)
+      throw CompileError(0, "ABI-v9 package source hash is repeated",
+                         "SOURCE_FREE_CONTRACT_INVALID");
+    const size_t freshness_line_start = freshness + 1;
+    const size_t freshness_end = material.find('\n', freshness_line_start);
+    if (freshness_end == string::npos)
+      throw CompileError(0, "ABI-v9 package source hash is incomplete",
+                         "SOURCE_FREE_CONTRACT_INVALID");
+    material.erase(freshness_line_start,
+                   freshness_end - freshness_line_start + 1);
+  }
+  return normalize_section1_locations(material);
 }
 
 static string source_free_declared_digest(const string& text) {
@@ -13206,13 +14840,217 @@ static string source_free_declared_digest(const string& text) {
   return text.substr(begin + marker.size(), 64);
 }
 
+static string source_free_declared_package_hash(const string& text) {
+  const size_t execution_section = text.find("\nexecution_body_version ");
+  const std::string_view section1(text.data(), execution_section == string::npos
+      ? text.size() : execution_section + 1);
+  const string marker = "\npackage_source_hash ";
+  const size_t begin = section1.find(marker);
+  if (begin == string::npos ||
+      section1.find(marker, begin + marker.size()) != string::npos)
+    return {};
+  const size_t value_begin = begin + marker.size();
+  const size_t end = section1.find('\n', value_begin);
+  if (end == string::npos) return {};
+  return string(section1.substr(value_begin, end - value_begin));
+}
+
+// Preserve absolute source locations in the emitted Section 1, but exclude
+// those locations from semantic identity. The sidecar is the consumer-facing
+// location map; generic body semantics and warning identities still remain in
+// the normalized material.
+static string normalize_section1_locations(std::string_view input) {
+  std::istringstream lines{string(input)};
+  std::ostringstream normalized;
+  string line;
+  while (std::getline(lines, line)) {
+    const string trimmed = trim(line);
+    auto replace_field = [&](size_t field_index) {
+      size_t at = 0;
+      for (size_t index = 0; index < field_index; ++index) {
+        while (at < line.size() && std::isspace(
+                   static_cast<unsigned char>(line[at]))) ++at;
+        while (at < line.size() && !std::isspace(
+                   static_cast<unsigned char>(line[at]))) ++at;
+      }
+      while (at < line.size() && std::isspace(
+                 static_cast<unsigned char>(line[at]))) ++at;
+      size_t end = at;
+      while (end < line.size() && !std::isspace(
+                 static_cast<unsigned char>(line[end]))) ++end;
+      if (end > at) line.replace(at, end - at, "0");
+    };
+    if (starts_with(trimmed, "generic_stmt ")) {
+      // kind, absolute line, indentation, then source-derived Moss IR.
+      replace_field(2);
+    } else if (starts_with(trimmed, "generic_result ")) {
+      replace_field(1);
+    } else if (trimmed.find("_warning ") != string::npos) {
+      const size_t key_begin = line.find_first_not_of(" \t");
+      const size_t key_end = key_begin == string::npos ? string::npos
+          : line.find_first_of(" \t", key_begin);
+      size_t at = key_end;
+      while (at < line.size() && std::isspace(
+                 static_cast<unsigned char>(line[at]))) ++at;
+      if (trimmed.find("object_method_warning ") == 0 ||
+          trimmed.find("handler_warning ") == 0) {
+        if (at < line.size() && line[at] == '"') {
+          ++at;
+          while (at < line.size() && line[at] != '"') {
+            if (line[at] == '\\' && at + 1 < line.size()) ++at;
+            ++at;
+          }
+          if (at < line.size()) ++at;
+          while (at < line.size() && std::isspace(
+                     static_cast<unsigned char>(line[at]))) ++at;
+          size_t end = at;
+          while (end < line.size() && !std::isspace(
+                     static_cast<unsigned char>(line[end]))) ++end;
+          if (end > at) line.replace(at, end - at, "0");
+        }
+      } else {
+        size_t end = at;
+        while (end < line.size() && !std::isspace(
+                   static_cast<unsigned char>(line[end]))) ++end;
+        if (end > at) line.replace(at, end - at, "0");
+      }
+    } else if (starts_with(trimmed, "generic_entity_id ")) {
+      const size_t at = line.rfind('@');
+      if (at != string::npos) {
+        size_t end = at + 1;
+        while (end < line.size() && std::isdigit(
+                   static_cast<unsigned char>(line[end]))) ++end;
+        if (end > at + 1) line.replace(at + 1, end - at - 1, "0");
+      }
+    }
+    normalized << line << "\n";
+  }
+  return normalized.str();
+}
+
+static bool execution_body_hash(const string& value) {
+  return value.size() == 64 &&
+      std::all_of(value.begin(), value.end(), [](unsigned char ch) {
+        return (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f');
+      });
+}
+
+static ExecutionBodySectionView parse_execution_body_section(
+    const string& text) {
+  static const string marker = "\nexecution_body_version ";
+  ExecutionBodySectionView result;
+  const size_t marker_at = text.find(marker);
+  if (marker_at == string::npos) return result;
+  if (text.find(marker, marker_at + marker.size()) != string::npos)
+    throw CompileError(0, "ABI-v9 execution-body section is repeated",
+                       "SOURCE_FREE_EXECUTION_BODY_INVALID");
+  result.present = true;
+  result.section_begin = marker_at + 1;
+  std::istringstream section(text.substr(result.section_begin));
+  string line;
+  if (!std::getline(section, line) || line != "execution_body_version 1")
+    throw CompileError(0, "unsupported ABI-v9 execution-body section version",
+                       "SOURCE_FREE_EXECUTION_BODY_INVALID");
+  if (!std::getline(section, line) || !starts_with(line, "execution_body_length "))
+    throw CompileError(0, "ABI-v9 execution-body section length is missing",
+                       "SOURCE_FREE_EXECUTION_BODY_INVALID");
+  size_t payload_length = 0;
+  try {
+    const string value = line.substr(string("execution_body_length ").size());
+    size_t consumed = 0;
+    const auto parsed = std::stoull(value, &consumed);
+    if (consumed != value.size() || parsed > 128u * 1024u * 1024u)
+      throw std::out_of_range("execution body length");
+    payload_length = static_cast<size_t>(parsed);
+  } catch (const std::exception&) {
+    throw CompileError(0, "ABI-v9 execution-body section length is invalid",
+                       "SOURCE_FREE_EXECUTION_BODY_INVALID");
+  }
+  if (!std::getline(section, line) || !starts_with(line, "execution_body_hash sha256:"))
+    throw CompileError(0, "ABI-v9 execution-body section hash is missing",
+                       "SOURCE_FREE_EXECUTION_BODY_INVALID");
+  const string declared_body_hash =
+      line.substr(string("execution_body_hash sha256:").size());
+  if (!execution_body_hash(declared_body_hash))
+    throw CompileError(0, "ABI-v9 execution-body section hash is malformed",
+                       "SOURCE_FREE_EXECUTION_BODY_INVALID");
+  if (!std::getline(section, line) || line != "execution_body_payload")
+    throw CompileError(0, "ABI-v9 execution-body payload is missing",
+                       "SOURCE_FREE_EXECUTION_BODY_INVALID");
+  const size_t payload_begin = result.section_begin +
+      static_cast<size_t>(section.tellg());
+  static const string end_marker = "execution_body_end\n";
+  if (payload_length > text.size() - payload_begin)
+    throw CompileError(0, "ABI-v9 execution-body payload framing is invalid",
+                       "SOURCE_FREE_EXECUTION_BODY_INVALID");
+  const size_t payload_end = payload_begin + payload_length;
+  if (text.compare(payload_end, end_marker.size(), end_marker) != 0 ||
+      payload_end + end_marker.size() != text.size())
+    throw CompileError(0, "ABI-v9 execution-body payload framing is invalid",
+                       "SOURCE_FREE_EXECUTION_BODY_INVALID");
+  result.payload = text.substr(payload_begin, payload_end - payload_begin);
+  if (result.payload.size() != payload_length ||
+      source_free_contract_sha256(result.payload) != declared_body_hash)
+    throw CompileError(0, "ABI-v9 execution-body payload hash or length mismatch",
+                       "SOURCE_FREE_EXECUTION_BODY_INVALID");
+
+  std::istringstream payload(result.payload);
+  string package_fingerprint, interface_digest, package_source_hash;
+  if (!std::getline(payload, line) || !starts_with(line, "package_fingerprint "))
+    throw CompileError(0, "ABI-v9 execution-body package fingerprint is missing",
+                       "SOURCE_FREE_EXECUTION_BODY_INVALID");
+  package_fingerprint = line.substr(string("package_fingerprint ").size());
+  if (!execution_body_hash(package_fingerprint))
+    throw CompileError(0, "ABI-v9 execution-body package fingerprint is malformed",
+                       "SOURCE_FREE_EXECUTION_BODY_INVALID");
+  if (!std::getline(payload, line) || !starts_with(line, "interface_digest "))
+    throw CompileError(0, "ABI-v9 execution-body interface binding is missing",
+                       "SOURCE_FREE_EXECUTION_BODY_INVALID");
+  interface_digest = line.substr(string("interface_digest ").size());
+  if (!execution_body_hash(interface_digest))
+    throw CompileError(0, "ABI-v9 execution-body Section 1 binding is malformed",
+                       "SOURCE_FREE_EXECUTION_BODY_INVALID");
+  result.package_fingerprint = std::move(package_fingerprint);
+  result.interface_digest = std::move(interface_digest);
+  return result;
+}
+
+static string stale_interface_message(const string& package_name) {
+  return "interface for " + package_name +
+      " is missing or stale; run `margo build`";
+}
+
+static void validate_provider_source_freshness(
+    const std::filesystem::path& interface_file, const string& package_hash) {
+  auto root = find_project_root(interface_file.parent_path());
+  string package_name = interface_file.stem().string();
+  if (!root)
+    throw CompileError(0, stale_interface_message(package_name),
+                       "MOSS_INTERFACE_STALE");
+  try {
+    const ProjectManifest manifest = load_project_manifest(*root);
+    package_name = manifest.name;
+    if (package_hash.empty() ||
+        package_hash != package_source_freshness_hash(manifest))
+      throw CompileError(0, stale_interface_message(package_name),
+                         "MOSS_INTERFACE_STALE");
+  } catch (const CompileError&) {
+    throw;
+  } catch (const std::exception&) {
+    throw CompileError(0, stale_interface_message(package_name),
+                       "MOSS_INTERFACE_STALE");
+  }
+}
+
 static void verify_source_free_provider_binding(
-    const std::filesystem::path& interface_file, const string& text) {
+    const std::filesystem::path& interface_file, const string& text,
+    bool require_native_artifact = true) {
   const string material = source_free_contract_material(text);
   const string declared = source_free_declared_digest(text);
   if (source_free_contract_sha256(material) != declared)
     throw CompileError(0, "ABI-v9 provider metadata does not match its declared contract digest",
                        "SOURCE_FREE_CONTRACT_MISMATCH");
+  if (!require_native_artifact) return;
   const auto rlib = selected_provider_rlib(interface_file);
   std::ifstream input(rlib, std::ios::binary);
   std::ostringstream archive;
@@ -13290,17 +15128,20 @@ static void verify_source_free_provider_binding(
 // are records projected into the declaration lines read below.
 static string verified_abi_v10_interface_records(
     const std::filesystem::path& file, const string& text,
-    abi_v10::SealedInterface* sealed = nullptr) {
+    abi_v10::SealedInterface* sealed = nullptr,
+    bool require_native_artifact = true) {
   abi_v10::SealedInterface parsed;
   try {
     parsed = abi_v10::parse(text);
     if (!abi_v10::digest_matches(text, parsed))
       throw abi_v10::Error("SOURCE_FREE_CONTRACT_INVALID",
                            "ABI-v10 provider metadata does not match its declared contract digest");
-    const auto rlib = selected_provider_rlib(file);
-    abi_v10::validate_selected_rlib(
-        read_text_file(rlib, "SOURCE_FREE_PROVIDER_ARTIFACT_MISSING"),
-        tooling_name(file.stem().string()), parsed.digest);
+    if (require_native_artifact) {
+      const auto rlib = selected_provider_rlib(file);
+      abi_v10::validate_selected_rlib(
+          read_text_file(rlib, "SOURCE_FREE_PROVIDER_ARTIFACT_MISSING"),
+          tooling_name(file.stem().string()), parsed.digest);
+    }
     abi_v10::verify_canonical(text, parsed);
     abi_v10::validate_complete_interface(parsed);
   } catch (const abi_v10::Error& error) {
@@ -13399,12 +15240,22 @@ static void validate_abi_v10_nominal_declarations(
 }
 
 static ParsedModuleUnit load_module_interface(
-    const std::filesystem::path& file) {
+    const std::filesystem::path& file, bool require_native_artifact = true,
+    bool load_execution_bodies = false) {
   std::ifstream input(file, std::ios::binary);
   std::ostringstream content;
   content << input.rdbuf();
   string text = content.str();
   const bool v10_interface = starts_with(text, "moss-module-interface-v3\n");
+  const size_t section2_marker = text.find("\nexecution_body_version ");
+  ExecutionBodySectionView execution_bodies;
+  if (load_execution_bodies)
+    execution_bodies = parse_execution_body_section(text);
+  // Section 2 is deliberately outside semantic admission and interface
+  // fingerprints. Ordinary imports parse only Section 1; the interpreter
+  // explicitly requests and validates executable bodies.
+  const string semantic_text = section2_marker == string::npos
+      ? text : text.substr(0, section2_marker + 1);
   if (v10_interface != staged_abi_v10())
     throw CompileError(0, v10_interface
         ? "source-free provider uses staged ABI v10; rebuild it for ABI v9 or set MOSS_STAGED_ABI=v10"
@@ -13412,9 +15263,27 @@ static ParsedModuleUnit load_module_interface(
         "SOURCE_FREE_ABI_REBUILD_REQUIRED");
   abi_v10::SealedInterface sealed;
   if (v10_interface) {
-    text = verified_abi_v10_interface_records(file, text, &sealed);
+    text = verified_abi_v10_interface_records(
+        file, semantic_text, &sealed, require_native_artifact);
+    validate_provider_source_freshness(file,
+                                       sealed.value.package_source_hash);
+    if (execution_bodies.present &&
+        (!abi_v10::hex_hash(sealed.semantic_hash) ||
+         execution_bodies.interface_digest != sealed.semantic_hash.substr(7)))
+      throw CompileError(0,
+          "ABI-v10 execution-body Section 1 binding mismatch",
+          "SOURCE_FREE_EXECUTION_BODY_INVALID");
   } else {
-    verify_source_free_provider_binding(file, text);
+    verify_source_free_provider_binding(file, text,
+                                        require_native_artifact);
+    if (execution_bodies.present &&
+        execution_bodies.interface_digest !=
+            source_free_declared_digest(text))
+      throw CompileError(0,
+          "ABI-v9 execution-body Section 1 binding mismatch",
+          "SOURCE_FREE_EXECUTION_BODY_INVALID");
+    validate_provider_source_freshness(
+        file, source_free_declared_package_hash(text));
     if (text.find("\nnative_abi " + std::to_string(kNativeAbiVersion) + "\n") == string::npos)
       throw CompileError(0, "compiled provider uses an incompatible native calling convention; rebuild its .mossi provider");
     // The producer already records separate hashes for the native contract and
@@ -13442,8 +15311,8 @@ static ParsedModuleUnit load_module_interface(
   const string concrete_hash = stable_hash(text.substr(
       contract_at + contract_marker.size(),
       semantic_at + 1 - contract_at - contract_marker.size()));
-  const string generic_hash = stable_hash(text.substr(
-      semantic_at + semantic_marker.size()));
+  const string generic_hash = stable_hash(normalize_section1_locations(
+      semantic_text.substr(semantic_at + semantic_marker.size())));
   if (declared_hashes.size() != 3 ||
       declared_hashes["concrete_interface_hash"] != concrete_hash ||
       declared_hashes["interface_hash"] != concrete_hash ||
@@ -13477,7 +15346,11 @@ static ParsedModuleUnit load_module_interface(
                        (indexed_strings_staged() ? "staged indexed-v1" : "plain") +
                        " representation; rebuild the provider with the same MOSS_STAGED_STRING_REPR",
                        "STRING_REPRESENTATION_MISMATCH");
-  std::istringstream lines(text);
+  // ABI-v10's framed container must first be projected to the legacy
+  // declaration-record view above. ABI-v9 keeps its original Section 1 bytes
+  // with Section 2 removed. Parsing the raw ABI-v10 container here mistakes
+  // section labels (for example `binary_contract`) for Moss module records.
+  std::istringstream lines(v10_interface ? text : semantic_text);
   ParsedModuleUnit unit;
   unit.name = interface_module_name(text, file);
   unit.module_identity = interface_module_identity(text, unit.name);
@@ -14554,7 +16427,7 @@ static ParsedModuleUnit load_module_interface(
         starts_with(line, "generic_stmt") ||
         starts_with(line, "generic_source") ||
         starts_with(line, "generic_result")) {
-      if (current && !(staged_abi_v10() &&
+      if (current && !(staged_abi_v10() && current->exported &&
           (starts_with(line, "generic_stmt") ||
            starts_with(line, "generic_source"))))
         parse_generic_ir_line(line, *current);
@@ -14696,6 +16569,11 @@ static ParsedModuleUnit load_module_interface(
             "compiled provider has invalid ABI-v9 handler contract");
     }
   }
+  // Section 2 is admitted only after Section 1 signatures and provider
+  // contracts have passed validation. It supplies executable non-generic
+  // bodies without reopening the provider source tree.
+  if (load_execution_bodies)
+    parse_execution_body_payload(execution_bodies, provider, file);
   for (auto& function : provider.functions) {
     function.source_file = file.string();
     function.header = "fn " + function.name;
@@ -14978,8 +16856,7 @@ static ParsedModuleUnit load_module_interface(
             origin.module_id + "\n" + origin.source_file_display);
         const string expected_provenance = abi_v10::hash(
             "moss-abi-v10-provenance",
-            origin.declaration_id + "\n" + origin.logical_source_id + "\n" +
-                std::to_string(origin.start_line));
+            origin.declaration_id + "\n" + origin.logical_source_id);
         if (origin.provenance_id != summary.provenance_id ||
             origin.module_id != callable->module_id ||
             origin.declaration_id != summary.callable_id ||
@@ -15113,6 +16990,34 @@ static ParsedModuleUnit load_module_interface(
         throw CompileError(std::max(function.line, 1),
             "checked ABI-v10 body identity or semantic hash does not match its summary",
             "SOURCE_FREE_CHECKED_BODY_INVALID");
+      // The checked summary is part of the imported interface. Private
+      // generic_dependency declarations have no legacy `param mode=` rows,
+      // so materialize their declared parameter access while loading the
+      // .mossi, before checker inference or checked-body projection begins.
+      // Projection must only validate this signature, never fill it in.
+      if (decoded_summary.parameters.size() != function.params.size() ||
+          decoded_summary.parameter_access.size() != function.params.size())
+        throw CompileError(std::max(function.line, 1),
+            "checked ABI-v10 parameter signature disagrees with its declaration",
+            "SOURCE_FREE_CHECKED_BODY_INVALID");
+      if (function.parameter_effects.empty()) {
+        function.parameter_effects.reserve(decoded_summary.parameter_access.size());
+        for (const auto access : decoded_summary.parameter_access)
+          function.parameter_effects.push_back(imported_abi_v10_effect(access));
+      } else {
+        if (function.parameter_effects.size() !=
+            decoded_summary.parameter_access.size())
+          throw CompileError(std::max(function.line, 1),
+              "checked ABI-v10 parameter access disagrees with its declaration",
+              "SOURCE_FREE_CHECKED_BODY_INVALID");
+        for (std::size_t index = 0;
+             index < decoded_summary.parameter_access.size(); ++index)
+          if (decoded_summary.parameter_access[index] !=
+              imported_abi_v10_access(function.parameter_effects[index]))
+            throw CompileError(std::max(function.line, 1),
+                "checked ABI-v10 parameter access disagrees with its declaration",
+                "SOURCE_FREE_CHECKED_BODY_INVALID");
+      }
       function.imported_checked_summary_payload = summary_payload;
       function.imported_checked_body_payload = body_payload;
       for (const auto& requirement : decoded_summary.requirements) {
@@ -15147,21 +17052,119 @@ static ParsedModuleUnit load_module_interface(
   if (v10_interface)
     validate_abi_v10_nominal_declarations(
         sealed, unit.module_identity, provider);
+  // Declaration locations are editor metadata, separate from the checked
+  // interface and executable-body artifact.
+  {
+    std::ifstream locations(file.parent_path() /
+        (file.stem().string() + ".locations"));
+    string version;
+    if (locations && std::getline(locations, version) &&
+        version == "moss-location-sidecar-v1") {
+      std::map<string, std::pair<string, int>> by_identity;
+      string identity, source;
+      int source_line = 0;
+      while (locations >> std::quoted(identity) >> std::quoted(source) >> source_line)
+        by_identity.emplace(identity, std::make_pair(source, source_line));
+      auto restore = [&](const string& identity, string& target_source,
+                         int& target_line) {
+        auto found = by_identity.find(identity);
+        const auto separator = identity.find(':');
+        if (found == by_identity.end() && separator != string::npos) {
+          const string prefix = identity.substr(0, separator + 1);
+          const string name = identity.substr(separator + 1);
+          found = by_identity.find(prefix + unit.name + "__" + name);
+        }
+        if (found == by_identity.end() && separator != string::npos) {
+          const string prefix = identity.substr(0, separator + 1);
+          const string suffix = "__" + identity.substr(separator + 1);
+          found = std::find_if(by_identity.begin(), by_identity.end(),
+              [&](const auto& candidate) {
+                return starts_with(candidate.first, prefix) &&
+                    candidate.first.size() >= suffix.size() &&
+                    candidate.first.compare(candidate.first.size() -
+                        suffix.size(), suffix.size(), suffix) == 0;
+              });
+        }
+        if (found == by_identity.end()) return;
+        target_source = found->second.first;
+        target_line = found->second.second;
+      };
+      for (auto& function : provider.functions)
+        restore("fn:" + function.name, function.provider_origin_file,
+                function.line);
+      for (auto& object : provider.objects)
+        {
+          restore("object:" + object.name, object.source_file, object.line);
+          for (auto& field : object.fields)
+            restore("field:" + object.name + "." + field.name,
+                    field.source_file, field.line);
+        }
+      for (auto& enumeration : provider.enums)
+        {
+          restore("enum:" + enumeration.name, enumeration.source_file,
+                  enumeration.line);
+          for (auto& item : enumeration.cases) {
+            restore("case:" + enumeration.name + "." + item.name,
+                    item.source_file, item.line);
+            for (auto& field : item.fields)
+              restore("field:" + enumeration.name + "." + item.name + "." +
+                          field.name, field.source_file, field.line);
+          }
+        }
+      for (auto& domain : provider.domains) {
+        restore("domain:" + domain.name, domain.source_file, domain.line);
+        for (auto& field : domain.state)
+          restore("state:" + domain.name + "." + field.name,
+                  field.source_file, field.line);
+        for (auto& handler : domain.handlers)
+          restore("handler:" + domain.name + "." + handler.name,
+                  handler.source_file, handler.line);
+      }
+      for (auto& object : provider.objects)
+        for (auto& method : object.methods)
+          restore("method:" + object.name + "." + method.name,
+                  method.source_file, method.line);
+      for (auto& trait : provider.traits) {
+        restore("trait:" + trait.name, trait.source_file, trait.line);
+        for (auto& method : trait.methods)
+          restore("trait_method:" + trait.name + "." + method.name,
+                  method.source_file, method.line);
+      }
+    }
+  }
   unit.files.push_back({std::move(provider), file.string()});
   return unit;
 }
 
 static vector<std::filesystem::path> compiled_interface_candidates(
     const ProjectManifest& manifest) {
-  vector<std::filesystem::path> roots = {
-      manifest.root / "build" / "debug", manifest.root / "deps"};
+  vector<std::filesystem::path> roots = {manifest.root / "deps"};
+  std::error_code own_build_error;
+  auto own_build_root =
+      std::filesystem::weakly_canonical(manifest.root / "build", own_build_error);
+  if (own_build_error)
+    own_build_root = std::filesystem::absolute(manifest.root / "build")
+                         .lexically_normal();
+  auto is_own_build_path = [&](const std::filesystem::path& candidate) {
+    std::error_code error;
+    auto absolute = std::filesystem::weakly_canonical(candidate, error);
+    if (error) {
+      error.clear();
+      absolute = std::filesystem::absolute(candidate, error).lexically_normal();
+    }
+    if (error) return false;
+    const auto relative = absolute.lexically_relative(own_build_root);
+    if (relative.empty()) return absolute == own_build_root;
+    return relative != ".." && !starts_with(relative.generic_string(), "../");
+  };
   if (const char* path = std::getenv("MOSS_MODULE_PATH")) {
     string value = path;
     size_t begin = 0;
     while (begin <= value.size()) {
       size_t end = value.find(':', begin);
-      roots.emplace_back(value.substr(begin, end == string::npos
-                                                ? string::npos : end - begin));
+      const string root = value.substr(begin, end == string::npos
+                                                   ? string::npos : end - begin);
+      if (!root.empty() && !is_own_build_path(root)) roots.emplace_back(root);
       if (end == string::npos) break;
       begin = end + 1;
     }
@@ -15172,7 +17175,8 @@ static vector<std::filesystem::path> compiled_interface_candidates(
     if (!std::filesystem::is_directory(root, error)) continue;
     for (std::filesystem::recursive_directory_iterator it(root, error), end;
          !error && it != end; it.increment(error))
-      if (it->is_regular_file(error) && it->path().extension() == ".mossi")
+      if (it->is_regular_file(error) && it->path().extension() == ".mossi" &&
+          !is_own_build_path(it->path()))
         {
           std::error_code canonical_error;
           auto path = std::filesystem::weakly_canonical(it->path(), canonical_error);
@@ -15289,9 +17293,13 @@ static CheckedProjectUnit check_project_sources(
     ProgramGenerationMode mode,
     const string& declaration_filter = {},
     const std::set<string>* declaration_ids = nullptr,
-    const std::map<std::filesystem::path, string>* source_overrides = nullptr) {
+    const std::map<std::filesystem::path, string>* source_overrides = nullptr,
+    bool require_native_artifacts = true,
+    const std::filesystem::path* file_check_root = nullptr,
+    bool load_execution_bodies = false,
+    const FastDebugScope* fast_debug_scope = nullptr) {
+  Program program;
   try {
-    Program program;
     std::map<string,ParsedModuleUnit> modules;
     std::map<string,ModuleImport> requested_imports;
     std::set<string> loaded_external_modules;
@@ -15335,7 +17343,10 @@ static CheckedProjectUnit check_project_sources(
     // A dependency may be represented only by its compiled Moss interface.
     // Load it into the semantic namespace, but keep it out of this build's
     // declaration set so its Rust implementation is consumed from its rlib.
-    if (has_explicit_modules) {
+    const char* module_path_env = std::getenv("MOSS_MODULE_PATH");
+    const bool scoped_interface_lookup = fast_debug_scope ||
+        (module_path_env && *module_path_env);
+    if (has_explicit_modules || scoped_interface_lookup) {
       CompilerStageTimer timer("module_resolution");
       auto request_import = [&](const ModuleImport& import) {
         if (!modules.count(import.name)) requested_imports.emplace(import.name, import);
@@ -15357,7 +17368,9 @@ static CheckedProjectUnit check_project_sources(
           const auto* selected = unique_compiled_module_provider(
               providers, requested.second);
           if (!selected) continue;
-          ParsedModuleUnit provider = load_module_interface(selected->interface_file);
+          ParsedModuleUnit provider = load_module_interface(
+              selected->interface_file, require_native_artifacts,
+              load_execution_bodies);
           // The provider map was indexed by the interface's module_id; retain
           // that invariant here rather than accepting a filename coincidence.
           if (provider.name != name)
@@ -15372,10 +17385,17 @@ static CheckedProjectUnit check_project_sources(
         }
       }
       for (const auto& name : requested_imports)
-        if (!modules.count(name.first))
-          throw CompileError(name.second.line, "imported module '" + name.first +
-                             "' was not found in source or compiled interfaces");
+        if (!modules.count(name.first)) {
+          throw CompileError(name.second.line,
+              stale_interface_message(name.first));
+        }
     }
+    // A legacy root module can import a dependency interface in package checks,
+    // native builds, file-scoped checks, and Fast Debug. Materialize that
+    // provider through the same module rewriting path as explicit modules.
+    if (!has_explicit_modules && scoped_interface_lookup &&
+        !loaded_external_modules.empty())
+      has_explicit_modules = true;
     // Module identities (TYPE_IR_CONTRACT §3.1). A source module belongs to
     // the package whose Moss.toml contains it (dependency sources reach here
     // through Fast Debug); a compiled provider keeps its interface identity.
@@ -15434,7 +17454,8 @@ static CheckedProjectUnit check_project_sources(
       std::map<string,std::set<string>> public_exports;
       for (const auto& entry : modules)
         public_exports[entry.first] = module_export_names(entry.second);
-      validate_module_exports(modules, public_exports);
+      validate_module_exports(modules, public_exports,
+                              file_check_root != nullptr);
       // Rewriting/moving one file must not erase names needed to resolve the
       // next file's route types. Keep the source namespace immutable.
       const auto source_modules = modules;
@@ -15444,8 +17465,13 @@ static CheckedProjectUnit check_project_sources(
         for (auto& file : entry.second.files) {
           for (auto& import : file.first.imports) import.owner_module = entry.first;
           rewrite_module_program(file.first, entry.first, source_modules, public_exports);
-          if (file.first.main && !external) program.main_module = entry.first;
-          merge_project_program(program, std::move(file.first), file.second);
+          // Retain the package's main module as identity context for scoped
+          // checks even when its main body is outside the requested file's
+          // reachable closure.
+          if (file.first.main && !external)
+            program.main_module = entry.first;
+          merge_project_program(program, std::move(file.first), file.second,
+                                file_check_root);
         }
       }
     } else {
@@ -15453,11 +17479,20 @@ static CheckedProjectUnit check_project_sources(
       // source order-independent whole-project semantics.
       for (auto& entry : modules) {
         for (auto& file : entry.second.files) {
-          if (file.first.main) program.main_module = manifest.name;
-          merge_project_program(program, std::move(file.first), file.second);
+          if (file.first.main)
+            program.main_module = manifest.name;
+          merge_project_program(program, std::move(file.first), file.second,
+                                file_check_root);
         }
       }
     }
+    if (file_check_root)
+      scope_program_to_file(program, *file_check_root);
+    else if (fast_debug_scope)
+      scope_program_to_file(program, fast_debug_scope->root_file,
+                            fast_debug_scope->kind,
+                            fast_debug_scope->test_filter,
+                            fast_debug_scope->all_package_tests);
     prepare_and_validate_module_exports(program, false);
     CheckedProgram checker(program);
     checker.run();
@@ -15495,13 +17530,16 @@ static CheckedProjectUnit check_project_sources(
     return {std::move(program), std::move(warnings),
             std::move(external_module_interfaces)};
   } catch (const CompileError& error) {
+    const string source = error.source_file.empty()
+        ? (sources.empty() ? string() : sources.front().string())
+        : error.source_file;
+    const string identity = !error.semantic_identity.empty()
+        ? error.semantic_identity
+        : semantic_identity_near_source_line(&program, source, error.line);
     throw ProjectError(
         error.code.empty() ? diagnostic_code_for_message(error.what())
                            : error.code,
-        error.what(), error.source_file.empty()
-            ? (sources.empty() ? string() : sources.front().string())
-            : error.source_file,
-        error.line, error.teaching);
+        error.what(), source, error.line, error.teaching, identity);
   }
 }
 
@@ -15542,9 +17580,11 @@ static CompiledProjectUnit check_project_semantics(
     const ProjectManifest& manifest,
     const vector<std::filesystem::path>& sources, bool optimized,
     ProgramGenerationMode mode,
-    const std::map<std::filesystem::path, string>* source_overrides = nullptr) {
+    const std::map<std::filesystem::path, string>* source_overrides = nullptr,
+    const std::filesystem::path* file_check_root = nullptr) {
   CheckedProjectUnit checked = check_project_sources(
-      manifest, sources, mode, {}, nullptr, source_overrides);
+      manifest, sources, mode, {}, nullptr, source_overrides, false,
+      file_check_root);
   try {
     optimize_program(checked.program, optimized);
     OptimizationPlan plan = OptimizationPlan{optimized};
@@ -17113,8 +19153,7 @@ static abi_v10::SourceProvenance abi_v10_checked_provenance(
   provenance.end_column = 1;
   provenance.provenance_id = abi_v10::hash(
       "moss-abi-v10-provenance",
-      declaration_id + "\n" + provenance.logical_source_id + "\n" +
-          std::to_string(provenance.start_line));
+      declaration_id + "\n" + provenance.logical_source_id);
   return provenance;
 }
 
@@ -18433,6 +20472,433 @@ static void validate_imported_nominal_key_proofs(
   }
 }
 
+static void write_execution_body_statement(std::ostream& out,
+                                           const Stmt& statement) {
+  out << "stmt " << static_cast<int>(statement.kind) << " "
+      << statement.line << " " << statement.indent << " "
+      << std::quoted(statement.text) << " " << std::quoted(statement.a) << " "
+      << std::quoted(statement.b) << " "
+      << std::quoted(statement.semantic_type) << " "
+      << std::quoted(statement.message_result) << " "
+      << statement.args.size();
+  for (const auto& argument : statement.args)
+    out << " " << std::quoted(argument);
+  out << " " << statement.exceptional_alternatives.size();
+  for (const auto& raised : statement.exceptional_alternatives)
+    out << " " << std::quoted(raised.canonical());
+  out << "\n";
+}
+
+static string execution_body_package_fingerprint(
+    const string& package_source_hash, const BackendToolchainIdentity& backend) {
+  const char* supplied = std::getenv("MARGO_PACKAGE_FINGERPRINT");
+  if (supplied && *supplied) {
+    const string fingerprint(supplied);
+    if (fingerprint.size() != 64 ||
+        !std::all_of(fingerprint.begin(), fingerprint.end(),
+            [](unsigned char value) {
+              return (value >= '0' && value <= '9') ||
+                  (value >= 'a' && value <= 'f');
+            }))
+      throw ProjectError("MOSS_INTERFACE_ERROR",
+          "Margo supplied a malformed package fingerprint for .mossi Section 2");
+    return fingerprint;
+  }
+  // Direct `moss build` remains useful for local interface probes. Margo
+  // always supplies the full source/toolchain/dependency fingerprint.
+  return source_free_contract_sha256(
+      "standalone-mossi-execution-v1\n" + package_source_hash + "\n" +
+      backend.fingerprint + "\n");
+}
+
+static std::set<string> execution_body_callable_closure(
+    const Program& program, const string& module) {
+  auto local_module = [&](const string& name) {
+    return module_name_from_symbol(name) == module &&
+        !program.external_modules.count(module);
+  };
+  auto matches = [](const std::set<string>& names, const string& name) {
+    return names.count(name) || names.count(unqualified_callable_name(name));
+  };
+  auto function_key = [](const string& name) { return "fn:" + name; };
+  auto method_key = [](const string& owner, const string& name) {
+    return "method:" + owner + "." + name;
+  };
+  auto handler_key = [](const string& owner, const string& name) {
+    return "handler:" + owner + "." + name;
+  };
+
+  std::set<string> reachable;
+  for (const auto& function : program.functions)
+    if (function.exported && local_module(function.name))
+      reachable.insert(function_key(function.name));
+  for (const auto& object : program.objects)
+    if (object.exported && local_module(object.name))
+      for (const auto& method : object.methods)
+        reachable.insert(method_key(object.name, method.name));
+  for (const auto& domain : program.domains)
+    if (domain.exported && local_module(domain.name))
+      for (const auto& handler : domain.handlers)
+        reachable.insert(handler_key(domain.name, handler.name));
+
+  bool changed = true;
+  while (changed) {
+    changed = false;
+    FileCheckReferences references;
+    auto add_function_body = [&](const Function& function) {
+      add_statement_references(function.body, references);
+      if (function.result_expression)
+        add_expression_references(*function.result_expression, references);
+      std::set<string> locals;
+      for (const auto& parameter : function.params) locals.insert(parameter.name);
+      add_statement_callable_references(function.body, program, references,
+                                        std::move(locals));
+      if (function.result_expression)
+        add_callable_argument_references(*function.result_expression, program,
+                                         references);
+    };
+    auto add_method_body = [&](const Method& method) {
+      add_statement_references(method.body, references);
+      if (method.result_expression)
+        add_expression_references(*method.result_expression, references);
+      std::set<string> locals{"self"};
+      for (const auto& parameter : method.params) locals.insert(parameter.name);
+      add_statement_callable_references(method.body, program, references,
+                                        std::move(locals));
+      if (method.result_expression)
+        add_callable_argument_references(*method.result_expression, program,
+                                         references);
+    };
+    auto add_handler_body = [&](const Handler& handler) {
+      add_statement_references(handler.body, references);
+      std::set<string> locals{"self"};
+      for (const auto& parameter : handler.params) locals.insert(parameter.name);
+      add_statement_callable_references(handler.body, program, references,
+                                        locals);
+      for (const auto& arm : handler.failure_arms) {
+        add_statement_references(arm.body, references);
+        add_statement_callable_references(arm.body, program, references, locals);
+      }
+      if (handler.execution_failure_arms)
+        for (const auto& arm : *handler.execution_failure_arms) {
+          add_statement_references(arm.body, references);
+          add_statement_callable_references(arm.body, program, references, locals);
+        }
+    };
+    for (const auto& function : program.functions)
+      if (local_module(function.name) &&
+          reachable.count(function_key(function.name)))
+        add_function_body(function);
+    for (const auto& object : program.objects) {
+      if (!local_module(object.name)) continue;
+      bool object_reached = object.exported;
+      for (const auto& method : object.methods) {
+        if (!reachable.count(method_key(object.name, method.name))) continue;
+        object_reached = true;
+        add_method_body(method);
+      }
+      object_reached = object_reached || matches(references.functions, object.name);
+      if (object_reached)
+        for (const auto& field : object.fields)
+          if (!field.init.empty())
+            add_expression_references(field.init, references);
+    }
+    for (const auto& domain : program.domains) {
+      if (!local_module(domain.name)) continue;
+      bool domain_reached = domain.exported;
+      for (const auto& handler : domain.handlers) {
+        if (!reachable.count(handler_key(domain.name, handler.name))) continue;
+        domain_reached = true;
+        add_handler_body(handler);
+      }
+      domain_reached = domain_reached || matches(references.functions, domain.name);
+      if (domain_reached)
+        for (const auto& field : domain.state)
+          if (!field.init.empty())
+            add_expression_references(field.init, references);
+    }
+
+    // Preserve resolved compiler call edges as a second source of reach facts;
+    // the syntax walk also covers checked bodies whose specialized edge was
+    // intentionally omitted from the public semantic graph.
+    for (const auto& edge : program.semantic_call_edges) {
+      if (!reachable.count(edge.source)) continue;
+      if (starts_with(edge.target, "fn:"))
+        references.functions.insert(edge.target.substr(3));
+      else if (starts_with(edge.target, "method:")) {
+        const size_t dot = edge.target.rfind('.');
+        if (dot != string::npos)
+          references.methods.insert(edge.target.substr(dot + 1));
+      } else if (starts_with(edge.target, "handler:")) {
+        const size_t dot = edge.target.rfind('.');
+        if (dot != string::npos)
+          references.handlers.insert(edge.target.substr(dot + 1));
+      }
+    }
+
+    for (const auto& function : program.functions)
+      if (local_module(function.name) &&
+          matches(references.functions, function.name))
+        changed |= reachable.insert(function_key(function.name)).second;
+    for (const auto& object : program.objects)
+      if (local_module(object.name))
+        for (const auto& method : object.methods)
+          if (matches(references.methods, method.name))
+            changed |= reachable.insert(method_key(object.name, method.name)).second;
+    for (const auto& domain : program.domains)
+      if (local_module(domain.name))
+        for (const auto& handler : domain.handlers)
+          if (matches(references.handlers, handler.name))
+            changed |= reachable.insert(handler_key(domain.name, handler.name)).second;
+  }
+  return reachable;
+}
+
+static string encode_execution_body_payload(
+    const ProjectManifest& manifest, const Program& program,
+    const string& module,
+    const string& package_fingerprint, const string& interface_digest) {
+  std::ostringstream payload;
+  payload << "package_fingerprint " << package_fingerprint << "\n"
+          << "interface_digest " << interface_digest << "\n";
+  const auto execution_callables =
+      execution_body_callable_closure(program, module);
+
+  // Private nominal declarations are execution support. A reached concrete
+  // body can construct/read a private object or instantiate a private enum
+  // without invoking a private method, so serialize package-local nominal
+  // shapes independently of callable closure. These records remain outside
+  // the interface digest and public export set.
+  vector<const ObjectType*> private_objects;
+  for (const auto& object : program.objects) {
+    if (object.exported || module_name_from_symbol(object.name) != module ||
+        program.external_modules.count(module)) continue;
+    private_objects.push_back(&object);
+  }
+  std::sort(private_objects.begin(), private_objects.end(),
+            [](const ObjectType* left, const ObjectType* right) {
+              return left->name < right->name;
+            });
+  for (const auto* object : private_objects) {
+    payload << "private_object " << std::quoted(object->name) << " "
+            << object->line << " "
+            << std::quoted(project_relative_path(manifest, object->source_file))
+            << " " << object->fields.size() << "\n";
+    for (const auto& field : object->fields)
+      payload << "private_field " << std::quoted(field.name) << " "
+              << std::quoted(field.type) << " " << std::quoted(field.init)
+              << " " << field.line << "\n";
+    payload << "private_object_end\n";
+  }
+
+  // An enum carried by Section 1 for an exported generic's checked error
+  // body is already authoritative execution metadata. Do not duplicate it in
+  // Section 2: the reader will materialize the same declaration from the
+  // generic_error_enum record.
+  std::set<string> section1_generic_error_enums;
+  for (const auto& enumeration : program.enums) {
+    if (enumeration.exported || module_name_from_symbol(enumeration.name) != module ||
+        enumeration.source_file == "<moss-std>") continue;
+    const bool required = std::any_of(program.functions.begin(),
+        program.functions.end(), [&](const Function& function) {
+      if (!function.exported || !function.generic ||
+          module_name_from_symbol(function.name) != module)
+        return false;
+      return std::any_of(function.body.begin(), function.body.end(),
+          [&](const Stmt& statement) {
+        return std::any_of(statement.exceptional_alternatives.begin(),
+            statement.exceptional_alternatives.end(),
+            [&](const RaisedIdentity& raised) {
+          if (raised.kind != RaisedIdentityKind::EnumVariant) return false;
+          const string type = canonical_type_name(raised.type);
+          const string candidate = canonical_type_name(enumeration.name);
+          if (type == candidate) return true;
+          const auto separator = type.rfind("::");
+          return separator != string::npos &&
+              type.substr(separator + 2) ==
+                  enumeration.name.substr(module.size() + 2);
+        });
+      });
+    });
+    if (required) section1_generic_error_enums.insert(enumeration.name);
+  }
+
+  vector<const EnumType*> private_enums;
+  for (const auto& enumeration : program.enums)
+    if (!enumeration.exported &&
+        module_name_from_symbol(enumeration.name) == module &&
+        !program.external_modules.count(module) &&
+        !section1_generic_error_enums.count(enumeration.name))
+      private_enums.push_back(&enumeration);
+  std::sort(private_enums.begin(), private_enums.end(),
+            [](const EnumType* left, const EnumType* right) {
+              return left->name < right->name;
+            });
+  for (const auto* enumeration : private_enums) {
+    payload << "private_enum " << std::quoted(enumeration->name) << " "
+            << enumeration->line << " "
+            << std::quoted(project_relative_path(manifest,
+                                                  enumeration->source_file))
+            << " " << enumeration->cases.size() << "\n";
+    for (const auto& item : enumeration->cases) {
+      payload << "private_enum_case " << std::quoted(item.name) << " "
+              << item.line << " " << item.fields.size() << "\n";
+      for (const auto& field : item.fields)
+        payload << "private_enum_field " << std::quoted(field.name) << " "
+                << std::quoted(field.type) << " " << field.line << "\n";
+    }
+    payload << "private_enum_end\n";
+  }
+
+  vector<const Function*> functions;
+  for (const auto& function : program.functions) {
+    if (module_name_from_symbol(function.name) != module ||
+        program.external_modules.count(module) || function.generic ||
+        function.static_dispatch || !function.provider_origin_file.empty() ||
+        (!function.exported &&
+         !execution_callables.count("fn:" + function.name)))
+      continue;
+    functions.push_back(&function);
+  }
+  std::sort(functions.begin(), functions.end(),
+            [](const Function* left, const Function* right) {
+              return left->name < right->name;
+            });
+  for (const auto* function : functions) {
+    payload << "function " << std::quoted(function->name) << " "
+            << (function->exported ? 1 : 0) << " " << function->line << " "
+            << function->result_line << " " << function->params.size() << " "
+            << std::quoted(function->return_type.value_or("unit")) << " "
+            << std::quoted(interface_effects_text(function->observable_effects)) << " "
+            << std::quoted(project_relative_path(manifest,
+                                                  function->source_file)) << " "
+            << (function->result_expression ? 1 : 0) << " "
+            << std::quoted(function->result_expression.value_or(string())) << "\n";
+    for (size_t index = 0; index < function->params.size(); ++index) {
+      const Effect effect = index < function->parameter_effects.size()
+          ? function->parameter_effects[index] : Effect::Read;
+      payload << "param " << index << " "
+              << std::quoted(function->params[index].name) << " "
+              << std::quoted(function->params[index].type) << " "
+              << ownership_effect_name(effect) << "\n";
+    }
+    for (const auto& statement : function->body)
+      write_execution_body_statement(payload, statement);
+    payload << "function_end\n";
+  }
+
+  vector<const ObjectType*> objects;
+  for (const auto& object : program.objects)
+    if ((object.exported || std::find(private_objects.begin(), private_objects.end(),
+                                      &object) != private_objects.end()) &&
+        module_name_from_symbol(object.name) == module)
+      objects.push_back(&object);
+  std::sort(objects.begin(), objects.end(),
+            [](const ObjectType* left, const ObjectType* right) {
+              return left->name < right->name;
+            });
+  for (const auto* object : objects) {
+    vector<const Method*> methods;
+    for (const auto& method : object->methods)
+      if (object->exported || execution_callables.count(
+              "method:" + object->name + "." + method.name))
+        methods.push_back(&method);
+    std::sort(methods.begin(), methods.end(),
+              [](const Method* left, const Method* right) {
+                return left->name < right->name;
+              });
+    for (const auto* method : methods) {
+      payload << "method " << std::quoted(object->name) << " "
+              << std::quoted(method->name) << " " << method->line << " "
+              << method->result_line << " "
+              << std::quoted(project_relative_path(manifest,
+                                                    method->source_file)) << " "
+              << std::quoted(method->return_type.value_or("unit")) << " "
+              << ownership_effect_name(method->receiver_effect) << " "
+              << std::quoted(interface_effects_text(method->observable_effects))
+              << " " << method->params.size() << " "
+              << (method->result_expression ? 1 : 0) << " "
+              << std::quoted(method->result_expression.value_or(string())) << "\n";
+      for (size_t index = 0; index < method->params.size(); ++index) {
+        const Effect effect = index < method->parameter_effects.size()
+            ? method->parameter_effects[index] : Effect::Read;
+        payload << "method_param " << index << " "
+                << std::quoted(method->params[index].name) << " "
+                << std::quoted(method->params[index].type) << " "
+                << ownership_effect_name(effect) << "\n";
+      }
+      for (const auto& statement : method->body)
+        write_execution_body_statement(payload, statement);
+      payload << "method_end\n";
+    }
+  }
+
+  vector<const Domain*> domains;
+  for (const auto& domain : program.domains)
+    if (module_name_from_symbol(domain.name) == module &&
+        (domain.exported || std::any_of(
+            domain.handlers.begin(), domain.handlers.end(),
+            [&](const Handler& handler) {
+              return execution_callables.count(
+                  "handler:" + domain.name + "." + handler.name) != 0;
+            })))
+      domains.push_back(&domain);
+  std::sort(domains.begin(), domains.end(),
+            [](const Domain* left, const Domain* right) {
+              return left->name < right->name;
+            });
+  for (const auto* domain : domains) {
+    vector<const Handler*> handlers;
+    for (const auto& handler : domain->handlers)
+      if (domain->exported || execution_callables.count(
+              "handler:" + domain->name + "." + handler.name))
+        handlers.push_back(&handler);
+    std::sort(handlers.begin(), handlers.end(),
+              [](const Handler* left, const Handler* right) {
+                return left->name < right->name;
+              });
+    for (const auto* handler : handlers) {
+      payload << "handler " << std::quoted(domain->name) << " "
+              << std::quoted(handler->name) << " " << handler->line << " "
+              << std::quoted(project_relative_path(manifest,
+                                                    handler->source_file)) << " "
+              << handler->body.size() << " "
+              << handler->failure_arms.size() << "\n";
+      for (const auto& statement : handler->body)
+        write_execution_body_statement(payload, statement);
+      for (size_t index = 0; index < handler->failure_arms.size(); ++index) {
+        const auto& arm = handler->failure_arms[index];
+        payload << "failure_arm " << index << " " << arm.line << " "
+                << arm.body.size() << "\n";
+        for (const auto& statement : arm.body)
+          write_execution_body_statement(payload, statement);
+        payload << "failure_arm_end\n";
+      }
+      payload << "handler_end\n";
+    }
+  }
+  return payload.str();
+}
+
+static string append_execution_body_section(
+    const ProjectManifest& manifest, const Program& program,
+    const string& module,
+    const string& interface_digest, const string& package_source_hash,
+    const BackendToolchainIdentity& backend) {
+  const string package_fingerprint = execution_body_package_fingerprint(
+      package_source_hash, backend);
+  const string payload = encode_execution_body_payload(
+      manifest, program, module, package_fingerprint, interface_digest);
+  std::ostringstream section;
+  section << "execution_body_version 1\n"
+          << "execution_body_length " << payload.size() << "\n"
+          << "execution_body_hash sha256:"
+          << source_free_contract_sha256(payload) << "\n"
+          << "execution_body_payload\n" << payload
+          << "execution_body_end\n";
+  return section.str();
+}
+
 static vector<std::filesystem::path> write_module_interfaces(
     const ProjectManifest& manifest, const Program& program,
     const std::filesystem::path& directory,
@@ -18440,6 +20906,8 @@ static vector<std::filesystem::path> write_module_interfaces(
     const std::map<string, std::filesystem::path>& external_interfaces,
     const std::optional<abi_v10::RuntimeCrateIdentity>& shared_runtime = std::nullopt) {
   program.assert_declaration_type_consistency();
+  const string package_source_hash =
+      package_source_freshness_hash(manifest);
   std::map<string,std::ostringstream> contents;
   std::map<string,std::ostringstream> interface_contents;
   std::map<string, vector<abi_v10::Record>> local_key_proofs;
@@ -18463,39 +20931,23 @@ static vector<std::filesystem::path> write_module_interfaces(
       module_names.insert(module_name_from_symbol(domain.name));
   for (const auto& import : program.imports)
     if (!import.owner_module.empty()) module_names.insert(import.owner_module);
+  if (!program.explicit_module && !program.main_module.empty())
+    module_names.insert(program.main_module);
   for (const auto& module : module_names) {
     (void)contents[module];
     (void)interface_contents[module];
   }
-  // A source-free importer needs checked IR for private helpers only when an
-  // exported static body can reach them.  Keep this module-local and
-  // transitive: the presence of an unrelated static export must not widen a
-  // provider's semantic interface.
+  // A source-free importer needs checked IR for private generic helpers when
+  // any exported body can reach them. Keep this module-local and transitive:
+  // an unrelated private generic must not widen a provider's interface.
   std::map<string,std::set<string>> static_export_private_helpers;
   for (const auto& module : module_names) {
-    std::set<string> pending;
+    const auto reachable = execution_body_callable_closure(program, module);
     for (const auto& function : program.functions)
-      if (function.exported && function.static_dispatch &&
-          belongs_to_module(function.name, module))
-        pending.insert(function.name);
-    while (!pending.empty()) {
-      string source = *pending.begin();
-      pending.erase(pending.begin());
-      for (const auto& edge : program.semantic_call_edges) {
-        if (edge.source != "fn:" + source) continue;
-        auto target = std::find_if(program.functions.begin(),
-                                   program.functions.end(),
-            [&](const Function& function) {
-              return edge.target == function.name ||
-                  edge.target == "fn:" + function.name;
-            });
-        if (target == program.functions.end() || target->exported ||
-            !belongs_to_module(target->name, module))
-          continue;
-        if (static_export_private_helpers[module].insert(target->name).second)
-          pending.insert(target->name);
-      }
-    }
+      if (!function.exported && (function.generic || function.static_dispatch) &&
+          belongs_to_module(function.name, module) &&
+          reachable.count("fn:" + function.name))
+        static_export_private_helpers[module].insert(function.name);
   }
   for (const auto& function : program.functions) {
     if (!function.exported) continue;
@@ -18507,8 +20959,7 @@ static vector<std::filesystem::path> write_module_interfaces(
     string dispatch_kind = function.generic ? "generic"
         : function.static_dispatch ? "static" : "concrete";
     string symbol = tooling_native_symbol(
-        "function", function.name,
-        "fn:" + function.name + "@" + std::to_string(function.line));
+        "function", function.name, "fn:" + function.name);
     abi << "fn " << public_name << " kind="
         << dispatch_kind
         << " return=" << function.return_type.value_or("unit")
@@ -18517,10 +20968,16 @@ static vector<std::filesystem::path> write_module_interfaces(
     out << "export fn " << function.name.substr(module.size() + 2)
         << " kind=" << dispatch_kind
         << " semantic_hash=";
+    // Only preserve checked body identity when consumers instantiate or
+    // statically dispatch this callable from .mossi. Concrete functions link
+    // from the provider rlib, so their implementation body belongs to native
+    // artifact invalidation, not the semantic interface/checkstop hash.
     std::ostringstream body;
     body << function.header << "\n";
-    for (const auto& statement : function.body) body << statement.text << "\n";
-    if (function.result_expression) body << *function.result_expression << "\n";
+    if (function.generic || function.static_dispatch) {
+      for (const auto& statement : function.body) body << statement.text << "\n";
+      if (function.result_expression) body << *function.result_expression << "\n";
+    }
     string semantic_hash = stable_hash(body.str());
     out << semantic_hash << " return=" << function.return_type.value_or("unit")
         << " effects=" << interface_effects_text(function.observable_effects) << "\n";
@@ -18844,6 +21301,7 @@ static vector<std::filesystem::path> write_module_interfaces(
   std::function<string(const string&)> encode_v10 = [&](const string& module) {
     abi_v10::Interface value;
     value.module_id = abi_v10_module_id(manifest, module);
+    value.package_source_hash = package_source_hash;
     value.compiler = kCompilerVersion;
     value.backend_fingerprint = backend.fingerprint;
     value.backend_rustc = backend.version_verbose.substr(
@@ -18863,8 +21321,12 @@ static vector<std::filesystem::path> write_module_interfaces(
         throw ProjectError("MOSS_INTERFACE_ERROR",
             "staged ABI-v10 import '" + import.name + "' of module '" + module +
                 "' has no selected provider interface", directory.string());
-      auto provider = abi_v10::parse(read_text_file(
-          selected->second, "MOSS_INTERFACE_ERROR"));
+      const string provider_text = read_text_file(
+          selected->second, "MOSS_INTERFACE_ERROR");
+      const size_t section2 = provider_text.find(
+          "\nexecution_body_version ");
+      auto provider = abi_v10::parse(section2 == string::npos
+          ? provider_text : provider_text.substr(0, section2 + 1));
       value.imports.push_back({provider.value.module_id, provider.binary_hash,
                                provider.semantic_hash});
       for (const auto& record : provider.value.semantic_contract)
@@ -19001,7 +21463,20 @@ static vector<std::filesystem::path> write_module_interfaces(
   };
   for (auto& entry : contents) {
     if (staged_abi_v10()) {
-      const string text = encode_v10(entry.first);
+      const string interface_text = encode_v10(entry.first);
+      abi_v10::SealedInterface sealed;
+      try {
+        sealed = abi_v10::decode(interface_text);
+      } catch (const abi_v10::Error& error) {
+        throw ProjectError(error.code, error.what(), directory.string());
+      }
+      if (!abi_v10::hex_hash(sealed.semantic_hash))
+        throw ProjectError("SOURCE_FREE_CONTRACT_INVALID",
+                           "ABI-v10 semantic hash is malformed",
+                           directory.string());
+      const string text = interface_text + append_execution_body_section(
+          manifest, program, entry.first, sealed.semantic_hash.substr(7),
+          package_source_hash, backend);
       std::filesystem::path file =
           directory / (tooling_name(entry.first) + ".mossi");
       std::ifstream prior(file, std::ios::binary);
@@ -19014,6 +21489,74 @@ static vector<std::filesystem::path> write_module_interfaces(
                              "cannot write Moss module interface '" + file.string() + "'",
                              file.string());
         output << text;
+      }
+      std::ostringstream location_text;
+      location_text << "moss-location-sidecar-v1\n";
+      auto add_location = [&](const string& identity, const string& source,
+                              int source_line) {
+        if (source.empty() || source_line <= 0) return;
+        location_text << std::quoted(identity) << " " << std::quoted(source)
+                      << " " << source_line << "\n";
+      };
+      for (const auto& function : program.functions)
+        if (belongs_to_module(function.name, entry.first))
+          add_location("fn:" + function.name, function.source_file,
+                       function.line);
+      for (const auto& object : program.objects)
+        if (belongs_to_module(object.name, entry.first)) {
+          add_location("object:" + object.name, object.source_file,
+                       object.line);
+          for (const auto& field : object.fields)
+            add_location("field:" + object.name + "." + field.name,
+                         field.source_file, field.line);
+          for (const auto& method : object.methods)
+            add_location("method:" + object.name + "." + method.name,
+                         method.source_file, method.line);
+        }
+      for (const auto& enumeration : program.enums)
+        if (belongs_to_module(enumeration.name, entry.first)) {
+          add_location("enum:" + enumeration.name, enumeration.source_file,
+                       enumeration.line);
+          for (const auto& item : enumeration.cases) {
+            add_location("case:" + enumeration.name + "." + item.name,
+                         item.source_file, item.line);
+            for (const auto& field : item.fields)
+              add_location("field:" + enumeration.name + "." + item.name +
+                               "." + field.name,
+                           field.source_file, field.line);
+          }
+        }
+      for (const auto& domain : program.domains)
+        if (belongs_to_module(domain.name, entry.first)) {
+          add_location("domain:" + domain.name, domain.source_file,
+                       domain.line);
+          for (const auto& field : domain.state)
+            add_location("state:" + domain.name + "." + field.name,
+                         field.source_file, field.line);
+          for (const auto& handler : domain.handlers)
+            add_location("handler:" + domain.name + "." + handler.name,
+                         handler.source_file, handler.line);
+        }
+      for (const auto& trait : program.traits)
+        if (belongs_to_module(trait.name, entry.first)) {
+          add_location("trait:" + trait.name, trait.source_file, trait.line);
+          for (const auto& method : trait.methods)
+            add_location("trait_method:" + trait.name + "." + method.name,
+                         trait.source_file, method.line);
+        }
+      const auto location_file = directory /
+          (tooling_name(entry.first) + ".locations");
+      const string location_bytes = location_text.str();
+      std::ifstream old_locations(location_file, std::ios::binary);
+      std::ostringstream old_location_bytes;
+      if (old_locations) old_location_bytes << old_locations.rdbuf();
+      if (!old_locations || old_location_bytes.str() != location_bytes) {
+        std::ofstream locations(location_file, std::ios::binary);
+        if (!locations)
+          throw ProjectError("MOSS_INTERFACE_ERROR",
+              "cannot write Moss location sidecar '" + location_file.string() + "'",
+              location_file.string());
+        locations << location_bytes;
       }
       result.push_back(file);
       continue;
@@ -19031,7 +21574,7 @@ static vector<std::filesystem::path> write_module_interfaces(
            << "concrete_interface_hash "
            << stable_hash(interface_contents[entry.first].str()) << "\n"
            << "generic_semantic_hash "
-           << stable_hash(entry.second.str()) << "\n"
+           << stable_hash(normalize_section1_locations(entry.second.str())) << "\n"
            << "interface_hash "
            << stable_hash(interface_contents[entry.first].str()) << "\n"
            << "imports\n";
@@ -19048,10 +21591,80 @@ static vector<std::filesystem::path> write_module_interfaces(
     const size_t first_line = material.find('\n');
     synchronization_require(first_line != string::npos,
                             "ABI-v9 interface header is incomplete");
-    const string digest = source_free_contract_sha256(material);
-    const string text = material.substr(0, first_line + 1) +
+    const string digest = source_free_contract_sha256(
+        normalize_section1_locations(material));
+    string text = material.substr(0, first_line + 1) +
         "provider_contract_digest sha256:" + digest + "\n" +
+        "package_source_hash " + package_source_hash + "\n" +
         material.substr(first_line + 1);
+    text += append_execution_body_section(
+        manifest, program, entry.first, digest, package_source_hash, backend);
+    std::ostringstream location_text;
+    location_text << "moss-location-sidecar-v1\n";
+    auto add_location = [&](const string& identity, const string& source,
+                            int source_line) {
+      if (source.empty() || source_line <= 0) return;
+      location_text << std::quoted(identity) << " " << std::quoted(source)
+                    << " " << source_line << "\n";
+    };
+    for (const auto& function : program.functions)
+      if (belongs_to_module(function.name, entry.first))
+        add_location("fn:" + function.name, function.source_file, function.line);
+    for (const auto& object : program.objects)
+      if (belongs_to_module(object.name, entry.first)) {
+        add_location("object:" + object.name, object.source_file, object.line);
+        for (const auto& field : object.fields)
+          add_location("field:" + object.name + "." + field.name,
+                       field.source_file, field.line);
+        for (const auto& method : object.methods)
+          add_location("method:" + object.name + "." + method.name,
+                       method.source_file, method.line);
+      }
+    for (const auto& enumeration : program.enums)
+      if (belongs_to_module(enumeration.name, entry.first))
+        {
+          add_location("enum:" + enumeration.name, enumeration.source_file,
+                       enumeration.line);
+          for (const auto& item : enumeration.cases) {
+            add_location("case:" + enumeration.name + "." + item.name,
+                         item.source_file, item.line);
+            for (const auto& field : item.fields)
+              add_location("field:" + enumeration.name + "." + item.name +
+                               "." + field.name,
+                           field.source_file, field.line);
+          }
+        }
+    for (const auto& domain : program.domains)
+      if (belongs_to_module(domain.name, entry.first)) {
+        add_location("domain:" + domain.name, domain.source_file, domain.line);
+        for (const auto& field : domain.state)
+          add_location("state:" + domain.name + "." + field.name,
+                       field.source_file, field.line);
+        for (const auto& handler : domain.handlers)
+          add_location("handler:" + domain.name + "." + handler.name,
+                       handler.source_file, handler.line);
+      }
+    for (const auto& trait : program.traits)
+      if (belongs_to_module(trait.name, entry.first)) {
+        add_location("trait:" + trait.name, trait.source_file, trait.line);
+        for (const auto& method : trait.methods)
+          add_location("trait_method:" + trait.name + "." + method.name,
+                       trait.source_file, method.line);
+      }
+    const auto location_file = directory /
+        (tooling_name(entry.first) + ".locations");
+    const string location_bytes = location_text.str();
+    std::ifstream old_locations(location_file, std::ios::binary);
+    std::ostringstream old_location_bytes;
+    if (old_locations) old_location_bytes << old_locations.rdbuf();
+    if (!old_locations || old_location_bytes.str() != location_bytes) {
+      std::ofstream locations(location_file, std::ios::binary);
+      if (!locations)
+        throw ProjectError("MOSS_INTERFACE_ERROR",
+            "cannot write Moss location sidecar '" + location_file.string() + "'",
+            location_file.string());
+      locations << location_bytes;
+    }
     if (!prior || prior_text.str() != text) {
       std::ofstream output(file, std::ios::binary);
       if (!output)
@@ -19253,6 +21866,22 @@ static NativeArtifact compile_native_artifact(
       std::filesystem::is_regular_file(artifact.debug_map) &&
       std::filesystem::is_regular_file(artifact.executable) &&
       artifact.module_rlibs.size() == artifact.module_interfaces.size()) {
+    // The provider scan above deliberately drops interfaces for this package
+    // so a stale local interface cannot act as an imported provider. Restore
+    // the package's own interface outputs in the cached result, matching the
+    // first-build result without making them inputs to provider selection.
+    for (const auto& module : local_source_modules) {
+      const auto interface_file = directory / (tooling_name(module) + ".mossi");
+      if (std::filesystem::is_regular_file(interface_file))
+        artifact.module_interfaces.push_back(interface_file);
+    }
+    if (local_source_modules.empty()) {
+      const auto interface_file = directory /
+          (tooling_name(manifest.name) + ".mossi");
+      if (std::filesystem::is_regular_file(interface_file))
+        artifact.module_interfaces.push_back(interface_file);
+    }
+    std::sort(artifact.module_interfaces.begin(), artifact.module_interfaces.end());
     artifact.reused = true;
     artifact.semantic_analysis_reused = true;
     return artifact;
@@ -19272,8 +21901,12 @@ static NativeArtifact compile_native_artifact(
         shared_runtime_identity->artifact_hash + "\n";
     for (const auto& selected : unit.external_module_interfaces) {
       try {
-        auto provider = abi_v10::decode(read_text_file(
-            selected.second, "MOSS_INTERFACE_ERROR"));
+        const string provider_text = read_text_file(
+            selected.second, "MOSS_INTERFACE_ERROR");
+        const size_t section2 = provider_text.find(
+            "\nexecution_body_version ");
+        auto provider = abi_v10::decode(section2 == string::npos
+            ? provider_text : provider_text.substr(0, section2 + 1));
         size_t runtime_records = 0;
         for (const auto& record : provider.value.binary_contract)
           if (starts_with(record.payload, "runtime ")) {
@@ -19398,7 +22031,10 @@ static NativeArtifact compile_native_artifact(
         const bool v10 = staged_abi_v10();
         if (v10) {
           try {
-            abi_v10::decode(interface_text);
+            const size_t section2 = interface_text.find(
+                "\nexecution_body_version ");
+            abi_v10::decode(section2 == string::npos
+                ? interface_text : interface_text.substr(0, section2 + 1));
           } catch (const abi_v10::Error& error) {
             throw ProjectError("MOSS_INTERFACE_ERROR",
                 string("generated ABI-v10 provider interface is invalid: ") +
@@ -19689,20 +22325,12 @@ static SourceCompilationContext analyze_source_context(
   return context;
 }
 
-// Fast Debug uses the same project source universe as the native compiler,
-// but explicit-module projects can narrow that universe to the transitive
-// source-module closure of the requested entry module.  This is a loading
-// decision only: the selected files still pass through check_project_sources
-// and therefore the ordinary Moss parser/checker remains authoritative.
-// When MOSS_FAST_DEBUG_SOURCE_ROOTS is set (colon-separated list of package
-// root directories, populated by 'margo debug' and 'margo test --interp'),
-// dependency source files are
-// indexed alongside the root project's files so the transitive closure walk
-// can reach them. Providers are only disambiguated when an import makes a
-// module reachable; root project source has precedence over external source
-// providers, matching ordinary native module-provider selection.
+// Fast Debug narrows root-package source to the module closure. Imported
+// packages are resolved only through their checked .mossi interfaces.
 static vector<std::filesystem::path> fast_debug_source_closure(
-    const SourceCompilationContext& context) {
+    const SourceCompilationContext& context,
+    bool fast_debug_test_scope = false,
+    bool all_package_tests = false) {
   if (!context.project ||
       (context.mode != ProgramGenerationMode::Application &&
        context.mode != ProgramGenerationMode::Tests))
@@ -19754,50 +22382,6 @@ static vector<std::filesystem::path> fast_debug_source_closure(
   for (const auto& source : context.sources)
     add_source(source, context.manifest.root, true);
 
-  // Extend the module provider universe with explicitly supplied dependency
-  // source roots (set by Margo's Fast Debug commands via their exact,
-  // invocation-scoped MOSS_FAST_DEBUG_SOURCE_ROOTS handoff).
-  // Dependency source files are indexed here and merged into the same
-  // compilation unit; their module declarations make them self-identifying.
-  if (const char* source_roots_env =
-          std::getenv("MOSS_FAST_DEBUG_SOURCE_ROOTS")) {
-    string roots_value = source_roots_env;
-    size_t begin = 0;
-    while (begin <= roots_value.size()) {
-      size_t end = roots_value.find(':', begin);
-      string root_str = roots_value.substr(
-          begin, end == string::npos ? string::npos : end - begin);
-      begin = (end == string::npos) ? roots_value.size() + 1 : end + 1;
-      if (root_str.empty())
-        throw ProjectError(
-            "PROJECT_SOURCE_NOT_FOUND",
-            "Fast Debug received an empty dependency source root");
-      std::error_code absolute_error;
-      std::filesystem::path dep_root =
-          std::filesystem::absolute(root_str, absolute_error).lexically_normal();
-      if (absolute_error)
-        throw ProjectError(
-            "PROJECT_SOURCE_NOT_FOUND",
-            "cannot resolve Fast Debug dependency source root '" + root_str + "': " +
-                absolute_error.message(), root_str);
-      std::error_code ec;
-      if (ec || !std::filesystem::is_directory(dep_root, ec))
-        throw ProjectError(
-            "PROJECT_SOURCE_NOT_FOUND",
-            "Fast Debug dependency source root is not a directory '" +
-                dep_root.string() + "'", dep_root.string());
-      ProjectManifest dep_manifest = load_project_manifest(dep_root);
-      if (dep_manifest.root != dep_root)
-        throw ProjectError(
-            "PROJECT_MANIFEST_ERROR",
-            "Fast Debug dependency source root must be a package root containing "
-            "Moss.toml: '" + dep_root.string() + "'", dep_root.string());
-      vector<std::filesystem::path> dep_sources = project_source_files(dep_manifest);
-      for (const auto& source : dep_sources)
-        add_source(source, dep_manifest.root, false);
-    }
-  }
-
   if (!has_explicit_modules) return context.sources;
 
   auto select_provider = [&](const string& module)
@@ -19824,7 +22408,11 @@ static vector<std::filesystem::path> fast_debug_source_closure(
     result.insert(result.end(), provider->files.begin(), provider->files.end());
     for (const auto& imported : provider->imports) visit(imported);
   };
-  if (context.mode == ProgramGenerationMode::Tests) {
+  if (context.mode == ProgramGenerationMode::Tests && fast_debug_test_scope &&
+      !all_package_tests) {
+    if (entry_module.empty()) return context.sources;
+    visit(entry_module);
+  } else if (context.mode == ProgramGenerationMode::Tests) {
     // Every root-project module participates in project-wide test discovery.
     // Treat each as a closure root so tests and application modules can reach
     // source dependencies without pulling in unrelated dependency providers.
@@ -19874,7 +22462,8 @@ static void write_project_error_json(std::ostream& out,
                                      const string& command,
                                      const ProjectError& error) {
   write_structured_error(out, command, error.code, error.what(),
-                         error.source_file, error.line, {}, {},
+                         error.source_file, error.line,
+                         error.semantic_identity, {},
                          error.teaching.empty() ? nullptr : &error.teaching);
 }
 
@@ -19959,6 +22548,125 @@ static int run_project_build(const ProjectManifest& manifest, bool release,
   } else {
     std::cout << "Built " << manifest.name << " (" << profile << ")\n"
               << "  " << artifact.executable.string() << "\n";
+  }
+  return 0;
+}
+
+// Package `margo build --check` emits semantic interfaces without querying or
+// invoking the native toolchain. Keep these interfaces in a separate output
+// profile so a check-only result cannot replace a native provider's .mossi
+// beside an older .rlib.
+static int run_project_interface_check(const ProjectManifest& manifest,
+                                       bool release, bool json) {
+  vector<std::filesystem::path> sources = project_source_files(manifest);
+  if (sources.empty())
+    throw ProjectError("PROJECT_SOURCE_NOT_FOUND",
+                       "project target contains no Moss source files");
+  const auto mode = ProgramGenerationMode::Application;
+  CompiledProjectUnit checked = check_project_semantics(
+      manifest, sources, release, mode);
+  // Legacy source sets have no declared Moss module owner. Give their
+  // package-level check result an empty package interface so R7 still has a
+  // freshness-bearing .mossi artifact for this package.
+  if (!checked.program.explicit_module && checked.program.main_module.empty())
+    checked.program.main_module = manifest.name;
+  BackendToolchainIdentity backend;
+  backend.rustc_executable = "semantic-check-only";
+  backend.version_verbose = "semantic-check-only-v1";
+  backend.profile = release ? "check-release" : "check-debug";
+  backend.compile_flags = {"--semantic-check-only"};
+  backend.fingerprint = stable_hash(
+      "moss-semantic-check-only-v1\n" + backend.profile + "\n" +
+      kCompilerVersion + "\n");
+  std::optional<abi_v10::RuntimeCrateIdentity> check_runtime;
+  if (staged_abi_v10()) {
+    abi_v10::RuntimeCrateIdentity identity;
+    identity.build_key = source_free_contract_sha256(
+        "moss-semantic-check-only-runtime-build-v1");
+    identity.artifact_hash = source_free_contract_sha256(
+        "moss-semantic-check-only-runtime-artifact-v1");
+    identity.source_hash = source_free_contract_sha256(
+        "moss-semantic-check-only-runtime-source-v1");
+    identity.toolchain_fingerprint = backend.fingerprint;
+    identity.profile = backend.profile;
+    check_runtime = std::move(identity);
+  }
+  const string profile = release ? "check-release" : "check-debug";
+  const auto directory = manifest.root / "build" / profile;
+  std::error_code error;
+  std::filesystem::create_directories(directory, error);
+  if (error)
+    throw ProjectError("MOSS_INTERNAL_OR_IO_ERROR",
+                       "cannot create interface output directory '" +
+                           directory.string() + "': " + error.message());
+  const auto current_modules = module_names_for_program(checked.program);
+  for (std::filesystem::directory_iterator iterator(directory, error), end;
+       !error && iterator != end; iterator.increment(error)) {
+    if (!iterator->is_regular_file(error) ||
+        iterator->path().extension() != ".mossi")
+      continue;
+    const string module = iterator->path().stem().string();
+    if (std::find(current_modules.begin(), current_modules.end(), module) ==
+        current_modules.end()) {
+      std::filesystem::remove(iterator->path(), error);
+      if (error)
+        throw ProjectError("MOSS_INTERNAL_OR_IO_ERROR",
+                           "cannot remove stale Moss module interface '" +
+                               iterator->path().string() + "': " +
+                               error.message());
+    }
+  }
+  if (error)
+    throw ProjectError("MOSS_INTERNAL_OR_IO_ERROR",
+                       "cannot scan interface output directory '" +
+                           directory.string() + "': " + error.message());
+  const auto interfaces = write_module_interfaces(
+      manifest, checked.program, directory, backend,
+      checked.external_module_interfaces, check_runtime);
+  if (json) {
+    write_agent_envelope_begin(std::cout, "build", true);
+    std::cout << "  \"result\": {\"project\": ";
+    write_debug_json_string(std::cout, manifest.name);
+    std::cout << ", \"check_only\": true, \"profile\": ";
+    write_debug_json_string(std::cout, profile);
+    std::cout << ", \"module_interfaces\": [";
+    for (size_t index = 0; index < interfaces.size(); ++index) {
+      if (index) std::cout << ", ";
+      write_debug_json_string(std::cout, interfaces[index].string());
+    }
+    std::cout << "]}\n}\n";
+  } else {
+    std::cout << "Checked " << manifest.name << " (" << profile
+              << "); wrote " << interfaces.size() << " module interface(s)\n";
+  }
+  return 0;
+}
+
+// Semantic-only counterpart to `moss test`: check the complete Tests target
+// (`src + tests`) without building Rust or executing test bodies. Margo uses
+// this while checking package semantics so package checks cover the same
+// declaration universe as the test target.
+static int run_project_test_semantic_check(const ProjectManifest& manifest,
+                                           bool json) {
+  const auto sources = project_declaration_sources(manifest, "tests");
+  if (sources.empty())
+    throw ProjectError("PROJECT_SOURCE_NOT_FOUND",
+                       "test target contains no Moss source files");
+  (void)check_project_semantics(manifest, sources, false,
+                                ProgramGenerationMode::Tests);
+  if (json) {
+    std::cout << "{\"protocol_version\": 1, \"schema_version\": ";
+    write_debug_json_string(std::cout, kAgentSchemaVersion);
+    std::cout << ", \"compiler_version\": ";
+    write_debug_json_string(std::cout, kCompilerVersion);
+    std::cout << ", \"command\": \"test\", \"ok\": true, "
+                 "\"result\": {\"project\": ";
+    write_debug_json_string(std::cout, manifest.name);
+    std::cout << ", \"check_only\": true, \"target\": \"tests\", "
+                 "\"sources_checked\": " << sources.size() << "}}\n";
+  } else {
+    std::cout << "Checked " << sources.size()
+              << " test-target source file(s) (semantic-only)\n";
   }
   return 0;
 }
@@ -21788,13 +24496,17 @@ static int run_project_command(int argc, char** argv) {
         std::filesystem::current_path());
     if (command == "build") {
       bool release = false;
+      bool check_only = false;
       for (int index = 2; index < argc; ++index) {
         string argument = argv[index];
         if (argument == "--release") release = true;
+        else if (argument == "--check") check_only = true;
         else if (argument != "--json")
           throw ProjectError("BUILD_PROFILE_ERROR",
                              "unexpected build argument '" + argument + "'");
       }
+      if (check_only)
+        return run_project_interface_check(manifest, release, json);
       return run_project_build(manifest, release, json);
     }
     if (command == "fmt") {
@@ -22071,6 +24783,7 @@ static void usage() {
             << "  moss fmt [--check] [--json]\n"
             << "  moss edit rename|replace-expression|change-argument ... --json\n"
             << "  moss build [--release] [--json]\n"
+            << "  moss test --check [--json]\n"
             << "  moss clean [--json]\n"
             << "  moss test [filter] [--affected] [--json]\n"
             << "  moss bench [filter] [--json] [--save NAME] [--compare NAME] [--fail-over PERCENT]\n\n"
@@ -22530,31 +25243,68 @@ static std::map<std::string, std::string> fast_debug_fileio_tests(
   return rejected;
 }
 
+static bool fast_debug_execution_bodies_complete(const moss::Program& program) {
+  for (const auto& function : program.functions) {
+    const string module = moss::module_name_from_symbol(function.name);
+    if (!program.external_modules.count(module) || function.generic ||
+        function.static_dispatch || !function.provider_origin_file.empty())
+      continue;
+    if (!function.execution_body) return false;
+  }
+  for (const auto& object : program.objects) {
+    if (!program.external_modules.count(moss::module_name_from_symbol(object.name)))
+      continue;
+    for (const auto& method : object.methods)
+      if (!method.execution_body) return false;
+  }
+  for (const auto& domain : program.domains) {
+    if (!program.external_modules.count(moss::module_name_from_symbol(domain.name)))
+      continue;
+    for (const auto& handler : domain.handlers)
+      if (!handler.execution_body) return false;
+  }
+  return true;
+}
+
 static moss::Program load_checked_interpreter_program(
     const std::filesystem::path& input, bool test_mode = false,
-    std::map<std::string, std::string>* fileio_tests = nullptr) {
+    std::map<std::string, std::string>* fileio_tests = nullptr,
+    const string& test_filter = {}, bool all_package_tests = false) {
   try {
+    const moss::FastDebugScope execution_scope{
+        std::filesystem::absolute(input).lexically_normal(),
+        test_mode ? moss::FastDebugScopeKind::Tests
+                  : moss::FastDebugScopeKind::Main,
+        test_filter, all_package_tests};
     auto context = moss::analyze_source_context(input);
     if (test_mode && context.project) {
       context.mode = moss::ProgramGenerationMode::Tests;
-      context.sources = moss::project_declaration_sources(context.manifest, "tests");
-      if (context.sources.empty())
-        context.sources = moss::project_source_files(context.manifest);
+      context.sources = moss::project_source_files(context.manifest);
+      auto test_sources =
+          moss::project_declaration_sources(context.manifest, "tests");
+      context.sources.insert(context.sources.end(), test_sources.begin(),
+                             test_sources.end());
+      std::sort(context.sources.begin(), context.sources.end());
+      context.sources.erase(
+          std::unique(context.sources.begin(), context.sources.end()),
+          context.sources.end());
     }
     if (context.project) {
-      auto sources = moss::fast_debug_source_closure(context);
+      auto sources = moss::fast_debug_source_closure(
+          context, test_mode, all_package_tests);
       auto checked = moss::check_project_sources(
-          context.manifest, sources, context.mode);
-      if (!checked.program.external_modules.empty()) {
+          context.manifest, sources, context.mode, {}, nullptr, nullptr, false,
+          nullptr, true, &execution_scope);
+      if (!checked.program.external_modules.empty() &&
+          !fast_debug_execution_bodies_complete(checked.program)) {
         string missing = *checked.program.external_modules.begin();
         throw moss::ProjectError(
             "FAST_DEBUG_NATIVE_DEPENDENCY",
-            "Fast Debug requires source for all reachable Moss modules; "
-            "module '" + missing + "' is available only as a compiled .mossi "
-            "provider. Use '" +
+            "Fast Debug requires checked executable bodies for reachable Moss "
+            "modules; module '" + missing + "' has no usable Section 2 body in "
+            "its .mossi interface. Run '" +
                 string(test_mode ? "margo test --interp" : "margo debug") +
-                "' so Margo can supply the resolved "
-            "dependency source, or use native execution.",
+                "' to refresh dependency interfaces, or use native execution.",
             context.requested_source.string());
       }
       if (!test_mode) reject_fast_debug_fileio(checked.program);
@@ -22570,6 +25320,29 @@ static moss::Program load_checked_interpreter_program(
     }
     moss::Program program = moss::parse_source(
         source, std::filesystem::absolute(input).lexically_normal().string());
+    const string standalone_source =
+        std::filesystem::absolute(input).lexically_normal().string();
+    for (auto& function : program.functions)
+      if (function.source_file.empty()) function.source_file = standalone_source;
+    for (auto& object : program.objects) {
+      if (object.source_file.empty()) object.source_file = standalone_source;
+      for (auto& method : object.methods)
+        if (method.source_file.empty()) method.source_file = standalone_source;
+    }
+    for (auto& domain : program.domains) {
+      if (domain.source_file.empty()) domain.source_file = standalone_source;
+      for (auto& handler : domain.handlers)
+        if (handler.source_file.empty()) handler.source_file = standalone_source;
+    }
+    for (auto& enumeration : program.enums)
+      if (enumeration.source_file.empty()) enumeration.source_file = standalone_source;
+    if (program.main && program.main->source_file.empty())
+      program.main->source_file = standalone_source;
+    for (auto& test : program.tests)
+      if (test.source_file.empty()) test.source_file = standalone_source;
+    moss::scope_program_to_file(program, input, execution_scope.kind,
+                                execution_scope.test_filter,
+                                execution_scope.all_package_tests);
     moss::CheckedProgram checker(program);
     checker.run();
     if (!test_mode) reject_fast_debug_fileio(program);
@@ -22603,9 +25376,11 @@ static int run_fast_interpreter_source(const std::filesystem::path& input,
 }
 
 static int run_fast_interpreter_tests(const std::filesystem::path& input,
-                                      const string& filter, bool trace) {
+                                      const string& filter, bool trace,
+                                      bool all_package_tests = false) {
   std::map<std::string, std::string> fileio_tests;
-  moss::Program program = load_checked_interpreter_program(input, true, &fileio_tests);
+  moss::Program program = load_checked_interpreter_program(
+      input, true, &fileio_tests, filter, all_package_tests);
   moss::FastInterpreter::Options options;
   options.trace = trace;
   options.unsupported_tests = std::move(fileio_tests);
@@ -23272,6 +26047,46 @@ int main(int argc, char** argv) {
       }
     }
 
+    if (string(argv[1]) == "test") {
+      bool semantic_check = false;
+      bool test_json = false;
+      bool invalid_arguments = false;
+      for (int index = 2; index < argc; ++index) {
+        const string argument = argv[index];
+        if (argument == "--check") semantic_check = true;
+        else if (argument == "--json") test_json = true;
+        else invalid_arguments = true;
+      }
+      if (semantic_check) {
+        active_command = "test";
+        json_output = test_json;
+        if (invalid_arguments) {
+          std::cerr << "moss: test --check accepts only --json\n";
+          return 2;
+        }
+        const auto root = nearest_moss_project_root(
+            std::filesystem::current_path());
+        if (!root)
+          throw moss::ProjectError(
+              "PROJECT_MANIFEST_ERROR",
+              "no Moss.toml was found in this directory or any parent");
+        const auto manifest = moss::load_project_manifest(*root);
+        try {
+          return moss::run_project_test_semantic_check(manifest, test_json);
+        } catch (const moss::ProjectError& error) {
+          if (test_json)
+            moss::write_project_error_json(std::cout, "test", error);
+          else
+            std::cerr << error.source_file
+                      << (error.line > 0
+                              ? ":" + std::to_string(error.line) : "")
+                      << ": error: [" << error.code << "] "
+                      << error.what() << "\n";
+          return 1;
+        }
+      }
+    }
+
     // A standalone test file or multi-file project can use the checked interpreter backend.
     bool test_requests_interpreter = false;
     if (string(argv[1]) == "test") {
@@ -23298,10 +26113,13 @@ int main(int argc, char** argv) {
       }
       if (interpreter) {
         std::error_code ec;
+        bool all_package_tests = input.empty() ||
+            std::filesystem::is_directory(input, ec);
         if (!input.empty() && !std::filesystem::exists(input, ec) && filter.empty() &&
             nearest_moss_project_root(std::filesystem::current_path())) {
           filter = input;
           input.clear();
+          all_package_tests = true;
         }
         std::filesystem::path entry = resolve_fast_debug_test_entry(input);
         if (entry.empty()) {
@@ -23309,7 +26127,8 @@ int main(int argc, char** argv) {
           return 2;
         }
         try {
-          return run_fast_interpreter_tests(entry, filter, trace);
+          return run_fast_interpreter_tests(entry, filter, trace,
+                                            all_package_tests);
         } catch (const moss::FastInterpreter::RuntimeError& error) {
           std::cerr << "moss:" << (error.line() > 0 ? std::to_string(error.line()) + ": " : " ")
                     << "interpreter error: " << error.what() << "\n";
@@ -23587,13 +26406,16 @@ int main(int argc, char** argv) {
           else if (query_overlay)
             overrides[std::filesystem::absolute(input).lexically_normal()] =
                 *query_overlay;
+          // Queries and check use .mossi interfaces only. Fast Debug also
+          // resolves dependencies through .mossi, after Margo refreshes them.
           auto sources = moss::fast_debug_source_closure(context);
           // Check and semantic queries stop at semantics, exactly like the
           // standalone path below; only compilation lowers to Rust.
           auto unit = check_only
               ? moss::check_project_semantics(
                     context.manifest, sources, optimize_shared_memory,
-                    context.mode, overrides.empty() ? nullptr : &overrides)
+                    context.mode, overrides.empty() ? nullptr : &overrides,
+                    active_command == "check" ? &context.requested_source : nullptr)
               : moss::analyze_project_sources(
                     context.manifest, sources, optimize_shared_memory,
                     debug_build, context.mode, {}, nullptr,
@@ -23668,7 +26490,9 @@ int main(int argc, char** argv) {
     // later impact/affected-test commands.  Query and standalone compilation
     // remain read-only; a malformed or unrelated manifest never masks the
     // ordinary Moss check result.
-    if (check_only && query_command.empty()) {
+    // R3: file checking is semantic-only and must not run the native snapshot
+    // projection, which lowers Rust as a side effect of `moss check`.
+    if (check_only && query_command.empty() && active_command != "check") {
       auto project_root = nearest_moss_project_root(
           std::filesystem::path(active_input));
       if (project_root) {

@@ -1,9 +1,8 @@
-"""Exercise moss.text from compiled-only ABI-v9 provider artifacts."""
+"""Exercise moss.text through current provider interfaces."""
 
 import json
 import os
 from pathlib import Path
-import shutil
 import subprocess
 import tempfile
 
@@ -22,16 +21,8 @@ subprocess.run([str(MARGO), "build", "--json"], cwd=PACKAGE, env=ENV,
                check=True, capture_output=True, text=True)
 with tempfile.TemporaryDirectory(prefix="text-source-free-", dir=SCRATCH) as temporary:
     work = Path(temporary)
-    provider = work / "provider"
     app = work / "app"
-    provider.mkdir()
     (app / "src").mkdir(parents=True)
-    for source, names in (
-        (PACKAGE / "build" / "debug", ("text.mossi", "libtext.rlib")),
-        (CORE / "build" / "debug", ("core.mossi", "libcore.rlib")),
-    ):
-        for name in names:
-            shutil.copy2(source / name, provider / name)
     (app / "Moss.toml").write_text(
         '[package]\nname = "text_source_free_smoke"\nversion = "0.1.0"\n\n'
         '[build]\nsource = "src"\n', encoding="utf-8")
@@ -55,7 +46,12 @@ with tempfile.TemporaryDirectory(prefix="text-source-free-", dir=SCRATCH) as tem
         '  text.capacity_builder_append(capacity, copy_twice(other))\n'
         '  echo text.capacity_builder_build(capacity)\n'
         '  echo text.capacity_builder_finish(capacity)\n', encoding="utf-8")
-    source_free_env = ENV | {"MOSS_MODULE_PATH": str(provider)}
+    source_free_env = ENV | {
+        "MOSS_MODULE_PATH": ":".join((
+            str(PACKAGE / "build" / "debug"),
+            str(CORE / "build" / "debug"),
+        ))
+    }
     checked = subprocess.run([str(MOSS), "check", "src/main.moss", "--json"],
                              cwd=app, env=source_free_env, check=True,
                              capture_output=True, text=True)
@@ -95,4 +91,4 @@ with tempfile.TemporaryDirectory(prefix="text-source-free-", dir=SCRATCH) as tem
         nested_diagnostic["error"]["message"], nested_diagnostic
     assert "overlapping WRITE and READ" in \
         nested_diagnostic["error"]["message"], nested_diagnostic
-print("Compiled-only moss.text provider: check, build, run passed")
+print("Current moss.text provider interface: check, build, run passed")

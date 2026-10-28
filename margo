@@ -12,6 +12,8 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
+import shutil
 import subprocess
 import sys
 import tomllib
@@ -23,7 +25,6 @@ class MargoError(Exception):
 
 REPO = Path(__file__).resolve().parent
 MOSS = Path(os.environ.get("MOSS", REPO / "moss")).resolve()
-FAST_DEBUG_SOURCE_ROOT_ENV = "MOSS_FAST_DEBUG_SOURCE_ROOTS"
 
 
 def manifest_at(root: Path) -> Path:
@@ -62,8 +63,12 @@ def read_manifest(root: Path) -> tuple[Path, dict]:
     dependencies = data.get("dependencies", {})
     if not isinstance(dependencies, dict):
         raise MargoError(f"{manifest}: [dependencies] must be a table")
+    build = data.get("build", {})
+    source = build.get("source", "src") if isinstance(build, dict) else "src"
+    if not isinstance(source, str) or not source:
+        raise MargoError(f"{manifest}: [build].source must be a non-empty relative path")
     return manifest, {"name": package["name"], "version": package["version"],
-                      "dependencies": dependencies}
+                      "dependencies": dependencies, "source": source}
 
 
 def margo_home() -> Path:
@@ -220,8 +225,14 @@ def resolve_graph(root: Path) -> tuple[Package, list[Package]]:
     return root_package, ordered
 
 
-def package_environment(root: Package, ordered: list[Package], release: bool) -> dict:
-    paths = [str(package.root / "build" / ("release" if release else "debug"))
+def profile_name(release: bool, check_only: bool = False) -> str:
+    profile = "release" if release else "debug"
+    return "check-" + profile if check_only else profile
+
+
+def package_environment(root: Package, ordered: list[Package], release: bool,
+                        check_only: bool = False) -> dict:
+    paths = [str(package.root / "build" / profile_name(release, check_only))
              for package in ordered if package is not root]
     env = dict(os.environ)
     # The opt-in ABI-v10 compiler uses one content-addressed shared runtime
@@ -242,18 +253,484 @@ def package_environment(root: Package, ordered: list[Package], release: bool) ->
     return env
 
 
-def build_graph(root: Package, ordered: list[Package], release: bool, json_mode: bool) -> list[dict]:
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def semantic_interfaces(package: Package, release: bool,
+                        check_only: bool = False) -> list[dict]:
+    directory = package.root / "build" / profile_name(release, check_only)
+    rows = []
+    for interface in sorted(directory.glob("*.mossi")):
+        fields = {}
+        for line in interface.read_text(encoding="utf-8").splitlines():
+            key, separator, value = line.partition(" ")
+            if separator and key in {"module_id", "native_abi", "schema_version",
+                                     "concrete_interface_hash", "generic_semantic_hash",
+                                     "semantic_contract_hash"}:
+                fields[key] = value
+        if "module_id" not in fields:
+            raise MargoError(f"invalid module interface identity in {interface}")
+        if fields.get("schema_version") == "10":
+            semantic = fields.get("semantic_contract_hash")
+            if not semantic:
+                raise MargoError(f"missing semantic contract hash in {interface}")
+            hashes = {"semantic_contract_hash": semantic}
+        else:
+            concrete = fields.get("concrete_interface_hash")
+            generic = fields.get("generic_semantic_hash")
+            if not concrete or not generic:
+                raise MargoError(f"missing semantic interface hashes in {interface}")
+            hashes = {"concrete_interface_hash": concrete,
+                      "generic_semantic_hash": generic}
+        rows.append({"module_id": fields["module_id"],
+                     "native_abi": fields.get("native_abi", ""), **hashes})
+    return rows
+
+
+def package_toolchain_identity(check_only: bool) -> dict:
+    compiler = MOSS
+    if not compiler.is_file():
+        raise MargoError(f"Moss compiler is not a file: {compiler}")
+    identity = {"moss_path": str(compiler), "moss_sha256": sha256_file(compiler)}
+    delegated = os.environ.get("M1_REAL_MOSS")
+    if delegated:
+        delegated_path = Path(delegated).resolve()
+        identity["delegated_moss_path"] = str(delegated_path)
+        identity["delegated_moss_sha256"] = sha256_file(delegated_path)
+    if not check_only:
+        configured = os.environ.get("RUSTC", "rustc")
+        rustc = shutil.which(configured) if "/" not in configured else configured
+        if not rustc or not Path(rustc).is_file():
+            raise MargoError("rustc was not found; install Rust or set RUSTC to an executable")
+        rustc_path = Path(rustc).resolve()
+        version = subprocess.run([str(rustc_path), "--version", "--verbose"],
+                                 text=True, capture_output=True, check=False)
+        if version.returncode != 0:
+            raise MargoError("could not identify the configured Rust compiler")
+        identity.update({"rustc_path": str(rustc_path),
+                         "rustc_sha256": sha256_file(rustc_path),
+                         "rustc_version": version.stdout.strip()})
+    return identity
+
+
+def package_sources(package: Package) -> list[dict]:
+    source_root = package.root / package.data["source"]
+    if source_root.is_file():
+        files = [source_root] if source_root.suffix == ".moss" else []
+    elif source_root.is_dir():
+        files = sorted(path for path in source_root.rglob("*.moss") if path.is_file())
+    else:
+        files = []
+    rows = []
+    for path in files:
+        rows.append({"path": path.relative_to(package.root).as_posix(),
+                     "sha256": sha256_file(path)})
+    if not rows:
+        raise MargoError(f"package {package.data['name']} has no Moss sources under {source_root}")
+    return rows
+
+
+def package_test_sources(package: Package) -> list[Path]:
+    tests_root = package.root / "tests"
+    if not tests_root.is_dir():
+        return []
+    return sorted(path for path in tests_root.rglob("*.moss") if path.is_file())
+
+
+def dependency_native_artifacts(package: Package, release: bool) -> list[dict]:
+    rows = []
+    profile = "release" if release else "debug"
+    for dependency in sorted(package.dependencies,
+                             key=lambda item: (item.data["name"], item.identity)):
+        directory = dependency.root / "build" / profile
+        for artifact in sorted(directory.glob("*.rlib")):
+            rows.append({"package": dependency.identity,
+                         "path": artifact.name,
+                         "sha256": sha256_file(artifact)})
+    return rows
+
+
+def ambient_provider_source_state(interface: Path) -> dict:
+    owner = next((parent for parent in interface.parents
+                  if (parent / "Moss.toml").is_file() or
+                     (parent / "moss.toml").is_file()), None)
+    if owner is None:
+        owner = next((parent for parent in interface.parents
+                      if (parent / "build").is_dir()), None)
+    if owner is None:
+        return {"owner": "missing"}
+
+    candidates = [owner / "Moss.toml", owner / "moss.toml"]
+    manifest = next((path for path in candidates if path.is_file()), None)
+    if manifest is None:
+        return {"owner": str(owner), "manifest": "missing"}
+    state = {"owner": str(owner), "manifest": str(manifest),
+             "manifest_sha256": sha256_file(manifest)}
+    try:
+        _, data = read_manifest(owner)
+    except MargoError as error:
+        state["manifest_error"] = str(error)
+        return state
+
+    source_root = owner / data["source"]
+    state["source_root"] = str(source_root)
+    state["source_root_exists"] = source_root.exists()
+    if source_root.is_file():
+        paths = [source_root] if source_root.suffix == ".moss" else []
+    elif source_root.is_dir():
+        paths = sorted(path for path in source_root.rglob("*.moss")
+                       if path.is_file())
+    else:
+        paths = []
+    state["sources"] = [
+        {"path": path.relative_to(owner).as_posix(),
+         "sha256": sha256_file(path)} for path in paths]
+    return state
+
+
+def ambient_provider_is_current(interface: Path) -> bool:
+    """Whether the interface's source freshness key matches its owner.
+
+    The boolean is safe in check-only fingerprints: ordinary body edits do
+    not invalidate consumers once the provider has rebuilt its interface,
+    while a stale ambient interface changes the key and cannot be skipped.
+    """
+    owner = next((parent for parent in interface.parents
+                  if (parent / "Moss.toml").is_file() or
+                  (parent / "moss.toml").is_file()), None)
+    if owner is None:
+        return False
+    manifest, data = read_manifest(owner)
+    source_root = owner / data["source"]
+    if source_root.is_file():
+        sources = [source_root] if source_root.suffix == ".moss" else []
+    elif source_root.is_dir():
+        sources = sorted(path for path in source_root.rglob("*.moss")
+                         if path.is_file())
+    else:
+        sources = []
+    if not sources:
+        return False
+    material = bytearray(f"{len(sources)}\n".encode("utf-8"))
+    for source in sources:
+        relative = source.relative_to(owner).as_posix().encode("utf-8")
+        contents = source.read_bytes()
+        material.extend(f"{len(relative)}\n".encode("ascii"))
+        material.extend(relative)
+        material.extend(f"{len(contents)}\n".encode("ascii"))
+        material.extend(contents)
+    declared = next((line.partition(b" ")[2]
+                     for line in interface.read_bytes().splitlines()
+                     if line.startswith(b"package_source_hash ")), b"")
+    return declared == ("sha256:" + hashlib.sha256(material).hexdigest()).encode()
+
+
+def ambient_provider_inputs(package: Package, ordered: list[Package],
+                            release: bool, check_only: bool) -> list[dict]:
+    graph_build_roots = {str((package.root / "build").resolve())
+                         for package in ordered}
+    roots = []
+    for position, entry in enumerate(filter(None,
+            os.environ.get("MOSS_MODULE_PATH", "").split(os.pathsep))):
+        roots.append({"origin": "MOSS_MODULE_PATH", "position": position,
+                      "path": Path(entry).resolve()})
+    roots.append({"origin": "package-deps", "position": 0,
+                  "path": (package.root / "deps").resolve()})
+    rows = []
+    for origin in roots:
+        root = origin["path"]
+        if origin["origin"] == "MOSS_MODULE_PATH" and any(
+                str(root) == build or str(root).startswith(build + os.sep)
+                for build in graph_build_roots):
+            continue
+        if not root.is_dir():
+            rows.append({**{key: value for key, value in origin.items()
+                           if key != "path"}, "path": str(root),
+                         "missing": True})
+            continue
+        for interface in sorted(root.rglob("*.mossi")):
+            record = {**{key: value for key, value in origin.items()
+                         if key != "path"}, "path": str(interface),
+                      "section1": ambient_semantic_interface(interface)}
+            if check_only:
+                try:
+                    record["source_current"] = ambient_provider_is_current(interface)
+                except (OSError, ValueError, MargoError) as error:
+                    raise MargoError(
+                        f"cannot validate ambient provider freshness {interface}: {error}")
+            else:
+                # Native package outputs may need relinking after a provider
+                # body changes. Semantic-check fingerprints intentionally use
+                # only Section 1; Section 2 is checked execution data.
+                record["interface_sha256"] = sha256_file(interface)
+                try:
+                    record["provider_source_state"] = \
+                        ambient_provider_source_state(interface)
+                except (OSError, ValueError) as error:
+                    raise MargoError(
+                        f"cannot fingerprint ambient provider interface {interface}: {error}")
+            if not check_only:
+                candidates = [interface.with_suffix(".rlib"),
+                              interface.parent / ("lib" + interface.stem + ".rlib")]
+                rlib = next((candidate for candidate in candidates
+                             if candidate.is_file()), None)
+                record["native_artifact_sha256"] = (
+                    sha256_file(rlib) if rlib else "missing")
+            rows.append(record)
+    return rows
+
+
+def ambient_semantic_interface(interface: Path) -> dict:
+    raw = interface.read_bytes()
+    section_marker = b"\nexecution_body_version "
+    section2 = raw.find(section_marker)
+    section1 = raw[:section2] + b"\n" if section2 >= 0 else raw
+    section1 = b"".join(
+        line for line in section1.splitlines(keepends=True)
+        if not line.startswith(b"package_source_hash "))
+    section1 = normalize_section1_locations(section1)
+    fields = {}
+    for raw_line in section1.splitlines():
+        line = raw_line.decode("utf-8", errors="ignore")
+        key, separator, value = line.partition(" ")
+        if separator and key in {"module_id", "native_abi", "schema_version",
+                                 "concrete_interface_hash", "generic_semantic_hash",
+                                 "semantic_contract_hash", "binary_contract_hash"}:
+            fields[key] = value
+    if "module_id" not in fields:
+        raise MargoError(f"invalid module interface identity in {interface}")
+    if fields.get("schema_version") == "10":
+        semantic = fields.get("semantic_contract_hash")
+        binary = fields.get("binary_contract_hash")
+        if not semantic:
+            raise MargoError(f"missing ABI-v10 semantic or binary contract hash in {interface}")
+        consumer_contract = "\n".join((fields["module_id"],
+                                         fields.get("native_abi", ""),
+                                         binary or "", semantic)) + "\n"
+        return {"module_id": fields["module_id"],
+                "native_abi": fields.get("native_abi", ""),
+                "semantic_contract_hash": semantic,
+                "section1_sha256": hashlib.sha256(
+                    consumer_contract.encode("utf-8")).hexdigest()}
+    concrete = fields.get("concrete_interface_hash")
+    generic = fields.get("generic_semantic_hash")
+    if not concrete or not generic:
+        raise MargoError(f"missing semantic interface hashes in {interface}")
+    return {"module_id": fields["module_id"],
+            "native_abi": fields.get("native_abi", ""),
+            "concrete_interface_hash": concrete,
+            "generic_semantic_hash": generic,
+            "section1_sha256": hashlib.sha256(section1).hexdigest()}
+
+
+def normalize_section1_locations(section1: bytes) -> bytes:
+    """Hash Section 1 independently from absolute source line metadata."""
+    def replace_field(line: bytes, index: int) -> bytes:
+        start = 0
+        for _ in range(index):
+            while start < len(line) and line[start:start + 1].isspace():
+                start += 1
+            while start < len(line) and not line[start:start + 1].isspace():
+                start += 1
+        while start < len(line) and line[start:start + 1].isspace():
+            start += 1
+        end = start
+        while end < len(line) and not line[end:end + 1].isspace():
+            end += 1
+        return line[:start] + b"0" + line[end:] if end > start else line
+
+    normalized = []
+    for raw_line in section1.splitlines(keepends=True):
+        ending = b"\n" if raw_line.endswith(b"\n") else b""
+        line = raw_line[:-1] if ending else raw_line
+        fields = line.split()
+        if fields:
+            if fields[0] == b"generic_stmt" and len(fields) >= 3:
+                line = replace_field(line, 2)
+            elif fields[0] == b"generic_result" and len(fields) >= 2:
+                line = replace_field(line, 1)
+            elif fields[0].endswith(b"_warning"):
+                index = 2 if fields[0] in {
+                    b"object_method_warning", b"handler_warning"} else 1
+                if len(fields) > index:
+                    line = replace_field(line, index)
+            elif fields[0] == b"generic_entity_id":
+                line = re.sub(rb"@[0-9]+(?=\")", b"@0", line)
+        normalized.append(line + ending)
+    return b"".join(normalized)
+
+
+def execution_body_package_fingerprint(interface: Path) -> str | None:
+    lines = interface.read_bytes().splitlines()
+    try:
+        payload = lines.index(b"execution_body_payload")
+    except ValueError:
+        return None
+    if payload + 1 >= len(lines):
+        raise MargoError(f"truncated execution-body section in {interface}")
+    key, separator, value = lines[payload + 1].partition(b" ")
+    if key != b"package_fingerprint" or not separator or not value:
+        raise MargoError(f"missing execution-body package fingerprint in {interface}")
+    try:
+        return value.decode("ascii")
+    except UnicodeDecodeError as error:
+        raise MargoError(f"malformed execution-body package fingerprint in {interface}") from error
+
+
+def interface_native_abi(interface: Path) -> int | None:
+    match = re.search(rb"(?m)^native_abi ([0-9]+)$", interface.read_bytes())
+    return int(match.group(1)) if match else None
+
+
+def package_fingerprint(package: Package, release: bool, check_only: bool,
+                        toolchain: dict, ordered: list[Package],
+                        include_test_sources: bool) -> str:
+    dependencies = []
+    for dependency in sorted(package.dependencies,
+                             key=lambda item: (item.data["name"], item.identity)):
+        dependencies.append({"identity": dependency.identity,
+                             "semantic_interfaces": semantic_interfaces(
+                                 dependency, release, check_only)})
+    flags = {key: os.environ.get(key, "") for key in (
+        "MOSS_STAGED_ABI", "MOSS_STAGED_STRING_REPR", "MOSS_RUNTIME_SOURCE_DIR",
+        "RUSTFLAGS", "CARGO_ENCODED_RUSTFLAGS")}
+    payload = {
+        "format": "margo-package-fingerprint-v3",
+        "execution_body_section": 1,
+        "check_test_target": "root-only" if check_only else "none",
+        "identity": package.identity,
+        "name": package.data["name"],
+        "version": package.data["version"],
+        "manifest_sha256": sha256_file(package.manifest),
+        "sources": package_sources(package),
+        "test_sources": ([{"path": path.relative_to(package.root).as_posix(),
+                           "sha256": sha256_file(path)}
+                          for path in package_test_sources(package)]
+                         if check_only and include_test_sources else []),
+        "dependencies": dependencies,
+        "native_dependency_artifacts": [] if check_only else
+            dependency_native_artifacts(package, release),
+        "ambient_providers": ambient_provider_inputs(
+            package, ordered, release, check_only),
+        "compiler_and_toolchain": toolchain,
+        "flags": flags,
+        "profile": profile_name(release, check_only),
+        "mode": "semantic-check" if check_only else "native-build",
+    }
+    material = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()
+
+
+def output_snapshot(package: Package, release: bool,
+                    check_only: bool, result: dict | None) -> dict:
+    directory = package.root / "build" / profile_name(release, check_only)
+    # Both interface and location sidecars are required cached outputs. A
+    # missing .locations file must invalidate the provider's package state so
+    # imported declarations retain editor navigation metadata.
+    files: set[Path] = set(directory.glob("*.mossi"))
+    files.update(directory.glob("*.locations"))
+    if result:
+        artifacts = result.get("artifacts", {})
+        if isinstance(artifacts, dict):
+            for key, value in artifacts.items():
+                if key == "backend_toolchain":
+                    continue
+                values = value if isinstance(value, list) else [value]
+                for item in values:
+                    if isinstance(item, str):
+                        candidate = Path(item)
+                        if candidate.is_file():
+                            files.add(candidate)
+    return {str(path.resolve()): sha256_file(path)
+            for path in sorted(files) if path.is_file()}
+
+
+def atomic_json(path: Path, payload: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(path.name + f".{os.getpid()}.tmp")
+    temporary.write_text(json.dumps(payload, sort_keys=True, indent=2) + "\n",
+                         encoding="utf-8")
+    os.replace(temporary, path)
+
+
+def build_graph(root: Package, ordered: list[Package], release: bool,
+                json_mode: bool, check_only: bool = False) -> tuple[list[dict], list[str], list[str]]:
     artifacts: list[dict] = []
+    checked: list[str] = []
+    skipped: list[str] = []
+    toolchain = package_toolchain_identity(check_only)
     for package in ordered:
-        env = package_environment(package, ordered, release)
-        command = [str(MOSS), "build"] + (["--release"] if release else []) + ["--json"]
-        result = run(command, cwd=package.root, env=env, capture=True)
+        profile = profile_name(release, check_only)
+        state_path = package.root / "build" / profile / ".margo-fingerprint.json"
+        is_root_package = package.root.resolve() == root.root.resolve()
+        fingerprint = package_fingerprint(package, release, check_only,
+                                          toolchain, ordered,
+                                          include_test_sources=is_root_package)
+        prior = {}
         try:
-            payload = json.loads(result.stdout)["result"]
+            prior = json.loads(state_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            pass
+        prior_result = prior.get("result") if isinstance(prior, dict) else None
+        current_outputs = output_snapshot(package, release, check_only, prior_result)
+        has_check_interface = any(Path(path).suffix == ".mossi"
+                                  for path in current_outputs)
+        if (prior.get("format") == "margo-package-state-v1" and
+                prior.get("fingerprint") == fingerprint and
+                prior.get("outputs") == current_outputs and
+                (not check_only or has_check_interface) and
+                (check_only or isinstance(prior_result, dict))):
+            skipped.append(package.data["name"])
+            if isinstance(prior_result, dict):
+                artifacts.append(prior_result)
+            else:
+                artifacts.append({})
+            continue
+        env = package_environment(package, ordered, release, check_only)
+        env["MARGO_PACKAGE_FINGERPRINT"] = fingerprint
+        command = [str(MOSS), "build"] + (["--release"] if release else []) + \
+                  (["--check"] if check_only else []) + ["--json"]
+        completed = run(command, cwd=package.root, env=env, capture=True)
+        try:
+            payload = json.loads(completed.stdout)["result"]
         except (json.JSONDecodeError, KeyError) as error:
             raise MargoError(f"dependency package build produced invalid Moss JSON for {package.data['name']}") from error
+        test_sources = package_test_sources(package)
+        if check_only and is_root_package and test_sources:
+            test_check = subprocess.run(
+                [str(MOSS), "test", "--check", "--json"],
+                cwd=package.root, env=env, text=True,
+                capture_output=True, check=False)
+            if test_check.returncode != 0:
+                diagnostic = test_check.stdout.strip() or test_check.stderr.strip()
+                raise MargoError(
+                    f"test target semantic check failed for {package.data['name']}: "
+                    f"{diagnostic}")
+        checked.append(package.data["name"])
+        outputs = output_snapshot(package, release, check_only, payload)
+        if check_only:
+            for output in outputs:
+                path = Path(output)
+                if path.suffix != ".mossi":
+                    continue
+                embedded = execution_body_package_fingerprint(path)
+                if interface_native_abi(path) in (9, 10) and embedded is None:
+                    raise MargoError(
+                        f"new ABI-v{interface_native_abi(path)} .mossi is missing its execution-body section: {path}")
+                if embedded is not None and embedded != fingerprint:
+                    raise MargoError(
+                        f".mossi execution-body fingerprint mismatch for {path}: "
+                        f"expected {fingerprint}, found {embedded!r}")
+        state = {"format": "margo-package-state-v1", "fingerprint": fingerprint,
+                 "outputs": outputs, "result": payload}
+        atomic_json(state_path, state)
         artifacts.append(payload)
-    return artifacts
+    return artifacts, checked, skipped
 
 
 def main() -> int:
@@ -261,6 +738,8 @@ def main() -> int:
     parser.add_argument("command", choices=("build", "run", "test", "bench", "clean", "debug"))
     parser.add_argument("filter", nargs="?")
     parser.add_argument("--release", action="store_true")
+    parser.add_argument("--check", action="store_true",
+                        help="check package semantics and write .mossi interfaces without rustc")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--trace", action="store_true")
     parser.add_argument("--interp", action="store_true")
@@ -279,6 +758,8 @@ def main() -> int:
             raise MargoError(
                 "margo debug supports only 'margo debug' and 'margo debug --trace'; "
                 "unsupported arguments: " + " ".join(unsupported))
+        if args.check and args.command != "build":
+            raise MargoError("--check is supported only by 'margo build'")
         if args.command != "debug" and args.command != "test" and args.trace:
             raise MargoError("--trace is supported only by margo debug and margo test --interp")
         if args.command != "test" and args.interp:
@@ -291,20 +772,15 @@ def main() -> int:
         root, ordered = resolve_graph(root_path)
 
         if args.command == "test" and args.interp:
-            dep_roots = []
-            seen_roots = set()
-            for package in ordered:
-                if package is root:
-                    continue
-                package_root = str(package.root.resolve())
-                if package_root not in seen_roots:
-                    seen_roots.add(package_root)
-                    dep_roots.append(package_root)
-            env = dict(os.environ)
-            env.pop(FAST_DEBUG_SOURCE_ROOT_ENV, None)
-            env.pop("MOSS_SOURCE_ROOTS", None)
-            if dep_roots:
-                env[FAST_DEBUG_SOURCE_ROOT_ENV] = os.pathsep.join(dep_roots)
+            # Fast Debug consumes checked dependency bodies from the same
+            # package snapshots used by ordinary semantic imports. Refresh
+            # dependencies first, without checking unrelated root-package
+            # declarations or invoking rustc.
+            dependency_order = [package for package in ordered
+                                if package is not root]
+            build_graph(root, dependency_order, False, args.json,
+                        check_only=True)
+            env = package_environment(root, ordered, False, check_only=True)
             test_cmd = [str(MOSS), "test", "--interp"]
             if args.filter:
                 test_cmd.append(args.filter)
@@ -315,29 +791,14 @@ def main() -> int:
             return subprocess.run(test_cmd, cwd=root.root, env=env).returncode
 
         if args.command == "debug":
-            # For debug, we do NOT build dependency packages (no rustc needed).
-            # We resolve the package graph to get source roots, then invoke
-            # moss debug with an exact source-provider universe supplied through
-            # the narrowly scoped Margo-to-Fast-Debug handoff.
-            # The root package is NOT included in the source-provider handoff because
-            # moss debug already knows to use the root project's source.
-            dep_roots = []
-            seen_roots = set()
-            for package in ordered:
-                if package is root:
-                    continue
-                package_root = str(package.root.resolve())
-                if package_root not in seen_roots:
-                    seen_roots.add(package_root)
-                    dep_roots.append(package_root)
-            env = dict(os.environ)
-            # This invocation's resolved graph is authoritative. Never let an
-            # unrelated inherited provider list alter package-aware debugging.
-            env.pop(FAST_DEBUG_SOURCE_ROOT_ENV, None)
-            env.pop("MOSS_SOURCE_ROOTS", None)
-            if dep_roots:
-                env[FAST_DEBUG_SOURCE_ROOT_ENV] = os.pathsep.join(dep_roots)
-            # moss debug accepts the project root directory.
+            # Make dependency interfaces and executable bodies current without
+            # a native build. Fast Debug resolves only those .mossi artifacts;
+            # the root package is checked from the selected execution entries.
+            dependency_order = [package for package in ordered
+                                if package is not root]
+            build_graph(root, dependency_order, False, args.json,
+                        check_only=True)
+            env = package_environment(root, ordered, False, check_only=True)
             debug_cmd = [str(MOSS), "debug", str(root.root)]
             if args.trace:
                 debug_cmd.append("--trace")
@@ -346,7 +807,22 @@ def main() -> int:
         if args.command == "clean":
             run([str(MOSS), "clean"] + (["--json"] if args.json else []), cwd=root.root)
             return 0
-        artifacts = build_graph(root, ordered, args.release, args.json)
+        artifacts, checked_packages, skipped_packages = build_graph(
+            root, ordered, args.release, args.json, args.check)
+        if args.check:
+            if args.json:
+                print(json.dumps({"schema_version": "margo-1", "ok": True,
+                    "root_package": root.data["name"],
+                    "build_order": [p.data["name"] for p in ordered],
+                    "packages": [{"name": p.data["name"], "source": p.source}
+                                 for p in ordered],
+                    "check_only": True,
+                    "checked": checked_packages,
+                    "skipped": skipped_packages}, sort_keys=True))
+            else:
+                print("Checked " + str(len(checked_packages)) + " package(s); " +
+                      "skipped " + str(len(skipped_packages)) + " unchanged package(s)")
+            return 0
         environment = package_environment(root, ordered, args.release)
         if args.command == "build":
             if args.json:

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prove staged indexed String uses one runtime across source-free Moss crates."""
+"""Prove staged indexed String uses one runtime across imported-interface crates."""
 
 import json
 import hashlib
@@ -91,9 +91,8 @@ for profile in ("debug", "release"):
     assert "pub use moss_runtime::string::" in generated
     assert "pub struct MossString" not in generated
 
-# Neither consumer may read or recompile provider Moss source.
-(provider / "src" / "provider.moss").unlink()
-assert not list((provider / "src").glob("*.moss"))
+# Keep provider source available for R2 freshness hashing. Consumers still
+# select its compiled interface and native artifact through MOSS_MODULE_PATH.
 
 for profile in ("debug", "release"):
     artifacts = provider / "build" / profile
@@ -106,14 +105,13 @@ for profile in ("debug", "release"):
     sealed_rlib_hash = hashlib.sha256(provider_rlib.read_bytes()).hexdigest()
     for name, word, last in consumers:
         consumer = SCRATCH / name
-        assert not list((provider / "src").glob("*.moss"))
         accepted(build(consumer, profile, artifacts))
         consumer_interface = (consumer / "build" / profile / "app.mossi").read_text()
         assert consumer_interface.splitlines().count(sealed_import) == 1
         assert runtime_identity(consumer_interface) == sealed_runtime
         assert hashlib.sha256(provider_rlib.read_bytes()).hexdigest() == sealed_rlib_hash
         run(consumer, profile, word + "!\n" + last + "\n")
-    print(f"shared indexed String {profile}: two source-free consumers passed with sealed imports")
+    print(f"shared indexed String {profile}: two imported-interface consumers passed with sealed imports")
 
 # A different runtime source must fail at the Moss contract boundary, even
 # when the consumer has a warm native artifact from the original runtime.

@@ -132,7 +132,7 @@ with tempfile.TemporaryDirectory(prefix="moss-handle-closure-") as temporary:
     interface = project / "build" / "debug" / "provider.mossi"
     assert "route worker:" in interface.read_text()
     assert "domain_rank" not in interface.read_text()
-    provider.rename(provider.with_suffix(".hidden"))
+    # Keep package source available; own build output cannot stand in for it.
     built = json.loads(invoke("build", "--json", cwd=project).stdout)
     assert subprocess.check_output([built["result"]["artifacts"]["executable"]], text=True) == "9\n"
 

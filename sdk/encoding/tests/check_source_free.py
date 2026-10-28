@@ -1,9 +1,8 @@
-"""Exercise moss.encoding from compiled-only ABI-v9 provider artifacts."""
+"""Exercise moss.encoding through current source-backed interfaces."""
 
 import json
 import os
 from pathlib import Path
-import shutil
 import subprocess
 import tempfile
 
@@ -22,17 +21,10 @@ subprocess.run([str(MARGO), "build", "--json"], cwd=PACKAGE, env=ENV,
                check=True, capture_output=True, text=True)
 with tempfile.TemporaryDirectory(prefix="encoding-source-free-", dir=SCRATCH) as temporary:
     work = Path(temporary)
-    provider = work / "provider"
     app = work / "app"
-    provider.mkdir()
     (app / "src").mkdir(parents=True)
-    for source, names in (
-        (PACKAGE / "build" / "debug", ("encoding.mossi", "libencoding.rlib")),
-        (BYTES / "build" / "debug", ("bytes.mossi", "libbytes.rlib")),
-    ):
-        for name in names:
-            shutil.copy2(source / name, provider / name)
-    for interface in (provider / "encoding.mossi", provider / "bytes.mossi"):
+    for interface in (PACKAGE / "build/debug/encoding.mossi",
+                      BYTES / "build/debug/bytes.mossi"):
         assert "native_abi 9" in interface.read_text(encoding="utf-8"), interface
     (app / "Moss.toml").write_text(
         '[package]\nname = "encoding_source_free_smoke"\nversion = "0.1.0"\n\n'
@@ -110,11 +102,16 @@ fn main():
     assert(same_ints(encode_error_fingerprint([65, -1]), [8, 1, -1]))
     assert(same_ints(encode_error_fingerprint([65, 1114112]), [8, 1, 1114112]))
     assert(same_ints(encode_error_fingerprint([65, 55296]), [7, 1, 55296]))
-    echo "source-free UTF-8 error contracts ok"
+    echo "UTF-8 error contracts ok"
   recover error:
     echo "unexpected propagated UTF-8 error"
 ''', encoding="utf-8")
-    source_free_env = ENV | {"MOSS_MODULE_PATH": str(provider)}
+    source_free_env = ENV | {
+        "MOSS_MODULE_PATH": os.pathsep.join((
+            str(PACKAGE / "build" / "debug"),
+            str(BYTES / "build" / "debug"),
+        ))
+    }
     checked = subprocess.run([str(MOSS), "check", "src/main.moss", "--json"],
                              cwd=app, env=source_free_env, check=True,
                              capture_output=True, text=True)
@@ -124,5 +121,5 @@ fn main():
     result = subprocess.run([str(app / "build" / "debug" / "encoding_source_free_smoke")],
                             cwd=app, env=source_free_env, check=True,
                             capture_output=True, text=True)
-    assert result.stdout == "source-free UTF-8 error contracts ok\n", result.stdout
-print("Compiled-only ABI-v9 moss.encoding provider: exact error contracts passed")
+    assert result.stdout == "UTF-8 error contracts ok\n", result.stdout
+print("Current ABI-v9 moss.encoding provider interface: exact error contracts passed")

@@ -87,7 +87,8 @@ assert run(first["result"]["artifacts"]["executable"], cwd=project).stdout == "7
 interface = project / "build/debug/service.mossi"
 provider_rlib = project / "build/debug/libmoss_service.rlib"
 assert interface.exists() and provider_rlib.exists()
-provider.rename(provider.with_suffix(".removed"))
+# Package sources remain present: current .mossi artifacts are valid only for
+# source-backed packages under the Phase 26.1 R2 contract.
 consumer.write_text('''module app
 import service
 fn identity(value: Int) -> Int:
@@ -100,6 +101,6 @@ fn main():
 rebuilt = json.loads(run(COMPILER, "build", "--json", cwd=project).stdout)
 result = run(rebuilt["result"]["artifacts"]["executable"], cwd=project)
 assert result.stdout == "8\n7\n" and result.stderr == "", result
-assert not provider.exists() and interface.exists() and provider_rlib.exists()
+assert provider.exists() and interface.exists() and provider_rlib.exists()
 
 print("Phase 21 nested Root ingress and source-free trailer checks passed")

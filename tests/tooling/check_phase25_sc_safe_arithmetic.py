@@ -526,7 +526,7 @@ def test_compiled_only_provider():
             assert facts["may_panic"] == panic, (prefix, facts)
             assert facts["unresolved"] == "0" and facts["raise_set"] == "-", (prefix, facts)
         passed("keys.mossi: digit/tens/isequal/hash may_panic=0, risky may_panic=1")
-        (project / "src" / "keys.moss").unlink()
+        # Keep package source available for R2 interface freshness validation.
         second = run([str(MOSS), "build", "--json"], cwd=project)
         assert second.returncode == 0, second.stdout + second.stderr
         artifact = json.loads(second.stdout)["result"]["artifacts"]["executable"]

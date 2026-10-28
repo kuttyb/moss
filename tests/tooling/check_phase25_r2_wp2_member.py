@@ -55,6 +55,14 @@ with tempfile.TemporaryDirectory(prefix="phase25-r2-wp2-", dir=TMP) as td:
         run(["g++", "-std=c++17", "-O0", "-Wall", "-Wextra", "-Werror",
              "-Wno-missing-field-initializers", "-pedantic", "-Isrc",
              source, "src/checked_body_ir.cpp", "-o", target])
+    validation_view_test = scratch / "validation_view_test"
+    run(["g++", "-std=c++17", "-O0", "-Wall", "-Wextra", "-Werror",
+         "-Wno-missing-field-initializers", "-pedantic", "-Isrc",
+         "tests/tooling/check_phase26_1_t1_validation_view.cpp",
+         "src/type_ir.cpp", "-o", validation_view_test])
+    validation_view_result = run([validation_view_test])
+    assert "PASS mixed imported validation constraints preserved" in (
+        validation_view_result.stdout)
 
     provider = scratch / "provider"
     package(provider, "wp2_member_provider", """module Service
@@ -69,16 +77,14 @@ export fn size(value):
         flags = ["--release"] if profile == "release" else []
         run([MARGO, "build", *flags], cwd=provider, env=env)
         artifacts = scratch / f"artifacts-{profile}"
-        shutil.copytree(provider / "build" / profile, artifacts)
-        run([poisoner, artifacts / "Service.mossi",
-             artifacts / "libService.rlib", "Service", "1", "member"])
-        interface = (artifacts / "Service.mossi").read_text(errors="replace")
+        shutil.copytree(provider, artifacts)
+        artifact_dir = artifacts / "build" / profile
+        run([poisoner, artifact_dir / "Service.mossi",
+             artifact_dir / "libService.rlib", "Service", "1", "member"])
+        interface = (artifact_dir / "Service.mossi").read_text(errors="replace")
         assert "generic_stmt" not in interface, interface
         assert 'generic_constraint 1 "value" "forged_member"' in interface
         artifacts_by_profile[profile] = artifacts
-
-    shutil.rmtree(provider)
-    assert not list(scratch.rglob("provider/src/*.moss"))
 
     consumer_source = """module Main
 import Service
@@ -90,7 +96,7 @@ fn main():
         package(consumer, f"wp2_member_consumer_{profile}", consumer_source)
         flags = ["--release"] if profile == "release" else []
         env = fresh_env(scratch / f"consumer-home-{profile}",
-                        MOSS_MODULE_PATH=str(artifacts),
+                        MOSS_MODULE_PATH=str(artifacts / "build" / profile),
                         MOSS_STAGED_ABI="v10")
         run([MARGO, "build", *flags], cwd=consumer, env=env)
         traced_env = env | {"MOSS_PHASE25_CHECKED_BODY_TRACE": "1"}
@@ -104,7 +110,7 @@ fn main():
         executed = run([MARGO, "run", *flags], cwd=consumer, env=env)
         assert executed.stdout == "3\n", (profile, executed.stdout,
                                            executed.stderr)
-        print(f"PASS source-free member specialization {profile}", flush=True)
+        print(f"PASS imported member interface specialization {profile}", flush=True)
 
     mutations = (
         "member-identity", "summary-member-identity", "receiver-type",
@@ -115,12 +121,13 @@ fn main():
     for mutation in mutations:
         artifacts = scratch / f"hostile-{mutation}"
         shutil.copytree(base, artifacts)
-        run([mutator, artifacts / "Service.mossi",
-             artifacts / "libService.rlib", mutation, "Service"])
+        artifact_dir = artifacts / "build/debug"
+        run([mutator, artifact_dir / "Service.mossi",
+             artifact_dir / "libService.rlib", mutation, "Service"])
         consumer = scratch / f"hostile-consumer-{mutation}"
         package(consumer, f"wp2_member_bad_{mutation}", consumer_source)
         env = fresh_env(scratch / f"hostile-home-{mutation}",
-                        MOSS_MODULE_PATH=str(artifacts),
+                        MOSS_MODULE_PATH=str(artifact_dir),
                         MOSS_STAGED_ABI="v10",
                         MOSS_PHASE25_CHECKED_BODY_TRACE="1")
         rejected = run([MOSS, "check", consumer / "src" / "main.moss", "--json"],

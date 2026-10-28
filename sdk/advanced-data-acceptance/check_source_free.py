@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
-"""Build and execute the compiled-only advanced-data consumer."""
+"""Build and execute the advanced-data consumer through current interfaces."""
 
-import hashlib
 import json
 import os
 from pathlib import Path
@@ -51,10 +50,6 @@ def run(command: list[str], cwd: Path, env: dict[str, str]) -> subprocess.Comple
             f"stderr tail:\n{result.stderr[-4000:]}"
         )
     return result
-
-
-def digest(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def main() -> None:
@@ -145,27 +140,19 @@ def main() -> None:
         prefix="advanced-data-source-free-", dir=SCRATCH
     ) as temporary:
         work = Path(temporary)
-        provider = work / "provider"
         app = work / "consumer"
-        provider.mkdir()
         (app / "src").mkdir(parents=True)
 
-        copied = []
+        provider_roots = []
         for module, package in PROVIDERS:
             artifact_dir = package / "build" / profile
             for filename in (f"{module}.mossi", f"lib{module}.rlib"):
-                source = artifact_dir / filename
-                destination = provider / filename
-                shutil.copy2(source, destination)
-                assert digest(source) == digest(destination), filename
-                copied.append(filename)
-            interface = (provider / f"{module}.mossi").read_bytes()
+                assert (artifact_dir / filename).is_file(), filename
+            interface = (artifact_dir / f"{module}.mossi").read_bytes()
             header = interface.split(b"binary_contract\n", 1)[0]
             expected_abi = f"native_abi {9 if mode == 'v9' else 10}\n".encode()
             assert expected_abi in header, f"{module} is not ABI-{mode[1:]}"
-
-        assert not list(provider.rglob("*.moss"))
-        assert len(copied) == len(PROVIDERS) * 2
+            provider_roots.append(str(artifact_dir))
         (app / "Moss.toml").write_text(
             '[package]\nname = "advanced-data-source-free"\nversion = "0.1.0"\n\n'
             '[build]\nsource = "src"\n',
@@ -173,7 +160,7 @@ def main() -> None:
         )
         shutil.copy2(CONSUMER, app / "src" / "main.moss")
 
-        source_free_env = env | {"MOSS_MODULE_PATH": str(provider)}
+        source_free_env = env | {"MOSS_MODULE_PATH": ":".join(provider_roots)}
         checked = run([str(MOSS), "check", "src/main.moss", "--json"], app, source_free_env)
         assert json.loads(checked.stdout)["ok"] is True
         formatted = run(
@@ -194,7 +181,7 @@ def main() -> None:
     print(
         "Compiled-only advanced-data gate passed: "
         f"ABI-{mode[1:]} {profile}: {len(TEAM_A_MODULES)} Team A modules, "
-        f"{len(PROVIDERS)} exact provider pairs, no provider Moss source"
+        f"{len(PROVIDERS)} current source-backed provider interfaces"
     )
 
 

@@ -1856,7 +1856,7 @@ def test_library_only_unit(preamble: str):
 
 
 def test_explicit_module_pipeline():
-    name = "43-explicit-module-root-and-source-free-provider"
+    name = "43-explicit-module-root-and-provider-wrapper"
     print(f"Test {name}: moss build gives the explicit-module main crate the runtime; provider crates wrappers")
     project = TMP_DIR / "explicit_module_project"
     shutil.rmtree(project, ignore_errors=True)
@@ -1883,17 +1883,18 @@ def test_explicit_module_pipeline():
             problems.append("explicit-module executable app.rs does not own the process runtime")
         if "struct MossProcessRuntime" in pricing_rs or "fn __moss_branch_scope_new_current() -> *const ();" not in pricing_rs:
             problems.append("provider pricing.rs is not a wrapper-only crate")
-        # Source-free provider: hide pricing source and rebuild the root.
-        shutil.move(project / "src" / "pricing.moss", project / "pricing.moss.hidden")
+        # Rebuild with all package sources present. R2 retires source-free
+        # packages; imported-interface freshness is exercised in package tests.
+        assert (project / "src" / "pricing.moss").is_file()
         artifacts = build()
         output = subprocess.check_output([artifacts["executable"]], text=True, timeout=RUN_TIMEOUT)
         if output != "42\n":
-            problems.append(f"source-free provider program printed {output!r}")
+            problems.append(f"source-backed provider program printed {output!r}")
         if rlib is None or not rlib.exists():
             problems.append("no pricing rlib in artifacts")
         else:
             # Link a Rust root built from the real app.rs runtime against the
-            # real source-free provider rlib and run Branch work through the
+            # real provider rlib and run Branch work through the
             # provider's generated wrapper.
             main_src = runtime_preamble(app_rs) + TEST_PRELUDE + r"""
 extern crate moss_pricing;

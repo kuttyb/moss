@@ -290,6 +290,7 @@ Phase 7 reuses the same protocol rather than defining a second automation format
 moss build --json
 moss build --release --json
 moss test parser --json
+moss test --check --json
 moss bench normalize --json
 ```
 
@@ -303,6 +304,10 @@ normal compiler pipeline and semantic identities. Incremental work is available 
 `moss impact <target> --json`; during iteration, `moss test --affected --json` selects
 tests whose semantic dependency cone reaches a changed unit and reports skipped tests
 with reasons. A missing snapshot is handled conservatively by selecting all tests.
+`moss test --check` checks the complete Tests target semantically without executing
+test bodies or emitting Rust; Margo uses it as part of `margo build --check`.
+`moss check <file>` does not persist the native-lowering snapshot used by `moss impact`;
+run `moss build` to seed that snapshot before relying on incremental impact results.
 
 ### Project semantic context
 

@@ -81,7 +81,7 @@ with tempfile.TemporaryDirectory(prefix="phase24-generic-expressions-", dir=SCRA
         '[project]\nname="phase24_generic_expression_source_free"\nversion="0.1.0"\n',
         encoding="utf-8")
     provider_source = provider / "src/probe.moss"
-    provider_source.rename(provider / "src/probe.removed")
+    # Keep package source available for R2 interface freshness validation.
     compiled_provider = provider / "build/debug"
     assert (compiled_provider / "probe.mossi").exists()
     assert (compiled_provider / "libprobe.rlib").exists()

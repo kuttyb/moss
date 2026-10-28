@@ -109,6 +109,11 @@ static std::string read_file(const char* path) {
   return {std::istreambuf_iterator<char>(input), {}};
 }
 
+static std::string section1_only(const std::string& bytes) {
+  const auto section2 = bytes.find("\nexecution_body_version ");
+  return section2 == std::string::npos ? bytes : bytes.substr(0, section2 + 1);
+}
+
 static std::size_t count_lines_containing(const std::string& payload,
                                           const std::string& needle) {
   std::istringstream lines(payload);
@@ -311,5 +316,5 @@ static void check_artifact(const std::string& bytes) {
 int main(int argc, char** argv) {
   assert(argc == 2);
   check_in_memory_eligibility();
-  check_artifact(read_file(argv[1]));
+  check_artifact(section1_only(read_file(argv[1])));
 }

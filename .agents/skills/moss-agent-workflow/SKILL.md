@@ -319,6 +319,10 @@ moss test --affected --json
 formatting entropy. `moss test --affected` is a development accelerator derived from
 the semantic impact snapshot; full `moss test` remains the authoritative validation.
 If no safe narrow selection is available, expect a conservative larger selection.
+`moss check <file>` performs semantic checking without writing the native-lowering
+snapshot used by `moss impact`. After a source edit, run `moss build` before relying on
+impact's incremental comparison; if no snapshot is available, impact/test selection
+falls back conservatively.
 
 For narrowly supported exact semantic changes, JSON-only semantic edits avoid ambiguous
 line manipulation:

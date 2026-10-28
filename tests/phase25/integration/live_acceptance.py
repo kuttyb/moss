@@ -162,7 +162,8 @@ SUITE_PATHS = {"g2": G2_PATH, "e3-debug": E3_PATH,
 KEY_EXACT_STATUS = {
     "01-float-keys-map": "passes",
     "02-float-keys-set": "passes",
-    "03-imported-nominal-keys-source-free": "passes",
+    "03-imported-nominal-keys-source-free":
+        "fail-closed RECORD_MAP_KEY_UNSUPPORTED",
     "04-two-consumers-shared-map": "passes",
     "05-coherence-mismatch-method-override":
         "fail-closed KEY_PROOF_COHERENCE_MISMATCH",
