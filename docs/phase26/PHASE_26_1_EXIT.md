@@ -1,11 +1,12 @@
 # Phase 26.1 exit status
 
-**Status: 26.1 + 26.1.1 complete; awaiting Bank go.**
+**Status: Phase 26.1 + 26.1.1 merged and certified.**
 
 The Phase 26.1.1 X1–X4 closeout and exact-commit gates are recorded in
-[PHASE_26_1_1_X2_RESULTS.md](PHASE_26_1_1_X2_RESULTS.md). The branch is
-`phase26-1-m1`; its latest implementation commit is `e0b8dcc2`, with the
-Bank-directed audit and backlog recorded in docs-only follow-up commits. The
+[PHASE_26_1_1_X2_RESULTS.md](PHASE_26_1_1_X2_RESULTS.md). Branch
+`phase26-1-m1` at `2223dfb7` was merged into `main` with `--no-ff` at
+`ac977ce3` and pushed. The Bank-directed audit and backlog are recorded in
+this exit report and the X2 results. The
 12 native-failing v9 packages were checked with native `margo build` and
 `margo test` at `origin/main` `543722a9` and branch implementation
 `e0b8dcc2`. All 24 command/package exit statuses matched; no package passes on
@@ -15,9 +16,20 @@ corpus differential, C1, package-perf, compiler-perf, and v9 R12 evidence
 recorded in the X2 results. Uninterrupted `make check` passed 150/150 on
 implementation checkpoint `e0b8dcc2` and carries under Bank's docs-only
 exception. Architect issued exact-SHA GO on `e8c273f8`, confirming no
-implementation, test, build, or Margo files changed through this checkpoint
-and that the gate evidence carries. Do not merge until Bank explicitly
-authorizes it; certified compiler-perf on clean `main` remains post-merge.
+implementation, test, build, or Margo files changed through that checkpoint
+and that the gate evidence carries.
+
+## Certified compiler-perf on main
+
+After the no-ff merge, `MOSS_PERF_CERTIFY=1 make compiler-perf` passed on clean
+main at `ac977ce36c37f6e045c94068ac1a5460eefea299`. Certification used baseline
+`c66fb76ca0012b8125d70d404adbff13daa1cf4e`, all 77 fixtures, and three
+interleaved timing repetitions. Aggregate median time was **96.524 s baseline
+vs. 5.215 s candidate (-94.6%)**. The certified report lists **no slowdowns
+beyond the noise floor**. Report: `tmp/compiler-perf/20261027-215953/LOCAL_REPORT.md`.
+
+The delivery is tagged `phase26.1-delivered-v9` on the final certified
+documentation/status commit.
 
 ## Known issues
 

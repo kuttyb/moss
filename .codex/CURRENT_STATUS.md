@@ -1,10 +1,15 @@
-# 26.1 + 26.1.1 complete; awaiting Bank go
+# Phase 26.1 + 26.1.1 merged and certified.
 
-- Frozen docs-only checkpoint `e8c273f8` is pushed on `phase26-1-m1` and has
-  exact-SHA Architect GO. No implementation, test, build, or Margo files
-  changed since `e0b8dcc2`; final gate evidence carries as documented in
-  `docs/phase26/PHASE_26_1_1_X2_RESULTS.md`. Await Bank's explicit go before
-  merging to `main`.
+- Merged `phase26-1-m1` at `2223dfb7` into `main` with `--no-ff` at merge
+  commit `ac977ce3`; pushed to `origin/main` with no force-push.
+- Certified `MOSS_PERF_CERTIFY=1 make compiler-perf` on clean main commit
+  `ac977ce3`, using required baseline `c66fb76c`, all 77 fixtures, and three
+  timing repetitions. Certified report:
+  `tmp/compiler-perf/20261027-215953/LOCAL_REPORT.md`. Aggregate medians were
+  96.524 s baseline and 5.215 s candidate (-94.6%); no slowdown exceeded the
+  noise floor.
+- Final delivery tag: `phase26.1-delivered-v9`, annotated on the certified
+  documentation/status commit after the report and status update are pushed.
 - The implicit-root fixture now passes native `margo build` and `margo test`;
   `moss check <file>` rejects without `MOSS_MODULE_PATH` and accepts with the
   provider path. Focused X2 and `make c1-corpus-gates` pass (G-a 669/669,
