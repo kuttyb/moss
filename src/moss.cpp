@@ -12237,6 +12237,30 @@ static void scope_program_to_file(Program& program,
     return !source.empty() &&
         std::filesystem::absolute(source).lexically_normal().string() == root;
   };
+  auto test_root_directory = [](const std::filesystem::path& source) {
+    auto parent = std::filesystem::absolute(source).lexically_normal().parent_path();
+    while (!parent.empty()) {
+      if (parent.filename() == "tests") return parent;
+      auto next = parent.parent_path();
+      if (next == parent) break;
+      parent = std::move(next);
+    }
+    return std::filesystem::path();
+  };
+  const auto root_tests = test_root_directory(root_file);
+  auto visible_test_function = [&](const Function& function) {
+    if (root_tests.empty()) return true;
+    const auto function_tests = test_root_directory(function.source_file);
+    if (function_tests.empty()) return true;  // R1: all src declarations.
+    if (is_root(function.source_file)) return true;
+    // An explicitly imported module under tests/ is shared only with
+    // test files that name that module in an import declaration.
+    return std::any_of(program.imports.begin(), program.imports.end(),
+        [&](const ModuleImport& import) {
+          return is_root(import.source_file) &&
+              import.name == function.defining_module;
+        });
+  };
   if (scope_kind == FastDebugScopeKind::File) {
     for (const auto& object : program.objects)
       if (is_root(object.source_file)) program.file_scope_objects.insert(object.name);
@@ -12390,7 +12414,9 @@ static void scope_program_to_file(Program& program,
           std::filesystem::path(function.source_file).extension() == ".mossi";
       if (from_interface && !(function.generic || function.static_dispatch))
         continue;
-      if (matches(active.functions, function.name)) changed |= selected_functions.insert(i).second;
+      if (matches(active.functions, function.name) &&
+          visible_test_function(function))
+        changed |= selected_functions.insert(i).second;
     }
     method_index = 0;
     for (const auto& object : program.objects) {
@@ -12408,6 +12434,28 @@ static void scope_program_to_file(Program& program,
           changed |= selected_handlers.insert(handler_index).second;
         }
         ++handler_index;
+      }
+    }
+  }
+
+  if (!root_tests.empty()) {
+    for (const auto& function : program.functions) {
+      if (!test_root_directory(function.source_file).empty() &&
+          !visible_test_function(function) &&
+          matches(root_references.functions, function.name)) {
+        auto source = std::filesystem::path(function.source_file)
+                          .lexically_normal();
+        auto relative = source.lexically_relative(root_tests).generic_string();
+        int line = 0;
+        for (const auto& test : program.tests)
+          if (is_root(test.source_file)) { line = test.line; break; }
+        CompileError error(line,
+            "unknown local function '" + function.name +
+            "'; hint: declared in tests/" + relative +
+            "; move it into a test module and import it",
+            "UNKNOWN_SYMBOL_OR_TYPE");
+        error.source_file = root;
+        throw error;
       }
     }
   }
@@ -17605,10 +17653,11 @@ static CompiledProjectUnit analyze_project_sources(
     const string& declaration_filter = {},
     const std::set<string>* declaration_ids = nullptr,
     const std::map<std::filesystem::path, string>* source_overrides = nullptr,
-    bool require_native_artifacts = true) {
+    bool require_native_artifacts = true,
+    const std::filesystem::path* file_check_root = nullptr) {
   CheckedProjectUnit checked = check_project_sources(
       manifest, sources, mode, declaration_filter, declaration_ids,
-      source_overrides, require_native_artifacts);
+      source_overrides, require_native_artifacts, file_check_root);
   try {
     optimize_program(checked.program, optimized);
     OptimizationPlan plan = OptimizationPlan{optimized};
@@ -21766,7 +21815,8 @@ static NativeArtifact compile_native_artifact(
     bool debug_build, ProgramGenerationMode mode,
     const std::optional<string>& name_override = std::nullopt,
     const string& declaration_filter = {},
-    const std::set<string>* declaration_ids = nullptr) {
+    const std::set<string>* declaration_ids = nullptr,
+    const std::filesystem::path* file_check_root = nullptr) {
   std::error_code error;
   std::filesystem::create_directories(directory, error);
   if (error)
@@ -21907,6 +21957,10 @@ static NativeArtifact compile_native_artifact(
              << "\nmode\n"
              << static_cast<int>(mode) << "\nfilter\n" << declaration_filter
              << "\n";
+  if (file_check_root)
+    source_key << "file-check-root\n"
+               << std::filesystem::absolute(*file_check_root)
+                      .lexically_normal().string() << "\n";
   if (declaration_ids)
     for (const auto& identity : *declaration_ids)
       source_key << identity << "\n";
@@ -21950,7 +22004,7 @@ static NativeArtifact compile_native_artifact(
 
   CompiledProjectUnit unit = analyze_project_sources(
       manifest, sources, optimized, debug_build, mode, declaration_filter,
-      declaration_ids, nullptr, !cargo_driver);
+      declaration_ids, nullptr, !cargo_driver, file_check_root);
   if (staged_abi_v10())
     for (const auto& operation : unit.program.key_operation_specialization_ids)
       source_key << "key-operation " << operation.first << " "

@@ -12850,3 +12850,18 @@ decoder's first two tests and further calls later in that file). The requested
 references are local to their declaring test file; the apparent `key` match in
 the heap example is only prose in a test title. This is the sole Step 1
 migration candidate; Step 2 will move it into an explicit test module.
+
+Phase 26.3 implementation checkpoint: the cbor helper was moved to
+`tests/support/support.moss` as `test_support.same_ints`, with explicit imports
+and qualified calls in both cbor test files. Native cbor tests pass 34/34 and
+interpreter cbor tests pass 34/34. `make moss-dev -j` passes. A temporary
+two-file project probe confirmed that `moss check` rejects a cross-file helper
+reference as `UNKNOWN_SYMBOL_OR_TYPE` and gives the requested move/import hint.
+The file-scope checker path now filters unimported test-file function helpers.
+
+This is not a completed implementation checkpoint: native `margo test` still
+compiles the package test target as one module-oriented artifact, and the full
+R1-R6 rules, native per-file execution, no-test-rlib behavior, F1-F6 fixtures,
+five-package gate, docs, and final `make check` remain outstanding. No code
+changes have been merged. Continue on `phase26-3-native-tests`; do not treat the
+focused cbor runs as the final gate.
