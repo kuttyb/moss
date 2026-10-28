@@ -16,9 +16,14 @@
   R12 hits. Its only native-pass/Fast-Debug-fail entries are the three
   `[FAST_DEBUG_FILEIO]` examples accepted by the Architect. These edits
   invalidate earlier final gates for the current code.
-- Current next steps: finish the fix commit and normal push, obtain a frozen
-  Architect X1+X2 review of that SHA, then rerun all final gates on that exact
-  commit. Update this file with the exact results before ending the session.
+- `861fb2a9` is pushed; its uninterrupted `make check` passed 150/150. Frozen
+  Architect review was NO-GO: executable lookup must not return bodyless
+  `file_scope_pruned_functions`. The worktree now separates signature-only
+  lookup for map result typing from executable function lookup. Add a regression
+  that protects the R12 guard, then commit/push and obtain a new frozen review.
+- All final gates must be rerun on the repaired exact SHA; earlier corpus,
+  differential, C1, package-perf, and compiler-perf results are historical
+  because code changed after `0d205f1c`.
 
 ## Previous checkpoint notes
 

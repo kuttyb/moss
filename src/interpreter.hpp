@@ -795,6 +795,11 @@ class FastInterpreter {
   const Function* function(const std::string& name) const {
     for (const auto& candidate : program_.functions)
       if (candidate.name == name) return &candidate;
+    return nullptr;
+  }
+
+  const Function* function_signature(const std::string& name) const {
+    if (const auto* executable = function(name)) return executable;
     for (const auto& candidate : program_.file_scope_pruned_functions)
       if (candidate.name == name) return &candidate;
     return nullptr;
@@ -984,11 +989,11 @@ class FastInterpreter {
                  separator != std::string::npos;
                  separator = callback_name.find('.', separator + 2))
               callback_name.replace(separator, 1, "__");
-            auto callback_function = function(callback_name);
+            auto callback_function = function_signature(callback_name);
             if (!callback_function) {
               auto local = frame.locals.find(callback_name);
               if (local != frame.locals.end() && local->second.kind == Value::Kind::Callable)
-                callback_function = function(local->second.string);
+                callback_function = function_signature(local->second.string);
             }
             if (callback_function && callback_function->return_type)
               output_type = "vector[" + *callback_function->return_type + "]";
