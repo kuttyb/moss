@@ -12826,16 +12826,17 @@ studies.
 - verify-mode inference gate.
 - cap-reached counter.
 
-## Phase 26.3 item 7 — parse-cache purity (2026-10-28)
+## Phase 26.3 item 7 — parse-cache purity — delivered (2026-10-28)
 
-Work is on `phase26-3-work`, created from `origin/main` at `5e3c7506`. The five
-semantic checker parse-cache miss paths were audited: binary parsing calls only
-static `split_binary_uncached`; simple-call, member-call, and top-level split
-call free Moss parsing helpers; outer-parentheses parsing calls the free
-normalizer. Their transitive helpers use only arguments and local state. The
-cache results therefore depend only on their keys, and `parse_cache_entries_`
-was removed from `inferred_checker_signature()`. The five cache declarations
-carry the purity invariant comment. Audit evidence is in
+Branch `phase26-3-work` was created from `origin/main` at `5e3c7506` and
+pushed through `e615f5be`. The five semantic checker parse-cache miss paths
+were audited: binary parsing calls only static `split_binary_uncached`;
+simple-call, member-call, and top-level split call free Moss parsing helpers;
+outer-parentheses parsing calls the free normalizer. Their transitive helpers
+use only arguments and local state. The cache results depend only on their
+keys, so `parse_cache_entries_` was removed from
+`inferred_checker_signature()`. The five cache declarations carry the purity
+invariant comment. Audit evidence is in
 `docs/phase26/PHASE_26_2_INFERENCE_SIGNATURE_AUDIT.md`.
 
 Locale independence: explicit ASCII helpers in `src/ascii.hpp` classify
@@ -12846,9 +12847,24 @@ records that parser purity no longer depends on process locale. The requested
 conservative scheduling-state comment appears above the signature worklist
 entries.
 
-The first build attempt caught unqualified helper references in a translation-
-unit tail; that compile failure was fixed. Final `make
---jobs="$(nproc)" check` passed 152/152 jobs, 0 failed, 0 skipped, including
-`check_phase26_inference_verify_modes` and `check_phase26_0_1_c3_parse_cache`.
-`git diff --check` passes. Branch commit/push and merge-commit check plus
-compiler-perf gates are pending.
+Branch validation: `make --jobs="$(nproc)" check` passed 152/152 jobs, 0 failed,
+0 skipped, including `check_phase26_inference_verify_modes` and
+`check_phase26_0_1_c3_parse_cache`.
+
+Merge commit: `4a826037cb10502f7c806e271d3954728721fb6e`, first parent baseline
+`5e3c75060bc001f538fa511fe72327012d6b37e0`. On the exact merge commit,
+`make --jobs="$(nproc)" check` passed 152/152 jobs, 0 failed, 0 skipped.
+
+Full 77-fixture `compiler-perf`, 3 interleaved timing repetitions per run,
+against the first parent:
+
+- Run `20261028-113456`: baseline aggregate 5.221 s, candidate 5.107 s
+  (-2.2%).
+- Same-code rerun `20261028-113704`: baseline aggregate 5.258 s, candidate
+  5.083 s (-3.3%).
+- Candidate same-code spread, used as observed aggregate noise floor: 24 ms
+  (5.107 s versus 5.083 s). Both comparisons improved beyond this spread.
+- Neither run reported a fixture beyond the slowdown rule. No single-fixture
+  reproduction rerun was required.
+
+Tag `phase26-3-m1` targets the gated merge commit. No PR was created.
