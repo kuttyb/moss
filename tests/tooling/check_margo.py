@@ -113,7 +113,10 @@ run([margo, "bench", "dependency answer"], app, env=env)
 # branch resolution. Removing the original remote proves cache/lock reuse.
 shutil.rmtree(math)
 second = run([margo, "build", "--json", "--jobs", "1"], app, env=env)
-assert json.loads(second.stdout)["build_order"] == ["Math", "Geometry", "Independent", "App"]
+second_result = json.loads(second.stdout)
+assert second_result["build_order"] == ["Math", "Geometry", "Independent", "App"]
+assert second_result["native_checked"] == []
+assert second_result["native_skipped"] == second_result["build_order"]
 invalid_jobs = run([margo, "build", "-j", "0"], app, expected=1, env=env)
 assert "-j/--jobs must be at least 1" in invalid_jobs.stderr
 assert (app / "Moss.lock").read_text(encoding="utf-8") == lock

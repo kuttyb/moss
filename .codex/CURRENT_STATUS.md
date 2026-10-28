@@ -1,4 +1,30 @@
-# Phase 26.2 — Margo package parallelism checkpoint
+# Phase 26.2 — Cargo package graph checkpoint
+
+- Active branch: `phase26-2-work`, based on local `main` at `e97751ec`; no PR
+  or merge to `main` is in scope. User authorized frequent local commits and
+  normal pushes on this dev branch.
+- Margo now emits a stable Cargo workspace for the resolved package graph,
+  builds it with Cargo using the selected `-j` cap, and copies provider rlibs
+  and the root executable to established package artifact paths. Generated
+  manifests are content-stable. Moss package workers emit Rust in dependency
+  waves before the single graph Cargo build.
+- Validation completed after this implementation slice: `make moss-dev -j`,
+  `python3 -m py_compile margo`, `python3 tests/tooling/check_margo.py ./moss`,
+  and `python3 tests/tooling/check_agent_feedback.py` passed. From
+  `packages/numerics_integration`, `../../margo build --json -j 4` built all
+  five packages; the immediate repeat reported all five native artifacts
+  skipped. `../../margo test` passed 3/3 tests and `../../margo run` succeeded.
+  The exact root invocation `./margo build packages/numerics_integration`
+  is not accepted from repository root because there is no root `Moss.toml`.
+- Remaining Phase 26.2 work: resolve D4 routing for direct `moss` package
+  build commands versus Margo's canonical package driver; remove only retired
+  source-free code paths (keep ABI v10 masked and `checked_body_ir` intact);
+  run the full required regression gates and compiler-perf no-regression guard;
+  obtain the required frozen architecture review before final delivery.
+- The initial `-j` scheduler checkpoint is commit `63985761` on
+  `origin/phase26-2-work`. Current Cargo graph changes are not yet committed.
+
+# Phase 26.2 — Margo package parallelism checkpoint (initial)
 
 - Active branch: `phase26-2-work`, based on local `main` at `e97751ec` (the
   Phase 26.1 delivery merge). User authorized scoped local commits and normal

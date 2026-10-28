@@ -17549,10 +17549,11 @@ static CompiledProjectUnit analyze_project_sources(
     bool optimized, bool debug_build, ProgramGenerationMode mode,
     const string& declaration_filter = {},
     const std::set<string>* declaration_ids = nullptr,
-    const std::map<std::filesystem::path, string>* source_overrides = nullptr) {
+    const std::map<std::filesystem::path, string>* source_overrides = nullptr,
+    bool require_native_artifacts = true) {
   CheckedProjectUnit checked = check_project_sources(
       manifest, sources, mode, declaration_filter, declaration_ids,
-      source_overrides);
+      source_overrides, require_native_artifacts);
   try {
     optimize_program(checked.program, optimized);
     OptimizationPlan plan = OptimizationPlan{optimized};
@@ -17634,9 +17635,11 @@ static SemanticSnapshot analyze_project_snapshot(
 
 static SemanticSnapshot analyze_project_snapshot(
     const ProjectManifest& manifest,
-    const vector<std::filesystem::path>& sources) {
+    const vector<std::filesystem::path>& sources,
+    bool require_native_artifacts = true) {
   CompiledProjectUnit unit = analyze_project_sources(
-      manifest, sources, true, false, ProgramGenerationMode::Application);
+      manifest, sources, true, false, ProgramGenerationMode::Application,
+      {}, nullptr, nullptr, require_native_artifacts);
   return make_semantic_snapshot(manifest, sources, unit.program, unit.plan);
 }
 
@@ -21721,6 +21724,9 @@ static NativeArtifact compile_native_artifact(
   const std::filesystem::path& primary_source = sources.front();
   string stem = name_override.value_or(artifact_stem(manifest, primary_source));
   NativeArtifact artifact;
+  const char* cargo_driver_setting = std::getenv("MOSS_MARGO_CARGO_DRIVER");
+  const bool cargo_driver = cargo_driver_setting &&
+      string(cargo_driver_setting) == "1";
   artifact.rust = directory / (stem + ".rs");
   artifact.debug_map = directory / (stem + ".mossmap");
   artifact.executable = directory / stem;
@@ -21807,7 +21813,7 @@ static NativeArtifact compile_native_artifact(
         return local_source_modules.empty() ||
                local_source_modules.count(file.stem().string()) != 0;
       }), artifact.module_interfaces.end());
-  for (const auto& interface_file : artifact.module_interfaces) {
+  if (!cargo_driver) for (const auto& interface_file : artifact.module_interfaces) {
     std::error_code provider_error;
     auto rlib = interface_file;
     rlib.replace_extension(".rlib");
@@ -21820,7 +21826,7 @@ static NativeArtifact compile_native_artifact(
   // Compiled providers are semantic inputs too.  Their .mossi contract (and
   // backend fingerprint below) must invalidate a consumer even when the
   // consumer's Moss source is unchanged.
-  for (const auto& interface_file : artifact.module_interfaces) {
+  if (!cargo_driver) for (const auto& interface_file : artifact.module_interfaces) {
     std::ifstream interface_input(interface_file, std::ios::binary);
     std::ostringstream interface_text;
     if (interface_input) interface_text << interface_input.rdbuf();
@@ -21889,7 +21895,7 @@ static NativeArtifact compile_native_artifact(
 
   CompiledProjectUnit unit = analyze_project_sources(
       manifest, sources, optimized, debug_build, mode, declaration_filter,
-      declaration_ids);
+      declaration_ids, nullptr, !cargo_driver);
   if (staged_abi_v10())
     for (const auto& operation : unit.program.key_operation_specialization_ids)
       source_key << "key-operation " << operation.first << " "
@@ -21927,7 +21933,7 @@ static NativeArtifact compile_native_artifact(
       }
     }
   }
-  for (const auto& selected : unit.external_module_interfaces) {
+  if (!cargo_driver) for (const auto& selected : unit.external_module_interfaces) {
     const auto& interface_file = selected.second;
     const auto provider_rlib = selected_provider_rlib(interface_file);
     source_key << "selected-provider " << selected.first << "\n"
@@ -22057,7 +22063,7 @@ static NativeArtifact compile_native_artifact(
       rust_changed = update_file(rust_file, generated) || rust_changed;
       if (module == root_module) artifact.rust = rust_file;
     }
-    for (const auto& external : unit.program.external_modules) {
+  if (!cargo_driver) for (const auto& external : unit.program.external_modules) {
       // Pair native code with the exact .mossi interface selected during
       // semantic import resolution. Never re-scan by filename here: another
       // package may legitimately publish a different artifact with the same
@@ -22088,7 +22094,10 @@ static NativeArtifact compile_native_artifact(
   // never receives or regenerates a dependency's Moss implementation.
   artifact.module_rlibs.clear();
   if (unit.program.explicit_module) {
-    for (const auto& module : module_order) {
+    if (cargo_driver) {
+      for (const auto& module : module_order)
+        artifact.module_rlibs.push_back(module_rlib.at(module));
+    } else for (const auto& module : module_order) {
       std::filesystem::path rlib = module_rlib.at(module);
       vector<string> module_command = {artifact.backend_toolchain.rustc_executable};
       module_command.insert(module_command.end(),
@@ -22149,7 +22158,7 @@ static NativeArtifact compile_native_artifact(
 
   // The final executable is the root Moss module and links its dependency
   // rlibs through ordinary rustc --extern options.
-  if (unit.program.explicit_module) {
+  if (unit.program.explicit_module && !cargo_driver) {
     std::filesystem::remove(artifact.executable, error);
     if (error)
       throw ProjectError("MOSS_INTERNAL_OR_IO_ERROR",
@@ -22191,7 +22200,7 @@ static NativeArtifact compile_native_artifact(
     return artifact;
   }
 
-  if (!unit.program.explicit_module) {
+  if (!unit.program.explicit_module && !cargo_driver) {
     std::filesystem::remove(artifact.executable, error);
     if (error)
       throw ProjectError("MOSS_INTERNAL_OR_IO_ERROR",
@@ -22485,7 +22494,7 @@ static int run_project_build(const ProjectManifest& manifest, bool release,
     units_reused = previous_snapshot->units.size();
   } else {
     SemanticSnapshot current_snapshot = analyze_project_snapshot(
-        manifest, sources);
+        manifest, sources, std::getenv("MOSS_MARGO_CARGO_DRIVER") == nullptr);
     units_analyzed = current_snapshot.units.size();
     if (previous_snapshot) {
       std::unordered_map<string,const SemanticSnapshotUnit*> prior;
