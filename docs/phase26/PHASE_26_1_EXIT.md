@@ -1,15 +1,46 @@
 # Phase 26.1 exit status
 
-**Status: Prior Phase 26.1.1 gates passed at `f4b1686a`; Bank's follow-up audit found unresolved native parity defects. Merge is blocked.**
+**Status: 26.1 + 26.1.1 complete; awaiting Bank go.**
 
 The Phase 26.1.1 X1–X4 closeout and exact-commit gates are recorded in
 [PHASE_26_1_1_X2_RESULTS.md](PHASE_26_1_1_X2_RESULTS.md). The branch is
-`phase26-1-m1`; implementation commit `f4b1686a` is pushed to origin. The
-subsequent Bank audit found reachable native errors in the Fast Debug corpus
-and ABI-v10 interface/tooling failures. The X2 results record the evidence and
-current status. Do not merge to `main` until these blockers are resolved and
-Bank explicitly authorizes it; certified compiler-perf on clean `main` remains
-post-merge.
+`phase26-1-m1`; its latest implementation commit is `e0b8dcc2`, with the
+Bank-directed audit and backlog recorded in docs-only follow-up commits. The
+12 native-failing v9 packages were checked with native `margo build` and
+`margo test` at `origin/main` `543722a9` and branch implementation
+`e0b8dcc2`. All 24 command/package exit statuses matched; no package passes on
+main and fails on the branch. These are pre-existing native-backend issues,
+not Fast Debug defects. The exact-commit gates on `e0b8dcc2` carry over because
+the follow-up changes only documentation; Architect confirmation is recorded
+in the review handoff. Do not merge until Bank explicitly authorizes it;
+certified compiler-perf on clean `main` remains post-merge.
+
+## Known issues
+
+- **Native ownership analysis is less strict than Rust borrow checking.** Moss
+  accepts the reachable programs in `push_self_field_read/single` and
+  `field_self_assign_struct/single`, which rustc rejects with E0502, and both
+  `mutate_loop_element` variants, which rustc rejects with E0596. The exact
+  native build and test commands fail the same way on `origin/main` and
+  `e0b8dcc2`.
+- **Native test generation omits test-only support.** On both revisions,
+  `margo test` fails to emit/link helpers in `test_helper_fn/split`,
+  `test_file_helper/split`, and `test_module_mismatch/implicit_test`, and
+  test-only imported rlibs/types in `test_imports_not_in_main`,
+  `test_import/split`, and `test_local_type/split`.
+- **Other pre-existing native build failures.** The generic typed callee
+  fixture `exported_generic_typed_callee/split` fails native linking on both
+  revisions. `trait_only_module/split` reports its missing `traits` provider
+  on both. These are native-backend/package-resolution backlog items.
+- **ABI v10 Fast Debug corpus-only failures, out of scope by Bank decision.**
+  The 12 Margo `UnicodeDecodeError` rows and five
+  `SOURCE_FREE_CONTRACT_INVALID` rows remain on the backlog and are not to be
+  fixed in this phase. The `06j-proof-forged-interface/app` row is also out of
+  scope: Fast Debug skips v10 key-proof validation. ABI-v10 `make check` suites
+  remain in scope and pass; the v10 corpus run is report-only.
+- **Implicit-module identity uses two keys.** The empty string and manifest
+  package name can both identify the implicit module; this identity split is
+  recorded for follow-up.
 
 At `f4b1686a`, uninterrupted `make check` passed 150/150, C1 corpus gates
 passed G-a 669/669 and G-b 67/67, package-perf passed with target enforcement,

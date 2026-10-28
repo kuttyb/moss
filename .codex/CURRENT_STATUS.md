@@ -1,22 +1,23 @@
-# Phase 26.1.1 Bank follow-up audit — merge blocked
+# 26.1 + 26.1.1 complete; awaiting Bank go
 
-- Branch `phase26-1-m1`; native-agreement fix is pushed at `e0b8dcc2`.
-  Architect GO covers this exact code commit. Uninterrupted `make
-  --jobs="$(nproc)" check` passed 150/150 jobs, 0 failed, 0 skipped, on
-  `e0b8dcc2`. No merge to `main`; do not mark this branch as awaiting Bank go
-  yet.
+- Branch `phase26-1-m1`; implementation commit `e0b8dcc2` is pushed.
+  Uninterrupted `make --jobs="$(nproc)" check` passed 150/150 jobs, 0 failed,
+  0 skipped. The Bank-directed native baseline and backlog audit changed docs
+  only. Exact-SHA Architect confirmation of that fact is pending before
+  considering the prior final gates carried over. No merge to `main` until
+  Bank's explicit go.
 - The implicit-root fixture now passes native `margo build` and `margo test`;
   `moss check <file>` rejects without `MOSS_MODULE_PATH` and accepts with the
   provider path. Focused X2 and `make c1-corpus-gates` pass (G-a 669/669,
   G-b 67/67). Full `make check` and Architect review of the follow-up remain
   pending.
 - The post-fix exact-entry C1 trace audit found v9: 14 native-fail / Fast-
-  Debug-pass rows, 12 reachable native defects and 2 confirmed unreachable
-  errors; v10: 32 rows, 13 reachable errors, 2 confirmed unreachable errors,
-  and 17 ABI-v10 interface/tooling errors with no source-body location. Details
-  and every package are in `docs/phase26/PHASE_26_1_1_X2_RESULTS.md`. These
-  findings block Bank go. The native/check-only implicit-root mismatch itself
-  is fixed and reviewed; full gate results are recorded in the X2 results.
+  Debug-pass rows, of which 12 are reachable native backend failures also
+  present on `origin/main` and 2 are confirmed unreachable; v10 additionally
+  had 13 reachable rows, 2 unreachable rows, and 17 interface/tooling errors.
+  Bank classifies the v10 corpus-only rows as out of scope. The v9 baseline
+  comparison and all row details are in `docs/phase26/PHASE_26_1_1_X2_RESULTS.md`.
+  The implicit-root mismatch is fixed and reviewed.
 - The prior final gates at `f4b1686a` remain recorded below/history in the X2
   results: full check 150/150, zero R12 hits, the documented 3 Fast Debug
   differences against `origin/main`, 12 C1 + 3 T1 compiler-corpus rows,

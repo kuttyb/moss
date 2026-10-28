@@ -594,8 +594,13 @@ the durable classification is:
   `sdk/text-encoding-acceptance` main/tests). These remain unresolved interface
   and tooling failures.
 
-The native implicit-root mismatch is fixed and reviewed, but the reachable
-native errors and ABI-v10 interface/tooling rows block marking this branch as
-awaiting Bank go. Do not merge. The issue has been reported to Bank for
-direction; no further broad native backend changes are authorized by this
-follow-up.
+The native implicit-root mismatch is fixed and reviewed. Bank's final
+direction classifies ABI-v10 corpus-only failures as out of scope, while the
+v10 `make check` suites remain required and pass. The 12 v9 native-failing
+packages were each run with native `margo build` and `margo test` on
+`origin/main` `543722a9614b59235680745c24376df17cda236f` and branch
+implementation `e0b8dcc23351a1f119117bdaa8aa39648b101d57`. All 24
+package-command exit statuses matched, with the same native error category;
+none passes on main and fails on the branch. They are pre-existing native
+backend/package-resolution issues and are catalogued in Known issues in
+`PHASE_26_1_EXIT.md`. No implementation files changed in this follow-up.
