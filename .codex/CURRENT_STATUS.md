@@ -13026,3 +13026,17 @@ and native outputs matched (`12`) for the once-assigned Var case. Full
 `make --jobs="$(nproc)" check` passed 154/154 with zero failures or skips,
 including `shard_phase4_diff` and `shard_phase5_tooling`. Work remains on
 `phase26-3-let-alias`; do not merge to main.
+
+### Phase 26.3 let alias — materialization parity follow-up
+
+Renamed the positive optimizer fixture to `phase45_single_assignment_var_virtualizes`.
+Added mutation and reassignment cases that must materialize; both Fast Debug
+and native outputs match their expected values, and optimized artifacts contain
+`MATERIALIZED` with no `VIRTUALIZED` comment. The phase4 shard passed.
+
+Corpus differential against `origin/main` (`bce63bc3`), using its 2,065 tracked
+Moss sources: default output is byte-identical to the prior branch run (zero
+new verdict, diagnostic, or Rust-hash changes). The optimized comparison has
+only the nine established deltas (five virtualizations and four materialization
+reason comments); no new emitter-skip deltas. Full `make --jobs="$(nproc)"
+check` passed 154/154, zero failures or skips. Branch remains unmerged.

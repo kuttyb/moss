@@ -91,8 +91,18 @@ run_phase4_differential phase45_source_mutation_barrier \
   tests/phase45_source_mutation_barrier.moss '6 4'
 run_phase4_differential phase45_cross_let_effect_barrier \
   tests/phase45_cross_let_effect_barrier.moss "$(printf 'between stages\n12')"
-run_phase4_differential phase45_mutable_binding_materializes \
-  tests/phase45_mutable_binding_materializes.moss '12'
+run_phase4_differential phase45_single_assignment_var_virtualizes \
+  tests/phase45_single_assignment_var_virtualizes.moss '12'
+run_phase4_differential phase45_var_mutation_materializes \
+  tests/phase45_var_mutation_materializes.moss '16'
+run_phase4_differential phase45_var_reassignment_materializes \
+  tests/phase45_var_reassignment_materializes.moss '15'
+var_mutation_interp=$($compiler run --interp tests/phase45_var_mutation_materializes.moss)
+[ "$var_mutation_interp" = '16' ] ||
+  fail 'Fast Debug differed from native after Var producer mutation'
+var_reassignment_interp=$($compiler run --interp tests/phase45_var_reassignment_materializes.moss)
+[ "$var_reassignment_interp" = '15' ] ||
+  fail 'Fast Debug differed from native after Var producer reassignment'
 run_phase4_differential phase45_shared_any_all \
   tests/phase45_shared_any_all.moss 'true false 3'
 run_phase4_differential phase45_shared_wrapping \
@@ -283,12 +293,21 @@ if grep -F "FUNCTIONAL INTERMEDIATE 'normalized' VIRTUALIZED" \
   fail 'an intervening observable effect was crossed by binding fusion'
 fi
 grep -F "FUNCTIONAL INTERMEDIATE 'normalized' VIRTUALIZED" \
-  "$test_build/phase45_mutable_binding_materializes_optimized.rs" >/dev/null ||
+  "$test_build/phase45_single_assignment_var_virtualizes_optimized.rs" >/dev/null ||
   fail 'single-assignment var functional binding was not virtualized'
 if grep -Eq '^[[:space:]]*let mut normalized = \{' \
-    "$test_build/phase45_mutable_binding_materializes_optimized.rs"; then
+    "$test_build/phase45_single_assignment_var_virtualizes_optimized.rs"; then
   fail 'virtualized var producer was still materialized'
 fi
+for case in phase45_var_mutation_materializes phase45_var_reassignment_materializes; do
+  if grep -F "FUNCTIONAL INTERMEDIATE 'normalized' VIRTUALIZED" \
+      "$test_build/${case}_optimized.rs" >/dev/null; then
+    fail "$case unexpectedly virtualized a mutated or reassigned binding"
+  fi
+  grep -Eq '^[[:space:]]*let mut normalized = \{' \
+      "$test_build/${case}_optimized.rs" ||
+    fail "$case did not materialize its producer collection"
+done
 grep -Eq '^[[:space:]]*let (mut )?materialized = \{' \
   "$test_build/phase4_materialized_message_optimized.rs" ||
   fail 'message-bound functional collection did not remain materialized'
