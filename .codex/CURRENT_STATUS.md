@@ -12615,8 +12615,8 @@ Baseline comparison in isolated worktree `tmp/phase26-1-main` at `2223dfb7`:
 `make moss-dev -j` passed; W2 passed with `inference_rounds=5`; the Emacs
 cross-package xref check passed with source line 65. On this branch W2 reports 3
 rounds due to `34082a83`'s documented convergence stop; `MOSS_VERIFY_INFERENCE_ROUNDS=1`
-passes, confirming later rounds leave the inferred signature unchanged. The test
-expectation is stale; it was not edited.
+passes, confirming later rounds leave the inferred signature unchanged. W2 now
+expects 3 rounds and also asserts that W5 does not reach the inference round cap.
 
 Phase 26.2 scheduler now uses a bounded ready queue and emits start/finish/fail/
 cancel events in JSON build results. `check_margo.py` uses controlled worker
@@ -12645,12 +12645,16 @@ Latest full `make --jobs="$(nproc)" check`: 149/150. Only
 round count; it passes at the Phase 26.1 baseline. The Emacs xref fixture passed
 in this latest full run and also passed at baseline.
 
-ABI-v9 freshness note: the v9 contract marker now includes the package source
-hash. Commit `e78b6a22` added `validate_provider_source_freshness` to
-`verify_source_free_provider_binding`; this enforces that a consumer rejects a
-missing or stale provider `.mossi` when its recorded package source hash does
-not match the provider's current package source, reporting
-`MOSS_INTERFACE_STALE` and directing the user to run `margo build`.
+ABI-v9 freshness note: `validate_provider_source_freshness` was defined in
+`e78b6a22` (F1). On this branch, commit `bb4b3f7` added its call inside
+`verify_source_free_provider_binding` and added the package source hash to the
+v9 contract marker. This enforces the stale-`.mossi` rule that a consumer
+rejects a provider interface whose recorded package source hash is missing or
+does not match the current provider package source, with `MOSS_INTERFACE_STALE`.
+
+The Emacs xref fixture passes in isolation on baseline `2223dfb` and this
+branch, but is flaky under parallel `make check` (most likely shared state
+between checks). It is recorded for follow-up and was not changed in this phase.
 
 Inference signature completeness review: see
 [Phase 26.2 audit](../docs/phase26/PHASE_26_2_INFERENCE_SIGNATURE_AUDIT.md).

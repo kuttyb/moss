@@ -18,9 +18,10 @@ Margo resolves package dependencies before calling the existing Moss project
 compiler. `path = "../package"` dependencies are live local package roots;
 Git dependencies are cached in `${MARGO_HOME:-~/.margo}` and resolved commits are
 frozen in `Moss.lock`. Moss still owns source modules, `import`, `.mossi`, and all
-language checking. `moss build` rejects a `[package]` root with a structured
-diagnostic; use `margo build` to build its package graph. Legacy `[project]`
-manifests retain their direct compiler-project commands.
+language checking. `moss build` and `moss build --check` reject a `[package]`
+root with the structured diagnostic `MOSS_PACKAGE_BUILD_REQUIRES_MARGO`; use
+`margo build` and `margo build --check` to build or check its package graph.
+Legacy `[project]` manifests retain their direct compiler-project commands.
 
 `margo debug` resolves the package graph without building native artifacts, then hands
 the exact resolved dependency source roots to Fast Debug. Moss resolves source modules

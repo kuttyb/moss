@@ -294,6 +294,10 @@ margo test --check --json
 margo bench normalize --json
 ```
 
+For a `[package]` manifest, both `moss build` and `moss build --check` are
+rejected with `MOSS_PACKAGE_BUILD_REQUIRES_MARGO`. Use `margo build` or
+`margo build --check` to build or check the package graph.
+
 Build results identify the profile, deterministic artifact paths, and the resolved Rust
 backend toolchain fingerprint used for native cache validation. Test and benchmark
 records include stable project/source identities. Test assertions use
