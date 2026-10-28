@@ -11472,6 +11472,36 @@ static ProcessResult run_process(const vector<string>& arguments) {
   return result;
 }
 
+static int run_margo_package_build(const ProjectManifest& manifest,
+                                  bool release) {
+  vector<string> command;
+  if (const char* configured = std::getenv("MARGO");
+      configured && *configured) {
+    command.emplace_back(configured);
+  } else {
+    auto directory = manifest.root;
+    bool found = false;
+    while (!directory.empty()) {
+      const auto candidate = directory / "margo";
+      if (::access(candidate.c_str(), X_OK) == 0) {
+        command.push_back(candidate.string());
+        found = true;
+        break;
+      }
+      const auto parent = directory.parent_path();
+      if (parent == directory) break;
+      directory = parent;
+    }
+    if (!found) command.emplace_back("margo");
+  }
+  command.insert(command.end(), {"build", "--root", manifest.root.string(),
+                                 "--json"});
+  if (release) command.push_back("--release");
+  ProcessResult result = run_process(command);
+  if (!result.output.empty()) std::cout << result.output;
+  return result.exit_code;
+}
+
 struct BackendToolchainIdentity {
   string rustc_executable;
   string version_verbose;
@@ -24516,6 +24546,9 @@ static int run_project_command(int argc, char** argv) {
       }
       if (check_only)
         return run_project_interface_check(manifest, release, json);
+      const char* cargo_driver = std::getenv("MOSS_MARGO_CARGO_DRIVER");
+      if (!cargo_driver || string(cargo_driver) != "1")
+        return run_margo_package_build(manifest, release);
       return run_project_build(manifest, release, json);
     }
     if (command == "fmt") {

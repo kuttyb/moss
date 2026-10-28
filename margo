@@ -990,6 +990,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(prog="margo")
     parser.add_argument("command", choices=("build", "run", "test", "bench", "clean", "debug"))
     parser.add_argument("filter", nargs="?")
+    parser.add_argument("--root", type=Path,
+                        help="package root (defaults to the current directory or a parent)")
     parser.add_argument("--release", action="store_true")
     parser.add_argument("--check", action="store_true",
                         help="check package semantics and write .mossi interfaces without rustc")
@@ -1025,7 +1027,7 @@ def main() -> int:
             raise MargoError("--trace with margo test requires --interp")
         if args.command == "test" and args.interp and args.release:
             raise MargoError("margo test --interp does not support --release")
-        root_path = find_root(Path.cwd())
+        root_path = find_root(args.root if args.root is not None else Path.cwd())
         root, ordered = resolve_graph(root_path)
 
         if args.command == "test" and args.interp:

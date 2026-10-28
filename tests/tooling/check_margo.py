@@ -120,14 +120,14 @@ assert second_result["native_skipped"] == second_result["build_order"]
 invalid_jobs = run([margo, "build", "-j", "0"], app, expected=1, env=env)
 assert "-j/--jobs must be at least 1" in invalid_jobs.stderr
 assert (app / "Moss.lock").read_text(encoding="utf-8") == lock
+
+# A direct Moss package build delegates through Margo, which resolves the
+# package root and drives the generated crates through Cargo.
+shutil.rmtree(independent / "build")
+direct_build = run([moss, "build", "--json"], independent, env=env)
+assert json.loads(direct_build.stdout)["ok"] is True
 run([margo, "clean"], app, env=env)
 assert not (app / "build").exists()
-
-# The existing compiler command remains a direct compatibility path for a
-# package manifest; Margo owns dependency acquisition, Moss owns compilation.
-shutil.rmtree(geometry / "build")
-cached_math = next((home / "git" / "checkouts").glob("*/*/build/debug"))
-run([moss, "build"], geometry, env=dict(env, MOSS_MODULE_PATH=str(cached_math)))
 
 # Margo exposes package artifact roots but does not resolve Moss imports. Two
 # packages may publish the same module until App asks Moss to import it.

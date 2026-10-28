@@ -16,13 +16,18 @@
   skipped. `../../margo test` passed 3/3 tests and `../../margo run` succeeded.
   The exact root invocation `./margo build packages/numerics_integration`
   is not accepted from repository root because there is no root `Moss.toml`.
-- Remaining Phase 26.2 work: resolve D4 routing for direct `moss` package
-  build commands versus Margo's canonical package driver; remove only retired
+- D4 standalone package-build routing is implemented: `moss build` delegates
+  to Margo, and Margo accepts `--root` so the delegation can name the loaded
+  package manifest. Margo's internal Moss emitter call remains marked to avoid
+  recursive delegation. `tests/tooling/check_margo.py` exercises the direct
+  Moss path. `make moss-dev -j` and that check passed after this change.
+- Remaining Phase 26.2 work: remove only retired
   source-free code paths (keep ABI v10 masked and `checked_body_ir` intact);
   run the full required regression gates and compiler-perf no-regression guard;
   obtain the required frozen architecture review before final delivery.
-- The initial `-j` scheduler checkpoint is commit `63985761` on
-  `origin/phase26-2-work`. Current Cargo graph changes are not yet committed.
+- Pushed checkpoints: `63985761` (parallel package waves), `75fbbf32` (Cargo
+  package graph and native skip). Direct Moss-to-Margo build routing is the
+  current uncommitted slice.
 
 # Phase 26.2 — Margo package parallelism checkpoint (initial)
 
