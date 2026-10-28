@@ -19,6 +19,16 @@
 - Remaining stabilization items: deterministic parallel Emacs xref fixture,
   compiler-perf merge-baseline documentation, and final branch/merge gates.
 
+### Standing merge and delivery rules
+
+- Run all merge gates on the merge commit itself, not either parent. Do not
+  commit directly to `main` without the full required gates.
+- For `make compiler-perf` on a merge commit, set the baseline to the merge's
+  first parent (the previous `main` head) and include that baseline hash in the
+  report. A candidate-only run without a baseline does not satisfy the gate.
+- Compiler-perf is a slowdown guard; report regressions beyond the noise floor
+  and do not run timing studies.
+
 ### Stabilization item 2 — specific artifact errors
 
 | Rejection case | Observed before correction | Asserted code |

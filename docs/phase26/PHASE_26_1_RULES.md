@@ -63,7 +63,11 @@ check work only where needed.
 - Each work item gets its own change and Architect review. Required gates are
   corpus differential (verdicts, diagnostic codes, byte-identical generated
   Rust), Fast Debug parity, `make check`, and `compiler-perf` against main with
-  no slowdowns beyond the noise floor.
+  no slowdowns beyond the noise floor. For a merge, run all gates on the merge
+  commit itself. Compare `compiler-perf` against its first parent (the previous
+  `main` head), name that hash in the report, and do not count a candidate-only
+  run without a baseline as the gate. Do not commit directly to `main` without
+  the full required gates.
 - The exit report publishes the M1 table and a fresh certified
   `compiler-perf` run as the Phase 26.2 baseline.
 
