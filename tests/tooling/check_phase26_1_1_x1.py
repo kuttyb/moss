@@ -112,6 +112,20 @@ def main() -> int:
         raise AssertionError("blank-line edit did not update .locations")
     if initial_body_hash == blank_body_hash or initial_payload == blank_payload:
         raise AssertionError("blank-line edit did not refresh Section 2 line data")
+
+    sidecar.unlink()
+    restored_locations = run(env)
+    if not sidecar.is_file():
+        raise AssertionError("missing .locations sidecar was not regenerated")
+    if checked(restored_locations) != {"x1_library"}:
+        raise AssertionError(
+            f"restoring a missing sidecar rechecked a consumer: {restored_locations}")
+    restored_header, _, _ = section(interface)
+    if any(blank_header.get(key) != restored_header.get(key)
+           for key in interface_keys):
+        raise AssertionError("sidecar restoration changed the Section 1 digest")
+    blank_header, blank_body_hash, blank_payload = (
+        restored_header, blank_body_hash, blank_payload)
     initial_header, initial_body_hash, initial_payload = (
         blank_header, blank_body_hash, blank_payload)
 

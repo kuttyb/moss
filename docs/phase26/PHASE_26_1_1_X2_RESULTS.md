@@ -19,6 +19,9 @@
   Existing generic-body edits still change the digest and recheck the consumer.
 - The focused Emacs xref ERT passes before and after a dependency blank-line
   edit, resolving `summary_total_cost` to `model.moss` lines 64 and 65.
+- Margo output snapshots include `.locations` sidecars. The X1 regression
+  deletes a provider sidecar and verifies the next check-only build recreates it,
+  checks only that provider, and preserves all Section 1 digest keys.
 - Architect explicitly accepted the `[FAST_DEBUG_FILEIO]` expectation
   relaxation at frozen `b81bdb4d`; the native operation diagnostic remains
   required and Fast Debug's preflight failure is an accepted capability guard.

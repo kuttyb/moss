@@ -629,7 +629,11 @@ def package_fingerprint(package: Package, release: bool, check_only: bool,
 def output_snapshot(package: Package, release: bool,
                     check_only: bool, result: dict | None) -> dict:
     directory = package.root / "build" / profile_name(release, check_only)
+    # Both interface and location sidecars are required cached outputs. A
+    # missing .locations file must invalidate the provider's package state so
+    # imported declarations retain editor navigation metadata.
     files: set[Path] = set(directory.glob("*.mossi"))
+    files.update(directory.glob("*.locations"))
     if result:
         artifacts = result.get("artifacts", {})
         if isinstance(artifacts, dict):
