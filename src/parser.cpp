@@ -141,9 +141,9 @@ class Parser {
   }
 
   static bool identifier(const string& s) {
-    if (s.empty() || !(std::isalpha(static_cast<unsigned char>(s.front())) || s.front() == '_')) return false;
+    if (s.empty() || !(moss::ascii_is_alpha(static_cast<unsigned char>(s.front())) || s.front() == '_')) return false;
     return std::all_of(s.begin() + 1, s.end(), [](char c) {
-      return std::isalnum(static_cast<unsigned char>(c)) || c == '_';
+      return moss::ascii_is_alnum(static_cast<unsigned char>(c)) || c == '_';
     });
   }
 
@@ -165,9 +165,9 @@ class Parser {
       }
       if (ch == '"') { in_str = true; continue; }
       if (text.compare(i, word.size(), word) != 0) continue;
-      bool left = i == 0 || !(std::isalnum(static_cast<unsigned char>(text[i - 1])) || text[i - 1] == '_');
+      bool left = i == 0 || !(moss::ascii_is_alnum(static_cast<unsigned char>(text[i - 1])) || text[i - 1] == '_');
       size_t after = i + word.size();
-      bool right = after == text.size() || !(std::isalnum(static_cast<unsigned char>(text[after])) || text[after] == '_');
+      bool right = after == text.size() || !(moss::ascii_is_alnum(static_cast<unsigned char>(text[after])) || text[after] == '_');
       if (left && right) return true;
     }
     return false;
@@ -839,7 +839,7 @@ class Parser {
     for (const string& assertion : {string("assert"), string("assertEqual")}) {
       if (L.text == assertion ||
           (starts_with(L.text, assertion) && L.text.size() > assertion.size() &&
-           std::isspace(static_cast<unsigned char>(L.text[assertion.size()]))))
+           moss::ascii_is_space(static_cast<unsigned char>(L.text[assertion.size()]))))
         throw CompileError(L.no,
             assertion + " uses call syntax; write " + assertion + "(...)",
             "INVALID_ASSERT_SYNTAX");
@@ -868,8 +868,8 @@ size_t parse_rust_escape(const string& line, size_t at, uint32_t& codepoint) {
     return at + 2;
   }
   if (e == 'x') {
-    if (at + 3 >= line.size() || !std::isxdigit(static_cast<unsigned char>(line[at + 2])) ||
-        !std::isxdigit(static_cast<unsigned char>(line[at + 3])))
+    if (at + 3 >= line.size() || !moss::ascii_is_hex_digit(static_cast<unsigned char>(line[at + 2])) ||
+        !moss::ascii_is_hex_digit(static_cast<unsigned char>(line[at + 3])))
       return string::npos;
     codepoint = static_cast<uint32_t>(std::stoul(line.substr(at + 2, 2), nullptr, 16));
     return codepoint <= 0x7F ? at + 4 : string::npos;
@@ -878,7 +878,7 @@ size_t parse_rust_escape(const string& line, size_t at, uint32_t& codepoint) {
     size_t close = line.find('}', at + 3);
     if (close == string::npos || close == at + 3 || close - (at + 3) > 6) return string::npos;
     for (size_t k = at + 3; k < close; ++k)
-      if (!std::isxdigit(static_cast<unsigned char>(line[k]))) return string::npos;
+      if (!moss::ascii_is_hex_digit(static_cast<unsigned char>(line[k]))) return string::npos;
     codepoint = static_cast<uint32_t>(std::stoul(line.substr(at + 3, close - (at + 3)), nullptr, 16));
     if (codepoint > 0x10FFFF || (codepoint >= 0xD800 && codepoint <= 0xDFFF)) return string::npos;
     return close + 1;
@@ -943,9 +943,9 @@ static string canonicalize_char_literals(const string& line, int line_no,
             if (before == 0 ||
                 string("([{,=:+-*/%<>!&|^~").find(line[before - 1]) != string::npos) {
               negated = true;
-            } else if (std::isalpha(static_cast<unsigned char>(line[before - 1]))) {
+            } else if (moss::ascii_is_alpha(static_cast<unsigned char>(line[before - 1]))) {
               size_t word = before;
-              while (word > 0 && (std::isalnum(static_cast<unsigned char>(line[word - 1])) ||
+              while (word > 0 && (moss::ascii_is_alnum(static_cast<unsigned char>(line[word - 1])) ||
                                   line[word - 1] == '_'))
                 --word;
               static const std::set<string> keywords = {
@@ -987,7 +987,7 @@ static string canonicalize_char_literals(const string& line, int line_no,
     }
     if (end == string::npos) { out.push_back(c); continue; }
     if (line[i + 1] != '\\' && codepoint < 0x80 &&
-        (std::isalnum(static_cast<int>(codepoint)) || codepoint == '_')) {
+        (moss::ascii_is_alnum(static_cast<int>(codepoint)) || codepoint == '_')) {
       out += line.substr(i, end - i + 1);
     } else {
       char buffer[16];

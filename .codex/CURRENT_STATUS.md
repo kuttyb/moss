@@ -12828,21 +12828,27 @@ studies.
 
 ## Phase 26.3 item 7 — parse-cache purity (2026-10-28)
 
-Work is isolated on `phase26-3-work`, created from `origin/main` at
-`5e3c7506`. The five semantic checker parse-cache miss paths were audited:
-binary parsing calls only static `split_binary_uncached`; simple-call,
-member-call, and top-level split call the corresponding free `moss` parsing
-helpers; outer-parentheses parsing calls the free normalizer. Their transitive
-string helpers use arguments and local state. `trim` reaches `std::isspace`,
-which follows the process C locale; the repository contains no `setlocale` or
-other locale mutation, so this does not vary during a Moss check. The five
-cache declarations now carry a purity invariant comment; `parse_cache_entries_`
-was removed from `inferred_checker_signature()`. The Phase 26.2 audit document
-records file/line evidence and this locale detail. `AGENTS.md` records scoped
-normal commit/push authorization for this branch; no PR or merge is in scope.
+Work is on `phase26-3-work`, created from `origin/main` at `5e3c7506`. The five
+semantic checker parse-cache miss paths were audited: binary parsing calls only
+static `split_binary_uncached`; simple-call, member-call, and top-level split
+call free Moss parsing helpers; outer-parentheses parsing calls the free
+normalizer. Their transitive helpers use only arguments and local state. The
+cache results therefore depend only on their keys, and `parse_cache_entries_`
+was removed from `inferred_checker_signature()`. The five cache declarations
+carry the purity invariant comment. Audit evidence is in
+`docs/phase26/PHASE_26_2_INFERENCE_SIGNATURE_AUDIT.md`.
 
-Validation: `git diff --check` passed before the full gate. On the current
-implementation, `make --jobs="$(nproc)" check` passed all 152/152 jobs, 0 failed,
-0 skipped. This includes `check_phase26_inference_verify_modes`,
-`check_phase26_0_1_c3_parse_cache`, and `check_phase26_w2_inference_worklist`.
-Commit and push are pending.
+Locale independence: explicit ASCII helpers in `src/ascii.hpp` classify
+whitespace (space, tab, LF, CR, FF, VT), alpha, digit, alphanumeric, hex digit,
+and lowercase. `trim`, core parser, semantic checker, and numeric-literal
+parser helpers no longer use locale-dependent ctype classification. The audit
+records that parser purity no longer depends on process locale. The requested
+conservative scheduling-state comment appears above the signature worklist
+entries.
+
+The first build attempt caught unqualified helper references in a translation-
+unit tail; that compile failure was fixed. Final `make
+--jobs="$(nproc)" check` passed 152/152 jobs, 0 failed, 0 skipped, including
+`check_phase26_inference_verify_modes` and `check_phase26_0_1_c3_parse_cache`.
+`git diff --check` passes. Branch commit/push and merge-commit check plus
+compiler-perf gates are pending.

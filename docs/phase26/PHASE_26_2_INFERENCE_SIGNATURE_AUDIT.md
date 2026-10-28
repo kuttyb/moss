@@ -21,9 +21,11 @@ semantic convergence state; it has been removed from the signature. The
 signature dependency worklist is scheduling state: it determines what gets
 revisited, not what is inferred; the
 `MOSS_VERIFY_SIGNATURE_WORKLIST` check independently verifies its completeness.
-The shared `trim` helper uses `std::isspace`, whose C classification follows
-the process C locale; the repository has no `setlocale` or other locale mutation,
-so that locale is unchanged during a Moss check.
+The shared `trim` helper and the parser/checker token helpers now use explicit
+ASCII classification, including whitespace (`space`, `\t`, `\n`, `\r`, `\f`,
+`\v`). The core parser, semantic checker, and numeric-literal parser no longer
+use locale-dependent ctype classification. Parser purity no longer depends on
+the process locale.
 `inferred_checker_signature()` is also used by inner convergence loops (around
 `semantic_checker.cpp` lines 13564, 13923, and 14059). Default and verify-mode
 results were identical for all 77 inputs in the verify gate. The parser purity

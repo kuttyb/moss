@@ -1,4 +1,5 @@
 #include "numeric_literal.hpp"
+#include "ascii.hpp"
 
 #include <cerrno>
 #include <charconv>
@@ -10,10 +11,10 @@ namespace moss {
 
 namespace numeric_literal_detail {
 bool ident_char(char c) {
-  return std::isalnum(static_cast<unsigned char>(c)) || c == '_';
+  return ascii_is_alnum(static_cast<unsigned char>(c)) || c == '_';
 }
-bool hex_digit(char c) { return std::isxdigit(static_cast<unsigned char>(c)) != 0; }
-bool dec_digit(char c) { return std::isdigit(static_cast<unsigned char>(c)) != 0; }
+bool hex_digit(char c) { return ascii_is_hex_digit(static_cast<unsigned char>(c)) != 0; }
+bool dec_digit(char c) { return ascii_is_digit(static_cast<unsigned char>(c)) != 0; }
 // A digit group with separators only between digits: D+(_D+)*.
 template <class Digit>
 bool valid_group(std::string_view group, Digit digit) {
@@ -107,7 +108,7 @@ NumericLiteral scan_numeric_literal(std::string_view text, size_t start) {
     std::uint64_t value = 0;
     for (char c : strip(body)) {
       const unsigned d = dec_digit(c) ? static_cast<unsigned>(c - '0')
-          : static_cast<unsigned>(std::tolower(static_cast<unsigned char>(c)) - 'a' + 10);
+          : static_cast<unsigned>(ascii_to_lower(static_cast<unsigned char>(c)) - 'a' + 10);
       if (value > (UINT64_MAX >> 4)) { lit.magnitude_overflow = true; value = UINT64_MAX; break; }
       value = (value << 4) | d;
     }
@@ -265,8 +266,8 @@ bool int_literal_in_range(const NumericLiteral& lit, bool negated) {
 // leading '+' or '-' (no space after the sign). Returns nullopt for anything
 // else, including invalid or out-of-range literals.
 std::optional<DecodedNumber> decode_numeric_literal_expression(std::string_view e) {
-  while (!e.empty() && std::isspace(static_cast<unsigned char>(e.front()))) e.remove_prefix(1);
-  while (!e.empty() && std::isspace(static_cast<unsigned char>(e.back()))) e.remove_suffix(1);
+  while (!e.empty() && ascii_is_space(static_cast<unsigned char>(e.front()))) e.remove_prefix(1);
+  while (!e.empty() && ascii_is_space(static_cast<unsigned char>(e.back()))) e.remove_suffix(1);
   bool negated = false;
   if (!e.empty() && (e.front() == '+' || e.front() == '-')) {
     negated = e.front() == '-';

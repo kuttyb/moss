@@ -2825,7 +2825,7 @@ class Checker {
     const string ordinal_text = occurrence.semantic_target_id.substr(10);
     if (ordinal_text.empty() ||
         !std::all_of(ordinal_text.begin(), ordinal_text.end(),
-            [](unsigned char character) { return std::isdigit(character); }))
+            [](unsigned char character) { return moss::ascii_is_digit(character); }))
       return false;
     std::size_t consumed = 0;
     std::size_t ordinal = 0;
@@ -2973,7 +2973,7 @@ class Checker {
       const string ordinal_text = binding->second.substr(10);
       if (ordinal_text.empty() ||
           !std::all_of(ordinal_text.begin(), ordinal_text.end(),
-              [](unsigned char character) { return std::isdigit(character); })) {
+              [](unsigned char character) { return moss::ascii_is_digit(character); })) {
         state.expression_occurrence_ledger_complete = false;
         continue;
       }
@@ -4215,7 +4215,7 @@ class Checker {
                 !std::all_of(source.begin() +
                         static_cast<std::ptrdiff_t>(first_digit), source.end(),
                     [](unsigned char character) {
-                      return std::isdigit(character);
+                      return moss::ascii_is_digit(character);
                     }))
               return std::nullopt;
             try {
@@ -5530,7 +5530,7 @@ class Checker {
                 summary.parameter_types[index],
                 static_cast<std::uint32_t>(index), {}, {}, {}, 0};
         if (!value.empty() && std::all_of(value.begin(), value.end(),
-              [](unsigned char c) { return std::isdigit(c); })) {
+              [](unsigned char c) { return moss::ascii_is_digit(c); })) {
           try {
             size_t consumed = 0;
             const auto number = std::stoll(value, &consumed, 10);
@@ -10123,7 +10123,7 @@ class Checker {
     if (local != env.end() && local->second && local->second->name != "_value") return local->second->to_canonical_string();
     size_t start = (!e.empty() && (e.front() == '+' || e.front() == '-')) ? 1 : 0;
     if (start < e.size() && std::all_of(e.begin() + static_cast<std::ptrdiff_t>(start), e.end(), [](char c) {
-          return std::isdigit(static_cast<unsigned char>(c));
+          return moss::ascii_is_digit(static_cast<unsigned char>(c));
         })) return "int";
     if (decimal_float_literal(e)) return "float";
     return std::nullopt;
@@ -10478,9 +10478,9 @@ class Checker {
 
   static bool simple_identifier(const string& value) {
     string s = trim(value);
-    if (s.empty() || !(std::isalpha(static_cast<unsigned char>(s.front())) || s.front() == '_')) return false;
+    if (s.empty() || !(moss::ascii_is_alpha(static_cast<unsigned char>(s.front())) || s.front() == '_')) return false;
     return std::all_of(s.begin() + 1, s.end(), [](char c) {
-      return std::isalnum(static_cast<unsigned char>(c)) || c == '_';
+      return moss::ascii_is_alnum(static_cast<unsigned char>(c)) || c == '_';
     });
   }
 
@@ -10496,16 +10496,16 @@ class Checker {
         continue;
       }
       if (c == '"') { in_string = true; ++i; continue; }
-      if (!(std::isalpha(static_cast<unsigned char>(c)) || c == '_')) { ++i; continue; }
+      if (!(moss::ascii_is_alpha(static_cast<unsigned char>(c)) || c == '_')) { ++i; continue; }
       size_t end = i + 1;
       while (end < expression.size() &&
-             (std::isalnum(static_cast<unsigned char>(expression[end])) || expression[end] == '_')) ++end;
+             (moss::ascii_is_alnum(static_cast<unsigned char>(expression[end])) || expression[end] == '_')) ++end;
       if (expression.compare(i, end - i, name) == 0) {
         size_t before = i;
-        while (before > 0 && std::isspace(static_cast<unsigned char>(expression[before - 1]))) --before;
+        while (before > 0 && moss::ascii_is_space(static_cast<unsigned char>(expression[before - 1]))) --before;
         bool member_name = before > 0 && expression[before - 1] == '.';
         size_t after = end;
-        while (after < expression.size() && std::isspace(static_cast<unsigned char>(expression[after]))) ++after;
+        while (after < expression.size() && moss::ascii_is_space(static_cast<unsigned char>(expression[after]))) ++after;
         bool named_field = after < expression.size() && expression[after] == ':';
         if (!named_field && after < expression.size() && expression[after] == '=') {
           named_field = after + 1 == expression.size() || expression[after + 1] != '=';
@@ -10756,14 +10756,14 @@ class Checker {
         }
         if ((op == "+" || op == "-") && [&] {
               size_t before = i;
-              while (before > 0 && std::isspace(static_cast<unsigned char>(expression[before - 1])))
+              while (before > 0 && moss::ascii_is_space(static_cast<unsigned char>(expression[before - 1])))
                 --before;
               if (before == 0) return true;
               char prior = expression[before - 1];
               if ((prior == 'e' || prior == 'E') && before >= 2 &&
-                  std::isdigit(static_cast<unsigned char>(expression[before - 2])) &&
+                  moss::ascii_is_digit(static_cast<unsigned char>(expression[before - 2])) &&
                   i + 1 < expression.size() &&
-                  std::isdigit(static_cast<unsigned char>(expression[i + 1])))
+                  moss::ascii_is_digit(static_cast<unsigned char>(expression[i + 1])))
                 return true;
               return prior == '(' || prior == '[' || prior == '{' || prior == ',' ||
                   prior == ':' || prior == '+' || prior == '-' || prior == '*' ||
@@ -10822,7 +10822,7 @@ class Checker {
     }
     if (value.empty() ||
         !std::all_of(value.begin(), value.end(), [](char ch) {
-          return std::isdigit(static_cast<unsigned char>(ch));
+          return moss::ascii_is_digit(static_cast<unsigned char>(ch));
         }))
       return false;
     // Compare digit strings: no numeric conversion, so no overflow. A literal
@@ -11191,7 +11191,7 @@ class Checker {
     if (!e.empty() && e.front() == '~')
       return primitive_term(operand_term(trim(e.substr(1))), "int")
           ? primitive("int") : std::nullopt;
-    if (!e.empty() && e.front() == '-' && e.size() > 1 && !std::isdigit(static_cast<unsigned char>(e[1]))) {
+    if (!e.empty() && e.front() == '-' && e.size() > 1 && !moss::ascii_is_digit(static_cast<unsigned char>(e[1]))) {
       auto operand = operand_term(trim(e.substr(1)));
       if (primitive_term(operand, "int") || primitive_term(operand, "float"))
         return InferredExpr{operand, {}};
@@ -11648,7 +11648,7 @@ class Checker {
     if (!starts_with(result, "_method_result:")) return result;
     string suffix = result.substr(15);
     if (suffix.empty() || !std::all_of(suffix.begin(), suffix.end(), [](char ch) {
-          return std::isdigit(static_cast<unsigned char>(ch));
+          return moss::ascii_is_digit(static_cast<unsigned char>(ch));
         }))
       return std::nullopt;
     size_t index = static_cast<size_t>(std::stoull(suffix));
@@ -14343,6 +14343,8 @@ class Checker {
     append(inferred_all_function_signatures());
     append(inferred_shared_signature());
 
+    // Scheduling state, included conservatively; see
+    // PHASE_26_2_INFERENCE_SIGNATURE_AUDIT.md.
     for (size_t index = 0; index < p_.functions.size(); ++index) {
       auto found = signature_function_indices_.find(&p_.functions[index]);
       append(std::to_string(index));
@@ -14445,29 +14447,29 @@ class Checker {
             continue;
           }
           if (ch == '"') { quoted = true; ++i; continue; }
-          if (!std::isalpha(static_cast<unsigned char>(ch)) && ch != '_') {
+          if (!moss::ascii_is_alpha(static_cast<unsigned char>(ch)) && ch != '_') {
             ++i;
             continue;
           }
           size_t start = i++;
           while (i < expression.size() &&
-                 (std::isalnum(static_cast<unsigned char>(expression[i])) ||
+                 (moss::ascii_is_alnum(static_cast<unsigned char>(expression[i])) ||
                   expression[i] == '_')) ++i;
           string receiver = expression.substr(start, i - start);
           size_t dot = i;
-          while (dot < expression.size() && std::isspace(static_cast<unsigned char>(expression[dot]))) ++dot;
+          while (dot < expression.size() && moss::ascii_is_space(static_cast<unsigned char>(expression[dot]))) ++dot;
           if (dot >= expression.size() || expression[dot] != '.') continue;
           size_t member = dot + 1;
-          while (member < expression.size() && std::isspace(static_cast<unsigned char>(expression[member]))) ++member;
+          while (member < expression.size() && moss::ascii_is_space(static_cast<unsigned char>(expression[member]))) ++member;
           if (member >= expression.size() ||
-              (!std::isalpha(static_cast<unsigned char>(expression[member])) &&
+              (!moss::ascii_is_alpha(static_cast<unsigned char>(expression[member])) &&
                expression[member] != '_')) continue;
           size_t end = member + 1;
           while (end < expression.size() &&
-                 (std::isalnum(static_cast<unsigned char>(expression[end])) ||
+                 (moss::ascii_is_alnum(static_cast<unsigned char>(expression[end])) ||
                   expression[end] == '_')) ++end;
           size_t next = end;
-          while (next < expression.size() && std::isspace(static_cast<unsigned char>(expression[next]))) ++next;
+          while (next < expression.size() && moss::ascii_is_space(static_cast<unsigned char>(expression[next]))) ++next;
           auto binding = env.find(receiver);
           if (binding != env.end() && open_generic(binding->second) &&
               (next >= expression.size() || expression[next] != '('))
@@ -18451,7 +18453,7 @@ class Checker {
       }
       size_t end = at + marker.size();
       while (end < type.size() &&
-             (std::isalnum(static_cast<unsigned char>(type[end])) ||
+             (moss::ascii_is_alnum(static_cast<unsigned char>(type[end])) ||
               type[end] == '_'))
         ++end;
       text += "<" + type.substr(at + marker.size(), end - at - marker.size()) + ">";
@@ -19951,7 +19953,7 @@ class Checker {
     size_t start = (s.front() == '+') ? 1 : 0;
     if (start >= s.size()) return false;
     for (size_t i = start; i < s.size(); ++i) {
-      if (!std::isdigit(static_cast<unsigned char>(s[i]))) return false;
+      if (!moss::ascii_is_digit(static_cast<unsigned char>(s[i]))) return false;
     }
     try {
       return std::stoll(s) > 0;
@@ -19966,7 +19968,7 @@ class Checker {
     size_t start = (s.front() == '+') ? 1 : 0;
     if (start >= s.size()) return false;
     for (size_t i = start; i < s.size(); ++i) {
-      if (!std::isdigit(static_cast<unsigned char>(s[i]))) return false;
+      if (!moss::ascii_is_digit(static_cast<unsigned char>(s[i]))) return false;
     }
     try {
       return std::stoll(s) >= 0;
@@ -19979,9 +19981,9 @@ class Checker {
     std::set<string> ids;
     size_t i = 0;
     while (i < expr.size()) {
-      if (std::isalpha(static_cast<unsigned char>(expr[i])) || expr[i] == '_') {
+      if (moss::ascii_is_alpha(static_cast<unsigned char>(expr[i])) || expr[i] == '_') {
         size_t start = i;
-        while (i < expr.size() && (std::isalnum(static_cast<unsigned char>(expr[i])) || expr[i] == '_')) {
+        while (i < expr.size() && (moss::ascii_is_alnum(static_cast<unsigned char>(expr[i])) || expr[i] == '_')) {
           ++i;
         }
         ids.insert(expr.substr(start, i - start));
@@ -20488,19 +20490,19 @@ class Checker {
         continue;
       }
       if (ch == '"') { in_string = true; ++index; continue; }
-      if (!(std::isalpha(static_cast<unsigned char>(ch)) || ch == '_')) {
+      if (!(moss::ascii_is_alpha(static_cast<unsigned char>(ch)) || ch == '_')) {
         ++index;
         continue;
       }
       size_t end = index + 1;
       while (end < expression.size() &&
-             (std::isalnum(static_cast<unsigned char>(expression[end])) ||
+             (moss::ascii_is_alnum(static_cast<unsigned char>(expression[end])) ||
               expression[end] == '_'))
         ++end;
       string name = expression.substr(index, end - index);
       size_t before = index;
       while (before > 0 &&
-             std::isspace(static_cast<unsigned char>(expression[before - 1])))
+             moss::ascii_is_space(static_cast<unsigned char>(expression[before - 1])))
         --before;
       bool member_name = before > 0 && expression[before - 1] == '.';
       if (name != "_" && !member_name && env.count(name)) captures.insert(name);
@@ -23332,7 +23334,7 @@ class Checker {
         bool literal = first_digit < step.size() &&
             std::all_of(step.begin() + static_cast<std::ptrdiff_t>(first_digit),
                         step.end(), [](char value) {
-                          return std::isdigit(static_cast<unsigned char>(value));
+                          return moss::ascii_is_digit(static_cast<unsigned char>(value));
                         });
         if (!literal || (step == "0" || step == "+0"))
           err(line, "range step must be a positive non-zero Int literal");
@@ -24091,7 +24093,7 @@ class Checker {
     string operation_name = operation;
     std::transform(operation_name.begin(), operation_name.end(),
                    operation_name.begin(), [](unsigned char character) {
-                     return static_cast<char>(std::tolower(character));
+                     return static_cast<char>(moss::ascii_to_lower(character));
                    });
     string identity = trim(callable);
     if (identity.empty()) err(line, "functional stage requires a callable");
@@ -24866,7 +24868,7 @@ class Checker {
   static std::optional<std::pair<string, string>> juxtaposed_operands(const string& expression) {
     // `in` keeps its dedicated UNSUPPORTED_EXPRESSION_OPERATOR diagnostic.
     static const std::set<string> word_operators{"and", "or", "xor", "not", "message", "in"};
-    auto is_word = [](char c) { return std::isalnum(static_cast<unsigned char>(c)) || c == '_'; };
+    auto is_word = [](char c) { return moss::ascii_is_alnum(static_cast<unsigned char>(c)) || c == '_'; };
     string previous;          // last top-level token when it ends an operand
     bool previous_operand = false;
     bool space = false;
@@ -24898,12 +24900,12 @@ class Checker {
         continue;
       }
       if (depth > 0) { ++i; continue; }
-      if (std::isspace(static_cast<unsigned char>(c))) { space = true; ++i; continue; }
+      if (moss::ascii_is_space(static_cast<unsigned char>(c))) { space = true; ++i; continue; }
       if (is_word(c)) {
         size_t start = i;
         while (i < expression.size() && (is_word(expression[i]) || expression[i] == '.' ||
                ((expression[i] == '+' || expression[i] == '-') &&
-                std::isdigit(static_cast<unsigned char>(expression[start])) &&
+                moss::ascii_is_digit(static_cast<unsigned char>(expression[start])) &&
                 (expression[i - 1] == 'e' || expression[i - 1] == 'E'))))
           ++i;
         string word = expression.substr(start, i - start);
@@ -26073,7 +26075,7 @@ class Checker {
             ? trim(base.substr(1)) : base;
         auto all_digits = [](const string& text) {
           return !text.empty() && std::all_of(text.begin(), text.end(), [](char c) {
-            return std::isdigit(static_cast<unsigned char>(c)) || c == '_';
+            return moss::ascii_is_digit(static_cast<unsigned char>(c)) || c == '_';
           });
         };
         // An exponent field is only `e`/`E`, an optional sign, then digits
@@ -26697,7 +26699,7 @@ class Checker {
                  decimal_float_literal(value) ||
                  (!value.empty() && std::all_of(value.begin(), value.end(),
                      [](unsigned char character) {
-                       return std::isdigit(character) || character == '_';
+                       return moss::ascii_is_digit(character) || character == '_';
                      })))
           mark_active_expression(OccurrenceKind::Literal);
       }
