@@ -126,6 +126,31 @@ corpus differential, complete `make check`, `make c1-corpus-gates`, compiler
 performance guard, and Architect review of the X2 implementation SHA remain
 pending.
 
+## Final corpus parity repair checkpoint — 2026-10-27
+
+The final Fast Debug sweep found three native-pass execution failures plus one
+R12 guard hit. The causes and repairs are:
+
+- `examples/swarm/Python/HashMap`: accept the source spelling `Vector [Int]()`
+  as a typed empty-vector constructor before callable dispatch. This removes the
+  R12 guard hit.
+- `examples/swarm/Python/deque`: enter String `append`/`reserve` handling only
+  for an actual String receiver; custom object methods with those names now
+  reach normal method dispatch.
+- `examples/swarm/modules/data_pipeline/analytics` and
+  `.../repro/analytics_natural`: when scoped pipeline metadata is absent, retain
+  the mapped runtime value's element type, and consult checked callback
+  signatures where available. Both examples now execute successfully.
+
+The full 438-package / 127-test-file sweep completed uninterrupted. The R12
+guard fired zero times. Native-success/Fast-Debug-failure results are limited to
+the three FileIO examples guarded by `[FAST_DEBUG_FILEIO]`, whose test
+expectation was explicitly accepted by the Architect at `b81bdb4d`. Other
+reported harness failures are cases where native also fails, or where its
+strict build checks code intentionally outside the Fast Debug entry's scope;
+they are not runtime parity mismatches. This sweep is recorded as a focused
+corpus check; the formal all-gates run remains pending on the final frozen SHA.
+
 ## Follow-up checkpoint — 2026-10-27
 
 The follow-up addresses the Architect's two X2 findings: Main scope now removes

@@ -53,6 +53,10 @@ import dep
 
 fn main():
   echo used()
+  empty = typed_empty()
+
+fn typed_empty() -> Vector[Int]:
+  return Vector [Int]()
 
 fn used() -> Int:
   return dep.value() + 2

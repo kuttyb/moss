@@ -1,4 +1,26 @@
-# Phase 26.1.1 — ABI-v10 Section 2 checkpoint — 2026-10-27
+# Phase 26.1.1 — final gate continuation — 2026-10-27
+
+- Active branch: `phase26-1-m1`. Last frozen/pushed code SHA before the current
+  parity repairs: `0d205f1c`. X1–X4 are implemented and Architect GO was recorded
+  at that SHA. Bank accepted the `[FAST_DEBUG_FILEIO]` test relaxation at
+  `b81bdb4d`; the Phase 5 tooling shard was rerun successfully with
+  `/usr/bin/lldb-dap-18` (the earlier timeout remains recorded historically).
+- The full `make check` passed 150/150, C1 corpus gates passed, package-perf
+  passed with target enforcement, and the 5-repetition compiler-perf rerun
+  passed the noise-floor rule at `0d205f1c`. Compiler-to-compiler differential
+  against `origin/main` found exactly the intended 12 C1 and 3 T1 rows; Rust
+  output is byte-identical where both revisions emit it.
+- The subsequent Fast Debug corpus sweep exposed an R12 hit in HashMap and
+  runtime failures in deque and data_pipeline. Those fixes are in the current
+  worktree; the complete 438-package / 127-test-file sweep now reports zero
+  R12 hits. Its only native-pass/Fast-Debug-fail entries are the three
+  `[FAST_DEBUG_FILEIO]` examples accepted by the Architect. These edits
+  invalidate earlier final gates for the current code.
+- Current next steps: finish the fix commit and normal push, obtain a frozen
+  Architect X1+X2 review of that SHA, then rerun all final gates on that exact
+  commit. Update this file with the exact results before ending the session.
+
+## Previous checkpoint notes
 
 - X3 now follows Bank's corrected gate: a dependency blank-line edit rewrites
   its `.mossi`, Section 2, and `.locations`, while normalized Section 1 hashes
