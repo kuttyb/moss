@@ -161,6 +161,8 @@ def main() -> int:
         raise AssertionError(
             "W5 should stop after cross-family inference signatures converge"
         )
+    if profile.get("inference_rounds_cap_reached", 0) != 0:
+        raise AssertionError("W5 reached the cross-family inference round cap")
     visited_by_round = {
         key: value for key, value in profile.items()
         if re.fullmatch(r"inference_reinferred_functions_round_\d+", key)
