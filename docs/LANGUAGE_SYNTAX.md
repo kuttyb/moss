@@ -88,8 +88,7 @@ var count = 0
 count = count + 1
 ```
 
-`let` is explicitly immutable and cannot be reassigned or used as the writable
-receiver of a mutating operation. `var` is explicitly mutable. Local type
+`let` is an alias for `var`; local mutability is inferred. Local type
 annotations such as `var values: Vector[Int] = []` are not part of v0.1;
 ordinary locals are inferred instead.
 
@@ -943,8 +942,8 @@ Before the frontend migration, the compiler accepted `type Name = object`, `on` 
 handlers, `proc main()`, and dotted message calls. The migration adds the canonical
 `fn`, `type Name:`, inferred state bindings, inferred handler replies, explicit
 `message`, pipeline, and `=` constructor forms incrementally. `let` and `var` are
-current supported local-binding forms: `let` is explicitly immutable and `var`
-explicitly mutable. Most examples use the preferred syntax, but several older
+current supported local-binding forms: `let` is an alias for `var`; local
+mutability is inferred. Most examples use the preferred syntax, but several older
 functional examples still use the `proc main()` compatibility spelling, and
 compatibility tests retain older spellings where useful. The old naked dotted spelling
 is rejected when its receiver is a domain reference. Legacy declarations remain

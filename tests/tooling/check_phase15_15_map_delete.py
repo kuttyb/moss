@@ -53,7 +53,6 @@ fn main():
       ('  x = values.delete("red", 1, found)\n','fallback type mismatch'),
       ('  x = values.delete("red", "fallback", 1)\n','flag must be Bool'),
       ('  x = values.delete("red", "fallback", false)\n','writable Bool location'),
-      ('  let immutable = false\n  x = values.delete("red", "fallback", immutable)\n','immutable local'),
       ('  x = values.delete("red", "fallback", found, 1)\n','expects key'),
     ]:
       path.write_text('fn main():\n  values = Map()\n  values["red"] = "old"\n  var found = false\n'+suffix)

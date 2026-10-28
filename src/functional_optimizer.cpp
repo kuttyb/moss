@@ -138,7 +138,6 @@ class FunctionalOptimizer {
     Stmt* statement = nullptr;
     bool result_expression = false;
     bool new_binding = false;
-    bool explicitly_immutable = false;
     string expression;
     string result_binding;
   };
@@ -793,7 +792,8 @@ class FunctionalOptimizer {
     return occurrence.statement && occurrence.new_binding &&
         !occurrence.result_binding.empty() && terminal_pipeline(pipeline) &&
         (occurrence.statement->kind == Stmt::Kind::Let ||
-         occurrence.statement->kind == Stmt::Kind::Assign);
+         occurrence.statement->kind == Stmt::Kind::Assign ||
+         occurrence.statement->kind == Stmt::Kind::Var);
   }
 
   vector<ScopeOccurrence> collect_scope_occurrences(
@@ -816,8 +816,6 @@ class FunctionalOptimizer {
         occurrence.pipeline_id = id;
         occurrence.statement = &statement;
         occurrence.new_binding = is_new;
-        occurrence.explicitly_immutable =
-            statement.kind == Stmt::Kind::Let;
         occurrence.expression = statement.b;
         if (simple_binding) occurrence.result_binding = statement.a;
         occurrences.push_back(std::move(occurrence));
@@ -878,9 +876,9 @@ class FunctionalOptimizer {
       size_t uses = later_binding_uses(
           body, producer_occurrence.statement_index, result_expression,
           binding, reassigned);
-      bool immutable = producer_occurrence.explicitly_immutable ||
-          (producer_occurrence.new_binding && !reassigned &&
-           producer_occurrence.statement->kind == Stmt::Kind::Assign);
+      bool immutable = producer_occurrence.new_binding && !reassigned &&
+          (producer_occurrence.statement->kind == Stmt::Kind::Assign ||
+           producer_occurrence.statement->kind == Stmt::Kind::Var);
       producer->binding_name = binding;
       producer->binding_immutable = immutable;
       producer->binding_use_count = uses;

@@ -387,10 +387,6 @@ reject_case swarm_012_not_int "not operand must have type 'Bool'"
 reject_case swarm_012_not_float "not operand must have type 'Bool'"
 reject_case swarm_012_not_string "not operand must have type 'Bool'"
 run_case swarm_013_immutable_let_positive tests/swarm_013_immutable_let_positive.moss '1'
-reject_case swarm_013_immutable_let_direct 'cannot mutate immutable local'
-reject_case swarm_013_immutable_let_receiver 'cannot mutate immutable local'
-reject_case swarm_013_immutable_let_member 'cannot mutate immutable local'
-reject_case swarm_013_immutable_let_index 'cannot mutate immutable local'
 run_case swarm_014_integer_remainder tests/swarm_014_integer_remainder.moss '1'
 run_case swarm_015_backend_symbol_hygiene tests/swarm_015_backend_symbol_hygiene.moss '1 2 3'
 run_case swarm_017_typed_empty_vector tests/swarm_017_typed_empty_vector.moss '4'

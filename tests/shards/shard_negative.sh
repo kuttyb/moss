@@ -16,10 +16,6 @@ reject_case swarm_011_overlapping_access \
 reject_case swarm_012_not_int "not operand must have type 'Bool'"
 reject_case swarm_012_not_float "not operand must have type 'Bool'"
 reject_case swarm_012_not_string "not operand must have type 'Bool'"
-reject_case swarm_013_immutable_let_direct 'cannot mutate immutable local'
-reject_case swarm_013_immutable_let_receiver 'cannot mutate immutable local'
-reject_case swarm_013_immutable_let_member 'cannot mutate immutable local'
-reject_case swarm_013_immutable_let_index 'cannot mutate immutable local'
 reject_case swarm_026_in_expression "binary 'in' expression is not supported"
 reject_case swarm_036_symbolic_and "binary '&&' expression is not supported"
 reject_case swarm_036_symbolic_or "binary '||' expression is not supported"
