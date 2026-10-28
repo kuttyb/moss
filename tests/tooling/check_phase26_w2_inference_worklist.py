@@ -157,8 +157,10 @@ def main() -> int:
     function_count = profile.get("functions_analyzed", 0)
     if function_count != 200:
         raise AssertionError(f"W5 should analyze 200 functions, got {function_count}")
-    if profile.get("inference_rounds") != 5:
-        raise AssertionError("the existing inference_rounds meaning/count changed")
+    if profile.get("inference_rounds") != 3:
+        raise AssertionError(
+            "W5 should stop after cross-family inference signatures converge"
+        )
     visited_by_round = {
         key: value for key, value in profile.items()
         if re.fullmatch(r"inference_reinferred_functions_round_\d+", key)
@@ -177,6 +179,26 @@ def main() -> int:
         raise AssertionError("aggregate changed-signature counter disagrees with per-wave counts")
     if profile["inference_reinferred_functions"] > function_count * 8:
         raise AssertionError("W5 still re-infers too many functions across worklist waves")
+
+    verify_env = dict(os.environ)
+    verify_env.pop("MOSS_PROFILE_COMPILER", None)
+    verify_env["MOSS_VERIFY_INFERENCE_ROUNDS"] = "1"
+    verified = invoke(
+        [str(compiler), "check", str(W5), "--json"], env=verify_env
+    )
+    try:
+        verified_payload = json.loads(verified.stdout)
+    except json.JSONDecodeError as exc:
+        raise AssertionError(
+            f"verified W5 check produced invalid JSON: {verified.stdout!r} "
+            f"{verified.stderr!r}"
+        ) from exc
+    if verified.returncode != 0 or verified_payload.get("ok") is not True:
+        raise AssertionError(
+            f"verified W5 rejected: {verified.stdout!r} {verified.stderr!r}"
+        )
+    if "changed signatures after convergence" in verified.stderr:
+        raise AssertionError(verified.stderr)
 
     check_project_wave_counts(compiler, REGEX)
     check_project_wave_counts(compiler, DATASTRUCTURES)
