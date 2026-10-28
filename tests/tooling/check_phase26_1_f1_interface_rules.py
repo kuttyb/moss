@@ -163,7 +163,7 @@ def main() -> int:
         assert json.loads(unset.stdout) == json.loads(overridden.stdout), (
             command, unset.stdout, overridden.stdout)
     direct_debug = run([COMPILER, "debug", consumer], consumer, check_env, ok=False)
-    assert "interface for f1_lib is missing or stale; run `margo build`" in (
+    assert "PROJECT_SOURCE_NOT_FOUND" in (
         direct_debug.stdout + direct_debug.stderr), (
             direct_debug.stdout, direct_debug.stderr)
 

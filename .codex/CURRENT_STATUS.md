@@ -10,8 +10,14 @@
   source roots; that case still executes successfully. Margo strips obsolete
   source-root overrides before invoking Moss. Focused Phase 15.8 check passes
   11/11; `make moss-dev -j` and `python3 -m py_compile margo` pass.
-- Remaining stabilization items: R2 diagnostic specificity, deterministic
-  parallel Emacs xref fixture, and compiler-perf merge-baseline documentation.
+- Follow-up: `check_phase26_1_f1_interface_rules.py` also expected the previous
+  missing-interface diagnostic when it deliberately supplied a nonexistent
+  source root. Updated that assertion to `PROJECT_SOURCE_NOT_FOUND`; the focused
+  check passes. This is the expected R1 precedence for an invalid user-supplied
+  root.
+- Item 1 commits: `a599a536` plus its test expectation follow-up (below).
+- Remaining stabilization items: deterministic parallel Emacs xref fixture,
+  compiler-perf merge-baseline documentation, and final branch/merge gates.
 
 ### Stabilization item 2 — specific artifact errors
 
