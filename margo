@@ -240,6 +240,9 @@ def package_environment(root: Package, ordered: list[Package], release: bool,
     # The opt-in ABI-v10 compiler uses one content-addressed shared runtime
     # artifact across every package in this dependency graph.
     env.setdefault("MOSS_RUNTIME_SOURCE_DIR", str(REPO / "runtime" / "moss_runtime"))
+    env["MOSS_MARGO_PACKAGE_BUILD_ROOTS"] = os.pathsep.join(
+        str((package.root / "build" / profile_name(release, check_only)).resolve())
+        for package in ordered)
     if paths:
         existing = [p for p in env.get("MOSS_MODULE_PATH", "").split(os.pathsep) if p]
         pkg_build_dirs = {str((pkg.root / "build").resolve()) for pkg in ordered}
@@ -715,6 +718,62 @@ def cargo_build_graph(root: Package, packages: list[Package],
                         "crate_dir": crates_dir / name, "kind": "bin",
                         "executable": executable})
 
+    graph_modules = {module for modules in modules_by_package.values()
+                     for module in modules}
+    ambient_modules: dict[str, dict] = {}
+    ambient_packages: dict[str, Package] = {}
+    ambient_roots = [Path(raw_root) for raw_root in
+                     os.environ.get("MOSS_MODULE_PATH", "").split(os.pathsep)
+                     if raw_root]
+    ambient_roots.extend(package.root / "deps" for package in packages)
+    for ambient_root in ambient_roots:
+        if not ambient_root.is_dir():
+            continue
+        for interface in ambient_root.rglob("*.mossi"):
+            module_id = next((line.split(maxsplit=1)[1]
+                              for line in interface.read_text(encoding="utf-8").splitlines()
+                              if line.startswith("module_id ")), "")
+            module = module_id.rsplit("::", 1)[-1] if module_id else interface.stem
+            if module in graph_modules:
+                continue
+            owner = next((parent for parent in interface.parents
+                          if (parent / "Moss.toml").is_file() or
+                          (parent / "moss.toml").is_file()), None)
+            if owner is None:
+                continue
+            manifest, data = read_manifest(owner)
+            identity = "ambient-path:" + str(owner.resolve())
+            package = ambient_packages.setdefault(identity, Package(
+                owner.resolve(), manifest, data, identity,
+                {"kind": "ambient", "path": str(owner.resolve())}))
+            source = owner / "build" / profile_name(release) / f"{module}.rs"
+            if not source.is_file():
+                source = interface.parent / f"{module}.rs"
+            if not source.is_file():
+                emit_env = dict(os.environ)
+                emit_env["MOSS_MARGO_CARGO_DRIVER"] = "1"
+                emit_env["MOSS_MARGO_PACKAGE_BUILD_ROOTS"] = os.pathsep.join(
+                    [*(str((package.root / "build" / profile_name(release)).resolve())
+                      for package in packages),
+                     str((owner / "build" / profile_name(release)).resolve())])
+                run([str(MOSS), "build", "--json"], cwd=owner, env=emit_env,
+                    capture=True)
+                source = owner / "build" / profile_name(release) / f"{module}.rs"
+                if not source.is_file():
+                    raise MargoError(
+                        f"source-backed Cargo provider {module} has no generated Rust artifact")
+            name = cargo_package_name(package, "lib", module)
+            record = {"package": package, "module": module,
+                      "crate_name": rust_crate_name(module), "source": source,
+                      "cargo_name": name, "crate_dir": crates_dir / name,
+                      "kind": "lib"}
+            previous = ambient_modules.get(module)
+            if previous and previous["source"] != source:
+                raise MargoError(f"ambiguous ambient Cargo provider for module {module}")
+            ambient_modules[module] = record
+            modules_by_package.setdefault(identity, {})[module] = record
+            records.append(record)
+
     record_by_name = {record["cargo_name"]: record for record in records}
     for existing in crates_dir.iterdir():
         if existing.is_dir() and existing.name not in record_by_name:
@@ -736,6 +795,8 @@ def cargo_build_graph(root: Package, packages: list[Package],
                     candidates.append(found)
                 visit(dependency)
         visit(package)
+        if not candidates and module in ambient_modules:
+            candidates.append(ambient_modules[module])
         if len(candidates) != 1:
             reason = "missing" if not candidates else "ambiguous"
             raise MargoError(f"Cargo provider for module {module} is {reason} in {package.data['name']}")
@@ -743,6 +804,7 @@ def cargo_build_graph(root: Package, packages: list[Package],
 
     runtime_dir = Path(os.environ.get("MOSS_RUNTIME_SOURCE_DIR",
                                      REPO / "runtime" / "moss_runtime")).resolve()
+    external_crates: dict[str, Path] = {}
     for record in records:
         imports = sorted(set(re.findall(
             r"(?m)^\s*extern crate ([A-Za-z_][A-Za-z0-9_]*);",
@@ -752,11 +814,17 @@ def cargo_build_graph(root: Package, packages: list[Package],
             if crate == "moss_runtime" and (runtime_dir / "Cargo.toml").is_file():
                 dependencies.append((crate, "moss_runtime", runtime_dir))
             elif crate.startswith("moss_"):
-                provider = provider_for(record["package"], crate[5:])
-                dependencies.append((crate, provider["cargo_name"], provider["crate_dir"]))
+                module = crate[5:]
+                try:
+                    provider = provider_for(record["package"], module)
+                except MargoError as error:
+                    raise
+                else:
+                    dependencies.append((crate, provider["cargo_name"], provider["crate_dir"]))
             else:
                 raise MargoError(f"unsupported generated Rust dependency {crate} in {record['source']}")
         crate_dir = record["crate_dir"]
+        cargo_source = record["source"]
         manifest = ["[package]", f"name = {json.dumps(record['cargo_name'])}",
                     f"version = {json.dumps(record['package'].data['version'])}",
                     'edition = "2021"', 'build = "build.rs"',
@@ -775,7 +843,10 @@ def cargo_build_graph(root: Package, packages: list[Package],
                 manifest.append(f"{alias} = {{ package = {json.dumps(name)}, path = {json.dumps(dependency_path)} }}")
             manifest.append("")
         write_if_changed(crate_dir / "Cargo.toml", "\n".join(manifest))
-        build_rs = ('fn main() { println!("cargo:rustc-check-cfg=cfg(moss_process_root)"); '
+        build_rs = ('fn main() { println!("cargo:rerun-if-env-changed=MOSS_EXTERNAL_RLIB_FINGERPRINT"); '
+                    'println!("cargo:rustc-env=MOSS_EXTERNAL_RLIB_FINGERPRINT={}", '
+                    'std::env::var("MOSS_EXTERNAL_RLIB_FINGERPRINT").unwrap_or_default()); '
+                    'println!("cargo:rustc-check-cfg=cfg(moss_process_root)"); '
                     'println!("cargo:rustc-check-cfg=cfg(moss_perf)"); '
                     + ('println!("cargo:rustc-cfg=moss_process_root"); ' if record["kind"] == "bin" else '')
                     + '}\n')
@@ -790,6 +861,7 @@ def cargo_build_graph(root: Package, packages: list[Package],
     encoded_flags = env.get("CARGO_ENCODED_RUSTFLAGS")
     flags = encoded_flags.split("\x1f") if encoded_flags else shlex.split(env.get("RUSTFLAGS", ""))
     flags.extend(["-D", "warnings"])
+    env["MOSS_EXTERNAL_RLIB_FINGERPRINT"] = ""
     env["CARGO_ENCODED_RUSTFLAGS"] = "\x1f".join(flags)
     command = [os.environ.get("CARGO", "cargo"), "build", "--workspace",
                "--manifest-path", str(workspace / "Cargo.toml"),
@@ -816,7 +888,8 @@ def cargo_build_graph(root: Package, packages: list[Package],
             continue
         kinds = message.get("target", {}).get("kind", [])
         if any(kind in ("lib", "bin") for kind in kinds):
-            freshness[record["package"].data["name"]].append(bool(message.get("fresh", False)))
+            freshness.setdefault(record["package"].data["name"], []).append(
+                bool(message.get("fresh", False)))
         filenames = [Path(path) for path in message.get("filenames", [])]
         if record["kind"] == "lib":
             rlib = next((path for path in filenames if path.suffix == ".rlib"), None)
@@ -832,8 +905,11 @@ def cargo_build_graph(root: Package, packages: list[Package],
             if binary is not None:
                 record["executable"].parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(binary, record["executable"])
-    checked = [name for name, flags in freshness.items() if flags and not all(flags)]
-    skipped = [name for name, flags in freshness.items() if flags and all(flags)]
+    package_names = [package.data["name"] for package in packages]
+    checked = [name for name in package_names
+               if freshness.get(name) and not all(freshness[name])]
+    skipped = [name for name in package_names
+               if freshness.get(name) and all(freshness[name])]
     return checked, skipped
 
 
@@ -996,6 +1072,8 @@ def main() -> int:
     parser.add_argument("--check", action="store_true",
                         help="check package semantics and write .mossi interfaces without rustc")
     parser.add_argument("--json", action="store_true")
+    parser.add_argument("--moss-json", action="store_true",
+                        help=argparse.SUPPRESS)
     parser.add_argument("--trace", action="store_true")
     parser.add_argument("--interp", action="store_true")
     parser.add_argument("-j", "--jobs", type=int, default=max(1, os.cpu_count() or 1),
@@ -1019,6 +1097,8 @@ def main() -> int:
                 "unsupported arguments: " + " ".join(unsupported))
         if args.check and args.command != "build":
             raise MargoError("--check is supported only by 'margo build'")
+        if args.moss_json and args.command != "build":
+            raise MargoError("--moss-json is supported only by 'margo build'")
         if args.command != "debug" and args.command != "test" and args.trace:
             raise MargoError("--trace is supported only by margo debug and margo test --interp")
         if args.command != "test" and args.interp:
@@ -1084,6 +1164,11 @@ def main() -> int:
             return 0
         environment = package_environment(root, ordered, args.release)
         if args.command == "build":
+            if args.moss_json:
+                print(json.dumps({"protocol_version": 1,
+                    "schema_version": "moss-agent-1", "command": "build",
+                    "ok": True, "result": artifacts[-1]}, sort_keys=True))
+                return 0
             if args.json:
                 print(json.dumps({"schema_version": "margo-1", "ok": True,
                     "root_package": root.data["name"], "build_order": [p.data["name"] for p in ordered],

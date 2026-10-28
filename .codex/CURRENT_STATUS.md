@@ -21,13 +21,25 @@
   package manifest. Margo's internal Moss emitter call remains marked to avoid
   recursive delegation. `tests/tooling/check_margo.py` exercises the direct
   Moss path. `make moss-dev -j` and that check passed after this change.
-- Remaining Phase 26.2 work: remove only retired
-  source-free code paths (keep ABI v10 masked and `checked_body_ir` intact);
-  run the full required regression gates and compiler-perf no-regression guard;
-  obtain the required frozen architecture review before final delivery.
+- Source-backed ambient `.mossi` providers from `MOSS_MODULE_PATH` and
+  package-local `deps/` are emitted as Cargo workspace module crates when their
+  generated Rust artifact is absent. This keeps Rust crate identities coherent
+  across transitive imported modules. ABI-v9 provider artifact markers now
+  include the provider source freshness hash, so a different provider rlib
+  paired with an unchanged `.mossi` fails before native linking.
+- Initial full `make --jobs="$(nproc)" check` (before the ambient-provider and
+  direct-build compatibility fixes below) completed 112/150 with 38 failures.
+  Focused reruns now pass for `check_margo.py`, ABI-v9 external cache binding,
+  source-free cache binding, source-free ABI, and forged `.mossi` metadata.
+  Full suite rerun is pending on the current worktree.
+- Remaining Phase 26.2 work: identify and remove only retired source-free
+  implementation paths (keep ABI v10 masked and `checked_body_ir` intact); run
+  full regression gates and compiler-perf no-regression guard; obtain frozen
+  architecture review before final delivery.
 - Pushed checkpoints: `63985761` (parallel package waves), `75fbbf32` (Cargo
-  package graph and native skip). Direct Moss-to-Margo build routing is the
-  current uncommitted slice.
+  package graph and native skip), and `1ea17fc1` (direct Moss build routing).
+  Ambient provider Cargo workspace support and ABI-v9 provider source binding
+  are the current uncommitted slice.
 
 # Phase 26.2 — Margo package parallelism checkpoint (initial)
 
