@@ -13,16 +13,31 @@ All 16 written semantic members were already represented in
 early exit was sound as merged. A missing item is a defect only when it is
 written, read by a later round, and able to change that round's semantic output.
 
-The later additions of `parse_cache_entries_` and signature dependency
-worklist state are conservative additions, not defect fixes. The parse caches
-are memo tables: if every cached result depends only on its key, changing cache
-contents cannot change later semantic output. The worklist is scheduling state:
-it determines what gets revisited, not what is inferred; the
+The parse-cache dependency has now been audited and proven pure: each of the
+five cache miss paths calls only a free parser or static helper, and those
+helpers and their callees read only their arguments and local state. Cached
+results therefore depend only on their keys, and `parse_cache_entries_` is not
+semantic convergence state; it has been removed from the signature. The
+signature dependency worklist is scheduling state: it determines what gets
+revisited, not what is inferred; the
 `MOSS_VERIFY_SIGNATURE_WORKLIST` check independently verifies its completeness.
+The shared `trim` helper and the parser/checker token helpers now use explicit
+ASCII classification, including whitespace (`space`, `\t`, `\n`, `\r`, `\f`,
+`\v`). The core parser, semantic checker, and numeric-literal parser no longer
+use locale-dependent ctype classification. Parser purity no longer depends on
+the process locale.
 `inferred_checker_signature()` is also used by inner convergence loops (around
-`semantic_checker.cpp` lines 13564, 13923, and 14059), so these additions also
-affect when those loops stop. Default and verify-mode results were identical
-for all 77 inputs in the verify gate.
+`semantic_checker.cpp` lines 13564, 13923, and 14059). Default and verify-mode
+results were identical for all 77 inputs in the verify gate. The parser purity
+proof was checked at these implementation sites:
+
+| Cache | Checker miss path | Pure implementation and transitive helpers | Verdict |
+| --- | --- | --- | --- |
+| Binary | [semantic_checker.cpp:10698](/home/owner/daji/code/moss/src/semantic_checker.cpp:10698) calls static `split_binary_uncached` at [semantic_checker.cpp:10709](/home/owner/daji/code/moss/src/semantic_checker.cpp:10709) | `split_binary_uncached` uses only its two arguments and local counters/iteration state. | Pure: key is `(expression, ordered operators)`. |
+| Simple-call | [semantic_checker.cpp:10553](/home/owner/daji/code/moss/src/semantic_checker.cpp:10553) | [moss.cpp:1000](/home/owner/daji/code/moss/src/moss.cpp:1000) calls `trim` ([moss.cpp:118](/home/owner/daji/code/moss/src/moss.cpp:118), [moss.cpp:110](/home/owner/daji/code/moss/src/moss.cpp:110)) and `split_top_level` ([moss.cpp:214](/home/owner/daji/code/moss/src/moss.cpp:214)), whose only helper is `trim`. | Pure: key is `text`; output mutation is deterministic from `text`. |
+| Member-call | [semantic_checker.cpp:10607](/home/owner/daji/code/moss/src/semantic_checker.cpp:10607) | [moss.cpp:1073](/home/owner/daji/code/moss/src/moss.cpp:1073) calls `trim` and `split_top_level` ([moss.cpp:214](/home/owner/daji/code/moss.cpp:214)); those use only arguments and local state. | Pure: key is `text`; output flags and mutations are deterministic from `text`. |
+| Top-level split | [semantic_checker.cpp:10656](/home/owner/daji/code/moss/src/semantic_checker.cpp:10656) | [moss.cpp:214](/home/owner/daji/code/moss/src/moss.cpp:214) calls only `trim` ([moss.cpp:118](/home/owner/daji/code/moss/src/moss.cpp:118)); `trim` calls local-only `ltrim` ([moss.cpp:105](/home/owner/daji/code/moss/src/moss.cpp:105)) and `rtrim` ([moss.cpp:114](/home/owner/daji/code/moss/src/moss.cpp:114)). | Pure: key is `(text, delimiter)`. |
+| Outer parentheses | [semantic_checker.cpp:10675](/home/owner/daji/code/moss/src/semantic_checker.cpp:10675) | [moss.cpp:1241](/home/owner/daji/code/moss/src/moss.cpp:1241) calls `trim` and `matching_paren` ([moss.cpp:1219](/home/owner/daji/code/moss/src/moss.cpp:1219)); both use only arguments and local state. | Pure: key is `text`. |
 
 ## Program inference state
 
@@ -50,7 +65,7 @@ append(parameter.inferred ? "1" : "0");
 
 | Written state | Write / later-read sites | Signature coverage and result |
 | --- | --- | --- |
-| Binary, simple-call, member-call, top-level, and outer-parentheses parse caches; `parse_cache_entries_` | Insertions: [semantic_checker.cpp:10563](/home/owner/daji/code/moss/src/semantic_checker.cpp:10563), [semantic_checker.cpp:10623](/home/owner/daji/code/moss/src/semantic_checker.cpp:10623), [semantic_checker.cpp:10658](/home/owner/daji/code/moss/src/semantic_checker.cpp:10658), [semantic_checker.cpp:10677](/home/owner/daji/code/moss/src/semantic_checker.cpp:10677), [semantic_checker.cpp:10701](/home/owner/daji/code/moss/src/semantic_checker.cpp:10701); later lookups at [semantic_checker.cpp:10536](/home/owner/daji/code/moss/src/semantic_checker.cpp:10536), [semantic_checker.cpp:10584](/home/owner/daji/code/moss/src/semantic_checker.cpp:10584), [semantic_checker.cpp:10644](/home/owner/daji/code/moss/src/semantic_checker.cpp:10644), [semantic_checker.cpp:10666](/home/owner/daji/code/moss/src/semantic_checker.cpp:10666), [semantic_checker.cpp:10686](/home/owner/daji/code/moss/src/semantic_checker.cpp:10686) | **Previously omitted; defect fixed.** Each cache is append-only and each insertion increments `parse_cache_entries_`; the signature captures that monotonic mutation count at [semantic_checker.cpp:14347](/home/owner/daji/code/moss/src/semantic_checker.cpp:14347)–[semantic_checker.cpp:14350](/home/owner/daji/code/moss/src/semantic_checker.cpp:14350). |
+| Binary, simple-call, member-call, top-level, and outer-parentheses parse caches | Insertions: [semantic_checker.cpp:10563](/home/owner/daji/code/moss/src/semantic_checker.cpp:10563), [semantic_checker.cpp:10623](/home/owner/daji/code/moss/src/semantic_checker.cpp:10623), [semantic_checker.cpp:10658](/home/owner/daji/code/moss/src/semantic_checker.cpp:10658), [semantic_checker.cpp:10677](/home/owner/daji/code/moss/src/semantic_checker.cpp:10677), [semantic_checker.cpp:10701](/home/owner/daji/code/moss/src/semantic_checker.cpp:10701); later lookups at [semantic_checker.cpp:10536](/home/owner/daji/code/moss/src/semantic_checker.cpp:10536), [semantic_checker.cpp:10584](/home/owner/daji/code/moss/src/semantic_checker.cpp:10584), [semantic_checker.cpp:10644](/home/owner/daji/code/moss/src/semantic_checker.cpp:10644), [semantic_checker.cpp:10666](/home/owner/daji/code/moss/src/semantic_checker.cpp:10666), [semantic_checker.cpp:10686](/home/owner/daji/code/moss/src/semantic_checker.cpp:10686) | **Proven pure; intentionally omitted from the signature.** The keys determine all cached results; see the purity table above. |
 | `signature_function_indices_`, `signature_callers_by_function_`, `signature_callees_by_function_`, `signature_unresolved_consumers_` | Built/updated by [semantic_checker.cpp:18156](/home/owner/daji/code/moss/src/semantic_checker.cpp:18156)–[semantic_checker.cpp:18258](/home/owner/daji/code/moss/src/semantic_checker.cpp:18258); the old callee edges are read at [semantic_checker.cpp:14727](/home/owner/daji/code/moss/src/semantic_checker.cpp:14727)–[semantic_checker.cpp:14731](/home/owner/daji/code/moss/src/semantic_checker.cpp:14731), and the refreshed graph/consumer set is read at [semantic_checker.cpp:14935](/home/owner/daji/code/moss/src/semantic_checker.cpp:14935)–[semantic_checker.cpp:14940](/home/owner/daji/code/moss/src/semantic_checker.cpp:14940) | **Previously omitted; defect fixed.** Index mapping, caller/callee edges, and unresolved consumers are appended at [semantic_checker.cpp:14392](/home/owner/daji/code/moss/src/semantic_checker.cpp:14392)–[semantic_checker.cpp:14410](/home/owner/daji/code/moss/src/semantic_checker.cpp:14410). |
 | `signature_dependency_graph_changed_` | Reset, set, and read at [semantic_checker.cpp:14723](/home/owner/daji/code/moss/src/semantic_checker.cpp:14723), [semantic_checker.cpp:14882](/home/owner/daji/code/moss/src/semantic_checker.cpp:14882), [semantic_checker.cpp:14927](/home/owner/daji/code/moss/src/semantic_checker.cpp:14927) | Not appended: it is reset before each inner worklist step and is not carried as an input to the next cross-family round. |
 | Parse/profile counters, wave counts/ranges, and inference-pass round counters | Updated during the passes; emitted after checking at [semantic_checker.cpp:1725](/home/owner/daji/code/moss/src/semantic_checker.cpp:1725)–[semantic_checker.cpp:1826](/home/owner/daji/code/moss/src/semantic_checker.cpp:1826) | Not appended: they report work and are not read by a later inference round to determine inferred types or scheduling. |

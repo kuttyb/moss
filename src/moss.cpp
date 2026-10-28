@@ -108,11 +108,11 @@ static constexpr const char* kAgentSchemaVersion = "moss-agent-1";
 
 static string ltrim(string s) {
   size_t i = 0;
-  while (i < s.size() && std::isspace(static_cast<unsigned char>(s[i]))) ++i;
+  while (i < s.size() && moss::ascii_is_space(static_cast<unsigned char>(s[i]))) ++i;
   return s.substr(i);
 }
 string rtrim(string s) {
-  while (!s.empty() && std::isspace(static_cast<unsigned char>(s.back()))) s.pop_back();
+  while (!s.empty() && moss::ascii_is_space(static_cast<unsigned char>(s.back()))) s.pop_back();
   return s;
 }
 string trim(string s) { return rtrim(ltrim(std::move(s))); }
@@ -148,7 +148,7 @@ bool decimal_float_literal(const string& value) {
   auto digits = [&] {
     size_t start = index;
     while (index < value.size() &&
-           std::isdigit(static_cast<unsigned char>(value[index])))
+           moss::ascii_is_digit(static_cast<unsigned char>(value[index])))
       ++index;
     return index != start;
   };
@@ -184,7 +184,7 @@ string stable_hash(const string& value) {
 
 string tooling_name(string value) {
   for (char& c : value) {
-    if (!std::isalnum(static_cast<unsigned char>(c)) && c != '_') c = '_';
+    if (!moss::ascii_is_alnum(static_cast<unsigned char>(c)) && c != '_') c = '_';
   }
   while (!value.empty() && value.back() == '_') value.pop_back();
   return value.empty() ? "anonymous" : value;
@@ -455,20 +455,20 @@ void normalize_standard_error_lines(
         rewritten += value.substr(at);
         break;
       }
-      if (in_string || !(std::isalpha(static_cast<unsigned char>(value[at])) ||
+      if (in_string || !(moss::ascii_is_alpha(static_cast<unsigned char>(value[at])) ||
                          value[at] == '_')) {
         rewritten.push_back(value[at++]);
         continue;
       }
       size_t end = at + 1;
       while (end < value.size() &&
-             (std::isalnum(static_cast<unsigned char>(value[end])) ||
+             (moss::ascii_is_alnum(static_cast<unsigned char>(value[end])) ||
               value[end] == '_')) ++end;
       const string token = value.substr(at, end - at);
       if (token == "std" && end < value.size() && value[end] == '.') {
         size_t member = end + 1;
         while (member < value.size() &&
-               (std::isalnum(static_cast<unsigned char>(value[member])) ||
+               (moss::ascii_is_alnum(static_cast<unsigned char>(value[member])) ||
                 value[member] == '_')) ++member;
         const string name = value.substr(end + 1, member - end - 1);
         if (standard_error_short_name(name)) {
@@ -1040,9 +1040,9 @@ std::optional<string> typed_empty_vector_constructor(const string& text) {
 
 bool plain_identifier(const string& value) {
   string s = trim(value);
-  if (s.empty() || !(std::isalpha(static_cast<unsigned char>(s.front())) || s.front() == '_')) return false;
+  if (s.empty() || !(moss::ascii_is_alpha(static_cast<unsigned char>(s.front())) || s.front() == '_')) return false;
   return std::all_of(s.begin() + 1, s.end(), [](char c) {
-    return std::isalnum(static_cast<unsigned char>(c)) || c == '_';
+    return moss::ascii_is_alnum(static_cast<unsigned char>(c)) || c == '_';
   });
 }
 
@@ -1472,9 +1472,9 @@ string snake_case(const string& s) {
   string out;
   for (size_t i = 0; i < s.size(); ++i) {
     char c = s[i];
-    if (std::isupper(static_cast<unsigned char>(c))) {
+    if (moss::ascii_is_upper(static_cast<unsigned char>(c))) {
       if (i && !out.empty() && out.back() != '_') out.push_back('_');
-      out.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+      out.push_back(static_cast<char>(moss::ascii_to_lower(static_cast<unsigned char>(c))));
     } else out.push_back(c);
   }
   return out;
@@ -1943,7 +1943,7 @@ vector<moss::Requirement> imported_abi_v10_requirements(
           checked_occurrence_prefix.size());
       if (ordinal.empty() ||
           !std::all_of(ordinal.begin(), ordinal.end(), [](unsigned char c) {
-            return std::isdigit(c);
+            return moss::ascii_is_digit(c);
           }) || (ordinal.size() > 1 && ordinal.front() == '0'))
         invalid("checked ABI-v10 arithmetic occurrence identity is malformed");
     }
@@ -6566,7 +6566,7 @@ static std::optional<int> moss_comment_line(const string& line) {
   size_t begin = prefix.size();
   size_t end = begin;
   while (end < value.size() &&
-         std::isdigit(static_cast<unsigned char>(value[end])))
+         moss::ascii_is_digit(static_cast<unsigned char>(value[end])))
     ++end;
   if (end == begin) return std::nullopt;
   return std::stoi(value.substr(begin, end - begin));
@@ -6988,7 +6988,7 @@ static string compact_semantic_text(const string& text) {
     if (character == '"') {
       in_string = true;
       result.push_back(character);
-    } else if (!std::isspace(static_cast<unsigned char>(character))) {
+    } else if (!moss::ascii_is_space(static_cast<unsigned char>(character))) {
       result.push_back(character);
     }
   }
@@ -7873,7 +7873,7 @@ static std::optional<string> semantic_source_token_at(
     const Program& program, const string& source_file, int line, int column) {
   if (line <= 0 || column <= 0) return std::nullopt;
   auto word = [](unsigned char value) {
-    return std::isalnum(value) || value == '_';
+    return moss::ascii_is_alnum(value) || value == '_';
   };
   if (!source_file.empty()) {
     auto file_lines = read_source_lines_for_completion(source_file);
@@ -7945,7 +7945,7 @@ static bool semantic_source_line_has_module_qualifier(
       }
       if (text.compare(index, module.size(), module) != 0) continue;
       auto word = [](unsigned char value) {
-        return std::isalnum(value) || value == '_';
+        return moss::ascii_is_alnum(value) || value == '_';
       };
       bool left = index == 0 ||
           !word(static_cast<unsigned char>(text[index - 1]));
@@ -7954,7 +7954,7 @@ static bool semantic_source_line_has_module_qualifier(
           !word(static_cast<unsigned char>(text[after]));
       if (!left || !right) continue;
       while (after < text.size() &&
-             std::isspace(static_cast<unsigned char>(text[after])))
+             moss::ascii_is_space(static_cast<unsigned char>(text[after])))
         ++after;
       if (after < text.size() && text[after] == '.') return true;
     }
@@ -7979,11 +7979,11 @@ static SemanticQueryResolution resolve_semantic_target(
       ? string() : location.substr(location_separator + 1);
   const bool numeric_line = !line_text.empty() &&
       std::all_of(line_text.begin(), line_text.end(), [](unsigned char ch) {
-        return std::isdigit(ch);
+        return moss::ascii_is_digit(ch);
       });
   const bool numeric_column = column_text.empty() ||
       std::all_of(column_text.begin(), column_text.end(),
-                  [](unsigned char ch) { return std::isdigit(ch); });
+                  [](unsigned char ch) { return moss::ascii_is_digit(ch); });
   const bool by_location = numeric_line && numeric_column &&
       (location == selector || starts_with(selector, "line:") ||
        starts_with(selector, "at:"));
@@ -8697,7 +8697,7 @@ static void write_structured_error(
     consume_marker += string(" at line ").size();
     size_t end = consume_marker;
     while (end < message.size() &&
-           std::isdigit(static_cast<unsigned char>(message[end])))
+           moss::ascii_is_digit(static_cast<unsigned char>(message[end])))
       ++end;
     out << message.substr(consume_marker, end - consume_marker);
   } else {
@@ -10709,7 +10709,7 @@ static void write_symbols_query_json(
   };
   string folded_query = query;
   std::transform(folded_query.begin(), folded_query.end(), folded_query.begin(),
-                 [](unsigned char value) { return std::tolower(value); });
+                 [](unsigned char value) { return moss::ascii_to_lower(value); });
   for (const auto& target : targets) {
     if (!semantic_symbol_kind(target.kind)) continue;
     if (!visible_module(target.module_identity)) continue;
@@ -10723,9 +10723,9 @@ static void write_symbols_query_json(
     string folded = display;
     string folded_leaf = leaf;
     std::transform(folded.begin(), folded.end(), folded.begin(),
-                   [](unsigned char value) { return std::tolower(value); });
+                   [](unsigned char value) { return moss::ascii_to_lower(value); });
     std::transform(folded_leaf.begin(), folded_leaf.end(), folded_leaf.begin(),
-                   [](unsigned char value) { return std::tolower(value); });
+                   [](unsigned char value) { return moss::ascii_to_lower(value); });
     if (!folded_query.empty() && !starts_with(folded, folded_query) &&
         !starts_with(folded_leaf, folded_query))
       continue;
@@ -10790,10 +10790,10 @@ static bool parse_completion_location(
   string column_text = selector.substr(separator + 1);
   if (line_text.empty() || column_text.empty() ||
       !std::all_of(line_text.begin(), line_text.end(), [](unsigned char value) {
-        return std::isdigit(value);
+        return moss::ascii_is_digit(value);
       }) ||
       !std::all_of(column_text.begin(), column_text.end(), [](unsigned char value) {
-        return std::isdigit(value);
+        return moss::ascii_is_digit(value);
       }))
     return false;
   try {
@@ -10886,7 +10886,7 @@ static bool write_completion_query_json(
       line_text.size(), static_cast<size_t>(requested_column - 1));
   string before = line_text.substr(0, point);
   auto identifier_character = [](unsigned char value) {
-    return std::isalnum(value) || value == '_';
+    return moss::ascii_is_alnum(value) || value == '_';
   };
   size_t prefix_start = before.size();
   while (prefix_start > 0 &&
@@ -11155,13 +11155,13 @@ static std::optional<string> completion_recovery_source(
   size_t word_start = point;
   while (word_start > 0) {
     unsigned char value = current[word_start - 1];
-    if (!std::isalnum(value) && value != '_') break;
+    if (!moss::ascii_is_alnum(value) && value != '_') break;
     --word_start;
   }
   size_t word_end = point;
   while (word_end < current.size()) {
     unsigned char value = current[word_end];
-    if (!std::isalnum(value) && value != '_') break;
+    if (!moss::ascii_is_alnum(value) && value != '_') break;
     ++word_end;
   }
   bool type_context = before.rfind(':') != string::npos ||
@@ -11750,7 +11750,7 @@ static std::set<string> type_identifiers(const string& text) {
   std::set<string> result;
   string name;
   for (unsigned char ch : text) {
-    if (std::isalnum(ch) || ch == '_') name.push_back(static_cast<char>(ch));
+    if (moss::ascii_is_alnum(ch) || ch == '_') name.push_back(static_cast<char>(ch));
     else if (!name.empty()) { result.insert(std::move(name)); name.clear(); }
   }
   if (!name.empty()) result.insert(std::move(name));
@@ -11782,13 +11782,13 @@ static void add_expression_references(const string& source,
   }
   auto add_bare_references = [&](size_t begin, size_t end) {
     for (size_t at = begin; at < end;) {
-      if (!(std::isalpha(static_cast<unsigned char>(text[at])) || text[at] == '_')) {
+      if (!(moss::ascii_is_alpha(static_cast<unsigned char>(text[at])) || text[at] == '_')) {
         ++at;
         continue;
       }
       const size_t start = at++;
       while (at < end &&
-             (std::isalnum(static_cast<unsigned char>(text[at])) || text[at] == '_')) ++at;
+             (moss::ascii_is_alnum(static_cast<unsigned char>(text[at])) || text[at] == '_')) ++at;
       if (at < end && text[at] == '.') continue;
       references.functions.insert(text.substr(start, at - start));
     }
@@ -11809,19 +11809,19 @@ static void add_expression_references(const string& source,
     }
   }
   for (size_t i = 0; i < text.size();) {
-    if (!(std::isalpha(static_cast<unsigned char>(text[i])) || text[i] == '_')) {
+    if (!(moss::ascii_is_alpha(static_cast<unsigned char>(text[i])) || text[i] == '_')) {
       ++i;
       continue;
     }
     const size_t begin = i++;
     while (i < text.size() &&
-           (std::isalnum(static_cast<unsigned char>(text[i])) || text[i] == '_')) ++i;
+           (moss::ascii_is_alnum(static_cast<unsigned char>(text[i])) || text[i] == '_')) ++i;
     string name = text.substr(begin, i - begin);
     size_t next = i;
-    while (next < text.size() && std::isspace(static_cast<unsigned char>(text[next]))) ++next;
+    while (next < text.size() && moss::ascii_is_space(static_cast<unsigned char>(text[next]))) ++next;
     if (next == text.size() || text[next] != '(') continue;
     size_t previous = begin;
-    while (previous > 0 && std::isspace(static_cast<unsigned char>(text[previous - 1]))) --previous;
+    while (previous > 0 && moss::ascii_is_space(static_cast<unsigned char>(text[previous - 1]))) --previous;
     const bool member = previous > 0 && text[previous - 1] == '.';
     bool message_handler = false;
     if (member) {
@@ -11829,15 +11829,15 @@ static void add_expression_references(const string& source,
       const auto message = text.rfind("message", dot);
       if (message != string::npos &&
           (message == 0 ||
-           !(std::isalnum(static_cast<unsigned char>(text[message - 1])) ||
+           !(moss::ascii_is_alnum(static_cast<unsigned char>(text[message - 1])) ||
              text[message - 1] == '_')) &&
           (message + 7 == text.size() ||
-           std::isspace(static_cast<unsigned char>(text[message + 7])))) {
+           moss::ascii_is_space(static_cast<unsigned char>(text[message + 7])))) {
         message_handler = true;
         for (size_t between = message + 7; between < begin; ++between)
-          if (!(std::isalnum(static_cast<unsigned char>(text[between])) ||
+          if (!(moss::ascii_is_alnum(static_cast<unsigned char>(text[between])) ||
                 text[between] == '_' || text[between] == '.' ||
-                std::isspace(static_cast<unsigned char>(text[between])))) {
+                moss::ascii_is_space(static_cast<unsigned char>(text[between])))) {
             message_handler = false;
             break;
           }
@@ -12029,7 +12029,7 @@ static void add_callable_argument_references(const string& source,
   auto add_callable_value = [&](const string& raw_value) {
     const string value = trim(raw_value);
     if (value.empty() || !std::all_of(value.begin(), value.end(), [](unsigned char ch) {
-          return std::isalnum(ch) || ch == '_' || ch == '.' || ch == ':';
+          return moss::ascii_is_alnum(ch) || ch == '_' || ch == '.' || ch == ':';
         })) return;
     vector<const Function*> matches;
     const string normalized = canonical_spelling(value);
@@ -12073,7 +12073,7 @@ static void add_callable_argument_references(const string& source,
     for (size_t open = 0; open < text.size(); ++open) {
       if (text[open] != '(') continue;
       size_t begin = open;
-      while (begin > 0 && (std::isalnum(static_cast<unsigned char>(text[begin - 1])) ||
+      while (begin > 0 && (moss::ascii_is_alnum(static_cast<unsigned char>(text[begin - 1])) ||
                            text[begin - 1] == '_' || text[begin - 1] == '.' ||
                            text[begin - 1] == ':')) --begin;
       if (begin == open) continue;
@@ -12135,7 +12135,7 @@ static void add_bare_callable_value_reference(
   const string value = trim(raw_value);
   if (value.empty() || local_names.count(value) ||
       !std::all_of(value.begin(), value.end(), [](unsigned char ch) {
-        return std::isalnum(ch) || ch == '_' || ch == '.' || ch == ':';
+        return moss::ascii_is_alnum(ch) || ch == '_' || ch == '.' || ch == ':';
       })) return;
   string normalized = value;
   for (size_t dot = normalized.find('.'); dot != string::npos;
@@ -13070,11 +13070,11 @@ static void validate_imported_nominal_key_proofs(
 // lone `=`.
 static bool named_argument_label(const string& expression, size_t begin, size_t end) {
   size_t before = begin;
-  while (before > 0 && std::isspace(static_cast<unsigned char>(expression[before - 1]))) --before;
+  while (before > 0 && moss::ascii_is_space(static_cast<unsigned char>(expression[before - 1]))) --before;
   // before == 0: a statement-call argument rewritten on its own (`by: key`).
   if (before > 0 && expression[before - 1] != '(' && expression[before - 1] != ',') return false;
   size_t after = end;
-  while (after < expression.size() && std::isspace(static_cast<unsigned char>(expression[after]))) ++after;
+  while (after < expression.size() && moss::ascii_is_space(static_cast<unsigned char>(expression[after]))) ++after;
   if (after >= expression.size()) return false;
   if (expression[after] == ':') return after + 1 >= expression.size() || expression[after + 1] != ':';
   if (expression[after] == '=') return after + 1 >= expression.size() || expression[after + 1] != '=';
@@ -13130,13 +13130,13 @@ static string rewrite_module_type(string type, const string& module,
   // words are unaffected because they are not module declarations.
   string result;
   for (size_t i = 0; i < type.size();) {
-    if (!(std::isalpha(static_cast<unsigned char>(type[i])) || type[i] == '_')) {
+    if (!(moss::ascii_is_alpha(static_cast<unsigned char>(type[i])) || type[i] == '_')) {
       result.push_back(type[i++]);
       continue;
     }
     size_t end = i + 1;
     while (end < type.size() &&
-           (std::isalnum(static_cast<unsigned char>(type[end])) || type[end] == '_')) ++end;
+           (moss::ascii_is_alnum(static_cast<unsigned char>(type[end])) || type[end] == '_')) ++end;
     string token = type.substr(i, end - i);
     if (starts_with(token, "std__") &&
         standard_error_short_name(token.substr(5))) {
@@ -13150,13 +13150,13 @@ static string rewrite_module_type(string type, const string& module,
       continue;
     }
     size_t dot = end;
-    while (dot < type.size() && std::isspace(static_cast<unsigned char>(type[dot]))) ++dot;
+    while (dot < type.size() && moss::ascii_is_space(static_cast<unsigned char>(type[dot]))) ++dot;
     if (dot < type.size() && type[dot] == '.') {
       size_t member = dot + 1;
-      while (member < type.size() && std::isspace(static_cast<unsigned char>(type[member]))) ++member;
+      while (member < type.size() && moss::ascii_is_space(static_cast<unsigned char>(type[member]))) ++member;
       size_t member_end = member;
       while (member_end < type.size() &&
-             (std::isalnum(static_cast<unsigned char>(type[member_end])) || type[member_end] == '_')) ++member_end;
+             (moss::ascii_is_alnum(static_cast<unsigned char>(type[member_end])) || type[member_end] == '_')) ++member_end;
       string name = type.substr(member, member_end - member);
       if (token == module) {
         auto local_types = module_type_names(modules.at(module));
@@ -13208,12 +13208,12 @@ static string rewrite_module_expression(
       continue;
     }
     if (c == '"') { in_string = true; result.push_back(c); ++i; continue; }
-    if (!(std::isalpha(static_cast<unsigned char>(c)) || c == '_')) {
+    if (!(moss::ascii_is_alpha(static_cast<unsigned char>(c)) || c == '_')) {
       result.push_back(c); ++i; continue;
     }
     size_t end = i + 1;
     while (end < expression.size() &&
-           (std::isalnum(static_cast<unsigned char>(expression[end])) || expression[end] == '_')) ++end;
+           (moss::ascii_is_alnum(static_cast<unsigned char>(expression[end])) || expression[end] == '_')) ++end;
     string token = expression.substr(i, end - i);
     if (starts_with(token, "std__") &&
         standard_error_short_name(token.substr(5))) {
@@ -13251,13 +13251,13 @@ static string rewrite_module_expression(
       continue;
     }
     size_t cursor = end;
-    while (cursor < expression.size() && std::isspace(static_cast<unsigned char>(expression[cursor]))) ++cursor;
+    while (cursor < expression.size() && moss::ascii_is_space(static_cast<unsigned char>(expression[cursor]))) ++cursor;
     if (cursor < expression.size() && expression[cursor] == '.') {
       size_t member = cursor + 1;
-      while (member < expression.size() && std::isspace(static_cast<unsigned char>(expression[member]))) ++member;
+      while (member < expression.size() && moss::ascii_is_space(static_cast<unsigned char>(expression[member]))) ++member;
       size_t member_end = member;
       while (member_end < expression.size() &&
-             (std::isalnum(static_cast<unsigned char>(expression[member_end])) || expression[member_end] == '_')) ++member_end;
+             (moss::ascii_is_alnum(static_cast<unsigned char>(expression[member_end])) || expression[member_end] == '_')) ++member_end;
       string name = expression.substr(member, member_end - member);
       if (token == module) {
         if (functions.count(name) || types.count(name)) {
@@ -13279,9 +13279,9 @@ static string rewrite_module_expression(
       }
     }
     size_t after = end;
-    while (after < expression.size() && std::isspace(static_cast<unsigned char>(expression[after]))) ++after;
+    while (after < expression.size() && moss::ascii_is_space(static_cast<unsigned char>(expression[after]))) ++after;
     size_t before = i;
-    while (before > 0 && std::isspace(static_cast<unsigned char>(expression[before - 1]))) --before;
+    while (before > 0 && moss::ascii_is_space(static_cast<unsigned char>(expression[before - 1]))) --before;
     bool member = before > 0 && expression[before - 1] == '.';
     if (!member && !(sibling_methods && sibling_methods->count(token)) &&
         !(locals && locals->count(token)) &&
@@ -14872,15 +14872,15 @@ static string normalize_section1_locations(std::string_view input) {
     auto replace_field = [&](size_t field_index) {
       size_t at = 0;
       for (size_t index = 0; index < field_index; ++index) {
-        while (at < line.size() && std::isspace(
+        while (at < line.size() && moss::ascii_is_space(
                    static_cast<unsigned char>(line[at]))) ++at;
-        while (at < line.size() && !std::isspace(
+        while (at < line.size() && !moss::ascii_is_space(
                    static_cast<unsigned char>(line[at]))) ++at;
       }
-      while (at < line.size() && std::isspace(
+      while (at < line.size() && moss::ascii_is_space(
                  static_cast<unsigned char>(line[at]))) ++at;
       size_t end = at;
-      while (end < line.size() && !std::isspace(
+      while (end < line.size() && !moss::ascii_is_space(
                  static_cast<unsigned char>(line[end]))) ++end;
       if (end > at) line.replace(at, end - at, "0");
     };
@@ -14894,7 +14894,7 @@ static string normalize_section1_locations(std::string_view input) {
       const size_t key_end = key_begin == string::npos ? string::npos
           : line.find_first_of(" \t", key_begin);
       size_t at = key_end;
-      while (at < line.size() && std::isspace(
+      while (at < line.size() && moss::ascii_is_space(
                  static_cast<unsigned char>(line[at]))) ++at;
       if (trimmed.find("object_method_warning ") == 0 ||
           trimmed.find("handler_warning ") == 0) {
@@ -14905,16 +14905,16 @@ static string normalize_section1_locations(std::string_view input) {
             ++at;
           }
           if (at < line.size()) ++at;
-          while (at < line.size() && std::isspace(
+          while (at < line.size() && moss::ascii_is_space(
                      static_cast<unsigned char>(line[at]))) ++at;
           size_t end = at;
-          while (end < line.size() && !std::isspace(
+          while (end < line.size() && !moss::ascii_is_space(
                      static_cast<unsigned char>(line[end]))) ++end;
           if (end > at) line.replace(at, end - at, "0");
         }
       } else {
         size_t end = at;
-        while (end < line.size() && !std::isspace(
+        while (end < line.size() && !moss::ascii_is_space(
                    static_cast<unsigned char>(line[end]))) ++end;
         if (end > at) line.replace(at, end - at, "0");
       }
@@ -14922,7 +14922,7 @@ static string normalize_section1_locations(std::string_view input) {
       const size_t at = line.rfind('@');
       if (at != string::npos) {
         size_t end = at + 1;
-        while (end < line.size() && std::isdigit(
+        while (end < line.size() && moss::ascii_is_digit(
                    static_cast<unsigned char>(line[end]))) ++end;
         if (end > at + 1) line.replace(at + 1, end - at - 1, "0");
       }
@@ -22939,7 +22939,7 @@ static void parse_test_failure_detail(ProjectTestResult& result) {
   size_t line_begin = prefix.size();
   size_t line_end = line_begin;
   while (line_end < result.detail.size() &&
-         std::isdigit(static_cast<unsigned char>(result.detail[line_end])))
+         moss::ascii_is_digit(static_cast<unsigned char>(result.detail[line_end])))
     ++line_end;
   if (line_end == line_begin ||
       result.detail.compare(line_end, 2, ": ") != 0)
@@ -23317,7 +23317,7 @@ static string utc_timestamp() {
 static void validate_baseline_name(const string& name) {
   if (name.empty() ||
       !std::all_of(name.begin(), name.end(), [](unsigned char character) {
-        return std::isalnum(character) || character == '-' ||
+        return moss::ascii_is_alnum(character) || character == '-' ||
             character == '_' || character == '.';
       }))
     throw ProjectError(
@@ -23430,7 +23430,7 @@ static std::uint64_t baseline_integer_field(
   begin += marker.size();
   size_t end = begin;
   while (end < text.size() &&
-         std::isdigit(static_cast<unsigned char>(text[end])))
+         moss::ascii_is_digit(static_cast<unsigned char>(text[end])))
     ++end;
   if (end == begin)
     throw ProjectError("BENCHMARK_CONFIGURATION_ERROR",
@@ -23718,7 +23718,7 @@ static size_t comment_start_outside_string(const string& line) {
 }
 
 static bool format_word_character(char character) {
-  return std::isalnum(static_cast<unsigned char>(character)) ||
+  return moss::ascii_is_alnum(static_cast<unsigned char>(character)) ||
       character == '_';
 }
 
@@ -23727,7 +23727,7 @@ static string canonicalize_code_spacing(const string& input) {
   vector<Token> tokens;
   for (size_t index = 0; index < input.size();) {
     unsigned char character = static_cast<unsigned char>(input[index]);
-    if (std::isspace(character)) {
+    if (moss::ascii_is_space(character)) {
       ++index;
       continue;
     }
@@ -25088,10 +25088,10 @@ class FastDebugFileIOPreflight {
   const std::set<std::string>* line_targets_ = nullptr;
 
   static bool ident_start(char c) {
-    return std::isalpha(static_cast<unsigned char>(c)) || c == '_';
+    return moss::ascii_is_alpha(static_cast<unsigned char>(c)) || c == '_';
   }
   static bool ident_char(char c) {
-    return std::isalnum(static_cast<unsigned char>(c)) || c == '_';
+    return moss::ascii_is_alnum(static_cast<unsigned char>(c)) || c == '_';
   }
 
   // Number of 'message' keywords outside String/Char literals.
@@ -25175,7 +25175,7 @@ class FastDebugFileIOPreflight {
         continue;
       }
       if (!ident_start(c)) {
-        if (!std::isspace(static_cast<unsigned char>(c)) && c != '.')
+        if (!moss::ascii_is_space(static_cast<unsigned char>(c)) && c != '.')
           previous_token.clear();
         ++i;
         continue;
@@ -25184,10 +25184,10 @@ class FastDebugFileIOPreflight {
       while (end < text.size() && ident_char(text[end])) ++end;
       const std::string token = text.substr(i, end - i);
       size_t before = i;
-      while (before > 0 && std::isspace(static_cast<unsigned char>(text[before - 1]))) --before;
+      while (before > 0 && moss::ascii_is_space(static_cast<unsigned char>(text[before - 1]))) --before;
       const bool member = before > 0 && text[before - 1] == '.';
       size_t after = end;
-      while (after < text.size() && std::isspace(static_cast<unsigned char>(text[after]))) ++after;
+      while (after < text.size() && moss::ascii_is_space(static_cast<unsigned char>(text[after]))) ++after;
       const bool label = after < text.size() && text[after] == ':' &&
           !(after + 1 < text.size() && text[after + 1] == ':');
       const std::string receiver = member ? previous_token : std::string();
@@ -25544,7 +25544,7 @@ static bool debug_query_parse_integer(const string& value, int minimum,
   if (value.empty()) return false;
   int result = 0;
   for (unsigned char ch : value) {
-    if (!std::isdigit(ch)) return false;
+    if (!moss::ascii_is_digit(ch)) return false;
     int digit = ch - '0';
     if (result > (std::numeric_limits<int>::max() - digit) / 10)
       return false;
@@ -26452,7 +26452,7 @@ int main(int argc, char** argv) {
           bool valid_location = !possible_location.empty() &&
               std::all_of(possible_location.begin(), possible_location.end(),
                           [](unsigned char ch) {
-                            return std::isdigit(ch) || ch == ':';
+                            return moss::ascii_is_digit(ch) || ch == ':';
                           });
           if (valid_location) {
             input = query_target.substr(0, separator);

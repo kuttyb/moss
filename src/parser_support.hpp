@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ascii.hpp"
 #include "ast.hpp"
 
 #include <set>

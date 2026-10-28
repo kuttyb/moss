@@ -170,6 +170,8 @@ When working with Moss:
   pushes for the Phase 26.1.1 X2 follow-up on `phase26-1-m1`, and Phase 26.2
   work on `phase26-2-work`. For Phase 26.2, checkpoint completed slices with
   local commits and normal pushes to the configured remote; no PRs are in scope.
+  For Phase 26.3 work on `phase26-3-work`, the user authorized scoped local
+  commits and normal pushes to the configured remote; no PR is in scope.
   Keep each task on its scoped branch; do not merge directly to `main` unless
   the user explicitly directs that merge. Do not force-push or rewrite
   published history.
