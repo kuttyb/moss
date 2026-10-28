@@ -12658,3 +12658,17 @@ between checks). It is recorded for follow-up and was not changed in this phase.
 
 Inference signature completeness review: see
 [Phase 26.2 audit](../docs/phase26/PHASE_26_2_INFERENCE_SIGNATURE_AUDIT.md).
+The audit's main finding is that all 16 written semantic members were already
+in `inferred_checker_signature()` when `34082a83` added early convergence, so
+that early exit was sound as merged. The parse-cache counter and signature
+dependency worklist additions are conservative scheduling/memo-state inputs,
+not defect fixes; the corrected criterion requires that a missing item is
+written, read by a later round, and able to alter that round's semantic output.
+The signature also controls inner convergence loops. The verify gate produced
+identical check results in default and verify modes for all 77 inputs.
+
+Merge rule: run `make --jobs="$(nproc)" check` and `make compiler-perf` on the
+merge commit itself, never only on either parent. Phase 26.1 was certified on
+parent `2223dfb` instead of merge commit `ac977ce`, leaving W2 red on main.
+Compiler-perf is a slowdown guard; report regressions and do not run timing
+studies.

@@ -6,6 +6,24 @@ Scope: the three non-final passes called in `Checker::run()` in this order:
 `inferred_checker_signature()` and therefore compared at the cross-family
 round boundary.
 
+## Finding and criterion
+
+All 16 written semantic members were already represented in
+`inferred_checker_signature()` when `34082a83` introduced the early exit. The
+early exit was sound as merged. A missing item is a defect only when it is
+written, read by a later round, and able to change that round's semantic output.
+
+The later additions of `parse_cache_entries_` and signature dependency
+worklist state are conservative additions, not defect fixes. The parse caches
+are memo tables: if every cached result depends only on its key, changing cache
+contents cannot change later semantic output. The worklist is scheduling state:
+it determines what gets revisited, not what is inferred; the
+`MOSS_VERIFY_SIGNATURE_WORKLIST` check independently verifies its completeness.
+`inferred_checker_signature()` is also used by inner convergence loops (around
+`semantic_checker.cpp` lines 13564, 13923, and 14059), so these additions also
+affect when those loops stop. Default and verify-mode results were identical
+for all 77 inputs in the verify gate.
+
 ## Program inference state
 
 | Written field/member | Write sites | Signature coverage |
@@ -38,6 +56,15 @@ append(parameter.inferred ? "1" : "0");
 | Parse/profile counters, wave counts/ranges, and inference-pass round counters | Updated during the passes; emitted after checking at [semantic_checker.cpp:1725](/home/owner/daji/code/moss/src/semantic_checker.cpp:1725)–[semantic_checker.cpp:1826](/home/owner/daji/code/moss/src/semantic_checker.cpp:1826) | Not appended: they report work and are not read by a later inference round to determine inferred types or scheduling. |
 | `current_source_file_`, `current_body_types_` | Scoped by `SourceFileScope` / `BodyTypeScope` around pass bodies, e.g. [semantic_checker.cpp:13938](/home/owner/daji/code/moss/src/semantic_checker.cpp:13938), [semantic_checker.cpp:14081](/home/owner/daji/code/moss/src/semantic_checker.cpp:14081) | Not appended: each scope restores the prior value before the pass returns; the next round establishes its own scope. |
 
-The omitted persistent parser cache and worklist state met the audit’s write,
-later-read, and missing-signature criteria. Both are now included in the
-convergence comparison. No semantic Program field remains outside it.
+The persistent parser cache and worklist state were added conservatively to the
+convergence comparison; neither was an omitted semantic output dependency.
+No semantic Program field remains outside the original signature.
+
+## Backlog
+
+- Confirm parse-cache purity: every input a cached parse result depends on
+  must be represented in that cache's key.
+- When cross-family rounds are replaced by a single worklist, shrink the
+  convergence signature back to semantic state only.
+- The Emacs xref fixture is flaky only under parallel `make check`; it passes
+  in isolation.
