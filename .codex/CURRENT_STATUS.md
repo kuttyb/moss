@@ -26,8 +26,9 @@
 - Before the fix, isolated ERT failed 10/10 on the provider line shift; in five
   full parallel checks the xref ERT failed 3 times and passed 2 times (one other
   shard failure was an unrelated `lldb-dap` timeout). After the fix, the focused
-  ERT passed and all 7 completed isolated ERT runs passed. Five complete full
-  parallel checks after the fix are still required.
+  ERT passed and all 7 completed isolated ERT runs passed. Attribution runs then
+  passed the complete tooling shard 5/5 on `d95188b0` and 5/5 on the
+  stabilization head, including the live LLDB and DAP checks.
 - No shared package build directory, Emacs server/socket, fixed port, or HOME
   caused the xref result: the parallel runner isolates each job's worktree,
   output directory, `MARGO_HOME`, and `TMPDIR`; Emacs runs in batch `-Q` mode.
@@ -46,9 +47,11 @@
    `SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH`; swapped rlib →
    `SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH`; corrupt rlib →
    `SOURCE_FREE_ARTIFACT_CONTRACT_INVALID`; tampered imported-effects provider
-   → `SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH`; tampered external provider with
-   no source → `MOSS_INTERFACE_STALE`. Verifier fixes and tests are in
-   `c8ef5fae`.
+   → `SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH`; valid external provider without
+   source → `SOURCE_FREE_PROVIDER_SOURCE_MISSING`; tampered external provider
+   without source → `SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH`. Available but
+   changed source → `MOSS_INTERFACE_STALE`. The original verifier/test work is
+   in `c8ef5fae`, corrected in `dcaa8969`.
 3. **Item 3:** The old expected failure tracked cross-package xref resolving to
    `.mossi` locations; `.locations` sidecars closed it in 26.1.1. A separate
    Emacs cache-key omission left rebuilt provider locations stale. Including
@@ -59,20 +62,29 @@
    Commit: `e6866021`.
 4. **Item 4:** Merge and compiler-perf baseline rules are documented in
    `5b85d68c`.
-5. **Branch gate / STOP:** The post-fix
-   `make --jobs="$(nproc)" check` did not complete. In `shard_phase5_tooling`,
-   LLDB CLI stopped at the source breakpoint and left the debuggee in
-   `ptrace_stop`; the shard and make remained blocked for more than six minutes.
-   I stopped those processes. This is not a green branch gate, so I did not
-   merge, run merge-commit gates, push `main`, or create the tag. STOP: the
-   required branch `make check` gate is not green/completed. Decision needed:
-   whether to expand scope to diagnose and repair the separate LLDB hang before
-   resuming the required five full parallel checks and merge sequence.
+5. **Branch gate:** Pending after the attribution and harness changes; run five
+   complete parallel `make check` gates with no waivers before merging.
+6. **LLDB attribution and timeout harness:** The former stall was a single LLDB
+   CLI run where the debuggee remained in `ptrace_stop`. It did not reproduce in
+   five complete `shard_phase5_tooling` runs on either `d95188b0` or the branch.
+   The machine reports LLDB 18.1.3 and `kernel.yama.ptrace_scope=1`. No branch
+   only cause was found; this remains an intermittent, unclassified LLDB/ptrace
+   event. Commit `fe939c59` adds 600-second per-check timeouts by default, a
+   900-second override for the longest release-semantics check, a 300-second
+   override for the live LLDB/DAP shard, process-group termination, and a
+   self-test proving the check name, 20-line output tail, and descendant cleanup.
+7. **Item 2 diagnostic correction:** The external fixture now copies the actual
+   `libexternal.rlib`. With no provider source, a valid external artifact reports
+   `SOURCE_FREE_PROVIDER_SOURCE_MISSING`; a tampered `.mossi` whose contract no
+   longer matches its rlib reports `SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH`.
+   Available but changed provider source continues to report
+   `MOSS_INTERFACE_STALE`. Commit `dcaa8969`.
 
 ### Standing merge and delivery rules
 
-- Run all merge gates on the merge commit itself, not either parent. Do not
-  commit directly to `main` without the full required gates.
+- Doc-only commits to `main` are exempt from merge gates. All other changes go
+  through a branch and a gated merge; run the gates on the merge commit itself,
+  not either parent. Do not commit code or behavior changes directly to `main`.
 - For `make compiler-perf` on a merge commit, set the baseline to the merge's
   first parent (the previous `main` head) and include that baseline hash in the
   report. A candidate-only run without a baseline does not satisfy the gate.
@@ -87,12 +99,15 @@
 | Swapped provider rlib | `SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH` | `SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH` |
 | Corrupt provider rlib | `SOURCE_FREE_ARTIFACT_CONTRACT_INVALID` | `SOURCE_FREE_ARTIFACT_CONTRACT_INVALID` |
 | Tampered imported-effects provider | `MOSS_COMPILE_ERROR` | `SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH` |
-| Tampered external provider with no source | `MOSS_INTERFACE_STALE` | `MOSS_INTERFACE_STALE` |
+| Valid external provider with no source | — | `SOURCE_FREE_PROVIDER_SOURCE_MISSING` |
+| Tampered external provider with no source | `MOSS_INTERFACE_STALE` | `SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH` |
 
-The ABI-v9 verifier now reports digest and missing-required-effect tampering as
-`SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH`; this changes only diagnostic codes.
-The external provider is copied to `MOSS_MODULE_PATH`, its source project is
-removed, and Margo rejects its altered source hash without rewriting it. The
+The ABI-v9 verifier reports digest and missing-required-effect tampering as
+`SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH`. The external fixture copies both
+`external.mossi` and `libexternal.rlib` to `MOSS_MODULE_PATH`, then removes its
+source. An intact provider is rejected with the explicit source-missing code;
+tampering the interface source hash is rejected as a contract mismatch before
+freshness checking, and Margo leaves both provider artifacts unchanged. The
 swapped-rlib `moss check` acceptance and source-present Margo regeneration are
 retained with comments explaining their behavior. The external-cache,
 imported-effects, and Phase 21C branch-error focused checks pass.

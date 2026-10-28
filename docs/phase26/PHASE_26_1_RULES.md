@@ -66,8 +66,9 @@ check work only where needed.
   no slowdowns beyond the noise floor. For a merge, run all gates on the merge
   commit itself. Compare `compiler-perf` against its first parent (the previous
   `main` head), name that hash in the report, and do not count a candidate-only
-  run without a baseline as the gate. Do not commit directly to `main` without
-  the full required gates.
+  run without a baseline as the gate. Doc-only commits to `main` are exempt from
+  merge gates; every other change goes through a branch and gated merge. Do not
+  commit code or behavior changes directly to `main`.
 - The exit report publishes the M1 table and a fresh certified
   `compiler-perf` run as the Phase 26.2 baseline.
 
