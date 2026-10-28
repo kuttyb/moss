@@ -22,6 +22,15 @@ import time
 
 REPO = Path(__file__).resolve().parents[1]
 GIT_LOCK = threading.Lock()
+DEFAULT_CHECK_TIMEOUT_SECONDS = 600.0
+CHECK_TIMEOUT_OVERRIDES = {
+    # This checked release-mode semantics shard is the suite's longest known
+    # check, so leave extra room beyond the generous default.
+    "check_phase20_release_semantics": 900.0,
+    # The tooling shard runs live LLDB and DAP sessions; allow several minutes
+    # for them while still bounding a debugger that never resumes.
+    "shard_phase5_tooling": 300.0,
+}
 
 
 @dataclass
@@ -34,6 +43,7 @@ class Job:
     env_overrides: dict[str, str] = field(default_factory=dict)
     isolate_worktree: bool = False
     exclusive: bool = False
+    timeout_seconds: float = 600.0
 
 
 @dataclass
@@ -46,8 +56,27 @@ class JobResult:
     output_dir: Path
 
 
+def result_tail(result: JobResult, line_count: int = 20) -> list[str]:
+    """Return the last output lines for a failed check, stdout then stderr."""
+    combined = "\n".join(part for part in (result.stdout, result.stderr) if part)
+    return combined.strip().splitlines()[-line_count:]
+
+
+def _kill_process_tree(proc: subprocess.Popen[str]) -> None:
+    """Kill a check and every descendant in its isolated process group."""
+    if os.name == "posix":
+        try:
+            os.killpg(proc.pid, 9)
+        except ProcessLookupError:
+            pass
+    else:
+        proc.kill()
+    proc.wait()
+
+
 # All individual standalone Python regressions from tests/run.sh
 TOOLING_TESTS: list[tuple] = [
+    ("check_run_parallel_timeout", [sys.executable, "tests/tooling/check_run_parallel_timeout.py"]),
     ("check_make_incremental_dependencies", [sys.executable, "tests/tooling/check_make_incremental_dependencies.py"]),
     ("check_retired_syntax", [sys.executable, "tests/tooling/check_retired_syntax.py", "--self-test"]),
     ("check_agent_skills", [sys.executable, "tests/tooling/check_agent_skills.py", "{compiler}"]),
@@ -231,13 +260,17 @@ def build_manifest() -> list[Job]:
         jobs.append(Job(name=name, cmd_template=cmd,
                         use_opt_compiler=name not in lightweight,
                         isolate_worktree=True,
-                        exclusive=name == "check_phase25_4_performance_baseline"))
+                        exclusive=name == "check_phase25_4_performance_baseline",
+                        timeout_seconds=CHECK_TIMEOUT_OVERRIDES.get(
+                            name, DEFAULT_CHECK_TIMEOUT_SECONDS)))
 
     for item in SHELL_SHARDS:
         name, cmd = item[0], item[1]
         deps = item[2] if len(item) > 2 else []
         jobs.append(Job(name=name, cmd_template=cmd, dependencies=deps,
-                        use_opt_compiler=True, isolate_worktree=True))
+                        use_opt_compiler=True, isolate_worktree=True,
+                        timeout_seconds=CHECK_TIMEOUT_OVERRIDES.get(
+                            name, DEFAULT_CHECK_TIMEOUT_SECONDS)))
 
     return jobs
 
@@ -324,24 +357,40 @@ def run_single_job(
     stderr_file = job_out / "stderr.log"
 
     try:
-        proc = subprocess.run(
+        proc = subprocess.Popen(
             cmd,
             cwd=cwd,
             env=env,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            check=False,
+            start_new_session=(os.name == "posix"),
         )
+        timed_out = False
+        try:
+            stdout, stderr = proc.communicate(timeout=job.timeout_seconds)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            _kill_process_tree(proc)
+            stdout, stderr = proc.communicate()
         duration = time.monotonic() - start_time
-        stdout_file.write_text(proc.stdout, encoding="utf-8")
-        stderr_file.write_text(proc.stderr, encoding="utf-8")
+        if timed_out:
+            timeout_note = (
+                f"check {job.name} exceeded its {job.timeout_seconds:g}s timeout; "
+                "the process tree was killed."
+            )
+            stderr = "\n".join(part for part in (stderr, timeout_note) if part)
+            returncode = 124
+        else:
+            returncode = proc.returncode
+        stdout_file.write_text(stdout, encoding="utf-8")
+        stderr_file.write_text(stderr, encoding="utf-8")
         return JobResult(
             job=job,
-            returncode=proc.returncode,
+            returncode=returncode,
             duration=duration,
-            stdout=proc.stdout,
-            stderr=proc.stderr,
+            stdout=stdout,
+            stderr=stderr,
             output_dir=job_out,
         )
     except Exception as exc:
@@ -575,7 +624,7 @@ def main() -> int:
         for name, res in failed.items():
             print(f"\n--- [FAIL] {name} (exit {res.returncode}, {res.duration:.2f}s) ---")
             print(f"Build output: {res.output_dir}")
-            tail = (res.stderr or res.stdout).strip().splitlines()[-15:]
+            tail = result_tail(res, 20)
             if tail:
                 print("Last log lines:")
                 for line in tail:
