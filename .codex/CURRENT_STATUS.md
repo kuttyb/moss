@@ -13009,3 +13009,20 @@ Tag `phase26-3-m1` targets the gated merge commit. No PR was created.
   checker/Fast Debug/native behavior are delivered. `--interp --json`, F1-F6,
   and the five-package native gate are included and passing.
 - Delivery tag `phase26-3-m2` targets the gated merge commit.
+
+## Phase 26.3 let alias — emitter follow-up
+
+Continuation from `2d7cb6ad` on `phase26-3-let-alias`: native generation now
+skips virtualized Var producers. The source-kind audit added Var handling to the
+parser-origin branch-join, predecessor, and local-binding recognition paths;
+the remaining Let-only immutable-local marker stays Let-only so Var bindings
+are not marked immutable. Checked-body/internal synthesized Let construction
+remains unchanged. The phase4 assertions now expect mutable Rust locals and
+require a single-assignment Var producer to be virtualized.
+
+Validation: all five newly fused optimized Rust artifacts contain the
+`VIRTUALIZED` marker and no materialized producer declaration/loop. Fast Debug
+and native outputs matched (`12`) for the once-assigned Var case. Full
+`make --jobs="$(nproc)" check` passed 154/154 with zero failures or skips,
+including `shard_phase4_diff` and `shard_phase5_tooling`. Work remains on
+`phase26-3-let-alias`; do not merge to main.

@@ -918,8 +918,10 @@ class Checker {
             one_exact_top_level_join = one_exact_top_level_join && then_node &&
                 else_marker && else_node && then_node->bindings.size() == 1 &&
                 else_node->bindings.size() == 1 &&
-                then_node->source->kind == Stmt::Kind::Let &&
-                else_node->source->kind == Stmt::Kind::Let;
+                (then_node->source->kind == Stmt::Kind::Let ||
+                 then_node->source->kind == Stmt::Kind::Var) &&
+                (else_node->source->kind == Stmt::Kind::Let ||
+                 else_node->source->kind == Stmt::Kind::Var);
             std::array<std::optional<std::size_t>, 2> parameter_ordinals;
             std::array<const BodyTypeState::StatementOccurrence*, 2> branches{
                 then_node, else_node};
@@ -5050,7 +5052,8 @@ class Checker {
               if (seen_roles[role_index] || !predecessor ||
                   predecessor->bindings.size() != 1 ||
                   predecessor->bindings.front().identity != edge.binding_id ||
-                  predecessor->source->kind != Stmt::Kind::Let)
+                  (predecessor->source->kind != Stmt::Kind::Let &&
+                   predecessor->source->kind != Stmt::Kind::Var))
                 return std::nullopt;
               const auto root = state.expression_root_slots.find(
                   {predecessor->id, "initializer"});
@@ -31354,7 +31357,8 @@ fn inspect_sample(sample: Sample) -> Int:
       return false;
     const auto local_nodes = std::count_if(statement_nodes.begin(),
         statement_nodes.end(), [](const auto& node) {
-          return node.kind == Stmt::Kind::Let && node.introduces_binding &&
+          return (node.kind == Stmt::Kind::Let ||
+                  node.kind == Stmt::Kind::Var) && node.introduces_binding &&
               !node.binding_identity.empty() && node.binding_type;
         });
     if (local_nodes != 2)
@@ -31388,7 +31392,8 @@ fn inspect_sample(sample: Sample) -> Int:
         if_node->bindings.front().predecessor_binding_ids.begin(),
         if_node->bindings.front().predecessor_binding_ids.end());
     for (const auto& declaration : statement_nodes)
-      if (declaration.kind == Stmt::Kind::Let &&
+      if ((declaration.kind == Stmt::Kind::Let ||
+           declaration.kind == Stmt::Kind::Var) &&
           declaration.introduces_binding && declaration.binding_type &&
           declaration.source && declaration.source->a == "local")
         joined_predecessors.erase(declaration.binding_identity);

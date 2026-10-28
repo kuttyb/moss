@@ -275,16 +275,19 @@ fi
 grep -F "FUNCTIONAL INTERMEDIATE 'normalized' VIRTUALIZED" \
   "$test_build/phase45_cross_let_result_optimized.rs" >/dev/null ||
   fail 'function-result consumer did not virtualize its immutable producer'
-grep -Eq '^[[:space:]]*let normalized = \{' \
+grep -Eq '^[[:space:]]*let mut normalized = \{' \
   "$test_build/phase45_later_use_materializes_optimized.rs" ||
   fail 'later independent use did not force collection materialization'
 if grep -F "FUNCTIONAL INTERMEDIATE 'normalized' VIRTUALIZED" \
     "$test_build/phase45_cross_let_effect_barrier_optimized.rs" >/dev/null; then
   fail 'an intervening observable effect was crossed by binding fusion'
 fi
-if grep -F "FUNCTIONAL INTERMEDIATE 'normalized' VIRTUALIZED" \
-    "$test_build/phase45_mutable_binding_materializes_optimized.rs" >/dev/null; then
-  fail 'a mutable functional binding was incorrectly virtualized'
+grep -F "FUNCTIONAL INTERMEDIATE 'normalized' VIRTUALIZED" \
+  "$test_build/phase45_mutable_binding_materializes_optimized.rs" >/dev/null ||
+  fail 'single-assignment var functional binding was not virtualized'
+if grep -Eq '^[[:space:]]*let mut normalized = \{' \
+    "$test_build/phase45_mutable_binding_materializes_optimized.rs"; then
+  fail 'virtualized var producer was still materialized'
 fi
 grep -Eq '^[[:space:]]*let (mut )?materialized = \{' \
   "$test_build/phase4_materialized_message_optimized.rs" ||
