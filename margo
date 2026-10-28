@@ -85,6 +85,14 @@ def run(command: list[str], *, cwd: Path | None = None, env: dict | None = None,
     except (OSError, subprocess.CalledProcessError) as error:
         detail = ((error.stderr or error.stdout or "").strip()
                   if isinstance(error, subprocess.CalledProcessError) else str(error))
+        if (isinstance(error, subprocess.CalledProcessError) and
+                command[-2:] in (["build", "--json"], ["--check", "--json"])):
+            try:
+                payload = json.loads(error.stdout or "")
+                if isinstance(payload, dict) and payload.get("ok") is False:
+                    detail = (error.stdout or "").strip()
+            except json.JSONDecodeError:
+                pass
         raise MargoError(f"command failed ({' '.join(command)}): {detail}") from error
 
 

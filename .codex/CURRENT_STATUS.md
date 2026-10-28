@@ -12588,3 +12588,13 @@ String linkage, and Phase 24 same-module type resolution pass after this fix.
 The earlier full suite result was 137/150 on `bb4b3f77`; it has not yet been
 rerun against the current working tree. The remaining Phase 26.2 work includes
 re-running the complete suite and reviewing retired source-free code paths.
+
+Phase 26.2 follow-up: full `make --jobs="$(nproc)" check` completed with
+148/150 passing. Both failures were isolated: the R2 WP1 hostile provider case
+lost its structured Moss diagnostic because Margo preferred stderr trace output;
+Margo now preserves a failed command's Moss JSON response, and the focused WP1
+script passes. The other failure is `check_phase26_w2_inference_worklist`, which
+observed `inference_rounds=3` against its expected 5; this profile is not touched
+by Phase 26.2 changes. Focused Margo, R2 WP1, WP2, WP3, shared String, and Phase
+24 module type checks pass. Full suite has not been rerun after the diagnostic
+wrapper adjustment.
