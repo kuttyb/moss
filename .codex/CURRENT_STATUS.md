@@ -32,9 +32,9 @@
 - No shared package build directory, Emacs server/socket, fixed port, or HOME
   caused the xref result: the parallel runner isolates each job's worktree,
   output directory, `MARGO_HOME`, and `TMPDIR`; Emacs runs in batch `-Q` mode.
-- Item 3 code is validated by the direct xref ERT and seven isolated ERT runs;
-  its repeated full parallel gate remains pending. Item 4 documentation is in
-  commit `5b85d68c`.
+- Item 3 code is validated by the direct xref ERT, seven isolated ERT runs, five
+  full branch checks, and the final branch-head check. Item 4 documentation is
+  in commit `5b85d68c`.
 
 ## Phase 26.2 stabilization final report — stopped before main push
 
@@ -86,15 +86,23 @@
 9. **Merge commit:** Local merge commit `6a78f7387923a311dcfbaee2e27d0f72e0653ecf`
    has first parent `d95188b037a989e2486ca52ffd355795658175ad` and passed
    `make --jobs="$(nproc)" check` **152/152**, with zero failures and skips.
-10. **Compiler-perf STOP:** `MOSS_PERF_BASELINE=d95188b0 make compiler-perf`
-    ran on that merge commit. Aggregate medians improved 0.2%, but
-    `w6_types_count_t050` regressed 8.5% (+3.00 ms) beyond the noise floor
-    (baseline range 34.92–35.77 ms; candidate range 36.77–41.30 ms). This fires
-    the slowdown STOP rule. Do not push `main`, tag the merge, or add the
-    delivery record until the regression is addressed and the gates are rerun.
-    Report: `tmp/compiler-perf/20261028-095842/LOCAL_REPORT.md`.
-    The merge exists only in the local `main` ref; `origin/main` remains
-    `d95188b0`. No `phase26-2-stab-m1` tag or delivery-record commit was created.
+10. **Compiler-perf reruns and STOP:** Both runs used interleaved baseline and
+    candidate trials on merge commit `6a78f738`, baseline
+    `d95188b037a989e2486ca52ffd355795658175ad`. The initial run had aggregate
+    medians 5.143 s → 5.133 s (-0.2%) and `w6_types_count_t050` 35.28 → 38.28 ms
+    (+8.5%, +3.00 ms), beyond the noise floor (ranges 34.92–35.77 vs
+    36.77–41.30 ms). The quiet rerun had aggregate medians 5.085 s → 5.136 s
+    (+1.0%). Its `w6_types_count` siblings were: t010 6.91 → 6.84 ms (-1.0%);
+    t025 16.18 → 15.80 ms (-2.4%); t050 35.39 → 36.95 ms (+4.4%, within the
+    noise floor); t100 91.92 → 90.14 ms (-1.9%). The quiet run reported no
+    per-fixture slowdowns beyond the noise floor. The measured aggregate
+    slowdown nevertheless blocks immediately under the standing rule below.
+    Do not push `main`, tag the merge, or add the delivery record. Reports:
+    `tmp/compiler-perf/20261028-095842/LOCAL_REPORT.md` and
+    `tmp/compiler-perf/20261028-101136/LOCAL_REPORT.md`. No builds, checks, or
+    other agents were active before the quiet rerun. No code was changed.
+    The merge exists only in local `main`; `origin/main` remains `d95188b0`.
+    No `phase26-2-stab-m1` tag or delivery-record commit was created.
 
 ### Standing merge and delivery rules
 
@@ -106,6 +114,8 @@
   report. A candidate-only run without a baseline does not satisfy the gate.
 - Compiler-perf is a slowdown guard; report regressions beyond the noise floor
   and do not run timing studies.
+- A single-fixture slowdown beyond the noise floor must reproduce on one quiet
+  rerun before it blocks a merge. An aggregate slowdown blocks immediately.
 
 ### Stabilization item 2 — specific artifact errors
 
