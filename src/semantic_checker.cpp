@@ -1866,6 +1866,8 @@ class Checker {
     string member;
     vector<string> arguments;
   };
+  // Results must depend only on the key; the miss path must not read checker
+  // state. Keep all five parsers below pure with respect to their keys.
   mutable std::unordered_map<string, vector<BinaryParseEntry>> binary_parse_cache_;
   mutable std::unordered_map<string, CallParseEntry> simple_call_parse_cache_;
   mutable std::unordered_map<string, MemberParseEntry> member_call_parse_cache_;
@@ -14340,14 +14342,6 @@ class Checker {
     };
     append(inferred_all_function_signatures());
     append(inferred_shared_signature());
-
-    // Parser memo tables and the signature dependency worklist persist across
-    // cross-family rounds. Include their deterministic contents so the outer
-    // convergence check cannot overlook state that a later round reads.
-    // These memo tables are append-only: every insertion site increments this
-    // monotonic count. The count detects cache-state changes without walking
-    // the potentially large tables at every inner inference iteration.
-    append(std::to_string(parse_cache_entries_));
 
     for (size_t index = 0; index < p_.functions.size(); ++index) {
       auto found = signature_function_indices_.find(&p_.functions[index]);

@@ -12825,3 +12825,24 @@ studies.
 - W2 updated for inference convergence.
 - verify-mode inference gate.
 - cap-reached counter.
+
+## Phase 26.3 item 7 — parse-cache purity (2026-10-28)
+
+Work is isolated on `phase26-3-work`, created from `origin/main` at
+`5e3c7506`. The five semantic checker parse-cache miss paths were audited:
+binary parsing calls only static `split_binary_uncached`; simple-call,
+member-call, and top-level split call the corresponding free `moss` parsing
+helpers; outer-parentheses parsing calls the free normalizer. Their transitive
+string helpers use arguments and local state. `trim` reaches `std::isspace`,
+which follows the process C locale; the repository contains no `setlocale` or
+other locale mutation, so this does not vary during a Moss check. The five
+cache declarations now carry a purity invariant comment; `parse_cache_entries_`
+was removed from `inferred_checker_signature()`. The Phase 26.2 audit document
+records file/line evidence and this locale detail. `AGENTS.md` records scoped
+normal commit/push authorization for this branch; no PR or merge is in scope.
+
+Validation: `git diff --check` passed before the full gate. On the current
+implementation, `make --jobs="$(nproc)" check` passed all 152/152 jobs, 0 failed,
+0 skipped. This includes `check_phase26_inference_verify_modes`,
+`check_phase26_0_1_c3_parse_cache`, and `check_phase26_w2_inference_worklist`.
+Commit and push are pending.
