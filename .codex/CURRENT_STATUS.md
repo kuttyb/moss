@@ -13040,3 +13040,31 @@ new verdict, diagnostic, or Rust-hash changes). The optimized comparison has
 only the nine established deltas (five virtualizations and four materialization
 reason comments); no new emitter-skip deltas. Full `make --jobs="$(nproc)"
 check` passed 154/154, zero failures or skips. Branch remains unmerged.
+
+## Phase 26.3 let alias delivered
+
+- Merge commit: `a517979be464ed6c5ce528a18a3a9eb49c340fbc` (first parent and
+  corpus/perf baseline: `a19b54c9195b057f9054bf74d3f72d8c42d755ea`).
+- Parser: `let` and `var` both produce `Stmt::Kind::Var`; `let` is an alias for
+  `var`.
+- Optimizer: single-assignment Var bindings use the same inference as Assign;
+  `explicitly_immutable` was removed.
+- Emitter and checker: virtualized Var producers are skipped; parser-reachable
+  Var paths were added to checker handling, while synthesized Let paths remain.
+- Tests: removed let-immutability negatives; renamed the positive test to
+  `phase45_single_assignment_var_virtualizes`; added mutation and reassignment
+  materialization cases with Fast Debug/native parity and optimized marker checks.
+- On the merge commit, `make --jobs="$(nproc)" check` passed 154/154 with zero
+  failures or skips. Default corpus differential against the first parent checked
+  2,065 sources and matched the branch run: 6 approved let-related verdict changes
+  and 89 accepted Rust hashes. `-O` had the same 6 verdict changes, 87 accepted
+  Rust hashes, and no diagnostic-code changes; its five differences from the
+  saved branch table are the expected Var virtualization hashes.
+- `MOSS_PERF_BASELINE=a19b54c9195b057f9054bf74d3f72d8c42d755ea make compiler-perf`
+  ran 57 fixtures with three interleaved repetitions. Aggregate medians were
+  5.026 s baseline and 5.076 s candidate (+50 ms, +1.0%); same-code aggregate
+  spreads were 196 ms baseline and 205 ms candidate, so the change is within the
+  noise floor. `w3_spec_repeated_n008` initially exceeded the fixture noise floor
+  (+8.7%, +4.93 ms), but a quiet paired rerun did not reproduce it (baseline
+  median 63.68 ms, candidate 62.02 ms). No fixture regression blocks delivery.
+- Tag `phase26-3-let-alias-m1` targets the merge commit.
