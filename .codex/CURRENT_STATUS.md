@@ -12825,3 +12825,28 @@ studies.
 - W2 updated for inference convergence.
 - verify-mode inference gate.
 - cap-reached counter.
+
+## Phase 26.3 native test helpers — Step 1 measurements (2026-10-28)
+
+Branch `phase26-3-native-tests` starts at `origin/main` `5e3c7506`. Step 1 was
+measurement-only; no compiler or test-source changes were made.
+
+| Package | Native `margo test --json` | Interpreter | First error |
+|---|---:|---:|---|
+| `sdk/encoding` | 5/0/5 | 5/0/5 | none |
+| `sdk/cbor` | 34/0/34 | 34/0/34 | none |
+| `packages/compress` | 8/0/8 | 8/0/8 | none |
+| `sdk/text-encoding-acceptance` | 3/0/3 | 3/0/3 | none |
+| `sdk/binary` | 9/0/9 | 9/0/9 | none |
+
+`margo test --interp --json` is unsupported (Moss reports that interpreter
+tests do not yet support `--json`), so interpreter counts use
+`../../margo test --interp` output. Native results used the requested JSON mode.
+The only cross-test-file helper use found in `sdk/`, `packages/`, `examples/`,
+and `tests/fixtures/` is `sdk/cbor/tests/cbor_decoder_test.moss` calling
+`same_ints`, declared in `sdk/cbor/tests/cbor_test.moss` (four calls in the
+decoder's first two tests and further calls later in that file). The requested
+`tests/fixtures/` directory is absent on this branch. Other scanned helper
+references are local to their declaring test file; the apparent `key` match in
+the heap example is only prose in a test title. This is the sole Step 1
+migration candidate; Step 2 will move it into an explicit test module.
