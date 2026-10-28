@@ -17343,7 +17343,7 @@ static CheckedProjectUnit check_project_sources(
     // A dependency may be represented only by its compiled Moss interface.
     // Load it into the semantic namespace, but keep it out of this build's
     // declaration set so its Rust implementation is consumed from its rlib.
-    if (has_explicit_modules) {
+    if (has_explicit_modules || file_check_root || fast_debug_scope) {
       CompilerStageTimer timer("module_resolution");
       auto request_import = [&](const ModuleImport& import) {
         if (!modules.count(import.name)) requested_imports.emplace(import.name, import);
@@ -17387,6 +17387,13 @@ static CheckedProjectUnit check_project_sources(
               stale_interface_message(name.first));
         }
     }
+    // A legacy root module can import a dependency interface in file-scoped
+    // and Fast Debug modes. Materialize that provider through the same module
+    // rewriting path as explicit modules, while leaving package-wide native
+    // compilation's legacy source rules unchanged.
+    if (!has_explicit_modules && (file_check_root || fast_debug_scope) &&
+        !loaded_external_modules.empty())
+      has_explicit_modules = true;
     // Module identities (TYPE_IR_CONTRACT §3.1). A source module belongs to
     // the package whose Moss.toml contains it (dependency sources reach here
     // through Fast Debug); a compiled provider keeps its interface identity.

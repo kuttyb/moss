@@ -130,6 +130,19 @@ export fn not_reached() -> Int:
         require_ok(margo_tests, "Margo all-package Fast Debug tests")
         if margo_tests.stdout != all_tests.stdout:
             raise AssertionError("Margo test --interp did not select all package tests")
+
+        # Source-free dependency interfaces resolve imports from an implicit
+        # root module too; this package intentionally has no `module` line.
+        implicit_app = root / "implicit-app"
+        write_package(implicit_app, "implicit_app", '''import dep
+fn main():
+  echo dep.value() + 2
+''', '\n[dependencies]\ndep = { path = "../dep" }\n')
+        implicit_debug = run([str(margo), "debug"], cwd=implicit_app, env=env)
+        require_ok(implicit_debug, "implicit-module source-free dependency import")
+        if implicit_debug.stdout.strip() != "43":
+            raise AssertionError(f"implicit-module dependency execution produced {implicit_debug.stdout!r}")
+
         main_source = app / "src" / "main.moss"
         main_source.write_text(main_source.read_text() +
             '\ntest "unselected sibling test":\n  echo definitely_missing()\n',
