@@ -58,8 +58,7 @@ moss_skill_contract:
   composition_initializers: bootstrap-discoverable
   fileio_executor: bootstrap-discoverable
   domain_fn: handler
-  explicit_let: immutable
-  explicit_var: mutable
+  let: alias for var; local mutability is inferred
 ```
 
 ## Core source surface
@@ -72,8 +71,8 @@ full-document reading assignment. The high-frequency current forms are:
 
 ```moss
 x = expression        # usual inferred binding
-let x = expression    # explicitly immutable local
-var x = expression    # explicitly mutable local
+let x = expression    # alias for var; local mutability is inferred
+var x = expression    # alias for var; local mutability is inferred
 
 if condition:
   ...

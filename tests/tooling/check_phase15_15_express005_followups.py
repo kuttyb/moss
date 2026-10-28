@@ -716,16 +716,6 @@ fn main():
   machine = Machine()
   echo message machine.Step()
 """, output="work"),
-    Case("D4d", "control", "replace rejects immutable storage",
-         """enum Box:
-  Full(value: String)
-  Empty
-
-fn main():
-  let current = Box.Empty
-  let previous = replace(current, Box.Full(value: "new"))
-  echo 0
-""", check="reject", needle="IMMUTABLE_LOCAL_MUTATION"),
     Case("D4e", "control", "replace requires the same static type",
          """enum Box:
   Full(value: String)

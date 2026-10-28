@@ -21,7 +21,6 @@ AGENT_SKILLS_DOC = ROOT / "docs" / "AGENT_SKILLS.md"
 AGENT_API_DOC = ROOT / "docs" / "AGENT_API.md"
 EXAMPLE = ROOT / "tests" / "tooling" / "fixtures" / "moss_language_skill_example.moss"
 SOURCE_SURFACE = ROOT / "tests" / "tooling" / "fixtures" / "moss_language_surface.moss"
-IMMUTABLE_LET = ROOT / "tests" / "tooling" / "fixtures" / "moss_language_surface_immutable_let.moss"
 LOCAL_ANNOTATION = ROOT / "tests" / "tooling" / "fixtures" / "moss_language_surface_local_annotation.moss"
 FAST_DEBUG_CONTAINER_FIELD = ROOT / "tests" / "tooling" / "fixtures" / "moss_fast_debug_container_field_limit.moss"
 DISCOVERY_COLLECTIONS = ROOT / "tests" / "tooling" / "fixtures" / "moss_discovery_collections.moss"
@@ -133,8 +132,7 @@ def main() -> int:
             "composition_initializers": "bootstrap-discoverable",
             "fileio_executor": "bootstrap-discoverable",
             "domain_fn": "handler",
-            "explicit_let": "immutable",
-            "explicit_var": "mutable",
+            "let": "alias for var; local mutability is inferred",
         },
         "moss-language",
     )
@@ -467,9 +465,6 @@ def main() -> int:
     if (impure_composition_initializer.returncode == 0
             or "domain state initializers must be side-effect-free" not in impure_composition_initializer.stdout):
         fail("composition initializer discovery no longer matches the compiler")
-    immutable_let = run([str(compiler), "check", str(IMMUTABLE_LET), "--json"], ROOT)
-    if immutable_let.returncode == 0 or "IMMUTABLE_LOCAL_MUTATION" not in immutable_let.stdout:
-        fail("explicit let mutation was not rejected by the advertised source surface")
     local_annotation = run([str(compiler), "check", str(LOCAL_ANNOTATION), "--json"], ROOT)
     if local_annotation.returncode == 0 or "LOCAL_TYPE_ANNOTATION_UNSUPPORTED" not in local_annotation.stdout:
         fail("unsupported local annotation did not receive its advertised diagnostic")

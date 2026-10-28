@@ -5314,7 +5314,8 @@ class Generator {
           planned_functional_pipeline(direct_functional_id);
       if (direct_functional &&
           direct_functional->virtualized_into_pipeline_id &&
-          (s.kind == Stmt::Kind::Assign || s.kind == Stmt::Kind::Let)) {
+          (s.kind == Stmt::Kind::Assign || s.kind == Stmt::Kind::Let ||
+           s.kind == Stmt::Kind::Var)) {
         backend_comment(
             o, (base + level) * 4,
             "FUNCTIONAL INTERMEDIATE '" + direct_functional->binding_name +

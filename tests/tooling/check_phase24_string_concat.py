@@ -71,8 +71,6 @@ with tempfile.TemporaryDirectory(dir=ROOT / "tmp") as directory:
         ('fn identity(value: String) -> String:\n  return value + ""\n\n'
          'fn main():\n  var value = "x"\n  value.append(identity(value))\n',
          "OWNERSHIP_CONFLICTING_ACCESS"),
-        ('fn main():\n  let value = "x"\n  value.append("y")\n',
-         "IMMUTABLE_LOCAL_MUTATION"),
         ('fn main():\n  var value = "x"\n  value.reserve("many")\n',
          "TYPE_MISMATCH"),
     ]:

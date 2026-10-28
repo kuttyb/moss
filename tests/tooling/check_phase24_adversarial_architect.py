@@ -204,28 +204,6 @@ with tempfile.TemporaryDirectory(prefix="p24-adversarial-gate-") as temp_dir:
     own_env = base_env.copy()
     own_env["MOSS_MODULE_PATH"] = f"{REPO_ROOT / 'sdk/foundations/algorithms/build/debug'}:{REPO_ROOT / 'sdk/foundations/bytes/build/debug'}"
 
-    # B1: Immutable input rejected by sort_int
-    (own_dir / "src/main.moss").write_text(
-        'module app\nimport algorithms\nfn main():\n'
-        '  let items = [3, 2, 1]\n'
-        '  algorithms.sort_int(items)\n',
-        encoding="utf-8"
-    )
-    ok, out = run_cmd([str(MOSS), "check", "src/main.moss", "--json"], cwd=own_dir, env=own_env, expected_rc=1)
-    assert ok, f"Expected check failure for immutable sort:\n{out}"
-    parsed = json.loads(out)
-    assert "IMMUTABLE" in parsed.get("error", {}).get("code", ""), f"Expected IMMUTABLE error:\n{out}"
-
-    # B2: Immutable input rejected by bytes mutation
-    (own_dir / "src/main.moss").write_text(
-        'module app\nimport bytes\nfn main():\n'
-        '  let b = [65, 66]\n'
-        '  bytes.set_if_valid(b, 0, 70)\n',
-        encoding="utf-8"
-    )
-    ok, out = run_cmd([str(MOSS), "check", "src/main.moss", "--json"], cwd=own_dir, env=own_env, expected_rc=1)
-    assert ok, f"Expected check failure for immutable bytes:\n{out}"
-
     # B3: Concurrent domain state sort with synchronization plan
     (own_dir / "src/main.moss").write_text(
         'module app\nimport algorithms\n'

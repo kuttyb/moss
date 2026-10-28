@@ -23,12 +23,6 @@ EXPLICIT_VAR = """fn main():
   echo n
 """
 
-EXPLICIT_LET = """fn main():
-  let n = 1
-  n = 2
-  echo n
-"""
-
 BRANCH_LOCAL_ESCAPE = """fn main():
   if true:
     n = 1
@@ -92,7 +86,6 @@ assert implicit_output == var_output, (
 )
 assert implicit_output.strip() == "2", f"expected reassigned value 2, got {implicit_output!r}"
 
-check_rejects(EXPLICIT_LET, "IMMUTABLE_LOCAL_MUTATION", "d3a_explicit_let")
 check_rejects(BRANCH_LOCAL_ESCAPE, "UNKNOWN_SYMBOL_OR_TYPE", "d3a_branch_local")
 
 print("D3a implicit mutable binding preflight: PASS")

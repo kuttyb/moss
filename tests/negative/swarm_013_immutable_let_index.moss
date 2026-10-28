@@ -1,3 +1,0 @@
-fn main():
-  let values = [1]
-  values[0] = 2

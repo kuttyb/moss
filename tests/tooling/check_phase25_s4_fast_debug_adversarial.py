@@ -185,20 +185,7 @@ fn main():
         "s\n10\n101\ns\n20\n201\n201\n")
 
 
-def test_join_let_stays_immutable():
-    print("P25-S-S4-004: a `let` bound on every path stays immutable after the join")
-    rejected("""
-fn f(flag: Bool) -> Int:
-  if flag:
-    let r = 10
-  else:
-    let r = 20
-  r = r + 1
-  return r
-
-fn main():
-  echo f(true)
-""", "assignment to joined let", "IMMUTABLE_LOCAL_MUTATION")
+def test_joined_bindings_remain_assignable():
     three_modes("""
 enum E:
   A
@@ -365,17 +352,6 @@ fn main():
   echo message b.Guarded(9)
   echo message b.Show()
 """, "message results written to domain state", "4t44p2\n5\n6\n-9\n-9t44p2\n")
-    rejected("""
-domain W:
-  fn Num(k: Int) -> Int:
-    reply k
-
-fn main():
-  w = W()
-  let x = 5
-  x = message w.Num(1)
-  echo x
-""", "message result into an immutable local", "IMMUTABLE_LOCAL_MUTATION")
     with tempfile.TemporaryDirectory(prefix="p25-s4-", dir=SCRATCH) as td:
         source = Path(td) / "payload.moss"
         source.write_text("""domain W:
@@ -480,7 +456,7 @@ def main():
     print("=== Phase 25 Team S S4 adversarial Fast Debug parity regressions ===")
     test_try_join_binding_after_raise()
     test_branch_bindings_shadowing_state()
-    test_join_let_stays_immutable()
+    test_joined_bindings_remain_assignable()
     test_wrapping_unary_minus()
     test_int_literal_range()
     test_message_result_writes_state()
