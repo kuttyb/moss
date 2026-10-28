@@ -16,6 +16,7 @@ import re
 import shutil
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import tomllib
 
 
@@ -659,12 +660,13 @@ def atomic_json(path: Path, payload: dict) -> None:
 
 
 def build_graph(root: Package, ordered: list[Package], release: bool,
-                json_mode: bool, check_only: bool = False) -> tuple[list[dict], list[str], list[str]]:
-    artifacts: list[dict] = []
-    checked: list[str] = []
-    skipped: list[str] = []
+                json_mode: bool, check_only: bool = False,
+                jobs: int = 1) -> tuple[list[dict], list[str], list[str]]:
+    if jobs < 1:
+        raise MargoError("package build job count must be at least 1")
     toolchain = package_toolchain_identity(check_only)
-    for package in ordered:
+
+    def build_one(package: Package) -> tuple[dict, bool]:
         profile = profile_name(release, check_only)
         state_path = package.root / "build" / profile / ".margo-fingerprint.json"
         is_root_package = package.root.resolve() == root.root.resolve()
@@ -685,12 +687,9 @@ def build_graph(root: Package, ordered: list[Package], release: bool,
                 prior.get("outputs") == current_outputs and
                 (not check_only or has_check_interface) and
                 (check_only or isinstance(prior_result, dict))):
-            skipped.append(package.data["name"])
             if isinstance(prior_result, dict):
-                artifacts.append(prior_result)
-            else:
-                artifacts.append({})
-            continue
+                return prior_result, False
+            return {}, False
         env = package_environment(package, ordered, release, check_only)
         env["MARGO_PACKAGE_FINGERPRINT"] = fingerprint
         command = [str(MOSS), "build"] + (["--release"] if release else []) + \
@@ -711,7 +710,6 @@ def build_graph(root: Package, ordered: list[Package], release: bool,
                 raise MargoError(
                     f"test target semantic check failed for {package.data['name']}: "
                     f"{diagnostic}")
-        checked.append(package.data["name"])
         outputs = output_snapshot(package, release, check_only, payload)
         if check_only:
             for output in outputs:
@@ -729,7 +727,49 @@ def build_graph(root: Package, ordered: list[Package], release: bool,
         state = {"format": "margo-package-state-v1", "fingerprint": fingerprint,
                  "outputs": outputs, "result": payload}
         atomic_json(state_path, state)
-        artifacts.append(payload)
+        return payload, True
+
+    # Each wave contains packages whose direct providers have completed. Packages
+    # in a wave write separate build roots, so they can safely use separate Moss
+    # processes while preserving the dependency-first interface contract.
+    artifacts_by_identity: dict[str, dict] = {}
+    checked_identities: set[str] = set()
+    pending = list(ordered)
+    completed: set[str] = set()
+    with ThreadPoolExecutor(max_workers=jobs, thread_name_prefix="margo-package") as pool:
+        while pending:
+            ready = [package for package in pending
+                     if all(dependency.identity in completed
+                            for dependency in package.dependencies)]
+            if not ready:
+                raise MargoError("internal error: package graph has no buildable package")
+            futures = {pool.submit(build_one, package): package for package in ready}
+            failures = []
+            results = {}
+            for future in as_completed(futures):
+                package = futures[future]
+                try:
+                    results[package.identity] = future.result()
+                except Exception as error:
+                    failures.append((package, error))
+            if failures:
+                package, error = sorted(failures,
+                    key=lambda item: ordered.index(item[0]))[0]
+                if isinstance(error, MargoError):
+                    raise error
+                raise MargoError(f"package build failed for {package.data['name']}: {error}") from error
+            for package in ready:
+                artifact, was_checked = results[package.identity]
+                artifacts_by_identity[package.identity] = artifact
+                if was_checked:
+                    checked_identities.add(package.identity)
+                completed.add(package.identity)
+                pending.remove(package)
+    artifacts = [artifacts_by_identity[package.identity] for package in ordered]
+    checked = [package.data["name"] for package in ordered
+               if package.identity in checked_identities]
+    skipped = [package.data["name"] for package in ordered
+               if package.identity not in checked_identities]
     return artifacts, checked, skipped
 
 
@@ -743,8 +783,12 @@ def main() -> int:
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--trace", action="store_true")
     parser.add_argument("--interp", action="store_true")
+    parser.add_argument("-j", "--jobs", type=int, default=max(1, os.cpu_count() or 1),
+                        help="maximum number of independent package builds (default: CPU count)")
     args = parser.parse_args()
     try:
+        if args.jobs < 1:
+            raise MargoError("-j/--jobs must be at least 1")
         if args.command == "debug" and (args.filter or args.release or args.json or args.interp):
             unsupported = []
             if args.filter:
@@ -779,7 +823,7 @@ def main() -> int:
             dependency_order = [package for package in ordered
                                 if package is not root]
             build_graph(root, dependency_order, False, args.json,
-                        check_only=True)
+                        check_only=True, jobs=args.jobs)
             env = package_environment(root, ordered, False, check_only=True)
             test_cmd = [str(MOSS), "test", "--interp"]
             if args.filter:
@@ -797,7 +841,7 @@ def main() -> int:
             dependency_order = [package for package in ordered
                                 if package is not root]
             build_graph(root, dependency_order, False, args.json,
-                        check_only=True)
+                        check_only=True, jobs=args.jobs)
             env = package_environment(root, ordered, False, check_only=True)
             debug_cmd = [str(MOSS), "debug", str(root.root)]
             if args.trace:
@@ -808,7 +852,7 @@ def main() -> int:
             run([str(MOSS), "clean"] + (["--json"] if args.json else []), cwd=root.root)
             return 0
         artifacts, checked_packages, skipped_packages = build_graph(
-            root, ordered, args.release, args.json, args.check)
+            root, ordered, args.release, args.json, args.check, args.jobs)
         if args.check:
             if args.json:
                 print(json.dumps({"schema_version": "margo-1", "ok": True,

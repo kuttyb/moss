@@ -64,6 +64,16 @@ import Geometry
 fn main():
   echo Geometry.answer()
 """, '''\n[dependencies]\nGeometry = { path = "../geometry" }\n''')
+independent = root / "independent"
+write_package(independent, "Independent", """module Independent
+
+export fn value() -> Int:
+  7
+""")
+app_manifest = app / "Moss.toml"
+app_manifest.write_text(app_manifest.read_text(encoding="utf-8") +
+                        'Independent = { path = "../independent" }\n',
+                        encoding="utf-8")
 (app / "tests").mkdir()
 (app / "tests" / "answer.moss").write_text('import Geometry\n\ntest "dependency answer":\n  assertEqual(Geometry.answer(), 42)\n', encoding="utf-8")
 (app / "benches").mkdir()
@@ -71,10 +81,10 @@ fn main():
 env = dict(os.environ)
 env.update(MARGO_HOME=str(home), MOSS=str(moss))
 
-first = run([margo, "build", "--json"], app, env=env)
+first = run([margo, "build", "--json", "-j", "2"], app, env=env)
 result = json.loads(first.stdout)
 assert result["ok"] is True
-assert result["build_order"] == ["Math", "Geometry", "App"]
+assert result["build_order"] == ["Math", "Geometry", "Independent", "App"]
 assert result["packages"][0]["source"]["commit"] == commit
 # These are compiled provider contracts, not a folded Moss source unit.  The
 # concrete Rust consumers name their imported module crate and do not contain
@@ -102,8 +112,10 @@ run([margo, "bench", "dependency answer"], app, env=env)
 # Once the exact revision is cached, a repeat must not need a changing tag or
 # branch resolution. Removing the original remote proves cache/lock reuse.
 shutil.rmtree(math)
-second = run([margo, "build", "--json"], app, env=env)
-assert json.loads(second.stdout)["build_order"] == ["Math", "Geometry", "App"]
+second = run([margo, "build", "--json", "--jobs", "1"], app, env=env)
+assert json.loads(second.stdout)["build_order"] == ["Math", "Geometry", "Independent", "App"]
+invalid_jobs = run([margo, "build", "-j", "0"], app, expected=1, env=env)
+assert "-j/--jobs must be at least 1" in invalid_jobs.stderr
 assert (app / "Moss.lock").read_text(encoding="utf-8") == lock
 run([margo, "clean"], app, env=env)
 assert not (app / "build").exists()

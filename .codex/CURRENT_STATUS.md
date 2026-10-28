@@ -1,3 +1,23 @@
+# Phase 26.2 — Margo package parallelism checkpoint
+
+- Active branch: `phase26-2-work`, based on local `main` at `e97751ec` (the
+  Phase 26.1 delivery merge). User authorized scoped local commits and normal
+  pushes on this branch; no PR or merge to `main` is in scope.
+- Kickoff decisions: package-level parallel builds are principled; no timing
+  study, with compiler-perf used only as a no-regression guard. Cargo is the
+  package native-build driver, Margo owns generated stable manifests and the
+  package graph, and one Moss process per package is capped by `-j`. ABI v10
+  remains masked; no ABI-v10-only work is pulled forward.
+- First implementation slice adds Margo `-j`/`--jobs` and executes dependency
+  DAG waves concurrently while keeping dependency interfaces dependency-first
+  and result/build-order reporting deterministic. `tests/tooling/check_margo.py`
+  now exercises a graph with independent leaves, both jobs spellings, and
+  invalid zero jobs.
+- Validation on this checkpoint: `python3 -m py_compile margo` and
+  `python3 tests/tooling/check_margo.py ./moss` passed. Cargo integration,
+  native artifact skip validation, retired source-free path removal, full
+  regression gates, compiler-perf guard, and Architect review remain pending.
+
 # Phase 26.1 + 26.1.1 merged and certified.
 
 - Merged `phase26-1-m1` at `2223dfb7` into `main` with `--no-ff` at merge

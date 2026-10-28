@@ -167,6 +167,9 @@ When working with Moss:
   `phase25-2-work`, and the current Phase 25.4 check-gate fixes on
   `phase25-4-check-gates`, the user authorized local commits and normal pushes
   to the configured remote. The user also authorized local commits and normal
-  pushes for the Phase 26.1.1 X2 follow-up on `phase26-1-m1`. Keep each task on
-  its scoped branch; do not merge directly to `main` unless the user explicitly
-  directs that merge. Do not force-push or rewrite published history.
+  pushes for the Phase 26.1.1 X2 follow-up on `phase26-1-m1`, and Phase 26.2
+  work on `phase26-2-work`. For Phase 26.2, checkpoint completed slices with
+  local commits and normal pushes to the configured remote; no PRs are in scope.
+  Keep each task on its scoped branch; do not merge directly to `main` unless
+  the user explicitly directs that merge. Do not force-push or rewrite
+  published history.
