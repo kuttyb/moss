@@ -10,15 +10,14 @@ Bank-directed audit and backlog recorded in docs-only follow-up commits. The
 `margo test` at `origin/main` `543722a9` and branch implementation
 `e0b8dcc2`. All 24 command/package exit statuses matched; no package passes on
 main and fails on the branch. These are pre-existing native-backend issues,
-not Fast Debug defects. The docs-only follow-up checkpoint `a3954019` received
-Architect GO, confirming that implementation, test, and build files did not
-change and that prior gate evidence carries under Bank's explicit exception.
-The exact-SHA `e0b8dcc2` record includes full `make check`, C1 gates, focused
-X2/native agreement, and the v9/v10 corpus audit. The broader compiler-corpus
-differential, package-perf, and compiler-perf results remain cited at their
-recorded earlier checkpoint below; those measurements were not rerun for this
-docs-only audit. Do not merge until Bank explicitly authorizes it; certified
-compiler-perf on clean `main` remains post-merge.
+not Fast Debug defects. The frozen docs-only candidate `647487e1` has fresh
+corpus differential, C1, package-perf, compiler-perf, and v9 R12 evidence
+recorded in the X2 results. Uninterrupted `make check` passed 150/150 on
+implementation checkpoint `e0b8dcc2` and carries under Bank's docs-only
+exception. Architect GO at `a3954019` confirmed the intervening audit changed
+no implementation, test, or build files; exact review of `647487e1` is pending.
+Do not merge until Bank explicitly authorizes it; certified compiler-perf on
+clean `main` remains post-merge.
 
 ## Known issues
 

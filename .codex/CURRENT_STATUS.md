@@ -1,12 +1,11 @@
 # 26.1 + 26.1.1 complete; awaiting Bank go
 
-- Branch `phase26-1-m1`; implementation commit `e0b8dcc2` is pushed.
-  Uninterrupted `make --jobs="$(nproc)" check` passed 150/150 jobs, 0 failed,
-  0 skipped. The Bank-directed native baseline/backlog checkpoint `a3954019`
-  received Architect GO. It changes only status/results/exit docs relative to
-  the task base; no implementation, test, or build files changed. Prior gate
-  evidence carries under Bank's docs-only exception. No merge to `main` until
-  Bank's explicit go.
+- Frozen docs-only candidate `647487e1` is pushed on `phase26-1-m1`.
+  Architect GO on the prior docs-only checkpoint confirms no implementation,
+  test, or build files changed; exact review of this final gate record is
+  pending. The full Bank gate set is recorded at the end of
+  `docs/phase26/PHASE_26_1_1_X2_RESULTS.md`. No merge to `main` until Bank's
+  explicit go.
 - The implicit-root fixture now passes native `margo build` and `margo test`;
   `moss check <file>` rejects without `MOSS_MODULE_PATH` and accepts with the
   provider path. Focused X2 and `make c1-corpus-gates` pass (G-a 669/669,
@@ -22,9 +21,9 @@
   results: full check 150/150, zero R12 hits, the documented 3 Fast Debug
   differences against `origin/main`, 12 C1 + 3 T1 compiler-corpus rows,
   enforced package-perf, and compiler-perf with no slowdowns beyond noise.
-  The post-fix e0 checkpoint separately records full check, C1 gates, focused
-  X2/native agreement, and the v9/v10 corpus audit. No gate or timing study was
-  rerun for the docs-only a395 checkpoint; carryover is under Bank's exception.
+  Fresh differential, C1, package-perf, compiler-perf, and v9 R12 results were
+  recorded on `647487e1`; full `make check` carries from implementation
+  checkpoint `e0b8dcc2` under Bank's docs-only exception.
 
 ## Previous checkpoint notes
 

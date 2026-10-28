@@ -578,7 +578,8 @@ the durable classification is:
   and `test_file_helper/split` (reached test helper missing from Rust). These
   are defects under Bank's reachability criterion, not accepted scope
   differences.
-- ABI v10 adds one more reachable error:
+- ABI v10 adds one more reachable corpus mismatch, which Bank has classified
+  as out of scope because Fast Debug skips v10 key-proof validation:
   `tests/phase25/key_protocol/06j-proof-forged-interface/app`. Its native
   `KEY_PROOF_INVALID` is triggered by the reached `main` using
   `keyprov.name(...)` as a map key.
@@ -592,7 +593,7 @@ the durable classification is:
   `nested_generic_string`, and `source_free_generics` repros,
   `sdk/foundations/collections/examples/basic` and `contains_only`, and
   `sdk/text-encoding-acceptance` main/tests). These remain unresolved interface
-  and tooling failures.
+  and tooling failures, recorded as out of scope by Bank's decision.
 
 The native implicit-root mismatch is fixed and reviewed. Bank's final
 direction classifies ABI-v10 corpus-only failures as out of scope, while the
@@ -604,3 +605,39 @@ package-command exit statuses matched, with the same native error category;
 none passes on main and fails on the branch. They are pre-existing native
 backend/package-resolution issues and are catalogued in Known issues in
 `PHASE_26_1_EXIT.md`. No implementation files changed in this follow-up.
+
+## Bank final gates — frozen docs-only candidate `647487e1`
+
+No implementation, test, build, or Margo files changed between implementation
+commit `e0b8dcc2` and this docs-only candidate. Architect confirmed the
+docs-only carry rule at `a3954019`; exact review of this final record is
+pending. The full `make check` at `e0b8dcc2` passed **150/150 jobs, 0 failed,
+0 skipped**, including the ABI-v10 suites.
+
+- Compiler corpus differential against `origin/main` `543722a9`: **2,064
+  sources**, exactly **12 C1 + 3 T1** changed verdicts. Of 1,325 sources
+  accepted by both compilers, **all generated-Rust hashes are byte-identical**.
+  The three T1 rows newly emit Rust; C1 changed rows remain fail-fast or
+  accepted without emission as expected. Fresh result tables are in
+  `tmp/final-gates-647/`.
+- `make c1-corpus-gates`: passed, **G-a 669/669, G-b 67/67**, 438 packages,
+  zero failures.
+- `MOSS_M1_ENFORCE_TARGETS=1 make package-perf`: passed with target
+  enforcement; report `tmp/compiler-perf/m1-20261027-213640/M1_BASELINE.md`.
+- `MOSS_PERF_BASELINE=0872d642 MOSS_PERF_REPS=5 make compiler-perf`: passed,
+  57 fixtures, aggregate medians **5.190 s baseline / 5.217 s candidate
+  (+0.5%)**, no slowdown beyond the noise floor. Report:
+  `tmp/compiler-perf/20261027-213824/LOCAL_REPORT.md`. The first attempt found
+  ignored generated `.moss` semantic-cache snapshots in five torture fixtures;
+  after removing only those snapshots, the full integrity validation and
+  benchmark passed.
+- v9 Fast Debug corpus: **438 packages, 349 mains, 127 test files**, **zero
+  R12 guard hits**. The strict native/Fast-Debug harness reports 97 raw
+  mismatch rows, including pre-existing native backend failures classified
+  above; that broader raw count is not the R12 gate. Run output:
+  `tmp/final-gates-647/fastdebug-v9.log` and
+  `tmp/phase26-1-1-fastdebug-corpus-native-fix-v9.jsonl`.
+- Full check, C1, X2, and native-agreement evidence remains on the same
+  implementation source commit (`e0b8dcc2`) and carries across docs-only
+  commits as Bank directed. The ABI-v10 corpus remains report-only, with its
+  specified rows out of scope; the v10 suites in `make check` passed.
