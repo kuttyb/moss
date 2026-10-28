@@ -17343,7 +17343,10 @@ static CheckedProjectUnit check_project_sources(
     // A dependency may be represented only by its compiled Moss interface.
     // Load it into the semantic namespace, but keep it out of this build's
     // declaration set so its Rust implementation is consumed from its rlib.
-    if (has_explicit_modules || file_check_root || fast_debug_scope) {
+    const char* module_path_env = std::getenv("MOSS_MODULE_PATH");
+    const bool scoped_interface_lookup = fast_debug_scope ||
+        (file_check_root && module_path_env && *module_path_env);
+    if (has_explicit_modules || scoped_interface_lookup) {
       CompilerStageTimer timer("module_resolution");
       auto request_import = [&](const ModuleImport& import) {
         if (!modules.count(import.name)) requested_imports.emplace(import.name, import);
@@ -17391,7 +17394,7 @@ static CheckedProjectUnit check_project_sources(
     // and Fast Debug modes. Materialize that provider through the same module
     // rewriting path as explicit modules, while leaving package-wide native
     // compilation's legacy source rules unchanged.
-    if (!has_explicit_modules && (file_check_root || fast_debug_scope) &&
+    if (!has_explicit_modules && scoped_interface_lookup &&
         !loaded_external_modules.empty())
       has_explicit_modules = true;
     // Module identities (TYPE_IR_CONTRACT §3.1). A source module belongs to
