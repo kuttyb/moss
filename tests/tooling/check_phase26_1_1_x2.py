@@ -111,6 +111,13 @@ export fn not_reached() -> Int:
         require_ok(selected, "selected test Fast Debug")
         if selected.stdout != "1\nPASS first\n1 passed\n":
             raise AssertionError(f"filter selected an unexpected test set: {selected.stdout!r}")
+        empty_filter = run(
+            [str(moss), "test", "--interp", str(test_a), ""],
+            cwd=app, env=env)
+        require_ok(empty_filter, "empty-filter test Fast Debug")
+        if empty_filter.stdout != selected.stdout:
+            raise AssertionError(
+                f"empty filter changed selected tests: {empty_filter.stdout!r}")
         all_tests = run([str(moss), "test", "--interp"], cwd=app, env=env)
         require_ok(all_tests, "all-package-tests Fast Debug")
         if all_tests.stdout != "1\nPASS first\n2\nPASS second\n2 passed\n":

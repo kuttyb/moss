@@ -23206,8 +23206,7 @@ class Checker {
             origin.module_id + "\n" + origin.source_file_display);
         const string expected_provenance = abi_v10::hash(
             "moss-abi-v10-provenance",
-            origin.declaration_id + "\n" + origin.logical_source_id + "\n" +
-                std::to_string(origin.start_line));
+            origin.declaration_id + "\n" + origin.logical_source_id);
         if (origin.module_id != callable->module_id ||
             origin.declaration_id != callable_id ||
             origin.logical_source_id != expected_logical_source ||

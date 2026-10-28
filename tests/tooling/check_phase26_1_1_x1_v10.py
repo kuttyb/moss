@@ -101,6 +101,29 @@ def main() -> int:
     if '"x1_v10_library__helper"' not in first_payload:
         raise AssertionError("reachable private helper body is missing from Section 2")
 
+    sidecar = interface.with_suffix(".locations")
+    first_locations = sidecar.read_text(encoding="utf-8")
+    provider_source.write_text("\n" + provider_source.read_text(encoding="utf-8"),
+                               encoding="utf-8")
+    blank_line = build_check(app, env)
+    if set(blank_line.get("checked", [])) != {"x1_v10_library"}:
+        raise AssertionError(
+            f"ABI-v10 blank-line edit rechecked a consumer: {blank_line}")
+    blank_fields, blank_body_hash, blank_payload = section(interface)
+    for key in ("provider_contract_digest", "semantic_contract_hash",
+                "binary_contract_hash", "interface_hash"):
+        if first_fields[key] != blank_fields[key]:
+            raise AssertionError(f"ABI-v10 blank-line edit changed Section 1 {key}")
+    if first_locations == sidecar.read_text(encoding="utf-8"):
+        raise AssertionError("ABI-v10 blank-line edit did not update .locations")
+    if first_body_hash == blank_body_hash or first_payload == blank_payload:
+        raise AssertionError("ABI-v10 blank-line edit did not refresh Section 2")
+    first_fields, first_body_hash, first_payload = (
+        blank_fields, blank_body_hash, blank_payload)
+    fingerprint_state = json.loads(
+        (interface.parent / ".margo-fingerprint.json").read_text())
+    first_fingerprint = fingerprint_state["fingerprint"]
+
     provider_source.write_text(provider_source.read_text().replace(
         "return value + 1", "return value + 2", 1), encoding="utf-8")
     edited = build_check(app, env)

@@ -1,6 +1,6 @@
 # Phase 26.1.1 X2 — entry-scoped Fast Debug checkpoint
 
-## X3 sidecar investigation — in progress
+## X3 normalized Section 1 and location sidecar — focused gates pass
 
 - Compiler emission now writes adjacent `.locations` metadata for functions,
   objects and fields, enums and cases, domains and state, methods, handlers,
@@ -8,15 +8,41 @@
   metadata from this sidecar. The cross-package Emacs xref expected-failure
   annotation was removed; its focused ERT now passes and resolves
   `summary_total_cost` to `graphlib/src/model.moss:64`.
-- The X3 blank-line acceptance is not met. A two-package `margo build --check`
-  probe inserted one blank line at the start of a dependency module. Both
-  packages were checked, `.mossi` bytes changed, and `.locations` bytes changed.
-  The current provider freshness hash and Margo package fingerprint include
-  source bytes; Section 2 also serializes statement line numbers. The sidecar
-  implementation is therefore incomplete pending a solution that keeps source
-  freshness and execution metadata valid while making a location-only edit
-  sidecar-only and preserving downstream skip behavior.
-- No X4 work or full-suite validation has been performed after these changes.
+- Section 1 digest construction now normalizes absolute source positions in
+  generic IR records, warning witnesses, and ABI-v10 provenance. Absolute lines
+  remain in `.mossi`; `.locations` restores source navigation. Margo's
+  consumer-facing v9 fingerprint input uses normalized Section 1 bytes, while
+  ABI-v10 uses its normalized binary and semantic contract hashes.
+- `check_phase26_1_1_x1.py` and `check_phase26_1_1_x1_v10.py` both pass the
+  blank-line case: the provider is checked, zero consumers are checked, the
+  Section 1 digest keys remain stable, and Section 2 plus `.locations` update.
+  Existing generic-body edits still change the digest and recheck the consumer.
+- The focused Emacs xref ERT passes before and after a dependency blank-line
+  edit, resolving `summary_total_cost` to `model.moss` lines 64 and 65.
+- Architect explicitly accepted the `[FAST_DEBUG_FILEIO]` expectation
+  relaxation at frozen `b81bdb4d`; the native operation diagnostic remains
+  required and Fast Debug's preflight failure is an accepted capability guard.
+- The full `make check` has not yet run after these changes.
+
+## X4 edge-case coverage — focused gates pass
+
+- `check_phase26_1_1_x2.py` covers dependency edits between runs, filtered
+  execution with an empty filter, and no-file test execution.
+- `check_phase26_1_1_x1.py` and `check_phase26_1_1_x1_v10.py` cover compatible
+  dependency generic instantiation, edited generic bodies, and consumer
+  invalidation.
+- `check_phase26_1_1_x4.py` covers dependency domains, a cross-package callback
+  passed from the application into a dependency generic, an incompatible
+  dependency generic instantiation, and ambiguous cross-package callback names.
+  Its focused run passes.
+- The existing `check_phase26_1_c1_scope.py` ambiguous callback regression
+  asserts both same-leaf callback candidates are in the checked reach set.
+  `check_phase26_1_1_x2.py` and X4 are now registered in `tests/run_parallel.py`.
+- The complete `shard_phase5_tooling` rerun passed on this worktree, including
+  62/62 Emacs ERT tests and the live DAP integration using
+  `/usr/bin/lldb-dap-18`. This resolves the earlier timeout for gate readiness;
+  the historical failed run remains recorded above.
+- Full `make check` and other final gates remain pending.
 
 ## Implementation
 

@@ -53,9 +53,14 @@
   do not expand staged ABI-v10 checked-body coverage in this phase.
 - `margo build --check` also writes declaration source locations (file and
   line) to a separate sidecar next to `.mossi`. The sidecar is outside the
-  interface digest and package fingerprint. Queries/editor navigation use it
-  without parsing or checking dependency source. A source-location-only edit
-  updates the sidecar without causing downstream package rechecks.
+  Section 1 digest and consumer-facing package fingerprint input. Queries and
+  editor navigation use it without parsing or checking dependency source. A
+  dependency blank-line edit may recheck that dependency and rewrite its
+  `.mossi`, Section 2, and sidecar; it must leave the Section 1 digest stable
+  and recheck zero consumers. Normalize line and position fields in the
+  Section 1 digest inputs while retaining absolute source lines in `.mossi`
+  diagnostics and `.locations` navigation metadata. Real signature or generic
+  body edits must still change the digest.
 
 ## Work order and acceptance gates
 

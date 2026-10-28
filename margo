@@ -493,6 +493,7 @@ def ambient_semantic_interface(interface: Path) -> dict:
     section1 = b"".join(
         line for line in section1.splitlines(keepends=True)
         if not line.startswith(b"package_source_hash "))
+    section1 = normalize_section1_locations(section1)
     fields = {}
     for raw_line in section1.splitlines():
         line = raw_line.decode("utf-8", errors="ignore")
@@ -505,12 +506,17 @@ def ambient_semantic_interface(interface: Path) -> dict:
         raise MargoError(f"invalid module interface identity in {interface}")
     if fields.get("schema_version") == "10":
         semantic = fields.get("semantic_contract_hash")
-        if not semantic:
-            raise MargoError(f"missing semantic contract hash in {interface}")
+        binary = fields.get("binary_contract_hash")
+        if not semantic or not binary:
+            raise MargoError(f"missing ABI-v10 semantic or binary contract hash in {interface}")
+        consumer_contract = "\n".join((fields["module_id"],
+                                         fields.get("native_abi", ""),
+                                         binary, semantic)) + "\n"
         return {"module_id": fields["module_id"],
                 "native_abi": fields.get("native_abi", ""),
                 "semantic_contract_hash": semantic,
-                "section1_sha256": hashlib.sha256(section1).hexdigest()}
+                "section1_sha256": hashlib.sha256(
+                    consumer_contract.encode("utf-8")).hexdigest()}
     concrete = fields.get("concrete_interface_hash")
     generic = fields.get("generic_semantic_hash")
     if not concrete or not generic:
@@ -520,6 +526,43 @@ def ambient_semantic_interface(interface: Path) -> dict:
             "concrete_interface_hash": concrete,
             "generic_semantic_hash": generic,
             "section1_sha256": hashlib.sha256(section1).hexdigest()}
+
+
+def normalize_section1_locations(section1: bytes) -> bytes:
+    """Hash Section 1 independently from absolute source line metadata."""
+    def replace_field(line: bytes, index: int) -> bytes:
+        start = 0
+        for _ in range(index):
+            while start < len(line) and line[start:start + 1].isspace():
+                start += 1
+            while start < len(line) and not line[start:start + 1].isspace():
+                start += 1
+        while start < len(line) and line[start:start + 1].isspace():
+            start += 1
+        end = start
+        while end < len(line) and not line[end:end + 1].isspace():
+            end += 1
+        return line[:start] + b"0" + line[end:] if end > start else line
+
+    normalized = []
+    for raw_line in section1.splitlines(keepends=True):
+        ending = b"\n" if raw_line.endswith(b"\n") else b""
+        line = raw_line[:-1] if ending else raw_line
+        fields = line.split()
+        if fields:
+            if fields[0] == b"generic_stmt" and len(fields) >= 3:
+                line = replace_field(line, 2)
+            elif fields[0] == b"generic_result" and len(fields) >= 2:
+                line = replace_field(line, 1)
+            elif fields[0].endswith(b"_warning"):
+                index = 2 if fields[0] in {
+                    b"object_method_warning", b"handler_warning"} else 1
+                if len(fields) > index:
+                    line = replace_field(line, index)
+            elif fields[0] == b"generic_entity_id":
+                line = re.sub(rb"@[0-9]+(?=\")", b"@0", line)
+        normalized.append(line + ending)
+    return b"".join(normalized)
 
 
 def execution_body_package_fingerprint(interface: Path) -> str | None:

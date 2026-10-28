@@ -1932,8 +1932,7 @@ vector<moss::Requirement> imported_abi_v10_requirements(
         origin.module_id + "\n" + origin.source_file_display);
     const string expected_provenance = abi_v10::hash(
         "moss-abi-v10-provenance",
-        origin.declaration_id + "\n" + expected_logical_source + "\n" +
-            std::to_string(origin.start_line));
+        origin.declaration_id + "\n" + expected_logical_source);
     if (origin.logical_source_id != expected_logical_source ||
         origin.provenance_id != expected_provenance)
       invalid("checked ABI-v10 requirement provenance identity is forged");
@@ -7291,7 +7290,8 @@ static vector<SemanticTargetFact> semantic_target_facts(
     fact.name = function.name;
     fact.type = function.return_type.value_or("unit");
     fact.line = function.line;
-    fact.source_file = function.source_file;
+    fact.source_file = function.provider_origin_file.empty()
+        ? function.source_file : function.provider_origin_file;
     fact.module_identity = semantic_module_name(function.name);
     fact.export_visibility = function.exported ? "exported" : "private";
     fact.export_kind = function.exported
@@ -14774,6 +14774,8 @@ static string source_free_contract_marker(const string& module,
          "::END";
 }
 
+static string normalize_section1_locations(std::string_view input);
+
 static string source_free_contract_material(const string& text) {
   static const string prefix = "provider_contract_digest sha256:";
   if (!starts_with(text, "moss-module-interface-v2\n"))
@@ -14828,7 +14830,7 @@ static string source_free_contract_material(const string& text) {
     material.erase(freshness_line_start,
                    freshness_end - freshness_line_start + 1);
   }
-  return material;
+  return normalize_section1_locations(material);
 }
 
 static string source_free_declared_digest(const string& text) {
@@ -14851,6 +14853,79 @@ static string source_free_declared_package_hash(const string& text) {
   const size_t end = section1.find('\n', value_begin);
   if (end == string::npos) return {};
   return string(section1.substr(value_begin, end - value_begin));
+}
+
+// Preserve absolute source locations in the emitted Section 1, but exclude
+// those locations from semantic identity. The sidecar is the consumer-facing
+// location map; generic body semantics and warning identities still remain in
+// the normalized material.
+static string normalize_section1_locations(std::string_view input) {
+  std::istringstream lines{string(input)};
+  std::ostringstream normalized;
+  string line;
+  while (std::getline(lines, line)) {
+    const string trimmed = trim(line);
+    auto replace_field = [&](size_t field_index) {
+      size_t at = 0;
+      for (size_t index = 0; index < field_index; ++index) {
+        while (at < line.size() && std::isspace(
+                   static_cast<unsigned char>(line[at]))) ++at;
+        while (at < line.size() && !std::isspace(
+                   static_cast<unsigned char>(line[at]))) ++at;
+      }
+      while (at < line.size() && std::isspace(
+                 static_cast<unsigned char>(line[at]))) ++at;
+      size_t end = at;
+      while (end < line.size() && !std::isspace(
+                 static_cast<unsigned char>(line[end]))) ++end;
+      if (end > at) line.replace(at, end - at, "0");
+    };
+    if (starts_with(trimmed, "generic_stmt ")) {
+      // kind, absolute line, indentation, then source-derived Moss IR.
+      replace_field(2);
+    } else if (starts_with(trimmed, "generic_result ")) {
+      replace_field(1);
+    } else if (trimmed.find("_warning ") != string::npos) {
+      const size_t key_begin = line.find_first_not_of(" \t");
+      const size_t key_end = key_begin == string::npos ? string::npos
+          : line.find_first_of(" \t", key_begin);
+      size_t at = key_end;
+      while (at < line.size() && std::isspace(
+                 static_cast<unsigned char>(line[at]))) ++at;
+      if (trimmed.find("object_method_warning ") == 0 ||
+          trimmed.find("handler_warning ") == 0) {
+        if (at < line.size() && line[at] == '"') {
+          ++at;
+          while (at < line.size() && line[at] != '"') {
+            if (line[at] == '\\' && at + 1 < line.size()) ++at;
+            ++at;
+          }
+          if (at < line.size()) ++at;
+          while (at < line.size() && std::isspace(
+                     static_cast<unsigned char>(line[at]))) ++at;
+          size_t end = at;
+          while (end < line.size() && !std::isspace(
+                     static_cast<unsigned char>(line[end]))) ++end;
+          if (end > at) line.replace(at, end - at, "0");
+        }
+      } else {
+        size_t end = at;
+        while (end < line.size() && !std::isspace(
+                   static_cast<unsigned char>(line[end]))) ++end;
+        if (end > at) line.replace(at, end - at, "0");
+      }
+    } else if (starts_with(trimmed, "generic_entity_id ")) {
+      const size_t at = line.rfind('@');
+      if (at != string::npos) {
+        size_t end = at + 1;
+        while (end < line.size() && std::isdigit(
+                   static_cast<unsigned char>(line[end]))) ++end;
+        if (end > at + 1) line.replace(at + 1, end - at - 1, "0");
+      }
+    }
+    normalized << line << "\n";
+  }
+  return normalized.str();
 }
 
 static bool execution_body_hash(const string& value) {
@@ -15236,8 +15311,8 @@ static ParsedModuleUnit load_module_interface(
   const string concrete_hash = stable_hash(text.substr(
       contract_at + contract_marker.size(),
       semantic_at + 1 - contract_at - contract_marker.size()));
-  const string generic_hash = stable_hash(semantic_text.substr(
-      semantic_at + semantic_marker.size()));
+  const string generic_hash = stable_hash(normalize_section1_locations(
+      semantic_text.substr(semantic_at + semantic_marker.size())));
   if (declared_hashes.size() != 3 ||
       declared_hashes["concrete_interface_hash"] != concrete_hash ||
       declared_hashes["interface_hash"] != concrete_hash ||
@@ -16781,8 +16856,7 @@ static ParsedModuleUnit load_module_interface(
             origin.module_id + "\n" + origin.source_file_display);
         const string expected_provenance = abi_v10::hash(
             "moss-abi-v10-provenance",
-            origin.declaration_id + "\n" + origin.logical_source_id + "\n" +
-                std::to_string(origin.start_line));
+            origin.declaration_id + "\n" + origin.logical_source_id);
         if (origin.provenance_id != summary.provenance_id ||
             origin.module_id != callable->module_id ||
             origin.declaration_id != summary.callable_id ||
@@ -17016,7 +17090,8 @@ static ParsedModuleUnit load_module_interface(
         target_line = found->second.second;
       };
       for (auto& function : provider.functions)
-        restore("fn:" + function.name, function.source_file, function.line);
+        restore("fn:" + function.name, function.provider_origin_file,
+                function.line);
       for (auto& object : provider.objects)
         {
           restore("object:" + object.name, object.source_file, object.line);
@@ -19069,8 +19144,7 @@ static abi_v10::SourceProvenance abi_v10_checked_provenance(
   provenance.end_column = 1;
   provenance.provenance_id = abi_v10::hash(
       "moss-abi-v10-provenance",
-      declaration_id + "\n" + provenance.logical_source_id + "\n" +
-          std::to_string(provenance.start_line));
+      declaration_id + "\n" + provenance.logical_source_id);
   return provenance;
 }
 
@@ -20876,8 +20950,7 @@ static vector<std::filesystem::path> write_module_interfaces(
     string dispatch_kind = function.generic ? "generic"
         : function.static_dispatch ? "static" : "concrete";
     string symbol = tooling_native_symbol(
-        "function", function.name,
-        "fn:" + function.name + "@" + std::to_string(function.line));
+        "function", function.name, "fn:" + function.name);
     abi << "fn " << public_name << " kind="
         << dispatch_kind
         << " return=" << function.return_type.value_or("unit")
@@ -21408,6 +21481,74 @@ static vector<std::filesystem::path> write_module_interfaces(
                              file.string());
         output << text;
       }
+      std::ostringstream location_text;
+      location_text << "moss-location-sidecar-v1\n";
+      auto add_location = [&](const string& identity, const string& source,
+                              int source_line) {
+        if (source.empty() || source_line <= 0) return;
+        location_text << std::quoted(identity) << " " << std::quoted(source)
+                      << " " << source_line << "\n";
+      };
+      for (const auto& function : program.functions)
+        if (belongs_to_module(function.name, entry.first))
+          add_location("fn:" + function.name, function.source_file,
+                       function.line);
+      for (const auto& object : program.objects)
+        if (belongs_to_module(object.name, entry.first)) {
+          add_location("object:" + object.name, object.source_file,
+                       object.line);
+          for (const auto& field : object.fields)
+            add_location("field:" + object.name + "." + field.name,
+                         field.source_file, field.line);
+          for (const auto& method : object.methods)
+            add_location("method:" + object.name + "." + method.name,
+                         method.source_file, method.line);
+        }
+      for (const auto& enumeration : program.enums)
+        if (belongs_to_module(enumeration.name, entry.first)) {
+          add_location("enum:" + enumeration.name, enumeration.source_file,
+                       enumeration.line);
+          for (const auto& item : enumeration.cases) {
+            add_location("case:" + enumeration.name + "." + item.name,
+                         item.source_file, item.line);
+            for (const auto& field : item.fields)
+              add_location("field:" + enumeration.name + "." + item.name +
+                               "." + field.name,
+                           field.source_file, field.line);
+          }
+        }
+      for (const auto& domain : program.domains)
+        if (belongs_to_module(domain.name, entry.first)) {
+          add_location("domain:" + domain.name, domain.source_file,
+                       domain.line);
+          for (const auto& field : domain.state)
+            add_location("state:" + domain.name + "." + field.name,
+                         field.source_file, field.line);
+          for (const auto& handler : domain.handlers)
+            add_location("handler:" + domain.name + "." + handler.name,
+                         handler.source_file, handler.line);
+        }
+      for (const auto& trait : program.traits)
+        if (belongs_to_module(trait.name, entry.first)) {
+          add_location("trait:" + trait.name, trait.source_file, trait.line);
+          for (const auto& method : trait.methods)
+            add_location("trait_method:" + trait.name + "." + method.name,
+                         trait.source_file, method.line);
+        }
+      const auto location_file = directory /
+          (tooling_name(entry.first) + ".locations");
+      const string location_bytes = location_text.str();
+      std::ifstream old_locations(location_file, std::ios::binary);
+      std::ostringstream old_location_bytes;
+      if (old_locations) old_location_bytes << old_locations.rdbuf();
+      if (!old_locations || old_location_bytes.str() != location_bytes) {
+        std::ofstream locations(location_file, std::ios::binary);
+        if (!locations)
+          throw ProjectError("MOSS_INTERFACE_ERROR",
+              "cannot write Moss location sidecar '" + location_file.string() + "'",
+              location_file.string());
+        locations << location_bytes;
+      }
       result.push_back(file);
       continue;
     }
@@ -21424,7 +21565,7 @@ static vector<std::filesystem::path> write_module_interfaces(
            << "concrete_interface_hash "
            << stable_hash(interface_contents[entry.first].str()) << "\n"
            << "generic_semantic_hash "
-           << stable_hash(entry.second.str()) << "\n"
+           << stable_hash(normalize_section1_locations(entry.second.str())) << "\n"
            << "interface_hash "
            << stable_hash(interface_contents[entry.first].str()) << "\n"
            << "imports\n";
@@ -21441,7 +21582,8 @@ static vector<std::filesystem::path> write_module_interfaces(
     const size_t first_line = material.find('\n');
     synchronization_require(first_line != string::npos,
                             "ABI-v9 interface header is incomplete");
-    const string digest = source_free_contract_sha256(material);
+    const string digest = source_free_contract_sha256(
+        normalize_section1_locations(material));
     string text = material.substr(0, first_line + 1) +
         "provider_contract_digest sha256:" + digest + "\n" +
         "package_source_hash " + package_source_hash + "\n" +

@@ -95,14 +95,32 @@ def main() -> int:
     if checked(initial) != {"x1_library", "x1_app"}:
         raise AssertionError(f"initial check did not build both packages: {initial}")
 
+    sidecar = interface.with_suffix(".locations")
+    first_locations = sidecar.read_text(encoding="utf-8")
+    lib_source.write_text("\n" + lib_source.read_text(encoding="utf-8"),
+                          encoding="utf-8")
+    blank_line = run(env)
+    blank_header, blank_body_hash, blank_payload = section(interface)
+    interface_keys = ("concrete_interface_hash", "generic_semantic_hash",
+                      "interface_hash", "provider_contract_digest")
+    for key in interface_keys:
+        if initial_header.get(key) != blank_header.get(key):
+            raise AssertionError(f"blank-line edit changed Section 1 {key}")
+    if checked(blank_line) != {"x1_library"}:
+        raise AssertionError(f"blank-line edit rechecked a consumer: {blank_line}")
+    if first_locations == sidecar.read_text(encoding="utf-8"):
+        raise AssertionError("blank-line edit did not update .locations")
+    if initial_body_hash == blank_body_hash or initial_payload == blank_payload:
+        raise AssertionError("blank-line edit did not refresh Section 2 line data")
+    initial_header, initial_body_hash, initial_payload = (
+        blank_header, blank_body_hash, blank_payload)
+
     lib_source.write_text(lib_source.read_text().replace(
         "fn hidden_helper(value: Int) -> Int:\n  return value + 1",
         "fn hidden_helper(value: Int) -> Int:\n  return value + 2", 1),
                           encoding="utf-8")
     non_generic = run(env)
     body_header, body_hash, body_payload = section(interface)
-    interface_keys = ("concrete_interface_hash", "generic_semantic_hash",
-                      "interface_hash", "provider_contract_digest")
     if any(initial_header.get(key) != body_header.get(key) for key in interface_keys):
         raise AssertionError("non-generic body edit changed the Section 1 digest")
     if initial_body_hash == body_hash or initial_payload == body_payload:

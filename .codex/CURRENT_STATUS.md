@@ -1,21 +1,24 @@
 # Phase 26.1.1 — ABI-v10 Section 2 checkpoint — 2026-10-27
 
-- The current X3 checkpoint emits declaration locations and imported
-  semantic facts restore them; the restored cross-package Emacs xref
-  regression passes (source path and line 64). X3 is not complete: a two-package
-  `margo build --check` probe showed that inserting one blank line changes both
-  the provider `.mossi` and `.locations`, and checks both provider and consumer.
-  This conflicts with X3's sidecar-only/no-downstream-recheck acceptance. The
-  raw source freshness hash, Margo package fingerprint, and Section 2 line
-  metadata currently depend on source bytes/line numbers. Resolve that boundary
-  before claiming X3 or starting X4. No implementation gates have been rerun
-  after the sidecar edit.
+- X3 now follows Bank's corrected gate: a dependency blank-line edit rewrites
+  its `.mossi`, Section 2, and `.locations`, while normalized Section 1 hashes
+  stay stable and consumers are skipped. Focused X1 v9 and v10 blank-line,
+  generic-body, Section 2, and consumer-reach checks pass. Cross-package Emacs
+  xref passes before and after a blank-line edit (line 64→65). Architect
+  explicitly accepted the `[FAST_DEBUG_FILEIO]` test expectation relaxation at
+  frozen commit `b81bdb4d`; restoration is not required. No full `make check`
+  has run after the current normalization changes. X4 edge-case fixture and
+  focused X1 v9/v10, X2, X4, C1 scope, feedback checks and the full Phase 5
+  tooling shard pass. The shard's live DAP test succeeds with the installed
+  `/usr/bin/lldb-dap-18`; the earlier timeout remains recorded as historical
+  evidence and does not need a Bank waiver after the successful rerun. Next:
+  checkpoint/push, frozen Architect review of X1–X4, then final gates.
 
-- Active branch `phase26-1-m1`; latest pushed checkpoint `39d4f282`. The frozen code checkpoint `8ddf97e0` passed uninterrupted `make --jobs="$(nproc)" check`: **148/148 jobs, 0 failures, 0 skipped**, 240.58s wall time. The later full run at documentation-only `39d4f282` completed 147/148; its sole failure was `shard_phase5_tooling`, where the installed LLDB-DAP timed out. An isolated rerun of that shard also timed out. The earlier implementation checkpoint `beb27000` passed 148/148 as well.
+- Active branch `phase26-1-m1`; latest pushed checkpoint `39d4f282`, current X3/X4 changes uncommitted. The frozen code checkpoint `8ddf97e0` passed uninterrupted `make --jobs="$(nproc)" check`: **148/148 jobs, 0 failures, 0 skipped**, 240.58s wall time. The later full run at documentation-only `39d4f282` completed 147/148; its sole failure was `shard_phase5_tooling`, where LLDB-DAP timed out. An isolated rerun of that shard also timed out. On the current worktree, the isolated shard now passes completely, including live DAP with `/usr/bin/lldb-dap-18`. The earlier implementation checkpoint `beb27000` passed 148/148 as well.
 - Focused evidence also passes: C1 scope/package probes, Phase 21 A–F/root-totality, Phase 20 Executor/FileIO, Phase 25 S1/S2/S-B, typed semantic API, Team A, builtin generic typing (129/129), X1 ABI-v9/v10, Phase 15.9, Phase 22.4, Phase 106, G2 conformance (11/11), R2 WP1/WP2/WP3, ABI-v10 units, and SDK text-encoding Fast Debug (3/3).
 - Frozen Architect review: X1+X2 code GO at `8ddf97e0`, carried forward to `39d4f282` because the intervening commit is docs-only. The Architect explicitly accepted all six dependency/interface expectation audits and the S2 fixture correction.
 - The uninterrupted baseline at `fc6331d08146f7150378ee3728b228e915e078e5` remains 130/146 passed, 16 failed, 0 skipped. Baseline triage and repair dispositions are in `docs/phase26/PHASE_26_1_1_X2_RESULTS.md`.
-- Next: implement X3's declaration location sidecar and xref queries, then X4's six edge-case regressions. Keep the LLDB-DAP timeout visible in validation records; rerun all required final gates after X3/X4.
+- Next: freeze and obtain Architect review of X1–X4, then run all required final gates on the reviewed exact commit.
 
 ## Baseline and triage — 2026-10-27
 

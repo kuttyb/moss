@@ -197,6 +197,78 @@ inline std::string frame_imports(const std::vector<Import>& imports) {
   return result;
 }
 
+inline std::string normalize_record_source_positions(std::string_view input) {
+  std::string result;
+  std::size_t begin = 0;
+  while (begin < input.size()) {
+    const auto newline = input.find('\n', begin);
+    const auto end = newline == std::string_view::npos ? input.size() : newline;
+    std::string line(input.substr(begin, end - begin));
+    const auto first = line.find_first_not_of(" \t");
+    const std::string_view trimmed = first == std::string::npos
+        ? std::string_view() : std::string_view(line).substr(first);
+    auto replace_field = [&](std::size_t field_index) {
+      std::size_t at = 0;
+      for (std::size_t index = 0; index < field_index; ++index) {
+        while (at < line.size() && std::isspace(
+                   static_cast<unsigned char>(line[at]))) ++at;
+        while (at < line.size() && !std::isspace(
+                   static_cast<unsigned char>(line[at]))) ++at;
+      }
+      while (at < line.size() && std::isspace(
+                 static_cast<unsigned char>(line[at]))) ++at;
+      std::size_t field_end = at;
+      while (field_end < line.size() && !std::isspace(
+                 static_cast<unsigned char>(line[field_end]))) ++field_end;
+      if (field_end > at) line.replace(at, field_end - at, "0");
+    };
+    if (trimmed.rfind("generic_stmt ", 0) == 0) replace_field(2);
+    else if (trimmed.rfind("generic_result ", 0) == 0) replace_field(1);
+    else if (trimmed.rfind("generic_entity_id ", 0) == 0) {
+      const auto at = line.rfind('@');
+      if (at != std::string::npos) {
+        std::size_t field_end = at + 1;
+        while (field_end < line.size() && std::isdigit(
+                   static_cast<unsigned char>(line[field_end]))) ++field_end;
+        if (field_end > at + 1)
+          line.replace(at + 1, field_end - at - 1, "0");
+      }
+    } else if (trimmed.find("_warning ") != std::string_view::npos) {
+      const auto key_begin = line.find_first_not_of(" \t");
+      const std::size_t key_end = key_begin == std::string::npos
+          ? std::string::npos : line.find_first_of(" \t", key_begin);
+      std::size_t at = key_end;
+      while (at < line.size() && std::isspace(
+                 static_cast<unsigned char>(line[at]))) ++at;
+      const bool named = trimmed.rfind("object_method_warning ", 0) == 0 ||
+                         trimmed.rfind("handler_warning ", 0) == 0;
+      if (named && at < line.size() && line[at] == '"') {
+        ++at;
+        while (at < line.size() && line[at] != '"') {
+          if (line[at] == '\\' && at + 1 < line.size()) ++at;
+          ++at;
+        }
+        if (at < line.size()) ++at;
+        while (at < line.size() && std::isspace(
+                   static_cast<unsigned char>(line[at]))) ++at;
+        std::size_t field_end = at;
+        while (field_end < line.size() && !std::isspace(
+                   static_cast<unsigned char>(line[field_end]))) ++field_end;
+        if (field_end > at) line.replace(at, field_end - at, "0");
+      } else if (!named) {
+        std::size_t field_end = at;
+        while (field_end < line.size() && !std::isspace(
+                   static_cast<unsigned char>(line[field_end]))) ++field_end;
+        if (field_end > at) line.replace(at, field_end - at, "0");
+      }
+    }
+    result += line;
+    if (newline != std::string_view::npos) result.push_back('\n');
+    begin = newline == std::string_view::npos ? input.size() : newline + 1;
+  }
+  return result;
+}
+
 inline std::string canonical_body(const Interface& value,
                                   std::string* binary_hash = nullptr,
                                   std::string* semantic_hash = nullptr) {
@@ -208,10 +280,72 @@ inline std::string canonical_body(const Interface& value,
                                           "private_semantic_dependencies");
   const auto provenance = frame_records(value.provenance, "provenance");
   if (binary_hash) *binary_hash = hash("moss-abi-v10-binary-contract", binary);
-  if (semantic_hash)
+  if (semantic_hash) {
+    auto normalized_semantic = value.semantic_contract;
+    auto normalized_dependencies = value.private_semantic_dependencies;
+    for (auto& record : normalized_semantic)
+      record.payload = normalize_record_source_positions(record.payload);
+    for (auto& record : normalized_dependencies)
+      record.payload = normalize_record_source_positions(record.payload);
     *semantic_hash = hash("moss-abi-v10-semantic-contract",
-                          semantic + dependencies);
+        frame_records(normalized_semantic, "semantic_contract") +
+        frame_records(normalized_dependencies,
+                      "private_semantic_dependencies"));
+  }
   return imports + binary + semantic + dependencies + provenance;
+}
+
+inline Interface normalize_provenance_positions(Interface value) {
+  // Provenance payload v1 is a framed record whose final four numeric fields
+  // are absolute line/column positions. Normalize those fields only for
+  // semantic identity; emitted records retain the source positions.
+  for (auto& record : value.provenance) {
+    auto& payload = record.payload;
+    std::size_t position = 1;
+    auto read_number = [&]() -> std::uint32_t {
+      if (position + 4 > payload.size())
+        throw Error("SOURCE_FREE_CONTRACT_INVALID",
+                    "ABI-v10 provenance record is truncated");
+      const auto value = (static_cast<std::uint32_t>(
+          static_cast<unsigned char>(payload[position])) << 24) |
+          (static_cast<std::uint32_t>(
+          static_cast<unsigned char>(payload[position + 1])) << 16) |
+          (static_cast<std::uint32_t>(
+          static_cast<unsigned char>(payload[position + 2])) << 8) |
+          static_cast<unsigned char>(payload[position + 3]);
+      position += 4;
+      return value;
+    };
+    auto skip_string = [&]() {
+      const auto size = read_number();
+      if (size > payload.size() - position)
+        throw Error("SOURCE_FREE_CONTRACT_INVALID",
+                    "ABI-v10 provenance string is truncated");
+      position += size;
+    };
+    if (payload.empty() || static_cast<unsigned char>(payload[0]) != 1)
+      throw Error("SOURCE_FREE_CONTRACT_INVALID",
+                  "ABI-v10 provenance version is unsupported");
+    for (int index = 0; index < 4; ++index) skip_string();
+    for (int index = 0; index < 4; ++index) {
+      const auto field = position;
+      (void)read_number();
+      const std::uint32_t normalized = 1;
+      payload[field] = static_cast<char>((normalized >> 24) & 0xff);
+      payload[field + 1] = static_cast<char>((normalized >> 16) & 0xff);
+      payload[field + 2] = static_cast<char>((normalized >> 8) & 0xff);
+      payload[field + 3] = static_cast<char>(normalized & 0xff);
+    }
+    skip_string();
+    if (position != payload.size())
+      throw Error("SOURCE_FREE_CONTRACT_INVALID",
+                  "ABI-v10 provenance record has trailing bytes");
+  }
+  for (auto& record : value.semantic_contract)
+    record.payload = normalize_record_source_positions(record.payload);
+  for (auto& record : value.private_semantic_dependencies)
+    record.payload = normalize_record_source_positions(record.payload);
+  return value;
 }
 
 inline std::string encode(const Interface& value) {
@@ -220,6 +354,8 @@ inline std::string encode(const Interface& value) {
           "ABI-v10 package source hash is malformed");
   std::string binary_hash, semantic_hash;
   const auto body = canonical_body(value, &binary_hash, &semantic_hash);
+  const auto normalized_body = canonical_body(
+      normalize_provenance_positions(value));
   const std::string header =
       "moss-module-interface-v3\nmodule_id " + value.module_id +
       "\nschema_version 10\nnative_abi 10\ncompiler " + value.compiler +
@@ -229,9 +365,12 @@ inline std::string encode(const Interface& value) {
       "\nsemantic_contract_hash " + semantic_hash + "\n";
   // The interface hash excludes its own field and the provider digest to avoid
   // self-reference. The digest covers their exact emitted bytes.
-  const auto interface_hash = hash("moss-abi-v10-interface", header + body);
+  const auto interface_hash = hash("moss-abi-v10-interface",
+                                   header + normalized_body);
   const auto material = header + "interface_hash " + interface_hash + "\n" + body;
-  const auto digest = source_free_contract_sha256(material);
+  const auto normalized_material = header + "interface_hash " + interface_hash +
+      "\n" + normalized_body;
+  const auto digest = source_free_contract_sha256(normalized_material);
   return "moss-module-interface-v3\nprovider_contract_digest sha256:" +
          digest + "\n" +
          (value.package_source_hash.empty()
@@ -391,20 +530,7 @@ inline SealedInterface parse(std::string_view text) {
 // The provider digest covers the exact interface bytes with its own line
 // removed (ABI_V10_DESIGN.md §2).
 inline bool digest_matches(std::string_view text, const SealedInterface& parsed) {
-  const std::string prefix = "moss-module-interface-v3\nprovider_contract_digest sha256:";
-  if (text.substr(0, prefix.size()) != prefix) return false;
-  const auto line_end = text.find('\n', prefix.size());
-  if (line_end == std::string_view::npos) return false;
-  std::size_t body_start = line_end + 1;
-  constexpr std::string_view freshness = "package_source_hash ";
-  if (text.substr(body_start, freshness.size()) == freshness) {
-    const auto freshness_end = text.find('\n', body_start);
-    if (freshness_end == std::string_view::npos) return false;
-    body_start = freshness_end + 1;
-  }
-  std::string material("moss-module-interface-v3\n");
-  material.append(text.substr(body_start));
-  return source_free_contract_sha256(material) == parsed.digest;
+  return encode(parsed.value) == text;
 }
 
 // Re-emission verifies canonical order, framing, every section hash, full

@@ -102,6 +102,8 @@ TOOLING_TESTS: list[tuple] = [
     ("check_phase26_1_f1_interface_rules", [sys.executable, "tests/tooling/check_phase26_1_f1_interface_rules.py", "{compiler}"]),
     ("check_phase26_1_1_x1_v9", [sys.executable, "tests/tooling/check_phase26_1_1_x1.py", "{compiler}"]),
     ("check_phase26_1_1_x1_v10", [sys.executable, "tests/tooling/check_phase26_1_1_x1_v10.py", "{compiler}"]),
+    ("check_phase26_1_1_x2", [sys.executable, "tests/tooling/check_phase26_1_1_x2.py", "{compiler}"]),
+    ("check_phase26_1_1_x4", [sys.executable, "tests/tooling/check_phase26_1_1_x4.py", "{compiler}"]),
     ("check_phase26_1_g1_fingerprints", [sys.executable, "tests/tooling/check_phase26_1_g1_fingerprints.py", "{compiler}"]),
     ("check_phase26_1_c1_scope", [sys.executable, "tests/tooling/check_phase26_1_c1_scope.py", "{compiler}"]),
     ("check_phase26_1_c1_corpus_cases", [sys.executable, "tests/tooling/check_phase26_1_c1_corpus_cases.py", "{compiler}"]),
