@@ -164,3 +164,44 @@ and no unresolved NEEDS BANK groups. The 101 rejected-source total is grouped by
 slot in the preceding table; it includes corpus contexts beyond the original
 17-case ruling table. ABI-v9 generic bodies and Section 2 execution bodies are
 covered separately by `tests/tooling/check_phase27_est_mossi.py`.
+
+## Legacy string-shape comparison blind spot (2026-10-28)
+
+The measurement ran shadow `moss check` once for every tracked `.moss` file at
+the Phase 27.1 closeout candidate (2,087 roots). Occurrences were deduplicated
+across repeated module compilations by source path, origin, owner, slot, and
+argument index. A handle counts as never compared only when every corpus
+compilation that encountered it reported `string_shape == null`; 73 additional
+handles were unparsed in one context but compared in another, so they are not
+in the blind-spot total. There are 65,777 unique slot occurrences; 173 (0.263%)
+never received a structural comparison.
+
+| Slot | Unique occurrences | Never compared | Percent |
+| --- | ---: | ---: | ---: |
+| Condition | 3,611 | 0 | 0.000% |
+| Initializer | 4,329 | 0 | 0.000% |
+| ReturnValue | 6,273 | 13 | 0.207% |
+| Iterable | 166 | 0 | 0.000% |
+| Receiver | 8,601 | 0 | 0.000% |
+| Argument | 16,067 | 14 | 0.087% |
+| LhsPlace | 13,024 | 0 | 0.000% |
+| RhsValue | 13,015 | 146 | **1.122%** |
+| Scrutinee | 68 | 0 | 0.000% |
+| Pattern | 0 | 0 | n/a |
+| RaisedValue | 607 | 0 | 0.000% |
+| Expression | 16 | 0 | 0.000% |
+
+Three forms account for the 173 never-compared occurrences:
+
+| Form | Count | Slot breakdown | Examples (path:line, failed expression) |
+| --- | ---: | --- | --- |
+| `FileIO.open` call with a bare mode argument | 126 | RhsValue 126 | `tests/tooling/phase20_review/probes/design_write_range_slice.moss:4`, `FileIO.open("tmp/phase20-review/input.txt", ro)`; `tests/tooling/phase20_review/probes/design_write_range_slice.moss:5`, `FileIO.open("tmp/phase20-review/out/copy2.txt", create)`; `tests/tooling/phase20_review/probes/bug_range_eq_string_binary.moss:4`, `FileIO.open("tmp/phase20-review/binary.dat", ro)` |
+| `DataTools` qualified member call | 24 | RhsValue 14, ReturnValue 10 | `examples/swarm/polymorphism/collection_pipeline/data_tools/tests/test_data_tools.moss:21`, `DataTools.filter_by(values, TestDataTools.is_positive)`; `examples/swarm/polymorphism/collection_pipeline/data_tools/tests/test_data_tools.moss:26`, `DataTools.count_matching(values, TestDataTools.is_gt_10)`; `examples/swarm/polymorphism/collection_pipeline/data_tools/tests/test_data_tools.moss:31`, `DataTools.map_by(values, TestDataTools.triple_int)` |
+| Other uppercase-qualified call | 23 | Argument 14, ReturnValue 3, RhsValue 6 | `tests/phase25/integration/fixtures/abi_v10/scenario07_missing_method/consumer/src/main.moss:9`, `MethodProvider.invoke_action(d)`; `sdk/host/io/feasibility/process_probe.moss:2`, `Process.run("true", Vector[String]())`; `tests/phase25/integration/fixtures/abi_v10/scenario03_consumer_b/src/main.moss:12`, `BoxProvider.relay(b)` |
+
+Reproduce with `python3 tests/tooling/measure_phase27_est_blindspots.py
+build/compiler/moss-dev --output tmp/phase27-blindspot-repro`. The tracer is
+opt-in through `MOSS_EST_BLINDSPOT_FILE`; it records handles and whether their
+containing expression's legacy shape was unavailable. It does not alter the
+parser or comparison result. The maximum is RhsValue at 1.122%, above the
+closeout escalation threshold; stop before merge pending Bank direction.

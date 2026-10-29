@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
+#include <map>
 #include <sstream>
 #include <stdexcept>
 #include <type_traits>
@@ -467,6 +468,42 @@ Shape canonicalize_pipeline_left_spine(Shape pipeline) {
 }
 
 std::uint64_t shadow_attempts = 0, shadow_compared = 0, shadow_unparsed = 0;
+std::map<std::pair<const Arena*, ExprId>, std::string> structurally_uncompared_nodes;
+
+void mark_uncompared_subtree(const Arena& arena, ExprId id,
+                             const std::string& failed_source) {
+  if (!structurally_uncompared_nodes.emplace(
+          std::make_pair(&arena, id), failed_source).second) return;
+  std::visit([&](const auto& node) {
+    using T = std::decay_t<decltype(node)>;
+    if constexpr (std::is_same_v<T, Unary>) mark_uncompared_subtree(arena, node.operand, failed_source);
+    else if constexpr (std::is_same_v<T, Binary>) {
+      mark_uncompared_subtree(arena, node.left, failed_source);
+      mark_uncompared_subtree(arena, node.right, failed_source);
+    } else if constexpr (std::is_same_v<T, Call>) {
+      mark_uncompared_subtree(arena, node.callee, failed_source);
+      for (auto child : node.arguments) mark_uncompared_subtree(arena, child, failed_source);
+    } else if constexpr (std::is_same_v<T, Member>) mark_uncompared_subtree(arena, node.base, failed_source);
+    else if constexpr (std::is_same_v<T, Index>) {
+      mark_uncompared_subtree(arena, node.base, failed_source);
+      mark_uncompared_subtree(arena, node.index, failed_source);
+    } else if constexpr (std::is_same_v<T, Parenthesized>) mark_uncompared_subtree(arena, node.inner, failed_source);
+    else if constexpr (std::is_same_v<T, Message>) {
+      mark_uncompared_subtree(arena, node.target, failed_source);
+      for (auto child : node.arguments) mark_uncompared_subtree(arena, child, failed_source);
+    } else if constexpr (std::is_same_v<T, NamedArgument>) mark_uncompared_subtree(arena, node.value, failed_source);
+    else if constexpr (std::is_same_v<T, Collection> || std::is_same_v<T, Tuple>) {
+      for (auto child : node.elements) mark_uncompared_subtree(arena, child, failed_source);
+    } else if constexpr (std::is_same_v<T, Constructor>) {
+      mark_uncompared_subtree(arena, node.type, failed_source);
+      for (auto child : node.type_arguments) mark_uncompared_subtree(arena, child, failed_source);
+      for (auto child : node.arguments) mark_uncompared_subtree(arena, child, failed_source);
+    } else if constexpr (std::is_same_v<T, Pipeline>) {
+      mark_uncompared_subtree(arena, node.input, failed_source);
+      for (auto child : node.stages) mark_uncompared_subtree(arena, child, failed_source);
+    }
+  }, arena.at(id));
+}
 
 Shape shape_of(const Arena& arena, ExprId id) {
   return std::visit([&](const auto& node) -> Shape {
@@ -820,7 +857,12 @@ void check_pipeline_shape_contract() {
 void compare_string_shape(const Arena& arena, ExprId id, std::string_view source) {
   ++shadow_attempts;
   auto expected = string_shape(std::string(source));
-  if (!expected) { ++shadow_unparsed; return; }
+  if (!expected) {
+    ++shadow_unparsed;
+    if (std::getenv("MOSS_EST_BLINDSPOT_FILE"))
+      mark_uncompared_subtree(arena, id, std::string(source));
+    return;
+  }
   ++shadow_compared;
   const auto actual = shape_of(arena, id);
   if (const char* inject = std::getenv("MOSS_EST_SHADOW_MISMATCH_TEST");
@@ -1084,6 +1126,21 @@ static void populate_impl(Program& program, std::vector<Stmt>* additional,
                            const std::string& source, ExprId id) {
     handles.push_back({owner, slot, index, id, fingerprint(source), origin_id,
                        primary_arena_index});
+    const auto unparsed = structurally_uncompared_nodes.find({&arena, id});
+    if (const char* path = std::getenv("MOSS_EST_BLINDSPOT_FILE")) {
+      std::ofstream out(path, std::ios::app);
+      if (!out) throw std::runtime_error("cannot open MOSS_EST_BLINDSPOT_FILE");
+      out << (unparsed != structurally_uncompared_nodes.end() ? '1' : '0') << '\t';
+      if (unparsed != structurally_uncompared_nodes.end())
+        for (const char c : unparsed->second)
+          out << ((c == '\t' || c == '\n' || c == '\r') ? ' ' : c);
+      out << '\t';
+      for (const char c : source)
+        out << ((c == '\t' || c == '\n' || c == '\r') ? ' ' : c);
+      out << '\t' << slot_name(slot) << '\t' << owner << '\t' << index << '\t'
+          << origin_id << '\t' << source_file << '\t' << arena.span(id).line
+          << '\t' << arena.span(id).column << '\n';
+    }
     if (dump_enabled) {
       std::ostringstream line;
       line << "MOSS_EST_DUMP owner=" << owner << " slot=" << slot_name(slot)
