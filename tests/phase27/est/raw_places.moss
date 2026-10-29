@@ -1,0 +1,5 @@
+fn main():
+  a.b[i].c[j] = x
+  total += f(k)
+  f(x)
+  self.nxt[u] = self.head[u]

@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "cases": [
+    {"id": "Group A/push_self_field_read", "path": "examples/swarm/modules/algo_chain/repro/push_self_field_read/single/src/main.moss", "reason": "baseline E0502 borrow conflict in emitted Rust"},
+    {"id": "Group A/field_self_assign_struct", "path": "examples/swarm/modules/lib_and_app/repro/field_self_assign_struct/single/src/main.moss", "reason": "baseline E0502 borrow conflict in emitted Rust"},
+    {"id": "mutate_loop_element", "path": "examples/swarm/modules/text_toolkit/repro/mutate_loop_element/single/src/main.moss", "reason": "baseline E0596 mutable loop binding in emitted Rust"},
+    {"id": "phase221_object_method_control", "path": "tests/phase221_object_method_control.moss", "reason": "baseline Rust keyword `box` is emitted as a binding"},
+    {"id": "swarm_034b_tail_assert_native", "path": "examples/swarm/Surface/repros/swarm_034b_tail_assert_native.moss", "reason": "accepted source emits assert as a function call (rustc E0423)"},
+    {"id": "repro_push_loop_reference", "path": "examples/swarm/polymorphism/collection_pipeline/reproducers/repro_push_loop_reference.moss", "reason": "accepted source emits &String where String is required (rustc E0308)"}
+  ]
+}

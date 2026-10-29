@@ -1,0 +1,5 @@
+fn contains(values: Map[String, Int]) -> Bool:
+  return "a" in values
+
+fn main():
+  pass

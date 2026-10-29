@@ -14,6 +14,7 @@
 #include "functional_ir.hpp"
 #include "synchronization.hpp"
 #include "type_ir.hpp"
+#include "est/expression_tree.hpp"
 
 namespace moss {
 
@@ -56,6 +57,7 @@ struct Field {
   // lets semantic consumers distinguish it from an explicitly typed field.
   bool inferred = false;
   bool exported = false;
+  vector<est::Handle> expression_handles;
 };
 struct Param {
   string name, type;
@@ -254,6 +256,8 @@ struct Stmt {
     Try, Recover, Raise
   } kind = Kind::Raw;
   int line = 0; int indent = 0; string text, a, b; vector<string> args;
+  vector<est::Handle> expression_handles;
+  std::optional<est::RawForm> est_raw_form;
   // A synchronous message may be used as an expression initializer.  The
   // receiver/handler remain in `a`/`b` (the canonical domain-call slots),
   // while this records the optional destination binding.  Keeping this on
@@ -402,6 +406,7 @@ struct Method {
   std::optional<string> execution_result_expression;
   string execution_source_file;
   std::optional<string> result_expression;
+  vector<est::Handle> expression_handles;
   int result_line = 0;
   vector<int> result_continuation_lines;
   std::unordered_map<string,std::size_t> result_functional_pipeline_ids;
@@ -457,6 +462,7 @@ struct TraitMethod {
   string source_file;
 };
 struct Handler {
+  vector<est::Handle> expression_handles;
   string name, header;
   vector<Param> params;
   std::optional<string> reply_type;
@@ -583,6 +589,7 @@ struct DomainSpecialization {
   std::unordered_map<string,string> handler_reply_types;
 };
 struct Function {
+  vector<est::Handle> expression_handles;
   string name, header;
   vector<Param> params;
   std::optional<string> return_type;
@@ -822,6 +829,11 @@ struct ExecutorStartPlan {
 };
 
 struct Program {
+  // Null in MOSS_EST=off: no arena is allocated by the legacy path.
+  std::shared_ptr<est::Arena> expression_arena;
+  // Explicit-module projects may merge independently parsed source units.
+  // Handles carry an index into this shared immutable arena list.
+  vector<std::shared_ptr<est::Arena>> expression_arenas;
   // Set only by `moss check <file>` on a project. This tells checker passes
   // that callable bodies have already been reduced to the file's reachable
   // closure and that package-wide rules belong to Margo's build path.

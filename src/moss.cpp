@@ -11694,6 +11694,7 @@ static void annotate_program_source(Program& program, const string& source_file)
 static void merge_project_program(Program& destination, Program source,
                                   const string& source_file,
                                   const std::filesystem::path* file_check_root = nullptr) {
+  est::adopt_program_arenas(destination, source);
   // Each physical file was parsed independently, but all declarations are
   // checked together below.  This is temporary global linkage until Moss has
   // explicit modules/imports; no synthetic source file or implicit namespace
@@ -13453,6 +13454,88 @@ static void rewrite_module_program(
   auto params = [&](vector<Param>& values) {
     for (auto& param : values) param.set_type(type(param.type));
   };
+  auto expression_text = [&](const Stmt& statement,
+                             const est::Handle& handle) -> string {
+    switch (handle.slot) {
+      case est::ExprSlot::Condition: case est::ExprSlot::Scrutinee:
+      case est::ExprSlot::ReturnValue: case est::ExprSlot::RaisedValue:
+        return statement.a;
+      case est::ExprSlot::Iterable: case est::ExprSlot::Initializer:
+        return statement.b;
+      case est::ExprSlot::Receiver:
+        if (statement.kind == Stmt::Kind::Message) {
+          string joined;
+          for (size_t i = 0; i < statement.args.size(); ++i) {
+            if (i) joined += ", ";
+            joined += statement.args[i];
+          }
+          return "message " + statement.a + "." + statement.b + "(" + joined + ")";
+        }
+        return statement.a;
+      case est::ExprSlot::Argument:
+        return handle.argument_index < statement.args.size()
+            ? statement.args[handle.argument_index] : string{};
+      case est::ExprSlot::Expression:
+        return statement.text;
+      case est::ExprSlot::LhsPlace: case est::ExprSlot::RhsValue:
+        if (statement.kind != Stmt::Kind::Raw)
+          return handle.slot == est::ExprSlot::LhsPlace ? statement.a : statement.b;
+        {
+          const size_t assignment = top_level_assignment(statement.text);
+          if (assignment == string::npos) return {};
+          const bool compound = assignment > 0 &&
+              std::string_view("+-*/%&|^").find(statement.text[assignment - 1]) !=
+                  std::string_view::npos;
+          if (handle.slot == est::ExprSlot::LhsPlace)
+            return trim(statement.text.substr(0, assignment - (compound ? 1 : 0)));
+          return trim(statement.text.substr(assignment + 1));
+        }
+      default: return {};
+    }
+  };
+  auto rebuild_expression_slot = [&](std::vector<est::Handle>& handles,
+                                     est::ExprSlot slot, uint32_t argument,
+                                     const string& old_text,
+                                     const string& new_text) {
+    if (old_text == new_text || !program.expression_arena ||
+        est::mode() != est::Mode::Shadow) return;
+    const auto prior = handles;
+    for (const auto& handle : prior) {
+      if (handle.slot != slot || handle.argument_index != argument) continue;
+      if (!est::lookup(handles, *program.expression_arena, handle.owner,
+                       slot, argument, old_text)) continue;
+      const auto old_expr = handle.expr;
+      est::rebuild_slot(*program.expression_arena, handles, handle.owner,
+                        slot, argument, new_text);
+      const auto* refreshed = est::lookup(handles, *program.expression_arena,
+          handle.owner, slot, argument, new_text);
+      assert(refreshed && refreshed->expr != old_expr);
+      (void)program.expression_arena->at(old_expr);
+      return;
+    }
+  };
+  auto rebuild_changed_slots = [&](const Stmt& before, Stmt& after) {
+    if (!program.expression_arena || est::mode() != est::Mode::Shadow) return;
+    const auto old_handles = before.expression_handles;
+    for (const auto& handle : old_handles) {
+      const string old_text = expression_text(before, handle);
+      const string new_text = expression_text(after, handle);
+      if (old_text == new_text) continue;
+      const auto* current = est::lookup(before.expression_handles,
+          *program.expression_arena, handle.owner, handle.slot,
+          handle.argument_index, old_text);
+      if (!current) continue;
+      const auto old_expr = current->expr;
+      est::rebuild_slot(*program.expression_arena, after.expression_handles,
+                        handle.owner, handle.slot, handle.argument_index,
+                        new_text);
+      const auto* refreshed = est::lookup(after.expression_handles,
+          *program.expression_arena, handle.owner, handle.slot,
+          handle.argument_index, new_text);
+      assert(refreshed && refreshed->expr != old_expr);
+      (void)program.expression_arena->at(old_expr);
+    }
+  };
   auto body = [&](vector<Stmt>& statements,
                   const std::set<string>& initial_locals = {},
                   const std::set<string>* sibling_methods = nullptr) -> std::set<string> {
@@ -13466,6 +13549,7 @@ static void rewrite_module_program(
           continue;
         }
         if (statement.kind == Stmt::Kind::Else) return;
+        const Stmt before_statement = statement;
 
         if (statement.kind == Stmt::Kind::Try) {
           const std::set<string> incoming = locals;
@@ -13477,9 +13561,11 @@ static void rewrite_module_program(
                  statements[index].indent == level &&
                  statements[index].kind == Stmt::Kind::Recover) {
             Stmt& arm = statements[index];
+          const Stmt before_arm = arm;
             arm.a = rewrite_module_expression(
                 arm.a, module, modules, public_exports, sibling_methods,
                 &incoming);
+          rebuild_changed_slots(before_arm, arm);
             std::set<string> arm_locals = incoming;
             if (plain_identifier(arm.a)) arm_locals.insert(arm.a);
             ++index;
@@ -13496,6 +13582,7 @@ static void rewrite_module_program(
         if (statement.kind == Stmt::Kind::If) {
           statement.a = rewrite_module_expression(
               statement.a, module, modules, public_exports, sibling_methods, &locals);
+          rebuild_changed_slots(before_statement, statement);
           std::set<string> incoming = locals;
           ++index;
           std::set<string> then_locals = incoming;
@@ -13532,6 +13619,7 @@ static void rewrite_module_program(
         if (statement.kind == Stmt::Kind::Match) {
           statement.a = rewrite_module_expression(
               statement.a, module, modules, public_exports, sibling_methods, &locals);
+          rebuild_changed_slots(before_statement, statement);
           std::set<string> incoming = locals;
           std::vector<std::set<string>> paths;
           ++index;
@@ -13561,6 +13649,7 @@ static void rewrite_module_program(
         if (statement.kind == Stmt::Kind::While) {
           statement.a = rewrite_module_expression(
               statement.a, module, modules, public_exports, sibling_methods, &locals);
+          rebuild_changed_slots(before_statement, statement);
           std::set<string> incoming = locals;
           ++index;
           std::set<string> body_locals = incoming;
@@ -13572,6 +13661,7 @@ static void rewrite_module_program(
         if (statement.kind == Stmt::Kind::For) {
           statement.b = rewrite_module_expression(
               statement.b, module, modules, public_exports, sibling_methods, &locals);
+          rebuild_changed_slots(before_statement, statement);
           std::set<string> incoming = locals;
           ++index;
           std::set<string> body_locals = incoming;
@@ -13645,6 +13735,8 @@ static void rewrite_module_program(
           statement.text = rewrite_module_expression(
               statement.text, module, modules, public_exports, sibling_methods, &locals);
 
+        rebuild_changed_slots(before_statement, statement);
+
         ++index;
       }
     };
@@ -13664,9 +13756,13 @@ static void rewrite_module_program(
     std::set<string> initial_locals;
     for (const auto& p : function.params) initial_locals.insert(p.name);
     auto body_locals = body(function.body, initial_locals);
-    if (function.result_expression)
+    if (function.result_expression) {
+      const string old_expression = *function.result_expression;
       *function.result_expression = rewrite_module_expression(
           *function.result_expression, module, modules, public_exports, nullptr, &body_locals);
+      rebuild_expression_slot(function.expression_handles, est::ExprSlot::ReturnValue,
+                              0, old_expression, *function.result_expression);
+    }
   }
   for (auto& object : program.objects) {
     string old = object.name;
@@ -13677,7 +13773,12 @@ static void rewrite_module_program(
     object.name = module_symbol(module, old);
     for (auto& field : object.fields) {
       field.type = type(field.type);
-      if (!field.init.empty()) field.init = expression(field.init);
+      if (!field.init.empty()) {
+        const string old_expression = field.init;
+        field.init = expression(field.init);
+        rebuild_expression_slot(field.expression_handles, est::ExprSlot::Initializer,
+                                0, old_expression, field.init);
+      }
     }
     for (auto& method : object.methods) {
       method.owner = object.name;
@@ -13686,10 +13787,14 @@ static void rewrite_module_program(
       std::set<string> initial_locals{"self"};
       for (const auto& p : method.params) initial_locals.insert(p.name);
       auto body_locals = body(method.body, initial_locals, &sibling_methods);
-      if (method.result_expression)
+      if (method.result_expression) {
+        const string old_expression = *method.result_expression;
         *method.result_expression = rewrite_module_expression(
             *method.result_expression, module, modules, public_exports,
             &sibling_methods, &body_locals);
+        rebuild_expression_slot(method.expression_handles, est::ExprSlot::ReturnValue,
+                                0, old_expression, *method.result_expression);
+      }
     }
   }
   for (auto& enumeration : program.enums) {
@@ -13713,7 +13818,12 @@ static void rewrite_module_program(
     domain.name = module_symbol(module, domain.name);
     for (auto& field : domain.state) {
       field.type = type(field.type);
-      if (!field.init.empty()) field.init = expression(field.init);
+      if (!field.init.empty()) {
+        const string old_expression = field.init;
+        field.init = expression(field.init);
+        rebuild_expression_slot(field.expression_handles, est::ExprSlot::Initializer,
+                                0, old_expression, field.init);
+      }
     }
     for (auto& route : domain.routes) route.type = type(route.type);
     for (auto& handler : domain.handlers) {
@@ -16748,8 +16858,48 @@ static ParsedModuleUnit load_module_interface(
   // Section 2 is admitted only after Section 1 signatures and provider
   // contracts have passed validation. It supplies executable non-generic
   // bodies without reopening the provider source tree.
-  if (load_execution_bodies)
+  auto build_loaded_body = [&](std::vector<Stmt>& body,
+                               const string& identity) {
+    est::populate_loaded(provider, body, est::stable_origin_id(
+        file.string() + "\n" + identity));
+  };
+  for (auto& function : provider.functions)
+    build_loaded_body(function.body, "generic-function:" + function.name);
+  for (auto& object : provider.objects)
+    for (auto& method : object.methods)
+      build_loaded_body(method.body,
+                        "generic-method:" + object.name + "::" + method.name);
+  for (auto& domain : provider.domains)
+    for (auto& handler : domain.handlers) {
+      build_loaded_body(handler.body,
+                        "generic-handler:" + domain.name + "::" + handler.name);
+      for (auto& arm : handler.failure_arms)
+        build_loaded_body(arm.body, "generic-failure:" + domain.name + "::" +
+                          handler.name + ":" + std::to_string(arm.line));
+    }
+  if (load_execution_bodies) {
     parse_execution_body_payload(execution_bodies, provider, file);
+    for (auto& function : provider.functions) {
+      if (function.execution_body)
+        build_loaded_body(*function.execution_body, "function:" + function.name);
+    }
+    for (auto& object : provider.objects)
+      for (auto& method : object.methods) {
+        if (method.execution_body)
+          build_loaded_body(*method.execution_body,
+                            "method:" + object.name + "::" + method.name);
+      }
+    for (auto& domain : provider.domains)
+      for (auto& handler : domain.handlers) {
+        if (handler.execution_body)
+          build_loaded_body(*handler.execution_body,
+                            "handler:" + domain.name + "::" + handler.name);
+        if (handler.execution_failure_arms)
+          for (auto& arm : *handler.execution_failure_arms)
+            build_loaded_body(arm.body, "failure:" + domain.name + "::" +
+                              handler.name + ":" + std::to_string(arm.line));
+      }
+  }
   for (auto& function : provider.functions) {
     function.source_file = file.string();
     function.header = "fn " + function.name;

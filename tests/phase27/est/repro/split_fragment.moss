@@ -1,0 +1,6 @@
+fn main():
+  values = [
+    1,
+    2
+  ]
+  echo values

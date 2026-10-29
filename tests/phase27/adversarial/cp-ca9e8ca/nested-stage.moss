@@ -1,0 +1,5 @@
+fn main():
+  outer = [10]
+  inner = [1]
+  result = outer |> (inner |> map(_ + 1))
+  echo result |> sum

@@ -1,0 +1,7 @@
+type Pair:
+  left: Int
+  right: Int
+
+fn main():
+  pair = Pair(left: 1, right: 2)
+  echo pair.left

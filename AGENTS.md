@@ -172,6 +172,10 @@ When working with Moss:
   local commits and normal pushes to the configured remote; no PRs are in scope.
   For Phase 26.3 work on `phase26-3-work`, the user authorized scoped local
   commits and normal pushes to the configured remote; no PR is in scope.
+  For Phase 27 work on `phase27-work` and `phase27-*` slice branches, the user
+  authorized scoped local commits and normal pushes to the configured remote;
+  no PR is in scope. No repository-level no-push restriction applies to
+  these branches.
   Keep each task on its scoped branch; do not merge directly to `main` unless
   the user explicitly directs that merge. Do not force-push or rewrite
   published history.

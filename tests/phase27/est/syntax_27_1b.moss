@@ -1,0 +1,14 @@
+type Box:
+  value: Int
+
+enum Reply:
+  Ok(value: Int)
+
+fn main():
+  values = [1, 2, 3]
+  mapped = values |> map(_ + 1)
+  total = mapped |> sum
+  container = Box(value = total)
+  reply = Reply.Ok(value: total)
+  vector = Vector[Map[String, Int]]()
+  echo container.value
