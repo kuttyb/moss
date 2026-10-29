@@ -257,6 +257,7 @@ struct Stmt {
   } kind = Kind::Raw;
   int line = 0; int indent = 0; string text, a, b; vector<string> args;
   vector<est::Handle> expression_handles;
+  std::optional<est::RawForm> est_raw_form;
   // A synchronous message may be used as an expression initializer.  The
   // receiver/handler remain in `a`/`b` (the canonical domain-call slots),
   // while this records the optional destination binding.  Keeping this on

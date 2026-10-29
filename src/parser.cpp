@@ -126,6 +126,7 @@ class Parser {
         }
       }
     }
+    est::populate(p);
     return p;
   }
 

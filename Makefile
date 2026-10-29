@@ -148,6 +148,7 @@ $(foreach object,$(COMPILER_OBJECTS_OPT),$(eval $(object): $(object:.o=.d)))
 check: check-parallel
 
 check-parallel: moss-dev moss-opt
+	python3 tests/tooling/check_phase27_string_debt.py
 	python3 tests/run_parallel.py --jobs $(TEST_JOBS) --compiler-dev $(MOSS_DEV) --compiler-opt $(MOSS_OPT)
 
 check-serial: moss
