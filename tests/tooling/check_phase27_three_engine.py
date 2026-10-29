@@ -7,6 +7,7 @@ import re
 import subprocess
 import sys
 import time
+from phase27_allowlist_paths import missing_fixture_paths, self_test as allowlist_self_test
 
 ROOT = Path(__file__).resolve().parents[2]
 COMPILER = Path(sys.argv[1]).resolve()
@@ -28,6 +29,7 @@ def ratchet(observed, allowed):
 
 
 def self_test():
+    allowlist_self_test()
     ratchet({"seed": "mismatch"}, {"seed"})
     for observed, allowed in (({"new": "mismatch"}, set()), ({}, {"fixed"})):
         try: ratchet(observed, allowed)
@@ -94,6 +96,9 @@ def main():
         if expected is None: expected = signature
         elif signature != expected: observed[label] = "output or callback count differs"
     allowed_json = json.loads(ALLOW.read_text(encoding="utf-8"))
+    missing = missing_fixture_paths(ROOT, allowed_json["cases"])
+    if missing:
+        raise SystemExit("allowlist names missing fixtures: " + ", ".join(missing))
     allowed = set()
     observed = {}
     for entry in allowed_json["cases"]:

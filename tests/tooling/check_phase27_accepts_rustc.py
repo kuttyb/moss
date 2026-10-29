@@ -6,6 +6,7 @@ from pathlib import Path
 import subprocess
 import sys
 import time
+from phase27_allowlist_paths import missing_fixture_paths, self_test as allowlist_self_test
 
 ROOT = Path(__file__).resolve().parents[2]
 COMPILER = Path(sys.argv[1]).resolve()
@@ -25,6 +26,7 @@ def ratchet(observed, allowed):
 
 
 def self_test():
+    allowlist_self_test()
     ratchet({"seed": "fail"}, {"seed"})
     for observed, allowed in (({"new": "fail"}, set()), ({}, {"fixed"})):
         try:
@@ -47,6 +49,9 @@ def rustc_fails(source, work):
 def main():
     self_test()
     allow_data = json.loads(ALLOW.read_text(encoding="utf-8"))
+    missing = missing_fixture_paths(ROOT, allow_data["cases"])
+    if missing:
+        raise SystemExit("allowlist names missing fixtures: " + ", ".join(missing))
     allowed_cases = {entry["id"]: entry for entry in allow_data["cases"]}
     work = ROOT / "tmp" / "phase27-accepts-rustc" / str(time.time_ns())
     work.mkdir(parents=True)
