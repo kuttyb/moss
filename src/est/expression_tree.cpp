@@ -94,12 +94,12 @@ std::optional<ParsedFunctionalPipeline> functional_pipeline(
   for (const auto stage_id : pipeline->stages) {
     auto raw = source_slice(stage_id);
     if (!raw || raw->empty()) return std::nullopt;
-    std::string_view callee = *raw;
+    std::string callee = *raw;
     std::vector<ExprId> arguments;
     if (const auto* call = std::get_if<Call>(&arena.at(stage_id))) {
       auto call_name = source_slice(call->callee);
       if (!call_name) return std::nullopt;
-      callee = *call_name;
+      callee = std::move(*call_name);
       arguments = call->arguments;
     }
     auto kind = resolve_stage(callee);
