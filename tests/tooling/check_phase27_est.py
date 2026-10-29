@@ -3,6 +3,7 @@
 import os
 import pathlib
 import re
+import resource
 import subprocess
 import sys
 
@@ -40,7 +41,7 @@ def main():
     if result.returncode != 0 or "MOSS_EST_STATS arena_size=0 handle_count=0" not in result.stderr:
         raise SystemExit(f"off allocated EST storage: {result.stdout}{result.stderr}")
     raw = ROOT / "tests/phase27/est/raw_places.moss"
-    result = run(raw, "shadow", MOSS_EST_DUMP="1")
+    result = run(raw, "shadow", MOSS_EST_DUMP="1", MOSS_EST_CONTRACT_TEST="1")
     if "MOSS_EST_RAW" not in result.stderr:
         raise SystemExit(f"shadow raw/contract check did not reach EST: {result.stdout}{result.stderr}")
     for form in ("Assign", "CompoundAssign", "ExprStmt"):
@@ -66,7 +67,15 @@ def main():
              for line in lhs_rhs if re.search(r'identifier#(\d+) "u"', line)]
     if len(set(u_ids)) != 2 or len(u_ids) < 2:
         raise SystemExit(f"assignment index occurrences share an ExprId: {lhs_rhs}")
-    print("phase27 EST focused checks passed (3 dumps; raw places; off arena size 0)")
+    stale = subprocess.run([str(COMPILER), "check", str(raw), "--json"], cwd=ROOT,
+                           env={**os.environ, "MOSS_EST": "shadow",
+                                "MOSS_EST_CONTRACT_TEST": "1", "MOSS_EST_STALE_TEST": "1"},
+                           text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                           check=False, preexec_fn=lambda: resource.setrlimit(
+                               resource.RLIMIT_CORE, (0, 0)))
+    if stale.returncode == 0 or "source_fingerprint" not in stale.stderr:
+        raise SystemExit("mutating source did not trip the shadow staleness assertion")
+    print("phase27 EST focused checks passed (3 dumps; raw places; copy/rebuild; off arena size 0; stale guard)")
 
 if __name__ == "__main__":
     main()

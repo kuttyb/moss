@@ -696,7 +696,46 @@ void populate(Program& program) {
     std::cerr << "MOSS_EST_STATS arena_size=" << arena.size()
               << " handle_count=" << built << '\n';
   }
-
+  const char* contract = std::getenv("MOSS_EST_CONTRACT_TEST");
+  if (contract && std::string_view(contract) == "1" && program.main &&
+      !program.main->body.empty()) {
+    Program copied = program;
+    assert(copied.expression_arena == program.expression_arena);
+    assert(copied.main && copied.main->body.size() == program.main->body.size());
+    for (std::size_t i = 0; i < program.main->body.size(); ++i) {
+      const auto& before = program.main->body[i].expression_handles;
+      const auto& after = copied.main->body[i].expression_handles;
+      assert(before.size() == after.size());
+      for (std::size_t j = 0; j < before.size(); ++j)
+        assert(before[j].expr == after[j].expr);
+    }
+    auto shifted = copied.main->body;
+    const auto retained = shifted.front().expression_handles;
+    shifted.insert(shifted.begin(), Stmt{});
+    shifted.erase(shifted.begin());
+    assert(shifted.front().expression_handles.size() == retained.size());
+    for (std::size_t i = 0; i < retained.size(); ++i)
+      assert(arena.at(retained[i].expr).index() ==
+             arena.at(shifted.front().expression_handles[i].expr).index());
+    auto same_a = parse_expression(arena, "same");
+    auto same_b = parse_expression(arena, "same");
+    assert(same_a != same_b);
+    assert(fresh_occurrence(arena, same_a) != same_a);
+    const auto old_id = retained.front().expr;
+    const auto old_dump = dump_node(arena, old_id);
+    auto rebuilt = retained;
+    const auto& old_handle = retained.front();
+    rebuild_slot(arena, rebuilt, old_handle.owner, old_handle.slot,
+                 old_handle.argument_index, "replacement + 1");
+    assert(rebuilt.front().expr != old_id && dump_node(arena, old_id) == old_dump);
+    const char* stale = std::getenv("MOSS_EST_STALE_TEST");
+    if (stale && std::string_view(stale) == "1") {
+      std::string changed = "mutated source";
+      (void)lookup(retained, arena, old_handle.owner, old_handle.slot,
+                   old_handle.argument_index, changed);
+      assert(false && "staleness guard did not fire");
+    }
+  }
 }
 
 }  // namespace moss::est
