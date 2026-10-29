@@ -203,5 +203,15 @@ Reproduce with `python3 tests/tooling/measure_phase27_est_blindspots.py
 build/compiler/moss-dev --output tmp/phase27-blindspot-repro`. The tracer is
 opt-in through `MOSS_EST_BLINDSPOT_FILE`; it records handles and whether their
 containing expression's legacy shape was unavailable. It does not alter the
-parser or comparison result. The maximum is RhsValue at 1.122%, above the
-closeout escalation threshold; stop before merge pending Bank direction.
+parser or comparison result.
+
+### Bank ruling on the blind spot
+
+Bank accepts the measured gap. All 173 never-compared occurrences are
+uppercase-qualified calls (`Module.func` / `Type.method`) for which the legacy
+shape parser returns no shape. Keep this accepted as a 27.1 validation limit;
+it does not indicate a compiler behavior difference. First item to close in
+27.2: after module-name resolution moves onto the tree, add structural
+comparison for qualified calls, then rerun
+`tests/tooling/measure_phase27_est_blindspots.py` and show the count reaches
+zero. Keep the measurement tool and its opt-in tracer for that proof.

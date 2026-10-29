@@ -1,8 +1,8 @@
-# Phase 27.1a EST foundation — closeout
+# Phase 27.1 EST foundation — closeout
 
 Branch: `phase27-work`
 Required corpus/performance baseline: `4d6d0c8c2fcb3bb6e255bcaee80174b6b928a576`
-CP-A candidate: `0f116ada267b3772895e84859132a07218be8aa1`. CP-A was not started. Final 27.1 completion head will be recorded after this closeout commit.
+CP-A candidate: `0f116ada267b3772895e84859132a07218be8aa1`. CP-A review completed; see the review record below.
 
 ## A. Corpus count
 
@@ -74,7 +74,7 @@ Baseline hash for the corpus and performance gates: `4d6d0c8c2fcb3bb6e255bcaee80
 | Gate | Result | Evidence |
 | --- | --- | --- |
 | G1 `MOSS_EST=off make --jobs="$(nproc)" check` | PASS, 157/157 jobs, no skips or waivers | `tmp/phase27-final/G1-off-pipeline-fix.log`; baseline `4d6d0c8c2fcb3bb6e255bcaee80174b6b928a576` |
-| G2 shadow `make check` | PASS, 157/157 jobs, no skips or waivers; one initial oracle mismatch was fixed and rerun passed | `tmp/phase27-final/G2-shadow-pipeline-fix.log`; baseline `4d6d0c8c2fcb3bb6e255bcaee80174b6b928a576` |
+| G2 shadow `make check` | PASS, 157/157 jobs, no skips or waivers, including rerun with the opt-in blind-spot tracer present | `tmp/phase27-closeout/G2-shadow-tracer.log`; baseline `4d6d0c8c2fcb3bb6e255bcaee80174b6b928a576` |
 | G3 branch off vs 4d6d0c8 binary | PASS, 2,061 baseline sources, zero verdict/Rust-hash differences | `tmp/phase27-final/G3-baseline-final.log`, `G3-off-final.log`; baseline binary from `4d6d0c8c2fcb3bb6e255bcaee80174b6b928a576` |
 | G4 off vs shadow corpus | PASS, 2,061 baseline sources, 1,341 accepted each, zero verdict/Rust-hash differences | `tmp/phase27-final/G3-off-final.tsv`, `G4-shadow-final.tsv`; baseline `4d6d0c8c2fcb3bb6e255bcaee80174b6b928a576` |
 | G5 examples optimized Rust hashes | PASS, 776 sources, 546 accepted, zero differences | `tmp/phase27-final/G5-optimized-examples-final.log`; baseline `4d6d0c8c2fcb3bb6e255bcaee80174b6b928a576` |
@@ -100,8 +100,9 @@ The Bank ruled that the compiler-bound cache contract must remain intact: distin
 
 - All deferred 27.1b expressions, including pipelines, placeholders, constructors, collection literals, and named arguments, are built. ABI-v9 generic statement bodies and Section 2 execution bodies loaded from `.mossi` use EST parsing with package/interface origin IDs.
 - In shadow mode the structural oracle compares the EST shape with the string path wherever that path parses. G2's first run exposed a left-associated versus flattened pipeline representation mismatch; the shape oracle was canonicalized, and the single rerun passed. Structural comparison stats and an injected mismatch test are covered by `tests/tooling/check_phase27_est.py`.
-- Both conformance gate allowlists currently contain the same seven seeded rows: `Group A/push_self_field_read`, `Group A/field_self_assign_struct`, `T6/repro_untyped_for_write4`, `T6/repro_untyped_for_write5`, `T6/repro_untyped_for_write6`, `T6/repro_untyped_for_write7`, and `mutate_loop_element`. These seeds include the four absent T6 fixture paths noted in the JSON files; both gates pass with ratcheting enabled.
+- The conformance gate allowlists retain existing runnable fixtures, including `Group A/push_self_field_read`, `Group A/field_self_assign_struct`, and `mutate_loop_element`. The four T6 entries were removed because reachable Phase 24 history contains only README references and no fixture files. Both gates now fail if an allowlist path is missing; see `tests/tooling/phase27_allowlist_paths.py`.
 - CP-B-final review limitation: its focused structural-shape probes do not compare cases where the legacy string-shape parser returns null. Corpus shadow builds had no comparable structural mismatches; the remaining unparsed shapes are tracked by shadow comparison stats.
+- Bank accepts the measured blind spot: all 173 never-compared occurrences are uppercase-qualified calls (`Module.func` / `Type.method`) for which the legacy shape parser returns no shape. This is a 27.1 validation limit, not a compiler behavior difference. First item to close in 27.2: after module-name resolution moves onto the tree, add structural comparison for qualified calls and use `tests/tooling/measure_phase27_est_blindspots.py` to show the count reaches zero.
 
 - **Self-review:** The 2,064 count is stale for the specified baseline; all source-set differences are listed rather than inventing three omissions.
 - **Self-review:** Parser-promoted assignment and call statements retain their existing kinds and semantics. EST-only metadata covers the required Assign / CompoundAssign / ExprStmt classifications.
