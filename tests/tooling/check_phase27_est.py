@@ -28,9 +28,16 @@ def run(path, mode, **extra):
 def main():
     for name, pieces in CASES.items():
         path = ROOT / "tests/phase27/est" / name
-        result = run(path, "shadow", MOSS_EST_DUMP="1")
+        result = run(path, "shadow", MOSS_EST_DUMP="1",
+                     MOSS_EST_COMPARE_STATS="1")
         if result.returncode != 0:
             raise SystemExit(f"shadow check failed for {name}: {result.stdout}{result.stderr}")
+        comparisons = re.findall(
+            r"MOSS_EST_SHADOW_COMPARE attempts=(\d+) compared=(\d+) "
+            r"string_path_unparsed=(\d+)", result.stderr)
+        if not comparisons or not any(int(compared) > 0
+                                      for _, compared, _ in comparisons):
+            raise SystemExit(f"legacy string shape was not compared for {name}")
         dumps = [line for line in result.stderr.splitlines() if line.startswith("MOSS_EST_DUMP ")]
         if not dumps or not all(piece in "\n".join(dumps) for piece in pieces):
             raise SystemExit(f"missing expected tree fields for {name}: {dumps}")
@@ -39,9 +46,16 @@ def main():
             if len(ids) != len(set(ids)):
                 raise SystemExit(f"ExprId reused within one occurrence in {name}: {ids}")
     tuple_probe = ROOT / "tests/tooling/fixtures/phase20_fileio_runtime_integration.moss"
-    tuple_tree = run(tuple_probe, "shadow", MOSS_EST_DUMP="1")
+    tuple_tree = run(tuple_probe, "shadow", MOSS_EST_DUMP="1",
+                     MOSS_EST_COMPARE_STATS="1")
     if tuple_tree.returncode != 0 or "(tuple#" not in tuple_tree.stderr:
         raise SystemExit(f"tuple collection elements were not represented: {tuple_tree.stderr}")
+    if not re.search(r"MOSS_EST_SHADOW_COMPARE .* compared=[1-9]", tuple_tree.stderr):
+        raise SystemExit("tuple/string legacy shape was not compared")
+    mismatch = run(ROOT / "tests/phase27/est/bitwise_shift.moss", "shadow",
+                   MOSS_EST_SHADOW_MISMATCH_TEST="1")
+    if mismatch.returncode == 0 or "injected mismatch" not in mismatch.stdout:
+        raise SystemExit("shadow structural comparator did not reject an injected mismatch")
     probe = ROOT / "tests/phase27/est/bitwise_shift.moss"
     result = run(probe, "off", MOSS_EST_STATS="1")
     if result.returncode != 0 or "MOSS_EST_STATS arena_size=0 handle_count=0" not in result.stderr:

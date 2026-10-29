@@ -1,5 +1,6 @@
 #include "expression_tree.hpp"
 #include "../ast.hpp"
+#include "../native_generator_support.hpp"
 #include "../numeric_literal.hpp"
 #include "../parser_support.hpp"
 
@@ -443,12 +444,349 @@ class Reader {
     return left;
   }
 };
+
+struct Shape {
+  std::string kind, value;
+  std::vector<Shape> children;
+  bool operator==(const Shape& other) const {
+    return kind == other.kind && value == other.value && children == other.children;
+  }
+};
+
+std::uint64_t shadow_attempts = 0, shadow_compared = 0, shadow_unparsed = 0;
+
+Shape shape_of(const Arena& arena, ExprId id) {
+  return std::visit([&](const auto& node) -> Shape {
+    using T = std::decay_t<decltype(node)>;
+    if constexpr (std::is_same_v<T, Literal>) return {"literal", node.spelling, {}};
+    else if constexpr (std::is_same_v<T, Identifier>) return {"identifier", node.name, {}};
+    else if constexpr (std::is_same_v<T, Unary>) return {"unary", node.op, {shape_of(arena, node.operand)}};
+    else if constexpr (std::is_same_v<T, Binary>) return {"binary", node.op, {shape_of(arena, node.left), shape_of(arena, node.right)}};
+    else if constexpr (std::is_same_v<T, Call>) {
+      Shape result{"call", {}, {shape_of(arena, node.callee)}};
+      for (auto child : node.arguments) result.children.push_back(shape_of(arena, child));
+      return result;
+    } else if constexpr (std::is_same_v<T, Member>) return {"member", node.name, {shape_of(arena, node.base)}};
+    else if constexpr (std::is_same_v<T, Index>) return {"index", {}, {shape_of(arena, node.base), shape_of(arena, node.index)}};
+    else if constexpr (std::is_same_v<T, Parenthesized>) return shape_of(arena, node.inner);
+    else if constexpr (std::is_same_v<T, Message>) {
+      Shape result{"message", node.handler, {shape_of(arena, node.target)}};
+      for (auto child : node.arguments) result.children.push_back(shape_of(arena, child));
+      return result;
+    } else if constexpr (std::is_same_v<T, NamedArgument>) return {"named", node.name, {shape_of(arena, node.value)}};
+    else if constexpr (std::is_same_v<T, Placeholder>) return {"placeholder", {}, {}};
+    else if constexpr (std::is_same_v<T, Collection>) {
+      Shape result{"collection", std::string(1, node.delimiter), {}};
+      for (auto child : node.elements) result.children.push_back(shape_of(arena, child));
+      return result;
+    } else if constexpr (std::is_same_v<T, Tuple>) {
+      Shape result{"tuple", {}, {}};
+      for (auto child : node.elements) result.children.push_back(shape_of(arena, child));
+      return result;
+    } else if constexpr (std::is_same_v<T, Constructor>) {
+      Shape result{"constructor", std::to_string(node.type_arguments.size()) + "/" +
+          std::to_string(node.arguments.size()), {shape_of(arena, node.type)}};
+      for (auto child : node.type_arguments) result.children.push_back(shape_of(arena, child));
+      for (auto child : node.arguments) result.children.push_back(shape_of(arena, child));
+      return result;
+    } else {
+      Shape result{"pipeline", {}, {shape_of(arena, node.input)}};
+      for (auto child : node.stages) result.children.push_back(shape_of(arena, child));
+      return result;
+    }
+  }, arena.at(id));
+}
+
+std::string shape_text(const Shape& shape) {
+  std::ostringstream out;
+  out << '(' << shape.kind;
+  if (!shape.value.empty()) out << ' ' << std::quoted(shape.value);
+  for (const auto& child : shape.children) out << ' ' << shape_text(child);
+  return out.str() + ')';
+}
+
+std::optional<std::pair<std::string, std::string>> legacy_operator(
+    const std::string& source, const std::vector<std::string>& operators) {
+  int par = 0, bracket = 0, brace = 0;
+  char quote = 0;
+  bool escaped = false;
+  std::vector<std::pair<std::size_t, std::string>> found;
+  for (std::size_t i = 0; i < source.size(); ++i) {
+    const char c = source[i];
+    if (quote) {
+      if (escaped) escaped = false;
+      else if (c == '\\') escaped = true;
+      else if (c == quote) quote = 0;
+      continue;
+    }
+    if (c == '"' || c == '\'') { quote = c; continue; }
+    if (c == '(') ++par; else if (c == ')') --par;
+    else if (c == '[') ++bracket; else if (c == ']') --bracket;
+    else if (c == '{') ++brace; else if (c == '}') --brace;
+    if (par || bracket || brace) continue;
+    for (const auto& op : operators) {
+      if (source.compare(i, op.size(), op) != 0) continue;
+      if ((op == "|" && i + 1 < source.size() && (source[i + 1] == '>' || source[i + 1] == '|' || source[i + 1] == '=')) ||
+          (op == "|" && i && source[i - 1] == '|') ||
+          (op == "&" && i + 1 < source.size() && (source[i + 1] == '&' || source[i + 1] == '=')) ||
+          (op == "&" && i && source[i - 1] == '&') ||
+          (op == "^" && i + 1 < source.size() && source[i + 1] == '=') ||
+          (op == "<" && i + 1 < source.size() && (source[i + 1] == '<' || source[i + 1] == '=')) ||
+          (op == "<" && i && source[i - 1] == '<') ||
+          (op == ">" && i + 1 < source.size() && (source[i + 1] == '>' || source[i + 1] == '=')) ||
+          (op == ">" && i && (source[i - 1] == '>' || source[i - 1] == '|'))) continue;
+      if ((op == "+" || op == "-") && inside_numeric_literal(source, i)) continue;
+      if (op == "+" || op == "-") {
+        auto before = i;
+        while (before && std::isspace(static_cast<unsigned char>(source[before - 1]))) --before;
+        if (!before || std::string("([{,:+-*/%=<>!|&^~").find(source[before - 1]) != std::string::npos) continue;
+      }
+      found.emplace_back(i, op);
+      break;
+    }
+  }
+  if (found.empty()) return std::nullopt;
+  const auto [pos, op] = found.back();
+  return std::make_pair(trim(source.substr(0, pos)), trim(source.substr(pos + op.size())));
+}
+
+std::optional<Shape> string_shape(std::string source) {
+  source = trim(std::move(source));
+  if (source.empty()) return std::nullopt;
+  if (source.front() == '(' && source.back() == ')' &&
+      matching_paren(source, 0) == source.size() - 1) {
+    const auto inside = trim(source.substr(1, source.size() - 2));
+    if (!inside.empty()) {
+      const auto elements = split_top_level(inside, ',');
+      if (elements.size() > 1) {
+        Shape result{"tuple", {}, {}};
+        for (const auto& element : elements) {
+          auto child = string_shape(element);
+          if (!child) return std::nullopt;
+          result.children.push_back(std::move(*child));
+        }
+        return result;
+      }
+    }
+  }
+  auto unwrapped = strip_redundant_outer_parentheses(source);
+  if (unwrapped != source) return string_shape(std::move(unwrapped));
+  if (source.rfind("message ", 0) == 0) {
+    std::string target, handler;
+    std::vector<std::string> args;
+    if (parse_member_call(source.substr(8), target, handler, args)) {
+      auto root = string_shape(target);
+      if (!root) return std::nullopt;
+      Shape result{"message", handler, {*root}};
+      for (const auto& arg : args) {
+        auto child = string_shape(arg);
+        if (!child) return std::nullopt;
+        result.children.push_back(std::move(*child));
+      }
+      return result;
+    }
+  }
+  if (auto pipeline = legacy_operator(source, {"|>"})) {
+    auto input = string_shape(pipeline->first), stage = string_shape(pipeline->second);
+    if (input && stage) {
+      if (input->kind == "pipeline") {
+        input->children.push_back(std::move(*stage));
+        return input;
+      }
+      return Shape{"pipeline", {}, {std::move(*input), std::move(*stage)}};
+    }
+    return std::nullopt;
+  }
+  if (auto pipeline = parse_functional_pipeline(source)) {
+    auto root = string_shape(pipeline->source);
+    if (!root) return std::nullopt;
+    Shape result{"pipeline", {}, {*root}};
+    for (const auto& stage : pipeline->stages) {
+      auto child = string_shape(stage.raw);
+      if (!child) return std::nullopt;
+      result.children.push_back(std::move(*child));
+    }
+    return result;
+  }
+  static const std::vector<std::vector<std::string>> tiers = {
+      {" or "}, {" xor "}, {" and "}, {"==", "!=", "<=", ">=", "<", ">"},
+      {"|"}, {"^"}, {"&"}, {"<<", ">>"}, {"+", "-"}, {"*", "/", "%"}};
+  for (const auto& tier : tiers) if (auto split = legacy_operator(source, tier)) {
+    auto left = string_shape(split->first), right = string_shape(split->second);
+    if (!left || !right) return std::nullopt;
+    const auto at = source.find(split->first);
+    const auto op = trim(source.substr(at + split->first.size(),
+        source.size() - at - split->first.size() - split->second.size()));
+    return Shape{"binary", op, {std::move(*left), std::move(*right)}};
+  }
+  for (const auto& op : {std::string("not "), std::string("~"), std::string("-"), std::string("+")})
+    if (source.rfind(op, 0) == 0 && source.size() > op.size()) {
+      auto child = string_shape(source.substr(op.size()));
+      if (child) return Shape{"unary", trim(op), {std::move(*child)}};
+    }
+  std::string enum_name, case_name;
+  std::vector<std::string> fields;
+  bool called = false;
+  if (parse_enum_case_expression(source, enum_name, case_name, fields, called) &&
+      (!called || (!enum_name.empty() &&
+                   std::isupper(static_cast<unsigned char>(enum_name.front()))))) {
+    auto enum_root = string_shape(enum_name);
+    if (!enum_root) return std::nullopt;
+    Shape type{"member", case_name, {std::move(*enum_root)}};
+    if (!called) return type;
+    Shape result{"constructor", "0/" + std::to_string(fields.size()), {type}};
+    for (const auto& field : fields) {
+      std::string name, value;
+      if (!parse_named_argument(field, name, value)) return std::nullopt;
+      auto child = string_shape(value);
+      if (!child) return std::nullopt;
+      result.children.push_back({"named", name, {std::move(*child)}});
+    }
+    return result;
+  }
+  std::string generic_name, generic_arguments;
+  if (parse_index(source, generic_name, generic_arguments) &&
+      plain_identifier(generic_name) && !generic_name.empty() &&
+      std::isupper(static_cast<unsigned char>(generic_name.front()))) {
+    const auto arguments = trim(generic_arguments).empty()
+        ? std::vector<std::string>{} : split_top_level(generic_arguments, ',');
+    Shape result{"constructor", std::to_string(arguments.size()) + "/0",
+                 {{"identifier", generic_name, {}}}};
+    for (const auto& argument : arguments) {
+      auto child = string_shape(argument);
+      if (!child) return std::nullopt;
+      result.children.push_back(std::move(*child));
+    }
+    return result;
+  }
+  if (auto items = parse_vector_literal(source)) {
+    Shape result{"collection", "[", {}};
+    for (const auto& item : *items) {
+      auto child = string_shape(item);
+      if (!child) return std::nullopt;
+      result.children.push_back(std::move(*child));
+    }
+    return result;
+  }
+  std::string callee;
+  std::vector<std::string> args;
+  bool is_call = parse_simple_call(source, callee, args);
+  if (!is_call) {
+    std::size_t open = std::string::npos;
+    for (std::size_t i = 0; i < source.size(); ++i)
+      if (source[i] == '(' && matching_paren(source, i) == source.size() - 1) {
+        open = i;
+        break;
+      }
+    if (open != std::string::npos) {
+      std::string ignored;
+      const auto suffix = "__est_shadow_call" + source.substr(open);
+      if (parse_simple_call(suffix, ignored, args)) {
+        callee = trim(source.substr(0, open));
+        is_call = !callee.empty();
+      }
+    }
+  }
+  if (is_call) {
+    auto root = string_shape(callee);
+    if (!root) return std::nullopt;
+    if (root->kind == "constructor") {
+      const auto type_count = root->children.size() - 1;
+      root->value = std::to_string(type_count) + "/" + std::to_string(args.size());
+      for (const auto& arg : args) {
+        auto child = string_shape(arg);
+        if (!child) return std::nullopt;
+        root->children.push_back(std::move(*child));
+      }
+      return root;
+    }
+    const auto capitalized_identifier = [](const Shape& shape) {
+      return shape.kind == "identifier" && !shape.value.empty() &&
+          std::isupper(static_cast<unsigned char>(shape.value.front()));
+    };
+    const bool constructor = capitalized_identifier(*root) ||
+        (root->kind == "member" && !root->children.empty() &&
+         capitalized_identifier(root->children.front()));
+    Shape result{constructor ? "constructor" : "call",
+        constructor ? "0/" + std::to_string(args.size()) : "", {*root}};
+    for (const auto& arg : args) {
+      std::string name, value;
+      if (parse_named_argument(arg, name, value)) {
+        auto child = string_shape(value);
+        if (!child) return std::nullopt;
+        result.children.push_back({"named", name, {std::move(*child)}});
+      } else {
+        auto child = string_shape(arg);
+        if (!child) return std::nullopt;
+        result.children.push_back(std::move(*child));
+      }
+    }
+    return result;
+  }
+  std::string base, index;
+  if (parse_index(source, base, index)) {
+    auto root = string_shape(base), child = string_shape(index);
+    if (root && child) return Shape{"index", {}, {std::move(*root), std::move(*child)}};
+    return std::nullopt;
+  }
+  int par = 0, square = 0, curly = 0;
+  char quote = 0;
+  bool escaped = false;
+  std::size_t last_dot = std::string::npos;
+  for (std::size_t i = 0; i < source.size(); ++i) {
+    const char c = source[i];
+    if (quote) {
+      if (escaped) escaped = false;
+      else if (c == '\\') escaped = true;
+      else if (c == quote) quote = 0;
+      continue;
+    }
+    if (c == '"' || c == '\'') { quote = c; continue; }
+    if (c == '(') ++par; else if (c == ')') --par;
+    else if (c == '[') ++square; else if (c == ']') --square;
+    else if (c == '{') ++curly; else if (c == '}') --curly;
+    else if (c == '.' && !par && !square && !curly &&
+             !(i && i + 1 < source.size() &&
+               std::isdigit(static_cast<unsigned char>(source[i - 1])) &&
+               std::isdigit(static_cast<unsigned char>(source[i + 1]))))
+      last_dot = i;
+  }
+  if (last_dot != std::string::npos && last_dot && last_dot + 1 < source.size()) {
+    auto root = string_shape(source.substr(0, last_dot));
+    if (root) return Shape{"member", trim(source.substr(last_dot + 1)), {std::move(*root)}};
+  }
+  const auto tokens = lex(source);
+  if (tokens.size() == 1) {
+    const auto& token = tokens.front();
+    if (token.text == "_") return Shape{"placeholder", {}, {}};
+    if (token.literal || token.text == "true" || token.text == "false") return Shape{"literal", token.text, {}};
+    if (token.word) return Shape{"identifier", token.text, {}};
+  }
+  return std::nullopt;
+}
+
+void compare_string_shape(const Arena& arena, ExprId id, std::string_view source) {
+  ++shadow_attempts;
+  auto expected = string_shape(std::string(source));
+  if (!expected) { ++shadow_unparsed; return; }
+  ++shadow_compared;
+  const auto actual = shape_of(arena, id);
+  if (const char* inject = std::getenv("MOSS_EST_SHADOW_MISMATCH_TEST");
+      inject && std::string_view(inject) == "1")
+    throw std::runtime_error("MOSS_EST shadow structural divergence (injected mismatch)");
+  if (!(actual == *expected))
+    throw std::runtime_error("MOSS_EST shadow structural divergence for '" +
+        std::string(source) + "': tree=" + shape_text(actual) +
+        " string=" + shape_text(*expected));
+}
 }  // namespace
 
 ExprId parse_expression(Arena& arena, std::string_view source,
                         std::uint64_t origin_id, std::uint32_t base_line,
                         std::uint32_t base_column) {
-  return Reader(arena, source, origin_id, base_line, base_column).parse();
+  const auto id = Reader(arena, source, origin_id, base_line, base_column).parse();
+  if (mode() == Mode::Shadow) compare_string_shape(arena, id, source);
+  return id;
 }
 
 namespace {
@@ -649,6 +987,9 @@ static void populate_impl(Program& program, std::vector<Stmt>* additional,
       std::cerr << "MOSS_EST_STATS arena_size=0 handle_count=0\n";
     return;
   }
+  const auto compare_attempts_before = shadow_attempts;
+  const auto compare_matches_before = shadow_compared;
+  const auto compare_unparsed_before = shadow_unparsed;
   if (program.expression_arena && !additional) return;
   if (!program.expression_arena) program.expression_arena = std::make_shared<Arena>();
   if (std::find(program.expression_arenas.begin(), program.expression_arenas.end(),
@@ -1027,6 +1368,13 @@ static void populate_impl(Program& program, std::vector<Stmt>* additional,
       assert(false && "staleness guard did not fire");
     }
   }
+  if (const char* stats = std::getenv("MOSS_EST_COMPARE_STATS"); stats &&
+      std::string_view(stats) == "1")
+    std::cerr << "MOSS_EST_SHADOW_COMPARE attempts="
+              << shadow_attempts - compare_attempts_before
+              << " compared=" << shadow_compared - compare_matches_before
+              << " string_path_unparsed=" << shadow_unparsed - compare_unparsed_before
+              << '\n';
 }
 
 void populate(Program& program) { populate_impl(program, nullptr, 0); }
