@@ -24804,15 +24804,20 @@ class Checker {
             ? 1 : 0;
         if (callable_index < stage.arguments.size()) {
           const string callable = trim(stage.arguments[callable_index]);
+          // Placeholder callback checking above can append nested expression
+          // occurrences and reallocate this vector. Reacquire the stage by its
+          // stable ID before writing its callable fact.
+          auto& checked_occurrence =
+              current_body_types_->expression_occurrences.at(id);
           if (expression_uses(callable, "_")) {
           if (!(stage.kind == FunctionalNodeKind::Map &&
-                occurrence.output_type_ref &&
-                occurrence.semantic_target_id ==
+                checked_occurrence.output_type_ref &&
+                checked_occurrence.semantic_target_id ==
                     "builtin:functional:Map"))
-            occurrence.semantic_target_id = "placeholder:" + callable;
+            checked_occurrence.semantic_target_id = "placeholder:" + callable;
           } else if (auto local = env.find(callable);
                      local != env.end() && open_generic(local->second)) {
-            occurrence.semantic_target_id = "binding:" + callable;
+            checked_occurrence.semantic_target_id = "binding:" + callable;
             const Function* enclosing_function = nullptr;
             if (starts_with(current_semantic_context_, "fn:")) {
               auto enclosing = functions_.find(current_semantic_context_.substr(3));
@@ -24823,7 +24828,7 @@ class Checker {
               for (size_t parameter = 0;
                    parameter < enclosing_function->params.size(); ++parameter)
                 if (enclosing_function->params[parameter].name == callable) {
-                  occurrence.semantic_target_id =
+                  checked_occurrence.semantic_target_id =
                       "parameter:" + std::to_string(parameter);
                   break;
                 }
@@ -24833,11 +24838,11 @@ class Checker {
                 if (requirement.kind == ConstraintKind::Callable &&
                     requirement.subject == callable &&
                     requirement.arity == arity)
-                  occurrence.linked_constraints.push_back(requirement);
+                  checked_occurrence.linked_constraints.push_back(requirement);
             }
           } else if (auto callable_function = functions_.find(callable);
                      callable_function != functions_.end()) {
-            occurrence.semantic_target_id =
+            checked_occurrence.semantic_target_id =
                 callable_function->second->semantic_callable_id;
           }
         }
