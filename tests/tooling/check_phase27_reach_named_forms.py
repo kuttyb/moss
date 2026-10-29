@@ -146,11 +146,36 @@ def main() -> int:
         assert package_diagnostics[mode] == (
             "UNKNOWN_SYMBOL_OR_TYPE", "token.moss", 3), package_diagnostics
     assert package_diagnostics["legacy"] == package_diagnostics["tree"]
+
+    ambiguous_root = SCRATCH / "ambiguous"
+    ambiguous_src = ambiguous_root / "src"
+    ambiguous_src.mkdir(parents=True)
+    (ambiguous_root / "Moss.toml").write_text(
+        '[package]\nname = "ambiguous_reach"\nversion = "0.1.0"\n\n'
+        '[build]\nsource = "src"\n')
+    ambiguous_entry = ambiguous_src / "main.moss"
+    ambiguous_entry.write_text(
+        "type Left:\n  value: Int\n  fn key() -> Int:\n    return value\n"
+        "type Right:\n  value: Int\n  fn key() -> Int:\n    return value\n"
+        "fn main():\n  left = Left(value: 1)\n  echo left.key()\n")
+    ambiguous_methods = {}
+    for mode, binary in (("legacy", LEGACY), ("tree", COMPILER)):
+        env["MOSS_EST"] = "off" if mode == "legacy" else "shadow"
+        result = run(binary, ambiguous_entry, env, ok=True)
+        ambiguous_methods[mode] = {
+            row.split("|", 3)[3]
+            for row in result.stderr.splitlines()
+            if row.startswith("MOSS_C1_SCOPE_ID|method|")
+        }
+    expected_ambiguous = {"method:Left.key@3", "method:Right.key@7"}
+    assert ambiguous_methods["legacy"] == expected_ambiguous, ambiguous_methods
+    assert ambiguous_methods["tree"] == expected_ambiguous, ambiguous_methods
     print("PASS Point(x = ops.g(7)) reaches exactly ops.g; entry main is traced separately")
     print("PASS f(x = g(1)) rejects identically: CALL_NAMED_ARGUMENT_UNSUPPORTED")
     print("PASS node.kind_num excludes token.kind_num; legacy rejects, tree accepts")
     print("PASS package-mode Margo check rejects both paths identically: "
           f"{package_diagnostics['tree']}")
+    print("PASS left.key() retains both same-name method candidates on both paths")
     return 0
 
 
