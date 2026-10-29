@@ -11766,6 +11766,33 @@ static const est::Arena* expression_arena_for(const Program& program,
       ? program.expression_arenas[handle.arena_index].get() : nullptr;
 }
 
+static bool has_expression_slot(const vector<est::Handle>& handles,
+                                est::ExprSlot slot) {
+  return std::any_of(handles.begin(), handles.end(),
+      [&](const est::Handle& handle) { return handle.slot == slot; });
+}
+
+static string lhs_root_name(const Program& program,
+                            const vector<est::Handle>& handles) {
+  for (const auto& handle : handles) {
+    if (handle.slot != est::ExprSlot::LhsPlace) continue;
+    const auto* arena = expression_arena_for(program, handle);
+    if (!arena) continue;
+    est::ExprId root = handle.expr;
+    while (true) {
+      const auto& node = arena->at(root);
+      if (const auto* member = std::get_if<est::Member>(&node))
+        root = member->base;
+      else if (const auto* index = std::get_if<est::Index>(&node))
+        root = index->base;
+      else if (const auto* identifier = std::get_if<est::Identifier>(&node))
+        return identifier->name;
+      else return {};
+    }
+  }
+  return {};
+}
+
 static string callable_spelling(const est::Arena& arena, est::ExprId id) {
   return std::visit([&](const auto& node) -> string {
     using T = std::decay_t<decltype(node)>;
@@ -11777,6 +11804,26 @@ static string callable_spelling(const est::Arena& arena, est::ExprId id) {
       return callable_spelling(arena, node.inner);
     else return {};
   }, arena.at(id));
+}
+
+static string callable_leaf_spelling(const est::Arena& arena, est::ExprId id) {
+  return std::visit([&](const auto& node) -> string {
+    using T = std::decay_t<decltype(node)>;
+    if constexpr (std::is_same_v<T, est::Identifier>) return node.name;
+    else if constexpr (std::is_same_v<T, est::Member>) return node.name;
+    else if constexpr (std::is_same_v<T, est::Parenthesized>)
+      return callable_leaf_spelling(arena, node.inner);
+    else return {};
+  }, arena.at(id));
+}
+
+static bool imported_module_qualified_name(const Program& program,
+                                           const string& name) {
+  const auto dot = name.find('.');
+  if (dot == string::npos) return false;
+  const auto prefix = name.substr(0, dot);
+  return std::any_of(program.imports.begin(), program.imports.end(),
+      [&](const ModuleImport& import) { return import.name == prefix; });
 }
 
 template <class ProgramCallable>
@@ -11887,9 +11934,18 @@ static void add_expression_references(const Program& program,
       call = true;
     }
     if (!call) return;
-    const auto name = callable_spelling(arena, callee);
+    string name = callable_spelling(arena, callee);
+    if (name.empty()) name = callable_leaf_spelling(arena, callee);
     if (name.empty()) return;
     const auto leaf = unqualified_callable_name(name);
+    if (imported_module_qualified_name(program, name)) {
+      string qualified_name = name;
+      for (size_t dot = qualified_name.find('.'); dot != string::npos;
+           dot = qualified_name.find('.', dot + 2))
+        qualified_name.replace(dot, 1, "__");
+      references.methods.insert(qualified_name);
+      references.functions.insert(qualified_name);
+    }
     references.methods.insert(leaf);
     references.functions.insert(leaf);
     if (const auto kind = functional_stage_kind(name)) {
@@ -11943,26 +11999,12 @@ static void add_statement_references(const vector<Stmt>& body,
       references.methods.insert("iter");
     }
     if (statement.kind == Stmt::Kind::Message) {
-      if (!statement.b.empty()) references.handlers.insert(trim(statement.b));
       add_expression_references(program, statement.expression_handles, references);
       continue;
     }
     add_expression_references(program, statement.expression_handles, references);
     add_invoked_handler_references(program, statement.expression_handles,
                                    references);
-    if (statement.kind == Stmt::Kind::Call) {
-      if (!statement.b.empty()) {
-        const string source = trim(statement.text);
-        if (starts_with(source, "message "))
-          references.handlers.insert(trim(statement.b));
-        else {
-          references.methods.insert(trim(statement.b));
-          references.functions.insert(trim(statement.b));
-        }
-      } else if (!statement.a.empty()) {
-        references.functions.insert(trim(statement.a));
-      }
-    }
   }
 }
 
@@ -12013,9 +12055,21 @@ static void add_callable_argument_references(
     FileCheckReferences& references) {
   visit_expression_handles(program, handles, [&](const est::Arena& arena,
                                                   est::ExprId id) {
-    const auto* call = std::get_if<est::Call>(&arena.at(id));
-    if (!call) return;
-    const string call_name = callable_spelling(arena, call->callee);
+    est::ExprId callee = 0;
+    const std::vector<est::ExprId>* arguments = nullptr;
+    if (const auto* call = std::get_if<est::Call>(&arena.at(id))) {
+      callee = call->callee;
+      arguments = &call->arguments;
+    } else if (const auto* constructor =
+                   std::get_if<est::Constructor>(&arena.at(id))) {
+      // EST keeps syntactically ambiguous qualified calls in Constructor
+      // nodes until semantic name resolution. The legacy reach walk treats
+      // every call-shaped expression uniformly, including DataTools.fn(...).
+      callee = constructor->type;
+      arguments = &constructor->arguments;
+    }
+    if (!arguments) return;
+    const string call_name = callable_spelling(arena, callee);
     if (call_name.empty()) return;
     vector<size_t> callback_indices;
     const bool qualified = call_name.find('.') != string::npos ||
@@ -12040,7 +12094,8 @@ static void add_callable_argument_references(
       }
       FileCheckReferences body_references;
       add_statement_references(function.body, program, body_references);
-      if (function.result_expression)
+      if (has_expression_slot(function.expression_handles,
+                              est::ExprSlot::ReturnValue))
         add_expression_references(program, function.expression_handles,
                                   body_references);
       for (size_t index = 0; index < function.params.size(); ++index) {
@@ -12073,8 +12128,8 @@ static void add_callable_argument_references(
                                        callback_indices.end()),
                            callback_indices.end());
     for (const auto index : callback_indices)
-      if (index < call->arguments.size())
-        add_callable_value_reference(program, arena, call->arguments[index],
+      if (index < arguments->size())
+        add_callable_value_reference(program, arena, (*arguments)[index],
                                      references);
   });
 }
@@ -12120,33 +12175,15 @@ static void add_statement_callable_references(
     }
     add_callable_argument_references(program, statement.expression_handles,
                                      references);
-    if (statement.kind == Stmt::Kind::Call) {
-      const string callee = !statement.b.empty() ? trim(statement.b) : trim(statement.a);
-      const auto kind = functional_stage_kind(callee);
-      size_t callback_index = std::numeric_limits<size_t>::max();
-      if (kind) {
-        switch (*kind) {
-          case FunctionalNodeKind::Map:
-          case FunctionalNodeKind::Filter:
-          case FunctionalNodeKind::Any:
-          case FunctionalNodeKind::All: callback_index = 0; break;
-          case FunctionalNodeKind::Reduce: callback_index = 1; break;
-          case FunctionalNodeKind::Source:
-          case FunctionalNodeKind::Sum:
-          case FunctionalNodeKind::Count: break;
-        }
-      }
-      if (callback_index < statement.args.size())
-        add_bare_callable_handle_reference(program, statement.expression_handles,
-            est::ExprSlot::Argument,
-            static_cast<std::uint32_t>(callback_index), local_names, references);
-    }
-    if ((statement.kind == Stmt::Kind::Let ||
-         statement.kind == Stmt::Kind::Var ||
-         statement.kind == Stmt::Kind::Assign ||
-         statement.kind == Stmt::Kind::For) && !statement.a.empty()) {
-      local_names.insert(trim(statement.a));
-      block_local_bindings.emplace_back(statement.indent, trim(statement.a));
+    string binding;
+    if (statement.kind == Stmt::Kind::Var ||
+        statement.kind == Stmt::Kind::For)
+      binding = statement.est_binding_name;
+    else if (statement.kind == Stmt::Kind::Assign)
+      binding = lhs_root_name(program, statement.expression_handles);
+    if (!binding.empty()) {
+      local_names.insert(binding);
+      block_local_bindings.emplace_back(statement.indent, binding);
     }
     if (!statement.message_result.empty()) {
       local_names.insert(trim(statement.message_result));
@@ -12252,14 +12289,16 @@ static void scope_program_to_file(Program& program,
     const auto& function = program.functions[i];
     auto& refs = function_refs[i];
     add_statement_references(function.body, program, refs);
-    if (function.result_expression)
+    if (has_expression_slot(function.expression_handles,
+                            est::ExprSlot::ReturnValue))
       add_expression_references(program, function.expression_handles, refs);
     std::set<string> function_locals;
     for (const auto& parameter : function.params)
       function_locals.insert(parameter.name);
     add_statement_callable_references(function.body, program, refs,
                                       std::move(function_locals));
-    if (function.result_expression)
+    if (has_expression_slot(function.expression_handles,
+                            est::ExprSlot::ReturnValue))
       add_callable_argument_references(program, function.expression_handles, refs);
     if (scope_kind == FastDebugScopeKind::File &&
         is_root(function.source_file)) selected_functions.insert(i);
@@ -12268,7 +12307,8 @@ static void scope_program_to_file(Program& program,
     for (const auto& method : object.methods) {
       auto& refs = method_refs[method_index];
       add_statement_references(method.body, program, refs);
-      if (method.result_expression)
+      if (has_expression_slot(method.expression_handles,
+                              est::ExprSlot::ReturnValue))
         add_expression_references(program, method.expression_handles, refs);
       std::set<string> method_locals{"self"};
       for (const auto& field : object.fields) method_locals.insert(field.name);
@@ -12276,7 +12316,8 @@ static void scope_program_to_file(Program& program,
         method_locals.insert(parameter.name);
       add_statement_callable_references(method.body, program, refs,
                                         std::move(method_locals));
-      if (method.result_expression)
+      if (has_expression_slot(method.expression_handles,
+                              est::ExprSlot::ReturnValue))
         add_callable_argument_references(program, method.expression_handles, refs);
       if (scope_kind == FastDebugScopeKind::File &&
           is_root(method.source_file)) selected_methods.insert(method_index);
@@ -12632,11 +12673,24 @@ static void scope_program_to_file(Program& program,
       std::cerr << "MOSS_C1_SCOPE_ID|" << kind << "|" << source << "|"
                 << identity << "\n";
     };
+    auto emit_edges = [&](const string& owner,
+                          const FileCheckReferences& references) {
+      for (const auto& target : references.functions)
+        std::cerr << "MOSS_C1_SCOPE_EDGE|" << owner << "|function|"
+                  << target << "\n";
+      for (const auto& target : references.methods)
+        std::cerr << "MOSS_C1_SCOPE_EDGE|" << owner << "|method|"
+                  << target << "\n";
+      for (const auto& target : references.handlers)
+        std::cerr << "MOSS_C1_SCOPE_EDGE|" << owner << "|handler|"
+                  << target << "\n";
+    };
+    emit_edges("entry:" + root, root_references);
     for (size_t i = 0; i < program.functions.size(); ++i) {
       if (!selected_functions.count(i)) continue;
       const auto& function = program.functions[i];
-      if (std::filesystem::path(function.source_file).extension() == ".mossi")
-        continue;
+      emit_edges("function:" + function.source_file + ":" + function.name,
+                 function_refs[i]);
       const string declaration = function.declaration_name.empty()
           ? function.name : function.declaration_name;
       emit("function", function.source_file,
@@ -12650,20 +12704,28 @@ static void scope_program_to_file(Program& program,
     method_index = 0;
     for (const auto& object : program.objects) {
       for (const auto& method : object.methods) {
-        if (selected_methods.count(method_index))
+        if (selected_methods.count(method_index)) {
+          emit_edges("method:" + method.source_file + ":" + object.name +
+                         "." + method.name,
+                     method_refs[method_index]);
           emit("method", method.source_file,
                "method:" + object.name + "." + method.name + "@" +
                    std::to_string(method.line));
+        }
         ++method_index;
       }
     }
     handler_index = 0;
     for (const auto& domain : program.domains) {
       for (const auto& handler : domain.handlers) {
-        if (selected_handlers.count(handler_index))
+        if (selected_handlers.count(handler_index)) {
+          emit_edges("handler:" + handler.source_file + ":" + domain.name +
+                         "." + handler.name,
+                     handler_refs[handler_index]);
           emit("handler", handler.source_file,
                "handler:" + domain.name + "." + handler.name + "@" +
                    std::to_string(handler.line));
+        }
         ++handler_index;
       }
     }
@@ -20909,27 +20971,31 @@ static std::set<string> execution_body_callable_closure(
     FileCheckReferences references;
     auto add_function_body = [&](const Function& function) {
       add_statement_references(function.body, program, references);
-      if (function.result_expression)
+      if (has_expression_slot(function.expression_handles,
+                              est::ExprSlot::ReturnValue))
         add_expression_references(program, function.expression_handles,
                                  references);
       std::set<string> locals;
       for (const auto& parameter : function.params) locals.insert(parameter.name);
       add_statement_callable_references(function.body, program, references,
                                         std::move(locals));
-      if (function.result_expression)
+      if (has_expression_slot(function.expression_handles,
+                              est::ExprSlot::ReturnValue))
         add_callable_argument_references(program, function.expression_handles,
                                          references);
     };
     auto add_method_body = [&](const Method& method) {
       add_statement_references(method.body, program, references);
-      if (method.result_expression)
+      if (has_expression_slot(method.expression_handles,
+                              est::ExprSlot::ReturnValue))
         add_expression_references(program, method.expression_handles,
                                  references);
       std::set<string> locals{"self"};
       for (const auto& parameter : method.params) locals.insert(parameter.name);
       add_statement_callable_references(method.body, program, references,
                                         std::move(locals));
-      if (method.result_expression)
+      if (has_expression_slot(method.expression_handles,
+                              est::ExprSlot::ReturnValue))
         add_callable_argument_references(program, method.expression_handles,
                                          references);
     };

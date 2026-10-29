@@ -42,9 +42,14 @@ CONSUMER_PATHS = {
 }
 EXTENSIONS = (".cpp", ".hpp", ".inc")
 REACH_FUNCTIONS = (
+    "has_expression_slot", "lhs_root_name", "expression_arena_for",
+    "callable_spelling", "callable_leaf_spelling",
+    "imported_module_qualified_name", "visit_expression_handles",
+    "unqualified_callable_name", "functional_stage_kind",
     "add_expression_references", "add_statement_references",
     "add_callable_argument_references", "add_callable_value_reference",
     "add_bare_callable_handle_reference", "add_statement_callable_references",
+    "scope_program_to_file", "execution_body_callable_closure",
 )
 
 
@@ -69,7 +74,10 @@ def reach_lines(source):
     for name in REACH_FUNCTIONS:
         start = next((i for i, line in enumerate(lines)
                       if re.match(r"\s*static\b", line) and
-                      re.search(r"\b" + re.escape(name) + r"\s*\(", line)), None)
+                      re.search(r"\b" + re.escape(name) + r"\s*\(", line) and
+                      "{" in "\n".join(lines[i:i + 8]) and
+                      (";" not in "\n".join(lines[i:i + 8]) or
+                       "{" in "\n".join(lines[i:i + 8]).split(";", 1)[0])), None)
         if start is None:
             continue
         depth = 0
@@ -116,6 +124,13 @@ def sites(commit=None):
                             re.escape(api) + r"\s*\(", line):
                     continue
                 found[(site_consumer, relative, line_no, line.strip(), api)] += 1
+            if line_no in reach:
+                for match in re.finditer(
+                        r"\b(?:statement|function|method)\.(text|a|b|args|result_expression)\b",
+                        line):
+                    field = "Stmt." + match[1]
+                    found[("reach_walk", relative, line_no,
+                           line.strip(), field)] += 1
             if consumer == "fast_debug":
                 calls = re.findall(r"\beval\s*\(", line)
                 if calls and not re.search(r"\bValue\s+eval\s*\(", line):
@@ -177,6 +192,13 @@ def main():
              if value > baseline.get(key, 0)]
     for (consumer, api), amount in sorted(added):
         print(f"new expression-text reader call count ({amount}): {consumer}/{api}", file=sys.stderr)
+    field_reads = [(path, line, text, api)
+                   for (consumer, path, line, text, api), amount in sites().items()
+                   if consumer == "reach_walk" and api.startswith("Stmt.") and amount]
+    for path, line, text, api in field_reads:
+        print(f"reach walk expression field read {api} at {path}:{line}: {text}",
+              file=sys.stderr)
+    added.extend((("reach_walk", api), 1) for _path, _line, _text, api in field_reads)
     return 1 if added else 0
 
 

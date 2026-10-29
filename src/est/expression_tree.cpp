@@ -1286,6 +1286,8 @@ static void populate_impl(Program& program, std::vector<Stmt>* additional,
     if (additional && (!s.expression_handles.empty() || s.est_raw_form)) return;
     set_location(s.line, s.text);
     const auto owner = next_owner++;
+    if (s.kind == Stmt::Kind::For || s.kind == Stmt::Kind::Var)
+      s.est_binding_name = trim(s.a);
     switch (s.kind) {
       case Stmt::Kind::If: case Stmt::Kind::While:
         bind(s.expression_handles, owner, ExprSlot::Condition, 0, s.a); break;
