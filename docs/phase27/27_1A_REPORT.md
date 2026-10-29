@@ -2,7 +2,7 @@
 
 Branch: `phase27-work`
 Required corpus/performance baseline: `4d6d0c8c2fcb3bb6e255bcaee80174b6b928a576`
-CP-A candidate code head before this report-only commit: `0f116ada267b3772895e84859132a07218be8aa1`. CP-A was not started.
+CP-A candidate: `0f116ada267b3772895e84859132a07218be8aa1`. CP-A was not started. Final 27.1 completion head will be recorded after this closeout commit.
 
 ## A. Corpus count
 
@@ -28,29 +28,29 @@ The seven delimiter fragments were traced to six rejected files; none came from 
 
 ## C. Final unique-occurrence counters
 
-Fresh shadow corpus: 2,061 sources, 1,341 accepted. Columns are attempts / unique `(owner, slot, argument_index)` occurrences / built / deferred 27.1b / rejected source / failed. Attempts equal unique occurrences for this pass. Failed is zero in every slot.
+The 27.1b/c final corpus pass covered 2,078 tracked sources and 1,351 accepted. Columns are attempts / unique `(owner, slot, argument_index)` occurrences / built / deferred 27.1b / rejected source / failed. Attempts and unique counts match within each Program arena scope; this does not establish cross-compilation deduplication. Deferred and failed are zero in every slot.
 
 | Slot | Attempts | Unique | Built | Deferred | Rejected | Failed |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Condition | 33,374 | 33,374 | 32,683 | 685 | 6 | 0 |
-| Initializer | 23,390 | 23,390 | 17,082 | 6,308 | 0 | 0 |
-| ReturnValue | 55,893 | 55,893 | 47,916 | 7,973 | 4 | 0 |
-| Iterable | 1,240 | 1,240 | 1,190 | 50 | 0 | 0 |
-| Receiver | 48,495 | 48,495 | 48,480 | 15 | 0 | 0 |
-| Argument | 88,473 | 88,473 | 83,621 | 4,850 | 2 | 0 |
-| LhsPlace | 74,315 | 74,315 | 74,281 | 34 | 0 | 0 |
-| RhsValue | 74,315 | 74,315 | 49,611 | 24,704 | 0 | 0 |
-| Scrutinee | 288 | 288 | 284 | 4 | 0 | 0 |
-| RaisedValue | 3,583 | 3,583 | 1,808 | 1,775 | 0 | 0 |
-| Expression | 70 | 70 | 46 | 19 | 5 | 0 |
+| Condition | 22,029 | 22,029 | 22,023 | 0 | 6 | 0 |
+| Initializer | 16,953 | 16,953 | 16,951 | 0 | 2 | 0 |
+| ReturnValue | 32,785 | 32,785 | 32,767 | 0 | 18 | 0 |
+| Iterable | 744 | 744 | 744 | 0 | 0 | 0 |
+| Receiver | 32,942 | 32,942 | 32,941 | 0 | 1 | 0 |
+| Argument | 59,115 | 59,115 | 59,080 | 0 | 35 | 0 |
+| LhsPlace | 47,936 | 47,936 | 47,936 | 0 | 0 | 0 |
+| RhsValue | 47,936 | 47,936 | 47,923 | 0 | 13 | 0 |
+| Scrutinee | 147 | 147 | 147 | 0 | 0 | 0 |
+| RaisedValue | 3,024 | 3,024 | 3,024 | 0 | 0 | 0 |
+| Expression | 68 | 68 | 42 | 0 | 26 | 0 |
 
-Pattern had no occurrences. Aggregate: 403,436 attempts and unique occurrences; 357,002 built, 46,417 deferred, 17 rejected, 0 failed. Coverage artifact: `tmp/phase27-c2-est-coverage.csv`.
+Pattern had no occurrences. Aggregate: 263,679 attempts and unique occurrences; 263,578 built, 0 deferred, 101 rejected, 0 failed. Final slot data and divergence labels are also in `docs/phase27/EST_DIVERGENCES.md`.
 
 ## D–F. Places, copy/rebuild contract, and off mode
 
 - D: `tests/phase27/est/raw_places.moss` and `tests/tooling/check_phase27_est.py` verify the requested projection chain, different IDs for `i`, `j`, and both `u` occurrences, compound `+=` bindings, and ExprStmt classification for `f(x)`. Assignment/call statements promoted by the legacy parser receive EST-only RawForm metadata once; consumers are unchanged. Pass.
 - C dump positives: `tests/phase27/est/message_expression.moss`, `bitwise_shift.moss` (cites `docs/LANGUAGE_SYNTAX.md` §Bitwise and shift operators), and `numeric_member.moss`. `MOSS_EST_DUMP=1` writes S-expressions with ExprIds. Pass.
-- E: the focused contract test checks ordinary Program copy ExprId retention, statement insertion/erasure, deep fresh occurrence IDs for identical member/index text, rebuild rebinding while the old node remains readable, append-only arena growth, and the negative `Stmt.text` staleness assertion in shadow. Rebuild remains unwired to optimizer and module-name rewriting. Pass.
+- E: the focused contract test checks ordinary Program copy ExprId retention, statement insertion/erasure, deep fresh occurrence IDs for identical member/index text, rebuild rebinding while the old node remains readable, append-only arena growth, and the negative `Stmt.text` staleness assertion in shadow. Module-name rewrite shadow hooks call `rebuild_slot`; the functional optimizer changes semantic plans and does not rewrite expression text. Pass.
 - F: `MOSS_EST=off MOSS_EST_STATS=1` reports `arena_size=0 handle_count=0`; the off path returns before arena allocation or handle population. Pass.
 - Test command: `python3 tests/tooling/check_phase27_est.py build/compiler/moss-dev`.
 
@@ -73,15 +73,15 @@ Baseline hash for the corpus and performance gates: `4d6d0c8c2fcb3bb6e255bcaee80
 
 | Gate | Result | Evidence |
 | --- | --- | --- |
-| G1 `MOSS_EST=off make --jobs="$(nproc)" check` | PASS, 157/157 jobs, no skips or waivers | `tmp/phase27-final/G1-off-revised.log`; baseline `4d6d0c8c2fcb3bb6e255bcaee80174b6b928a576` |
-| G2 shadow `make check` | PASS, 157/157 jobs, no skips or waivers | `tmp/phase27-final/G2-shadow-revised.log`; baseline `4d6d0c8c2fcb3bb6e255bcaee80174b6b928a576` |
-| G3 branch off vs 4d6d0c8 binary | PASS, 2,061 sources, zero verdict/Rust-hash differences | `tmp/phase27-G3-summary.log`; baseline binary from `4d6d0c8c2fcb3bb6e255bcaee80174b6b928a576` |
-| G4 off vs shadow corpus | PASS, 2,061 sources, 1,341 accepted each, zero differences | `tmp/phase27-G4-G5-summary.log`; baseline `4d6d0c8c2fcb3bb6e255bcaee80174b6b928a576` |
-| G5 examples Rust hashes | PASS, 776 `examples/` sources, zero differences | `tmp/phase27-G4-G5-summary.log`; baseline `4d6d0c8c2fcb3bb6e255bcaee80174b6b928a576` |
-| G6 Fast Debug parity | PASS, 546 accepted examples, zero output differences, zero R12 text hits; two identical timeouts per mode | `tmp/phase27-G6-fast-debug-corpus.log`, plus paired scope logs `tmp/phase27-G6-fast-debug-off.log` and `...-shadow.log`; baseline `4d6d0c8c2fcb3bb6e255bcaee80174b6b928a576` |
-| G7 `.mossi` parity | PASS: same-binary off/shadow raw files are identical; branch/baseline bytes match after recomputing `package_fingerprint` and derived `execution_body_hash` with the baseline toolchain identity | `tmp/phase27-final/G7-raw-off-shadow.log`, `tmp/phase27-final/G7-baseline-recomputed.log`; baseline `4d6d0c8c2fcb3bb6e255bcaee80174b6b928a576` |
-| G8 off compiler-perf | PASS, 4.827 s candidate vs 4.849 s baseline (−0.5%); no slowdown beyond noise | `tmp/phase27-G8-perf-off-final.log`, `tmp/compiler-perf/20261028-185417/LOCAL_REPORT.md`; baseline `4d6d0c8c2fcb3bb6e255bcaee80174b6b928a576` |
-| G9 shadow compiler-perf | Recorded only: 5.003 s aggregate candidate, about 3.6% above the separate off candidate run; no slowdown beyond baseline noise rule | `tmp/phase27-G9-perf-shadow-final.log`, `tmp/compiler-perf/20261028-185601/LOCAL_REPORT.md`; baseline `4d6d0c8c2fcb3bb6e255bcaee80174b6b928a576` |
+| G1 `MOSS_EST=off make --jobs="$(nproc)" check` | PASS, 157/157 jobs, no skips or waivers | `tmp/phase27-final/G1-off-pipeline-fix.log`; baseline `4d6d0c8c2fcb3bb6e255bcaee80174b6b928a576` |
+| G2 shadow `make check` | PASS, 157/157 jobs, no skips or waivers; one initial oracle mismatch was fixed and rerun passed | `tmp/phase27-final/G2-shadow-pipeline-fix.log`; baseline `4d6d0c8c2fcb3bb6e255bcaee80174b6b928a576` |
+| G3 branch off vs 4d6d0c8 binary | PASS, 2,061 baseline sources, zero verdict/Rust-hash differences | `tmp/phase27-final/G3-baseline-final.log`, `G3-off-final.log`; baseline binary from `4d6d0c8c2fcb3bb6e255bcaee80174b6b928a576` |
+| G4 off vs shadow corpus | PASS, 2,061 baseline sources, 1,341 accepted each, zero verdict/Rust-hash differences | `tmp/phase27-final/G3-off-final.tsv`, `G4-shadow-final.tsv`; baseline `4d6d0c8c2fcb3bb6e255bcaee80174b6b928a576` |
+| G5 examples optimized Rust hashes | PASS, 776 sources, 546 accepted, zero differences | `tmp/phase27-final/G5-optimized-examples-final.log`; baseline `4d6d0c8c2fcb3bb6e255bcaee80174b6b928a576` |
+| G6 Fast Debug parity | PASS, 546 accepted examples, zero output differences, zero R12 hits; same two timeouts in each mode | `tmp/phase27-final/G6-fast-debug-final.log`, `tmp/phase27-final/fast-debug.json`; baseline `4d6d0c8c2fcb3bb6e255bcaee80174b6b928a576` |
+| G7 `.mossi` parity | PASS: same-binary off/shadow raw bytes identical; baseline identity recomputation yields equal fingerprints/body hashes and every other Section 1/2 byte equal | `tmp/phase27-final/G7-raw-off-shadow-final.log`, `tmp/phase27-final/G7-baseline-recomputed-final.log`; baseline `4d6d0c8c2fcb3bb6e255bcaee80174b6b928a576` |
+| G8 off compiler-perf | PASS after one noisy outlier was repeated: aggregate −0.1%, no workload beyond noise floor | `tmp/phase27-final/G8-perf-off-repeat.log`, first sample `G8-perf-off-final.log`; repeat report `tmp/compiler-perf/20261028-220053/LOCAL_REPORT.md`; baseline `4d6d0c8c2fcb3bb6e255bcaee80174b6b928a576` |
+| G9 shadow compiler-perf | Recorded overhead: aggregate +2.3% vs baseline | `tmp/phase27-final/G9-perf-shadow-final.log`, `tmp/compiler-perf/20261028-215905/LOCAL_REPORT.md`; baseline `4d6d0c8c2fcb3bb6e255bcaee80174b6b928a576` |
 
 The first G1 attempt exposed standalone native-test links that omitted the nested EST translation unit. The shared source enumeration was corrected; the final G1 and G2 runs above both pass. The first G7 fixture used different absolute roots and therefore changed a Section 2 path hash; using the same root for both modes produced identical Section 1 and Section 2 hashes.
 
@@ -90,6 +90,18 @@ The first G1 attempt exposed standalone native-test links that omitted the neste
 The Bank ruled that the compiler-bound cache contract must remain intact: distinct compiler binaries retain distinct `package_toolchain_identity` values. G7 therefore requires (1) raw `.mossi` equality for off and shadow using the same binary, and (2) for branch versus `4d6d0c8`, recomputing `package_fingerprint` under the baseline toolchain identity and recomputing its dependent `execution_body_hash`. The focused two-package probe passes both checks. The candidate and baseline raw hashes differ, while both recomputed package fingerprints and body hashes match and all other Section 1/2 bytes are equal. Detailed values are in `tmp/phase27-final/G7-baseline-recomputed.log`.
 
 ## Decisions and self-review
+
+### CP-A / CP-B reviews
+
+- CP-A on frozen `0f116ada267b3772895e84859132a07218be8aa1`: **`VERDICT: GO — 0 confirmed implementation defects; 1 measurement-scope caveat.`** Confirmed defect count 0. The 403,436 attempts/unique values are per Program arena scope and do not mean a global cross-compilation dedup key. The two Fast Debug timeouts reproduced on 4d6d0c8. Review: `docs/phase27/adversarial/CP-A.md`.
+- CP-B original finding: NO-GO due distinct compiler-bound cache identities. Per Bank ruling, preserve those identities and use the revised invariant. Fresh revised-invariant review at `dacf2fab1ab252968dc974b180e7279e46cb22e9`: **`VERDICT: GO — 0 confirmed product defects; 1 test-coverage caveat closed by the independent probe.`** Revised final fresh review at `3d4d3b4fcdcb9e4113f8217850ceccc9b9d0dc07`: **`VERDICT: GO — 0 confirmed defects.`** Both confirmed defect counts are 0. The pipeline shape oracle correction after that frozen review is limited to canonicalizing left-associated pipeline stages; G2 passed on the corrected code. Final review artifacts: `docs/phase27/adversarial/CP-B-final.md`, commit `feb5c111077e5d06b6b621a724a18cdd8927871f` integrated unchanged as `16fc4a5f`.
+
+### 27.1b/c completion
+
+- All deferred 27.1b expressions, including pipelines, placeholders, constructors, collection literals, and named arguments, are built. ABI-v9 generic statement bodies and Section 2 execution bodies loaded from `.mossi` use EST parsing with package/interface origin IDs.
+- In shadow mode the structural oracle compares the EST shape with the string path wherever that path parses. G2's first run exposed a left-associated versus flattened pipeline representation mismatch; the shape oracle was canonicalized, and the single rerun passed. Structural comparison stats and an injected mismatch test are covered by `tests/tooling/check_phase27_est.py`.
+- Both conformance gate allowlists currently contain the same seven seeded rows: `Group A/push_self_field_read`, `Group A/field_self_assign_struct`, `T6/repro_untyped_for_write4`, `T6/repro_untyped_for_write5`, `T6/repro_untyped_for_write6`, `T6/repro_untyped_for_write7`, and `mutate_loop_element`. These seeds include the four absent T6 fixture paths noted in the JSON files; both gates pass with ratcheting enabled.
+- CP-B-final review limitation: its focused structural-shape probes do not compare cases where the legacy string-shape parser returns null. Corpus shadow builds had no comparable structural mismatches; the remaining unparsed shapes are tracked by shadow comparison stats.
 
 - **Self-review:** The 2,064 count is stale for the specified baseline; all source-set differences are listed rather than inventing three omissions.
 - **Self-review:** Parser-promoted assignment and call statements retain their existing kinds and semantics. EST-only metadata covers the required Assign / CompoundAssign / ExprStmt classifications.
