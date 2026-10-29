@@ -39,7 +39,34 @@ def main():
     result = run(probe, "off", MOSS_EST_STATS="1")
     if result.returncode != 0 or "MOSS_EST_STATS arena_size=0 handle_count=0" not in result.stderr:
         raise SystemExit(f"off allocated EST storage: {result.stdout}{result.stderr}")
-    print("phase27 EST focused checks passed (3 dumps; off arena size 0)")
+    raw = ROOT / "tests/phase27/est/raw_places.moss"
+    result = run(raw, "shadow", MOSS_EST_DUMP="1")
+    if "MOSS_EST_RAW" not in result.stderr:
+        raise SystemExit(f"shadow raw/contract check did not reach EST: {result.stdout}{result.stderr}")
+    for form in ("Assign", "CompoundAssign", "ExprStmt"):
+        if f"form={form}" not in result.stderr:
+            raise SystemExit(f"missing {form} classification")
+    lines = [line for line in result.stderr.splitlines() if line.startswith("MOSS_EST_DUMP")]
+    chained = [line for line in lines if "owner=1 " in line and "slot=LhsPlace" in line]
+    if not chained or not all(piece in chained[0] for piece in
+                               ('"a"', '"b"', '"i"', '"c"', '"j"')):
+        raise SystemExit(f"projection chain was not preserved: {chained}")
+    all_index_ids = re.findall(r'identifier#(\d+) "[ij]"', chained[0])
+    if len(all_index_ids) != 2 or all_index_ids[0] == all_index_ids[1]:
+        raise SystemExit(f"place index expressions lack distinct ExprIds: {chained}")
+    if not any('owner=2 slot=LhsPlace' in line and '"total"' in line for line in lines) or \
+       not any('owner=2 slot=RhsValue' in line and '"f"' in line and '"k"' in line for line in lines):
+        raise SystemExit("compound assignment place/value binding is incomplete")
+    if not any('owner=3 slot=Receiver' in line and '"f"' in line for line in lines) or \
+       not any('owner=3 slot=Argument' in line and '"x"' in line for line in lines):
+        raise SystemExit("expression-statement call is incomplete")
+    lhs_rhs = [line for line in lines if "owner=4 " in line and
+               ("slot=LhsPlace" in line or "slot=RhsValue" in line)]
+    u_ids = [re.search(r'identifier#(\d+) "u"', line).group(1)
+             for line in lhs_rhs if re.search(r'identifier#(\d+) "u"', line)]
+    if len(set(u_ids)) != 2 or len(u_ids) < 2:
+        raise SystemExit(f"assignment index occurrences share an ExprId: {lhs_rhs}")
+    print("phase27 EST focused checks passed (3 dumps; raw places; off arena size 0)")
 
 if __name__ == "__main__":
     main()

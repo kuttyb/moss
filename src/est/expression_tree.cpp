@@ -568,9 +568,21 @@ void populate(Program& program) {
         bind(s.expression_handles, owner, ExprSlot::Scrutinee, 0, s.a); break;
       case Stmt::Kind::Var:
         bind(s.expression_handles, owner, ExprSlot::Initializer, 0, s.b); break;
-      case Stmt::Kind::Assign:
-        bind(s.expression_handles, owner, ExprSlot::LhsPlace, 0, s.a);
-        bind(s.expression_handles, owner, ExprSlot::RhsValue, 0, s.b); break;
+      case Stmt::Kind::Assign: {
+        assert(!s.est_raw_form.has_value());
+        const auto target = trim(s.a);
+        const bool compound = !target.empty() &&
+            std::string_view("+-*/%&|^").find(target.back()) !=
+                std::string_view::npos;
+        s.est_raw_form = compound ? RawForm::CompoundAssign : RawForm::Assign;
+        bind(s.expression_handles, owner, ExprSlot::LhsPlace, 0,
+             compound ? target.substr(0, target.size() - 1) : target);
+        bind(s.expression_handles, owner, ExprSlot::RhsValue, 0, s.b);
+        if (dump_enabled)
+          std::cerr << "MOSS_EST_RAW owner=" << owner << " form="
+                    << (compound ? "CompoundAssign" : "Assign") << '\n';
+        break;
+      }
       case Stmt::Kind::Reply: case Stmt::Kind::Return:
         bind(s.expression_handles, owner, ExprSlot::ReturnValue, 0, s.a); break;
       case Stmt::Kind::Raise:
@@ -588,11 +600,16 @@ void populate(Program& program) {
         }
         break;
       }
-      case Stmt::Kind::Call:
+      case Stmt::Kind::Call: {
+        assert(!s.est_raw_form.has_value());
+        s.est_raw_form = RawForm::ExprStmt;
         bind(s.expression_handles, owner, ExprSlot::Receiver, 0, s.a);
         for (std::uint32_t index = 0; index < s.args.size(); ++index)
           bind(s.expression_handles, owner, ExprSlot::Argument, index, s.args[index]);
+        if (dump_enabled)
+          std::cerr << "MOSS_EST_RAW owner=" << owner << " form=ExprStmt\n";
         break;
+      }
       case Stmt::Kind::Echo:
         for (std::uint32_t index = 0; index < s.args.size(); ++index)
           bind(s.expression_handles, owner, ExprSlot::Argument, index, s.args[index]);
@@ -600,24 +617,32 @@ void populate(Program& program) {
       case Stmt::Kind::Raw: {
         assert(!s.est_raw_form.has_value());
         const auto eq = top_level_assignment(s.text);
-        if (eq != std::string::npos) {
+        const bool compound = eq != std::string::npos && eq > 0 &&
+            std::string_view("+-*/%&|^").find(s.text[eq - 1]) !=
+                std::string_view::npos;
+        if (compound) {
+          s.est_raw_form = RawForm::CompoundAssign;
+          bind(s.expression_handles, owner, ExprSlot::LhsPlace, 0,
+               s.text.substr(0, eq - 1));
+          bind(s.expression_handles, owner, ExprSlot::RhsValue, 0,
+               s.text.substr(eq + 1));
+        } else if (eq != std::string::npos) {
           s.est_raw_form = RawForm::Assign;
           bind(s.expression_handles, owner, ExprSlot::LhsPlace, 0,
                s.text.substr(0, eq));
           bind(s.expression_handles, owner, ExprSlot::RhsValue, 0,
                s.text.substr(eq + 1));
-        } else if (const auto compound = s.text.find("+=");
-                   compound != std::string::npos) {
-          s.est_raw_form = RawForm::CompoundAssign;
-          bind(s.expression_handles, owner, ExprSlot::LhsPlace, 0,
-               s.text.substr(0, compound));
-          bind(s.expression_handles, owner, ExprSlot::RhsValue, 0,
-               s.text.substr(compound + 2));
         } else {
           s.est_raw_form = RawForm::ExprStmt;
           bind(s.expression_handles, owner, ExprSlot::Expression, 0, s.text);
         }
         assert(s.est_raw_form.has_value());
+        if (dump_enabled) {
+          const char* form = *s.est_raw_form == RawForm::Assign ? "Assign" :
+              *s.est_raw_form == RawForm::CompoundAssign ? "CompoundAssign" :
+              "ExprStmt";
+          std::cerr << "MOSS_EST_RAW owner=" << owner << " form=" << form << '\n';
+        }
         break;
       }
       default: break;
@@ -671,6 +696,7 @@ void populate(Program& program) {
     std::cerr << "MOSS_EST_STATS arena_size=" << arena.size()
               << " handle_count=" << built << '\n';
   }
+
 }
 
 }  // namespace moss::est
