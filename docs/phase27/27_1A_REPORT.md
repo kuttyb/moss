@@ -73,8 +73,8 @@ Baseline hash for the corpus and performance gates: `4d6d0c8c2fcb3bb6e255bcaee80
 
 | Gate | Result | Evidence |
 | --- | --- | --- |
-| G1 `MOSS_EST=off make --jobs="$(nproc)" check` | PASS, 154/154 jobs, no skips or waivers | `tmp/phase27-G1-off-final.log`; baseline `4d6d0c8c2fcb3bb6e255bcaee80174b6b928a576` |
-| G2 shadow `make check` | PASS, 154/154 jobs, no skips or waivers | `tmp/phase27-G2-shadow-final.log`; baseline `4d6d0c8c2fcb3bb6e255bcaee80174b6b928a576` |
+| G1 `MOSS_EST=off make --jobs="$(nproc)" check` | PASS, 157/157 jobs, no skips or waivers | `tmp/phase27-final/G1-off-revised.log`; baseline `4d6d0c8c2fcb3bb6e255bcaee80174b6b928a576` |
+| G2 shadow `make check` | PASS, 157/157 jobs, no skips or waivers | `tmp/phase27-final/G2-shadow-revised.log`; baseline `4d6d0c8c2fcb3bb6e255bcaee80174b6b928a576` |
 | G3 branch off vs 4d6d0c8 binary | PASS, 2,061 sources, zero verdict/Rust-hash differences | `tmp/phase27-G3-summary.log`; baseline binary from `4d6d0c8c2fcb3bb6e255bcaee80174b6b928a576` |
 | G4 off vs shadow corpus | PASS, 2,061 sources, 1,341 accepted each, zero differences | `tmp/phase27-G4-G5-summary.log`; baseline `4d6d0c8c2fcb3bb6e255bcaee80174b6b928a576` |
 | G5 examples Rust hashes | PASS, 776 `examples/` sources, zero differences | `tmp/phase27-G4-G5-summary.log`; baseline `4d6d0c8c2fcb3bb6e255bcaee80174b6b928a576` |
