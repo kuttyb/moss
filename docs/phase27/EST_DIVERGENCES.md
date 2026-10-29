@@ -69,3 +69,53 @@ The columns below are successful builds / deferred forms / remaining failed form
 | **Total** | **361,260** | **40,108** | **2,068** |
 
 **Stop rule applied:** item B produced multiple NEEDS BANK groups. Item B is recorded; work stops before item C pending bank classification. No language semantics, `.mossi` format, or ABI decision was made.
+
+## Bank rulings on item B (2026-10-28)
+
+1. **Message expressions (1,645): EST BUG, in scope.** Parse `message target.Handler(args...)` as a primary expression. Its target, handler name, and arguments are explicit; every argument is a distinct occurrence. Message expressions are valid wherever a value is valid.
+2. **Bitwise and shift operators (402): EST BUG, in scope.** Implement `& | ^ ~ << >>` using the precedence and associativity in `docs/LANGUAGE_SYNTAX.md` §Bitwise and shift operators. The positive regression cites this section.
+3. **`**`, `in`, `&&`, `||`, and incomplete `2 +` (10): REJECTED-SOURCE.** The string path rejects these spellings. Count them separately as rejected source, not failures; preserve identical diagnostics in off and shadow. Do not extend the EST grammar to accept them.
+4. **Standalone `]` / `)` fragments (7): source audit required.** Inspect each occurrence's source. If the source is rejected, classify it as REJECTED-SOURCE. If any is from accepted source, fix the shadow hook to provide the complete logical expression; do not change the expression parser to accept a fragment.
+5. **Numeric literal member access (4): EST BUG.** The string path accepts `(796935229243298.2).to_string()`; repair EST tokenization.
+
+The C counters classify unique `(owner, slot, argument_index)` occurrences and separately retain total attempts.
+
+### Bank ruling applied: standalone fragments
+
+All seven isolated delimiters came from rejected source files; none came from an accepted source. The result is REJECTED-SOURCE for all seven (five `]` fragments in Expression, two `)` fragments in ReturnValue):
+
+- `examples/swarm/control_flow_2026/iterative_planner/failed_attempts/01_multiline_task_literal.moss` — `MOSS_COMPILE_ERROR`, indentation jumps more than one block level.
+- `examples/swarm/expression_surface_2026/numerical_tool/failed_attempts/01_len_method.moss` — `UNTYPED_FIELD_ACCESS`.
+- `examples/swarm/expression_surface_2026/parser_evaluator/failed_attempts/01_multiline_vector_literal.moss` — `MOSS_COMPILE_ERROR`, indentation jumps more than one block level.
+- `examples/swarm/expression_surface_2026/validation_engine/failed_attempts/01_multiline_constructor.moss` — `UNTYPED_FIELD_ACCESS`.
+- `examples/swarm/expression_surface_2026/validation_engine/failed_attempts/02_multiline_vector.moss` — `MOSS_COMPILE_ERROR`, indentation jumps more than one block level.
+- `examples/swarm/expression_surface_2026/validation_engine/failed_attempts/15_multiline_test_vector.moss` — `MOSS_COMPILE_ERROR`, indentation jumps more than one block level.
+
+### Item C construction result
+
+The fresh run after applying the rulings covered 2,061 sources (1,341 accepted). Per-slot totals below are attempts / unique / built / deferred 27.1b / rejected source / failed. Attempts and unique match because each occurrence is visited once in each compile invocation. The corpus pass had zero failed occurrences.
+
+| Slot | Attempts | Unique | Built | Deferred | Rejected | Failed |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Condition | 33,374 | 33,374 | 32,683 | 685 | 6 | 0 |
+| Initializer | 23,390 | 23,390 | 17,082 | 6,308 | 0 | 0 |
+| ReturnValue | 55,893 | 55,893 | 47,916 | 7,973 | 4 | 0 |
+| Iterable | 1,240 | 1,240 | 1,190 | 50 | 0 | 0 |
+| Receiver | 48,495 | 48,495 | 48,480 | 15 | 0 | 0 |
+| Argument | 88,473 | 88,473 | 83,621 | 4,850 | 2 | 0 |
+| LhsPlace | 74,315 | 74,315 | 74,281 | 34 | 0 | 0 |
+| RhsValue | 74,315 | 74,315 | 49,611 | 24,704 | 0 | 0 |
+| Scrutinee | 288 | 288 | 284 | 4 | 0 | 0 |
+| RaisedValue | 3,583 | 3,583 | 1,808 | 1,775 | 0 | 0 |
+| Expression | 70 | 70 | 46 | 19 | 5 | 0 |
+
+| Form | Label | Count | Reproducer |
+| --- | --- | ---: | --- |
+| Pipelines, placeholders, constructors, collection literals/constructors | DEFERRED-27.1b | 40,108 (attempts) | `tests/phase27/est/repro/pipeline.moss`, `collection_literal.moss`, `constructor.moss` |
+| Message expressions | EST BUG, fixed | 1,645 (triage) | `tests/phase27/est/message_expression.moss` |
+| Bitwise and shifts | EST BUG, fixed | 402 (triage) | `tests/phase27/est/bitwise_shift.moss` |
+| Unsupported operators and incomplete expression | REJECTED-SOURCE | 10 (triage) | `tests/phase27/est/repro/unsupported_operators.moss` |
+| Isolated `]` / `)` fragments | REJECTED-SOURCE | 7 (triage) | `tests/phase27/est/repro/split_fragment.moss` |
+| Numeric literal member access | EST BUG, fixed | 4 (triage) | `tests/phase27/est/numeric_member.moss` |
+
+There are no remaining NEEDS BANK groups. The raw shadow failure file was not created because the failed count was zero. Corpus artifacts: `tmp/phase27-c2-shadow.tsv` and `tmp/phase27-c2-est-coverage.csv`.
