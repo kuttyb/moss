@@ -8545,7 +8545,7 @@ class Checker {
   void derive_expression_constraints(Function& function, const string& expression,
                                      const string& expected_result = "") {
     string original = trim(expression);
-    if (auto pipeline = parse_functional_pipeline(original)) {
+    if (auto pipeline = functional_pipeline_from_est(original)) {
       for (const auto& parameter : function.params) {
         if (trim(pipeline->source) == parameter.name &&
             (parameter.type.empty() || parameter.type == "vector")) {
@@ -10114,7 +10114,7 @@ class Checker {
       err(line, "message " + dit->second->name + "." + message + " expects " +
           std::to_string(h->params.size()) + " arguments, got " + std::to_string(args.size()));
     for (size_t index = 0; index < args.size(); ++index) {
-      if (auto pipeline = parse_functional_pipeline(args[index]);
+      if (auto pipeline = functional_pipeline_from_est(args[index]);
           pipeline && functional_pipeline_requires_materialization(*pipeline))
         err(line, "functional pipeline must be materialized in a local binding "
                   "before crossing a domain boundary");
@@ -10239,7 +10239,7 @@ class Checker {
   std::optional<FunctionalPipelineState> inferred_functional_pipeline_state(
       const string& expression, const TypeEnv& env,
       bool accept_bare_source = false) const {
-    auto parsed = parse_functional_pipeline(expression);
+    auto parsed = functional_pipeline_from_est(expression);
     string source = parsed ? parsed->source : trim(expression);
     if (!parsed && !accept_bare_source) return std::nullopt;
     auto source_type = inferred_expr_type(source, env);
@@ -13519,7 +13519,7 @@ class Checker {
                 for (size_t index = 0;
                      index < statement.args.size() && index < handler->params.size(); ++index) {
                   if (auto pipeline =
-                          parse_functional_pipeline(statement.args[index]);
+                          functional_pipeline_from_est(statement.args[index]);
                       pipeline &&
                           functional_pipeline_requires_materialization(*pipeline))
                     err(statement.line,
@@ -17215,7 +17215,7 @@ class Checker {
       }
     }
     if (leaf_effect_capture_) {
-      if (auto pipeline = parse_functional_pipeline(expression)) {
+      if (auto pipeline = functional_pipeline_from_est(expression)) {
         auto source_type = inferred_expr_type(pipeline->source, env);
         auto element = source_type ? functional_element_type(*source_type, pipeline->source) : std::nullopt;
         synchronization_require(element.has_value(), "unresolved functional effect source");
@@ -17981,7 +17981,7 @@ class Checker {
       vector<LocalCallSite>& calls) const {
     (void)line;
     string original = trim(expression);
-    if (auto pipeline = parse_functional_pipeline(original)) {
+    if (auto pipeline = functional_pipeline_from_est(original)) {
       collect_local_call_sites(line, pipeline->source, env, implicit_owner, calls);
       auto source_type = inferred_expr_type(pipeline->source, env);
       string element = source_type
@@ -18239,7 +18239,7 @@ class Checker {
     while (value.size() >= 2 && value.front() == '(' && value.back() == ')' &&
            matching_paren(value, 0) == value.size() - 1)
       value = trim(value.substr(1, value.size() - 2));
-    if (parse_functional_pipeline(value)) return true;
+    if (functional_pipeline_from_est(value)) return true;
     if (auto elements = parse_vector_literal(value))
       return std::any_of(elements->begin(), elements->end(),
           [&](const string& element) {
@@ -19707,7 +19707,7 @@ class Checker {
       return effects;
     }
 
-    if (auto pipeline = parse_functional_pipeline(original)) {
+    if (auto pipeline = functional_pipeline_from_est(original)) {
       effects.merge(observable_expression_effects(
           pipeline->source, env, domain_fields, implicit_object, parameters,
           proven_indices, root_ingress));
@@ -20716,8 +20716,10 @@ class Checker {
       const std::set<string>& domain_fields = {},
       const ObjectType* implicit_object = nullptr,
       const vector<int>& continuation_lines = {},
-      const string& source_file = {}) {
-    auto parsed = parse_functional_pipeline(expression);
+      const string& source_file = {},
+      const vector<est::Handle>* expression_handles = nullptr) {
+    auto parsed = functional_pipeline_from_est(expression,
+                                               expression_handles);
     if (!parsed) return std::nullopt;
     auto source_type = inferred_expr_type(parsed->source, env);
     if (!source_type) return std::nullopt;
@@ -20915,6 +20917,7 @@ class Checker {
   void collect_functional_ir_from_body(
       const vector<Stmt>& body, const std::optional<string>& result,
       int result_line, const vector<int>& result_continuation_lines,
+      const vector<est::Handle>* result_expression_handles,
       std::unordered_map<string,size_t>* result_pipeline_ids,
       TypeEnv env, const string& context, Function* owning_function,
       size_t& next_pipeline_id, size_t& next_node_id,
@@ -20932,7 +20935,7 @@ class Checker {
             statement.line, expressions[index], context, identity, current_env,
             owning_function, next_pipeline_id, next_node_id, domain_fields,
             implicit_object, statement.continuation_lines,
-            statement.source_file);
+            statement.source_file, &statement.expression_handles);
         ids.push_back(id.value_or(0));
       }
     };
@@ -20947,7 +20950,8 @@ class Checker {
           context + "@" + std::to_string(line) + ":result", env,
           owning_function, next_pipeline_id, next_node_id, domain_fields,
           implicit_object, result_continuation_lines,
-          owning_function ? owning_function->source_file : string());
+          owning_function ? owning_function->source_file : string(),
+          result_expression_handles);
       if (result_pipeline_ids) {
         result_pipeline_ids->erase(context);
         if (id) (*result_pipeline_ids)[context] = *id;
@@ -20971,7 +20975,7 @@ class Checker {
           string context = functional_function_context(function, &specialization);
           collect_functional_ir_from_body(
               function.body, function.result_expression, function.result_line,
-              function.result_continuation_lines,
+              function.result_continuation_lines, &function.expression_handles,
               &function.result_functional_pipeline_ids, std::move(env), context,
               &function, next_pipeline_id, next_node_id);
         }
@@ -20982,7 +20986,7 @@ class Checker {
               ? "_generic:" + parameter.name : parameter.type;
         collect_functional_ir_from_body(
             function.body, function.result_expression, function.result_line,
-            function.result_continuation_lines,
+            function.result_continuation_lines, &function.expression_handles,
             &function.result_functional_pipeline_ids, std::move(env),
             functional_function_context(function), &function,
             next_pipeline_id, next_node_id);
@@ -20998,7 +21002,7 @@ class Checker {
           env[parameter.name] = parameter.type;
         collect_functional_ir_from_body(
             method.body, method.result_expression, method.result_line,
-            method.result_continuation_lines,
+            method.result_continuation_lines, &method.expression_handles,
             &method.result_functional_pipeline_ids, std::move(env),
             functional_method_context(object, method), nullptr,
             next_pipeline_id, next_node_id, {}, &object);
@@ -21015,22 +21019,22 @@ class Checker {
         for (const auto& parameter : handler.params)
           env[parameter.name] = parameter.type;
         collect_functional_ir_from_body(
-            handler.body, std::nullopt, 0, {}, nullptr, std::move(env),
+            handler.body, std::nullopt, 0, {}, nullptr, nullptr, std::move(env),
             functional_handler_context(domain, handler), nullptr,
             next_pipeline_id, next_node_id, domain_fields);
       }
     }
     if (p_.main)
       collect_functional_ir_from_body(
-          p_.main->body, std::nullopt, 0, {}, nullptr, {}, "main", nullptr,
+          p_.main->body, std::nullopt, 0, {}, nullptr, nullptr, {}, "main", nullptr,
           next_pipeline_id, next_node_id);
     for (const auto& test : p_.tests)
       collect_functional_ir_from_body(
-          test.body, std::nullopt, 0, {}, nullptr, {},
+          test.body, std::nullopt, 0, {}, nullptr, nullptr, {},
           "test:" + test.name, nullptr, next_pipeline_id, next_node_id);
     for (const auto& benchmark : p_.benchmarks)
       collect_functional_ir_from_body(
-          benchmark.body, std::nullopt, 0, {}, nullptr, {},
+          benchmark.body, std::nullopt, 0, {}, nullptr, nullptr, {},
           "bench:" + benchmark.name, nullptr, next_pipeline_id,
           next_node_id);
   }
@@ -21174,7 +21178,7 @@ class Checker {
 
   bool check_functional_pipeline_ownership(int line, const string& expression,
                                            OwnershipEnv& env) {
-    auto parsed = parse_functional_pipeline(expression);
+    auto parsed = functional_pipeline_from_est(expression);
     if (!parsed) return false;
     if (current_body_types_ && !checking_specialization_ &&
         !current_body_types_->active_expression_occurrences.empty())
@@ -24604,7 +24608,7 @@ class Checker {
 
   bool check_functional_pipeline(int line, const string& expression,
                                  const TypeEnv& env) {
-    auto parsed = parse_functional_pipeline(expression);
+    auto parsed = functional_pipeline_from_est(expression);
     if (!parsed) return false;
     if (current_body_types_ && !checking_specialization_ &&
         !current_body_types_->active_expression_occurrences.empty()) {
@@ -25193,6 +25197,51 @@ class Checker {
     if (index == 0 && p_.expression_arena)
       return p_.expression_arena.get();
     return nullptr;
+  }
+
+  std::optional<ParsedFunctionalPipeline> functional_pipeline_from_est(
+      std::string_view source,
+      const std::vector<est::Handle>* handles = nullptr) const {
+    const auto resolve_stage = [](std::string_view name)
+        -> std::optional<FunctionalNodeKind> {
+      for (const auto& operation : functional_operations())
+        if (name == operation.name) return operation.kind;
+      return std::nullopt;
+    };
+    const auto source_fingerprint = est::fingerprint(std::string(source));
+    auto convert = [&](std::uint32_t arena_index, est::ExprId expression)
+        -> std::optional<ParsedFunctionalPipeline> {
+      const auto* arena = expression_arena(arena_index);
+      return arena ? est::functional_pipeline(*arena, expression, source,
+                                               resolve_stage) : std::nullopt;
+    };
+    if (handles) {
+      for (const auto& handle : *handles)
+        if (handle.source_fingerprint == source_fingerprint)
+          if (auto parsed = convert(handle.arena_index, handle.expr))
+            return parsed;
+    }
+    if (!active_est_expression_cursors_.empty() &&
+        active_est_expression_cursors_.back() &&
+        active_est_expression_cursors_.back()->source == source) {
+      const auto& cursor = *active_est_expression_cursors_.back();
+      if (auto parsed = convert(cursor.arena_index, cursor.expr)) return parsed;
+    }
+    if (auto cursor = root_expression_cursor(source, {}))
+      if (auto parsed = convert(cursor->arena_index, cursor->expr))
+        return parsed;
+
+    // MOSS_EST=off intentionally omits persistent arenas. Build a temporary
+    // syntax tree for this expression so the checker plan has one parser in
+    // both modes; this path still consumes the EST representation.
+    est::Arena temporary;
+    try {
+      const auto expression = est::parse_expression(temporary, source);
+      return est::functional_pipeline(temporary, expression, source,
+                                      resolve_stage);
+    } catch (const std::invalid_argument&) {
+      return std::nullopt;
+    }
   }
 
   std::string expression_fact_context() const {
@@ -27826,7 +27875,7 @@ class Checker {
           }
         }
         for (const auto& argument : statement.args) {
-          if (auto pipeline = parse_functional_pipeline(argument)) {
+          if (auto pipeline = functional_pipeline_from_est(argument)) {
             auto source_type = inferred_expr_type(pipeline->source, current_env);
             if (source_type && functional_element_type(
                                    *source_type, pipeline->source) &&
@@ -28125,7 +28174,7 @@ class Checker {
         check_expression(statement.line, statement.a, current_env,
                          "reply-value");
         auto actual = inferred_expr_type(statement.a, current_env);
-        if (auto pipeline = parse_functional_pipeline(statement.a)) {
+        if (auto pipeline = functional_pipeline_from_est(statement.a)) {
           auto source_type = inferred_expr_type(pipeline->source, current_env);
           if (source_type && functional_element_type(
                                  *source_type, pipeline->source) &&
