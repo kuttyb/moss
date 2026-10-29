@@ -126,3 +126,41 @@ The fresh run after applying the rulings covered 2,061 sources (1,341 accepted).
 | Numeric literal member access | EST BUG, fixed | 4 (triage) | `tests/phase27/est/numeric_member.moss` |
 
 There are no remaining NEEDS BANK groups. The raw shadow failure file was not created because the failed count was zero. Corpus artifacts: `tmp/phase27-c2-shadow.tsv` and `tmp/phase27-c2-est-coverage.csv`.
+
+## Phase 27.1b/c final construction and ruling status (2026-10-28)
+
+This section supersedes the earlier deferred totals above. The final corpus pass
+covered 2,078 tracked sources and 1,351 checker-accepted sources. Attempts equal
+unique occurrences within the per-Program arena scopes; this aggregate equality
+does not establish deduplication across separate compiler invocations (see CP-A).
+
+| Slot | Attempts | Unique | Built | Deferred 27.1b | Rejected source | Failed |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Condition | 22,029 | 22,029 | 22,023 | 0 | 6 | 0 |
+| Initializer | 16,953 | 16,953 | 16,951 | 0 | 2 | 0 |
+| ReturnValue | 32,785 | 32,785 | 32,767 | 0 | 18 | 0 |
+| Iterable | 744 | 744 | 744 | 0 | 0 | 0 |
+| Receiver | 32,942 | 32,942 | 32,941 | 0 | 1 | 0 |
+| Argument | 59,115 | 59,115 | 59,080 | 0 | 35 | 0 |
+| LhsPlace | 47,936 | 47,936 | 47,936 | 0 | 0 | 0 |
+| RhsValue | 47,936 | 47,936 | 47,923 | 0 | 13 | 0 |
+| Scrutinee | 147 | 147 | 147 | 0 | 0 | 0 |
+| RaisedValue | 3,024 | 3,024 | 3,024 | 0 | 0 | 0 |
+| Expression | 68 | 68 | 42 | 0 | 26 | 0 |
+| **Total** | **263,679** | **263,679** | **263,578** | **0** | **101** | **0** |
+
+| Form | Phase 27.1a count | Final status | Reproducer |
+| --- | ---: | --- | --- |
+| Pipelines, placeholders, constructors, collection literals and named arguments | 40,108 | Built; no deferred occurrences | `tests/phase27/est/syntax_27_1b.moss` |
+| Message expressions | 1,645 | EST BUG fixed and built | `tests/phase27/est/message_expression.moss` |
+| Bitwise and shift operators | 402 | EST BUG fixed and built | `tests/phase27/est/bitwise_shift.moss` |
+| `**`, `in`, `&&`, `||`, incomplete `2 +` | 10 | REJECTED-SOURCE; the string checker rejects these | `tests/phase27/est/repro/unsupported_operators.moss` |
+| Isolated `]` / `)` fragments | 7 | REJECTED-SOURCE; all source occurrences were rejected by the checker | `tests/phase27/est/repro/split_fragment.moss` |
+| Numeric literal member access | 4 | EST BUG fixed and built | `tests/phase27/est/numeric_member.moss` |
+
+Final construction labels: deferred 27.1b = 0, failed = 0, rejected source = 101
+unique slot occurrences (including the 17 ruled rejected-source cases above),
+and no unresolved NEEDS BANK groups. The 101 rejected-source total is grouped by
+slot in the preceding table; it includes corpus contexts beyond the original
+17-case ruling table. ABI-v9 generic bodies and Section 2 execution bodies are
+covered separately by `tests/tooling/check_phase27_est_mossi.py`.
