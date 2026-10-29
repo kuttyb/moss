@@ -20,6 +20,8 @@ import tarfile
 
 ROOT = Path(__file__).resolve().parents[2]
 REV = "HEAD"
+EXPECTED_LEGACY_SHA256 = (
+    "4a9d7d7509f9883194f2d3f147c4ff66c39e9c832e758ddffdd7572d57667ffd")
 
 
 def trace(binary: Path, mode: str, corpus: Path, source: str, timeout: int):
@@ -60,10 +62,18 @@ def main() -> int:
     parser.add_argument("--rev", default=REV)
     parser.add_argument("--jobs", type=int, default=min(os.cpu_count() or 4, 8))
     parser.add_argument("--timeout", type=int, default=120)
+    parser.add_argument("--expected-legacy-sha256",
+                        default=EXPECTED_LEGACY_SHA256,
+                        help="required SHA-256 for the frozen phase27-1-m1 compiler")
     parser.add_argument("--out", type=Path,
                         default=ROOT / "tmp/phase27-2/reach-differential.json")
     args = parser.parse_args()
     legacy, candidate = args.legacy.resolve(), args.candidate.resolve()
+    legacy_sha256 = hashlib.sha256(legacy.read_bytes()).hexdigest()
+    if legacy_sha256 != args.expected_legacy_sha256:
+        raise SystemExit(
+            "legacy compiler SHA-256 mismatch: "
+            f"expected {args.expected_legacy_sha256}, got {legacy_sha256}")
     sources = subprocess.check_output(
         ["git", "ls-tree", "-r", "--name-only", args.rev], cwd=ROOT,
         text=True).splitlines()
@@ -111,8 +121,7 @@ def main() -> int:
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps({"revision": args.rev,
                                     "legacy_revision": "phase27-1-m1",
-                                    "legacy_binary_sha256": hashlib.sha256(
-                                        legacy.read_bytes()).hexdigest(),
+                                    "legacy_binary_sha256": legacy_sha256,
                                     "candidate_binary_sha256": hashlib.sha256(
                                         candidate.read_bytes()).hexdigest(),
                                     "source_count": len(sources),
