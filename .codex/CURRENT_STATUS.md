@@ -13068,3 +13068,10 @@ check` passed 154/154, zero failures or skips. Branch remains unmerged.
   (+8.7%, +4.93 ms), but a quiet paired rerun did not reproduce it (baseline
   median 63.68 ms, candidate 62.02 ms). No fixture regression blocks delivery.
 - Tag `phase26-3-let-alias-m1` targets the merge commit.
+# Phase 27.1a EST foundation — in progress (2026-10-28)
+
+- `phase27-work` was created from `main` at `4d6d0c8c2fcb3bb6e255bcaee80174b6b928a576`, as Bank instructed. No PR or merge to `main` is in scope.
+- Required Moss skills were loaded; `./moss agent bootstrap --json` returned `moss-0.1`. The execution file and frozen ownership/EST/kickoff contracts were read. The kickoff's older base is superseded by Bank's explicit branch SHA; no contract text was changed.
+- Initial implementation adds a dedicated EST arena API with immutable node access, append-only construction, fresh-ID duplication, and asserted rebuild; inline handle vectors on `Stmt`, `Function`, `Method`, `Handler`, and `Field`; and a null-by-default `Program` arena pointer. `Handler` and `Field` were additional expression owners found in `src/ast.hpp`.
+- `make --jobs="$(nproc)" moss-dev` completed successfully after the final `Field` handle edit; log: `tmp/phase27-build.log`. No full gate has run or been claimed.
+- Still required for 27.1a: per-kind slot mapping, initial parser and Raw classification, `MOSS_EST=off|shadow` plumbing, coverage and divergence accounting, string-debt lint/baseline, full corpus/ABI/Fast Debug parity, `make check`, compiler-perf, self-review, and CP-A independent adversarial review. No checkpoint is frozen and Agent 2 has not been started. No 27.1b work has begun.
