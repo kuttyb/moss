@@ -453,6 +453,19 @@ struct Shape {
   }
 };
 
+Shape canonicalize_pipeline_left_spine(Shape pipeline) {
+  while (pipeline.kind == "pipeline" && !pipeline.children.empty() &&
+         pipeline.children.front().kind == "pipeline") {
+    auto left = std::move(pipeline.children.front());
+    std::vector<Shape> flattened = std::move(left.children);
+    flattened.reserve(flattened.size() + pipeline.children.size() - 1);
+    for (std::size_t i = 1; i < pipeline.children.size(); ++i)
+      flattened.push_back(std::move(pipeline.children[i]));
+    pipeline.children = std::move(flattened);
+  }
+  return pipeline;
+}
+
 std::uint64_t shadow_attempts = 0, shadow_compared = 0, shadow_unparsed = 0;
 
 Shape shape_of(const Arena& arena, ExprId id) {
@@ -490,20 +503,10 @@ Shape shape_of(const Arena& arena, ExprId id) {
       for (auto child : node.arguments) result.children.push_back(shape_of(arena, child));
       return result;
     } else {
-      Shape result{"pipeline", {}, {}};
-      auto input = shape_of(arena, node.input);
-      if (input.kind == "pipeline")
-        result.children = std::move(input.children);
-      else
-        result.children.push_back(std::move(input));
-      for (auto child : node.stages) {
-        auto stage = shape_of(arena, child);
-        if (stage.kind == "pipeline")
-          result.children.insert(result.children.end(), stage.children.begin(), stage.children.end());
-        else
-          result.children.push_back(std::move(stage));
-      }
-      return result;
+      Shape result{"pipeline", {}, {shape_of(arena, node.input)}};
+      for (auto child : node.stages)
+        result.children.push_back(shape_of(arena, child));
+      return canonicalize_pipeline_left_spine(std::move(result));
     }
   }, arena.at(id));
 }
@@ -600,11 +603,8 @@ std::optional<Shape> string_shape(std::string source) {
   if (auto pipeline = legacy_operator(source, {"|>"})) {
     auto input = string_shape(pipeline->first), stage = string_shape(pipeline->second);
     if (input && stage) {
-      if (input->kind == "pipeline") {
-        input->children.push_back(std::move(*stage));
-        return input;
-      }
-      return Shape{"pipeline", {}, {std::move(*input), std::move(*stage)}};
+      return canonicalize_pipeline_left_spine(
+          Shape{"pipeline", {}, {std::move(*input), std::move(*stage)}});
     }
     return std::nullopt;
   }
@@ -617,7 +617,7 @@ std::optional<Shape> string_shape(std::string source) {
       if (!child) return std::nullopt;
       result.children.push_back(std::move(*child));
     }
-    return result;
+    return canonicalize_pipeline_left_spine(std::move(result));
   }
   static const std::vector<std::vector<std::string>> tiers = {
       {" or "}, {" xor "}, {" and "}, {"==", "!=", "<=", ">=", "<", ">"},
@@ -774,6 +774,47 @@ std::optional<Shape> string_shape(std::string source) {
     if (token.word) return Shape{"identifier", token.text, {}};
   }
   return std::nullopt;
+}
+
+void check_pipeline_shape_contract() {
+  auto est_shape = [](const std::string& source) {
+    Arena arena;
+    const auto id = Reader(arena, source, 0, 1, 1).parse();
+    return shape_of(arena, id);
+  };
+  auto text_shape = [](const std::string& source) {
+    const auto shape = string_shape(source);
+    if (!shape) throw std::runtime_error("pipeline contract text shape did not parse: " + source);
+    return *shape;
+  };
+  if (!(est_shape("(xs |> f) |> g") == text_shape("xs |> f |> g")))
+    throw std::runtime_error("pipeline contract: left-spine association was not canonicalized");
+
+  auto identifier = [](const std::string& name) { return Shape{"identifier", name, {}}; };
+  auto call = [&](const std::string& name, std::vector<Shape> args) {
+    Shape result{"call", {}, {identifier(name)}};
+    result.children.insert(result.children.end(), args.begin(), args.end());
+    return result;
+  };
+  Shape nested_lambda = canonicalize_pipeline_left_spine(Shape{"pipeline", {}, {
+      identifier("xs"), call("map", {Shape{"lambda", {}, {
+          canonicalize_pipeline_left_spine(Shape{"pipeline", {}, {
+              identifier("r"), call("filter", {identifier("ok")})}})}}})}});
+  Shape lifted_lambda = canonicalize_pipeline_left_spine(Shape{"pipeline", {}, {
+      identifier("xs"), call("map", {Shape{"lambda", {}, {identifier("r")}}}),
+      call("filter", {identifier("ok")})}});
+  if (nested_lambda == lifted_lambda)
+    throw std::runtime_error("pipeline contract: normalization descended into a lambda body");
+
+  const std::string nested_argument = "xs |> g(ys |> h)";
+  const std::string lifted_argument = "xs |> g(ys) |> h";
+  const auto nested_argument_tree = est_shape(nested_argument);
+  if (!(nested_argument_tree == text_shape(nested_argument)) ||
+      nested_argument_tree == text_shape(lifted_argument))
+    throw std::runtime_error("pipeline contract: normalization erased a call-argument pipeline");
+
+  if (est_shape("xs |> f |> g") == text_shape("xs |> f |> k"))
+    throw std::runtime_error("pipeline contract: normalization erased a left-spine stage difference");
 }
 
 void compare_string_shape(const Arena& arena, ExprId id, std::string_view source) {
@@ -1002,6 +1043,9 @@ static void populate_impl(Program& program, std::vector<Stmt>* additional,
   const auto compare_matches_before = shadow_compared;
   const auto compare_unparsed_before = shadow_unparsed;
   if (program.expression_arena && !additional) return;
+  if (const char* pipeline_test = std::getenv("MOSS_EST_PIPELINE_SHAPE_TEST");
+      pipeline_test && std::string_view(pipeline_test) == "1")
+    check_pipeline_shape_contract();
   if (!program.expression_arena) program.expression_arena = std::make_shared<Arena>();
   if (std::find(program.expression_arenas.begin(), program.expression_arenas.end(),
                 program.expression_arena) == program.expression_arenas.end())

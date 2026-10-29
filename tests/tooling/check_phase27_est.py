@@ -56,6 +56,10 @@ def main():
                    MOSS_EST_SHADOW_MISMATCH_TEST="1")
     if mismatch.returncode == 0 or "injected mismatch" not in mismatch.stdout:
         raise SystemExit("shadow structural comparator did not reject an injected mismatch")
+    pipeline_shapes = run(ROOT / "tests/phase27/est/pipeline_shape.moss", "shadow",
+                          MOSS_EST_PIPELINE_SHAPE_TEST="1")
+    if pipeline_shapes.returncode != 0:
+        raise SystemExit(f"pipeline structural-shape cases failed: {pipeline_shapes.stdout}{pipeline_shapes.stderr}")
     probe = ROOT / "tests/phase27/est/bitwise_shift.moss"
     result = run(probe, "off", MOSS_EST_STATS="1")
     if result.returncode != 0 or "MOSS_EST_STATS arena_size=0 handle_count=0" not in result.stderr:
