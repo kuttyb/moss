@@ -13179,3 +13179,15 @@ check` passed 154/154, zero failures or skips. Branch remains unmerged.
 - Renamed the complete report to `docs/phase27/27_1_REPORT.md`; removed the stale CP-A/not-final-head claims and corrected the allowlist section.
 - G2 shadow check with the opt-in measurement tracer in the source is pending. Merge remains pending G2 and all merge-commit gates.
 - G2 with the tracer present passed on `phase27-work` (`1f9d71b0`): 157/157 jobs, zero failures or skips. Log: `tmp/phase27-closeout/G2-shadow-tracer.log`. The requested merge and all merge-head gates remain next.
+
+
+## Phase 27.1 delivery complete (2026-10-28)
+
+- Outcome 1: fresh Agent 2 reviewed the left-spine-only pipeline comparator fix at frozen SHA `b908f34f057e879ffcdd035449a90d84dac61b1d`; exact verdict: `Verdict: GO — defects: 0`. The report and probes were committed unchanged.
+- Outcome 2: removed nonexistent T6 `repro_untyped_for_write4–7` entries from both conformance allowlists after no fixture blobs were found in reachable Phase 24 history; both gates reject missing fixture paths.
+- Outcome 3: blind-spot measurement found 173 uppercase-qualified calls that the legacy shape parser cannot compare. Bank accepts the limit; first 27.2 item is structural comparison after module-name resolution moves to the tree, retaining the measurement tool until it proves zero.
+- Outcome 4: renamed and cleaned the completion report as `docs/phase27/27_1_REPORT.md`.
+- Outcome 5: merge commit `5627727657ad7d26d860d4824b4ba03764252b0e` (first parent `0ecfa51c6dfa4a3d87b678012e5605ad29a8da7c`) is pushed to `origin/main`; annotated tag `phase27-1-m1` points to the merge commit.
+- Merge-head gates: G1 off 157/157 and G2 shadow 157/157, no failures/skips; corpus baseline/off/shadow parity zero differences on 2,087 sources after a 120-second retry resolved one timeout-only initial discrepancy; optimized corpus rows identical; Fast Debug 546 accepted examples, zero differences and zero R12 hits; `.mossi` raw off/shadow equality and baseline-identity normalization pass; G8 off perf 4.858 s vs 4.871 s first-parent baseline (−0.3%), no workload beyond noise. Logs are listed in `docs/phase27/27_1_REPORT.md`.
+- Reviews: CP-A `VERDICT: GO — 0 confirmed implementation defects; 1 measurement-scope caveat.`; CP-B final `VERDICT: GO — 0 confirmed defects.`; pipeline comparator fix review `Verdict: GO — defects: 0`.
+- Decision: optimized corpus validation retained the same 11 EMITFAIL rows in baseline, off, and shadow; this is parity, not a newly introduced regression. G9 shadow performance is recorded from the earlier run because the final closeout gate list required only G8.

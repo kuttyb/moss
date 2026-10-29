@@ -1,6 +1,6 @@
 # Phase 27.1 EST foundation — closeout
 
-Branch: `phase27-work`
+Branch: `phase27-work` (merged to `main` at `5627727657ad7d26d860d4824b4ba03764252b0e`, tag `phase27-1-m1`).
 Required corpus/performance baseline: `4d6d0c8c2fcb3bb6e255bcaee80174b6b928a576`
 CP-A candidate: `0f116ada267b3772895e84859132a07218be8aa1`. CP-A review completed; see the review record below.
 
@@ -73,15 +73,15 @@ Baseline hash for the corpus and performance gates: `4d6d0c8c2fcb3bb6e255bcaee80
 
 | Gate | Result | Evidence |
 | --- | --- | --- |
-| G1 `MOSS_EST=off make --jobs="$(nproc)" check` | PASS, 157/157 jobs, no skips or waivers | `tmp/phase27-final/G1-off-pipeline-fix.log`; baseline `4d6d0c8c2fcb3bb6e255bcaee80174b6b928a576` |
-| G2 shadow `make check` | PASS, 157/157 jobs, no skips or waivers, including rerun with the opt-in blind-spot tracer present | `tmp/phase27-closeout/G2-shadow-tracer.log`; baseline `4d6d0c8c2fcb3bb6e255bcaee80174b6b928a576` |
-| G3 branch off vs 4d6d0c8 binary | PASS, 2,061 baseline sources, zero verdict/Rust-hash differences | `tmp/phase27-final/G3-baseline-final.log`, `G3-off-final.log`; baseline binary from `4d6d0c8c2fcb3bb6e255bcaee80174b6b928a576` |
-| G4 off vs shadow corpus | PASS, 2,061 baseline sources, 1,341 accepted each, zero verdict/Rust-hash differences | `tmp/phase27-final/G3-off-final.tsv`, `G4-shadow-final.tsv`; baseline `4d6d0c8c2fcb3bb6e255bcaee80174b6b928a576` |
-| G5 examples optimized Rust hashes | PASS, 776 sources, 546 accepted, zero differences | `tmp/phase27-final/G5-optimized-examples-final.log`; baseline `4d6d0c8c2fcb3bb6e255bcaee80174b6b928a576` |
-| G6 Fast Debug parity | PASS, 546 accepted examples, zero output differences, zero R12 hits; same two timeouts in each mode | `tmp/phase27-final/G6-fast-debug-final.log`, `tmp/phase27-final/fast-debug.json`; baseline `4d6d0c8c2fcb3bb6e255bcaee80174b6b928a576` |
-| G7 `.mossi` parity | PASS: same-binary off/shadow raw bytes identical; baseline identity recomputation yields equal fingerprints/body hashes and every other Section 1/2 byte equal | `tmp/phase27-final/G7-raw-off-shadow-final.log`, `tmp/phase27-final/G7-baseline-recomputed-final.log`; baseline `4d6d0c8c2fcb3bb6e255bcaee80174b6b928a576` |
-| G8 off compiler-perf | PASS after one noisy outlier was repeated: aggregate −0.1%, no workload beyond noise floor | `tmp/phase27-final/G8-perf-off-repeat.log`, first sample `G8-perf-off-final.log`; repeat report `tmp/compiler-perf/20261028-220053/LOCAL_REPORT.md`; baseline `4d6d0c8c2fcb3bb6e255bcaee80174b6b928a576` |
-| G9 shadow compiler-perf | Recorded overhead: aggregate +2.3% vs baseline | `tmp/phase27-final/G9-perf-shadow-final.log`, `tmp/compiler-perf/20261028-215905/LOCAL_REPORT.md`; baseline `4d6d0c8c2fcb3bb6e255bcaee80174b6b928a576` |
+| G1 `MOSS_EST=off make --jobs="$(nproc)" check` | PASS, 157/157 jobs, zero failures or skips, on merge commit `5627727657ad7d26d860d4824b4ba03764252b0e` | `tmp/phase27-closeout/merge-G1-off.log`; baseline `4d6d0c8c2fcb3bb6e255bcaee80174b6b928a576` |
+| G2 `MOSS_EST=shadow make --jobs="$(nproc)" check` | PASS, 157/157 jobs, zero failures or skips, with opt-in tracer code present, on the merge commit | `tmp/phase27-closeout/merge-G2-shadow.log`; baseline `4d6d0c8c2fcb3bb6e255bcaee80174b6b928a576` |
+| G3 branch off vs 4d6d0c8 binary | PASS, 2,087 sources, zero verdict or default Rust-hash differences; the initial 20-second timeout discrepancy disappeared on the documented 120-second retry | `tmp/phase27-closeout/merge-G3-baseline-retry.log`, `merge-G3-off-retry.log`, matching TSVs; baseline binary `4d6d0c8c2fcb3bb6e255bcaee80174b6b928a576` |
+| G4 off vs shadow | PASS, same 2,087-source corpus, zero verdict or Rust-hash differences | `tmp/phase27-closeout/merge-G4-shadow-retry.log`; `merge-G3-off-retry.tsv` equals `merge-G4-shadow-retry.tsv` |
+| G5 examples and corpus optimized Rust | PASS, off/shadow/baseline optimized TSVs identical across 2,087 sources; 1,347 successful emissions, with the same 724 rejects, 5 NOJSON, and 11 EMITFAIL rows per mode | `tmp/phase27-closeout/G5-baseline-opt-final.log`, `G5-off-opt-final.log`, `G5-shadow-opt-final.log`; TSVs under the same directory |
+| G6 Fast Debug parity | PASS, 546 accepted examples, baseline/off/shadow identical, zero R12 hits; same two timeouts in each mode | `tmp/phase27-closeout/merge-G6-fast-debug.log`, `merge-G6-fast-debug.json` |
+| G7 `.mossi` parity | PASS: off/shadow raw bytes identical on the same binary; baseline-identity recomputation equal for derived hashes and all remaining Section 1/2 bytes | `tmp/phase27-closeout/merge-G7-raw.log`, `merge-G7-baseline.log`; detailed report `tmp/phase27-mossi-baseline/1793256362679123879/report.json` |
+| G8 off compiler-perf | PASS against merge first parent `0ecfa51c6dfa4a3d87b678012e5605ad29a8da7c`: 4.871 s baseline, 4.858 s candidate (−0.3%), no workload beyond noise floor | `tmp/phase27-closeout/merge-G8-perf-off.log`; report `tmp/compiler-perf/20261028-234617/LOCAL_REPORT.md` |
+| G9 shadow compiler-perf | Not a merge gate in the closeout gate list; the previously measured shadow overhead was +2.3% on the earlier 4d6d0c8-baseline run | `tmp/phase27-final/G9-perf-shadow-final.log`; report `tmp/compiler-perf/20261028-215905/LOCAL_REPORT.md` |
 
 The first G1 attempt exposed standalone native-test links that omitted the nested EST translation unit. The shared source enumeration was corrected; the final G1 and G2 runs above both pass. The first G7 fixture used different absolute roots and therefore changed a Section 2 path hash; using the same root for both modes produced identical Section 1 and Section 2 hashes.
 
@@ -109,3 +109,8 @@ The Bank ruled that the compiler-bound cache contract must remain intact: distin
 - **Self-review:** The one initial G1 failure was a test-link inventory issue, fixed by discovering nested `src/**/*.cpp`; final G1/G2 evidence is clean.
 - **Self-review:** Rebuild and fresh-occurrence APIs only append nodes and rebind explicit handles. No consumer was switched to tree-based behavior.
 - **Self-review:** Off/shadow output parity and off/base parity are both zero-difference on the required corpus. No language semantics, `.mossi` format, or ABI was changed.
+
+
+## Merge delivery
+
+The merge commit is `5627727657ad7d26d860d4824b4ba03764252b0e`; annotated tag `phase27-1-m1` points to it. All required closeout gates above were run on that merge commit. The merge was pushed to `origin/main`.
