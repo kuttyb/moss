@@ -26867,6 +26867,7 @@ class Checker {
         // an unresolved intermediate type as a generic assert configuration
         // error. The argument is retained here so it is not visited twice.
         if (callee == "assert") {
+          retain_active_expression_target("builtin:assert");
           for (size_t index = 0; index < args.size(); ++index) {
             const auto& arg = args[index];
             string name, val;
@@ -26888,17 +26889,15 @@ class Checker {
           const auto occurrence =
               current_body_types_->active_expression_occurrences.back();
           if (resolved_target) {
-            current_body_types_->retain_expression_target(
-                occurrence, resolved_target->semantic_callable_id);
+            retain_active_expression_target(
+                resolved_target->semantic_callable_id);
           } else if (auto binding = env.find(callee);
                      binding != env.end() && open_generic(binding->second)) {
-            current_body_types_->retain_expression_target(
-                occurrence, "binding:pending:" + callee);
+            retain_active_expression_target("binding:pending:" + callee);
             current_body_types_->retain_expression_type(
                 occurrence, current_body_types_->solver.fresh(0));
           } else {
-            current_body_types_->retain_expression_target(
-                occurrence, "builtin:" + callee);
+            retain_active_expression_target("builtin:" + callee);
           }
         }
         for (size_t index = 0; index < args.size(); ++index) {
