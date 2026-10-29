@@ -1,77 +1,94 @@
-# Phase 27.1a report — stopped after item B
+# Phase 27.1a EST foundation — closeout
 
-## 1. Corpus count
+Branch: `phase27-work`
+Required corpus/performance baseline: `4d6d0c8c2fcb3bb6e255bcaee80174b6b928a576`
+CP-A candidate code head before this report-only commit: `0f116ada267b3772895e84859132a07218be8aa1`. CP-A was not started.
 
-The prior statement “2,061 of 2,064” is based on a wrong denominator for the requested baseline. At `4d6d0c8c2fcb3bb6e255bcaee80174b6b928a576`, there are 2,061 tracked `.moss` files, and the off/shadow corpus TSVs contain each one exactly once. No source was omitted; therefore there are no three omitted paths to name. Compared with the separate 2,064-source tree at `d109b8f1`, the required tree has 7 fewer paths and 4 additions (net −3), rather than three omissions:
+## A. Corpus count
 
-- Older-only: `tests/negative/swarm_013_immutable_let_{direct,index,member,receiver}.moss`, `tests/phase45_mutable_binding_materializes.moss`, `tests/tooling/fixtures/builtin_generic_typing/map_delete_immutable.moss`, `tests/tooling/fixtures/moss_language_surface_immutable_let.moss`.
-- Required-tree-only: `sdk/cbor/tests/support/support.moss`, `tests/phase45_single_assignment_var_virtualizes.moss`, `tests/phase45_var_mutation_materializes.moss`, `tests/phase45_var_reassignment_materializes.moss`.
+The requested tree at `4d6d0c8` contains 2,061 tracked `.moss` files, and the corpus runner checked all 2,061. There are no three omitted sources to name. The 2,064 denominator belongs to `d109b8f1`, not the required tree: it has seven older-only sources and four newer-only sources at `4d6d0c8`, yielding a net difference of three. The seven absent from the required tree are `tests/negative/swarm_013_immutable_let_direct.moss`, `tests/negative/swarm_013_immutable_let_index.moss`, `tests/negative/swarm_013_immutable_let_member.moss`, `tests/negative/swarm_013_immutable_let_receiver.moss`, `tests/phase45_mutable_binding_materializes.moss`, `tests/tooling/fixtures/builtin_generic_typing/map_delete_immutable.moss`, and `tests/tooling/fixtures/moss_language_surface_immutable_let.moss`. The four added by the required tree are `sdk/cbor/tests/support/support.moss`, `tests/phase45_single_assignment_var_virtualizes.moss`, `tests/phase45_var_mutation_materializes.moss`, and `tests/phase45_var_reassignment_materializes.moss`. This was a denominator mismatch, not an accidental omission.
 
-Evidence: `tmp/phase27-a-baseline.txt`, `tmp/phase27-a-old.txt`, `tmp/phase27-a-current.txt`, `tmp/phase27-a-ran.txt`.
+## B. Construction-failure triage and rulings
 
-## 2. Shadow failure triage
+Counts below are the initial failure groups before fixes. Slot distributions and original reproducers are also recorded in `EST_DIVERGENCES.md`. Bank rulings supersede its historical NEEDS BANK labels; no NEEDS BANK group remains.
 
-| Form | Label | Count | Reproducer |
-|---|---|---:|---|
+| Form | Label | Count | Reproducer(s) |
+| --- | --- | ---: | --- |
 | Pipelines | DEFERRED-27.1b | 9,919 | `tests/phase27/est/repro/pipeline.moss` |
 | Collection literals | DEFERRED-27.1b | 7,447 | `tests/phase27/est/repro/collection_literal.moss` |
 | Collection constructors | DEFERRED-27.1b | 30 | `tests/phase27/est/repro/collection_constructor.moss` |
-| Record/enum constructors and argument fragments | DEFERRED-27.1b | 22,712 | `tests/phase27/est/repro/constructor.moss` |
-| Message expressions | NEEDS BANK | 1,645 | `tests/phase27/est/repro/message_expression.moss` |
-| Bitwise and shift operators | NEEDS BANK | 402 | `tests/phase27/est/repro/bitwise_shift.moss` |
-| Unsupported `**` and `in` | NEEDS BANK | 4 | `tests/phase27/est/repro/unsupported_exponent.moss`; `tests/phase27/est/repro/membership_operator.moss` |
-| Symbolic `&&` and `||` | NEEDS BANK | 4 | `tests/phase27/est/repro/symbolic_boolean.moss` |
-| Incomplete expression | NEEDS BANK | 2 | `tests/phase27/est/repro/incomplete_expression.moss` |
-| Standalone multiline fragments | NEEDS BANK | 7 | `tests/phase27/est/repro/split_fragment.moss` |
-| Numeric literal member access | EST BUG | 4 | `tests/phase27/est/repro/numeric_literal_member.moss` |
+| Record/enum constructors and constructor argument fragments | DEFERRED-27.1b | 22,712 | `tests/phase27/est/repro/constructor.moss` |
+| Message expressions | EST BUG, fixed | 1,645 | `tests/phase27/est/repro/message_expression.moss` |
+| Bitwise and shift operators | EST BUG, fixed | 402 | `tests/phase27/est/repro/bitwise_shift.moss` |
+| `**`, `in`, `&&`, `||`, incomplete `2 +` | REJECTED-SOURCE | 10 | `tests/phase27/est/repro/unsupported_operators.moss`, `symbolic_boolean.moss`, `incomplete_expression.moss` |
+| Isolated `]` / `)` fragments | REJECTED-SOURCE | 7 | `tests/phase27/est/repro/split_fragment.moss` |
+| Numeric literal member access | EST BUG, fixed | 4 | `tests/phase27/est/repro/numeric_literal_member.moss` |
 
-No `.mossi`-loaded expression failure was observed; the runner enumerates tracked `.moss` sources. Group details, slot counts, language syntax references, and string-path outcomes are in `docs/phase27/EST_DIVERGENCES.md`.
+The seven delimiter fragments were traced to six rejected files; none came from an accepted source. The exact paths and each string-path diagnostic are in `EST_DIVERGENCES.md`. The 10 rejected-operator/incomplete-expression cases and all seven fragments retain identical off/shadow diagnostics (G4). No `.mossi`-loaded expression was present in the `.moss` corpus.
 
-## 3. Per-slot classified counts
+## C. Final unique-occurrence counters
 
-These are computed from the raw shadow trace, not the C counter implementation, which was not started.
+Fresh shadow corpus: 2,061 sources, 1,341 accepted. Columns are attempts / unique `(owner, slot, argument_index)` occurrences / built / deferred 27.1b / rejected source / failed. Attempts equal unique occurrences for this pass. Failed is zero in every slot.
 
-| Slot | Built | Deferred 27.1b | Remaining failures |
-|---|---:|---:|---:|
-| Condition | 32,664 | 685 | 25 |
-| Initializer | 20,370 | 2,940 | 80 |
-| ReturnValue | 47,840 | 7,849 | 204 |
-| Iterable | 1,190 | 50 | 0 |
-| Receiver | 48,494 | 1 | 0 |
-| Argument | 82,077 | 4,811 | 1,585 |
-| LhsPlace | 74,281 | 34 | 0 |
-| RhsValue | 52,206 | 21,940 | 169 |
-| Scrutinee | 284 | 4 | 0 |
-| Pattern | 0 | 0 | 0 |
-| RaisedValue | 1,808 | 1,775 | 0 |
-| Expression | 46 | 19 | 5 |
+| Slot | Attempts | Unique | Built | Deferred | Rejected | Failed |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Condition | 33,374 | 33,374 | 32,683 | 685 | 6 | 0 |
+| Initializer | 23,390 | 23,390 | 17,082 | 6,308 | 0 | 0 |
+| ReturnValue | 55,893 | 55,893 | 47,916 | 7,973 | 4 | 0 |
+| Iterable | 1,240 | 1,240 | 1,190 | 50 | 0 | 0 |
+| Receiver | 48,495 | 48,495 | 48,480 | 15 | 0 | 0 |
+| Argument | 88,473 | 88,473 | 83,621 | 4,850 | 2 | 0 |
+| LhsPlace | 74,315 | 74,315 | 74,281 | 34 | 0 | 0 |
+| RhsValue | 74,315 | 74,315 | 49,611 | 24,704 | 0 | 0 |
+| Scrutinee | 288 | 288 | 284 | 4 | 0 | 0 |
+| RaisedValue | 3,583 | 3,583 | 1,808 | 1,775 | 0 | 0 |
+| Expression | 70 | 70 | 46 | 19 | 5 | 0 |
 
-## 4. Items D–F
+Pattern had no occurrences. Aggregate: 403,436 attempts and unique occurrences; 357,002 built, 46,417 deferred, 17 rejected, 0 failed. Coverage artifact: `tmp/phase27-c2-est-coverage.csv`.
 
-Not started. The stop rule fired after item B produced NEEDS BANK groups. No D–F behavior or tests are claimed.
+## D–F. Places, copy/rebuild contract, and off mode
 
-## 5. String-debt baseline
+- D: `tests/phase27/est/raw_places.moss` and `tests/tooling/check_phase27_est.py` verify the requested projection chain, different IDs for `i`, `j`, and both `u` occurrences, compound `+=` bindings, and ExprStmt classification for `f(x)`. Assignment/call statements promoted by the legacy parser receive EST-only RawForm metadata once; consumers are unchanged. Pass.
+- C dump positives: `tests/phase27/est/message_expression.moss`, `bitwise_shift.moss` (cites `docs/LANGUAGE_SYNTAX.md` §Bitwise and shift operators), and `numeric_member.moss`. `MOSS_EST_DUMP=1` writes S-expressions with ExprIds. Pass.
+- E: the focused contract test checks ordinary Program copy ExprId retention, statement insertion/erasure, deep fresh occurrence IDs for identical member/index text, rebuild rebinding while the old node remains readable, append-only arena growth, and the negative `Stmt.text` staleness assertion in shadow. Rebuild remains unwired to optimizer and module-name rewriting. Pass.
+- F: `MOSS_EST=off MOSS_EST_STATS=1` reports `arena_size=0 handle_count=0`; the off path returns before arena allocation or handle population. Pass.
+- Test command: `python3 tests/tooling/check_phase27_est.py build/compiler/moss-dev`.
 
-Not measured for the required `4d6d0c8` baseline; item G was not started. Existing baseline data elsewhere in the worktree is not substituted.
+## G. String-debt baseline
 
-## 6. Gates G1–G9
+Counts at `4d6d0c8`, ordered as `parse_simple_call / split_top_level / strip_redundant_outer_parentheses / parse_enum_case_expression / interpreter eval(string)`:
 
-All not run. Work stopped before C under the explicit NEEDS BANK stop rule; no gate failure or pass is claimed. There are no gate logs. Required baseline hash: `4d6d0c8c2fcb3bb6e255bcaee80174b6b928a576`.
+| Consumer | Counts |
+| --- | --- |
+| Checker | 50 / 16 / 6 / 7 / 0 |
+| Emitter | 17 / 6 / 9 / 2 / 0 |
+| Reach walk | 7 / 10 / 1 / 0 / 0 |
+| Fast Debug | 0 / 0 / 0 / 0 / 99 |
 
-- G1 `make check`, off: NOT RUN. Log: none (not run).
-- G2 `make check`, shadow: NOT RUN. Log: none (not run).
-- G3 corpus off vs baseline binary: NOT RUN. Log: none (not run).
-- G4 corpus off vs shadow: NOT RUN. Log: none (not run).
-- G5 generated Rust parity: NOT RUN. Log: none (not run).
-- G6 Fast Debug parity: NOT RUN. Log: none (not run).
-- G7 `.mossi` Section 1/2 parity: NOT RUN. Log: none (not run).
-- G8 compiler-perf, off: NOT RUN. Log: none (not run).
-- G9 compiler-perf, shadow: NOT RUN. Log: none (not run).
+`docs/phase27/STRING_DEBT_BASELINE.md` gives the measurement command and machine-readable per-site baseline consumed by the lint. A temporary `split_top_level` emitter call failed the lint with exit 1 (`tmp/phase27-g-emitter-lint-failure.log`). A temporary interpreter `eval` call failed with exit 1 (`tmp/phase27-g-interpreter-lint-failure.log`). Both probes were removed; the current lint passes.
 
-## 7. Branch head and CP-A
+## G1–G9 final-head gates
 
-The final branch head is the commit containing this report. It is not an authorized CP-A start; CP-A has not begun. The branch head SHA is reported in the session closeout.
+Baseline hash for the corpus and performance gates: `4d6d0c8c2fcb3bb6e255bcaee80174b6b928a576`.
 
-## 8. Decisions
+| Gate | Result | Evidence |
+| --- | --- | --- |
+| G1 `MOSS_EST=off make --jobs="$(nproc)" check` | PASS, 154/154 jobs, no skips or waivers | `tmp/phase27-G1-off-final.log`; baseline `4d6d0c8c2fcb3bb6e255bcaee80174b6b928a576` |
+| G2 shadow `make check` | PASS, 154/154 jobs, no skips or waivers | `tmp/phase27-G2-shadow-final.log`; baseline `4d6d0c8c2fcb3bb6e255bcaee80174b6b928a576` |
+| G3 branch off vs 4d6d0c8 binary | PASS, 2,061 sources, zero verdict/Rust-hash differences | `tmp/phase27-G3-summary.log`; baseline binary from `4d6d0c8c2fcb3bb6e255bcaee80174b6b928a576` |
+| G4 off vs shadow corpus | PASS, 2,061 sources, 1,341 accepted each, zero differences | `tmp/phase27-G4-G5-summary.log`; baseline `4d6d0c8c2fcb3bb6e255bcaee80174b6b928a576` |
+| G5 examples Rust hashes | PASS, 776 `examples/` sources, zero differences | `tmp/phase27-G4-G5-summary.log`; baseline `4d6d0c8c2fcb3bb6e255bcaee80174b6b928a576` |
+| G6 Fast Debug parity | PASS, 546 accepted examples, zero output differences, zero R12 text hits; two identical timeouts per mode | `tmp/phase27-G6-fast-debug-corpus.log`, plus paired scope logs `tmp/phase27-G6-fast-debug-off.log` and `...-shadow.log`; baseline `4d6d0c8c2fcb3bb6e255bcaee80174b6b928a576` |
+| G7 `.mossi` Section 1/2 hashes | PASS, identical for off and shadow | `tmp/phase27-G7-mossi-hashes.log`; baseline `4d6d0c8c2fcb3bb6e255bcaee80174b6b928a576` |
+| G8 off compiler-perf | PASS, 4.827 s candidate vs 4.849 s baseline (−0.5%); no slowdown beyond noise | `tmp/phase27-G8-perf-off-final.log`, `tmp/compiler-perf/20261028-185417/LOCAL_REPORT.md`; baseline `4d6d0c8c2fcb3bb6e255bcaee80174b6b928a576` |
+| G9 shadow compiler-perf | Recorded only: 5.003 s aggregate candidate, about 3.6% above the separate off candidate run; no slowdown beyond baseline noise rule | `tmp/phase27-G9-perf-shadow-final.log`, `tmp/compiler-perf/20261028-185601/LOCAL_REPORT.md`; baseline `4d6d0c8c2fcb3bb6e255bcaee80174b6b928a576` |
 
-**Self-review:** item A's denominator was checked against both Git trees and exact TSV membership. Item B used one fresh 2,061-source shadow run; categorized totals reconcile to 42,176 raw failed constructions. Deferred groups were not counted as built. The NEEDS BANK stop rule was applied before C. No splitter, consumer, language semantic, ABI, or `.mossi` behavior was changed. The only implementation addition is opt-in failure tracing under `src/est`; reproducers and evidence are under repository-local paths.
+The first G1 attempt exposed standalone native-test links that omitted the nested EST translation unit. The shared source enumeration was corrected; the final G1 and G2 runs above both pass. The first G7 fixture used different absolute roots and therefore changed a Section 2 path hash; using the same root for both modes produced identical Section 1 and Section 2 hashes.
+
+## Decisions and self-review
+
+- **Self-review:** The 2,064 count is stale for the specified baseline; all source-set differences are listed rather than inventing three omissions.
+- **Self-review:** Parser-promoted assignment and call statements retain their existing kinds and semantics. EST-only metadata covers the required Assign / CompoundAssign / ExprStmt classifications.
+- **Self-review:** The one initial G1 failure was a test-link inventory issue, fixed by discovering nested `src/**/*.cpp`; final G1/G2 evidence is clean.
+- **Self-review:** Rebuild and fresh-occurrence APIs only append nodes and rebind explicit handles. No consumer was switched to tree-based behavior.
+- **Self-review:** Off/shadow output parity and off/base parity are both zero-difference on the required corpus. No language semantics, `.mossi` format, or ABI was changed.

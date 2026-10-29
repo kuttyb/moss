@@ -1,5 +1,9 @@
 # Phase 27 EST shadow divergences
 
+The zero-count table below is the pre-27.1a placeholder. The Phase 27.1a triage,
+bank rulings, and final construction result supersede it; the current bank status
+is recorded after those rulings.
+
 The shadow corpus gate classifies each structural disagreement as an EST bug,
 an existing-compiler inconsistency needing Bank adjudication, or Unexplained.
 Each entry must include a minimal reproducer and the checker/string-path result.
@@ -71,6 +75,9 @@ The columns below are successful builds / deferred forms / remaining failed form
 **Stop rule applied:** item B produced multiple NEEDS BANK groups. Item B is recorded; work stops before item C pending bank classification. No language semantics, `.mossi` format, or ABI decision was made.
 
 ## Bank rulings on item B (2026-10-28)
+
+The NEEDS BANK labels in the initial triage table are historical and are
+superseded by the ruling results below. No NEEDS BANK group remains.
 
 1. **Message expressions (1,645): EST BUG, in scope.** Parse `message target.Handler(args...)` as a primary expression. Its target, handler name, and arguments are explicit; every argument is a distinct occurrence. Message expressions are valid wherever a value is valid.
 2. **Bitwise and shift operators (402): EST BUG, in scope.** Implement `& | ^ ~ << >>` using the precedence and associativity in `docs/LANGUAGE_SYNTAX.md` §Bitwise and shift operators. The positive regression cites this section.
