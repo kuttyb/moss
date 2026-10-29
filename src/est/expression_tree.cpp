@@ -219,8 +219,26 @@ void populate(Program& program) {
       const auto id = parse_expression(arena, source);
       handles.push_back({slot, index, id, fingerprint(source)});
       arena.note(slot, true);
-    } catch (const std::invalid_argument&) {
+    } catch (const std::invalid_argument& error) {
       arena.note(slot, false);
+      if (const char* failures = std::getenv("MOSS_EST_FAILURE_FILE")) {
+        std::ofstream out(failures, std::ios::app);
+        if (!out) throw std::runtime_error("cannot open MOSS_EST_FAILURE_FILE");
+        auto field = [&](std::string_view value) {
+          for (const char c : value) {
+            if (c == '\\' || c == '\t' || c == '\n' || c == '\r') out << '\\';
+            if (c == '\n') out << 'n';
+            else if (c == '\r') out << 'r';
+            else if (c == '\t') out << 't';
+            else out << c;
+          }
+        };
+        out << static_cast<std::size_t>(slot) << '\t';
+        field(source);
+        out << '\t';
+        field(error.what());
+        out << '\n';
+      }
     }
   };
   auto statement = [&](Stmt& s) {

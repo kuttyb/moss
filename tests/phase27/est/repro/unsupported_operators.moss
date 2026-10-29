@@ -1,0 +1,8 @@
+fn pow(value: Int) -> Int:
+  return value ** 2
+fn member(values: Map[String, Int]) -> Bool:
+  return "a" in values
+fn both(a: Bool, b: Bool) -> Bool:
+  return a && b
+fn either(a: Bool, b: Bool) -> Bool:
+  return a || b

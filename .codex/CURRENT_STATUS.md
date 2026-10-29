@@ -13090,5 +13090,14 @@ check` passed 154/154, zero failures or skips. Branch remains unmerged.
 ## Phase 27.1a item A — corpus inventory (2026-10-28)
 
 - At `4d6d0c8c2fcb3bb6e255bcaee80174b6b928a576`, `git ls-tree -r --name-only` finds 2,061 tracked `.moss` sources; `tests/tooling/corpus_verdicts.py` records all 2,061 exactly once. The prior off/shadow corpus TSVs likewise have 2,061 unique source rows, with no omitted or extra path.
-- The stated 2,064 count matches a different historical corpus revision (`d109b8f1`), not the required baseline. Between those revisions, 11 paths were removed and 8 added, so there are no three specific omissions to name. Answer: none; the discrepancy is an invalid expected denominator.
+- The stated 2,064 count matches a different historical corpus revision (`d109b8f1`), not the required baseline. Between those revisions, 7 paths were removed and 4 added, so there are no three specific omissions to name. Answer: none; the discrepancy is an invalid expected denominator.
 - Updated AGENTS.md's Phase 27 branch instruction to state explicitly that scoped local commits and normal pushes are authorized and no repository-level no-push restriction applies.
+
+
+## Phase 27.1a item B — shadow failure triage and stop (2026-10-28)
+
+- Fresh `MOSS_EST=shadow` corpus pass at the item A commit checked 2,061 sources, 1,341 accepted. Logs: `tmp/phase27-b-shadow.tsv`, `tmp/phase27-b-est-failures.tsv`, `tmp/phase27-b-est-coverage.csv`. The raw trace has 403,436 attempts, 361,260 built, and 42,176 failed. Grouped rows reconcile to all 42,176 failures.
+- Triage groups, labels, per-form slot counts, reduced reproducers, string-path outcomes, and `docs/LANGUAGE_SYNTAX.md` section references are recorded in `docs/phase27/EST_DIVERGENCES.md`. All reproducers live under `tests/phase27/est/repro/` and are at most ten lines. Seven valid reproducers pass `MOSS_EST=off`; unsupported/malformed cases retain their existing string-path diagnostics.
+- Classified slot totals (built/deferred_27_1b/remaining failure) are: Condition 32664/685/25; Initializer 20370/2940/80; ReturnValue 47840/7849/204; Iterable 1190/50/0; Receiver 48494/1/0; Argument 82077/4811/1585; LhsPlace 74281/34/0; RhsValue 52206/21940/169; Scrutinee 284/4/0; Pattern 0/0/0; RaisedValue 1808/1775/0; Expression 46/19/5. These are a triage classification, not the requested C counter implementation.
+- **STOP RULE:** item B produced six NEEDS BANK groups (message expressions, bitwise/shifts, unsupported operator spellings, symbolic Boolean spellings, incomplete expressions, and standalone multiline fragments). Item B is complete and committed; stop before C pending bank classification. Items C onward and gates G1–G9 are not run. No G1–G9 pass or failure is claimed.
+- Item A count correction: exact source-set diff from `d109b8f1` to `4d6d0c8` is 7 older-only paths and 4 required-tree-only paths (net −3); the requested baseline itself has no omitted sources.
