@@ -717,10 +717,18 @@ void populate(Program& program) {
     for (std::size_t i = 0; i < retained.size(); ++i)
       assert(arena.at(retained[i].expr).index() ==
              arena.at(shifted.front().expression_handles[i].expr).index());
-    auto same_a = parse_expression(arena, "same");
-    auto same_b = parse_expression(arena, "same");
+    auto same_a = parse_expression(arena, "same.path[index]");
+    auto same_b = parse_expression(arena, "same.path[index]");
     assert(same_a != same_b);
-    assert(fresh_occurrence(arena, same_a) != same_a);
+    const auto* old_chain = std::get_if<Index>(&arena.at(same_a));
+    assert(old_chain);
+    const auto fresh = fresh_occurrence(arena, same_a);
+    const auto* new_chain = std::get_if<Index>(&arena.at(fresh));
+    assert(fresh != same_a && new_chain && new_chain->base != old_chain->base &&
+           new_chain->index != old_chain->index);
+    const auto* old_member = std::get_if<Member>(&arena.at(old_chain->base));
+    const auto* new_member = std::get_if<Member>(&arena.at(new_chain->base));
+    assert(old_member && new_member && new_member->base != old_member->base);
     const auto old_id = retained.front().expr;
     const auto old_dump = dump_node(arena, old_id);
     auto rebuilt = retained;
@@ -730,9 +738,16 @@ void populate(Program& program) {
     assert(rebuilt.front().expr != old_id && dump_node(arena, old_id) == old_dump);
     const char* stale = std::getenv("MOSS_EST_STALE_TEST");
     if (stale && std::string_view(stale) == "1") {
-      std::string changed = "mutated source";
-      (void)lookup(retained, arena, old_handle.owner, old_handle.slot,
-                   old_handle.argument_index, changed);
+      Stmt stale_stmt;
+      stale_stmt.kind = Stmt::Kind::Raw;
+      stale_stmt.text = "f(x)";
+      const auto stale_owner = UINT64_MAX;
+      const auto stale_root = parse_expression(arena, stale_stmt.text);
+      std::vector<Handle> stale_handles{{stale_owner, ExprSlot::Expression, 0,
+          stale_root, fingerprint(stale_stmt.text)}};
+      stale_stmt.text = "f(y)";
+      (void)lookup(stale_handles, arena, stale_owner, ExprSlot::Expression, 0,
+                   stale_stmt.text);
       assert(false && "staleness guard did not fire");
     }
   }
