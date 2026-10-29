@@ -27,6 +27,24 @@ def run(binary: Path, source: Path, env: dict[str, str], *, ok: bool):
     return result
 
 
+def package_check(binary: Path, package: Path, env: dict[str, str]):
+    package_env = dict(env)
+    package_env["MOSS"] = str(binary)
+    result = subprocess.run(
+        [str(ROOT / "margo"), "--root", str(package), "build", "--check", "--json"],
+        cwd=ROOT, env=package_env, text=True, capture_output=True, timeout=120)
+    assert result.returncode != 0, (result.stdout, result.stderr)
+    outer = json.loads(result.stdout)
+    assert outer.get("ok") is False, outer
+    detail = outer.get("error", "")
+    start = detail.find("{\n")
+    assert start >= 0, detail
+    inner = json.loads(detail[start:])
+    error = inner.get("error") or {}
+    return (error.get("code"), Path(error.get("source_file", "")).name,
+            error.get("line"))
+
+
 def main() -> int:
     shutil.rmtree(SCRATCH, ignore_errors=True)
     source_root = SCRATCH / "src"
@@ -121,9 +139,18 @@ def main() -> int:
                for identity in qualified_sets["legacy"])
     assert qualified_results["legacy"][0] is False
     assert qualified_results["tree"][0] is True
+    package_diagnostics = {}
+    for mode, binary in (("legacy", LEGACY), ("tree", COMPILER)):
+        env["MOSS_EST"] = "off" if mode == "legacy" else "shadow"
+        package_diagnostics[mode] = package_check(binary, qualified_root, env)
+        assert package_diagnostics[mode] == (
+            "UNKNOWN_SYMBOL_OR_TYPE", "token.moss", 3), package_diagnostics
+    assert package_diagnostics["legacy"] == package_diagnostics["tree"]
     print("PASS Point(x = ops.g(7)) reaches exactly ops.g; entry main is traced separately")
     print("PASS f(x = g(1)) rejects identically: CALL_NAMED_ARGUMENT_UNSUPPORTED")
     print("PASS node.kind_num excludes token.kind_num; legacy rejects, tree accepts")
+    print("PASS package-mode Margo check rejects both paths identically: "
+          f"{package_diagnostics['tree']}")
     return 0
 
 
