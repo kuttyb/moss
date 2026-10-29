@@ -58768,7 +58768,7 @@
     "qualified_call_reproducer": {
       "path": "tests/tooling/check_phase27_reach_named_forms.py",
       "fixture": "generated qualified/src/main.moss imports node and token, calls node.kind_num(); token.kind_num returns absent()",
-      "oracle": "docs/LANGUAGE_SYNTAX.md \u00a7Modules: import introduces a qualified module name; node.kind_num names node.kind_num",
+      "oracle": "docs/LANGUAGE_SYNTAX.md §Modules: import introduces a qualified module name; node.kind_num names node.kind_num",
       "legacy_answer": {
         "ok": false,
         "error_code": "UNKNOWN_SYMBOL_OR_TYPE",
@@ -58799,14 +58799,14 @@
     "verdict_mismatches": 0,
     "edge_row_counts": {
       "legacy_only": 6634,
-      "tree_only": 889,
-      "total": 7523,
+      "tree_only": 965,
+      "total": 7599,
       "classification": [
         {
           "cause": "BENIGN: same owner and edge kind, same target leaf with legacy unqualified and tree qualified spellings",
           "legacy_only": 6102,
-          "tree_only": 207,
-          "total": 6309,
+          "tree_only": 283,
+          "total": 6385,
           "examples": [
             {
               "entry": "benchmarks/agent/baselines/post-22.1/AB024/final/src/main.moss",
@@ -58923,14 +58923,14 @@
               "call": "node.kind_num()",
               "legacy": "checks token.kind_num and rejects UNKNOWN_SYMBOL_OR_TYPE at token.moss:3",
               "tree": "checks node.kind_num and accepts",
-              "oracle": "LANGUAGE_SYNTAX \u00a7Modules plus C1; package-mode Margo verdict remains equal"
+              "oracle": "LANGUAGE_SYNTAX §Modules plus C1; package-mode Margo verdict remains equal"
             },
             {
               "reproducer": "tests/tooling/check_phase27_reach_named_forms.py",
               "call": "inner.make(5)",
               "legacy": "checks outer.make and rejects UNKNOWN_SYMBOL_OR_TYPE at outer.moss:3",
               "tree": "checks inner.make and accepts",
-              "oracle": "LANGUAGE_SYNTAX \u00a7Modules plus C1; package-mode Margo verdict remains equal"
+              "oracle": "LANGUAGE_SYNTAX §Modules plus C1; package-mode Margo verdict remains equal"
             }
           ]
         },
@@ -59154,5 +59154,129 @@
       "result": "Package-mode verdict and diagnostic match; file-root check accepts only on the tree path.",
       "reproducer": "tests/tooling/check_phase27_reach_named_forms.py"
     }
+  },
+  "phase27_2_cpc_remediation": {
+    "frozen_review_sha": "31c4261a121e1036e74092f717496e6fe95bdca8",
+    "fresh_cp_c": "CP-C: NO-GO",
+    "fresh_cp_c_findings": "The deferred-pipeline checker crash and false cross-module same-leaf function candidates were migration defects. Crash fixes are in semantic_checker.cpp; reach closure now limits same-leaf candidates by each declaration source file imports.",
+    "latest_differential_checkpoint": "644edc5372be15f68924764c2025e4bb8740fdd8 with the recorded source changes present in the candidate binary; rerun after commit for a clean revision/hash record.",
+    "pinned_legacy_sha256": "4a9d7d7509f9883194f2d3f147c4ff66c39e9c832e758ddffdd7572d57667ffd",
+    "candidate_sha256": "2013359db00105fa0d0f8276fec2650cdfeb7c8d05a9640ec849ce7bb414ec3e",
+    "source_count": 2088,
+    "verdict_mismatches": 5,
+    "verdict_mismatch_ruling": "All five are exact pinned-baseline SIGSEGVs on deferred generic pipeline sources that the candidate accepts after fixing unresolved pipeline type dereferences; no candidate-only reject/crash remains. Focused reproducer is tests/tooling/check_phase27_untyped_pipeline_return.py.",
+    "checked_declarations": {
+      "legacy_only": 8,
+      "tree_only": 2,
+      "unexpected_legacy_only": 0,
+      "legacy_only_ruling": "All eight are qualified-module same-leaf artifacts produced by the legacy text splitter. The two-path corpus harness records both checked sets and verdicts for every listed source. The only tree-only declarations remain Ast.size and Env.size, with the previously adjudicated receiver-name candidate chain.",
+      "legacy_only_instances": [
+        {
+          "entry": "examples/swarm/modules/calc_interpreter/repro/natural_full/src/parser.moss",
+          "legacy_only_identity": "callable-v1:module-v1:calc-interpreter@0.1.0::node:fn:kind_assign",
+          "classification": "LEGACY MISPARSE: the legacy text splitter erased the explicit module qualifier and selected a same-leaf homonym",
+          "oracle": "LANGUAGE_SYNTAX §Modules: a qualified call resolves through its imported module name; C1 package-mode verdict remains unchanged",
+          "two_path_reproducer": {
+            "script": "tests/tooling/check_phase27_reach_differential.py",
+            "entrypoint": "moss check <this same source entry> --json",
+            "legacy": "MOSS_EST=off; full checked set and verdict recorded in the report",
+            "tree": "MOSS_EST=shadow; full checked set and verdict recorded in the report"
+          }
+        },
+        {
+          "entry": "examples/swarm/modules/calc_interpreter/repro/natural_full/src/parser.moss",
+          "legacy_only_identity": "callable-v1:module-v1:calc-interpreter@0.1.0::node:fn:kind_num",
+          "classification": "LEGACY MISPARSE: the legacy text splitter erased the explicit module qualifier and selected a same-leaf homonym",
+          "oracle": "LANGUAGE_SYNTAX §Modules: a qualified call resolves through its imported module name; C1 package-mode verdict remains unchanged",
+          "two_path_reproducer": {
+            "script": "tests/tooling/check_phase27_reach_differential.py",
+            "entrypoint": "moss check <this same source entry> --json",
+            "legacy": "MOSS_EST=off; full checked set and verdict recorded in the report",
+            "tree": "MOSS_EST=shadow; full checked set and verdict recorded in the report"
+          }
+        },
+        {
+          "entry": "examples/swarm/modules/calc_interpreter/repro/natural_full/tests/lexer_test.moss",
+          "legacy_only_identity": "callable-v1:module-v1:calc-interpreter@0.1.0::node:fn:kind_assign",
+          "classification": "LEGACY MISPARSE: the legacy text splitter erased the explicit module qualifier and selected a same-leaf homonym",
+          "oracle": "LANGUAGE_SYNTAX §Modules: a qualified call resolves through its imported module name; C1 package-mode verdict remains unchanged",
+          "two_path_reproducer": {
+            "script": "tests/tooling/check_phase27_reach_differential.py",
+            "entrypoint": "moss check <this same source entry> --json",
+            "legacy": "MOSS_EST=off; full checked set and verdict recorded in the report",
+            "tree": "MOSS_EST=shadow; full checked set and verdict recorded in the report"
+          }
+        },
+        {
+          "entry": "examples/swarm/modules/calc_interpreter/repro/natural_full/tests/parser_test.moss",
+          "legacy_only_identity": "callable-v1:module-v1:calc-interpreter@0.1.0::node:fn:kind_num",
+          "classification": "LEGACY MISPARSE: the legacy text splitter erased the explicit module qualifier and selected a same-leaf homonym",
+          "oracle": "LANGUAGE_SYNTAX §Modules: a qualified call resolves through its imported module name; C1 package-mode verdict remains unchanged",
+          "two_path_reproducer": {
+            "script": "tests/tooling/check_phase27_reach_differential.py",
+            "entrypoint": "moss check <this same source entry> --json",
+            "legacy": "MOSS_EST=off; full checked set and verdict recorded in the report",
+            "tree": "MOSS_EST=shadow; full checked set and verdict recorded in the report"
+          }
+        },
+        {
+          "entry": "examples/swarm/modules/calc_interpreter/repro/natural_full/tests/token_test.moss",
+          "legacy_only_identity": "callable-v1:module-v1:calc-interpreter@0.1.0::node:fn:kind_num",
+          "classification": "LEGACY MISPARSE: the legacy text splitter erased the explicit module qualifier and selected a same-leaf homonym",
+          "oracle": "LANGUAGE_SYNTAX §Modules: a qualified call resolves through its imported module name; C1 package-mode verdict remains unchanged",
+          "two_path_reproducer": {
+            "script": "tests/tooling/check_phase27_reach_differential.py",
+            "entrypoint": "moss check <this same source entry> --json",
+            "legacy": "MOSS_EST=off; full checked set and verdict recorded in the report",
+            "tree": "MOSS_EST=shadow; full checked set and verdict recorded in the report"
+          }
+        },
+        {
+          "entry": "examples/swarm/modules/calc_interpreter/tests/lexer_test.moss",
+          "legacy_only_identity": "callable-v1:module-v1:calc-interpreter@0.1.0::node:fn:kind_assign",
+          "classification": "LEGACY MISPARSE: the legacy text splitter erased the explicit module qualifier and selected a same-leaf homonym",
+          "oracle": "LANGUAGE_SYNTAX §Modules: a qualified call resolves through its imported module name; C1 package-mode verdict remains unchanged",
+          "two_path_reproducer": {
+            "script": "tests/tooling/check_phase27_reach_differential.py",
+            "entrypoint": "moss check <this same source entry> --json",
+            "legacy": "MOSS_EST=off; full checked set and verdict recorded in the report",
+            "tree": "MOSS_EST=shadow; full checked set and verdict recorded in the report"
+          }
+        },
+        {
+          "entry": "examples/swarm/modules/calc_interpreter/tests/token_test.moss",
+          "legacy_only_identity": "callable-v1:module-v1:calc-interpreter@0.1.0::node:fn:kind_num",
+          "classification": "LEGACY MISPARSE: the legacy text splitter erased the explicit module qualifier and selected a same-leaf homonym",
+          "oracle": "LANGUAGE_SYNTAX §Modules: a qualified call resolves through its imported module name; C1 package-mode verdict remains unchanged",
+          "two_path_reproducer": {
+            "script": "tests/tooling/check_phase27_reach_differential.py",
+            "entrypoint": "moss check <this same source entry> --json",
+            "legacy": "MOSS_EST=off; full checked set and verdict recorded in the report",
+            "tree": "MOSS_EST=shadow; full checked set and verdict recorded in the report"
+          }
+        },
+        {
+          "entry": "examples/swarm/modules/calc_interpreter/tests/token_test.moss",
+          "legacy_only_identity": "callable-v1:module-v1:calc-interpreter@0.1.0::node:fn:make",
+          "classification": "LEGACY MISPARSE: the legacy text splitter erased the explicit module qualifier and selected a same-leaf homonym",
+          "oracle": "LANGUAGE_SYNTAX §Modules: a qualified call resolves through its imported module name; C1 package-mode verdict remains unchanged",
+          "two_path_reproducer": {
+            "script": "tests/tooling/check_phase27_reach_differential.py",
+            "entrypoint": "moss check <this same source entry> --json",
+            "legacy": "MOSS_EST=off; full checked set and verdict recorded in the report",
+            "tree": "MOSS_EST=shadow; full checked set and verdict recorded in the report"
+          }
+        }
+      ]
+    },
+    "current_edge_rows": {
+      "legacy_only": 6634,
+      "tree_only": 965,
+      "total": 7599,
+      "classification_counts": "See phase27_2_adjudication.edge_row_counts.classification; the same-leaf spelling class now has 283 tree-only rows, receiver-name over-approximation 2, and built-in constructor rows 680."
+    },
+    "package_mode": "Focused Margo package checks still match; UNKNOWN_SYMBOL_OR_TYPE remains at token.moss:3 on both paths.",
+    "full_off_gate": "158/158 passed on 31c4261a before the latest reach correction; rerun required.",
+    "sanitizer_sweep": "2,088 sources, zero ASan/UBSan findings on fe70ca86; rerun required after latest reach correction."
   }
 }
