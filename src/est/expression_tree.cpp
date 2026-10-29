@@ -490,8 +490,19 @@ Shape shape_of(const Arena& arena, ExprId id) {
       for (auto child : node.arguments) result.children.push_back(shape_of(arena, child));
       return result;
     } else {
-      Shape result{"pipeline", {}, {shape_of(arena, node.input)}};
-      for (auto child : node.stages) result.children.push_back(shape_of(arena, child));
+      Shape result{"pipeline", {}, {}};
+      auto input = shape_of(arena, node.input);
+      if (input.kind == "pipeline")
+        result.children = std::move(input.children);
+      else
+        result.children.push_back(std::move(input));
+      for (auto child : node.stages) {
+        auto stage = shape_of(arena, child);
+        if (stage.kind == "pipeline")
+          result.children.insert(result.children.end(), stage.children.begin(), stage.children.end());
+        else
+          result.children.push_back(std::move(stage));
+      }
       return result;
     }
   }, arena.at(id));
