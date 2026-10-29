@@ -3,6 +3,7 @@
 #include <cassert>
 #include <array>
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <optional>
 #include <string>
@@ -13,6 +14,7 @@
 #include <vector>
 
 #include "../constraints.hpp"
+#include "../functional_source_pipeline.hpp"
 #include "../type_ir.hpp"
 
 namespace moss { struct Program; struct Stmt; }
@@ -137,6 +139,10 @@ ExprId parse_expression(Arena& arena, std::string_view source,
                         std::uint64_t origin_id = 0,
                         std::uint32_t base_line = 1,
                         std::uint32_t base_column = 1);
+std::optional<ParsedFunctionalPipeline> functional_pipeline(
+    const Arena& arena, ExprId expression, std::string_view source,
+    const std::function<std::optional<FunctionalNodeKind>(
+        std::string_view)>& resolve_stage);
 void populate(Program& program);
 void populate_loaded(Program& program, std::vector<Stmt>& statements,
                      std::uint64_t origin_id);

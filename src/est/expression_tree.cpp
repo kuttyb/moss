@@ -64,6 +64,59 @@ const SemanticFacts* Arena::facts(
   return found == semantic_facts_.end() ? nullptr : &found->second;
 }
 
+std::optional<ParsedFunctionalPipeline> functional_pipeline(
+    const Arena& arena, ExprId expression, std::string_view source,
+    const std::function<std::optional<FunctionalNodeKind>(
+        std::string_view)>& resolve_stage) {
+  const auto* pipeline = std::get_if<Pipeline>(&arena.at(expression));
+  if (!pipeline || pipeline->stages.empty()) return std::nullopt;
+  const auto root_span = arena.span(expression);
+  const auto source_slice = [&](ExprId id) -> std::optional<std::string> {
+    const auto span = arena.span(id);
+    if (span.source_begin < root_span.source_begin ||
+        span.source_end < span.source_begin ||
+        span.source_end > root_span.source_end)
+      return std::nullopt;
+    const auto begin = span.source_begin - root_span.source_begin;
+    const auto length = span.source_end - span.source_begin;
+    if (begin > source.size() || length > source.size() - begin)
+      return std::nullopt;
+    auto text = source.substr(begin, length);
+    const auto first = text.find_first_not_of(" \t\r\n");
+    if (first == std::string_view::npos) return std::string{};
+    const auto last = text.find_last_not_of(" \t\r\n");
+    return std::string(text.substr(first, last - first + 1));
+  };
+  auto source_text = source_slice(pipeline->input);
+  if (!source_text || source_text->empty()) return std::nullopt;
+  ParsedFunctionalPipeline result;
+  result.source = std::move(*source_text);
+  for (const auto stage_id : pipeline->stages) {
+    auto raw = source_slice(stage_id);
+    if (!raw || raw->empty()) return std::nullopt;
+    std::string_view callee = *raw;
+    std::vector<ExprId> arguments;
+    if (const auto* call = std::get_if<Call>(&arena.at(stage_id))) {
+      auto call_name = source_slice(call->callee);
+      if (!call_name) return std::nullopt;
+      callee = *call_name;
+      arguments = call->arguments;
+    }
+    auto kind = resolve_stage(callee);
+    if (!kind) return std::nullopt;
+    ParsedFunctionalStage parsed_stage;
+    parsed_stage.kind = *kind;
+    parsed_stage.raw = std::move(*raw);
+    for (const auto argument : arguments) {
+      auto argument_text = source_slice(argument);
+      if (!argument_text) return std::nullopt;
+      parsed_stage.arguments.push_back(std::move(*argument_text));
+    }
+    result.stages.push_back(std::move(parsed_stage));
+  }
+  return result;
+}
+
 void Arena::note(std::uint64_t owner, ExprSlot slot,
                  std::uint32_t argument_index, Outcome outcome) {
   auto& count = coverage_.at(static_cast<std::size_t>(slot));
