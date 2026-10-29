@@ -139,6 +139,50 @@ def main() -> int:
                for identity in qualified_sets["legacy"])
     assert qualified_results["legacy"][0] is False
     assert qualified_results["tree"][0] is True
+
+    inner_root = SCRATCH / "inner_qualified"
+    inner_src = inner_root / "src"
+    inner_src.mkdir(parents=True)
+    (inner_root / "Moss.toml").write_text(
+        '[package]\nname = "inner_qualified_reach"\nversion = "0.1.0"\n\n'
+        '[build]\nsource = "src"\n')
+    inner_entry = inner_src / "main.moss"
+    inner_entry.write_text(
+        "module app\nimport inner\nimport outer\n"
+        "fn main():\n  echo inner.make(5)\n")
+    (inner_src / "inner.moss").write_text(
+        "module inner\nexport fn make(value: Int) -> Int:\n"
+        "  return value + 1\n")
+    (inner_src / "outer.moss").write_text(
+        "module outer\nexport fn make(value: Int) -> Int:\n"
+        "  return absent()\n")
+    inner_results = {}
+    inner_sets = {}
+    inner_package_diagnostics = {}
+    for mode, binary, ok in (
+        ("legacy", LEGACY, False), ("tree", COMPILER, True)):
+        env["MOSS_EST"] = "off" if mode == "legacy" else "shadow"
+        result = run(binary, inner_entry, env, ok=ok)
+        response = json.loads(result.stdout)
+        error = response.get("error") or {}
+        inner_results[mode] = (
+            response.get("ok"), error.get("code"),
+            Path(error.get("source_file", "")).name, error.get("line"))
+        inner_sets[mode] = {
+            row.split("|", 3)[3]
+            for row in result.stderr.splitlines()
+            if row.startswith("MOSS_C1_SCOPE_ID|function|")
+        }
+        inner_package_diagnostics[mode] = package_check(binary, inner_root, env)
+    assert inner_results["legacy"] == (
+        False, "UNKNOWN_SYMBOL_OR_TYPE", "outer.moss", 3), inner_results
+    assert inner_results["tree"] == (True, None, "", None), inner_results
+    assert inner_sets["tree"] == {
+        "callable-v1:module-v1:inner_qualified_reach@0.1.0::inner:fn:make"
+    }, inner_sets
+    assert inner_package_diagnostics["legacy"] == (
+        "UNKNOWN_SYMBOL_OR_TYPE", "outer.moss", 3), inner_package_diagnostics
+    assert inner_package_diagnostics["tree"] == inner_package_diagnostics["legacy"], inner_package_diagnostics
     package_diagnostics = {}
     for mode, binary in (("legacy", LEGACY), ("tree", COMPILER)):
         env["MOSS_EST"] = "off" if mode == "legacy" else "shadow"
@@ -173,6 +217,9 @@ def main() -> int:
     print("PASS Point(x = ops.g(7)) reaches exactly ops.g; entry main is traced separately")
     print("PASS f(x = g(1)) rejects identically: CALL_NAMED_ARGUMENT_UNSUPPORTED")
     print("PASS node.kind_num excludes token.kind_num; legacy rejects, tree accepts")
+    print("PASS inner.make excludes outer.make; legacy rejects, tree accepts")
+    print("PASS inner.make package mode rejects both paths identically: "
+          f"{inner_package_diagnostics['tree']}")
     print("PASS package-mode Margo check rejects both paths identically: "
           f"{package_diagnostics['tree']}")
     print("PASS left.key() retains both same-name method candidates on both paths")

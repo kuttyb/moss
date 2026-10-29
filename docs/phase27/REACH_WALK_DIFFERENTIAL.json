@@ -58789,5 +58789,361 @@
       "ruling_requested": "Does this qualify as an accepted LEGACY MISPARSE correction despite changing file-check acceptance, given the Modules section settles the qualified target?"
     },
     "remaining_work": "Classify every edge-set difference by exact cause and count, provide two runnable examples per non-benign cause, verify consumers beyond checked closure, then focused/full gates and CP-C."
+  },
+  "phase27_2_adjudication": {
+    "frozen_source_checkpoint": "2ca5f60b",
+    "legacy_revision": "phase27-1-m1",
+    "legacy_binary_sha256": "4a9d7d7509f9883194f2d3f147c4ff66c39e9c832e758ddffdd7572d57667ffd",
+    "candidate_binary_sha256": "f80b721c94408f83e0f59962da7e51613b94e8e7bab8162cb32f01a0d52b4982",
+    "source_count": 2088,
+    "verdict_mismatches": 0,
+    "edge_row_counts": {
+      "legacy_only": 6634,
+      "tree_only": 889,
+      "total": 7523,
+      "classification": [
+        {
+          "cause": "BENIGN: same owner and edge kind, same target leaf with legacy unqualified and tree qualified spellings",
+          "legacy_only": 6102,
+          "tree_only": 207,
+          "total": 6309,
+          "examples": [
+            {
+              "entry": "benchmarks/agent/baselines/post-22.1/AB024/final/src/main.moss",
+              "legacy_edge": [
+                "function",
+                "answer"
+              ],
+              "tree_edge": [
+                "function",
+                "Math__answer"
+              ],
+              "also_method_edges": true
+            },
+            {
+              "entry": "examples/swarm/modules/algo_chain/repro/natural_chain/routekit/src/graph.moss",
+              "legacy_edge": [
+                "function",
+                "graph__Edge"
+              ],
+              "tree_edge": [
+                "function",
+                "Edge"
+              ],
+              "also_method_edges": true
+            }
+          ]
+        },
+        {
+          "cause": "BENIGN: legacy text reader reports keywords and pipeline placeholders as edge names",
+          "legacy_only": 302,
+          "tree_only": 0,
+          "total": 302,
+          "target_counts": {
+            "return": 136,
+            "if": 66,
+            "_": 32,
+            "not": 20,
+            "and": 16,
+            "or": 16,
+            "while": 16
+          },
+          "examples": [
+            {
+              "source": "examples/swarm/modules/algo_chain/heapkit/src/heap.moss",
+              "legacy_target": "return"
+            },
+            {
+              "source": "examples/projects/phase7_demo/benches/arithmetic.moss:12",
+              "legacy_target": "_"
+            }
+          ]
+        },
+        {
+          "cause": "BENIGN: legacy text reader reports pattern and enum case labels as callable edges",
+          "legacy_only": 66,
+          "tree_only": 0,
+          "total": 66,
+          "examples": [
+            {
+              "source": "sdk/encoding/tests/encoding.moss:30",
+              "legacy_target": "SurrogateScalar"
+            },
+            {
+              "source": "packages/regex/tests/regex_test.moss:30",
+              "legacy_target": "Matched"
+            }
+          ]
+        },
+        {
+          "cause": "BENIGN: legacy text reader reports shadowed local or parameter names as callable edges",
+          "legacy_only": 120,
+          "tree_only": 0,
+          "total": 120,
+          "examples": [
+            {
+              "source": "examples/swarm/modules/calc_interpreter/repro/natural_full/src/parser.moss:70",
+              "legacy_target": "st"
+            },
+            {
+              "source": "examples/swarm/polymorphism/geometry_modules/src/pipeline_ops.moss:26",
+              "legacy_target": "threshold"
+            }
+          ]
+        },
+        {
+          "cause": "BENIGN: tree constructor nodes name built-in collection constructors with no local callable target",
+          "legacy_only": 0,
+          "tree_only": 680,
+          "total": 680,
+          "target_counts": {
+            "Vector": 668,
+            "Map": 12
+          },
+          "examples": [
+            {
+              "source": "examples/swarm/Julia/FenwickTree/src/main.moss",
+              "tree_target": "Vector"
+            },
+            {
+              "source": "examples/swarm/Python/chain_map/src/main.moss",
+              "tree_target": "Map"
+            }
+          ]
+        },
+        {
+          "cause": "LEGACY MISPARSE: a qualified module call is resolved by the legacy path to a same-leaf homonym",
+          "legacy_only": 42,
+          "tree_only": 0,
+          "total": 42,
+          "checked_declaration_instances": 19,
+          "examples": [
+            {
+              "reproducer": "tests/tooling/check_phase27_reach_named_forms.py",
+              "call": "node.kind_num()",
+              "legacy": "checks token.kind_num and rejects UNKNOWN_SYMBOL_OR_TYPE at token.moss:3",
+              "tree": "checks node.kind_num and accepts",
+              "oracle": "LANGUAGE_SYNTAX \u00a7Modules plus C1; package-mode Margo verdict remains equal"
+            },
+            {
+              "reproducer": "tests/tooling/check_phase27_reach_named_forms.py",
+              "call": "inner.make(5)",
+              "legacy": "checks outer.make and rejects UNKNOWN_SYMBOL_OR_TYPE at outer.moss:3",
+              "tree": "checks inner.make and accepts",
+              "oracle": "LANGUAGE_SYNTAX \u00a7Modules plus C1; package-mode Margo verdict remains equal"
+            }
+          ]
+        },
+        {
+          "cause": "ACCEPTED C1 CORRECTION: member receiver-name over-approximation includes every same-name method candidate",
+          "legacy_only": 2,
+          "tree_only": 2,
+          "total": 4,
+          "checked_declaration_instances": 2,
+          "examples": [
+            {
+              "reproducer": "tests/tooling/check_phase27_reach_named_forms.py",
+              "call": "p.ast.size()",
+              "entry": "natural_full/tests/parser_test.moss",
+              "tree_candidates": [
+                "Ast.size",
+                "Env.size"
+              ],
+              "oracle": "R1/R2 user ruling; direct call site is parser_test.moss:15"
+            },
+            {
+              "reproducer": "tests/tooling/check_phase27_reach_named_forms.py",
+              "call": "left.key()",
+              "tree_candidates": [
+                "Left.key",
+                "Right.key"
+              ],
+              "oracle": "R2 user ruling; both paths retain both candidates"
+            }
+          ]
+        }
+      ]
+    },
+    "r1_initial_13_declaration_audit": {
+      "initial_tree_only_instances": 13,
+      "real_call_chain_instances": 5,
+      "migration_bugs_without_call_chain": 8,
+      "current_tree_only_instances": 2,
+      "current_tree_only_call_chains": [
+        {
+          "declaration": "Ast.size",
+          "entry": "examples/swarm/modules/calc_interpreter/repro/natural_full/tests/parser_test.moss",
+          "chain": "test precedence builds a post order tree -> p.ast.size() at line 15"
+        },
+        {
+          "declaration": "Env.size",
+          "entry": "examples/swarm/modules/calc_interpreter/repro/natural_full/tests/parser_test.moss",
+          "chain": "test precedence builds a post order tree -> p.ast.size() at line 15 -> same-name candidate Env.size"
+        }
+      ],
+      "initial_instances": [
+        {
+          "entry": "examples/swarm/modules/algo_chain/heapkit/src/order.moss",
+          "kind": "function",
+          "source": "examples/swarm/modules/algo_chain/heapkit/src/heap.moss",
+          "identity": "callable-v1:module-v1:heapkit@0.1.0::heap:fn:key_of",
+          "classification": "ACCEPTED_C1_CORRECTION",
+          "call_chain": [
+            "file-root order.moss -> order.order_by_key -> key_of(item) at line 18"
+          ]
+        },
+        {
+          "entry": "examples/swarm/modules/algo_chain/heapkit/src/order.moss",
+          "kind": "method",
+          "source": "examples/swarm/modules/algo_chain/heapkit/src/heap.moss",
+          "identity": "method:heap__Entry.key_of@9",
+          "classification": "MIGRATION_BUG",
+          "call_chain": null,
+          "explanation": "No call to heap.key_of or Entry.key_of is on this root path; order.key_of is a separate free function.",
+          "current_resolution": "No longer tree-only in the 2ca5f60b differential."
+        },
+        {
+          "entry": "examples/swarm/modules/algo_chain/heapkit/tests/order_test.moss",
+          "kind": "function",
+          "source": "examples/swarm/modules/algo_chain/heapkit/src/heap.moss",
+          "identity": "callable-v1:module-v1:heapkit@0.1.0::heap:fn:key_of",
+          "classification": "ACCEPTED_C1_CORRECTION",
+          "call_chain": [
+            "test \"order_by_key over a caller-defined type\" -> order.order_by_key(jobs)",
+            "order.order_by_key -> key_of(item) at order.moss:18"
+          ]
+        },
+        {
+          "entry": "examples/swarm/modules/algo_chain/heapkit/tests/order_test.moss",
+          "kind": "method",
+          "source": "examples/swarm/modules/algo_chain/heapkit/src/heap.moss",
+          "identity": "method:heap__Entry.key_of@9",
+          "classification": "MIGRATION_BUG",
+          "call_chain": null,
+          "explanation": "No call to heap.key_of or Entry.key_of is on this root path; order.key_of is a separate free function.",
+          "current_resolution": "No longer tree-only in the 2ca5f60b differential."
+        },
+        {
+          "entry": "examples/swarm/modules/algo_chain/repro/natural_chain/heapkit/src/order.moss",
+          "kind": "method",
+          "source": "examples/swarm/modules/algo_chain/repro/natural_chain/heapkit/src/heap.moss",
+          "identity": "method:heap__Entry.key_of@9",
+          "classification": "MIGRATION_BUG",
+          "call_chain": null,
+          "explanation": "No call to heap.key_of or Entry.key_of is on this root path; order.key_of is a separate free function.",
+          "current_resolution": "No longer tree-only in the 2ca5f60b differential."
+        },
+        {
+          "entry": "examples/swarm/modules/algo_chain/repro/natural_chain/heapkit/tests/order_test.moss",
+          "kind": "method",
+          "source": "examples/swarm/modules/algo_chain/repro/natural_chain/heapkit/src/heap.moss",
+          "identity": "method:heap__Entry.key_of@9",
+          "classification": "MIGRATION_BUG",
+          "call_chain": null,
+          "explanation": "No call to heap.key_of or Entry.key_of is on this root path; order.key_of is a separate free function.",
+          "current_resolution": "No longer tree-only in the 2ca5f60b differential."
+        },
+        {
+          "entry": "examples/swarm/modules/calc_interpreter/repro/natural_full/tests/lexer_test.moss",
+          "kind": "function",
+          "source": "examples/swarm/modules/calc_interpreter/repro/natural_full/src/node.moss",
+          "identity": "callable-v1:module-v1:calc-interpreter@0.1.0::node:fn:kind_num",
+          "classification": "MIGRATION_BUG",
+          "call_chain": null,
+          "explanation": "The test calls token.kind_num(); it does not call node.kind_num().",
+          "current_resolution": "Qualified-call resolution removed this tree-only false target by 2ca5f60b."
+        },
+        {
+          "entry": "examples/swarm/modules/calc_interpreter/repro/natural_full/tests/parser_test.moss",
+          "kind": "method",
+          "source": "examples/swarm/modules/calc_interpreter/repro/natural_full/src/ast.moss",
+          "identity": "method:ast__Ast.size@12",
+          "classification": "ACCEPTED_C1_CORRECTION",
+          "call_chain": [
+            "test \"precedence builds a post order tree\" -> p.ast.size() at parser_test.moss:15"
+          ]
+        },
+        {
+          "entry": "examples/swarm/modules/calc_interpreter/repro/natural_full/tests/parser_test.moss",
+          "kind": "method",
+          "source": "examples/swarm/modules/calc_interpreter/repro/natural_full/src/env.moss",
+          "identity": "method:env__Env.size@27",
+          "classification": "ACCEPTED_C1_CORRECTION",
+          "call_chain": [
+            "test \"precedence builds a post order tree\" -> p.ast.size() at parser_test.moss:15",
+            "same-name receiver candidate set includes Env.size under the required method-name over-approximation"
+          ]
+        },
+        {
+          "entry": "examples/swarm/modules/calc_interpreter/src/parser.moss",
+          "kind": "function",
+          "source": "examples/swarm/modules/calc_interpreter/src/token.moss",
+          "identity": "callable-v1:module-v1:calc-interpreter@0.1.0::token:fn:make",
+          "classification": "MIGRATION_BUG",
+          "call_chain": null,
+          "explanation": "No token.make call is reachable from this parser source root or the hand-built-AST eval test.",
+          "current_resolution": "No longer tree-only in the 2ca5f60b differential."
+        },
+        {
+          "entry": "examples/swarm/modules/calc_interpreter/tests/eval_test.moss",
+          "kind": "function",
+          "source": "examples/swarm/modules/calc_interpreter/src/token.moss",
+          "identity": "callable-v1:module-v1:calc-interpreter@0.1.0::token:fn:make",
+          "classification": "MIGRATION_BUG",
+          "call_chain": null,
+          "explanation": "No token.make call is reachable from this parser source root or the hand-built-AST eval test.",
+          "current_resolution": "No longer tree-only in the 2ca5f60b differential."
+        },
+        {
+          "entry": "examples/swarm/modules/calc_interpreter/tests/lexer_test.moss",
+          "kind": "function",
+          "source": "examples/swarm/modules/calc_interpreter/src/node.moss",
+          "identity": "callable-v1:module-v1:calc-interpreter@0.1.0::node:fn:kind_num",
+          "classification": "MIGRATION_BUG",
+          "call_chain": null,
+          "explanation": "The test calls token.kind_num(); it does not call node.kind_num().",
+          "current_resolution": "Qualified-call resolution removed this tree-only false target by 2ca5f60b."
+        },
+        {
+          "entry": "examples/swarm/modules/calc_interpreter/tests/lexer_test.moss",
+          "kind": "function",
+          "source": "examples/swarm/modules/calc_interpreter/src/node.moss",
+          "identity": "callable-v1:module-v1:calc-interpreter@0.1.0::node:fn:make",
+          "classification": "ACCEPTED_C1_CORRECTION",
+          "call_chain": [
+            "file-root ast.moss -> Ast.add_num (and sibling Ast.add_* methods) -> node.make at ast.moss:22"
+          ]
+        }
+      ]
+    },
+    "checked_declaration_differences": {
+      "legacy_only": 19,
+      "tree_only": 2,
+      "legacy_only_cause": "qualified module calls lost their module qualifier in the legacy splitter and pulled in same-leaf homonyms",
+      "tree_only_cause": "Ast.size and Env.size candidates reached from the member receiver call p.ast.size()",
+      "outputs": "0 verdict mismatches in the 2,088-source comparison."
+    },
+    "consumer_audit": {
+      "moss_calls": "No difference: direct target is fn:node__kind_num in both paths.",
+      "moss_impact": "No difference after source-path normalization on the same qualified-call fixture.",
+      "mossi_same_binary_off_vs_shadow": "All 11 generated natural_full interfaces match byte-for-byte; execution bodies and hashes match.",
+      "cross_binary_mossi": "Package fingerprint and execution-body hash differ with compiler/toolchain identity; interface body content otherwise matches after normalizing those headers. No edge-driven output change was found.",
+      "user_visible_edge_output_change": false
+    },
+    "r4_package_mode": {
+      "fixture": "node.kind_num() with broken token.kind_num homonym",
+      "legacy": [
+        "UNKNOWN_SYMBOL_OR_TYPE",
+        "token.moss",
+        3
+      ],
+      "tree": [
+        "UNKNOWN_SYMBOL_OR_TYPE",
+        "token.moss",
+        3
+      ],
+      "result": "Package-mode verdict and diagnostic match; file-root check accepts only on the tree path.",
+      "reproducer": "tests/tooling/check_phase27_reach_named_forms.py"
+    }
   }
 }
