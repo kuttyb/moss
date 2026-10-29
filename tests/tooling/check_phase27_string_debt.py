@@ -23,7 +23,8 @@ APIS = (
     "expression_mentions_identifier", "parse_binary_expression",
     "parse_call", "split_arguments", "split_binary",
     "generated_split_binary", "normalize_pipeline",
-    "strip_expression_parens",
+    "strip_expression_parens", "top_level_member",
+    "top_level_assignment", "top_level_colon", "identifier",
 )
 PATTERN = re.compile(r"\b(" + "|".join(map(re.escape, APIS)) + r")\s*\(")
 CONSUMER_PATHS = {
@@ -36,6 +37,7 @@ CONSUMER_PATHS = {
     "fast_debug": ("interpreter.hpp", "interpreter_domains.inc",
                    "interpreter_phase20.inc"),
     "optimizer": ("functional_optimizer.cpp",),
+    "parser": ("parser.cpp",),
 }
 EXTENSIONS = (".cpp", ".hpp", ".inc")
 
@@ -76,6 +78,11 @@ def sites(commit=None):
             # helper definitions while also containing the reach walk.)
             for match in PATTERN.finditer(line):
                 api = match[1]
+                # The source parser's local identifier predicate validates
+                # declaration names; expression identifier reads are tracked
+                # in the checker, emitter, reach walk, and interpreter.
+                if api == "identifier" and consumer == "parser":
+                    continue
                 if re.match(r"\s*(?:static\s+)?(?:bool|string|size_t|vector<.*?>|"
                             r"optional<.*?>|std::optional<.*?>)\s+" +
                             re.escape(api) + r"\s*\(", line):
