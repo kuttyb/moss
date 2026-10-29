@@ -1386,11 +1386,23 @@ static void populate_impl(Program& program, std::vector<Stmt>* additional,
   auto body = [&](std::vector<Stmt>& statements) {
     for (auto& current : statements) statement(current);
   };
+  auto failure_arms = [&](std::vector<FailureArm>& arms) {
+    if (dump_enabled)
+      std::cerr << "MOSS_EST_FAILURE_ARMS count=" << arms.size() << '\n';
+    for (auto& arm : arms) {
+      if (dump_enabled)
+        std::cerr << "MOSS_EST_FAILURE_ARM line=" << arm.line
+                  << " body=" << arm.body.size() << '\n';
+      body(arm.body);
+      if (arm.execution_body) body(*arm.execution_body);
+    }
+  };
   if (additional) body(*additional);
   else if (program.main) body(program.main->body);
   if (!additional) {
   for (auto& function : program.functions) {
     body(function.body);
+    if (function.execution_body) body(*function.execution_body);
     if (function.result_expression) {
       set_location(function.result_line, *function.result_expression);
       bind(function.expression_handles, next_owner++, ExprSlot::ReturnValue, 0,
@@ -1403,10 +1415,17 @@ static void populate_impl(Program& program, std::vector<Stmt>* additional,
       bind(field.expression_handles, next_owner++, ExprSlot::Initializer, 0,
            field.init);
     }
-    for (auto& handler : domain.handlers) body(handler.body);
+  for (auto& handler : domain.handlers) {
+      body(handler.body);
+      if (handler.execution_body) body(*handler.execution_body);
+      failure_arms(handler.failure_arms);
+      if (handler.execution_failure_arms)
+        failure_arms(*handler.execution_failure_arms);
+    }
   }
   for (auto& object : program.objects) for (auto& method : object.methods) {
     body(method.body);
+    if (method.execution_body) body(*method.execution_body);
     if (method.result_expression) {
       set_location(method.result_line, *method.result_expression);
       bind(method.expression_handles, next_owner++, ExprSlot::ReturnValue, 0,

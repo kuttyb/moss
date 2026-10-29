@@ -12023,8 +12023,12 @@ class Checker {
               for (auto& prior : const_cast<vector<Stmt>&>(statements))
                 if (prior.a == base && prior.b == "Map()") {
                   prior.semantic_type = canonical_type_name(retained);
-                  if (!join_context.empty())
+                  if (!join_context.empty()) {
                     prior.semantic_types_by_context[join_context] = canonical_type_name(retained);
+                    record_statement_type_fact(prior, est::ExprSlot::RhsValue,
+                        0, prior.b, join_context,
+                        canonical_type_name(retained));
+                  }
                 }
             return;
           }
@@ -12040,8 +12044,11 @@ class Checker {
                   for (auto& prior : const_cast<vector<Stmt>&>(statements))
                     if (prior.a == base && prior.b == "Map()") {
                       prior.semantic_type = *refined;
-                      if (!join_context.empty())
+                      if (!join_context.empty()) {
                         prior.semantic_types_by_context[join_context] = *refined;
+                        record_statement_type_fact(prior, est::ExprSlot::RhsValue,
+                            0, prior.b, join_context, *refined);
+                      }
                     }
                 }
               }
@@ -12091,8 +12098,11 @@ class Checker {
                  starts_with(prior.semantic_type, "queue") ||
                  (staged_abi_v10() && starts_with(prior.semantic_type, "set")))) {
               prior.semantic_type = canonical_type_name(retained);
-              if (!join_context.empty())
+              if (!join_context.empty()) {
                 prior.semantic_types_by_context[join_context] = canonical_type_name(retained);
+                record_statement_type_fact(prior, est::ExprSlot::RhsValue, 0,
+                    prior.b, join_context, canonical_type_name(retained));
+              }
             }
         return;
       }
@@ -12111,8 +12121,11 @@ class Checker {
                    starts_with(prior.semantic_type, "queue") ||
                    (staged_abi_v10() && starts_with(prior.semantic_type, "set")))) {
                 prior.semantic_type = *refined;
-                if (!join_context.empty())
+                if (!join_context.empty()) {
                   prior.semantic_types_by_context[join_context] = *refined;
+                  record_statement_type_fact(prior, est::ExprSlot::RhsValue, 0,
+                      prior.b, join_context, *refined);
+                }
               }
             }
           }
@@ -12517,13 +12530,21 @@ class Checker {
       }
       if (record_semantic_types && statement.kind == Stmt::Kind::Call &&
           !statement.b.empty()) {
-        if (auto receiver = inferred_expr_type(statement.a, env))
+        if (auto receiver = inferred_expr_type(statement.a, env)) {
           const_cast<Stmt&>(statement).receiver_types_by_context[join_context] = *receiver;
+          record_statement_type_fact(statement, est::ExprSlot::Receiver, 0,
+              statement.a, join_context, canonical_type_name(*receiver));
+        }
       }
       if (record_semantic_types && !join_context.empty() &&
-          !statement.semantic_type.empty())
+          !statement.semantic_type.empty()) {
         const_cast<Stmt&>(statement).semantic_types_by_context[join_context] =
             statement.semantic_type;
+        const std::string& source = statement.kind == Stmt::Kind::Assign
+            ? statement.b : statement.text;
+        record_statement_type_fact(statement, est::ExprSlot::RhsValue, 0,
+            source, join_context, statement.semantic_type);
+      }
       ++index;
     }
   }
@@ -13383,9 +13404,22 @@ class Checker {
           }
           closed.push_back(std::move(resolved));
         }
-        if (!closed.empty())
-          const_cast<Stmt*>(pending.statement)->member_requirements_by_context[
-              semantic_context] = std::move(closed);
+        if (!closed.empty()) {
+          auto& checked_statement = *const_cast<Stmt*>(pending.statement);
+          checked_statement.member_requirements_by_context[semantic_context] =
+              closed;
+          if (closed.size() == 1 && !checked_statement.b.empty()) {
+            est::SemanticFacts expression_facts;
+            if (closed.front().result)
+              expression_facts.type = *closed.front().result;
+            if (closed.front().selected_callable_id)
+              expression_facts.resolved_target =
+                  *closed.front().selected_callable_id;
+            record_statement_expression_facts(checked_statement,
+                est::ExprSlot::RhsValue, 0, checked_statement.b,
+                semantic_context, std::move(expression_facts));
+          }
+        }
       }
     for (const auto& pending : open_calls) {
       const Stmt* statement = pending.statement;
@@ -13404,9 +13438,20 @@ class Checker {
       for (const auto& binding : pending.bindings)
         facts.ordered_bindings.emplace_back(binding.first,
                                             solver.resolve(binding.second));
-      if (record_call_facts)
-        const_cast<Stmt*>(statement)->open_call_results_by_context[semantic_context] =
-            std::move(facts);
+      if (record_call_facts) {
+        auto& checked_statement = *const_cast<Stmt*>(statement);
+        checked_statement.open_call_results_by_context[semantic_context] = facts;
+        est::SemanticFacts expression_facts;
+        expression_facts.type = result;
+        expression_facts.resolved_target = facts.callable_id;
+        auto specialization = checked_statement.open_call_keys_by_context.find(
+            semantic_context);
+        if (specialization != checked_statement.open_call_keys_by_context.end())
+          expression_facts.specialization_result = specialization->second;
+        record_statement_expression_facts(checked_statement,
+            est::ExprSlot::RhsValue, 0, checked_statement.b, semantic_context,
+            std::move(expression_facts));
+      }
     }
     return body_types;
   }
@@ -23949,6 +23994,21 @@ class Checker {
             closed.admitted_template_or_builtin_family =
                 selected.admitted_template_or_builtin_family;
             closed.selected_callable_id = selected.selected_callable_id;
+            if (requirements.size() == 1 && !statement.b.empty()) {
+              est::SemanticFacts expression_facts;
+              if (closed.result && *closed.result)
+                expression_facts.type = *closed.result;
+              if (closed.selected_callable_id)
+                expression_facts.resolved_target =
+                    *closed.selected_callable_id;
+              record_statement_expression_facts(statement,
+                  est::ExprSlot::RhsValue, 0, statement.b,
+                  current_check_body_context_, expression_facts);
+              assert_statement_fact_agreement(statement,
+                  est::ExprSlot::RhsValue, 0, statement.b,
+                  current_check_body_context_, expression_facts.type,
+                  expression_facts.resolved_target);
+            }
             requirements[index] = std::move(closed);
           }
         }
@@ -23989,8 +24049,12 @@ class Checker {
                               direct_arguments) &&
             direct_callee == name && direct_arguments == args &&
             retained->second.callable_id ==
-                function->second->semantic_callable_id)
+                function->second->semantic_callable_id) {
           open_result = &retained->second;
+          assert_statement_fact_agreement(statement, est::ExprSlot::RhsValue,
+              0, statement.b, current_check_body_context_,
+              retained->second.result, retained->second.callable_id);
+        }
       }
       if (!open_result && current_check_result_function_ &&
           checking_specialization_ &&
@@ -25136,10 +25200,92 @@ class Checker {
       return "specialization:" + checking_specialization_->stable_type_key;
     if (!current_check_body_context_.empty())
       return current_check_body_context_;
+    if (!current_semantic_context_.empty())
+      return current_semantic_context_;
     if (current_check_statement_)
       return "source:" + current_check_statement_->source_file + ":" +
           std::to_string(current_check_statement_->line);
-    return current_semantic_context_;
+    return {};
+  }
+
+  void record_statement_expression_facts(
+      const Stmt& statement, est::ExprSlot slot, std::uint32_t argument_index,
+      std::string_view source, std::string context,
+      est::SemanticFacts facts, bool require_match = false) const {
+    const auto fingerprint = est::fingerprint(std::string(source));
+    bool recorded = false;
+    for (const auto& handle : statement.expression_handles) {
+      if (handle.slot != slot || handle.argument_index != argument_index ||
+          handle.source_fingerprint != fingerprint)
+        continue;
+      est::assert_fresh(handle, std::string(source));
+      auto* arena = expression_arena(handle.arena_index);
+      if (!arena) continue;
+      arena->record_facts(handle.expr, context, facts);
+      recorded = true;
+      if (est::mode() == est::Mode::Shadow) {
+        const auto* retained = arena->facts(handle.expr, context);
+        assert(retained);
+        if (facts.type)
+          assert(retained->type &&
+                 facts.type->structurally_equal(*retained->type));
+        if (!facts.specialization_result.empty())
+          assert(retained->specialization_result == facts.specialization_result);
+        if (!facts.resolved_target.empty())
+          assert(retained->resolved_target == facts.resolved_target);
+        if (facts.inferred_effect)
+          assert(retained->inferred_effect == facts.inferred_effect);
+      }
+    }
+    if (est::mode() == est::Mode::Shadow && require_match && !recorded &&
+        std::getenv("MOSS_EST_FACTS_DUMP")) {
+      std::cerr << "MOSS_EST_SIDE_FACT_MISSING slot="
+                << static_cast<unsigned>(slot) << " argument=" << argument_index
+                << " source=" << std::quoted(std::string(source))
+                << " context=" << std::quoted(context) << " handles=";
+      for (const auto& handle : statement.expression_handles)
+        std::cerr << static_cast<unsigned>(handle.slot) << ':'
+                  << handle.argument_index << ':' << handle.source_fingerprint << ',';
+      std::cerr << '\n';
+    }
+    if (est::mode() == est::Mode::Shadow && require_match) assert(recorded);
+  }
+
+  void record_statement_type_fact(const Stmt& statement, est::ExprSlot slot,
+                                 std::uint32_t argument_index,
+                                 std::string_view source,
+                                 const std::string& context,
+                                 std::string_view canonical_type,
+                                 bool require_match = false) const {
+    auto parsed = moss::Type::parse_canonical(std::string(canonical_type));
+    if (!parsed || !*parsed) return;
+    est::SemanticFacts facts;
+    facts.type = *parsed;
+    record_statement_expression_facts(statement, slot, argument_index, source,
+                                      context, std::move(facts), require_match);
+  }
+
+  void assert_statement_fact_agreement(
+      const Stmt& statement, est::ExprSlot slot, std::uint32_t argument_index,
+      std::string_view source, const std::string& context,
+      const moss::TypeRef& expected_type,
+      std::string_view expected_target = {}) const {
+    if (est::mode() != est::Mode::Shadow) return;
+    const auto fingerprint = est::fingerprint(std::string(source));
+    for (const auto& handle : statement.expression_handles) {
+      if (handle.slot != slot || handle.argument_index != argument_index ||
+          handle.source_fingerprint != fingerprint)
+        continue;
+      est::assert_fresh(handle, std::string(source));
+      const auto* arena = expression_arena(handle.arena_index);
+      const auto* actual = arena ? arena->facts(handle.expr, context) : nullptr;
+      assert(actual);
+      if (expected_type)
+        assert(actual->type && expected_type->structurally_equal(*actual->type));
+      if (!expected_target.empty())
+        assert(actual->resolved_target == expected_target);
+      return;
+    }
   }
 
   static std::optional<std::uint32_t> expression_role_index(
@@ -27918,6 +28064,7 @@ class Checker {
 
       if (statement.kind == Stmt::Kind::Echo) {
         vector<string> echo_types;
+        vector<moss::TypeRef> echo_type_refs;
         for (size_t index = 0; index < statement.args.size(); ++index) {
           const string slot = "echo-argument:" + std::to_string(index);
           const auto& argument = statement.args[index];
@@ -27940,12 +28087,26 @@ class Checker {
                       checking_specialization_);
           }
           echo_types.push_back(type ? canonical_type_name(*type) : string());
+          auto type_ref = type ? moss::Type::parse_canonical(*type)
+                               : std::optional<moss::TypeRef>{};
+          echo_type_refs.push_back(type_ref && *type_ref ? *type_ref : nullptr);
         }
         const string echo_context = current_function && checking_specialization_
             ? functional_function_context(*current_function, checking_specialization_)
             : string();
         const_cast<Stmt&>(statement).echo_types_by_context[echo_context] =
-            std::move(echo_types);
+            echo_types;
+        for (size_t index = 0; index < echo_type_refs.size(); ++index) {
+          if (!echo_type_refs[index]) continue;
+          est::SemanticFacts facts;
+          facts.type = echo_type_refs[index];
+          record_statement_expression_facts(statement, est::ExprSlot::Argument,
+              static_cast<std::uint32_t>(index), statement.args[index],
+              echo_context, std::move(facts), true);
+          if (est::mode() == est::Mode::Shadow)
+            assert(echo_types[index] ==
+                   canonical_type_name(echo_type_refs[index]));
+        }
         return;
       }
 

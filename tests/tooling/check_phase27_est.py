@@ -66,6 +66,12 @@ def main():
                      r'specialization="" target="callable-v1:[^"]+"',
                      facts.stderr):
         raise SystemExit("resolved direct-call target was not retained on its EST node")
+    failure_arm = run(
+        ROOT / "tests/tooling/phase20_review/probes/guard_domain_field_lifecycle.moss",
+        "shadow", MOSS_EST_DUMP="1")
+    if failure_arm.returncode != 0 or "unexpected FileIO error" not in failure_arm.stderr:
+        raise SystemExit(
+            f"failure-arm expression was not built into EST: {failure_arm.stdout}{failure_arm.stderr}")
     mismatch = run(ROOT / "tests/phase27/est/bitwise_shift.moss", "shadow",
                    MOSS_EST_SHADOW_MISMATCH_TEST="1")
     if mismatch.returncode == 0 or "injected mismatch" not in mismatch.stdout:
