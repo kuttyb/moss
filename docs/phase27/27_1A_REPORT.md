@@ -79,11 +79,15 @@ Baseline hash for the corpus and performance gates: `4d6d0c8c2fcb3bb6e255bcaee80
 | G4 off vs shadow corpus | PASS, 2,061 sources, 1,341 accepted each, zero differences | `tmp/phase27-G4-G5-summary.log`; baseline `4d6d0c8c2fcb3bb6e255bcaee80174b6b928a576` |
 | G5 examples Rust hashes | PASS, 776 `examples/` sources, zero differences | `tmp/phase27-G4-G5-summary.log`; baseline `4d6d0c8c2fcb3bb6e255bcaee80174b6b928a576` |
 | G6 Fast Debug parity | PASS, 546 accepted examples, zero output differences, zero R12 text hits; two identical timeouts per mode | `tmp/phase27-G6-fast-debug-corpus.log`, plus paired scope logs `tmp/phase27-G6-fast-debug-off.log` and `...-shadow.log`; baseline `4d6d0c8c2fcb3bb6e255bcaee80174b6b928a576` |
-| G7 `.mossi` Section 1/2 hashes | PASS, identical for off and shadow | `tmp/phase27-G7-mossi-hashes.log`; baseline `4d6d0c8c2fcb3bb6e255bcaee80174b6b928a576` |
+| G7 `.mossi` parity | PASS: same-binary off/shadow raw files are identical; branch/baseline bytes match after recomputing `package_fingerprint` and derived `execution_body_hash` with the baseline toolchain identity | `tmp/phase27-final/G7-raw-off-shadow.log`, `tmp/phase27-final/G7-baseline-recomputed.log`; baseline `4d6d0c8c2fcb3bb6e255bcaee80174b6b928a576` |
 | G8 off compiler-perf | PASS, 4.827 s candidate vs 4.849 s baseline (−0.5%); no slowdown beyond noise | `tmp/phase27-G8-perf-off-final.log`, `tmp/compiler-perf/20261028-185417/LOCAL_REPORT.md`; baseline `4d6d0c8c2fcb3bb6e255bcaee80174b6b928a576` |
 | G9 shadow compiler-perf | Recorded only: 5.003 s aggregate candidate, about 3.6% above the separate off candidate run; no slowdown beyond baseline noise rule | `tmp/phase27-G9-perf-shadow-final.log`, `tmp/compiler-perf/20261028-185601/LOCAL_REPORT.md`; baseline `4d6d0c8c2fcb3bb6e255bcaee80174b6b928a576` |
 
 The first G1 attempt exposed standalone native-test links that omitted the nested EST translation unit. The shared source enumeration was corrected; the final G1 and G2 runs above both pass. The first G7 fixture used different absolute roots and therefore changed a Section 2 path hash; using the same root for both modes produced identical Section 1 and Section 2 hashes.
+
+### G7 ruling and revised evidence
+
+The Bank ruled that the compiler-bound cache contract must remain intact: distinct compiler binaries retain distinct `package_toolchain_identity` values. G7 therefore requires (1) raw `.mossi` equality for off and shadow using the same binary, and (2) for branch versus `4d6d0c8`, recomputing `package_fingerprint` under the baseline toolchain identity and recomputing its dependent `execution_body_hash`. The focused two-package probe passes both checks. The candidate and baseline raw hashes differ, while both recomputed package fingerprints and body hashes match and all other Section 1/2 bytes are equal. Detailed values are in `tmp/phase27-final/G7-baseline-recomputed.log`.
 
 ## Decisions and self-review
 

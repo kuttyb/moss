@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Check EST population for imported ABI-v9 and Section 2 Mossi bodies."""
 import json
+import hashlib
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import time
@@ -52,11 +54,30 @@ def main():
         "fn main():\n"
         "  echo est_est_library.generic(3)\n"
         "  echo est_est_library.concrete(4)\n", encoding="utf-8")
-    build_env = os.environ.copy()
-    build_env.update({"MOSS": str(MOSS), "MOSS_EST": "shadow"})
-    report = run_margo(build_env)
-    if not report.get("ok"):
-        raise SystemExit("provider/app .mossi check did not complete")
+    mossi_by_mode = {}
+    for mode in ("off", "shadow"):
+        for root in (LIB, APP):
+            shutil.rmtree(root / "build", ignore_errors=True)
+        build_env = os.environ.copy()
+        build_env.update({"MOSS": str(MOSS), "MOSS_EST": mode})
+        report = run_margo(build_env)
+        if not report.get("ok"):
+            raise SystemExit(f"provider/app .mossi check failed in {mode} mode")
+        mossi_by_mode[mode] = {
+            "library": (LIB / "build" / "check-debug" /
+                        "est_est_library.mossi").read_bytes(),
+            "app": (APP / "build" / "check-debug" /
+                   "est_est_app.mossi").read_bytes(),
+        }
+    for package in ("library", "app"):
+        off_bytes = mossi_by_mode["off"][package]
+        shadow_bytes = mossi_by_mode["shadow"][package]
+        if off_bytes != shadow_bytes:
+            off_hash = hashlib.sha256(off_bytes).hexdigest()
+            shadow_hash = hashlib.sha256(shadow_bytes).hexdigest()
+            raise SystemExit(
+                f"same-binary raw .mossi mismatch for {package}: "
+                f"off={off_hash} shadow={shadow_hash}")
 
     provider_path = LIB / "build" / "check-debug"
     dump_path = WORK / "est-dump.log"
@@ -78,8 +99,10 @@ def main():
                        if line.startswith("MOSS_EST_DUMP ") and "origin=0 " not in line]
     if not execution_dumps or not any("binary#" in line for line in execution_dumps):
         raise SystemExit("Section 2 execution body did not build with the EST grammar")
-    print(f"phase27 .mossi EST passed (generic={len(generic_dumps)}, "
-          f"Section2={len(execution_dumps)} imported dumps)")
+    parity_hashes = {package: hashlib.sha256(mossi_by_mode["off"][package]).hexdigest()
+                     for package in ("library", "app")}
+    print(f"phase27 .mossi EST passed (raw off/shadow hashes={parity_hashes}, "
+          f"generic={len(generic_dumps)}, Section2={len(execution_dumps)} imported dumps)")
 
 
 if __name__ == "__main__":
