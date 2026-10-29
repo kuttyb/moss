@@ -8,6 +8,6 @@ def compiler_support_sources() -> list[str]:
     """Return production TUs other than moss.cpp, in stable link order."""
     return sorted(
         path.relative_to(ROOT).as_posix()
-        for path in (ROOT / "src").glob("*.cpp")
+        for path in (ROOT / "src").rglob("*.cpp")
         if path.name != "moss.cpp"
     )

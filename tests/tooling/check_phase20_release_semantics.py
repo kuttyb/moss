@@ -45,10 +45,10 @@ def main():
     release = build / "moss-ndebug"
     compiler = os.environ.get("CXX", "c++")
     flags = ["-std=c++17", "-O2", "-DNDEBUG", "-Wall", "-Wextra", "-pedantic"]
-    sources = [*ROOT.glob("src/*.cpp"), *ROOT.glob("src/*.hpp"),
-               *ROOT.glob("src/*.inc")]
+    sources = [*ROOT.glob("src/**/*.cpp"), *ROOT.glob("src/**/*.hpp"),
+               *ROOT.glob("src/**/*.inc")]
     compile_sources = sorted(path.relative_to(ROOT).as_posix()
-                             for path in ROOT.glob("src/*.cpp"))
+                             for path in ROOT.glob("src/**/*.cpp"))
     if not release.exists() or any(path.stat().st_mtime > release.stat().st_mtime
                                    for path in sources):
         subprocess.run([compiler, *flags, *compile_sources, "-o", str(release)],

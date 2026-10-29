@@ -404,7 +404,7 @@ const char* slot_name(ExprSlot slot) {
   return names[static_cast<std::size_t>(slot)];
 }
 
-std::string quoted(std::string_view value) {
+[[maybe_unused]] std::string quoted(std::string_view value) {
   std::ostringstream out;
   out << '"';
   for (const char c : value) {
