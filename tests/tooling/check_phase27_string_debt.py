@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Reject additions to legacy string-expression consumers after Phase 27 baseline."""
+"""Track expression-text readers by the consumer that calls them."""
 import collections
 import json
 import pathlib
@@ -9,17 +9,35 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 BASELINE = ROOT / "docs/phase27/STRING_DEBT_BASELINE.md"
-BASELINE_REV = "4d6d0c8"
-APIS = ("parse_simple_call", "split_top_level",
-        "strip_redundant_outer_parentheses", "parse_enum_case_expression")
-PATTERN = re.compile(r"\b(" + "|".join(APIS) + r")\s*\(")
-CONSUMERS = {
-    "checker": ("src/semantic_checker.cpp",),
-    "emitter": ("src/native_generator.cpp",),
-    "reach_walk": ("src/moss.cpp",),
-    "fast_debug": ("src/interpreter.hpp", "src/interpreter_domains.inc",
-                   "src/interpreter_phase20.inc"),
+BASELINE_REV = "a4f4790"
+# Helpers that inspect or split an expression string. `trim_compare` below also
+# catches expression-text trim calls used as a textual classifier.
+APIS = (
+    "parse_simple_call", "split_top_level",
+    "strip_redundant_outer_parentheses", "parse_enum_case_expression",
+    "parse_functional_pipeline", "word_occurrences", "plain_identifier",
+    "simple_identifier", "parse_index", "parse_member_call",
+    "parse_vector_literal", "parse_named_argument",
+    "parse_bound_method_callable", "parse_executor_chain",
+    "parse_fileio_open", "parse_fileio_chunks_source",
+    "expression_mentions_identifier", "parse_binary_expression",
+    "parse_call", "split_arguments", "split_binary",
+    "generated_split_binary", "normalize_pipeline",
+    "strip_expression_parens",
+)
+PATTERN = re.compile(r"\b(" + "|".join(map(re.escape, APIS)) + r")\s*\(")
+CONSUMER_PATHS = {
+    "checker": ("semantic_checker.cpp", "fileio_semantics.inc",
+                "file_chunk_lowering.inc", "executor_invoke_lowering.inc",
+                "static_bounds.inc"),
+    "emitter": ("native_generator.cpp", "file_chunk_codegen.inc",
+                "borrowed_views.inc", "handler_lowering.inc"),
+    "reach_walk": ("moss.cpp",),
+    "fast_debug": ("interpreter.hpp", "interpreter_domains.inc",
+                   "interpreter_phase20.inc"),
+    "optimizer": ("functional_optimizer.cpp",),
 }
+EXTENSIONS = (".cpp", ".hpp", ".inc")
 
 
 def read_source(path, commit=None):
@@ -29,69 +47,85 @@ def read_source(path, commit=None):
     return (ROOT / path).read_text()
 
 
+def consumer_for(path):
+    name = pathlib.Path(path).name
+    for consumer, names in CONSUMER_PATHS.items():
+        if name in names:
+            return consumer
+    return None
+
+
+def paths(commit=None):
+    if commit:
+        raw = subprocess.check_output(["git", "ls-tree", "-r", "--name-only",
+                                       commit, "src"], cwd=ROOT, text=True)
+        candidates = raw.splitlines()
+    else:
+        candidates = [p.relative_to(ROOT).as_posix() for p in (ROOT / "src").rglob("*")
+                      if p.is_file()]
+    return [p for p in candidates if p.endswith(EXTENSIONS) and consumer_for(p)]
+
+
 def sites(commit=None):
     found = collections.Counter()
-    for consumer, paths in CONSUMERS.items():
-        for relative in paths:
-            source = read_source(relative, commit)
-            for line_no, line in enumerate(source.splitlines(), 1):
-                for match in PATTERN.finditer(line):
-                    if relative == "src/moss.cpp" and re.match(
-                            r"\s*(?:bool|string|vector<string>)\s+" +
-                            re.escape(match[1]) + r"\s*\(", line):
-                        continue
-                    found[(consumer, relative, line_no, line.strip(), match[1])] += 1
-                if consumer == "fast_debug":
-                    # Count evaluator invocations, excluding its method definition.
-                    if re.search(r"\beval\s*\(", line) and not re.search(r"\bValue\s+eval\s*\(", line):
-                        found[(consumer, relative, line_no, line.strip(), "eval")] += len(
-                            re.findall(r"\beval\s*\(", line))
+    for relative in paths(commit):
+        consumer = consumer_for(relative)
+        source = read_source(relative, commit)
+        for line_no, line in enumerate(source.splitlines(), 1):
+            # Definitions are not consumer call sites. (moss.cpp owns many
+            # helper definitions while also containing the reach walk.)
+            for match in PATTERN.finditer(line):
+                api = match[1]
+                if re.match(r"\s*(?:static\s+)?(?:bool|string|size_t|vector<.*?>|"
+                            r"optional<.*?>|std::optional<.*?>)\s+" +
+                            re.escape(api) + r"\s*\(", line):
+                    continue
+                found[(consumer, relative, line_no, line.strip(), api)] += 1
+            if consumer == "fast_debug":
+                calls = re.findall(r"\beval\s*\(", line)
+                if calls and not re.search(r"\bValue\s+eval\s*\(", line):
+                    found[(consumer, relative, line_no, line.strip(), "eval(string)")] += len(calls)
+            # Trimming followed by a comparison is a string classification
+            # operation. Count at the call site, attributed to its caller.
+            comparisons = list(re.finditer(r"(?:==|!=|<=|>=|(?<!-)[<>])", line))
+            if ("trim(" in line and any(line[match.end():].strip()
+                                         for match in comparisons)):
+                found[(consumer, relative, line_no, line.strip(), "trim_compare")] += line.count("trim(")
     return found
-
-
-def counts(data):
-    result = {name: collections.Counter() for name in CONSUMERS}
-    for (consumer, _path, _line, _text, api), value in data.items():
-        result[consumer][api] += value
-    return result
 
 
 def write_baseline():
     data = sites(BASELINE_REV)
-    by_consumer = counts(data)
-    apis = (*APIS, "eval")
-    lines = [
-        "# Phase 27 string-debt baseline",
-        "",
-        f"Measured at `{BASELINE_REV}` (the required 4d6d0c8 baseline).",
-        "A site is a source occurrence of a listed legacy helper in its consumer file;",
-        "Fast Debug counts calls to the interpreter `eval(string, ...)` and excludes its definition.",
-        "",
-        "Command: `python3 tests/tooling/check_phase27_string_debt.py --write-baseline`",
-        "The generator reads the four consumer files below from `git show 4d6d0c8:<path>`.",
-        "",
-        "| Consumer | parse_simple_call | split_top_level | strip_redundant_outer_parentheses | parse_enum_case_expression | interpreter eval(string) |",
-        "| --- | ---: | ---: | ---: | ---: | ---: |",
-    ]
-    for consumer in CONSUMERS:
-        values = [by_consumer[consumer][api] for api in apis]
-        lines.append("| " + consumer + " | " + " | ".join(map(str, values)) + " |")
+    grouped = collections.defaultdict(collections.Counter)
+    for (consumer, _path, _line, _text, api), count in data.items():
+        grouped[consumer][api] += count
+    apis = sorted({api for *_rest, api in data})
+    consumers = tuple(CONSUMER_PATHS)
+    columns = ["consumer", *apis]
+    lines = ["# Phase 27 widened string-debt baseline", "",
+             f"Measured at `{BASELINE_REV}`.",
+             "Counts are call sites attributed to the source file that invokes the reader; helper definitions are excluded.",
+             "The inventory covers expression parsers, identifier classifiers, expression identifier scans, pipeline parsing, optimizer word scans, trim-and-compare classifiers, and Fast Debug eval(string).",
+             "",
+             "Command: `python3 tests/tooling/check_phase27_string_debt.py --write-baseline` (the script reads `git show a4f4790:<path>`).",
+             "", "| " + " | ".join(columns) + " |",
+             "| " + " | ".join(["---"] + ["---:"] * len(apis)) + " |"]
+    for consumer in consumers:
+        lines.append("| " + " | ".join([consumer] + [str(grouped[consumer][api]) for api in apis]) + " |")
     serial = {"source_commit": BASELINE_REV,
-              "sites": [[*key, value] for key, value in sorted(data.items())]}
+              "sites": [[*key, count] for key, count in sorted(data.items())]}
     lines.extend(["", "<!-- machine-readable baseline", json.dumps(serial, separators=(",", ":")),
                   "end machine-readable baseline -->", ""])
     BASELINE.write_text("\n".join(lines))
 
 
 def load_baseline():
-    text = BASELINE.read_text()
     match = re.search(r"<!-- machine-readable baseline\s*(.*?)\s*end machine-readable baseline -->",
-                      text, re.S)
+                      BASELINE.read_text(), re.S)
     if not match:
         raise SystemExit("string-debt baseline has no machine-readable site list")
-    data = json.loads(match[1])
     baseline = collections.Counter()
-    for consumer, _path, _line, _text, api, amount in data["sites"]:
+    for consumer, _path, _line, _text, api, amount in json.loads(match[1])["sites"]:
         baseline[(consumer, api)] += amount
     return baseline
 
@@ -101,15 +135,13 @@ def main():
         write_baseline()
         return 0
     baseline = load_baseline()
-    actual = sites()
-    actual_counts = collections.Counter()
-    for (consumer, _path, _line, _text, api), value in actual.items():
-        actual_counts[(consumer, api)] += value
-    added = [(key, value - baseline.get(key, 0))
-             for key, value in actual_counts.items()
+    actual = collections.Counter()
+    for (consumer, _path, _line, _text, api), amount in sites().items():
+        actual[(consumer, api)] += amount
+    added = [(key, value - baseline.get(key, 0)) for key, value in actual.items()
              if value > baseline.get(key, 0)]
-    for (consumer, api), amount in added:
-        print(f"new string parser call count ({amount}): {consumer}/{api}", file=sys.stderr)
+    for (consumer, api), amount in sorted(added):
+        print(f"new expression-text reader call count ({amount}): {consumer}/{api}", file=sys.stderr)
     return 1 if added else 0
 
 
