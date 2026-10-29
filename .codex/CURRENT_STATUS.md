@@ -13178,3 +13178,4 @@ check` passed 154/154, zero failures or skips. Branch remains unmerged.
 - Bank accepted the 173-occurrence blind spot: every case is an uppercase-qualified call (`Module.func` / `Type.method`) for which the legacy shape parser returns no shape. Record it as a 27.1 validation limit. First 27.2 item: after module-name resolution moves onto the tree, compare qualified-call structure and use the retained measurement tool to prove the count reaches zero.
 - Renamed the complete report to `docs/phase27/27_1_REPORT.md`; removed the stale CP-A/not-final-head claims and corrected the allowlist section.
 - G2 shadow check with the opt-in measurement tracer in the source is pending. Merge remains pending G2 and all merge-commit gates.
+- G2 with the tracer present passed on `phase27-work` (`1f9d71b0`): 157/157 jobs, zero failures or skips. Log: `tmp/phase27-closeout/G2-shadow-tracer.log`. The requested merge and all merge-head gates remain next.
