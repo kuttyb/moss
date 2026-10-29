@@ -14,6 +14,7 @@ namespace moss { struct Program; struct Stmt; }
 namespace moss::est {
 
 using ExprId = std::uint32_t;
+struct SourceSpan { std::uint32_t line = 1, column = 1; std::uint64_t origin_id = 0; };
 
 // Semantic roles, independent of the legacy field containing the spelling.
 enum class ExprSlot : std::uint8_t {
@@ -28,6 +29,8 @@ struct Handle {
   std::uint32_t argument_index = 0;
   ExprId expr = 0;
   std::uint64_t source_fingerprint = 0;
+  std::uint64_t origin_id = 0;
+  std::uint32_t arena_index = 0;
 };
 
 // Child IDs always denote distinct occurrences. The arena never interns text.
@@ -41,8 +44,15 @@ struct Index { ExprId base, index; };
 struct Parenthesized { ExprId inner; };
 struct Message { ExprId target; std::string handler; std::vector<ExprId> arguments; };
 struct NamedArgument { std::string name; ExprId value; };
+struct Placeholder {};
+struct Collection { char delimiter; std::vector<ExprId> elements; };
+struct Tuple { std::vector<ExprId> elements; };
+struct Constructor { ExprId type; std::vector<ExprId> type_arguments;
+                     std::vector<ExprId> arguments; };
+struct Pipeline { ExprId input; std::vector<ExprId> stages; };
 using Node = std::variant<Literal, Identifier, Unary, Binary, Call, Member,
-                          Index, Parenthesized, Message, NamedArgument>;
+                          Index, Parenthesized, Message, NamedArgument,
+                          Placeholder, Collection, Tuple, Constructor, Pipeline>;
 
 enum class Outcome : std::uint8_t { Built, Deferred27_1b, RejectedSource, Failed };
 
@@ -54,7 +64,9 @@ class Arena {
   };
   static constexpr std::size_t slot_count = 12;
   ExprId append(Node node);
+  ExprId append(Node node, SourceSpan span);
   const Node& at(ExprId id) const;
+  SourceSpan span(ExprId id) const { return spans_.at(id); }
   std::size_t size() const { return nodes_.size(); }
 
   // Same-source copies retain handles and share this immutable arena.
@@ -70,6 +82,7 @@ class Arena {
 
  private:
   std::vector<Node> nodes_;
+  std::vector<SourceSpan> spans_;
   std::array<Count, slot_count> coverage_{};
   std::set<std::tuple<std::uint64_t, std::uint8_t, std::uint32_t>> seen_;
 };
@@ -86,7 +99,14 @@ void rebuild_slot(Arena& arena, std::vector<Handle>& handles,
 
 enum class Mode { Off, Shadow };
 Mode mode();  // Rejects the reserved MOSS_EST=on setting.
-ExprId parse_expression(Arena& arena, std::string_view source);
+ExprId parse_expression(Arena& arena, std::string_view source,
+                        std::uint64_t origin_id = 0,
+                        std::uint32_t base_line = 1,
+                        std::uint32_t base_column = 1);
 void populate(Program& program);
+void populate_loaded(Program& program, std::vector<Stmt>& statements,
+                     std::uint64_t origin_id);
+void adopt_program_arenas(Program& destination, Program& source);
+std::uint64_t stable_origin_id(std::string_view identity);
 
 }  // namespace moss::est

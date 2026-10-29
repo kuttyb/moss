@@ -13,6 +13,8 @@ CASES = {
     "message_expression.moss": ("message#", '"Run"', 'literal#'),
     "bitwise_shift.moss": ('binary#', '"<<"', '"&"'),
     "numeric_member.moss": ('member#', '"to_string"', 'literal#'),
+    "syntax_27_1b.moss": ('pipeline#', 'placeholder#', 'collection#',
+                           'constructor#', 'named-argument#'),
 }
 
 def run(path, mode, **extra):
@@ -36,6 +38,10 @@ def main():
             ids = [int(x) for x in re.findall(r"#(\d+)", dump)]
             if len(ids) != len(set(ids)):
                 raise SystemExit(f"ExprId reused within one occurrence in {name}: {ids}")
+    tuple_probe = ROOT / "tests/tooling/fixtures/phase20_fileio_runtime_integration.moss"
+    tuple_tree = run(tuple_probe, "shadow", MOSS_EST_DUMP="1")
+    if tuple_tree.returncode != 0 or "(tuple#" not in tuple_tree.stderr:
+        raise SystemExit(f"tuple collection elements were not represented: {tuple_tree.stderr}")
     probe = ROOT / "tests/phase27/est/bitwise_shift.moss"
     result = run(probe, "off", MOSS_EST_STATS="1")
     if result.returncode != 0 or "MOSS_EST_STATS arena_size=0 handle_count=0" not in result.stderr:
@@ -75,7 +81,7 @@ def main():
                                resource.RLIMIT_CORE, (0, 0)))
     if stale.returncode == 0 or "source_fingerprint" not in stale.stderr:
         raise SystemExit("mutating source did not trip the shadow staleness assertion")
-    print("phase27 EST focused checks passed (3 dumps; raw places; copy/rebuild; off arena size 0; stale guard)")
+    print("phase27 EST focused checks passed (4 syntax dumps; raw places; copy/rebuild; off arena size 0; stale guard)")
 
 if __name__ == "__main__":
     main()

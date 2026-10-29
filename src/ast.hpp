@@ -831,6 +831,9 @@ struct ExecutorStartPlan {
 struct Program {
   // Null in MOSS_EST=off: no arena is allocated by the legacy path.
   std::shared_ptr<est::Arena> expression_arena;
+  // Explicit-module projects may merge independently parsed source units.
+  // Handles carry an index into this shared immutable arena list.
+  vector<std::shared_ptr<est::Arena>> expression_arenas;
   // Set only by `moss check <file>` on a project. This tells checker passes
   // that callable bodies have already been reduced to the file's reachable
   // closure and that package-wide rules belong to Margo's build path.

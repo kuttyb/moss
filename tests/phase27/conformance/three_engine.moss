@@ -1,0 +1,8 @@
+fn callback(value: Int) -> Int:
+  echo 999999
+  return value + 1
+
+fn main():
+  values = [1, 2, 3]
+  total = values |> map(callback) |> sum
+  echo total

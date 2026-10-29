@@ -90,7 +90,10 @@ def load_baseline():
     if not match:
         raise SystemExit("string-debt baseline has no machine-readable site list")
     data = json.loads(match[1])
-    return {tuple(row[:5]): row[5] for row in data["sites"]}
+    baseline = collections.Counter()
+    for consumer, _path, _line, _text, api, amount in data["sites"]:
+        baseline[(consumer, api)] += amount
+    return baseline
 
 
 def main():
@@ -99,10 +102,14 @@ def main():
         return 0
     baseline = load_baseline()
     actual = sites()
-    added = [(key, value - baseline.get(key, 0)) for key, value in actual.items()
+    actual_counts = collections.Counter()
+    for (consumer, _path, _line, _text, api), value in actual.items():
+        actual_counts[(consumer, api)] += value
+    added = [(key, value - baseline.get(key, 0))
+             for key, value in actual_counts.items()
              if value > baseline.get(key, 0)]
-    for key, amount in added:
-        print(f"new string parser call site ({amount}): {key}", file=sys.stderr)
+    for (consumer, api), amount in added:
+        print(f"new string parser call count ({amount}): {consumer}/{api}", file=sys.stderr)
     return 1 if added else 0
 
 
