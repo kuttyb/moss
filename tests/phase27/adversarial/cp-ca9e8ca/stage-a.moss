@@ -1,0 +1,4 @@
+fn main():
+  values = [1, 2]
+  result = values |> map(_ + 1) |> sum
+  echo result
