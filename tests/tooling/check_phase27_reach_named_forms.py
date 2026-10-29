@@ -122,23 +122,24 @@ def main() -> int:
     qualified_results = {}
     qualified_sets = {}
     for mode, binary, ok in (
-        ("legacy", LEGACY, False), ("tree", COMPILER, True)):
+        ("legacy", LEGACY, False), ("tree", COMPILER, False)):
         env["MOSS_EST"] = "off" if mode == "legacy" else "shadow"
         result = run(binary, qualified_entry, env, ok=ok)
         response = json.loads(result.stdout)
+        error = response.get("error") or {}
         qualified_results[mode] = (
-            response.get("ok"), (response.get("error") or {}).get("code"))
+            response.get("ok"), error.get("code"),
+            Path(error.get("source_file", "")).name, error.get("line"))
         qualified_sets[mode] = {
             row.split("|", 3)[3]
             for row in result.stderr.splitlines()
             if row.startswith("MOSS_C1_SCOPE_ID|function|")
         }
-    assert qualified_sets["tree"] == {
-        "callable-v1:module-v1:qualified_reach@0.1.0::node:fn:kind_num"}
-    assert any("token:fn:kind_num" in identity
-               for identity in qualified_sets["legacy"])
-    assert qualified_results["legacy"][0] is False
-    assert qualified_results["tree"][0] is True
+    assert qualified_sets["tree"] == qualified_sets["legacy"], qualified_sets
+    assert {identity.split("::")[-1] for identity in qualified_sets["tree"]} == {
+        "node:fn:kind_num", "token:fn:kind_num"}, qualified_sets
+    assert qualified_results["legacy"] == qualified_results["tree"] == (
+        False, "UNKNOWN_SYMBOL_OR_TYPE", "token.moss", 3), qualified_results
 
     inner_root = SCRATCH / "inner_qualified"
     inner_src = inner_root / "src"
@@ -160,7 +161,7 @@ def main() -> int:
     inner_sets = {}
     inner_package_diagnostics = {}
     for mode, binary, ok in (
-        ("legacy", LEGACY, False), ("tree", COMPILER, True)):
+        ("legacy", LEGACY, False), ("tree", COMPILER, False)):
         env["MOSS_EST"] = "off" if mode == "legacy" else "shadow"
         result = run(binary, inner_entry, env, ok=ok)
         response = json.loads(result.stdout)
@@ -176,10 +177,11 @@ def main() -> int:
         inner_package_diagnostics[mode] = package_check(binary, inner_root, env)
     assert inner_results["legacy"] == (
         False, "UNKNOWN_SYMBOL_OR_TYPE", "outer.moss", 3), inner_results
-    assert inner_results["tree"] == (True, None, "", None), inner_results
-    assert inner_sets["tree"] == {
-        "callable-v1:module-v1:inner_qualified_reach@0.1.0::inner:fn:make"
-    }, inner_sets
+    assert inner_results["tree"] == inner_results["legacy"] == (
+        False, "UNKNOWN_SYMBOL_OR_TYPE", "outer.moss", 3), inner_results
+    assert inner_sets["tree"] == inner_sets["legacy"], inner_sets
+    assert {identity.split("::")[-1] for identity in inner_sets["tree"]} == {
+        "inner:fn:make", "outer:fn:make"}, inner_sets
     assert inner_package_diagnostics["legacy"] == (
         "UNKNOWN_SYMBOL_OR_TYPE", "outer.moss", 3), inner_package_diagnostics
     assert inner_package_diagnostics["tree"] == inner_package_diagnostics["legacy"], inner_package_diagnostics
@@ -216,8 +218,8 @@ def main() -> int:
     assert ambiguous_methods["tree"] == expected_ambiguous, ambiguous_methods
     print("PASS Point(x = ops.g(7)) reaches exactly ops.g; entry main is traced separately")
     print("PASS f(x = g(1)) rejects identically: CALL_NAMED_ARGUMENT_UNSUPPORTED")
-    print("PASS node.kind_num excludes token.kind_num; legacy rejects, tree accepts")
-    print("PASS inner.make excludes outer.make; legacy rejects, tree accepts")
+    print("PASS node.kind_num retains same-leaf candidates; both paths reject token.moss:3")
+    print("PASS inner.make retains same-leaf candidates; both paths reject outer.moss:3")
     print("PASS inner.make package mode rejects both paths identically: "
           f"{inner_package_diagnostics['tree']}")
     print("PASS package-mode Margo check rejects both paths identically: "

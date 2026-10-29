@@ -12020,6 +12020,13 @@ static void add_expression_references(const Program& program,
         resolved_qualified_function) {
       references.methods.insert(qualified_name);
       references.functions.insert(qualified_name);
+      // Reach closure remains a compatibility superset during EST migration:
+      // the legacy text walk expands qualified calls to every same-leaf
+      // function candidate. Preserve those checked declarations while keeping
+      // the resolved qualified target in the expression facts.
+      for (const auto* candidate : function_index.candidates(
+               leaf, current_module))
+        references.functions.insert(candidate->name);
     } else if (member_callee) {
       references.methods.insert(leaf);
       references.functions.insert(leaf);

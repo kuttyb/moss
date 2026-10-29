@@ -66,7 +66,7 @@ def main() -> int:
                         default=EXPECTED_LEGACY_SHA256,
                         help="required SHA-256 for the frozen phase27-1-m1 compiler")
     parser.add_argument("--out", type=Path,
-                        default=ROOT / "tmp/phase27-2/reach-differential.json")
+                        help="report path (default names the source and candidate SHAs)")
     args = parser.parse_args()
     legacy, candidate = args.legacy.resolve(), args.candidate.resolve()
     legacy_sha256 = hashlib.sha256(legacy.read_bytes()).hexdigest()
@@ -74,8 +74,19 @@ def main() -> int:
         raise SystemExit(
             "legacy compiler SHA-256 mismatch: "
             f"expected {args.expected_legacy_sha256}, got {legacy_sha256}")
+    revision = subprocess.check_output(
+        ["git", "rev-parse", f"{args.rev}^{{commit}}"], cwd=ROOT,
+        text=True).strip()
+    candidate_sha256 = hashlib.sha256(candidate.read_bytes()).hexdigest()
+    candidate_revision = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
+    candidate_dirty_paths = subprocess.check_output(
+        ["git", "status", "--porcelain"], cwd=ROOT, text=True).splitlines()
+    legacy_revision = subprocess.check_output(
+        ["git", "rev-parse", "phase27-1-m1^{commit}"], cwd=ROOT,
+        text=True).strip()
     sources = subprocess.check_output(
-        ["git", "ls-tree", "-r", "--name-only", args.rev], cwd=ROOT,
+        ["git", "ls-tree", "-r", "--name-only", revision], cwd=ROOT,
         text=True).splitlines()
     sources = [source for source in sources if source.endswith(".moss")]
     base_root = ROOT / "tmp/phase27-2/reach-differential-base"
@@ -83,7 +94,7 @@ def main() -> int:
     for destination in (base_root, tree_root):
         shutil.rmtree(destination, ignore_errors=True)
         destination.mkdir(parents=True)
-        archive = subprocess.check_output(["git", "archive", args.rev], cwd=ROOT)
+        archive = subprocess.check_output(["git", "archive", revision], cwd=ROOT)
         with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
             tar.extractall(destination, filter="data")
 
@@ -118,28 +129,44 @@ def main() -> int:
                     before["trace_complete"] != after["trace_complete"] or
                     before["verdict"] != after["verdict"]):
                 failures.append(row)
-    args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_text(json.dumps({"revision": args.rev,
-                                    "legacy_revision": "phase27-1-m1",
+    checked_missing = sum(len(row["checked_missing"]) for row in rows)
+    checked_added = sum(len(row["checked_added"]) for row in rows)
+    out = args.out or ROOT / "tmp/phase27-2" / (
+        f"reach-differential-{revision[:10]}-{candidate_sha256[:10]}.json")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps({"revision": revision,
+                                    "candidate_revision": candidate_revision,
+                                    "candidate_dirty_paths": candidate_dirty_paths,
+                                    "legacy_revision": legacy_revision,
                                     "legacy_binary_sha256": legacy_sha256,
-                                    "candidate_binary_sha256": hashlib.sha256(
-                                        candidate.read_bytes()).hexdigest(),
+                                    "candidate_binary_sha256": candidate_sha256,
                                     "source_count": len(sources),
+                                    "checked_declaration_differences": {
+                                        "legacy_only": checked_missing,
+                                        "tree_only": checked_added},
+                                    "comparison": {
+                                        "entrypoint": "moss check <tracked .moss source> --json",
+                                        "cwd": "same archived repository root for each path",
+                                        "legacy_mode": "MOSS_EST=off",
+                                        "candidate_mode": "MOSS_EST=shadow",
+                                        "checked_key": ["kind", "relative source path", "declaration identity"],
+                                        "closure_invariant": "tree checked declarations must be a superset of legacy"},
                                     "failures": failures,
                                     "entries": rows}, indent=2) + "\n")
     try:
-        report_name = args.out.resolve().relative_to(ROOT).as_posix()
+        report_name = out.resolve().relative_to(ROOT).as_posix()
     except ValueError:
-        report_name = str(args.out)
+        report_name = str(out)
     print(f"{len(sources)} entries; {len(failures)} reachability differences; "
-          f"report {report_name}")
+          f"checked declarations legacy-only={checked_missing} "
+          f"tree-only={checked_added}; report {report_name}")
     for failure in failures:
         print(f"ENTRY {failure['entry']}")
         for kind in ("edge_missing", "edge_added", "checked_missing",
                      "checked_added"):
             for value in failure[kind]:
                 print(f"  {kind}: {value}")
-    return bool(failures)
+    return 1 if failures or checked_missing else 0
 
 
 if __name__ == "__main__":

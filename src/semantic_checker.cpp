@@ -24792,9 +24792,13 @@ class Checker {
                 }) != 1) {
               stages_resolved = false;
             } else {
-              map_fact->result = current_body_types_->solver.resolve(
-                  current_body_types_->expression_occurrences.at(
-                      pipeline_id).checked_type);
+              const auto& checked_pipeline =
+                  current_body_types_->expression_occurrences.at(pipeline_id);
+              if (checked_pipeline.checked_type)
+                map_fact->result = current_body_types_->solver.resolve(
+                    checked_pipeline.checked_type);
+              else
+                stages_resolved = false;
             }
           }
         } else {

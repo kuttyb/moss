@@ -58966,8 +58966,8 @@
     },
     "r1_initial_13_declaration_audit": {
       "initial_tree_only_instances": 13,
-      "real_call_chain_instances": 5,
-      "migration_bugs_without_call_chain": 8,
+      "real_call_chain_instances": 4,
+      "migration_bugs_without_call_chain": 9,
       "current_tree_only_instances": 2,
       "current_tree_only_call_chains": [
         {
@@ -59109,12 +59109,21 @@
           "kind": "function",
           "source": "examples/swarm/modules/calc_interpreter/src/node.moss",
           "identity": "callable-v1:module-v1:calc-interpreter@0.1.0::node:fn:make",
-          "classification": "ACCEPTED_C1_CORRECTION",
-          "call_chain": [
-            "file-root ast.moss -> Ast.add_num (and sibling Ast.add_* methods) -> node.make at ast.moss:22"
-          ]
+          "classification": "MIGRATION_BUG",
+          "call_chain": null,
+          "explanation": "The claimed chain begins in ast.moss, but this entry is lexer_test.moss, which imports errors, lexer, and token only and contains no Ast/ast call. There is no concrete call path from this entry to node.make.",
+          "current_resolution": "No longer tree-only after qualified-call resolution at 2ca5f60b."
         }
-      ]
+      ],
+      "review_reconciliation": {
+        "agent2_dispute": "The earlier audit incorrectly attributed the lexer_test.moss node.make instance to Ast.add_num in ast.moss. The entry imports no ast module, so this was not a call chain.",
+        "corrected_counts": {
+          "concrete_call_chains": 4,
+          "migration_bugs_without_chain": 9
+        },
+        "current_tree_only_instances": 2,
+        "current_tree_only_chains_verified": true
+      }
     },
     "checked_declaration_differences": {
       "legacy_only": 19,
