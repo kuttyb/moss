@@ -33,13 +33,19 @@ CONSUMER_PATHS = {
                 "static_bounds.inc"),
     "emitter": ("native_generator.cpp", "file_chunk_codegen.inc",
                 "borrowed_views.inc", "handler_lowering.inc"),
-    "reach_walk": ("moss.cpp",),
+    "reach_walk": (),
     "fast_debug": ("interpreter.hpp", "interpreter_domains.inc",
                    "interpreter_phase20.inc"),
     "optimizer": ("functional_optimizer.cpp",),
     "parser": ("parser.cpp",),
+    "compiler_frontend": ("moss.cpp",),
 }
 EXTENSIONS = (".cpp", ".hpp", ".inc")
+REACH_FUNCTIONS = (
+    "add_expression_references", "add_statement_references",
+    "add_callable_argument_references", "add_callable_value_reference",
+    "add_bare_callable_handle_reference", "add_statement_callable_references",
+)
 
 
 def read_source(path, commit=None):
@@ -55,6 +61,26 @@ def consumer_for(path):
         if name in names:
             return consumer
     return None
+
+
+def reach_lines(source):
+    lines = source.splitlines()
+    selected = set()
+    for name in REACH_FUNCTIONS:
+        start = next((i for i, line in enumerate(lines)
+                      if re.match(r"\s*static\b", line) and
+                      re.search(r"\b" + re.escape(name) + r"\s*\(", line)), None)
+        if start is None:
+            continue
+        depth = 0
+        opened = False
+        for index in range(start, len(lines)):
+            depth += lines[index].count("{") - lines[index].count("}")
+            opened |= "{" in lines[index]
+            if opened and depth == 0:
+                selected.update(range(start + 1, index + 2))
+                break
+    return selected
 
 
 def paths(commit=None):
@@ -73,21 +99,23 @@ def sites(commit=None):
     for relative in paths(commit):
         consumer = consumer_for(relative)
         source = read_source(relative, commit)
+        reach = reach_lines(source) if relative == "src/moss.cpp" else set()
         for line_no, line in enumerate(source.splitlines(), 1):
             # Definitions are not consumer call sites. (moss.cpp owns many
             # helper definitions while also containing the reach walk.)
             for match in PATTERN.finditer(line):
                 api = match[1]
+                site_consumer = ("reach_walk" if line_no in reach else consumer)
                 # The source parser's local identifier predicate validates
                 # declaration names; expression identifier reads are tracked
                 # in the checker, emitter, reach walk, and interpreter.
-                if api == "identifier" and consumer == "parser":
+                if api == "identifier" and site_consumer == "parser":
                     continue
                 if re.match(r"\s*(?:static\s+)?(?:bool|string|size_t|vector<.*?>|"
                             r"optional<.*?>|std::optional<.*?>)\s+" +
                             re.escape(api) + r"\s*\(", line):
                     continue
-                found[(consumer, relative, line_no, line.strip(), api)] += 1
+                found[(site_consumer, relative, line_no, line.strip(), api)] += 1
             if consumer == "fast_debug":
                 calls = re.findall(r"\beval\s*\(", line)
                 if calls and not re.search(r"\bValue\s+eval\s*\(", line):
@@ -97,7 +125,7 @@ def sites(commit=None):
             comparisons = list(re.finditer(r"(?:==|!=|<=|>=|(?<!-)[<>])", line))
             if ("trim(" in line and any(line[match.end():].strip()
                                          for match in comparisons)):
-                found[(consumer, relative, line_no, line.strip(), "trim_compare")] += line.count("trim(")
+                found[(site_consumer, relative, line_no, line.strip(), "trim_compare")] += line.count("trim(")
     return found
 
 

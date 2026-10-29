@@ -162,7 +162,6 @@ void assert_fresh(const Handle& handle, const std::string& source) {
 const Handle* lookup(const std::vector<Handle>& handles, const Arena& arena,
                      std::uint64_t owner, ExprSlot slot,
                      std::uint32_t argument_index, const std::string& source) {
-  if (mode() == Mode::Off) return nullptr;
   for (const auto& handle : handles) {
     if (handle.owner != owner || handle.slot != slot ||
         handle.argument_index != argument_index) continue;
@@ -1136,13 +1135,6 @@ std::string dump_node(const Arena& arena, ExprId id) {
 
 static void populate_impl(Program& program, std::vector<Stmt>* additional,
                           std::uint64_t origin_id) {
-  const auto current_mode = mode();
-  if (current_mode == Mode::Off) {
-    if (const char* stats = std::getenv("MOSS_EST_STATS"); stats &&
-        std::string_view(stats) == "1")
-      std::cerr << "MOSS_EST_STATS arena_size=0 handle_count=0\n";
-    return;
-  }
   const auto compare_attempts_before = shadow_attempts;
   const auto compare_matches_before = shadow_compared;
   const auto compare_unparsed_before = shadow_unparsed;
@@ -1338,6 +1330,7 @@ static void populate_impl(Program& program, std::vector<Stmt>* additional,
       case Stmt::Kind::Call: {
         assert(!s.est_raw_form.has_value());
         s.est_raw_form = RawForm::ExprStmt;
+        bind(s.expression_handles, owner, ExprSlot::Expression, 0, s.text);
         bind(s.expression_handles, owner, ExprSlot::Receiver, 0, s.a);
         for (std::uint32_t index = 0; index < s.args.size(); ++index)
           bind(s.expression_handles, owner, ExprSlot::Argument, index, s.args[index]);

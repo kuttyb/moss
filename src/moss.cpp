@@ -11747,6 +11747,8 @@ struct FileCheckReferences {
   std::set<string> functions, methods, handlers;
 };
 
+static string unqualified_callable_name(const string& name);
+
 static std::set<string> type_identifiers(const string& text) {
   std::set<string> result;
   string name;
@@ -11758,108 +11760,180 @@ static std::set<string> type_identifiers(const string& text) {
   return result;
 }
 
-static void add_expression_references(const string& source,
-                                      FileCheckReferences& references) {
-  string text = source;
-  enum class Quote { None, Single, Double } quote = Quote::None;
-  bool escaped = false;
-  for (size_t i = 0; i < text.size(); ++i) {
-    char ch = text[i];
-    if (quote != Quote::None) {
-      if (escaped) escaped = false;
-      else if (ch == '\\') escaped = true;
-      else if ((quote == Quote::Single && ch == '\'') ||
-               (quote == Quote::Double && ch == '"')) quote = Quote::None;
-      else text[i] = ' ';
-      continue;
-    }
-    if (ch == '#') {
-      while (i < text.size() && text[i] != '\n') text[i++] = ' ';
-      if (i == text.size()) break;
-      continue;
-    }
-    if (ch == '\'') { quote = Quote::Single; text[i] = ' '; continue; }
-    if (ch == '"') { quote = Quote::Double; text[i] = ' '; continue; }
-  }
-  auto add_bare_references = [&](size_t begin, size_t end) {
-    for (size_t at = begin; at < end;) {
-      if (!(moss::ascii_is_alpha(static_cast<unsigned char>(text[at])) || text[at] == '_')) {
-        ++at;
-        continue;
+static const est::Arena* expression_arena_for(const Program& program,
+                                               const est::Handle& handle) {
+  return handle.arena_index < program.expression_arenas.size()
+      ? program.expression_arenas[handle.arena_index].get() : nullptr;
+}
+
+static string callable_spelling(const est::Arena& arena, est::ExprId id) {
+  return std::visit([&](const auto& node) -> string {
+    using T = std::decay_t<decltype(node)>;
+    if constexpr (std::is_same_v<T, est::Identifier>) return node.name;
+    else if constexpr (std::is_same_v<T, est::Member>) {
+      const auto base = callable_spelling(arena, node.base);
+      return base.empty() ? string() : base + "." + node.name;
+    } else if constexpr (std::is_same_v<T, est::Parenthesized>)
+      return callable_spelling(arena, node.inner);
+    else return {};
+  }, arena.at(id));
+}
+
+template <class ProgramCallable>
+static void visit_expression_handles(const Program& program,
+                                    const vector<est::Handle>& handles,
+                                    ProgramCallable&& visit_root) {
+  std::set<std::pair<const est::Arena*, est::ExprId>> seen;
+  std::function<void(const est::Arena&, est::ExprId)> visit =
+      [&](const est::Arena& arena, est::ExprId id) {
+    if (!seen.emplace(&arena, id).second) return;
+    visit_root(arena, id);
+    std::visit([&](const auto& node) {
+      using T = std::decay_t<decltype(node)>;
+      if constexpr (std::is_same_v<T, est::Unary>) visit(arena, node.operand);
+      else if constexpr (std::is_same_v<T, est::Binary>) {
+        visit(arena, node.left); visit(arena, node.right);
+      } else if constexpr (std::is_same_v<T, est::Call>) {
+        visit(arena, node.callee);
+        for (auto child : node.arguments) visit(arena, child);
+      } else if constexpr (std::is_same_v<T, est::Member>) visit(arena, node.base);
+      else if constexpr (std::is_same_v<T, est::Index>) {
+        visit(arena, node.base); visit(arena, node.index);
+      } else if constexpr (std::is_same_v<T, est::Parenthesized>) visit(arena, node.inner);
+      else if constexpr (std::is_same_v<T, est::Message>) {
+        visit(arena, node.target);
+        for (auto child : node.arguments) visit(arena, child);
+      } else if constexpr (std::is_same_v<T, est::NamedArgument>) visit(arena, node.value);
+      else if constexpr (std::is_same_v<T, est::Collection> ||
+                         std::is_same_v<T, est::Tuple>) {
+        for (auto child : node.elements) visit(arena, child);
+      } else if constexpr (std::is_same_v<T, est::Constructor>) {
+        visit(arena, node.type);
+        for (auto child : node.type_arguments) visit(arena, child);
+        for (auto child : node.arguments) visit(arena, child);
+      } else if constexpr (std::is_same_v<T, est::Pipeline>) {
+        visit(arena, node.input);
+        for (auto child : node.stages) visit(arena, child);
       }
-      const size_t start = at++;
-      while (at < end &&
-             (moss::ascii_is_alnum(static_cast<unsigned char>(text[at])) || text[at] == '_')) ++at;
-      if (at < end && text[at] == '.') continue;
-      references.functions.insert(text.substr(start, at - start));
-    }
+    }, arena.at(id));
   };
-  if (const auto by = text.find("by:"); by != string::npos)
-    add_bare_references(by + 3, text.size());
-  else if (const auto by = text.find("by="); by != string::npos)
-    add_bare_references(by + 3, text.size());
-  for (const char* const operation_text : {"map(", "filter(", "reduce(", "fold(", "each(", "any(", "all("}) {
-    const string operation = operation_text;
-    size_t at = 0;
-    while ((at = text.find(operation, at)) != string::npos) {
-      const size_t begin = at + operation.size();
-      size_t end = text.find(')', begin);
-      if (end == string::npos) end = text.size();
-      add_bare_references(begin, end);
-      at = begin;
-    }
-  }
-  for (size_t i = 0; i < text.size();) {
-    if (!(moss::ascii_is_alpha(static_cast<unsigned char>(text[i])) || text[i] == '_')) {
-      ++i;
-      continue;
-    }
-    const size_t begin = i++;
-    while (i < text.size() &&
-           (moss::ascii_is_alnum(static_cast<unsigned char>(text[i])) || text[i] == '_')) ++i;
-    string name = text.substr(begin, i - begin);
-    size_t next = i;
-    while (next < text.size() && moss::ascii_is_space(static_cast<unsigned char>(text[next]))) ++next;
-    if (next == text.size() || text[next] != '(') continue;
-    size_t previous = begin;
-    while (previous > 0 && moss::ascii_is_space(static_cast<unsigned char>(text[previous - 1]))) --previous;
-    const bool member = previous > 0 && text[previous - 1] == '.';
-    bool message_handler = false;
-    if (member) {
-      const size_t dot = previous - 1;
-      const auto message = text.rfind("message", dot);
-      if (message != string::npos &&
-          (message == 0 ||
-           !(moss::ascii_is_alnum(static_cast<unsigned char>(text[message - 1])) ||
-             text[message - 1] == '_')) &&
-          (message + 7 == text.size() ||
-           moss::ascii_is_space(static_cast<unsigned char>(text[message + 7])))) {
-        message_handler = true;
-        for (size_t between = message + 7; between < begin; ++between)
-          if (!(moss::ascii_is_alnum(static_cast<unsigned char>(text[between])) ||
-                text[between] == '_' || text[between] == '.' ||
-                moss::ascii_is_space(static_cast<unsigned char>(text[between])))) {
-            message_handler = false;
-            break;
-          }
-      }
-    }
-    if (member && message_handler) references.handlers.insert(std::move(name));
-    else if (member) {
-      // `module.fn(...)` is syntactically a member call; select both kinds.
-      references.functions.insert(name);
-      references.methods.insert(std::move(name));
-    }
-    else {
-      // A bare call inside a method may name a sibling method (implicit
-      // receiver), so it selects both kinds of callable by name.
-      references.methods.insert(name);
-      references.functions.insert(std::move(name));
-    }
+  for (const auto& handle : handles) {
+    const auto* arena = expression_arena_for(program, handle);
+    if (arena) visit(*arena, handle.expr);
   }
 }
 
+static void add_expression_references(const Program& program,
+                                     const vector<est::Handle>& handles,
+                                     FileCheckReferences& references) {
+  visit_expression_handles(program, handles, [&](const est::Arena& arena,
+                                                  est::ExprId id) {
+    const auto& node = arena.at(id);
+    if (const auto* message = std::get_if<est::Message>(&node)) {
+      references.handlers.insert(message->handler);
+      return;
+    }
+    if (const auto* named = std::get_if<est::NamedArgument>(&node);
+        named && named->name == "by") {
+      std::function<void(est::ExprId)> add_bare_names =
+          [&](est::ExprId expression) {
+        std::visit([&](const auto& child) {
+          using T = std::decay_t<decltype(child)>;
+          auto add_name = [&](const string& name) {
+            references.functions.insert(name);
+            references.functions.insert(unqualified_callable_name(name));
+          };
+          if constexpr (std::is_same_v<T, est::Identifier>) add_name(child.name);
+          else if constexpr (std::is_same_v<T, est::Member>) add_name(child.name);
+          else if constexpr (std::is_same_v<T, est::Call>) {
+            const auto callee = callable_spelling(arena, child.callee);
+            if (!callee.empty()) add_name(unqualified_callable_name(callee));
+            for (auto argument : child.arguments) add_bare_names(argument);
+          } else if constexpr (std::is_same_v<T, est::Constructor>) {
+            const auto callee = callable_spelling(arena, child.type);
+            if (!callee.empty()) add_name(unqualified_callable_name(callee));
+            for (auto argument : child.arguments) add_bare_names(argument);
+          } else if constexpr (std::is_same_v<T, est::Unary>)
+            add_bare_names(child.operand);
+          else if constexpr (std::is_same_v<T, est::Binary>) {
+            add_bare_names(child.left); add_bare_names(child.right);
+          } else if constexpr (std::is_same_v<T, est::Parenthesized>)
+            add_bare_names(child.inner);
+          else if constexpr (std::is_same_v<T, est::Index>) {
+            add_bare_names(child.base); add_bare_names(child.index);
+          } else if constexpr (std::is_same_v<T, est::NamedArgument>)
+            add_bare_names(child.value);
+          else if constexpr (std::is_same_v<T, est::Message>) {
+            add_bare_names(child.target);
+            for (auto argument : child.arguments) add_bare_names(argument);
+          } else if constexpr (std::is_same_v<T, est::Collection> ||
+                               std::is_same_v<T, est::Tuple>) {
+            for (auto argument : child.elements) add_bare_names(argument);
+          } else if constexpr (std::is_same_v<T, est::Pipeline>) {
+            add_bare_names(child.input);
+            for (auto stage : child.stages) add_bare_names(stage);
+          }
+        }, arena.at(expression));
+      };
+      add_bare_names(named->value);
+    }
+    est::ExprId callee = 0;
+    bool call = false;
+    if (const auto* expression = std::get_if<est::Call>(&node)) {
+      callee = expression->callee;
+      call = true;
+    } else if (const auto* constructor = std::get_if<est::Constructor>(&node)) {
+      callee = constructor->type;
+      call = true;
+    }
+    if (!call) return;
+    const auto name = callable_spelling(arena, callee);
+    if (name.empty()) return;
+    const auto leaf = unqualified_callable_name(name);
+    references.methods.insert(leaf);
+    references.functions.insert(leaf);
+    if (const auto kind = functional_stage_kind(name)) {
+      size_t callback_index = std::numeric_limits<size_t>::max();
+      switch (*kind) {
+        case FunctionalNodeKind::Map:
+        case FunctionalNodeKind::Filter:
+        case FunctionalNodeKind::Any:
+        case FunctionalNodeKind::All: callback_index = 0; break;
+        case FunctionalNodeKind::Reduce: callback_index = 1; break;
+        case FunctionalNodeKind::Source:
+        case FunctionalNodeKind::Sum:
+        case FunctionalNodeKind::Count: break;
+      }
+      const auto* expression = std::get_if<est::Call>(&node);
+      if (expression && callback_index < expression->arguments.size()) {
+        const auto callback = callable_spelling(arena,
+                                                expression->arguments[callback_index]);
+        if (!callback.empty())
+          references.functions.insert(unqualified_callable_name(callback));
+      }
+    }
+  });
+}
+
+static void add_invoked_handler_references(
+    const Program& program, const vector<est::Handle>& handles,
+    FileCheckReferences& references) {
+  visit_expression_handles(program, handles, [&](const est::Arena& arena,
+                                                  est::ExprId id) {
+    const auto* call = std::get_if<est::Call>(&arena.at(id));
+    if (!call || unqualified_callable_name(
+            callable_spelling(arena, call->callee)) != "invoke" ||
+        call->arguments.empty()) return;
+    const auto* nested = std::get_if<est::Call>(
+        &arena.at(call->arguments.front()));
+    if (nested)
+      references.handlers.insert(unqualified_callable_name(
+          callable_spelling(arena, nested->callee)));
+  });
+}
+
 static void add_statement_references(const vector<Stmt>& body,
+                                     const Program& program,
                                      FileCheckReferences& references) {
   for (const auto& statement : body) {
     // `for x in value` calls the iterator protocol implicitly; method
@@ -11870,36 +11944,12 @@ static void add_statement_references(const vector<Stmt>& body,
     }
     if (statement.kind == Stmt::Kind::Message) {
       if (!statement.b.empty()) references.handlers.insert(trim(statement.b));
-      for (const auto& argument : statement.args)
-        add_expression_references(argument, references);
+      add_expression_references(program, statement.expression_handles, references);
       continue;
     }
-    auto callable_leaf = [](const string& name) {
-      size_t separator = name.rfind("__");
-      size_t width = 2;
-      const auto dot = name.rfind('.');
-      if (dot != string::npos && (separator == string::npos || dot > separator)) {
-        separator = dot;
-        width = 1;
-      }
-      return separator == string::npos ? name : name.substr(separator + width);
-    };
-    for (const string* candidate : {&statement.text, &statement.a}) {
-      string callee;
-      vector<string> arguments;
-      if (!parse_simple_call(*candidate, callee, arguments) ||
-          callable_leaf(callee) != "invoke" || arguments.empty())
-        continue;
-      string handler_call;
-      vector<string> handler_arguments;
-      if (!parse_simple_call(arguments.front(), handler_call, handler_arguments))
-        continue;
-      references.handlers.insert(callable_leaf(handler_call));
-    }
-    for (const string* text : {&statement.text, &statement.a, &statement.b})
-      add_expression_references(*text, references);
-    for (const auto& argument : statement.args)
-      add_expression_references(argument, references);
+    add_expression_references(program, statement.expression_handles, references);
+    add_invoked_handler_references(program, statement.expression_handles,
+                                   references);
     if (statement.kind == Stmt::Kind::Call) {
       if (!statement.b.empty()) {
         const string source = trim(statement.text);
@@ -11933,211 +11983,14 @@ static string unqualified_callable_name(const string& name) {
 }
 
 // A named function passed as an argument is a callable edge even though it is
-// not followed by `(...)` at the call site. Keep this syntactic and bounded to
-// known declarations: ordinary variable arguments with matching-looking
-// substrings must not pull unrelated bodies into file scope.
-static void add_callable_argument_references(const string& source,
-                                             const Program& program,
-                                             FileCheckReferences& references) {
-  auto canonical_spelling = [](string value) {
-    for (size_t dot = value.find('.'); dot != string::npos;
-         dot = value.find('.', dot + 2))
-      value.replace(dot, 1, "__");
-    return value;
-  };
-  auto callable_parameter_indices = [&](const string& call_name) {
-    vector<size_t> result;
-    std::vector<const Function*> called_functions;
-    const bool qualified = call_name.find('.') != string::npos ||
-        call_name.find("::") != string::npos || call_name.find("__") != string::npos;
-    auto collect = [&](const auto& function) {
-      const string normalized = canonical_spelling(call_name);
-      const string normalized_name = canonical_spelling(function.name);
-      if ((qualified && normalized != normalized_name &&
-           call_name != function.name && call_name != function.semantic_callable_id) ||
-          (!qualified && unqualified_callable_name(call_name) !=
-                             unqualified_callable_name(function.name)))
-        return;
-      called_functions.push_back(&function);
-    };
-    for (const auto& function : program.functions) collect(function);
-    // File checking must be conservative when this syntactic pass cannot know
-    // which same-leaf declaration name resolution will choose. Include every
-    // candidate's callable slots so an ambiguous or context-sensitive call
-    // cannot hide a reachable callback body.
-    for (const Function* function : called_functions) {
-      for (const auto& constraint : function->constraints) {
-        if (constraint.kind != ConstraintKind::Callable) continue;
-        for (size_t index = 0; index < function->params.size(); ++index)
-          if (constraint.subject == function->params[index].name)
-            result.push_back(index);
-      }
-      // Scoped checking runs before CheckedProgram has inferred callable
-      // constraints. Also recognize parameters invoked as callees in the
-      // candidate body's source syntax so named callback arguments remain in
-      // reachability until their static specializations are checked.
-      FileCheckReferences body_references;
-      add_statement_references(function->body, body_references);
-      if (function->result_expression)
-        add_expression_references(*function->result_expression, body_references);
-      std::set<string> pipeline_callable_parameters;
-      auto inspect_pipeline = [&](const string& expression) {
-        auto pipeline = parse_functional_pipeline(expression);
-        if (!pipeline) return;
-        for (const auto& stage : pipeline->stages) {
-          size_t callback_index = std::numeric_limits<size_t>::max();
-          switch (stage.kind) {
-            case FunctionalNodeKind::Map:
-            case FunctionalNodeKind::Filter:
-            case FunctionalNodeKind::Any:
-            case FunctionalNodeKind::All:
-              callback_index = 0;
-              break;
-            case FunctionalNodeKind::Reduce:
-              callback_index = 1;
-              break;
-            case FunctionalNodeKind::Source:
-            case FunctionalNodeKind::Sum:
-            case FunctionalNodeKind::Count:
-              break;
-          }
-          if (callback_index < stage.arguments.size())
-            pipeline_callable_parameters.insert(
-                trim(stage.arguments[callback_index]));
-        }
-      };
-      for (const auto& statement : function->body) {
-        inspect_pipeline(statement.text);
-        inspect_pipeline(statement.a);
-        inspect_pipeline(statement.b);
-        for (const auto& argument : statement.args) inspect_pipeline(argument);
-      }
-      if (function->result_expression)
-        inspect_pipeline(*function->result_expression);
-      for (size_t index = 0; index < function->params.size(); ++index) {
-        const auto& parameter = function->params[index].name;
-        if (body_references.functions.count(parameter) ||
-            body_references.functions.count(
-                unqualified_callable_name(parameter)) ||
-            pipeline_callable_parameters.count(parameter))
-          result.push_back(index);
-      }
-    }
-    std::sort(result.begin(), result.end());
-    result.erase(std::unique(result.begin(), result.end()), result.end());
-    return result;
-  };
-  auto add_callable_value = [&](const string& raw_value) {
-    const string value = trim(raw_value);
-    if (value.empty() || !std::all_of(value.begin(), value.end(), [](unsigned char ch) {
-          return moss::ascii_is_alnum(ch) || ch == '_' || ch == '.' || ch == ':';
-        })) return;
-    vector<const Function*> matches;
-    const string normalized = canonical_spelling(value);
-    const bool qualified = value.find('.') != string::npos ||
-        value.find("::") != string::npos || value.find("__") != string::npos;
-    for (const auto& function : program.functions) {
-      const string function_name = canonical_spelling(function.name);
-      if ((qualified && (normalized == function_name || value == function.name ||
-                         value == function.semantic_callable_id)) ||
-          (!qualified && (value == function.declaration_name ||
-                          value == function.name ||
-                          value == unqualified_callable_name(function.name))))
-        matches.push_back(&function);
-    }
-    // Preserve every candidate on ambiguity. Selecting too many bodies is
-    // safer than letting file mode omit a callback that the checker resolves.
-    for (const Function* function : matches)
-      references.functions.insert(function->name);
-  };
-  std::function<void(const string&)> visit = [&](const string& expression) {
-    string text = expression;
-    char quote = 0;
-    bool escaped = false;
-    for (size_t i = 0; i < text.size(); ++i) {
-      if (quote) {
-        const char ch = text[i];
-        if (escaped) escaped = false;
-        else if (ch == '\\') escaped = true;
-        else if (ch == quote) quote = 0;
-        if (ch != '\n') text[i] = ' ';
-      } else if (text[i] == '"' || text[i] == '\'') {
-        quote = text[i];
-        text[i] = ' ';
-      } else if (text[i] == '#') {
-        while (i < text.size() && text[i] != '\n') text[i++] = ' ';
-      }
-    }
-    // Find call-shaped subexpressions even when followed by operators, a
-    // condition delimiter, or another member call. This keeps the collector
-    // useful for expressions represented in larger AST fields.
-    for (size_t open = 0; open < text.size(); ++open) {
-      if (text[open] != '(') continue;
-      size_t begin = open;
-      while (begin > 0 && (moss::ascii_is_alnum(static_cast<unsigned char>(text[begin - 1])) ||
-                           text[begin - 1] == '_' || text[begin - 1] == '.' ||
-                           text[begin - 1] == ':')) --begin;
-      if (begin == open) continue;
-      int depth = 0;
-      char quote = 0;
-      bool escaped = false;
-      size_t close = open;
-      for (; close < text.size(); ++close) {
-        const char ch = text[close];
-        if (quote) {
-          if (escaped) escaped = false;
-          else if (ch == '\\') escaped = true;
-          else if (ch == quote) quote = 0;
-          continue;
-        }
-        if (ch == '"' || ch == '\'') { quote = ch; continue; }
-        if (ch == '(') ++depth;
-        else if (ch == ')' && --depth == 0) break;
-      }
-      if (close >= text.size()) continue;
-      string call, callee;
-      vector<string> arguments;
-      call = text.substr(begin, close - begin + 1);
-      if (!parse_simple_call(call, callee, arguments)) continue;
-      const auto callback_indices = callable_parameter_indices(callee);
-      const auto functional_kind = functional_stage_kind(callee);
-      for (size_t index = 0; index < arguments.size(); ++index) {
-        bool callback_value = std::find(callback_indices.begin(),
-            callback_indices.end(), index) != callback_indices.end();
-        if (functional_kind) {
-          switch (*functional_kind) {
-            case FunctionalNodeKind::Map:
-            case FunctionalNodeKind::Filter:
-            case FunctionalNodeKind::Any:
-            case FunctionalNodeKind::All:
-              callback_value = callback_value || index == 0;
-              break;
-            case FunctionalNodeKind::Reduce:
-              callback_value = callback_value || index == 1;
-              break;
-            case FunctionalNodeKind::Source:
-            case FunctionalNodeKind::Sum:
-            case FunctionalNodeKind::Count:
-              break;
-          }
-        }
-        if (callback_value) add_callable_value(arguments[index]);
-        visit(arguments[index]);
-      }
-      open = close;
-    }
-  };
-  visit(source);
-}
-
-static void add_bare_callable_value_reference(
-    const string& raw_value, const Program& program,
-    const std::set<string>& local_names, FileCheckReferences& references) {
-  const string value = trim(raw_value);
-  if (value.empty() || local_names.count(value) ||
-      !std::all_of(value.begin(), value.end(), [](unsigned char ch) {
-        return moss::ascii_is_alnum(ch) || ch == '_' || ch == '.' || ch == ':';
-      })) return;
+// not followed by `(...)` at the call site. Callback positions come from the
+// checked callable constraints or from syntax in the candidate body.
+static void add_callable_value_reference(const Program& program,
+                                        const est::Arena& arena,
+                                        est::ExprId expression,
+                                        FileCheckReferences& references) {
+  const string value = callable_spelling(arena, expression);
+  if (value.empty()) return;
   string normalized = value;
   for (size_t dot = normalized.find('.'); dot != string::npos;
        dot = normalized.find('.', dot + 2))
@@ -12155,6 +12008,91 @@ static void add_bare_callable_value_reference(
   }
 }
 
+static void add_callable_argument_references(
+    const Program& program, const vector<est::Handle>& handles,
+    FileCheckReferences& references) {
+  visit_expression_handles(program, handles, [&](const est::Arena& arena,
+                                                  est::ExprId id) {
+    const auto* call = std::get_if<est::Call>(&arena.at(id));
+    if (!call) return;
+    const string call_name = callable_spelling(arena, call->callee);
+    if (call_name.empty()) return;
+    vector<size_t> callback_indices;
+    const bool qualified = call_name.find('.') != string::npos ||
+        call_name.find("::") != string::npos || call_name.find("__") != string::npos;
+    auto canonical = [](string value) {
+      for (size_t dot = value.find('.'); dot != string::npos;
+           dot = value.find('.', dot + 2)) value.replace(dot, 1, "__");
+      return value;
+    };
+    for (const auto& function : program.functions) {
+      const bool matches = qualified
+          ? canonical(call_name) == canonical(function.name) ||
+                call_name == function.semantic_callable_id
+          : unqualified_callable_name(call_name) ==
+                unqualified_callable_name(function.name);
+      if (!matches) continue;
+      for (const auto& constraint : function.constraints) {
+        if (constraint.kind != ConstraintKind::Callable) continue;
+        for (size_t index = 0; index < function.params.size(); ++index)
+          if (constraint.subject == function.params[index].name)
+            callback_indices.push_back(index);
+      }
+      FileCheckReferences body_references;
+      add_statement_references(function.body, program, body_references);
+      if (function.result_expression)
+        add_expression_references(program, function.expression_handles,
+                                  body_references);
+      for (size_t index = 0; index < function.params.size(); ++index) {
+        const auto& parameter = function.params[index].name;
+        if (body_references.functions.count(parameter) ||
+            body_references.functions.count(unqualified_callable_name(parameter)))
+          callback_indices.push_back(index);
+      }
+    }
+    const auto functional_kind = functional_stage_kind(call_name);
+    if (functional_kind) {
+      switch (*functional_kind) {
+        case FunctionalNodeKind::Map:
+        case FunctionalNodeKind::Filter:
+        case FunctionalNodeKind::Any:
+        case FunctionalNodeKind::All:
+          callback_indices.push_back(0);
+          break;
+        case FunctionalNodeKind::Reduce:
+          callback_indices.push_back(1);
+          break;
+        case FunctionalNodeKind::Source:
+        case FunctionalNodeKind::Sum:
+        case FunctionalNodeKind::Count:
+          break;
+      }
+    }
+    std::sort(callback_indices.begin(), callback_indices.end());
+    callback_indices.erase(std::unique(callback_indices.begin(),
+                                       callback_indices.end()),
+                           callback_indices.end());
+    for (const auto index : callback_indices)
+      if (index < call->arguments.size())
+        add_callable_value_reference(program, arena, call->arguments[index],
+                                     references);
+  });
+}
+
+static void add_bare_callable_handle_reference(
+    const Program& program, const vector<est::Handle>& handles,
+    est::ExprSlot slot, std::uint32_t argument_index,
+    const std::set<string>& local_names, FileCheckReferences& references) {
+  for (const auto& handle : handles) {
+    if (handle.slot != slot || handle.argument_index != argument_index) continue;
+    const auto* arena = expression_arena_for(program, handle);
+    if (!arena) continue;
+    const string value = callable_spelling(*arena, handle.expr);
+    if (!value.empty() && !local_names.count(value))
+      add_callable_value_reference(program, *arena, handle.expr, references);
+  }
+}
+
 static void add_statement_callable_references(
     const vector<Stmt>& body, const Program& program,
     FileCheckReferences& references, std::set<string> local_names = {}) {
@@ -12166,38 +12104,42 @@ static void add_statement_callable_references(
       block_local_bindings.pop_back();
     }
     if (statement.kind == Stmt::Kind::Echo) {
-      if (!statement.args.empty()) {
-        for (const auto& argument : statement.args)
-          add_bare_callable_value_reference(argument, program, local_names,
-                                            references);
-      } else {
-        string expression = trim(statement.a.empty() ? statement.text : statement.a);
-        if (starts_with(expression, "echo ")) expression = trim(expression.substr(5));
-        for (const auto& argument : split_top_level(expression, ','))
-          add_bare_callable_value_reference(argument, program, local_names,
-                                            references);
-      }
+      for (const auto& handle : statement.expression_handles)
+        if (handle.slot == est::ExprSlot::Argument)
+          add_bare_callable_handle_reference(program,
+              statement.expression_handles, est::ExprSlot::Argument,
+              handle.argument_index, local_names, references);
     }
-    if ((statement.kind == Stmt::Kind::Let ||
-         statement.kind == Stmt::Kind::Var ||
-         statement.kind == Stmt::Kind::Assign) && !statement.b.empty())
-      add_bare_callable_value_reference(statement.b, program, local_names,
-                                        references);
-    for (const string* text : {&statement.text, &statement.a, &statement.b})
-      add_callable_argument_references(*text, program, references);
-    for (const auto& argument : statement.args)
-      add_callable_argument_references(argument, program, references);
+    if (statement.kind == Stmt::Kind::Let ||
+        statement.kind == Stmt::Kind::Var ||
+        statement.kind == Stmt::Kind::Assign) {
+      const auto slot = statement.kind == Stmt::Kind::Var
+          ? est::ExprSlot::Initializer : est::ExprSlot::RhsValue;
+      add_bare_callable_handle_reference(program, statement.expression_handles,
+          slot, 0, local_names, references);
+    }
+    add_callable_argument_references(program, statement.expression_handles,
+                                     references);
     if (statement.kind == Stmt::Kind::Call) {
       const string callee = !statement.b.empty() ? trim(statement.b) : trim(statement.a);
-      if (!callee.empty()) {
-        string call = callee + "(";
-        for (size_t i = 0; i < statement.args.size(); ++i) {
-          if (i) call += ", ";
-          call += statement.args[i];
+      const auto kind = functional_stage_kind(callee);
+      size_t callback_index = std::numeric_limits<size_t>::max();
+      if (kind) {
+        switch (*kind) {
+          case FunctionalNodeKind::Map:
+          case FunctionalNodeKind::Filter:
+          case FunctionalNodeKind::Any:
+          case FunctionalNodeKind::All: callback_index = 0; break;
+          case FunctionalNodeKind::Reduce: callback_index = 1; break;
+          case FunctionalNodeKind::Source:
+          case FunctionalNodeKind::Sum:
+          case FunctionalNodeKind::Count: break;
         }
-        call += ")";
-        add_callable_argument_references(call, program, references);
       }
+      if (callback_index < statement.args.size())
+        add_bare_callable_handle_reference(program, statement.expression_handles,
+            est::ExprSlot::Argument,
+            static_cast<std::uint32_t>(callback_index), local_names, references);
     }
     if ((statement.kind == Stmt::Kind::Let ||
          statement.kind == Stmt::Kind::Var ||
@@ -12309,23 +12251,25 @@ static void scope_program_to_file(Program& program,
   for (size_t i = 0; i < program.functions.size(); ++i) {
     const auto& function = program.functions[i];
     auto& refs = function_refs[i];
-    add_statement_references(function.body, refs);
-    if (function.result_expression) add_expression_references(*function.result_expression, refs);
+    add_statement_references(function.body, program, refs);
+    if (function.result_expression)
+      add_expression_references(program, function.expression_handles, refs);
     std::set<string> function_locals;
     for (const auto& parameter : function.params)
       function_locals.insert(parameter.name);
     add_statement_callable_references(function.body, program, refs,
                                       std::move(function_locals));
     if (function.result_expression)
-      add_callable_argument_references(*function.result_expression, program, refs);
+      add_callable_argument_references(program, function.expression_handles, refs);
     if (scope_kind == FastDebugScopeKind::File &&
         is_root(function.source_file)) selected_functions.insert(i);
   }
   for (const auto& object : program.objects) {
     for (const auto& method : object.methods) {
       auto& refs = method_refs[method_index];
-      add_statement_references(method.body, refs);
-      if (method.result_expression) add_expression_references(*method.result_expression, refs);
+      add_statement_references(method.body, program, refs);
+      if (method.result_expression)
+        add_expression_references(program, method.expression_handles, refs);
       std::set<string> method_locals{"self"};
       for (const auto& field : object.fields) method_locals.insert(field.name);
       for (const auto& parameter : method.params)
@@ -12333,7 +12277,7 @@ static void scope_program_to_file(Program& program,
       add_statement_callable_references(method.body, program, refs,
                                         std::move(method_locals));
       if (method.result_expression)
-        add_callable_argument_references(*method.result_expression, program, refs);
+        add_callable_argument_references(program, method.expression_handles, refs);
       if (scope_kind == FastDebugScopeKind::File &&
           is_root(method.source_file)) selected_methods.insert(method_index);
       ++method_index;
@@ -12342,7 +12286,7 @@ static void scope_program_to_file(Program& program,
   for (const auto& domain : program.domains) {
     for (const auto& handler : domain.handlers) {
       auto& refs = handler_refs[handler_index];
-      add_statement_references(handler.body, refs);
+      add_statement_references(handler.body, program, refs);
       std::set<string> handler_locals{"self"};
       for (const auto& field : domain.state) handler_locals.insert(field.name);
       for (const auto& route : domain.routes) handler_locals.insert(route.name);
@@ -12351,7 +12295,7 @@ static void scope_program_to_file(Program& program,
       add_statement_callable_references(handler.body, program, refs,
                                         handler_locals);
       for (const auto& arm : handler.failure_arms) {
-        add_statement_references(arm.body, refs);
+        add_statement_references(arm.body, program, refs);
         add_statement_callable_references(arm.body, program, refs,
                                           handler_locals);
       }
@@ -12365,7 +12309,7 @@ static void scope_program_to_file(Program& program,
        scope_kind == FastDebugScopeKind::Main) &&
       program.main && is_root(program.main->source_file))
     {
-      add_statement_references(program.main->body, root_references);
+      add_statement_references(program.main->body, program, root_references);
       add_statement_callable_references(program.main->body, program, root_references);
     }
   for (const auto& test : program.tests)
@@ -12377,12 +12321,12 @@ static void scope_program_to_file(Program& program,
         (scope_kind == FastDebugScopeKind::Tests
              ? (all_package_tests || is_root(test.source_file))
              : is_root(test.source_file))) {
-      add_statement_references(test.body, root_references);
+      add_statement_references(test.body, program, root_references);
       add_statement_callable_references(test.body, program, root_references);
     }
   for (const auto& bench : program.benchmarks)
     if (scope_kind == FastDebugScopeKind::File && is_root(bench.source_file)) {
-      add_statement_references(bench.body, root_references);
+      add_statement_references(bench.body, program, root_references);
       add_statement_callable_references(bench.body, program, root_references);
     }
 
@@ -12423,7 +12367,8 @@ static void scope_program_to_file(Program& program,
           });
       if (!selected_object) continue;
       for (const auto& field : object.fields)
-        if (!field.init.empty()) add_expression_references(field.init, active);
+        if (!field.init.empty())
+          add_expression_references(program, field.expression_handles, active);
     }
     for (const auto& domain : program.domains) {
       const bool selected_domain = matches(active.functions, domain.name) ||
@@ -12432,7 +12377,8 @@ static void scope_program_to_file(Program& program,
           });
       if (!selected_domain) continue;
       for (const auto& field : domain.state)
-        if (!field.init.empty()) add_expression_references(field.init, active);
+        if (!field.init.empty())
+          add_expression_references(program, field.expression_handles, active);
     }
     for (size_t i = 0; i < program.functions.size(); ++i) {
       const auto& function = program.functions[i];
@@ -12619,12 +12565,14 @@ static void scope_program_to_file(Program& program,
       if (program.file_scope_objects.count(object.name))
         for (const auto& field : object.fields)
           if (!field.init.empty())
-            add_expression_references(field.init, initializer_references);
+            add_expression_references(program, field.expression_handles,
+                                      initializer_references);
     for (const auto& domain : program.domains)
       if (program.file_scope_domains.count(domain.name))
         for (const auto& field : domain.state)
           if (!field.init.empty())
-            add_expression_references(field.init, initializer_references);
+            add_expression_references(program, field.expression_handles,
+                                      initializer_references);
     for (const auto& object : program.objects)
       if (!program.file_scope_objects.count(object.name) &&
           matches(initializer_references.functions, object.name))
@@ -16864,7 +16812,12 @@ static ParsedModuleUnit load_module_interface(
         file.string() + "\n" + identity));
   };
   for (auto& function : provider.functions)
+  {
     build_loaded_body(function.body, "generic-function:" + function.name);
+    if (function.execution_body)
+      build_loaded_body(*function.execution_body,
+                        "execution-function:" + function.name);
+  }
   for (auto& object : provider.objects)
     for (auto& method : object.methods)
       build_loaded_body(method.body,
@@ -16873,9 +16826,17 @@ static ParsedModuleUnit load_module_interface(
     for (auto& handler : domain.handlers) {
       build_loaded_body(handler.body,
                         "generic-handler:" + domain.name + "::" + handler.name);
+      if (handler.execution_body)
+        build_loaded_body(*handler.execution_body,
+                          "execution-handler:" + domain.name + "::" +
+                              handler.name);
       for (auto& arm : handler.failure_arms)
         build_loaded_body(arm.body, "generic-failure:" + domain.name + "::" +
                           handler.name + ":" + std::to_string(arm.line));
+      if (handler.execution_failure_arms)
+        for (auto& arm : *handler.execution_failure_arms)
+          build_loaded_body(arm.body, "execution-failure:" + domain.name + "::" +
+                            handler.name + ":" + std::to_string(arm.line));
     }
   if (load_execution_bodies) {
     parse_execution_body_payload(execution_bodies, provider, file);
@@ -20947,42 +20908,44 @@ static std::set<string> execution_body_callable_closure(
     changed = false;
     FileCheckReferences references;
     auto add_function_body = [&](const Function& function) {
-      add_statement_references(function.body, references);
+      add_statement_references(function.body, program, references);
       if (function.result_expression)
-        add_expression_references(*function.result_expression, references);
+        add_expression_references(program, function.expression_handles,
+                                 references);
       std::set<string> locals;
       for (const auto& parameter : function.params) locals.insert(parameter.name);
       add_statement_callable_references(function.body, program, references,
                                         std::move(locals));
       if (function.result_expression)
-        add_callable_argument_references(*function.result_expression, program,
+        add_callable_argument_references(program, function.expression_handles,
                                          references);
     };
     auto add_method_body = [&](const Method& method) {
-      add_statement_references(method.body, references);
+      add_statement_references(method.body, program, references);
       if (method.result_expression)
-        add_expression_references(*method.result_expression, references);
+        add_expression_references(program, method.expression_handles,
+                                 references);
       std::set<string> locals{"self"};
       for (const auto& parameter : method.params) locals.insert(parameter.name);
       add_statement_callable_references(method.body, program, references,
                                         std::move(locals));
       if (method.result_expression)
-        add_callable_argument_references(*method.result_expression, program,
+        add_callable_argument_references(program, method.expression_handles,
                                          references);
     };
     auto add_handler_body = [&](const Handler& handler) {
-      add_statement_references(handler.body, references);
+      add_statement_references(handler.body, program, references);
       std::set<string> locals{"self"};
       for (const auto& parameter : handler.params) locals.insert(parameter.name);
       add_statement_callable_references(handler.body, program, references,
                                         locals);
       for (const auto& arm : handler.failure_arms) {
-        add_statement_references(arm.body, references);
+        add_statement_references(arm.body, program, references);
         add_statement_callable_references(arm.body, program, references, locals);
       }
       if (handler.execution_failure_arms)
         for (const auto& arm : *handler.execution_failure_arms) {
-          add_statement_references(arm.body, references);
+          add_statement_references(arm.body, program, references);
           add_statement_callable_references(arm.body, program, references, locals);
         }
     };
@@ -21002,7 +20965,8 @@ static std::set<string> execution_body_callable_closure(
       if (object_reached)
         for (const auto& field : object.fields)
           if (!field.init.empty())
-            add_expression_references(field.init, references);
+            add_expression_references(program, field.expression_handles,
+                                      references);
     }
     for (const auto& domain : program.domains) {
       if (!local_module(domain.name)) continue;
@@ -21016,7 +20980,8 @@ static std::set<string> execution_body_callable_closure(
       if (domain_reached)
         for (const auto& field : domain.state)
           if (!field.init.empty())
-            add_expression_references(field.init, references);
+            add_expression_references(program, field.expression_handles,
+                                      references);
     }
 
     // Preserve resolved compiler call edges as a second source of reach facts;
