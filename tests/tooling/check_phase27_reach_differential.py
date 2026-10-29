@@ -29,6 +29,12 @@ def trace(binary: Path, mode: str, corpus: Path, source: str, timeout: int):
     result = subprocess.run([str(binary), "check", source, "--json"],
                             cwd=corpus, env=env, capture_output=True,
                             text=True, timeout=timeout)
+    try:
+        response = json.loads(result.stdout)
+        error = response.get("error") or {}
+        verdict = (response.get("ok"), error.get("code"), error.get("line"))
+    except (json.JSONDecodeError, AttributeError):
+        verdict = ("NOJSON", result.returncode, None)
     edges, checked = set(), set()
     complete = False
     prefix = str(corpus) + "/"
@@ -43,7 +49,7 @@ def trace(binary: Path, mode: str, corpus: Path, source: str, timeout: int):
             _, kind, source_file, identity = row.split("|", 3)
             checked.add((kind, source_file.replace(prefix, ""), identity))
     return {"edges": edges, "checked": checked, "trace_complete": complete,
-            "verdict_ok": result.returncode == 0}
+            "verdict": verdict, "verdict_ok": result.returncode == 0}
 
 
 def main() -> int:
@@ -88,12 +94,19 @@ def main() -> int:
                    "tree_trace_complete": after["trace_complete"],
                    "legacy_verdict_ok": before["verdict_ok"],
                    "tree_verdict_ok": after["verdict_ok"],
+                   "legacy_verdict": before["verdict"],
+                   "tree_verdict": after["verdict"],
                    "edge_missing": edge_missing, "edge_added": edge_added,
                    "checked_missing": checked_missing,
-                   "checked_added": checked_added}
+                   "checked_added": checked_added,
+                   "legacy_edges": sorted(before["edges"]),
+                   "tree_edges": sorted(after["edges"]),
+                   "legacy_checked": sorted(before["checked"]),
+                   "tree_checked": sorted(after["checked"])}
             rows.append(row)
             if (edge_missing or edge_added or checked_missing or checked_added or
-                    before["trace_complete"] != after["trace_complete"]):
+                    before["trace_complete"] != after["trace_complete"] or
+                    before["verdict"] != after["verdict"]):
                 failures.append(row)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps({"revision": args.rev,
@@ -105,8 +118,12 @@ def main() -> int:
                                     "source_count": len(sources),
                                     "failures": failures,
                                     "entries": rows}, indent=2) + "\n")
+    try:
+        report_name = args.out.resolve().relative_to(ROOT).as_posix()
+    except ValueError:
+        report_name = str(args.out)
     print(f"{len(sources)} entries; {len(failures)} reachability differences; "
-          f"report {args.out.relative_to(ROOT)}")
+          f"report {report_name}")
     for failure in failures:
         print(f"ENTRY {failure['entry']}")
         for kind in ("edge_missing", "edge_added", "checked_missing",

@@ -11749,6 +11749,33 @@ struct FileCheckReferences {
 
 static string unqualified_callable_name(const string& name);
 
+struct ReachFunctionIndex {
+  std::map<string, std::vector<const Function*>> by_leaf;
+  std::map<std::pair<string,string>, std::vector<const Function*>> by_module;
+  std::map<string, const Function*> by_name;
+
+  explicit ReachFunctionIndex(const Program& program) {
+    for (const auto& function : program.functions) {
+      const auto leaf = unqualified_callable_name(function.name);
+      by_leaf[leaf].push_back(&function);
+      by_name[function.name] = &function;
+      by_name[function.semantic_callable_id] = &function;
+      by_name[function.declaration_name] = &function;
+      by_module[{function.defining_module, leaf}].push_back(&function);
+    }
+  }
+
+  const std::vector<const Function*>& candidates(
+      const string& leaf, const string& current_module) const {
+    static const std::vector<const Function*> empty;
+    auto local = by_module.find({current_module, leaf});
+    if (!current_module.empty() && local != by_module.end())
+      return local->second;
+    auto all = by_leaf.find(leaf);
+    return all == by_leaf.end() ? empty : all->second;
+  }
+};
+
 static std::set<string> type_identifiers(const string& text) {
   std::set<string> result;
   string name;
@@ -11817,13 +11844,42 @@ static string callable_leaf_spelling(const est::Arena& arena, est::ExprId id) {
   }, arena.at(id));
 }
 
+static string unqualified_callable_name(const string& name);
+
 static bool imported_module_qualified_name(const Program& program,
-                                           const string& name) {
+                                           const string& name,
+                                           const string& current_module) {
+  (void)current_module;
   const auto dot = name.find('.');
   if (dot == string::npos) return false;
   const auto prefix = name.substr(0, dot);
   return std::any_of(program.imports.begin(), program.imports.end(),
       [&](const ModuleImport& import) { return import.name == prefix; });
+}
+
+static void add_function_name_reference(const Program& program,
+                                       const string& name,
+                                       const string& current_module,
+                                       const ReachFunctionIndex& function_index,
+                                       FileCheckReferences& references) {
+  const auto leaf = unqualified_callable_name(name);
+  if (name.find("__") != string::npos &&
+      function_index.by_name.count(name)) {
+    references.functions.insert(name);
+    return;
+  }
+  if (imported_module_qualified_name(program, name, current_module)) {
+    string qualified_name = name;
+    for (size_t dot = qualified_name.find('.'); dot != string::npos;
+         dot = qualified_name.find('.', dot + 2))
+      qualified_name.replace(dot, 1, "__");
+    references.functions.insert(qualified_name);
+    return;
+  }
+  const auto& candidates = function_index.candidates(leaf, current_module);
+  if (candidates.empty()) references.functions.insert(leaf);
+  else for (const auto* function : candidates)
+    references.functions.insert(function->name);
 }
 
 template <class ProgramCallable>
@@ -11872,7 +11928,9 @@ static void visit_expression_handles(const Program& program,
 
 static void add_expression_references(const Program& program,
                                      const vector<est::Handle>& handles,
-                                     FileCheckReferences& references) {
+                                     FileCheckReferences& references,
+                                     const string& current_module,
+                                     const ReachFunctionIndex& function_index) {
   visit_expression_handles(program, handles, [&](const est::Arena& arena,
                                                   est::ExprId id) {
     const auto& node = arena.at(id);
@@ -11926,6 +11984,7 @@ static void add_expression_references(const Program& program,
     }
     est::ExprId callee = 0;
     bool call = false;
+    bool member_callee = false;
     if (const auto* expression = std::get_if<est::Call>(&node)) {
       callee = expression->callee;
       call = true;
@@ -11934,20 +11993,41 @@ static void add_expression_references(const Program& program,
       call = true;
     }
     if (!call) return;
+    member_callee = std::holds_alternative<est::Member>(arena.at(callee));
     string name = callable_spelling(arena, callee);
     if (name.empty()) name = callable_leaf_spelling(arena, callee);
     if (name.empty()) return;
     const auto leaf = unqualified_callable_name(name);
-    if (imported_module_qualified_name(program, name)) {
-      string qualified_name = name;
-      for (size_t dot = qualified_name.find('.'); dot != string::npos;
-           dot = qualified_name.find('.', dot + 2))
-        qualified_name.replace(dot, 1, "__");
+    string qualified_name = name;
+    for (size_t dot = qualified_name.find('.'); dot != string::npos;
+         dot = qualified_name.find('.', dot + 2))
+      qualified_name.replace(dot, 1, "__");
+    bool resolved_qualified_function =
+        (member_callee && name.find('.') != string::npos &&
+         function_index.by_name.count(qualified_name) != 0) ||
+        (!member_callee && name.find("__") != string::npos &&
+         function_index.by_name.count(name) != 0);
+    if (member_callee && name.find('.') != string::npos &&
+        !resolved_qualified_function) {
+      const auto prefix = name.substr(0, name.find('.'));
+      for (const auto* function : function_index.candidates(leaf, prefix))
+        if (function->defining_module == prefix) {
+          references.functions.insert(function->name);
+          resolved_qualified_function = true;
+        }
+    }
+    if (imported_module_qualified_name(program, name, current_module) ||
+        resolved_qualified_function) {
       references.methods.insert(qualified_name);
       references.functions.insert(qualified_name);
+    } else if (member_callee) {
+      references.methods.insert(leaf);
+      references.functions.insert(leaf);
+    } else {
+      add_function_name_reference(program, name, current_module,
+                                  function_index, references);
+      references.methods.insert(leaf);
     }
-    references.methods.insert(leaf);
-    references.functions.insert(leaf);
     if (const auto kind = functional_stage_kind(name)) {
       size_t callback_index = std::numeric_limits<size_t>::max();
       switch (*kind) {
@@ -11990,7 +12070,9 @@ static void add_invoked_handler_references(
 
 static void add_statement_references(const vector<Stmt>& body,
                                      const Program& program,
-                                     FileCheckReferences& references) {
+                                     FileCheckReferences& references,
+                                     const string& current_module,
+                                     const ReachFunctionIndex& function_index) {
   for (const auto& statement : body) {
     // `for x in value` calls the iterator protocol implicitly; method
     // reachability is by name, so select every `next`/`iter` method.
@@ -11999,10 +12081,12 @@ static void add_statement_references(const vector<Stmt>& body,
       references.methods.insert("iter");
     }
     if (statement.kind == Stmt::Kind::Message) {
-      add_expression_references(program, statement.expression_handles, references);
+      add_expression_references(program, statement.expression_handles,
+                                references, current_module, function_index);
       continue;
     }
-    add_expression_references(program, statement.expression_handles, references);
+    add_expression_references(program, statement.expression_handles,
+                              references, current_module, function_index);
     add_invoked_handler_references(program, statement.expression_handles,
                                    references);
   }
@@ -12030,7 +12114,10 @@ static string unqualified_callable_name(const string& name) {
 static void add_callable_value_reference(const Program& program,
                                         const est::Arena& arena,
                                         est::ExprId expression,
-                                        FileCheckReferences& references) {
+                                        FileCheckReferences& references,
+                                        const string& current_module,
+                                        const ReachFunctionIndex& function_index) {
+  (void)program;
   const string value = callable_spelling(arena, expression);
   if (value.empty()) return;
   string normalized = value;
@@ -12039,20 +12126,25 @@ static void add_callable_value_reference(const Program& program,
     normalized.replace(dot, 1, "__");
   const bool qualified = value.find('.') != string::npos ||
       value.find("::") != string::npos || value.find("__") != string::npos;
-  for (const auto& function : program.functions) {
-    const string function_name = function.name;
-    if ((qualified && (normalized == function_name || value == function.name ||
-                       value == function.semantic_callable_id)) ||
-        (!qualified && (value == function.declaration_name ||
-                        value == function.name ||
-                        value == unqualified_callable_name(function.name))))
-      references.functions.insert(function.name);
+  std::vector<const Function*> candidates;
+  if (qualified) {
+    auto found = function_index.by_name.find(normalized);
+    if (found == function_index.by_name.end()) found = function_index.by_name.find(value);
+    if (found != function_index.by_name.end()) candidates.push_back(found->second);
+  } else {
+    for (const auto* function : function_index.candidates(value, current_module))
+      if (value == function->declaration_name || value == function->name ||
+          value == unqualified_callable_name(function->name))
+        candidates.push_back(function);
   }
+  for (const auto* function : candidates)
+    references.functions.insert(function->name);
 }
 
 static void add_callable_argument_references(
     const Program& program, const vector<est::Handle>& handles,
-    FileCheckReferences& references) {
+    FileCheckReferences& references, const string& current_module,
+    const ReachFunctionIndex& function_index) {
   visit_expression_handles(program, handles, [&](const est::Arena& arena,
                                                   est::ExprId id) {
     est::ExprId callee = 0;
@@ -12079,13 +12171,20 @@ static void add_callable_argument_references(
            dot = value.find('.', dot + 2)) value.replace(dot, 1, "__");
       return value;
     };
-    for (const auto& function : program.functions) {
-      const bool matches = qualified
-          ? canonical(call_name) == canonical(function.name) ||
-                call_name == function.semantic_callable_id
-          : unqualified_callable_name(call_name) ==
-                unqualified_callable_name(function.name);
-      if (!matches) continue;
+    std::vector<const Function*> called_functions;
+    if (qualified) {
+      const auto normalized = canonical(call_name);
+      auto found = function_index.by_name.find(normalized);
+      if (found == function_index.by_name.end())
+        found = function_index.by_name.find(call_name);
+      if (found != function_index.by_name.end())
+        called_functions.push_back(found->second);
+    } else {
+      called_functions = function_index.candidates(
+          unqualified_callable_name(call_name), current_module);
+    }
+    for (const auto* function_ptr : called_functions) {
+      const auto& function = *function_ptr;
       for (const auto& constraint : function.constraints) {
         if (constraint.kind != ConstraintKind::Callable) continue;
         for (size_t index = 0; index < function.params.size(); ++index)
@@ -12093,11 +12192,13 @@ static void add_callable_argument_references(
             callback_indices.push_back(index);
       }
       FileCheckReferences body_references;
-      add_statement_references(function.body, program, body_references);
+      add_statement_references(function.body, program, body_references,
+                               function.defining_module, function_index);
       if (has_expression_slot(function.expression_handles,
                               est::ExprSlot::ReturnValue))
         add_expression_references(program, function.expression_handles,
-                                  body_references);
+                                  body_references, function.defining_module,
+                                  function_index);
       for (size_t index = 0; index < function.params.size(); ++index) {
         const auto& parameter = function.params[index].name;
         if (body_references.functions.count(parameter) ||
@@ -12130,27 +12231,33 @@ static void add_callable_argument_references(
     for (const auto index : callback_indices)
       if (index < arguments->size())
         add_callable_value_reference(program, arena, (*arguments)[index],
-                                     references);
+                                     references, current_module,
+                                     function_index);
   });
 }
 
 static void add_bare_callable_handle_reference(
     const Program& program, const vector<est::Handle>& handles,
     est::ExprSlot slot, std::uint32_t argument_index,
-    const std::set<string>& local_names, FileCheckReferences& references) {
+    const std::set<string>& local_names, FileCheckReferences& references,
+    const string& current_module,
+    const ReachFunctionIndex& function_index) {
   for (const auto& handle : handles) {
     if (handle.slot != slot || handle.argument_index != argument_index) continue;
     const auto* arena = expression_arena_for(program, handle);
     if (!arena) continue;
     const string value = callable_spelling(*arena, handle.expr);
     if (!value.empty() && !local_names.count(value))
-      add_callable_value_reference(program, *arena, handle.expr, references);
+      add_callable_value_reference(program, *arena, handle.expr, references,
+                                   current_module, function_index);
   }
 }
 
 static void add_statement_callable_references(
     const vector<Stmt>& body, const Program& program,
-    FileCheckReferences& references, std::set<string> local_names = {}) {
+    FileCheckReferences& references, std::set<string> local_names,
+    const string& current_module,
+    const ReachFunctionIndex& function_index) {
   std::vector<std::pair<int,string>> block_local_bindings;
   for (const auto& statement : body) {
     while (!block_local_bindings.empty() &&
@@ -12163,7 +12270,8 @@ static void add_statement_callable_references(
         if (handle.slot == est::ExprSlot::Argument)
           add_bare_callable_handle_reference(program,
               statement.expression_handles, est::ExprSlot::Argument,
-              handle.argument_index, local_names, references);
+              handle.argument_index, local_names, references, current_module,
+              function_index);
     }
     if (statement.kind == Stmt::Kind::Let ||
         statement.kind == Stmt::Kind::Var ||
@@ -12171,10 +12279,10 @@ static void add_statement_callable_references(
       const auto slot = statement.kind == Stmt::Kind::Var
           ? est::ExprSlot::Initializer : est::ExprSlot::RhsValue;
       add_bare_callable_handle_reference(program, statement.expression_handles,
-          slot, 0, local_names, references);
+          slot, 0, local_names, references, current_module, function_index);
     }
     add_callable_argument_references(program, statement.expression_handles,
-                                     references);
+                                     references, current_module, function_index);
     string binding;
     if (statement.kind == Stmt::Kind::Var ||
         statement.kind == Stmt::Kind::For)
@@ -12275,6 +12383,7 @@ static void scope_program_to_file(Program& program,
                                     domain.defining_module)))
         program.file_scope_domains.insert(domain.name);
   }
+  const ReachFunctionIndex function_index(program);
   std::set<size_t> selected_functions, selected_methods, selected_handlers;
   std::vector<FileCheckReferences> function_refs(program.functions.size());
   std::vector<FileCheckReferences> method_refs;
@@ -12288,37 +12397,47 @@ static void scope_program_to_file(Program& program,
   for (size_t i = 0; i < program.functions.size(); ++i) {
     const auto& function = program.functions[i];
     auto& refs = function_refs[i];
-    add_statement_references(function.body, program, refs);
+    add_statement_references(function.body, program, refs,
+                             function.defining_module, function_index);
     if (has_expression_slot(function.expression_handles,
                             est::ExprSlot::ReturnValue))
-      add_expression_references(program, function.expression_handles, refs);
+      add_expression_references(program, function.expression_handles, refs,
+                                function.defining_module, function_index);
     std::set<string> function_locals;
     for (const auto& parameter : function.params)
       function_locals.insert(parameter.name);
     add_statement_callable_references(function.body, program, refs,
-                                      std::move(function_locals));
+                                      std::move(function_locals),
+                                      function.defining_module, function_index);
     if (has_expression_slot(function.expression_handles,
                             est::ExprSlot::ReturnValue))
-      add_callable_argument_references(program, function.expression_handles, refs);
+      add_callable_argument_references(program, function.expression_handles,
+                                       refs, function.defining_module,
+                                       function_index);
     if (scope_kind == FastDebugScopeKind::File &&
         is_root(function.source_file)) selected_functions.insert(i);
   }
   for (const auto& object : program.objects) {
     for (const auto& method : object.methods) {
       auto& refs = method_refs[method_index];
-      add_statement_references(method.body, program, refs);
+      add_statement_references(method.body, program, refs,
+                               object.defining_module, function_index);
       if (has_expression_slot(method.expression_handles,
                               est::ExprSlot::ReturnValue))
-        add_expression_references(program, method.expression_handles, refs);
+        add_expression_references(program, method.expression_handles, refs,
+                                  object.defining_module, function_index);
       std::set<string> method_locals{"self"};
       for (const auto& field : object.fields) method_locals.insert(field.name);
       for (const auto& parameter : method.params)
         method_locals.insert(parameter.name);
       add_statement_callable_references(method.body, program, refs,
-                                        std::move(method_locals));
+                                        std::move(method_locals),
+                                        object.defining_module, function_index);
       if (has_expression_slot(method.expression_handles,
                               est::ExprSlot::ReturnValue))
-        add_callable_argument_references(program, method.expression_handles, refs);
+        add_callable_argument_references(program, method.expression_handles,
+                                         refs, object.defining_module,
+                                         function_index);
       if (scope_kind == FastDebugScopeKind::File &&
           is_root(method.source_file)) selected_methods.insert(method_index);
       ++method_index;
@@ -12327,18 +12446,23 @@ static void scope_program_to_file(Program& program,
   for (const auto& domain : program.domains) {
     for (const auto& handler : domain.handlers) {
       auto& refs = handler_refs[handler_index];
-      add_statement_references(handler.body, program, refs);
+      add_statement_references(handler.body, program, refs,
+                               domain.defining_module, function_index);
       std::set<string> handler_locals{"self"};
       for (const auto& field : domain.state) handler_locals.insert(field.name);
       for (const auto& route : domain.routes) handler_locals.insert(route.name);
       for (const auto& parameter : handler.params)
         handler_locals.insert(parameter.name);
       add_statement_callable_references(handler.body, program, refs,
-                                        handler_locals);
+                                        handler_locals,
+                                        domain.defining_module, function_index);
       for (const auto& arm : handler.failure_arms) {
-        add_statement_references(arm.body, program, refs);
+        add_statement_references(arm.body, program, refs,
+                                 domain.defining_module, function_index);
         add_statement_callable_references(arm.body, program, refs,
-                                          handler_locals);
+                                          handler_locals,
+                                          domain.defining_module,
+                                          function_index);
       }
       if (scope_kind == FastDebugScopeKind::File &&
           is_root(handler.source_file)) selected_handlers.insert(handler_index);
@@ -12350,8 +12474,10 @@ static void scope_program_to_file(Program& program,
        scope_kind == FastDebugScopeKind::Main) &&
       program.main && is_root(program.main->source_file))
     {
-      add_statement_references(program.main->body, program, root_references);
-      add_statement_callable_references(program.main->body, program, root_references);
+      add_statement_references(program.main->body, program, root_references,
+                               program.main_module, function_index);
+      add_statement_callable_references(program.main->body, program,
+          root_references, {}, program.main_module, function_index);
     }
   for (const auto& test : program.tests)
     if ((scope_kind == FastDebugScopeKind::File ||
@@ -12362,13 +12488,19 @@ static void scope_program_to_file(Program& program,
         (scope_kind == FastDebugScopeKind::Tests
              ? (all_package_tests || is_root(test.source_file))
              : is_root(test.source_file))) {
-      add_statement_references(test.body, program, root_references);
-      add_statement_callable_references(test.body, program, root_references);
+      add_statement_references(test.body, program, root_references,
+                               program.main_module, function_index);
+      add_statement_callable_references(test.body, program, root_references,
+                                        {}, program.main_module,
+                                        function_index);
     }
   for (const auto& bench : program.benchmarks)
     if (scope_kind == FastDebugScopeKind::File && is_root(bench.source_file)) {
-      add_statement_references(bench.body, program, root_references);
-      add_statement_callable_references(bench.body, program, root_references);
+      add_statement_references(bench.body, program, root_references,
+                               program.main_module, function_index);
+      add_statement_callable_references(bench.body, program, root_references,
+                                        {}, program.main_module,
+                                        function_index);
     }
 
   auto matches = [](const std::set<string>& references, const string& name) {
@@ -12409,7 +12541,8 @@ static void scope_program_to_file(Program& program,
       if (!selected_object) continue;
       for (const auto& field : object.fields)
         if (!field.init.empty())
-          add_expression_references(program, field.expression_handles, active);
+          add_expression_references(program, field.expression_handles, active,
+                                    object.defining_module, function_index);
     }
     for (const auto& domain : program.domains) {
       const bool selected_domain = matches(active.functions, domain.name) ||
@@ -12419,7 +12552,8 @@ static void scope_program_to_file(Program& program,
       if (!selected_domain) continue;
       for (const auto& field : domain.state)
         if (!field.init.empty())
-          add_expression_references(program, field.expression_handles, active);
+          add_expression_references(program, field.expression_handles, active,
+                                    domain.defining_module, function_index);
     }
     for (size_t i = 0; i < program.functions.size(); ++i) {
       const auto& function = program.functions[i];
@@ -12599,6 +12733,7 @@ static void scope_program_to_file(Program& program,
   // Keep the nominal declarations named by initializers of reached state so
   // reply inference, display checks, and semantic queries retain their type
   // identities after unrelated callable bodies are pruned.
+  const ReachFunctionIndex initializer_function_index(program);
   for (bool grew = true; grew;) {
     grew = false;
     FileCheckReferences initializer_references;
@@ -12607,13 +12742,17 @@ static void scope_program_to_file(Program& program,
         for (const auto& field : object.fields)
           if (!field.init.empty())
             add_expression_references(program, field.expression_handles,
-                                      initializer_references);
+                                      initializer_references,
+                                      object.defining_module,
+                                      initializer_function_index);
     for (const auto& domain : program.domains)
       if (program.file_scope_domains.count(domain.name))
         for (const auto& field : domain.state)
           if (!field.init.empty())
             add_expression_references(program, field.expression_handles,
-                                      initializer_references);
+                                      initializer_references,
+                                      domain.defining_module,
+                                      initializer_function_index);
     for (const auto& object : program.objects)
       if (!program.file_scope_objects.count(object.name) &&
           matches(initializer_references.functions, object.name))
@@ -20965,54 +21104,73 @@ static std::set<string> execution_body_callable_closure(
       for (const auto& handler : domain.handlers)
         reachable.insert(handler_key(domain.name, handler.name));
 
+  const ReachFunctionIndex function_index(program);
   bool changed = true;
   while (changed) {
     changed = false;
     FileCheckReferences references;
     auto add_function_body = [&](const Function& function) {
-      add_statement_references(function.body, program, references);
+      add_statement_references(function.body, program, references,
+                               function.defining_module, function_index);
       if (has_expression_slot(function.expression_handles,
                               est::ExprSlot::ReturnValue))
         add_expression_references(program, function.expression_handles,
-                                 references);
+                                 references, function.defining_module,
+                                 function_index);
       std::set<string> locals;
       for (const auto& parameter : function.params) locals.insert(parameter.name);
       add_statement_callable_references(function.body, program, references,
-                                        std::move(locals));
+                                        std::move(locals),
+                                        function.defining_module,
+                                        function_index);
       if (has_expression_slot(function.expression_handles,
                               est::ExprSlot::ReturnValue))
         add_callable_argument_references(program, function.expression_handles,
-                                         references);
+                                         references,
+                                         function.defining_module,
+                                         function_index);
     };
-    auto add_method_body = [&](const Method& method) {
-      add_statement_references(method.body, program, references);
+    auto add_method_body = [&](const Method& method,
+                               const string& current_module) {
+      add_statement_references(method.body, program, references, current_module,
+                               function_index);
       if (has_expression_slot(method.expression_handles,
                               est::ExprSlot::ReturnValue))
         add_expression_references(program, method.expression_handles,
-                                 references);
+                                 references, current_module, function_index);
       std::set<string> locals{"self"};
       for (const auto& parameter : method.params) locals.insert(parameter.name);
       add_statement_callable_references(method.body, program, references,
-                                        std::move(locals));
+                                        std::move(locals), current_module,
+                                        function_index);
       if (has_expression_slot(method.expression_handles,
                               est::ExprSlot::ReturnValue))
         add_callable_argument_references(program, method.expression_handles,
-                                         references);
+                                         references, current_module,
+                                         function_index);
     };
-    auto add_handler_body = [&](const Handler& handler) {
-      add_statement_references(handler.body, program, references);
+    auto add_handler_body = [&](const Handler& handler,
+                                const string& current_module) {
+      add_statement_references(handler.body, program, references,
+                               current_module, function_index);
       std::set<string> locals{"self"};
       for (const auto& parameter : handler.params) locals.insert(parameter.name);
       add_statement_callable_references(handler.body, program, references,
-                                        locals);
+                                        locals, current_module, function_index);
       for (const auto& arm : handler.failure_arms) {
-        add_statement_references(arm.body, program, references);
-        add_statement_callable_references(arm.body, program, references, locals);
+        add_statement_references(arm.body, program, references,
+                                 current_module, function_index);
+        add_statement_callable_references(arm.body, program, references,
+                                          locals, current_module,
+                                          function_index);
       }
       if (handler.execution_failure_arms)
         for (const auto& arm : *handler.execution_failure_arms) {
-          add_statement_references(arm.body, program, references);
-          add_statement_callable_references(arm.body, program, references, locals);
+          add_statement_references(arm.body, program, references,
+                                   current_module, function_index);
+          add_statement_callable_references(arm.body, program, references,
+                                            locals, current_module,
+                                            function_index);
         }
     };
     for (const auto& function : program.functions)
@@ -21025,14 +21183,15 @@ static std::set<string> execution_body_callable_closure(
       for (const auto& method : object.methods) {
         if (!reachable.count(method_key(object.name, method.name))) continue;
         object_reached = true;
-        add_method_body(method);
+        add_method_body(method, object.defining_module);
       }
       object_reached = object_reached || matches(references.functions, object.name);
       if (object_reached)
         for (const auto& field : object.fields)
           if (!field.init.empty())
             add_expression_references(program, field.expression_handles,
-                                      references);
+                                      references, object.defining_module,
+                                      function_index);
     }
     for (const auto& domain : program.domains) {
       if (!local_module(domain.name)) continue;
@@ -21040,14 +21199,15 @@ static std::set<string> execution_body_callable_closure(
       for (const auto& handler : domain.handlers) {
         if (!reachable.count(handler_key(domain.name, handler.name))) continue;
         domain_reached = true;
-        add_handler_body(handler);
+        add_handler_body(handler, domain.defining_module);
       }
       domain_reached = domain_reached || matches(references.functions, domain.name);
       if (domain_reached)
         for (const auto& field : domain.state)
           if (!field.init.empty())
             add_expression_references(program, field.expression_handles,
-                                      references);
+                                      references, domain.defining_module,
+                                      function_index);
     }
 
     // Preserve resolved compiler call edges as a second source of reach facts;

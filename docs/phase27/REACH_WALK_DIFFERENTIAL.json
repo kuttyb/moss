@@ -58751,5 +58751,43 @@
       "checked_missing": [],
       "checked_added": []
     }
-  ]
+  ],
+  "current_followup": {
+    "candidate_binary_sha256": "f80b721c94408f83e0f59962da7e51613b94e8e7bab8162cb32f01a0d52b4982",
+    "legacy_binary_sha256": "4a9d7d7509f9883194f2d3f147c4ff66c39e9c832e758ddffdd7572d57667ffd",
+    "corpus_revision": "HEAD at ae7bbfbf plus uncommitted tree-path fix",
+    "corpus_sources": 2088,
+    "verdict_mismatches": 0,
+    "trace_scope_entries": 659,
+    "checked_set_differences": {
+      "legacy_only": 19,
+      "tree_only": 2,
+      "legacy_only_cause": "same-leaf function collisions across qualified module calls; candidate label LEGACY MISPARSE, pending L7/user ruling because the focused repro changes file-check acceptance",
+      "tree_only_cause": "Ast.size and Env.size reached through nested/member receiver expressions; candidate label LEGACY MISPARSE, pending per-case two-path confirmation"
+    },
+    "qualified_call_reproducer": {
+      "path": "tests/tooling/check_phase27_reach_named_forms.py",
+      "fixture": "generated qualified/src/main.moss imports node and token, calls node.kind_num(); token.kind_num returns absent()",
+      "oracle": "docs/LANGUAGE_SYNTAX.md \u00a7Modules: import introduces a qualified module name; node.kind_num names node.kind_num",
+      "legacy_answer": {
+        "ok": false,
+        "error_code": "UNKNOWN_SYMBOL_OR_TYPE",
+        "source_file_suffix": "qualified/src/token.moss",
+        "line": 3,
+        "checked_functions": [
+          "node.kind_num",
+          "token.kind_num"
+        ]
+      },
+      "tree_answer": {
+        "ok": true,
+        "checked_functions": [
+          "node.kind_num"
+        ]
+      },
+      "proposed_classification": "LEGACY MISPARSE",
+      "ruling_requested": "Does this qualify as an accepted LEGACY MISPARSE correction despite changing file-check acceptance, given the Modules section settles the qualified target?"
+    },
+    "remaining_work": "Classify every edge-set difference by exact cause and count, provide two runnable examples per non-benign cause, verify consumers beyond checked closure, then focused/full gates and CP-C."
+  }
 }
