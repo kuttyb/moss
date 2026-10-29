@@ -25211,6 +25211,10 @@ class Checker {
   std::optional<ParsedFunctionalPipeline> functional_pipeline_from_est(
       std::string_view source,
       const std::vector<est::Handle>* handles = nullptr) const {
+    // Avoid constructing an EST for expressions that cannot be functional
+    // pipelines. Besides reducing checker work, this keeps unrelated source
+    // spellings outside the functional parser's migration surface.
+    if (source.find("|>") == std::string_view::npos) return std::nullopt;
     const auto resolve_stage = [](std::string_view name)
         -> std::optional<FunctionalNodeKind> {
       for (const auto& operation : functional_operations())
