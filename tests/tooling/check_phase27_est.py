@@ -52,6 +52,16 @@ def main():
         raise SystemExit(f"tuple collection elements were not represented: {tuple_tree.stderr}")
     if not re.search(r"MOSS_EST_SHADOW_COMPARE .* compared=[1-9]", tuple_tree.stderr):
         raise SystemExit("tuple/string legacy shape was not compared")
+    facts = run(ROOT / "tests/phase27/est/pipeline_shape.moss", "shadow",
+                MOSS_EST_FACTS_DUMP="1")
+    if facts.returncode != 0:
+        raise SystemExit(f"checker fact dump failed: {facts.stdout}{facts.stderr}")
+    if not re.search(r'MOSS_EST_FACT expr=\d+ context="[^"]+" type="int"',
+                     facts.stderr):
+        raise SystemExit("checker did not retain a typed fact on the expression tree")
+    if not re.search(r'MOSS_EST_EFFECT_FACT expr=\d+ context="[^"]+" effect=\d+',
+                     facts.stderr):
+        raise SystemExit("effect analysis did not retain a context-scoped EST fact")
     mismatch = run(ROOT / "tests/phase27/est/bitwise_shift.moss", "shadow",
                    MOSS_EST_SHADOW_MISMATCH_TEST="1")
     if mismatch.returncode == 0 or "injected mismatch" not in mismatch.stdout:
