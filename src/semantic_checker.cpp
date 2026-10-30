@@ -2403,7 +2403,7 @@ class Checker {
       const string value = trim(expression);
       if (auto local = resolved_local(value)) return local;
       string base, index;
-      if (parse_index(value, base, index)) {
+      if (tree_parse_index(value, base, index)) {
         auto container = known_expression(base);
         if (container && container->kind == moss::TypeKind::Builtin) {
           if ((container->name == "vector" || container->name == "queue") &&
@@ -2609,7 +2609,7 @@ class Checker {
             occurrence.source_operands.size() != 2)
           return false;
         string label, key;
-        if (!parse_named_argument(occurrence.source_operands[1], label, key) ||
+        if (!tree_parse_named_argument(occurrence.source_operands[1], label, key) ||
             label != "by")
           return false;
         string wrapper;
@@ -4720,7 +4720,7 @@ class Checker {
               const auto ordinal =
                   occurrence.semantic_operand_ordinals[index];
               if (ordinal >= payloads.size() || payloads[ordinal] ||
-                  !parse_named_argument(occurrence.source_operands[index],
+                  !tree_parse_named_argument(occurrence.source_operands[index],
                                         field_name, field_value) ||
                   children[index]->child_role != "field:" + field_name)
                 return std::nullopt;
@@ -5559,7 +5559,7 @@ class Checker {
             }
           } catch (const std::exception&) {}
         }
-        auto binary = split_binary(value, {"+"});
+        auto binary = tree_split_binary(value, {"+"});
         if (binary) {
           auto left = emit(binary->first, nullptr, depth + 1);
           auto right = emit(binary->second, nullptr, depth + 1);
@@ -5588,7 +5588,7 @@ class Checker {
             }
           }
         }
-        if (auto elements = parse_vector_literal(value);
+        if (auto elements = tree_parse_vector_literal(value);
             elements && expected && expected->kind == moss::TypeKind::Builtin &&
             expected->name == "vector" && expected->type_args.size() == 1) {
           vector<moss::CheckedBodyExprV1> children;
@@ -5942,12 +5942,12 @@ class Checker {
                 auto found = std::find_if(arguments.begin(), arguments.end(),
                     [&](const string& argument) {
                   string name, value;
-                  return parse_named_argument(argument, name, value) &&
+                  return tree_parse_named_argument(argument, name, value) &&
                       name == field.name;
                 });
                 if (found == arguments.end()) { valid = false; break; }
                 string name, value;
-                (void)parse_named_argument(*found, name, value);
+                (void)tree_parse_named_argument(*found, name, value);
                 auto parameter = parameter_variables.find(trim(value));
                 moss::TypeRef term = parameter != parameter_variables.end()
                     ? parameter->second : type_term(
@@ -8625,7 +8625,7 @@ class Checker {
       derive_expression_constraints(function, operand, "bool");
     };
     for (const auto& op : vector<string>{" or ", " xor ", " and "}) {
-      if (auto binary = split_binary(e, {op})) {
+      if (auto binary = tree_split_binary(e, {op})) {
         constrain_boolean_operand(binary->first);
         constrain_boolean_operand(binary->second);
         if (expected_result == "$function_result" &&
@@ -8679,7 +8679,7 @@ class Checker {
       }
     }
     string ib, ii;
-    if (parse_index(e, ib, ii)) {
+    if (tree_parse_index(e, ib, ii)) {
       for (const auto& p : function.params) if (trim(ib) == p.name && p.type.empty()) {
         auto existing = std::find_if(function.constraints.begin(),
             function.constraints.end(), [&](const Constraint& requirement) {
@@ -8701,7 +8701,7 @@ class Checker {
     for (const auto& ops : vector<vector<string>>{{"==", "!=", "<=", ">=", "<", ">"},
                                                   {"|"}, {"^"}, {"&"}, {"<<", ">>"},
                                                   {"+", "-", "*", "/", "%"}})
-      if (auto binary = split_binary(e, ops)) {
+      if (auto binary = tree_split_binary(e, ops)) {
         auto left_type = constraint_expression_type(function, binary->first);
         auto right_type = constraint_expression_type(function, binary->second);
         string left_expected = right_type.value_or("");
@@ -9699,7 +9699,7 @@ class Checker {
       if (!tree_parse_simple_call(expression, callee, args)) return result;
       for (const auto& arg : args) {
         string name, value;
-        if (!parse_named_argument(arg, name, value)) continue;
+        if (!tree_parse_named_argument(arg, name, value)) continue;
         result.emplace_back(std::move(name), std::move(value));
       }
       return result;
@@ -9781,7 +9781,7 @@ class Checker {
           fail_at(statement, "domain construction requires a direct constructor call");
         for (const auto& argument : constructor_arguments) {
           string member_name, member_value;
-          if (!parse_named_argument(argument, member_name, member_value))
+          if (!tree_parse_named_argument(argument, member_name, member_value))
             fail_at(statement,
                    "domain constructors require named member bindings such as 'field: value'");
         }
@@ -10103,7 +10103,7 @@ class Checker {
     // rejected here instead of reaching an engine that cannot lower it.
     for (const auto& argument : args) {
       string label, value;
-      if (parse_named_argument(argument, label, value))
+      if (tree_parse_named_argument(argument, label, value))
         err(line, "message " + dit->second->name + "." + message +
             " does not accept named argument '" + trim(argument) +
             "'; message arguments are positional in Moss v0.1, so remove the "
@@ -10551,6 +10551,31 @@ class Checker {
     return !copy_type(type) && !domains_.count(canonical_type_name(type));
   }
 
+  static bool tree_parse_index(const string& text, string& base, string& index) {
+    auto syntax = moss::est::parse_view(text);
+    return syntax && moss::est::project_index(*syntax, base, index);
+  }
+
+  static bool tree_parse_named_argument(const string& text, string& name,
+                                 string& value) {
+    auto syntax = moss::est::parse_view(text);
+    return syntax && moss::est::project_named_argument(*syntax, name, value);
+  }
+
+  static std::optional<vector<string>> tree_parse_vector_literal(const string& text) {
+    auto syntax = moss::est::parse_view(text);
+    return syntax ? moss::est::project_vector_literal(*syntax) : std::nullopt;
+  }
+
+  static bool tree_parse_enum_case_expression(const string& text, string& enum_name,
+                                       string& case_name, vector<string>& fields,
+                                       bool& called) {
+    auto syntax = moss::est::parse_view(text);
+    called = false;
+    return syntax && moss::est::project_enum_case(*syntax, enum_name, case_name,
+                                                   fields, &called);
+  }
+
   bool tree_parse_simple_call(const string& text, string& callee,
                          vector<string>& args) const {
     auto found = simple_call_parse_cache_.find(text);
@@ -10705,7 +10730,7 @@ class Checker {
     return result;
   }
 
-  std::optional<std::pair<string,string>> split_binary(const string& expression,
+  std::optional<std::pair<string,string>> tree_split_binary(const string& expression,
                                                        const vector<string>& operators) const {
     auto found = binary_parse_cache_.find(expression);
     if (found != binary_parse_cache_.end()) {
@@ -10718,7 +10743,18 @@ class Checker {
     }
     ++parse_cache_misses_;
     const bool cache_full = parse_cache_entries_ >= parse_cache_limit_;
-    auto result = split_binary_uncached(expression, operators);
+    std::optional<std::pair<string,string>> result;
+    if (auto syntax = moss::est::parse_view(expression)) {
+      std::pair<string,string> operands;
+      string operation;
+      if (moss::est::project_binary(*syntax, operators, operands, operation))
+        result = std::move(operands);
+    }
+    if (moss::est::mode() == moss::est::Mode::Shadow) {
+      const auto legacy = split_binary_uncached(expression, operators);
+      if (result != legacy) std::fprintf(stderr, "EST binary mismatch: <%s> tree=(%s,%s) legacy=(%s,%s)\n", expression.c_str(), result ? result->first.c_str() : "<none>", result ? result->second.c_str() : "<none>", legacy ? legacy->first.c_str() : "<none>", legacy ? legacy->second.c_str() : "<none>");
+      assert(result == legacy);
+    }
     if (cache_full) {
       if (profile_concrete_effect_work_) ++parse_cache_success_after_cap_;
     } else {
@@ -10807,7 +10843,7 @@ class Checker {
                                   const std::pair<string, string>& split,
                                   const vector<string>& operators) const {
     for (const auto& op : operators)
-      if (auto candidate = split_binary(expression, {op}); candidate && *candidate == split)
+      if (auto candidate = tree_split_binary(expression, {op}); candidate && *candidate == split)
         return op;
     return "";
   }
@@ -10881,7 +10917,7 @@ class Checker {
       std::map<string, string> supplied_types;
       for (const auto& arg : args) {
         string fn, fv;
-        if (parse_named_argument(arg, fn, fv)) {
+        if (tree_parse_named_argument(arg, fn, fv)) {
           auto ft = inferred_expr_type(fv, env);
           if (ft) supplied_types[fn] = canonical_type_name(*ft);
         }
@@ -11092,7 +11128,7 @@ class Checker {
       string enum_name, case_name;
       vector<string> fields;
       bool called = false;
-      if (parse_enum_case_expression(original, enum_name, case_name, fields, called) &&
+      if (tree_parse_enum_case_expression(original, enum_name, case_name, fields, called) &&
           enums_.count(enum_name))
         return inferred_leaf(enum_name);
     }
@@ -11114,7 +11150,7 @@ class Checker {
       return inferred_leaf(*functional);
     string e = strip_redundant_outer_parentheses(normalize_pipeline(std::move(original)));
     for (const auto& op : vector<string>{" or ", " xor ", " and "}) {
-      if (auto binary = split_binary(e, {op})) {
+      if (auto binary = tree_split_binary(e, {op})) {
         return primitive_term(operand_term(binary->first), "bool") &&
                 primitive_term(operand_term(binary->second), "bool")
             ? primitive("bool") : std::nullopt;
@@ -11143,7 +11179,7 @@ class Checker {
       vector<string> open_arguments;
       if (parse_fileio_open(e, open_arguments)) return primitive("FileIO");
     }
-    if (auto parts = parse_vector_literal(e)) {
+    if (auto parts = tree_parse_vector_literal(e)) {
       if (parts->empty()) return InferredExpr{nullptr, "vector"};
       vector<InferredExpr> elements;
       // Preserve S's contextual empty-vector siblings using checked terms.
@@ -11175,16 +11211,16 @@ class Checker {
           return std::nullopt;
       return InferredExpr{nullptr, "vector[" + elements.front().projection() + "]"};
     }
-    if (auto comparison = split_binary(e, {"==", "!=", "<=", ">=", "<", ">"}))
+    if (auto comparison = tree_split_binary(e, {"==", "!=", "<=", ">=", "<", ">"}))
       return primitive("bool");
     for (const auto& ops : vector<vector<string>>{{"|"}, {"^"}, {"&"}, {"<<", ">>"}}) {
-      if (auto binary = split_binary(e, ops)) {
+      if (auto binary = tree_split_binary(e, ops)) {
         return primitive_term(operand_term(binary->first), "int") &&
                 primitive_term(operand_term(binary->second), "int")
             ? primitive("int") : std::nullopt;
       }
     }
-    if (auto arithmetic = split_binary(e, {"+", "-", "*", "/", "%"})) {
+    if (auto arithmetic = tree_split_binary(e, {"+", "-", "*", "/", "%"})) {
       auto left = operand_term(arithmetic->first);
       auto right = operand_term(arithmetic->second);
       if (left && right && left->kind == moss::TypeKind::Primitive &&
@@ -11193,7 +11229,7 @@ class Checker {
             e.find('+') != string::npos)
           return primitive("string");
         if (arithmetic->first.empty() || arithmetic->second.empty()) return std::nullopt;
-        if (split_binary(e, {"%"}) &&
+        if (tree_split_binary(e, {"%"}) &&
             (left->name != "int" || right->name != "int"))
           return std::nullopt;
         if ((left->name == "int" || left->name == "float") &&
@@ -11226,7 +11262,7 @@ class Checker {
         return inferred_leaf(canonical_type_name(*operand));
     }
     string index_base, index_expr;
-    if (parse_index(e, index_base, index_expr)) {
+    if (tree_parse_index(e, index_base, index_expr)) {
       auto base = inferred_expr(index_base, env);
       if (!base) return std::nullopt;
       if (primitive_term(base->term, "RangeBatch")) return primitive("Range");
@@ -11689,7 +11725,7 @@ class Checker {
     if (!tree_parse_simple_call(normalized, constructor, args)) {
       for (const auto& operators : vector<vector<string>>{{"==", "!=", "<=", ">=", "<", ">"},
                                                            {"+", "-", "*", "/", "%"}}) {
-        if (auto binary = split_binary(normalized, operators)) {
+        if (auto binary = tree_split_binary(normalized, operators)) {
           constrain_constructor_fields(line, binary->first, env);
           constrain_constructor_fields(line, binary->second, env);
           return;
@@ -11723,7 +11759,7 @@ class Checker {
     std::unordered_map<string,string> supplied;
     for (const auto& arg : args) {
       string field_name, field_value;
-      if (!parse_named_argument(arg, field_name, field_value))
+      if (!tree_parse_named_argument(arg, field_name, field_value))
         err(line, "object constructor fields must be named for '" + constructor + "'");
       if (!supplied.emplace(field_name, field_value).second)
         err(line, "duplicate field '" + field_name + "' in " + constructor + " constructor");
@@ -11805,7 +11841,7 @@ class Checker {
                                         const string& value,
                                         TypeEnv& env) const {
     string base, index;
-    if (!parse_index(target, base, index)) return;
+    if (!tree_parse_index(target, base, index)) return;
     auto container = env.find(base);
     if (container == env.end()) return;
     auto retained = current_body_types_
@@ -12018,7 +12054,7 @@ class Checker {
           const_cast<Stmt&>(statement).semantic_type = canonical_type_name(env[statement.a]);
       } else {
         string base, index_expression;
-        if (parse_index(statement.a, base, index_expression)) {
+        if (tree_parse_index(statement.a, base, index_expression)) {
           auto container = env.find(base);
           auto retained = current_body_types_
               ? current_body_types_->resolved_local(base) : nullptr;
@@ -12099,7 +12135,7 @@ class Checker {
             if (prior.a == statement.a &&
                 (prior.b == "[]" || prior.b == "Queue()" ||
                  (staged_abi_v10() && prior.b == "Set()") ||
-                 parse_vector_literal(prior.b).has_value() ||
+                 tree_parse_vector_literal(prior.b).has_value() ||
                  starts_with(prior.semantic_type, "vector") ||
                  starts_with(prior.semantic_type, "queue") ||
                  (staged_abi_v10() && starts_with(prior.semantic_type, "set")))) {
@@ -12122,7 +12158,7 @@ class Checker {
               if (prior.a == statement.a &&
                   (prior.b == "[]" || prior.b == "Queue()" ||
                    (staged_abi_v10() && prior.b == "Set()") ||
-                   parse_vector_literal(prior.b).has_value() ||
+                   tree_parse_vector_literal(prior.b).has_value() ||
                    starts_with(prior.semantic_type, "vector") ||
                    starts_with(prior.semantic_type, "queue") ||
                    (staged_abi_v10() && starts_with(prior.semantic_type, "set")))) {
@@ -13318,7 +13354,7 @@ class Checker {
       } else if (statement.kind == Stmt::Kind::Assign &&
                  statement.a.find('[') != string::npos) {
         string base, index;
-        if (!parse_index(statement.a, base, index)) continue;
+        if (!tree_parse_index(statement.a, base, index)) continue;
         auto container = body_types.known_expression(base);
         auto key = term_for(index);
         auto value = term_for(statement.b);
@@ -14599,7 +14635,7 @@ class Checker {
       for (const auto& parameter : function.params) {
         if (!parameter.type.empty() && parameter.type != "vector" && parameter.type != "queue" && parameter.type != "map") continue;
         auto mark = [&](const string& expression) {
-          auto binary = split_binary(trim(expression), {"+", "-", "*", "/", "%"});
+          auto binary = tree_split_binary(trim(expression), {"+", "-", "*", "/", "%"});
           if (binary) {
             for (const auto& p : function.params) {
               if (trim(binary->first) == p.name && trim(binary->second) == p.name) {
@@ -14613,7 +14649,7 @@ class Checker {
             }
           }
           string base, idx;
-          if (parse_index(expression, base, idx)) {
+          if (tree_parse_index(expression, base, idx)) {
             for (const auto& p : function.params) if (trim(base) == p.name) {
               function.generic = true;
               function.static_dispatch = true;
@@ -14982,7 +15018,7 @@ class Checker {
                       [](const Param& p) { return !p.type.empty(); }))
         function.generic = false;
       if (!function.generic && function.result_expression) {
-        auto binary = split_binary(trim(*function.result_expression), {"+", "-", "*", "/", "%"});
+        auto binary = tree_split_binary(trim(*function.result_expression), {"+", "-", "*", "/", "%"});
         if (binary) {
           bool p1_found = false, p2_found = false;
           for (const auto& p : function.params) {
@@ -15208,7 +15244,7 @@ class Checker {
       return StorageLocation{value, {}};
     }
     string base, index;
-    if (parse_index(value, base, index)) {
+    if (tree_parse_index(value, base, index)) {
       auto location = storage_location(base, env, require_known_root);
       if (!location) return std::nullopt;
       location->path.push_back("[]");
@@ -17099,7 +17135,7 @@ class Checker {
     // Indexed reads materialize their checked result; they do not transfer the
     // collection. Match the ownership walker when deriving concrete effects.
     string base, index;
-    if (parse_index(expression, base, index)) return Effect::Read;
+    if (tree_parse_index(expression, base, index)) return Effect::Read;
     auto type = inferred_expr_type(expression, env);
     return type && transfer_type(*type) ? Effect::Consume : Effect::Read;
   }
@@ -17213,7 +17249,7 @@ class Checker {
       // `s.length()` for `-s.length()` rather than a method on `-s`.
       string trimmed = trim(expression);
       if (trimmed.size() > 1 && trimmed.front() == '-' && trimmed[1] != '-' &&
-          !split_binary(trimmed, {"+", "-", "*", "/", "%", "==", "!=", "<", ">",
+          !tree_split_binary(trimmed, {"+", "-", "*", "/", "%", "==", "!=", "<", ">",
                                   "<=", ">=", " and ", " or ", " xor "})) {
         analyze_effect_expression(trim(trimmed.substr(1)), env, params, parameter_effects,
                                   receiver_effect, receiver_fields, Effect::Read);
@@ -17264,7 +17300,7 @@ class Checker {
     // parameter summary collapses projections to their root.
     string value = strip_expression_parens(normalize_pipeline(trim(expression)));
     if (value.empty()) return;
-    if (auto elements = parse_vector_literal(value)) {
+    if (auto elements = tree_parse_vector_literal(value)) {
       // Construction owns its elements, even when the new vector is READ.
       // Use the same rule for parameter summaries and state-leaf observation.
       for (const auto& element : *elements)
@@ -17278,7 +17314,7 @@ class Checker {
         observe_leaf_access(*location, projection_effect(value, requested, env));
         string projected = value, base, index;
         while (!tree_simple_identifier(projected)) {
-          if (parse_index(projected, base, index)) {
+          if (tree_parse_index(projected, base, index)) {
             analyze_effect_expression(index, env, params, parameter_effects,
                                       receiver_effect, receiver_fields, Effect::Read);
             projected = base;
@@ -17294,7 +17330,7 @@ class Checker {
 
     if (leaf_effect_capture_) {
       for (const auto& op : vector<string>{" or ", " xor ", " and "}) {
-        if (auto binary = split_binary(value, {op})) {
+        if (auto binary = tree_split_binary(value, {op})) {
           analyze_effect_expression(binary->first, env, params, parameter_effects,
                                     receiver_effect, receiver_fields, Effect::Read);
           analyze_effect_expression(binary->second, env, params, parameter_effects,
@@ -17306,7 +17342,7 @@ class Checker {
            vector<vector<string>>{{"==", "!=", "<=", ">=", "<", ">"},
                                   {"|"}, {"^"}, {"&"}, {"<<", ">>"},
                                   {"+", "-", "*", "/", "%"}}) {
-        if (auto binary = split_binary(value, operators)) {
+        if (auto binary = tree_split_binary(value, operators)) {
           analyze_effect_expression(binary->first, env, params, parameter_effects,
                                     receiver_effect, receiver_fields, Effect::Read);
           analyze_effect_expression(binary->second, env, params, parameter_effects,
@@ -17353,14 +17389,14 @@ class Checker {
       string enum_name, case_name;
       vector<string> fields;
       bool called = false;
-      if (parse_enum_case_expression(value, enum_name, case_name, fields, called) &&
+      if (tree_parse_enum_case_expression(value, enum_name, case_name, fields, called) &&
           enums_.count(enum_name)) {
         const EnumType& declaration = *enums_.at(enum_name);
         auto item = std::find_if(declaration.cases.begin(), declaration.cases.end(),
             [&](const EnumCase& candidate) { return candidate.name == case_name; });
         if (item != declaration.cases.end()) for (const auto& argument : fields) {
           string name, field_value;
-          if (!parse_named_argument(argument, name, field_value)) continue;
+          if (!tree_parse_named_argument(argument, name, field_value)) continue;
           auto field = std::find_if(item->fields.begin(), item->fields.end(),
               [&](const Field& candidate) { return candidate.name == name; });
           if (field != item->fields.end())
@@ -17527,7 +17563,7 @@ class Checker {
         std::unordered_map<string,string> supplied;
         for (const auto& argument : call_arguments) {
           string field, field_value;
-          if (parse_named_argument(argument, field, field_value)) supplied[field] = field_value;
+          if (tree_parse_named_argument(argument, field, field_value)) supplied[field] = field_value;
         }
         for (const auto& field : object->fields) {
           auto value_it = supplied.find(field.name);
@@ -17616,7 +17652,7 @@ class Checker {
                                                          {"==", "!=", "<=", ">=", "<", ">"},
                                                          {"|"}, {"^"}, {"&"}, {"<<", ">>"},
                                                          {"+", "-", "*", "/", "%"}}) {
-      if (auto binary = split_binary(value, operators)) {
+      if (auto binary = tree_split_binary(value, operators)) {
         analyze_effect_expression(binary->first, env, params, parameter_effects,
                                   receiver_effect, receiver_fields, Effect::Read);
         analyze_effect_expression(binary->second, env, params, parameter_effects,
@@ -17631,7 +17667,7 @@ class Checker {
     }
 
     string base, index;
-    if (parse_index(value, base, index)) {
+    if (tree_parse_index(value, base, index)) {
       analyze_effect_expression(base, env, params, parameter_effects,
                                 receiver_effect, receiver_fields,
                                 projection_effect(value, requested, env));
@@ -17653,7 +17689,7 @@ class Checker {
                                                          {"==", "!=", "<=", ">=", "<", ">"},
                                                          {"|"}, {"^"}, {"&"}, {"<<", ">>"},
                                                          {"+", "-", "*", "/", "%"}}) {
-      if (auto binary = split_binary(value, operators)) {
+      if (auto binary = tree_split_binary(value, operators)) {
         analyze_effect_expression(binary->first, env, params, parameter_effects,
                                   receiver_effect, receiver_fields, Effect::Read);
         analyze_effect_expression(binary->second, env, params, parameter_effects,
@@ -17845,7 +17881,7 @@ class Checker {
         }
         case Stmt::Kind::Assign: {
           string base, ignored;
-          if (parse_index(statement.a, base, ignored))
+          if (tree_parse_index(statement.a, base, ignored))
             analyze_effect_expression(statement.a, env, params, parameter_effects,
                                       receiver_effect, receiver_fields, Effect::Write);
           else {
@@ -18065,7 +18101,7 @@ class Checker {
     // edge.  Module projection uses these edges to emit imported generic
     // specializations into the consumer crate.  The checker and native
     // expression lowering already recurse through these forms.
-    if (auto elements = parse_vector_literal(value)) {
+    if (auto elements = tree_parse_vector_literal(value)) {
       for (const auto& element : *elements)
         collect_local_call_sites(line, element, env, implicit_owner, calls);
       return;
@@ -18087,7 +18123,7 @@ class Checker {
                                                          {"==", "!=", "<=", ">=", "<", ">"},
                                                          {"|"}, {"^"}, {"&"}, {"<<", ">>"},
                                                          {"+", "-", "*", "/", "%"}})
-      if (auto binary = split_binary(value, operators)) {
+      if (auto binary = tree_split_binary(value, operators)) {
         collect_local_call_sites(line, binary->first, env, implicit_owner, calls);
         collect_local_call_sites(line, binary->second, env, implicit_owner, calls);
         return;
@@ -18165,7 +18201,7 @@ class Checker {
           call_arguments.size() == 2) {
         string label, key, reverse_callee;
         vector<string> reverse_args;
-        if (parse_named_argument(call_arguments[1], label, key) && label == "by") {
+        if (tree_parse_named_argument(call_arguments[1], label, key) && label == "by") {
           key = trim(key);
           if (tree_parse_simple_call(key, reverse_callee, reverse_args) &&
               reverse_callee == "Reverse" && reverse_args.size() == 1)
@@ -18208,7 +18244,7 @@ class Checker {
       for (const auto& argument : call_arguments) {
         string field, field_value;
         collect_local_call_sites(line,
-                                 parse_named_argument(argument, field, field_value)
+                                 tree_parse_named_argument(argument, field, field_value)
                                      ? field_value : argument,
                                  env, implicit_owner, calls);
       }
@@ -18216,7 +18252,7 @@ class Checker {
     }
 
     string base, index;
-    if (parse_index(value, base, index)) {
+    if (tree_parse_index(value, base, index)) {
       collect_local_call_sites(line, base, env, implicit_owner, calls);
       collect_local_call_sites(line, index, env, implicit_owner, calls);
       return;
@@ -18246,7 +18282,7 @@ class Checker {
            matching_paren(value, 0) == value.size() - 1)
       value = trim(value.substr(1, value.size() - 2));
     if (functional_pipeline_from_est(value)) return true;
-    if (auto elements = parse_vector_literal(value))
+    if (auto elements = tree_parse_vector_literal(value))
       return std::any_of(elements->begin(), elements->end(),
           [&](const string& element) {
             return has_unresolved_local_callable_call(element, env);
@@ -18256,7 +18292,7 @@ class Checker {
              {"==", "!=", "<=", ">=", "<", ">"},
              {"|"}, {"^"}, {"&"}, {"<<", ">>"},
              {"+", "-", "*", "/", "%"}})
-      if (auto binary = split_binary(value, operators))
+      if (auto binary = tree_split_binary(value, operators))
         return has_unresolved_local_callable_call(binary->first, env) ||
             has_unresolved_local_callable_call(binary->second, env);
     if (starts_with(value, "not "))
@@ -18283,14 +18319,14 @@ class Checker {
       return std::any_of(arguments.begin(), arguments.end(),
           [&](const string& argument) {
             string label, value_argument;
-            const string& nested = parse_named_argument(argument, label,
+            const string& nested = tree_parse_named_argument(argument, label,
                                                          value_argument)
                 ? value_argument : argument;
             return has_unresolved_local_callable_call(nested, env);
           });
     }
     string base, index;
-    return parse_index(value, base, index) &&
+    return tree_parse_index(value, base, index) &&
         (has_unresolved_local_callable_call(base, env) ||
          has_unresolved_local_callable_call(index, env));
   }
@@ -18306,7 +18342,7 @@ class Checker {
     if (tree_parse_simple_call(trim(expression), direct_callee, direct_arguments) &&
         direct_callee == "sort" && direct_arguments.size() == 2) {
       string label, callable;
-      if (parse_named_argument(direct_arguments[1], label, callable) &&
+      if (tree_parse_named_argument(direct_arguments[1], label, callable) &&
           label == "by")
         signature_unresolved_consumers_.insert(caller);
     }
@@ -18948,7 +18984,7 @@ class Checker {
     string enum_name, case_name;
     vector<string> fields;
     bool called = false;
-    if (parse_enum_case_expression(expression, enum_name, case_name, fields,
+    if (tree_parse_enum_case_expression(expression, enum_name, case_name, fields,
                                    called) &&
         enums_.count(canonical_type_name(enum_name)))
       return {phase21_pattern_identity(line, enum_name + "." + case_name)};
@@ -19670,7 +19706,7 @@ class Checker {
     // Grouping and vector construction do not hide effects of their contents.
     // In particular, a raised element must reach recovery/Root totality, and
     // a grouped index panic must keep a chunk mapper out of Branch work.
-    if (auto elements = parse_vector_literal(original)) {
+    if (auto elements = tree_parse_vector_literal(original)) {
       for (const auto& element : *elements)
         effects.merge(observable_expression_effects(
             element, env, domain_fields, implicit_object, parameters,
@@ -19814,7 +19850,7 @@ class Checker {
                                 {"==", "!=", "<=", ">=", "<", ">"},
                                 {"|"}, {"^"}, {"&"}, {"<<", ">>"},
                                 {"+", "-"}, {"*", "/", "%"}}) {
-      if (auto binary = split_binary(value, operators)) {
+      if (auto binary = tree_split_binary(value, operators)) {
         effects.merge(observable_expression_effects(
             binary->first, env, domain_fields, implicit_object, parameters,
             proven_indices, root_ingress));
@@ -19841,7 +19877,7 @@ class Checker {
       }
     }
     string index_base, index_expression;
-    if (parse_index(value, index_base, index_expression)) {
+    if (tree_parse_index(value, index_base, index_expression)) {
       effects.may_panic =
           !proven_index_access(proven_indices, index_base, index_expression);
       effects.merge(observable_expression_effects(
@@ -19883,12 +19919,12 @@ class Checker {
     {
       string enum_name, case_name;
       bool called = false;
-      if (parse_enum_case_expression(value, enum_name, case_name, arguments, called) &&
+      if (tree_parse_enum_case_expression(value, enum_name, case_name, arguments, called) &&
           enums_.count(enum_name)) {
         for (const auto& argument : arguments) {
           string field, field_value;
           effects.merge(observable_expression_effects(
-              parse_named_argument(argument, field, field_value) ? field_value : argument,
+              tree_parse_named_argument(argument, field, field_value) ? field_value : argument,
               env, domain_fields, implicit_object, parameters,
               proven_indices, root_ingress));
         }
@@ -20005,7 +20041,7 @@ class Checker {
       for (const auto& argument : arguments_call) {
         string field, field_value;
         effects.merge(observable_expression_effects(
-            parse_named_argument(argument, field, field_value) ? field_value : argument,
+            tree_parse_named_argument(argument, field, field_value) ? field_value : argument,
             env, domain_fields, implicit_object, parameters,
             proven_indices, root_ingress));
       }
@@ -20124,8 +20160,8 @@ class Checker {
       const vector<Stmt>& body, size_t while_index, const TypeEnv& env) const {
     const Stmt& while_stmt = body[while_index];
     string condition = trim(while_stmt.a);
-    auto cmp_less = split_binary(condition, {"<=", "<"});
-    auto cmp_greater = split_binary(condition, {">=", ">"});
+    auto cmp_less = tree_split_binary(condition, {"<=", "<"});
+    auto cmp_greater = tree_split_binary(condition, {">=", ">"});
     if (!cmp_less && !cmp_greater) return false;
 
     bool is_less = cmp_less.has_value();
@@ -20170,7 +20206,7 @@ class Checker {
           if (trim(s.a) != var_name || s.indent != loop_body_indent)
             return false;
           if (is_less) {
-            auto add = split_binary(trim(s.b), {"+"});
+            auto add = tree_split_binary(trim(s.b), {"+"});
             if (!add) return false;
             string left = trim(add->first);
             string right = trim(add->second);
@@ -20181,7 +20217,7 @@ class Checker {
             if (!is_positive_integer_literal(step_str)) return false;
             ++progress_steps;
           } else {
-            auto sub = split_binary(trim(s.b), {"-"});
+            auto sub = tree_split_binary(trim(s.b), {"-"});
             if (!sub) return false;
             string left = trim(sub->first);
             string right = trim(sub->second);
@@ -21367,7 +21403,7 @@ class Checker {
       return fileio_operation_raise_set("open");
     string enum_name, case_name;
     bool called = false;
-    if (parse_enum_case_expression(value, enum_name, case_name, arguments,
+    if (tree_parse_enum_case_expression(value, enum_name, case_name, arguments,
                                    called) && enums_.count(enum_name))
       return {};
     string receiver, method;
@@ -21440,7 +21476,7 @@ class Checker {
     if (check_functional_pipeline_ownership(line, original, env)) return;
     string value = strip_expression_parens(normalize_pipeline(std::move(original)));
     if (value.empty()) return;
-    if (auto elements = parse_vector_literal(value)) {
+    if (auto elements = tree_parse_vector_literal(value)) {
       for (const auto& element : *elements)
         check_ownership_expression(line, element, env,
                                    vector_element_effect(element, env.types));
@@ -21461,7 +21497,7 @@ class Checker {
             "MATCH_READ_BORROW_ACTIVE");
     }
     for (const auto& op : vector<string>{" or ", " xor ", " and "}) {
-      if (auto binary = split_binary(value, {op})) {
+      if (auto binary = tree_split_binary(value, {op})) {
         check_ownership_expression(line, binary->first, env, Effect::Read);
         check_ownership_expression(line, binary->second, env, Effect::Read);
         return;
@@ -21490,7 +21526,7 @@ class Checker {
                                                          {"==", "!=", "<=", ">=", "<", ">"},
                                                          {"|"}, {"^"}, {"&"}, {"<<", ">>"},
                                                          {"+", "-", "*", "/", "%"}}) {
-      if (auto binary = split_binary(value, operators)) {
+      if (auto binary = tree_split_binary(value, operators)) {
         check_ownership_expression(line, binary->first, env, Effect::Read);
         check_ownership_expression(line, binary->second, env, Effect::Read);
         return;
@@ -21524,7 +21560,7 @@ class Checker {
       string enum_name, case_name;
       vector<string> fields;
       bool called = false;
-      if (parse_enum_case_expression(value, enum_name, case_name, fields, called) &&
+      if (tree_parse_enum_case_expression(value, enum_name, case_name, fields, called) &&
           enums_.count(enum_name)) {
         const EnumType& declaration = *enums_.at(enum_name);
         auto item = std::find_if(declaration.cases.begin(), declaration.cases.end(),
@@ -21540,7 +21576,7 @@ class Checker {
               "enum_case_constructor", line);
         if (item != declaration.cases.end()) for (const auto& argument : fields) {
           string name, expression;
-          if (!parse_named_argument(argument, name, expression)) continue;
+          if (!tree_parse_named_argument(argument, name, expression)) continue;
           auto field = std::find_if(item->fields.begin(), item->fields.end(),
               [&](const Field& candidate) { return candidate.name == name; });
           if (field != item->fields.end())
@@ -21711,7 +21747,7 @@ class Checker {
         std::unordered_map<string,string> supplied;
         for (const auto& argument : call_arguments) {
           string field, field_value;
-          if (parse_named_argument(argument, field, field_value)) {
+          if (tree_parse_named_argument(argument, field, field_value)) {
             supplied[field] = field_value;
             auto f_it = std::find_if(declaration.fields.begin(), declaration.fields.end(),
                                      [&](const Field& f) { return f.name == field; });
@@ -21783,7 +21819,7 @@ class Checker {
     }
 
     string base, index;
-    if (parse_index(value, base, index)) {
+    if (tree_parse_index(value, base, index)) {
       // Indexed reads materialize an element; they do not move the whole
       // collection. Only an explicit whole-place operation may consume it.
       check_ownership_expression(line, base, env, Effect::Read);
@@ -22329,7 +22365,7 @@ class Checker {
             err(s.line, "FileIO ownership is pinned and cannot be reassigned",
                 "FILEIO_PINNED_OWNERSHIP");
           string lhs_base, lhs_index;
-          if (parse_index(s.a, lhs_base, lhs_index))
+          if (tree_parse_index(s.a, lhs_base, lhs_index))
             check_ownership_expression(s.line, s.a, env, Effect::Write);
           else {
             auto dot = s.a.rfind('.');
@@ -23579,7 +23615,7 @@ class Checker {
         // Builtin calls are positional too (P25-S-ARCH-016): 'Char(codepoint: 65)'.
         for (const auto& argument : args) {
           string label, value;
-          if (parse_named_argument(argument, label, value))
+          if (tree_parse_named_argument(argument, label, value))
             err(line, "builtin " + name + " does not accept named argument '" +
                 trim(argument) + "'; pass the value positionally",
                 "CALL_NAMED_ARGUMENT_UNSUPPORTED");
@@ -23654,7 +23690,7 @@ class Checker {
     // surfaces, which are handled before this point.
     for (const auto& argument : args) {
       string label, value;
-      if (parse_named_argument(argument, label, value))
+      if (tree_parse_named_argument(argument, label, value))
         err(line, "function " + name + " does not accept named argument '" +
             trim(argument) + "'; function arguments are positional in Moss "
             "v0.1, so remove the label '" + label + ":' and pass the value in "
@@ -24562,7 +24598,7 @@ class Checker {
       return;
     }
     string label, key;
-    if (!parse_named_argument(args[1], label, key) || label != "by" ||
+    if (!tree_parse_named_argument(args[1], label, key) || label != "by" ||
         top_level_colon(args[1]) == string::npos)
       err(line, "sort's second argument must be 'by: key'", "SORT_SIGNATURE");
     string reverse_callee;
@@ -25850,7 +25886,7 @@ class Checker {
       string enum_name, case_name;
       vector<string> arguments;
       bool called = false;
-      if (parse_enum_case_expression(original, enum_name, case_name, arguments, called) &&
+      if (tree_parse_enum_case_expression(original, enum_name, case_name, arguments, called) &&
           enums_.count(enum_name)) {
         mark_active_expression(OccurrenceKind::Constructor,
                                "enum-case:" + enum_name + "." + case_name);
@@ -25874,7 +25910,7 @@ class Checker {
           occurrence.source_operands = arguments;
           for (const auto& argument : arguments) {
             string field_name, field_value;
-            if (!parse_named_argument(argument, field_name, field_value)) {
+            if (!tree_parse_named_argument(argument, field_name, field_value)) {
               occurrence.semantic_operand_ordinals.push_back(UINT32_MAX);
               continue;
             }
@@ -25903,7 +25939,7 @@ class Checker {
           if (equal != string::npos && (colon == string::npos || equal < colon))
             err(line, "enum constructor fields use ':' rather than '='",
                 "ENUM_FIELD_REQUIRES_COLON");
-          if (!parse_named_argument(argument, name, value))
+          if (!tree_parse_named_argument(argument, name, value))
             err(line, "enum constructor fields must be named", "ENUM_FIELD_REQUIRES_NAME");
           if (!supplied.insert(name).second)
             err(line, "duplicate enum field '" + name + "'", "DUPLICATE_ENUM_FIELD");
@@ -25976,7 +26012,7 @@ class Checker {
                        {}, "grouped-expression");
       return;
     }
-    if (auto elements = parse_vector_literal(original)) {
+    if (auto elements = tree_parse_vector_literal(original)) {
       mark_active_expression(OccurrenceKind::VectorLiteral,
                              "builtin:vector-literal");
       if (current_body_types_ && !checking_specialization_ &&
@@ -26072,19 +26108,19 @@ class Checker {
         (value.size() == 1 || value[1] != '='))
       err(line, "unary '!' is not supported; use 'not' for Boolean negation",
           "UNSUPPORTED_EXPRESSION_OPERATOR");
-    if (auto binary = split_binary(value, {" in "})) {
+    if (auto binary = tree_split_binary(value, {" in "})) {
       err(line, "binary 'in' expression is not supported; use Map.get, key iteration, or an explicit search",
           "UNSUPPORTED_EXPRESSION_OPERATOR");
       return;
     }
     for (const auto& op :
          vector<string>{"&&", "||"}) {
-      if (split_binary(value, {op}))
+      if (tree_split_binary(value, {op}))
         err(line, "binary '" + op + "' expression is not supported",
             "UNSUPPORTED_EXPRESSION_OPERATOR");
     }
     for (const auto& op : vector<string>{" or ", " xor ", " and "}) {
-      if (auto binary = split_binary(value, {op})) {
+      if (auto binary = tree_split_binary(value, {op})) {
         mark_active_expression(OccurrenceKind::Binary, trim(op));
         check_expression(line, binary->first, env, {}, "left");
         check_expression(line, binary->second, env, {}, "right");
@@ -26108,12 +26144,12 @@ class Checker {
         err(line, "not operand must have type 'Bool'", "TYPE_MISMATCH");
       return;
     }
-    if (auto ordering = split_binary(value, {"<=", ">=", "<", ">"})) {
+    if (auto ordering = tree_split_binary(value, {"<=", ">=", "<", ">"})) {
       // This pass checks the ordering-specific exclusions. The common
       // comparison branch below owns the single recursive operand traversal,
       // so the checker occurrence graph represents each source operand once.
       for (const string& op : vector<string>{"<=", ">=", "<", ">"}) {
-        auto candidate = split_binary(value, {op});
+        auto candidate = tree_split_binary(value, {op});
         if (candidate && candidate->first == ordering->first) {
           retain_open_operator_operation(line, op, ordering->first,
                                          ordering->second, env);
@@ -26148,13 +26184,13 @@ class Checker {
         }
       }
     }
-    if (auto binary = split_binary(value, {"==", "!=", "<=", ">=", "<", ">"})) {
+    if (auto binary = tree_split_binary(value, {"==", "!=", "<=", ">=", "<", ">"})) {
       mark_active_expression(OccurrenceKind::Binary,
-          split_binary(value, {"=="}) ? "==" :
-          split_binary(value, {"!="}) ? "!=" :
-          split_binary(value, {"<="}) ? "<=" :
-          split_binary(value, {">="}) ? ">=" :
-          split_binary(value, {"<"}) ? "<" : ">");
+          tree_split_binary(value, {"=="}) ? "==" :
+          tree_split_binary(value, {"!="}) ? "!=" :
+          tree_split_binary(value, {"<="}) ? "<=" :
+          tree_split_binary(value, {">="}) ? ">=" :
+          tree_split_binary(value, {"<"}) ? "<" : ">");
       check_expression(line, binary->first, env, {}, "left");
       check_expression(line, binary->second, env, {}, "right");
       auto left_type = inferred_expr_type(binary->first, env);
@@ -26165,7 +26201,7 @@ class Checker {
             "ENUM_OPERATOR_UNSUPPORTED");
       if (binary->first.empty() || binary->second.empty())
         err(line, "invalid comparison expression");
-      auto equality = split_binary(value, {"==", "!="});
+      auto equality = tree_split_binary(value, {"==", "!="});
       if (equality && equality->first == binary->first && current_body_types_) {
         auto operand_term = [&](const string& operand) {
           auto retained = current_body_types_->known_expression(operand);
@@ -26180,8 +26216,8 @@ class Checker {
               (!resolved_left->is_closed() || !resolved_right->is_closed())) {
             string indexed_base, indexed_key;
             const bool compares_index =
-                parse_index(binary->first, indexed_base, indexed_key) ||
-                parse_index(binary->second, indexed_base, indexed_key);
+                tree_parse_index(binary->first, indexed_base, indexed_key) ||
+                tree_parse_index(binary->second, indexed_base, indexed_key);
             if (compares_index && !resolved_left->is_closed() &&
                 !resolved_right->is_closed() &&
                 !current_body_types_->solver.unify(left, right))
@@ -26189,7 +26225,7 @@ class Checker {
                   "TYPE_MISMATCH");
             moss::Requirement requirement;
             requirement.kind = moss::RequirementKind::Operator;
-            requirement.target_id = split_binary(value, {"=="})
+            requirement.target_id = tree_split_binary(value, {"=="})
                 ? "operator:==" : "operator:!=";
             requirement.subject = left;
             requirement.arguments.push_back(right);
@@ -26225,7 +26261,7 @@ class Checker {
       return;
     }
     for (const auto& op : vector<string>{"|", "^", "&"}) {
-      if (auto binary = split_binary(value, {op})) {
+      if (auto binary = tree_split_binary(value, {op})) {
         mark_active_expression(OccurrenceKind::Binary, op);
         check_expression(line, binary->first, env, {}, "left");
         check_expression(line, binary->second, env, {}, "right");
@@ -26242,14 +26278,14 @@ class Checker {
         return;
       }
     }
-    if (auto binary = split_binary(value, {"<<", ">>"})) {
+    if (auto binary = tree_split_binary(value, {"<<", ">>"})) {
       mark_active_expression(OccurrenceKind::Binary,
-          split_binary(value, {"<<"}) ? "<<" : ">>");
-      string op = split_binary(value, {"<<"}) ? "<<" : ">>";
+          tree_split_binary(value, {"<<"}) ? "<<" : ">>");
+      string op = tree_split_binary(value, {"<<"}) ? "<<" : ">>";
       check_expression(line, binary->first, env, {}, "left");
       check_expression(line, binary->second, env, {}, "right");
       for (const string& candidate : vector<string>{"<<", ">>"})
-        if (split_binary(value, {candidate})) {
+        if (tree_split_binary(value, {candidate})) {
           retain_open_operator_operation(line, candidate, binary->first,
                                          binary->second, env);
           break;
@@ -26265,7 +26301,7 @@ class Checker {
       return;
     }
     if (!value.empty() && value.front() == '-' &&
-        !split_binary(value, {"+", "-", "*", "/", "%"})) {
+        !tree_split_binary(value, {"+", "-", "*", "/", "%"})) {
       // Prefix '-' applies to its whole postfix operand: `-s.length()` negates
       // the call result, so the operand is checked as one expression
       // (P25-S-ARCH-021) rather than letting member-call parsing see `-s`.
@@ -26287,10 +26323,10 @@ class Checker {
     }
     for (const auto& operators : vector<vector<string>>{
              {"+", "-"}, {"*", "/", "%"}}) {
-        if (auto binary = split_binary(value, operators)) {
+        if (auto binary = tree_split_binary(value, operators)) {
           string operation_id;
           for (const auto& candidate : operators) {
-            auto operation = split_binary(value, {candidate});
+            auto operation = tree_split_binary(value, {candidate});
             if (operation && operation->first == binary->first) {
               operation_id = candidate;
               break;
@@ -26300,7 +26336,7 @@ class Checker {
           check_expression(line, binary->first, env, {}, "left");
           check_expression(line, binary->second, env, {}, "right");
           for (const string& candidate : operators) {
-            auto operation = split_binary(value, {candidate});
+            auto operation = tree_split_binary(value, {candidate});
             if (operation && operation->first == binary->first) {
               retain_open_operator_operation(line, candidate,
                   binary->first, binary->second, env);
@@ -26330,7 +26366,7 @@ class Checker {
             string rt = canonical_type_name(*right_type);
             string op;
             for (const string candidate : {"+", "-", "*", "/", "%"}) {
-              auto split = split_binary(value, {candidate});
+              auto split = tree_split_binary(value, {candidate});
               if (split && split->first == binary->first) op = candidate;
             }
             bool numeric = (lt == "int" || lt == "float") && (rt == "int" || rt == "float");
@@ -26346,7 +26382,7 @@ class Checker {
                 (contains_record_type(lt) || contains_record_type(rt)))
               err(line, "operator '" + op + "' is not defined for records", "TYPE_MISMATCH");
           }
-          if (split_binary(value, {"%"})) {
+          if (tree_split_binary(value, {"%"})) {
             auto left = inferred_expr_type(binary->first, env);
             auto right = inferred_expr_type(binary->second, env);
             if (!left || !right || canonical_type_name(*left) != "int" ||
@@ -26634,7 +26670,7 @@ class Checker {
       return;
     }
     string ib, ii;
-    if (parse_index(value, ib, ii)) {
+    if (tree_parse_index(value, ib, ii)) {
       mark_active_expression(OccurrenceKind::Index, "builtin:index");
       check_expression(line, ib, env, {}, "container");
       check_expression(line, ii, env, {}, "index");
@@ -26868,7 +26904,7 @@ class Checker {
         bool has_open_argument = false;
         for (const auto& argument : args) {
           string field_name, value = argument;
-          (void)parse_named_argument(argument, field_name, value);
+          (void)tree_parse_named_argument(argument, field_name, value);
           auto term = current_body_types_->known_expression(value);
           if (!term) term = inferred_expr_term(value, env);
           auto resolved = term ? current_body_types_->solver.resolve(term) : nullptr;
@@ -26973,7 +27009,7 @@ class Checker {
               program_module_identity(p_, object.defining_module), type_name);
           for (const auto& argument : args) {
             string field_name, field_value;
-            if (!parse_named_argument(argument, field_name, field_value)) {
+            if (!tree_parse_named_argument(argument, field_name, field_value)) {
               occurrence.semantic_operand_ordinals.push_back(UINT32_MAX);
               continue;
             }
@@ -26992,7 +27028,7 @@ class Checker {
         for (size_t index = 0; index < args.size(); ++index) {
           const auto& arg = args[index];
           string field_name, field_value;
-          if (!parse_named_argument(arg, field_name, field_value))
+          if (!tree_parse_named_argument(arg, field_name, field_value))
             err(line, "object constructor fields must be named for '" + callee + "'");
           supplied.insert(field_name);
           check_expression(line, field_value, env, {}, "field:" + field_name);
@@ -27085,7 +27121,7 @@ class Checker {
           for (size_t index = 0; index < args.size(); ++index) {
             const auto& arg = args[index];
             string name, val;
-            if (parse_named_argument(arg, name, val))
+            if (tree_parse_named_argument(arg, name, val))
               check_expression(line, val, env, {},
                                "argument:" + std::to_string(index));
             else
@@ -27117,7 +27153,7 @@ class Checker {
         for (size_t index = 0; index < args.size(); ++index) {
           const auto& arg = args[index];
           string name, val;
-          if (parse_named_argument(arg, name, val))
+          if (tree_parse_named_argument(arg, name, val))
             check_expression(line, val, env, {},
                              "argument:" + std::to_string(index));
           else
@@ -27709,9 +27745,9 @@ class Checker {
             }
           } else {
             string base, index_expression;
-            if (parse_index(statement.a, base, index_expression)) {
+            if (tree_parse_index(statement.a, base, index_expression)) {
               string inner_base, inner_index;
-              if (parse_index(base, inner_base, inner_index)) {
+              if (tree_parse_index(base, inner_base, inner_index)) {
                 err(statement.line,
                     "nested indexed mutation is not supported; extract the inner collection to a local variable, update it, and write it back",
                     "UNSUPPORTED_NESTED_INDEX_ASSIGNMENT");
@@ -28082,7 +28118,7 @@ class Checker {
             const string slot = "call-argument:" + std::to_string(index);
             const auto occurrence_slot = statement.b.empty()
                 ? std::string_view(slot) : std::string_view{};
-            if (parse_named_argument(argument, name, val))
+            if (tree_parse_named_argument(argument, name, val))
               check_expression(statement.line, val, current_env, occurrence_slot,
                                "call-argument:" + std::to_string(index));
             else
@@ -28142,7 +28178,7 @@ class Checker {
               statement.line, *type,
               !current_function || !current_function->static_dispatch ||
                   checking_specialization_);
-          else if (parse_vector_literal(trim(argument)))
+          else if (tree_parse_vector_literal(trim(argument)))
             check_echo_display(statement.line, "vector");  // `echo []`, `echo [[]]`
           else if (tree_plain_identifier(trim(argument))) {
             auto binding = current_env.find(trim(argument));
@@ -29580,7 +29616,7 @@ class Checker {
                   const auto ordinal =
                       occurrence.semantic_operand_ordinals[index];
                   if (ordinal >= variant->fields.size() || seen[ordinal] ||
-                      !parse_named_argument(occurrence.source_operands[index],
+                      !tree_parse_named_argument(occurrence.source_operands[index],
                                             field_name, field_value) ||
                       variant->fields[ordinal].name != field_name ||
                       checked_types.expression_occurrences[children[index]]

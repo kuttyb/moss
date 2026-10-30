@@ -73,7 +73,9 @@
       const std::unordered_map<string,string>* types) const {
     if (view_place(expression, d, locals, types)) return true;
     string base, index;
-    return parse_index(trim(expression), base, index) && borrowed_view_expression(base, d, locals, types);
+    auto syntax = est::parse_view(trim(expression));
+    return syntax && est::project_index(*syntax, base, index) &&
+        borrowed_view_expression(base, d, locals, types);
   }
 
   string viewed_function_name(const string& name, const vector<string>& args, const Domain* d,

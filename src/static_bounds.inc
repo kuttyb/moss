@@ -60,7 +60,7 @@
     for (const auto& operators : vector<vector<string>>{
              {" or ", " xor ", " and "}, {"==", "!=", "<=", ">=", "<", ">"},
              {"+", "-"}, {"*", "/", "%"}})
-      if (auto binary = split_binary(expression, operators)) {
+      if (auto binary = tree_split_binary(expression, operators)) {
         static_mark_possible_mutation(binary->first, fileio_owners, mutated);
         static_mark_possible_mutation(binary->second, fileio_owners, mutated);
         return;
@@ -77,7 +77,7 @@
           mutated.insert(place->root);
         for (const auto& argument : args) {
           string argument_name, argument_value;
-          string actual = parse_named_argument(argument, argument_name,
+          string actual = tree_parse_named_argument(argument, argument_name,
                                                 argument_value) ?
               trim(argument_value) : trim(argument);
           if (auto place = storage_location(actual, {}, false))
@@ -88,7 +88,7 @@
       for (const auto& argument : args) {
         string name, value;
         static_mark_possible_mutation(
-            parse_named_argument(argument, name, value) ? value : argument,
+            tree_parse_named_argument(argument, name, value) ? value : argument,
             fileio_owners, mutated);
       }
       return;
@@ -98,7 +98,7 @@
       if (!objects_.count(callee) && callee != "range" && callee != "Some")
         for (const auto& argument : args) {
           string argument_name, argument_value;
-          string actual = parse_named_argument(argument, argument_name,
+          string actual = tree_parse_named_argument(argument, argument_name,
                                                 argument_value) ?
               trim(argument_value) : trim(argument);
           if (auto place = storage_location(actual, {}, false))
@@ -107,7 +107,7 @@
       for (const auto& argument : args) {
         string name, value;
         static_mark_possible_mutation(
-            parse_named_argument(argument, name, value) ? value : argument,
+            tree_parse_named_argument(argument, name, value) ? value : argument,
             fileio_owners, mutated);
       }
       return;
@@ -118,7 +118,7 @@
       return;
     }
     string base, index;
-    if (parse_index(expression, base, index)) {
+    if (tree_parse_index(expression, base, index)) {
       static_mark_possible_mutation(base, fileio_owners, mutated);
       static_mark_possible_mutation(index, fileio_owners, mutated);
       return;
@@ -412,7 +412,7 @@
     // splitter so this follows the language's arithmetic syntax.
     for (const auto& operators : vector<vector<string>>{{"+", "-"},
                                                           {"*", "/", "%"}}) {
-      if (auto binary = split_binary(source, operators)) {
+      if (auto binary = tree_split_binary(source, operators)) {
         auto left = static_exact_integer(binary->first, depth + 1);
         auto right = static_exact_integer(binary->second, depth + 1);
         if (!left || !right) return std::nullopt;
@@ -473,7 +473,7 @@
       std::map<string, string> named;
       for (const auto& field : fields) {
         string name, value;
-        if (parse_named_argument(field, name, value)) named[name] = value;
+        if (tree_parse_named_argument(field, name, value)) named[name] = value;
       }
       if (named.count("offset") && named.count("size"))
         return std::make_pair(named["offset"], named["size"]);
@@ -528,7 +528,7 @@
       if (expression.size() >= 2 && expression.front() == '"' &&
           expression.back() == '"')
         return static_cast<uint64_t>(expression.size() - 2);
-      if (auto concatenation = split_binary(expression, {"+"})) {
+      if (auto concatenation = tree_split_binary(expression, {"+"})) {
         auto left = bounded_string(concatenation->first);
         auto right = bounded_string(concatenation->second);
         uint64_t total = 0;
@@ -555,7 +555,7 @@
       }
     }
     string base, index_str;
-    if (parse_index(value, base, index_str)) {
+    if (tree_parse_index(value, base, index_str)) {
       auto entry_bounds = static_batch_entry_bounds(base);
       if (entry_bounds && !entry_bounds->empty()) {
         if (auto exact_idx = static_exact_integer(index_str)) {

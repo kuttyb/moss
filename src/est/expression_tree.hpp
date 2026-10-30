@@ -154,7 +154,8 @@ std::optional<std::vector<std::string>> project_vector_literal(
     const ExpressionView& view);
 bool project_enum_case(const ExpressionView& view, std::string& enum_name,
                        std::string& case_name,
-                       std::vector<std::string>& fields);
+                       std::vector<std::string>& fields,
+                       bool* called = nullptr);
 bool project_binary(const ExpressionView& view,
                     const std::vector<std::string>& operators,
                     std::pair<std::string, std::string>& operands,

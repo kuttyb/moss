@@ -419,7 +419,7 @@
     string value = strip_redundant_outer_parentheses(trim(expression));
     if (value.empty()) return;
     for (const auto& operation : vector<string>{" or ", " and "})
-      if (auto binary = split_binary(value, {operation})) {
+      if (auto binary = tree_split_binary(value, {operation})) {
         fileio_lifecycle_expression(line, binary->first, flow);
         FileIOFlow right = flow;
         fileio_lifecycle_expression(line, binary->second, right);
@@ -429,7 +429,7 @@
     for (const auto& operators : vector<vector<string>>{
              {"==", "!=", "<=", ">=", "<", ">"},
              {"+", "-"}, {"*", "/", "%"}})
-      if (auto binary = split_binary(value, operators)) {
+      if (auto binary = tree_split_binary(value, operators)) {
         fileio_lifecycle_expression(line, binary->first, flow);
         fileio_lifecycle_expression(line, binary->second, flow);
         return;
@@ -675,7 +675,7 @@
           ++flow.batch_generation[s.a];
         string source, offset;
         if (type && canonical_type_name(*type) == "Range" &&
-            parse_index(trim(s.b), source, offset) &&
+            tree_parse_index(trim(s.b), source, offset) &&
             canonical_type_name(inferred_expr_type(source, flow.types).value_or("")) ==
                 "RangeBatch")
           flow.range_origin[s.a] = {source, flow.batch_generation[source]};
@@ -810,7 +810,7 @@
     for (const auto& operators : vector<vector<string>>{
              {" or ", " and "}, {"==", "!=", "<=", ">=", "<", ">"},
              {"+", "-"}, {"*", "/", "%"}})
-      if (auto binary = split_binary(expression, operators)) {
+      if (auto binary = tree_split_binary(expression, operators)) {
         if (auto left = fileio_blocking_expression(binary->first, env, visited))
           return left;
         return fileio_blocking_expression(binary->second, env, visited);

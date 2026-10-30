@@ -250,34 +250,63 @@ bool project_index(const ExpressionView& e, std::string& base, std::string& inde
 
 std::optional<std::vector<std::string>> project_vector_literal(const ExpressionView& e) {
   std::optional<std::vector<std::string>> result;
-  if (e.arena && e.root < e.arena->size())
-    if (const auto* vector = std::get_if<Collection>(&e.arena->at(e.root));
+  if (e.arena && e.root < e.arena->size()) {
+    const auto root = unparenthesized(*e.arena, e.root);
+    if (const auto* vector = std::get_if<Collection>(&e.arena->at(root));
         vector && vector->delimiter == '[')
       result = child_texts(e, vector->elements);
+  }
   if (mode() == Mode::Shadow)
     assert(moss::parse_vector_literal(e.source) == result);
   return result;
 }
 
 bool project_enum_case(const ExpressionView& e, std::string& enum_name,
-                       std::string& case_name, std::vector<std::string>& fields) {
-  bool result = false;
-  if (e.arena && e.root < e.arena->size())
-    if (const auto* ctor = std::get_if<Constructor>(&e.arena->at(e.root)))
-      if (const auto* member = std::get_if<Member>(&e.arena->at(ctor->type)))
-        if (auto enum_text = e.source_text(member->base))
-          if (auto args = child_texts(e, ctor->arguments)) {
-            enum_name = std::move(*enum_text); case_name = member->name;
-            fields = std::move(*args); result = true;
+                       std::string& case_name, std::vector<std::string>& fields,
+                       bool* called) {
+  bool result = false, is_called = false;
+  if (called) *called = false;
+  if (e.arena && e.root < e.arena->size()) {
+    const Node* node = &e.arena->at(unparenthesized(*e.arena, e.root));
+    const Member* member = nullptr;
+    const std::vector<ExprId>* call_arguments = nullptr;
+    if (const auto* ctor = std::get_if<Constructor>(node)) {
+      member = std::get_if<Member>(&e.arena->at(ctor->type));
+      call_arguments = &ctor->arguments;
+    } else if (const auto* call = std::get_if<Call>(node)) {
+      member = std::get_if<Member>(&e.arena->at(call->callee));
+      call_arguments = &call->arguments;
+    } else {
+      member = std::get_if<Member>(node);
+    }
+    if (member)
+      if (auto enum_text = e.source_text(member->base)) {
+        enum_name = std::move(*enum_text); case_name = member->name;
+        const auto& base_node = e.arena->at(member->base);
+        const bool simple_enum = std::holds_alternative<Identifier>(base_node) ||
+            std::holds_alternative<Placeholder>(base_node) ||
+            (std::get_if<Literal>(&base_node) &&
+             (std::get<Literal>(base_node).spelling == "true" ||
+              std::get<Literal>(base_node).spelling == "false"));
+        if (call_arguments) {
+          if (auto args = child_texts(e, *call_arguments)) {
+            fields = std::move(*args); is_called = true; result = simple_enum;
           }
+        } else {
+          fields.clear(); result = simple_enum;
+        }
+      }
+  }
+  if (called) *called = is_called;
   if (mode() == Mode::Shadow) {
     std::string old_enum, old_case; std::vector<std::string> old_fields;
-    bool called = false;
+    bool old_called = false;
     const bool legacy = moss::parse_enum_case_expression(e.source, old_enum,
-        old_case, old_fields, called);
+        old_case, old_fields, old_called);
+    if (legacy != result) std::fprintf(stderr, "EST enum-case mismatch: <%s> legacy=%d tree=%d called=%d\n", e.source.c_str(), legacy, result, old_called);
     assert(legacy == result);
-    if (result) assert(called && old_enum == enum_name && old_case == case_name &&
-                       old_fields == fields);
+    if (result) assert(old_enum == enum_name && old_case == case_name &&
+                       old_fields == fields && old_called == is_called);
   }
   return result;
 }
@@ -286,12 +315,49 @@ bool project_binary(const ExpressionView& e, const std::vector<std::string>& ope
                     std::pair<std::string, std::string>& operands,
                     std::string& operation) {
   if (!e.arena || e.root >= e.arena->size()) return false;
-  const auto* binary = std::get_if<Binary>(&e.arena->at(e.root));
-  if (!binary || std::find(operators.begin(), operators.end(), binary->op) == operators.end())
+  const auto root = e.root;
+  const Binary* selected = nullptr;
+  std::uint32_t selected_position = 0;
+  std::function<void(ExprId)> visit = [&](ExprId id) {
+    const auto* binary = std::get_if<Binary>(&e.arena->at(id));
+    if (!binary) return;  // Grouping and all non-binary nodes stop top-level search.
+    if (std::find(operators.begin(), operators.end(), binary->op) != operators.end()) {
+      const auto position = e.arena->span(binary->left).source_end;
+      if (!selected || position > selected_position) {
+        selected = binary; selected_position = position;
+      }
+    }
+    visit(binary->left);
+    visit(binary->right);
+  };
+  visit(root);
+  if (!selected) return false;
+  const auto root_span = e.arena->span(root);
+  const auto left_end = e.arena->span(selected->left).source_end;
+  const auto right_begin = e.arena->span(selected->right).source_begin;
+  if (left_end < root_span.source_begin || right_begin < left_end ||
+      right_begin > root_span.source_end) return false;
+  const auto gap_begin = left_end - root_span.source_begin;
+  const auto gap_length = right_begin - left_end;
+  if (gap_begin > e.source.size() || gap_length > e.source.size() - gap_begin)
     return false;
-  auto left = e.source_text(binary->left); auto right = e.source_text(binary->right);
-  if (!left || !right) return false;
-  operands = {std::move(*left), std::move(*right)}; operation = binary->op;
+  const auto gap = std::string_view(e.source).substr(gap_begin, gap_length);
+  const auto operator_offset = gap.find(selected->op);
+  if (operator_offset == std::string_view::npos) return false;
+  const auto split = gap_begin + operator_offset;
+  const auto root_end = root_span.source_end - root_span.source_begin;
+  if (root_end > e.source.size() || split + selected->op.size() > root_end)
+    return false;
+  auto trimmed = [](std::string_view text) {
+    const auto first = text.find_first_not_of(" \t\r\n");
+    if (first == std::string_view::npos) return std::string{};
+    const auto last = text.find_last_not_of(" \t\r\n");
+    return std::string(text.substr(first, last - first + 1));
+  };
+  operands = {trimmed(std::string_view(e.source).substr(0, split)),
+              trimmed(std::string_view(e.source).substr(split + selected->op.size(),
+                                                        root_end - split - selected->op.size()))};
+  operation = selected->op;
   return true;
 }
 
