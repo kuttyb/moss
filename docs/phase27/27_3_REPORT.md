@@ -24,4 +24,18 @@ Full off gate at `6b926fc7`: **FAIL**, 157/159 jobs passed, zero skips; log `tmp
 
 ## Escalation blocker — semantic/package verdict change
 
-Fresh CP-E at `6b926fc7` found `tests/phase27/est/repro/incomplete_expression.moss`, containing `fn main(): echo 2 +`: phase27-2-m1 rejects it with `MOSS_COMPILE_ERROR:2`, candidate off accepts it, and candidate shadow aborts with SIGABRT before JSON output. A mini-package `margo build --check` reproduces the baseline-reject/candidate-accept verdict change. Agent 2 classified this as SEMANTIC and reports a package-mode verdict change. This meets the explicit escalation stop rule. No further source edits, gates, CP-F, merge, or tag are in progress. The isolated reviewer is committing the full inventory, report, and reproducers; append exact verdict and evidence SHA when available.
+CP-E verdict: NO-GO
+
+Frozen candidate: `6b926fc7dd3ed42dedddb0f2f8f60f931b106a68`
+
+Baseline `phase27-2-m1`: `d4446b7250f651e60e978740661e6fb20ff6ef10`
+
+Evidence payload: `c8cb5ae60e5f1017dfcebb56f97256ca6e6160ff` (review branch HEAD `aa0dc86ea4751df5e5cbe901bed0e9b3841e3559`; payload and follow-up are recorded on this branch as `8687e1a2` and `21e74a74`).
+
+On `tests/phase27/est/repro/incomplete_expression.moss` and the identical benchmark source `fn main(): echo 2 +`, baseline off rejects with `MOSS_COMPILE_ERROR:2`, candidate off accepts, and candidate shadow aborts with SIGABRT before JSON. A paired mini-package `margo build --check` reproduces baseline rejection and candidate acceptance. **Classification: SEMANTIC**, and a package-mode verdict changed. The source-free SDK fixture also changes standalone diagnostic from `RECOVERY_PATTERN_REQUIRES_VARIANT:57` to `UNKNOWN_ERROR_TYPE:57`; its actual provider-interface package result is unverified. Exact per-file evidence is in `docs/phase27/adversarial/cp_e_rawshape_6b926fc7_verdict_diff.tsv`, paired/package tables, report, inventory, and probes under `tests/phase27/adversarial/cp-e-rawshape-rerun/`.
+
+The exhaustive field inventory contains 1,192 line-level occurrences: 113 EST/expression-reader calls, 96 raw-string-operation review hits, 58 literal-comparison review hits, 484 expression-value uses, and 441 mixed name/expression uses. `tree_expression_text` has zero checker/emitter uses; there are 39 audited NAME comparisons, 9 binding comparisons, and three canonical-type split exemptions. CP-E demonstrates the widened lint still has an alias/helper blind spot: it catches direct Stmt-field shape tests but misses equivalent tests after copying expression text to a local string or helper parameter. Remaining indirect raw readers are enumerated and classified in the committed review.
+
+The off verdict-corpus comparison completed: baseline had 2,118 sources and 1,394 accepted; candidate had 2,124 sources and 1,398 accepted; 2,118 paths were common, with three verdict changes and six candidate-only sources. The checked-declaration closure differential timed out at 90 seconds on a specialization workload; its 300-second retry was stopped before producing a report. No closure pass is claimed.
+
+This SEMANTIC/package verdict change meets the explicit escalation stop rule. No further source edits, gates, CP-F, merge, or tag are in progress.
