@@ -20938,7 +20938,6 @@ class Checker {
       const ObjectType* implicit_object = nullptr,
       const ProvenIndexAccesses* invocation_proven_indices = nullptr) const {
     ObservableEffects effects = no_observable_effects();
-    std::set<string> locals = parameters;
     const auto loop_index_facts = stable_range_loop_index_facts(body, env);
     for (size_t stmt_idx = 0; stmt_idx < body.size(); ++stmt_idx) {
       const auto& statement = body[stmt_idx];
@@ -20985,38 +20984,32 @@ class Checker {
       if (statement.kind == Stmt::Kind::Assign ||
           statement.kind == Stmt::Kind::Let ||
           statement.kind == Stmt::Kind::Var) {
-        string root = trim(statement.a);
-        auto dot = root.find('.');
-        auto bracket = root.find('[');
-        size_t end = std::min(dot == string::npos ? root.size() : dot,
-                              bracket == string::npos ? root.size() : bracket);
-        root = trim(root.substr(0, end));
-        if (domain_fields.count(root)) effects.domain_write = true;
-        else if (parameters.count(root) ||
-                 (implicit_object && (root == "self" ||
+        const auto root = tree_root_identifier(statement.a);
+        if (root && domain_fields.count(*root)) effects.domain_write = true;
+        else if (root && (parameters.count(*root) ||
+                 (implicit_object && (*root == "self" ||
                   std::any_of(implicit_object->fields.begin(),
                               implicit_object->fields.end(),
                               [&](const Field& field) {
-                                return field.name == root;
-                              }))))
+                                return field.name == *root;
+                              })))))
           effects.local_mutation = true;
-        locals.insert(statement.a);
       }
       if (statement.kind == Stmt::Kind::Call && !statement.b.empty()) {
-        string root = trim(statement.a);
+        const auto root = tree_root_identifier(statement.a);
         bool mutating = statement.b == "push" || statement.b == "pop" || statement.b == "pop_front";
         if (statement.b == "pop" || statement.b == "pop_front") {
           effects.may_panic = true;
         }
         if (mutating) {
-          if (domain_fields.count(root)) effects.domain_write = true;
-          else if (parameters.count(root) ||
-                   (implicit_object && (root == "self" ||
+          if (root && domain_fields.count(*root)) effects.domain_write = true;
+          else if (root && (parameters.count(*root) ||
+                   (implicit_object && (*root == "self" ||
                     std::any_of(implicit_object->fields.begin(),
                                 implicit_object->fields.end(),
                                 [&](const Field& field) {
-                                  return field.name == root;
-                                }))))
+                                  return field.name == *root;
+                                })))))
             effects.local_mutation = true;
         }
       }
