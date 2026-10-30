@@ -563,11 +563,11 @@
     while (index < body.size() && body[index].indent == indent) {
       const Stmt& s = body[index];
       if (!flow.continuing) { ++index; continue; }
-      string use = s.kind == Stmt::Kind::Call || s.kind == Stmt::Kind::Raw ||
-                   s.kind == Stmt::Kind::Echo || s.kind == Stmt::Kind::Message
-          ? s.text : s.b.empty() ? s.a : s.b;
+      const auto uses = statement_expressions(s);
       for (const auto& origin : flow.range_origin)
-        if (expression_uses(use, origin.first) &&
+        if (std::any_of(uses.begin(), uses.end(), [&](const string& use) {
+              return expression_uses(use, origin.first);
+            }) &&
             flow.batch_generation[origin.second.first] != origin.second.second)
           err(s.line, "Range '" + origin.first +
               "' outlived its RangeBatch", "RANGE_BATCH_LIFETIME");

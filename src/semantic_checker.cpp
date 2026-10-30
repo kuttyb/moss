@@ -10735,6 +10735,31 @@ class Checker {
   }
 
   static bool expression_uses(const string& expression, const string& name) {
+    auto syntax = checker_est_view(expression);
+    bool tree = syntax && moss::est::contains_identifier(*syntax, name);
+    if (!syntax) {
+      // A few checker helpers pass a comma-delimited operand list rather than
+      // one expression (for example FileIO range tuples). Parse those children
+      // as independent EST expressions instead of scanning their spelling.
+      auto children = moss::est::parse_delimited_children(expression, ',');
+      if (children && children->size() > 1)
+        for (const auto& child : *children) {
+          auto child_tree = checker_est_view(child);
+          tree |= child_tree && moss::est::contains_identifier(*child_tree, name);
+        }
+    }
+    if (moss::est::mode() == moss::est::Mode::Shadow) {
+      const bool legacy = legacy_expression_uses(expression, name);
+      if (tree != legacy)
+        std::fprintf(stderr, "EST identifier-use mismatch <%s> name=<%s> tree=%d legacy=%d\n",
+                     expression.c_str(), name.c_str(), tree, legacy);
+      assert(tree == legacy);
+    }
+    return tree;
+  }
+
+  static bool legacy_expression_uses(const string& expression,
+                                     const string& name) {
     bool in_string = false, escaped = false;
     for (size_t i = 0; i < expression.size();) {
       char c = expression[i];

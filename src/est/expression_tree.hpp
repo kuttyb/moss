@@ -231,6 +231,7 @@ bool empty_vector_literal(const ExpressionView& view);
 bool member_expression(const ExpressionView& view);
 bool empty_constructor_named(const ExpressionView& view, std::string_view name);
 bool placeholder_expression(const ExpressionView& view);
+bool contains_identifier(const ExpressionView& view, std::string_view name);
 bool expression_mentions(const ExpressionView& view, std::string_view name);
 bool structurally_equal(const ExpressionView& left,
                         const ExpressionView& right);

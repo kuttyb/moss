@@ -358,6 +358,41 @@ void mentions_node(const Arena& arena, ExprId id, std::string_view name, bool& f
     else if constexpr (std::is_same_v<T, Pipeline>) { visit(node.input); visit_all(node.stages); }
   }, arena.at(id));
 }
+
+void identifier_occurs_node(const Arena& arena, ExprId id,
+                            std::string_view name, bool& found) {
+  if (found) return;
+  std::visit([&](const auto& node) {
+    using T = std::decay_t<decltype(node)>;
+    auto visit = [&](ExprId child) {
+      identifier_occurs_node(arena, child, name, found);
+    };
+    auto visit_all = [&](const std::vector<ExprId>& children) {
+      for (const auto child : children) visit(child);
+    };
+    if constexpr (std::is_same_v<T, Identifier>) found = node.name == name;
+    else if constexpr (std::is_same_v<T, Placeholder>) found = name == "_";
+    else if constexpr (std::is_same_v<T, Unary>) visit(node.operand);
+    else if constexpr (std::is_same_v<T, Binary>) {
+      visit(node.left); visit(node.right);
+    } else if constexpr (std::is_same_v<T, Call>) {
+      visit(node.callee); visit_all(node.arguments);
+    } else if constexpr (std::is_same_v<T, Member>) visit(node.base);
+    else if constexpr (std::is_same_v<T, Index>) {
+      visit(node.base); visit(node.index);
+    } else if constexpr (std::is_same_v<T, Parenthesized>) visit(node.inner);
+    else if constexpr (std::is_same_v<T, Message>) {
+      visit(node.target); visit_all(node.arguments);
+    } else if constexpr (std::is_same_v<T, NamedArgument>) visit(node.value);
+    else if constexpr (std::is_same_v<T, Collection> ||
+                       std::is_same_v<T, Tuple>) visit_all(node.elements);
+    else if constexpr (std::is_same_v<T, Constructor>) {
+      visit(node.type); visit_all(node.type_arguments); visit_all(node.arguments);
+    } else if constexpr (std::is_same_v<T, Pipeline>) {
+      visit(node.input); visit_all(node.stages);
+    }
+  }, arena.at(id));
+}
 }
 
 bool project_simple_call(const ExpressionView& e, std::string& callee,
@@ -1276,6 +1311,13 @@ bool placeholder_expression(const ExpressionView& e) {
 bool expression_mentions(const ExpressionView& e, std::string_view name) {
   if (!e.arena || e.root >= e.arena->size()) return false;
   bool found = false; mentions_node(*e.arena, e.root, name, found); return found;
+}
+
+bool contains_identifier(const ExpressionView& e, std::string_view name) {
+  if (!e.arena || e.root >= e.arena->size()) return false;
+  bool found = false;
+  identifier_occurs_node(*e.arena, e.root, name, found);
+  return found;
 }
 
 bool structurally_equal(const ExpressionView& left, const ExpressionView& right) {
