@@ -10617,14 +10617,14 @@ class Checker {
   }
 
   static std::optional<char> tree_named_argument_separator(const string& text) {
-    auto syntax = moss::est::parse_view(text);
+    auto syntax = moss::est::parse_named_argument_view(text);
     return syntax ? moss::est::project_named_argument_separator(*syntax)
                   : std::nullopt;
   }
 
   static bool tree_parse_named_argument(const string& text, string& name,
                                  string& value) {
-    auto syntax = moss::est::parse_view(text);
+    auto syntax = moss::est::parse_named_argument_view(text);
     return syntax && moss::est::project_named_argument(*syntax, name, value);
   }
 
@@ -10817,10 +10817,15 @@ class Checker {
     ++parse_cache_misses_;
     const bool cache_full = parse_cache_entries_ >= parse_cache_limit_;
     std::optional<std::pair<string,string>> result;
-    if (auto syntax = moss::est::parse_view(expression)) {
+    auto syntax = moss::est::parse_view(expression);
+    if (!syntax) syntax = moss::est::parse_view("(" + expression + ")");
+    if (syntax) {
       std::pair<string,string> operands;
       string operation;
-      if (moss::est::project_binary(*syntax, operators, operands, operation))
+      const bool is_tuple = std::holds_alternative<moss::est::Tuple>(
+          syntax->arena->at(syntax->root));
+      if ((is_tuple || syntax->source == expression) &&
+          moss::est::project_binary(*syntax, operators, operands, operation))
         result = std::move(operands);
     }
     if (moss::est::mode() == moss::est::Mode::Shadow) {

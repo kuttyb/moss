@@ -44,6 +44,18 @@ std::optional<ExpressionView> parse_view(std::string_view source) {
   }
 }
 
+std::optional<ExpressionView> parse_named_argument_view(std::string_view source) {
+  auto wrapped = parse_view("__est_named__(" + std::string(source) + ")");
+  if (!wrapped || !wrapped->arena || wrapped->root >= wrapped->arena->size())
+    return std::nullopt;
+  const auto* call = std::get_if<Call>(&wrapped->arena->at(wrapped->root));
+  if (!call || call->arguments.size() != 1 ||
+      !std::holds_alternative<NamedArgument>(
+          wrapped->arena->at(call->arguments.front()))) return std::nullopt;
+  return ExpressionView{wrapped->owned_arena, wrapped->arena,
+                        call->arguments.front(), std::string(source)};
+}
+
 ExprId unparenthesized(const Arena& arena, ExprId expression) {
   while (const auto* grouped = std::get_if<Parenthesized>(&arena.at(expression)))
     expression = grouped->inner;
@@ -61,6 +73,89 @@ std::optional<std::vector<std::string>> child_texts(
     result.push_back(std::move(*text));
   }
   return result;
+}
+
+bool callee_contains_parenthesis(const Arena& arena, ExprId id) {
+  const auto& node = arena.at(id);
+  return std::visit([&](const auto& value) -> bool {
+    using T = std::decay_t<decltype(value)>;
+    if constexpr (std::is_same_v<T, Parenthesized> || std::is_same_v<T, Call>)
+      return true;
+    else if constexpr (std::is_same_v<T, Member>)
+      return callee_contains_parenthesis(arena, value.base);
+    else if constexpr (std::is_same_v<T, Index>)
+      return callee_contains_parenthesis(arena, value.base) ||
+             callee_contains_parenthesis(arena, value.index);
+    else if constexpr (std::is_same_v<T, Unary>)
+      return callee_contains_parenthesis(arena, value.operand);
+    else if constexpr (std::is_same_v<T, Binary>)
+      return callee_contains_parenthesis(arena, value.left) ||
+             callee_contains_parenthesis(arena, value.right);
+    else if constexpr (std::is_same_v<T, NamedArgument>)
+      return callee_contains_parenthesis(arena, value.value);
+    else if constexpr (std::is_same_v<T, Collection> || std::is_same_v<T, Tuple>) {
+      for (const auto child : value.elements)
+        if (callee_contains_parenthesis(arena, child)) return true;
+      return false;
+    } else if constexpr (std::is_same_v<T, Constructor>) {
+      if (callee_contains_parenthesis(arena, value.type)) return true;
+      for (const auto child : value.type_arguments)
+        if (callee_contains_parenthesis(arena, child)) return true;
+      for (const auto child : value.arguments)
+        if (callee_contains_parenthesis(arena, child)) return true;
+      return false;
+    } else if constexpr (std::is_same_v<T, Pipeline>) {
+      if (callee_contains_parenthesis(arena, value.input)) return true;
+      for (const auto child : value.stages)
+        if (callee_contains_parenthesis(arena, child)) return true;
+      return false;
+    } else if constexpr (std::is_same_v<T, Message>) {
+      if (callee_contains_parenthesis(arena, value.target)) return true;
+      for (const auto child : value.arguments)
+        if (callee_contains_parenthesis(arena, child)) return true;
+      return false;
+    }
+    return false;
+  }, node);
+}
+
+const Call* trailing_call(const Arena& arena, ExprId id) {
+  const auto& node = arena.at(id);
+  if (const auto* call = std::get_if<Call>(&node)) return call;
+  if (const auto* binary = std::get_if<Binary>(&node))
+    return trailing_call(arena, binary->right);
+  if (const auto* unary = std::get_if<Unary>(&node))
+    return trailing_call(arena, unary->operand);
+  if (const auto* member = std::get_if<Member>(&node))
+    return trailing_call(arena, member->base);
+  return nullptr;
+}
+
+bool has_earlier_call_or_group(const Arena& arena, ExprId id,
+                               std::uint32_t before) {
+  if (arena.span(id).source_begin >= before) return false;
+  const auto& node = arena.at(id);
+  return std::visit([&](const auto& value) -> bool {
+    using T = std::decay_t<decltype(value)>;
+    if constexpr (std::is_same_v<T, Call> || std::is_same_v<T, Parenthesized>)
+      return arena.span(id).source_end <= before;
+    else if constexpr (std::is_same_v<T, Binary>)
+      return has_earlier_call_or_group(arena, value.left, before) ||
+             has_earlier_call_or_group(arena, value.right, before);
+    else if constexpr (std::is_same_v<T, Unary>)
+      return has_earlier_call_or_group(arena, value.operand, before);
+    else if constexpr (std::is_same_v<T, Member>)
+      return has_earlier_call_or_group(arena, value.base, before);
+    else if constexpr (std::is_same_v<T, Index>)
+      return has_earlier_call_or_group(arena, value.base, before) ||
+             has_earlier_call_or_group(arena, value.index, before);
+    else if constexpr (std::is_same_v<T, Collection> || std::is_same_v<T, Tuple>) {
+      for (const auto child : value.elements)
+        if (has_earlier_call_or_group(arena, child, before)) return true;
+      return false;
+    }
+    return false;
+  }, node);
 }
 
 bool equal_node(const Arena& left, ExprId lhs, const Arena& right, ExprId rhs) {
@@ -144,13 +239,34 @@ bool project_simple_call(const ExpressionView& e, std::string& callee,
   bool result = false;
   if (e.arena && e.root < e.arena->size()) {
     if (const auto* call = std::get_if<Call>(&e.arena->at(e.root))) {
-      if (auto name = e.source_text(call->callee))
+      if (callee_contains_parenthesis(*e.arena, call->callee)) {
+        // The legacy simple-call reader rejects a callee containing an earlier
+        // parenthesis pair (for example `(number).to_string()`).
+      } else if (auto name = e.source_text(call->callee))
         if (auto args = child_texts(e, call->arguments)) {
           callee = std::move(*name); arguments = std::move(*args); result = true;
         }
     } else if (const auto* constructor =
                    std::get_if<Constructor>(&e.arena->at(e.root))) {
-      if (auto name = e.source_text(constructor->type))
+      std::optional<std::string> name;
+      const auto root_span = e.arena->span(e.root);
+      if (constructor->callee_source_end >= constructor->callee_source_begin &&
+          constructor->callee_source_begin >= root_span.source_begin &&
+          constructor->callee_source_end <= root_span.source_end) {
+        const auto begin = constructor->callee_source_begin - root_span.source_begin;
+        const auto length = constructor->callee_source_end - constructor->callee_source_begin;
+        if (begin <= e.source.size() && length <= e.source.size() - begin) {
+          auto spelling = std::string_view(e.source).substr(begin, length);
+          const auto first = spelling.find_first_not_of(" \t\r\n");
+          if (first == std::string_view::npos) name = std::string{};
+          else {
+            const auto last = spelling.find_last_not_of(" \t\r\n");
+            name = std::string(spelling.substr(first, last - first + 1));
+          }
+        }
+      }
+      if (!name) name = e.source_text(constructor->type);
+      if (name)
         if (auto args = child_texts(e, constructor->arguments)) {
           callee = std::move(*name); arguments = std::move(*args); result = true;
         }
@@ -170,11 +286,40 @@ bool project_simple_call(const ExpressionView& e, std::string& callee,
                 arguments = std::move(*args); result = true;
               }
     }
+    if (!result) {
+      // The legacy splitter accepts a trailing call on a larger expression
+      // (for example `total + item.length()`). Preserve that projection using
+      // the terminal Call node, provided no earlier call/group would have
+      // made the legacy scan stop before this call.
+      if (const auto* call = trailing_call(*e.arena, e.root)) {
+        const auto root_span = e.arena->span(e.root);
+        const auto callee_span = e.arena->span(call->callee);
+        if (callee_span.source_begin >= root_span.source_begin &&
+            !callee_contains_parenthesis(*e.arena, call->callee) &&
+            !has_earlier_call_or_group(*e.arena, e.root,
+                                       callee_span.source_begin) &&
+            callee_span.source_end <= root_span.source_end) {
+          if (auto args = child_texts(e, call->arguments)) {
+              callee = e.source.substr(0, callee_span.source_end - root_span.source_begin);
+              const auto first = callee.find_first_not_of(" \t\r\n");
+              const auto last = callee.find_last_not_of(" \t\r\n");
+              callee = first == std::string::npos ? std::string{} : callee.substr(first, last - first + 1);
+              arguments = std::move(*args); result = !callee.empty();
+          }
+        }
+      }
+    }
   }
   if (mode() == Mode::Shadow) {
     std::string old_name; std::vector<std::string> old_args;
     const bool legacy = moss::parse_simple_call(e.source, old_name, old_args);
+    if (legacy != result) std::fprintf(stderr, "EST simple mismatch <%s> legacy=%d tree=%d\n", e.source.c_str(), legacy, result);
     assert(legacy == result);
+    if (result && (old_name != callee || old_args != arguments)) {
+      std::fprintf(stderr, "EST simple output mismatch <%s> old-name=<%s> tree-name=<%s> old-args=%zu tree-args=%zu\n", e.source.c_str(), old_name.c_str(), callee.c_str(), old_args.size(), arguments.size());
+      for (const auto& arg : old_args) std::fprintf(stderr, " old arg <%s>\n", arg.c_str());
+      for (const auto& arg : arguments) std::fprintf(stderr, " tree arg <%s>\n", arg.c_str());
+    }
     if (result) assert(old_name == callee && old_args == arguments);
   }
   return result;
@@ -201,16 +346,38 @@ bool project_member_call(const ExpressionView& e, std::string& receiver,
       if (const auto* method = std::get_if<Member>(&e.arena->at(call->callee)))
         if (auto base = e.source_text(method->base))
           assign_member(std::move(*base), method->name, call->arguments, false);
+    if (const auto* constructor = std::get_if<Constructor>(&e.arena->at(e.root)))
+      if (const auto* method = std::get_if<Member>(&e.arena->at(constructor->type)))
+        if (auto base = e.source_text(method->base))
+          assign_member(std::move(*base), method->name, constructor->arguments, false);
     if (const auto* message = std::get_if<Message>(&e.arena->at(e.root)))
       if (auto base = e.source_text(message->target))
         assign_member(std::move(*base), message->handler,
                       message->arguments, true);
+    if (!result) {
+      if (const auto* call = trailing_call(*e.arena, e.root)) {
+        if (const auto* method = std::get_if<Member>(&e.arena->at(call->callee))) {
+          const auto root_span = e.arena->span(e.root);
+          const auto base_span = e.arena->span(method->base);
+          if (base_span.source_end >= root_span.source_begin &&
+              base_span.source_end <= root_span.source_end) {
+            const auto length = base_span.source_end - root_span.source_begin;
+            std::string base = e.source.substr(0, length);
+            const auto first = base.find_first_not_of(" \t\r\n");
+            const auto last = base.find_last_not_of(" \t\r\n");
+            base = first == std::string::npos ? std::string{} : base.substr(first, last - first + 1);
+            assign_member(std::move(base), method->name, call->arguments, false);
+          }
+        }
+      }
+    }
   }
   if (mode() == Mode::Shadow) {
     std::string old_receiver, old_member; std::vector<std::string> old_args;
     bool old_outputs = false;
     const bool legacy = moss::parse_member_call(e.source, old_receiver, old_member,
                                                 old_args, &old_outputs);
+    if (legacy != result) std::fprintf(stderr, "EST member mismatch <%s> legacy=%d tree=%d\n", e.source.c_str(), legacy, result);
     assert(legacy == result);
     if (old_outputs) assert(old_receiver == receiver && old_member == member);
     if (outputs_written) assert(old_outputs == *outputs_written);
@@ -241,9 +408,19 @@ bool project_bound_method(const ExpressionView& e, std::string& receiver,
 }
 
 std::string strip_grouping(const ExpressionView& e) {
-  std::string result = e.source_text(unparenthesized(*e.arena, e.root)).value_or(e.source);
-  if (mode() == Mode::Shadow)
-    assert(result == moss::strip_redundant_outer_parentheses(e.source));
+  std::string result;
+  if (e.arena && e.root < e.arena->size() &&
+      std::holds_alternative<Tuple>(e.arena->at(e.root)) &&
+      e.source.size() >= 2) {
+    result = e.source.substr(1, e.source.size() - 2);
+  } else {
+    result = e.source_text(unparenthesized(*e.arena, e.root)).value_or(e.source);
+  }
+  if (mode() == Mode::Shadow) {
+    const auto legacy = moss::strip_redundant_outer_parentheses(e.source);
+    if (result != legacy) std::fprintf(stderr, "EST strip mismatch <%s> tree=<%s> legacy=<%s>\n", e.source.c_str(), result.c_str(), legacy.c_str());
+    assert(result == legacy);
+  }
   return result;
 }
 
@@ -334,12 +511,22 @@ bool project_executor_chain(
         if (executor && base->arguments.empty() && base->type_arguments.empty()) {
           std::reverse(reverse.begin(), reverse.end()); calls = std::move(reverse);
           result = true;
+          break;
         }
-        break;
+        if (!std::holds_alternative<Member>(e.arena->at(base->type))) break;
       }
       if (const auto* call = std::get_if<Call>(&node)) {
         if (const auto* member = std::get_if<Member>(&e.arena->at(call->callee))) {
           auto arguments = child_texts(e, call->arguments);
+          if (!arguments) break;
+          reverse.emplace_back(member->name, std::move(*arguments));
+          current = member->base;
+          continue;
+        }
+      }
+      if (const auto* constructor = std::get_if<Constructor>(&node)) {
+        if (const auto* member = std::get_if<Member>(&e.arena->at(constructor->type))) {
+          auto arguments = child_texts(e, constructor->arguments);
           if (!arguments) break;
           reverse.emplace_back(member->name, std::move(*arguments));
           current = member->base;
@@ -355,11 +542,35 @@ bool project_executor_chain(
       }
       break;
     }
-    if (!result) calls = std::move(reverse);
+    if (!result) {
+      calls = std::move(reverse);
+      if (calls.empty()) {
+        if (const auto* terminal = trailing_call(*e.arena, e.root)) {
+          const Call* current_call = terminal;
+          ExprId current_base = current_call->callee;
+          while (const auto* method = std::get_if<Member>(&e.arena->at(current_base))) {
+            auto arguments = child_texts(e, current_call->arguments);
+            if (!arguments) break;
+            calls.emplace_back(method->name, std::move(*arguments));
+            current_base = method->base;
+            current_call = nullptr;
+            // Inner calls are visited from the receiver expression.
+            while (current_base < e.arena->size()) {
+              if (const auto* inner = std::get_if<Call>(&e.arena->at(current_base))) {
+                current_call = inner; current_base = inner->callee; break;
+              }
+              break;
+            }
+            if (!current_call) break;
+          }
+        }
+      }
+    }
   }
   if (mode() == Mode::Shadow) {
     std::vector<std::pair<std::string, std::vector<std::string>>> legacy;
     const bool old = moss::parse_executor_chain(e.source, legacy);
+    if (old != result || legacy != calls) std::fprintf(stderr, "executor parity <%s> old=%d tree=%d oldcalls=%zu treecalls=%zu\n", e.source.c_str(), old, result, legacy.size(), calls.size());
     assert(old == result && legacy == calls);
   }
   return result;
@@ -368,14 +579,27 @@ bool project_executor_chain(
 bool project_named_argument(const ExpressionView& e, std::string& name,
                             std::string& value) {
   bool result = false;
-  if (e.arena && e.root < e.arena->size())
-    if (const auto* arg = std::get_if<NamedArgument>(&e.arena->at(e.root)))
-      if (auto text = e.source_text(arg->value)) {
+  const ExpressionView* view = &e;
+  std::optional<ExpressionView> wrapped;
+  ExprId argument_id = e.root;
+  if (!e.arena || e.root >= e.arena->size() ||
+      !std::holds_alternative<NamedArgument>(e.arena->at(e.root))) {
+    wrapped = parse_view("__est_named__(" + e.source + ")");
+    if (wrapped && wrapped->arena && wrapped->root < wrapped->arena->size())
+      if (const auto* call = std::get_if<Call>(&wrapped->arena->at(wrapped->root));
+          call && call->arguments.size() == 1) {
+        view = &*wrapped; argument_id = call->arguments.front();
+      }
+  }
+  if (view->arena && argument_id < view->arena->size())
+    if (const auto* arg = std::get_if<NamedArgument>(&view->arena->at(argument_id)))
+      if (auto text = view->source_text(arg->value)) {
         name = arg->name; value = std::move(*text); result = true;
       }
   if (mode() == Mode::Shadow) {
     std::string old_name, old_value;
     const bool legacy = moss::parse_named_argument(e.source, old_name, old_value);
+    if (legacy != result) std::fprintf(stderr, "EST named argument mismatch <%s> legacy=%d tree=%d\n", e.source.c_str(), legacy, result);
     assert(legacy == result);
     if (result) assert(old_name == name && old_value == value);
   }
@@ -384,8 +608,20 @@ bool project_named_argument(const ExpressionView& e, std::string& name,
 
 std::optional<char> project_named_argument_separator(const ExpressionView& e) {
   std::optional<char> result;
-  if (e.arena && e.root < e.arena->size())
-    if (const auto* argument = std::get_if<NamedArgument>(&e.arena->at(e.root)))
+  const Arena* arena = e.arena;
+  ExprId argument_id = e.root;
+  std::optional<ExpressionView> wrapped;
+  if (!arena || e.root >= arena->size() ||
+      !std::holds_alternative<NamedArgument>(arena->at(e.root))) {
+    wrapped = parse_view("__est_named__(" + e.source + ")");
+    if (wrapped && wrapped->arena && wrapped->root < wrapped->arena->size())
+      if (const auto* call = std::get_if<Call>(&wrapped->arena->at(wrapped->root));
+          call && call->arguments.size() == 1) {
+        arena = wrapped->arena; argument_id = call->arguments.front();
+      }
+  }
+  if (arena && argument_id < arena->size())
+    if (const auto* argument = std::get_if<NamedArgument>(&arena->at(argument_id)))
       result = argument->separator;
   if (mode() == Mode::Shadow) {
     const auto equal = moss::top_level_assignment(e.source);
@@ -483,6 +719,7 @@ bool project_binary(const ExpressionView& e, const std::vector<std::string>& ope
                     std::string& operation) {
   if (!e.arena || e.root >= e.arena->size()) return false;
   const auto root = e.root;
+  const auto* tuple_root = std::get_if<Tuple>(&e.arena->at(root));
   const Binary* selected = nullptr;
   std::uint32_t selected_position = 0;
   std::function<void(ExprId)> visit = [&](ExprId id) {
@@ -497,22 +734,31 @@ bool project_binary(const ExpressionView& e, const std::vector<std::string>& ope
     visit(binary->left);
     visit(binary->right);
   };
-  visit(root);
+  if (tuple_root) {
+    for (const auto child : tuple_root->elements) visit(child);
+  } else {
+    visit(root);
+  }
   if (!selected) return false;
   const auto root_span = e.arena->span(root);
+  const auto body_begin = tuple_root ? e.arena->span(tuple_root->elements.front()).source_begin
+                                     : root_span.source_begin;
+  const auto body_end = tuple_root ? static_cast<std::uint32_t>(e.source.size() - 1)
+                                   : root_span.source_end;
   const auto left_end = e.arena->span(selected->left).source_end;
   const auto right_begin = e.arena->span(selected->right).source_begin;
-  if (left_end < root_span.source_begin || right_begin < left_end ||
-      right_begin > root_span.source_end) return false;
-  const auto gap_begin = left_end - root_span.source_begin;
+  if (left_end < body_begin || right_begin < left_end ||
+      right_begin > body_end) return false;
+  const auto gap_begin = left_end;
   const auto gap_length = right_begin - left_end;
   if (gap_begin > e.source.size() || gap_length > e.source.size() - gap_begin)
     return false;
   const auto gap = std::string_view(e.source).substr(gap_begin, gap_length);
   const auto operator_offset = gap.find(selected->op);
   if (operator_offset == std::string_view::npos) return false;
+  const auto source_begin = body_begin;
   const auto split = gap_begin + operator_offset;
-  const auto root_end = root_span.source_end - root_span.source_begin;
+  const auto root_end = body_end;
   if (root_end > e.source.size() || split + selected->op.size() > root_end)
     return false;
   auto trimmed = [](std::string_view text) {
@@ -521,7 +767,7 @@ bool project_binary(const ExpressionView& e, const std::vector<std::string>& ope
     const auto last = text.find_last_not_of(" \t\r\n");
     return std::string(text.substr(first, last - first + 1));
   };
-  operands = {trimmed(std::string_view(e.source).substr(0, split)),
+  operands = {trimmed(std::string_view(e.source).substr(source_begin, split - source_begin)),
               trimmed(std::string_view(e.source).substr(split + selected->op.size(),
                                                         root_end - split - selected->op.size()))};
   operation = selected->op;

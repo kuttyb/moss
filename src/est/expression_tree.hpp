@@ -80,7 +80,9 @@ struct Placeholder {};
 struct Collection { char delimiter; std::vector<ExprId> elements; };
 struct Tuple { std::vector<ExprId> elements; };
 struct Constructor { ExprId type; std::vector<ExprId> type_arguments;
-                     std::vector<ExprId> arguments; };
+                     std::vector<ExprId> arguments;
+                     std::uint32_t callee_source_begin = 0;
+                     std::uint32_t callee_source_end = 0; };
 struct Pipeline { ExprId input; std::vector<ExprId> stages; };
 using Node = std::variant<Literal, Identifier, Unary, Binary, Call, Member,
                           Index, Parenthesized, Message, NamedArgument,
@@ -139,6 +141,7 @@ struct ExpressionView {
 ExpressionView view(const Arena& arena, ExprId root,
                     std::string_view source);
 std::optional<ExpressionView> parse_view(std::string_view source);
+std::optional<ExpressionView> parse_named_argument_view(std::string_view source);
 ExprId unparenthesized(const Arena& arena, ExprId expression);
 bool project_simple_call(const ExpressionView& view, std::string& callee,
                          std::vector<std::string>& arguments);
@@ -179,6 +182,12 @@ void assert_delimited_parity(const ExpressionView& view, char delimiter,
                              const std::optional<std::vector<std::string>>& tree);
 bool project_identifier(const ExpressionView& view, std::string& name);
 bool is_identifier(const ExpressionView& view);
+bool identifier_named(const ExpressionView& view, std::string_view name);
+bool expressions_equal(const ExpressionView& left, const ExpressionView& right);
+bool empty_vector_literal(const ExpressionView& view);
+bool member_expression(const ExpressionView& view);
+bool empty_constructor_named(const ExpressionView& view, std::string_view name);
+bool placeholder_expression(const ExpressionView& view);
 bool expression_mentions(const ExpressionView& view, std::string_view name);
 bool structurally_equal(const ExpressionView& left,
                         const ExpressionView& right);

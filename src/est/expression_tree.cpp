@@ -506,14 +506,17 @@ class Reader {
             do { type_arguments.push_back(expression(0)); } while (take(","));
             expect("]");
           }
+          const auto callee_begin = source_begin(id);
+          const auto callee_end = tokens_[position_ - 1].source_end;
           if (position_ < tokens_.size() && tokens_[position_].text == "(") {
             auto arguments = call_arguments();
             id = append(Constructor{id, std::move(type_arguments),
-                                           std::move(arguments)}, source_begin(id));
+                                    std::move(arguments), callee_begin,
+                                    callee_end}, callee_begin);
             continue;
           }
-          id = append(Constructor{id, std::move(type_arguments), {}},
-                      source_begin(id));
+          id = append(Constructor{id, std::move(type_arguments), {},
+                                 callee_begin, callee_end}, callee_begin);
           continue;
         }
         const auto index = expression(0);
@@ -521,6 +524,8 @@ class Reader {
         id = append(Index{id, index}, source_begin(id));
       } else if (take("(")) {
         --position_;
+        const auto callee_begin = source_begin(id);
+        const auto callee_end = tokens_[position_].source_begin;
         auto arguments = call_arguments();
         const auto* named = std::get_if<Identifier>(&arena_.at(id));
         const auto* member = std::get_if<Member>(&arena_.at(id));
@@ -531,8 +536,9 @@ class Reader {
              std::isupper(static_cast<unsigned char>(named->name.front()))) ||
             (member_base && !member_base->name.empty() &&
              std::isupper(static_cast<unsigned char>(member_base->name.front())));
-        id = constructor ? append(Constructor{id, {}, std::move(arguments)},
-                                   source_begin(id))
+        id = constructor ? append(Constructor{id, {}, std::move(arguments),
+                                               callee_begin, callee_end},
+                                   callee_begin)
                          : append(Call{id, std::move(arguments)}, source_begin(id));
       } else break;
     }
@@ -637,7 +643,7 @@ Shape shape_of(const Arena& arena, ExprId id) {
       Shape result{"message", node.handler, {shape_of(arena, node.target)}};
       for (auto child : node.arguments) result.children.push_back(shape_of(arena, child));
       return result;
-    } else if constexpr (std::is_same_v<T, NamedArgument>) return {"named", node.name + node.separator, {shape_of(arena, node.value)}};
+    } else if constexpr (std::is_same_v<T, NamedArgument>) return {"named", node.name, {shape_of(arena, node.value)}};
     else if constexpr (std::is_same_v<T, Placeholder>) return {"placeholder", {}, {}};
     else if constexpr (std::is_same_v<T, Collection>) {
       Shape result{"collection", std::string(1, node.delimiter), {}};
