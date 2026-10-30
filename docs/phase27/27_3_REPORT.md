@@ -13,4 +13,8 @@ Focused evidence from the current tree: `tmp/phase27-3/cp-e-after-enum-and-if-fi
 
 ## Remaining sections
 
-The fresh CP-E rerun, CP-F verdict, semantic-fact audit, current full gate table, performance comparisons, sanitizer scan, merge SHA, and release tag will be appended after they are completed.
+## Fresh CP-E checkpoint
+
+Agent 2 reviewed frozen candidate `068eb9aa130e51778441f222b1a449a48247bef9` against phase27-2-m1 `04be1a1bbbc7a4fd8fe2e4090b4b5bad5dd573e4` and returned **CP-E verdict: NO-GO**. Evidence commit: `88b2b006f8c97adfd3f1e71e0bb7421eb01bb249` (recorded on the phase branch as `c5741773`). Four independent probes matched verdicts and diagnostics in baseline, candidate off, and candidate shadow. The review found expression-shape reads missed by the widened lint: bracket/dot checks on assignment targets; bracket-prefixed initializer checks for vector classification in checker and emitter; and a dot/call-suffix assignment-target classification. Full inventory and exact locations: `docs/phase27/adversarial/cp_e_agent2_068eb9aa_inventory.tsv`; report: `docs/phase27/adversarial/cp_e_agent2_068eb9aa_review.md`; probes: `tests/phase27/adversarial/cp-e-agent2-068eb9aa/`. These are unconverted migration reads; no semantic delta was reported. The exhaustive inventory and full corpus closure differential are still open.
+
+The off-mode full gate was started at `068eb9aa` and interrupted after the CP-E NO-GO, so there is no full-gate result. Shadow full gate was not started on this checkpoint. CP-F, semantic-fact audit, full parity/sanitizer/performance gates, merge SHA, and tag remain outstanding.
