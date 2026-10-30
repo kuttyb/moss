@@ -8,6 +8,7 @@ CASES = {
   "parenthesized_enum_constructor": '''enum Choice:\n  Value(value: Int)\n  Empty\nfn unwrap(choice) -> Int:\n  match choice:\n    case Value(value):\n      return value\n    case Empty:\n      return 0\nfn main():\n  result = unwrap((Choice.Value(value: 7)))\n  echo result\n''',
   "dotted_string_member_path": '''fn main():\n  text = "AbC"\n  n = text.ascii_lower().length()\n  assertEqual(n, 3)\n''',
   "invalid_dotted_member_path": '''fn main():\n  text = "AbC"\n  n = text.ascii_lower().not_a_method()\n  echo n\n''',
+  "invalid_if_expression": '''fn main():\n  x = if 1 == 1: 1 else: 2\n  echo 0\n''',
   "checked_closure_unreachable": '''fn dormant():\n  echo "dormant"\nfn main():\n  echo "closure-ok"\n''',
   "checked_closure_reachable": '''fn dormant():\n  echo "dormant"\nfn main():\n  dormant()\n''',
 }

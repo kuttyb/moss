@@ -10875,8 +10875,17 @@ class Checker {
       }
       // The legacy splitter sees the first `*` inside unsupported `**`.
       // The EST root supplies the independent operator boundary.
+      // On a rejected `if ...: ... else: ...` expression, the legacy scanner
+      // also sees comparisons in the statement body even though EST correctly
+      // refuses to build an expression root. The diagnostic oracle is
+      // INVALID_EXPRESSION in both modes (see the CP-E adversarial probe).
+      const auto trimmed_expression = trim(expression);
+      const bool legacy_invalid_if_comparison = legacy && !result && !syntax &&
+          starts_with(trimmed_expression, "if ") &&
+          expression.find(':') != string::npos &&
+          expression.find("else:") != string::npos;
       if (result != legacy && !(named_argument && legacy && !result) &&
-          !exponent_star_substring) {
+          !exponent_star_substring && !legacy_invalid_if_comparison) {
         assert(result == legacy);
       }
     }

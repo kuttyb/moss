@@ -890,7 +890,11 @@ bool project_enum_case(const ExpressionView& e, std::string& enum_name,
   if (mode() == Mode::Shadow) {
     std::string old_enum, old_case; std::vector<std::string> old_fields;
     bool old_called = false;
-    const bool legacy = moss::parse_enum_case_expression(e.source, old_enum,
+    // Grouping is represented by the EST parent relation, so normalize it
+    // before asking the legacy enum-case parser for the independent oracle.
+    const auto legacy_source =
+        moss::strip_redundant_outer_parentheses(e.source);
+    const bool legacy = moss::parse_enum_case_expression(legacy_source, old_enum,
         old_case, old_fields, old_called);
     const auto root = unparenthesized(*e.arena, e.root);
     const auto& root_node = e.arena->at(root);
