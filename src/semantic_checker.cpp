@@ -5731,8 +5731,9 @@ class Checker {
               unsigned depth) -> std::optional<moss::CheckedBodyExprV1> {
         if (depth > 8) return std::nullopt;
         string value = trim(source);
+        const auto value_binding = tree_identifier_name(value);
         for (size_t index = 0; index < function.params.size(); ++index)
-          if (value == function.params[index].name &&
+          if (value_binding && *value_binding == function.params[index].name &&
               index < summary.parameter_types.size() &&
               summary.parameter_types[index] &&
               (!expected || summary.parameter_types[index]->structurally_equal(*expected)))
@@ -5740,19 +5741,22 @@ class Checker {
                 moss::CheckedBodyExprV1::Kind::Parameter,
                 summary.parameter_types[index],
                 static_cast<std::uint32_t>(index), {}, {}, {}, 0};
-        if (!value.empty() && std::all_of(value.begin(), value.end(),
-              [](unsigned char c) { return moss::ascii_is_digit(c); })) {
-          try {
-            size_t consumed = 0;
-            const auto number = std::stoll(value, &consumed, 10);
-            if (consumed == value.size()) {
-              auto integer = moss::Type::primitive("int");
-              if (!expected || integer->structurally_equal(*expected))
-                return moss::CheckedBodyExprV1{
-                    moss::CheckedBodyExprV1::Kind::Integer,
-                    integer, 0, std::to_string(number), {}, {}, 0};
-            }
-          } catch (const std::exception&) {}
+        auto syntax = checker_est_view(value);
+        const auto literal_root = syntax && syntax->arena &&
+                syntax->root < syntax->arena->size()
+            ? moss::est::unparenthesized(*syntax->arena, syntax->root)
+            : moss::est::ExprId{};
+        if (syntax && syntax->arena &&
+            std::holds_alternative<moss::est::Literal>(
+                syntax->arena->at(literal_root))) {
+          auto decoded = moss::decode_numeric_literal_expression(value);
+          if (decoded && decoded->kind == moss::NumericLiteral::Kind::Int) {
+            auto integer = moss::Type::primitive("int");
+            if (!expected || integer->structurally_equal(*expected))
+              return moss::CheckedBodyExprV1{
+                  moss::CheckedBodyExprV1::Kind::Integer,
+                  integer, 0, std::to_string(decoded->integer), {}, {}, 0};
+          }
         }
         auto binary = tree_split_binary(value, {"+"});
         if (binary) {
@@ -5763,18 +5767,19 @@ class Checker {
                 moss::CheckedBodyExprV1::Kind::Add,
                 expected, 0, {}, {*left, *right}, {}, 0};
         }
-        const size_t dot = value.find('.');
-        if (dot != string::npos && value.find('.', dot + 1) == string::npos) {
-          auto receiver = emit(value.substr(0, dot), nullptr, depth + 1);
+        string receiver_expression, field_name;
+        if (tree_parse_member_access(value, receiver_expression, field_name) &&
+            tree_plain_identifier(field_name)) {
+          auto receiver = emit(receiver_expression, nullptr, depth + 1);
           if (receiver && receiver->type &&
               receiver->type->kind == moss::TypeKind::NominalInstance &&
               receiver->type->declaration) {
             auto field = BodyTypeState::nominal_field(
-                receiver->type, value.substr(dot + 1));
+                receiver->type, field_name);
             if (field && (!expected || field->structurally_equal(*expected))) {
               const auto& slots = receiver->type->declaration->fields;
               for (size_t index = 0; index < slots.size(); ++index)
-                if (slots[index].name == value.substr(dot + 1))
+                if (slots[index].name == field_name)
                   return moss::CheckedBodyExprV1{
                       moss::CheckedBodyExprV1::Kind::Field,
                       field, 0, {}, {*receiver},
@@ -6143,7 +6148,10 @@ class Checker {
                 if (found == arguments.end()) { valid = false; break; }
                 string name, value;
                 (void)tree_parse_named_argument(*found, name, value);
-                auto parameter = parameter_variables.find(trim(value));
+                const auto value_binding = tree_identifier_name(value);
+                auto parameter = value_binding
+                    ? parameter_variables.find(*value_binding)
+                    : parameter_variables.end();
                 moss::TypeRef term = parameter != parameter_variables.end()
                     ? parameter->second : type_term(
                         constraint_expression_type(function, value).value_or(""));
@@ -6180,7 +6188,10 @@ class Checker {
               std::map<std::uint32_t, moss::TypeRef> replacements;
               bool valid = exact_edge;
               for (size_t index = 0; valid && index < arguments.size(); ++index) {
-                auto argument = parameter_variables.find(trim(arguments[index]));
+                const auto argument_binding = tree_identifier_name(arguments[index]);
+                auto argument = argument_binding
+                    ? parameter_variables.find(*argument_binding)
+                    : parameter_variables.end();
                 const auto& formal = source.parameter_types[index];
                 if (argument == parameter_variables.end() || !formal ||
                     formal->kind != moss::TypeKind::InferenceVar ||
@@ -6380,12 +6391,13 @@ class Checker {
           (function.body.empty() ||
            (function.body.size() == 1 &&
             function.body.front().kind == Stmt::Kind::Return))) {
-        const string expression = trim(*single_result_expression);
-        const size_t dot = expression.find('.');
-        if (dot != string::npos &&
-            expression.find('.', dot + 1) == string::npos) {
-          auto receiver = parameter_variables.find(trim(expression.substr(0, dot)));
-          const string field = trim(expression.substr(dot + 1));
+        string receiver_expression, field;
+        if (tree_parse_member_access(*single_result_expression,
+                                     receiver_expression, field)) {
+          const auto receiver_binding = tree_identifier_name(receiver_expression);
+          auto receiver = receiver_binding
+              ? parameter_variables.find(*receiver_binding)
+              : parameter_variables.end();
           if (receiver != parameter_variables.end() && tree_plain_identifier(field)) {
             const auto& type = receiver->second;
             if (type && type->kind == moss::TypeKind::NominalInstance &&
@@ -6466,7 +6478,10 @@ class Checker {
               break;
           }
           for (const auto& argument : constraint.arguments) {
-            auto parameter = parameter_variables.find(trim(argument));
+            const auto argument_binding = tree_identifier_name(argument);
+            auto parameter = argument_binding
+                ? parameter_variables.find(*argument_binding)
+                : parameter_variables.end();
             moss::TypeRef term = parameter != parameter_variables.end()
                 ? parameter->second : type_term(
                       constraint_expression_type(function, argument).value_or(""));
@@ -6508,7 +6523,10 @@ class Checker {
                          function.line, 1, function.semantic_callable_id,
                          member.requirement_id};
         for (const auto& argument : constraint.arguments) {
-          auto parameter = parameter_variables.find(trim(argument));
+          const auto argument_binding = tree_identifier_name(argument);
+          auto parameter = argument_binding
+              ? parameter_variables.find(*argument_binding)
+              : parameter_variables.end();
           moss::TypeRef term = parameter != parameter_variables.end()
               ? parameter->second : type_term(
                     constraint_expression_type(function, argument).value_or(""));
@@ -9995,7 +10013,9 @@ class Checker {
           if (route == domain.routes.end() && field == domain.state.end())
             fail_at(statement, "unknown member '" + pair.first + "' in domain " + domain.name + " constructor");
           if (route != domain.routes.end()) {
-            auto target = binding_types.find(trim(pair.second));
+            const auto target_binding = tree_identifier_name(pair.second);
+            auto target = target_binding
+                ? binding_types.find(*target_binding) : binding_types.end();
             if (target == binding_types.end())
               fail_at(statement, "route '" + pair.first + "' must bind a concrete domain instance in main");
             if (!same_type(target->second, route->type))
@@ -10004,7 +10024,8 @@ class Checker {
             ConcreteRouteEdge edge;
             edge.source_instance = p_.concrete_domain_graph.instances[by_binding.at(statement.a)].identity;
             edge.route = pair.first;
-            edge.target_instance = p_.concrete_domain_graph.instances[by_binding.at(trim(pair.second))].identity;
+            edge.target_instance = p_.concrete_domain_graph.instances[
+                by_binding.at(*target_binding)].identity;
             edge.source_file = statement.source_file.empty() ? p_.main->source_file : statement.source_file;
             edge.line = statement.line;
             p_.concrete_domain_graph.edges.push_back(std::move(edge));
@@ -12061,7 +12082,8 @@ class Checker {
     if (current_body_types_)
       if (auto retained = current_body_types_->known_expression(expression))
         return retained;
-    auto it = env.terms.find(trim(expression));
+    const auto binding = tree_identifier_name(expression);
+    auto it = binding ? env.terms.find(*binding) : env.terms.end();
     if (it != env.terms.end() && it->second) return it->second;
     auto expr = inferred_expr(expression, env);
     if (expr && expr->term) return expr->term;
@@ -21386,7 +21408,9 @@ class Checker {
           callback_input_types.insert(
               callback_input_types.begin(),
               inferred_expr_type(parsed_stage.arguments.front(), env).value_or(""));
-        auto fn_it = functions_.find(trim(callable));
+        const auto callable_name = tree_identifier_name(callable);
+        auto fn_it = callable_name
+            ? functions_.find(*callable_name) : functions_.end();
         if (fn_it != functions_.end()) {
           bool concrete_cb = std::all_of(callback_input_types.begin(), callback_input_types.end(),
                                          [&](const string& type) {
@@ -21412,7 +21436,8 @@ class Checker {
         // the checked functional IR must have a concrete callable identity;
         // an unresolved indirect callable here would make effect propagation
         // silently incomplete.
-        auto callable_binding = env.find(trim(callable));
+        auto callable_binding = callable_name
+            ? env.find(*callable_name) : env.end();
         const bool deferred_generic_callable =
             callable_binding != env.end() &&
             open_generic(callable_binding->second);
@@ -25475,7 +25500,8 @@ class Checker {
     }
     auto source_type = inferred_expr_type(parsed->source, env);
     if (!source_type) {
-      if (auto local = env.find(trim(parsed->source));
+      const auto source_binding = tree_identifier_name(parsed->source);
+      if (auto local = source_binding ? env.find(*source_binding) : env.end();
           local != env.end() && (!local->second || canonical_type_name(local->second).empty() ||
                                  canonical_type_name(local->second) == "_value" ||
                                  contains_internal_placeholder(canonical_type_name(local->second)))) {
@@ -28031,7 +28057,8 @@ class Checker {
     }
     auto source_type = inferred_expr_type(source, env);
     if (!source_type) {
-      auto local = env.find(trim(source));
+      const auto source_binding = tree_identifier_name(source);
+      auto local = source_binding ? env.find(*source_binding) : env.end();
       if (local != env.end() && (!local->second || canonical_type_name(local->second).empty()))
         return "_iterator_element:" + trim(source);
       err(line, "cannot infer the static iterator source type");
@@ -28731,7 +28758,9 @@ class Checker {
           else if (tree_parse_vector_literal(trim(argument)))
             check_echo_display(statement.line, "vector");  // `echo []`, `echo [[]]`
           else if (tree_plain_identifier(trim(argument))) {
-            auto binding = current_env.find(trim(argument));
+            const auto binding_name = tree_identifier_name(argument);
+            auto binding = binding_name
+                ? current_env.find(*binding_name) : current_env.end();
             if (binding != current_env.end() &&
                 (canonical_type_name(binding->second) == "vector" ||
                  contains_internal_placeholder(binding->second)))

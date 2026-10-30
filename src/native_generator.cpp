@@ -1525,9 +1525,10 @@ class Generator {
     string actual_type = generated_expr_type(argument, types).value_or("");
     auto abi = function_parameter_abi(function, index, actual_type, specialization);
     Effect effect = abi.effect;
+    const auto argument_binding = tree_identifier_name(argument);
     if (effect == Effect::Consume &&
-        phase21_option_slots_.count(trim(argument)))
-      return "__moss_recovery_slot_" + trim(argument) +
+        argument_binding && phase21_option_slots_.count(*argument_binding))
+      return "__moss_recovery_slot_" + *argument_binding +
           ".take().unwrap_or_else(|| std::process::abort())";
     string rendered = nominal_domain_handle_argument(
         argument, function.params[index].type, d, locals, types,
@@ -1553,9 +1554,10 @@ class Generator {
       return nominal_domain_handle_argument(argument, "", d, locals, types,
                                             functional_pipeline_id);
     Effect effect = method_effect(method, index);
+    const auto argument_binding = tree_identifier_name(argument);
     if (effect == Effect::Consume &&
-        phase21_option_slots_.count(trim(argument)))
-      return "__moss_recovery_slot_" + trim(argument) +
+        argument_binding && phase21_option_slots_.count(*argument_binding))
+      return "__moss_recovery_slot_" + *argument_binding +
           ".take().unwrap_or_else(|| std::process::abort())";
     string rendered = nominal_domain_handle_argument(
         argument, method.params[index].type, d, locals, types,
@@ -4442,8 +4444,8 @@ class Generator {
   };
 
   bool borrowed_message_parameter(const string& expression) const {
-    return tree_plain_identifier(trim(expression)) &&
-        borrowed_message_parameters_.count(trim(expression));
+    const auto binding = tree_identifier_name(expression);
+    return binding && borrowed_message_parameters_.count(*binding);
   }
 
   bool borrowed_message_type(const string& type) const {
