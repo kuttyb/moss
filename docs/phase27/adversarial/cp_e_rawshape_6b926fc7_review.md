@@ -6,7 +6,7 @@ CP-E verdict: NO-GO
 
 - Baseline: `d4446b7250f651e60e978740661e6fb20ff6ef10` (`phase27-2-m1`).
 - Candidate: `6b926fc7dd3ed42dedddb0f2f8f60f931b106a68`.
-- Evidence commit: recorded after this report and its probes are committed; it is a separate review branch whose parent is the candidate SHA above.
+- Evidence payload commit: `c8cb5ae60e5f1017dfcebb56f97256ca6e6160ff`; its parent is the exact candidate SHA above. This commit contains the inventory, paired probes, package probe, TSVs, and this report.
 - Candidate source was not modified. The review and probe files were added only in this separate worktree.
 - Bootstrap reported `moss-0.1`. Candidate `make --jobs="$(nproc)" moss-dev` passed.
 
