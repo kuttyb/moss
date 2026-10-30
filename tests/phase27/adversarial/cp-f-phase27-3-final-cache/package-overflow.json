@@ -1,0 +1,42 @@
+{
+  "baseline_sha": "04be1a1bbbc7a4fd8fe2e4090b4b5bad5dd573e4",
+  "candidate_sha": "2bdc2ea16cff57882dcfb45f99b5c2df39d6d98f",
+  "rows": [
+    {
+      "compiler": "baseline",
+      "diagnostics": [],
+      "mode": "off",
+      "ok": true,
+      "returncode": 0,
+      "stderr_tail": "",
+      "stdout_tail": ""
+    },
+    {
+      "compiler": "candidate",
+      "diagnostics": [],
+      "mode": "off",
+      "ok": true,
+      "returncode": 0,
+      "stderr_tail": "",
+      "stdout_tail": ""
+    },
+    {
+      "compiler": "baseline",
+      "diagnostics": [],
+      "mode": "shadow",
+      "ok": true,
+      "returncode": 0,
+      "stderr_tail": "",
+      "stdout_tail": ""
+    },
+    {
+      "compiler": "candidate",
+      "diagnostics": [],
+      "mode": "shadow",
+      "ok": true,
+      "returncode": 0,
+      "stderr_tail": "",
+      "stdout_tail": ""
+    }
+  ]
+}

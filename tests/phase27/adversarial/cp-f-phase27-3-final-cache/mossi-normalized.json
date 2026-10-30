@@ -1,0 +1,30 @@
+{
+  "baseline_toolchain_identity": {
+    "moss_sha256": "754fa75658e530dc169257670610c207200a2b3efdc64f125c7c0af53a3da726",
+    "rustc_sha256": "dda7234360b7f578ca8b0ddcb80145646fa61a67c1720a5abc7051b35c9fcb71",
+    "rustc_version": "rustup 1.29.1 (d95a37b6a 2026-08-13)"
+  },
+  "candidate_toolchain_identity": {
+    "moss_sha256": "cacf063b4ee8bc0d79e729a6933edfa8709fc67f3b7d9454876d738d75ea36fa",
+    "rustc_sha256": "dda7234360b7f578ca8b0ddcb80145646fa61a67c1720a5abc7051b35c9fcb71",
+    "rustc_version": "rustup 1.29.1 (d95a37b6a 2026-08-13)"
+  },
+  "results": {
+    "app": {
+      "baseline_execution_body_hash": "c682c59a704593f05b2efa736b482f2edee4128effb1872a7f76fe22b79d4a71",
+      "baseline_raw_sha256": "c5138c5a21fced1118ecf88369a665db803aa3db1a4d9fc043d0e3ebf67c42e8",
+      "candidate_raw_sha256": "56ac2ab092318b4cc75dd70b50bd35b56812cc6873c4d4e4a161bcdfdfd23905",
+      "normalized_bytes_equal": true,
+      "recomputed_baseline_package_fingerprint": "3a25de7f67c77e85a3df7aee85f143ba6703fe169c0ba134f84bc40fd9385712",
+      "recomputed_execution_body_hash": "c682c59a704593f05b2efa736b482f2edee4128effb1872a7f76fe22b79d4a71"
+    },
+    "library": {
+      "baseline_execution_body_hash": "fcfc4ecd2bde10807e4940cddc62ede3f111af086b5607d57326c14e8cfd3898",
+      "baseline_raw_sha256": "1b92b4dd624ecee20590f3197ac6f0a942f9bd2a57865bfdf8b296047e6a92db",
+      "candidate_raw_sha256": "eace533d8200ae9f0bf9ce42cc550a5a5ebcc212e8033f1160c522630d7b45ae",
+      "normalized_bytes_equal": true,
+      "recomputed_baseline_package_fingerprint": "1b2064e49417fb4691d71b20e74695398e5d28299ac82c2c71d23f5b80a547e6",
+      "recomputed_execution_body_hash": "fcfc4ecd2bde10807e4940cddc62ede3f111af086b5607d57326c14e8cfd3898"
+    }
+  }
+}
