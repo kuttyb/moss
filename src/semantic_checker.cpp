@@ -18200,9 +18200,15 @@ class Checker {
                                       receiver_effect, receiver_fields, Effect::Read);
         }
       } else {
-        for (const auto& argument : call_arguments)
-          analyze_effect_expression(argument, env, params, parameter_effects,
+        for (const auto& argument : call_arguments) {
+          string argument_name, argument_value;
+          const string* expression = &argument;
+          if (tree_parse_named_argument(argument, argument_name,
+                                        argument_value))
+            expression = &argument_value;
+          analyze_effect_expression(*expression, env, params, parameter_effects,
                                     receiver_effect, receiver_fields, Effect::Read);
+        }
       }
       return;
     }
