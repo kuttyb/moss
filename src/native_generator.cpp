@@ -1459,10 +1459,9 @@ class Generator {
       return place_expr(value, d, locals, types);
     string base, index;
     if (!tree_parse_index(value, base, index)) {
-      auto dot = value.rfind('.');
-      if (dot != string::npos && tree_plain_identifier(trim(value.substr(dot + 1)))) {
-        string field = trim(value.substr(dot + 1));
-        return "(" + write_call_place(value.substr(0, dot), d, locals, types) +
+      string field;
+      if (tree_parse_member_access(value, base, field)) {
+        return "(" + write_call_place(base, d, locals, types) +
             ")." + rust_identifier(field);
       }
       return place_expr(value, d, locals, types);
