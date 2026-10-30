@@ -26,6 +26,7 @@
 #include "diagnostics.hpp"
 #include "functional_optimizer.hpp"
 #include "functional_optimizer_support.hpp"
+#include "semantic_checker_support.hpp"
 #include "native_generator.hpp"
 #include "native_generator_support.hpp"
 #include "type_placeholders.hpp"
@@ -61,6 +62,16 @@ struct LoweredFunctionalStage {
 struct LoweredFunctionalPipeline {
   std::string source;
   std::vector<LoweredFunctionalStage> stages;
+};
+
+struct FunctionalExpressionHandlesScope {
+  const vector<est::Handle>*& slot;
+  const vector<est::Handle>* prior;
+  FunctionalExpressionHandlesScope(
+      const vector<est::Handle>*& target,
+      const vector<est::Handle>* current)
+      : slot(target), prior(target) { slot = current; }
+  ~FunctionalExpressionHandlesScope() { slot = prior; }
 };
 
 class Generator {
@@ -420,6 +431,7 @@ class Generator {
   const RaiseSet* phase21_capture_alternatives_ = nullptr;
   std::set<string> phase21_option_slots_;
   const Stmt* phase21_codegen_statement_ = nullptr;
+  const vector<est::Handle>* active_functional_expression_handles_ = nullptr;
   string codegen_body_context_;
   string codegen_active_specialization_key_;
   const FunctionSpecialization* codegen_result_specialization_ = nullptr;
@@ -1542,10 +1554,51 @@ class Generator {
     return std::nullopt;
   }
 
+  std::optional<ParsedFunctionalPipeline> functional_pipeline_from_est(
+      std::string_view expression,
+      const vector<est::Handle>* handles = nullptr) const {
+    if (expression.find("|>") == std::string_view::npos)
+      return std::nullopt;
+    const auto resolve_stage = [](std::string_view name)
+        -> std::optional<FunctionalNodeKind> {
+      for (const auto& operation : functional_operations())
+        if (name == operation.name) return operation.kind;
+      return std::nullopt;
+    };
+    const auto fingerprint = est::fingerprint(string(expression));
+    auto convert = [&](std::uint32_t arena_index, est::ExprId root)
+        -> std::optional<ParsedFunctionalPipeline> {
+      if (arena_index >= p_.expression_arenas.size() ||
+          !p_.expression_arenas[arena_index]) return std::nullopt;
+      return est::functional_pipeline(*p_.expression_arenas[arena_index], root,
+                                      expression, resolve_stage);
+    };
+    const auto* selected_handles = handles ? handles
+        : active_functional_expression_handles_;
+    if (selected_handles) {
+      for (const auto& handle : *selected_handles)
+        if (handle.source_fingerprint == fingerprint)
+          if (auto parsed = convert(handle.arena_index, handle.expr))
+            return parsed;
+    }
+
+    // Optimizer-created and nested expression occurrences may not retain a
+    // root handle. Parse those expressions into EST and consume the Pipeline
+    // node, keeping the emitter off the legacy pipeline splitter.
+    est::Arena temporary;
+    try {
+      const auto root = est::parse_expression(temporary, expression);
+      return est::functional_pipeline(temporary, root, expression,
+                                      resolve_stage);
+    } catch (const std::invalid_argument&) {
+      return std::nullopt;
+    }
+  }
+
   std::optional<string> generated_functional_pipeline_type(
       const string& expression,
       const std::unordered_map<string,string>* types) const {
-    auto pipeline = parse_functional_pipeline(expression);
+    auto pipeline = functional_pipeline_from_est(expression);
     if (!pipeline) return std::nullopt;
     auto source_type = generated_expr_type(pipeline->source, types);
     if (!source_type) return std::nullopt;
@@ -2364,7 +2417,8 @@ class Generator {
         throw std::runtime_error(
             "internal error: stale shared functional traversal region");
       const FunctionalPipeline* plan = planned_functional_pipeline(exact_id);
-      auto parsed = parse_functional_pipeline(statement.b);
+      auto parsed = functional_pipeline_from_est(
+          statement.b, &statement.expression_handles);
       if (!plan || !parsed || parsed->stages.empty() ||
           !functional_terminal_kind(parsed->stages.back().kind))
         throw std::runtime_error(
@@ -2877,7 +2931,7 @@ class Generator {
       const std::set<string>& locals,
       const std::unordered_map<string,string>* types,
       size_t functional_pipeline_id) const {
-    auto pipeline = parse_functional_pipeline(expression);
+    auto pipeline = functional_pipeline_from_est(expression);
     if (!pipeline) return std::nullopt;
     if (auto chunk_lowering = gen_fileio_chunk_pipeline(
             *pipeline, domain, locals, types, functional_pipeline_id))
@@ -2900,7 +2954,7 @@ class Generator {
       const FunctionalPipeline* upstream = planned_functional_pipeline(
           planned->virtual_upstream_pipeline_id);
       auto upstream_parsed = upstream
-          ? parse_functional_pipeline(upstream->expression) : std::nullopt;
+          ? functional_pipeline_from_est(upstream->expression) : std::nullopt;
       if (!upstream_parsed || upstream_parsed->stages.empty() ||
           functional_terminal_kind(upstream_parsed->stages.back().kind))
         throw std::runtime_error(
@@ -4532,6 +4586,9 @@ class Generator {
       if (method.result_expression) {
         string context = functional_method_context(t, method);
         auto plan = method.result_functional_pipeline_ids.find(context);
+        FunctionalExpressionHandlesScope result_handles_scope(
+            active_functional_expression_handles_,
+            &method.expression_handles);
         source_comment(o, 8,
                        method.result_line ? method.result_line : method.line,
                        *method.result_expression);
@@ -4744,6 +4801,8 @@ class Generator {
       } result_scope(codegen_result_specialization_,
                      codegen_result_expression_, specialization,
                      *f.result_expression);
+      FunctionalExpressionHandlesScope result_handles_scope(
+          active_functional_expression_handles_, &f.expression_handles);
       source_comment(o, 4, f.result_line, *f.result_expression);
       auto plan = f.result_functional_pipeline_ids.find(functional_context);
       string rendered = expr(*f.result_expression, nullptr, locals, &types,
@@ -5275,6 +5334,8 @@ class Generator {
             : slot(target), prior(target) { slot = current; }
         ~CodegenStatementScope() { slot = prior; }
       } codegen_statement_scope(phase21_codegen_statement_, &s);
+      FunctionalExpressionHandlesScope expression_handles_scope(
+          active_functional_expression_handles_, &s.expression_handles);
       struct CodegenContextScope {
         string& slot;
         string prior;

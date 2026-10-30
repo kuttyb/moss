@@ -3,6 +3,9 @@
 #include <cassert>
 #include <array>
 #include <cstdint>
+#include <functional>
+#include <map>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <set>
@@ -10,11 +13,21 @@
 #include <variant>
 #include <vector>
 
+#include "../constraints.hpp"
+#include "../functional_source_pipeline.hpp"
+#include "../type_ir.hpp"
+
 namespace moss { struct Program; struct Stmt; }
 namespace moss::est {
 
 using ExprId = std::uint32_t;
-struct SourceSpan { std::uint32_t line = 1, column = 1; std::uint64_t origin_id = 0; };
+struct SourceSpan {
+  std::uint32_t line = 1, column = 1;
+  std::uint64_t origin_id = 0;
+  // Byte range within the source string passed to parse_expression. These are
+  // compiler-internal navigation data; diagnostics continue to use line/column.
+  std::uint32_t source_begin = 0, source_end = 0;
+};
 
 // Semantic roles, independent of the legacy field containing the spelling.
 enum class ExprSlot : std::uint8_t {
@@ -31,6 +44,24 @@ struct Handle {
   std::uint64_t source_fingerprint = 0;
   std::uint64_t origin_id = 0;
   std::uint32_t arena_index = 0;
+};
+
+// Checker-owned facts are deliberately stored beside, not inside, immutable
+// syntax nodes. Specializations of one source occurrence have separate keys.
+struct FactKey {
+  ExprId expression = 0;
+  std::string specialization_context;
+  bool operator<(const FactKey& other) const {
+    return expression < other.expression ||
+        (expression == other.expression &&
+         specialization_context < other.specialization_context);
+  }
+};
+struct SemanticFacts {
+  TypeRef type;
+  std::string specialization_result;
+  std::string resolved_target;
+  std::optional<Effect> inferred_effect;
 };
 
 // Child IDs always denote distinct occurrences. The arena never interns text.
@@ -68,6 +99,10 @@ class Arena {
   const Node& at(ExprId id) const;
   SourceSpan span(ExprId id) const { return spans_.at(id); }
   std::size_t size() const { return nodes_.size(); }
+  void record_facts(ExprId id, std::string specialization_context,
+                    SemanticFacts facts);
+  const SemanticFacts* facts(ExprId id,
+                             std::string_view specialization_context) const;
 
   // Same-source copies retain handles and share this immutable arena.
   // A transformed or duplicated logical occurrence calls duplicate() and
@@ -83,6 +118,7 @@ class Arena {
  private:
   std::vector<Node> nodes_;
   std::vector<SourceSpan> spans_;
+  std::map<FactKey, SemanticFacts> semantic_facts_;
   std::array<Count, slot_count> coverage_{};
   std::set<std::tuple<std::uint64_t, std::uint8_t, std::uint32_t>> seen_;
 };
@@ -103,6 +139,10 @@ ExprId parse_expression(Arena& arena, std::string_view source,
                         std::uint64_t origin_id = 0,
                         std::uint32_t base_line = 1,
                         std::uint32_t base_column = 1);
+std::optional<ParsedFunctionalPipeline> functional_pipeline(
+    const Arena& arena, ExprId expression, std::string_view source,
+    const std::function<std::optional<FunctionalNodeKind>(
+        std::string_view)>& resolve_stage);
 void populate(Program& program);
 void populate_loaded(Program& program, std::vector<Stmt>& statements,
                      std::uint64_t origin_id);

@@ -135,6 +135,8 @@ TOOLING_TESTS: list[tuple] = [
     ("check_phase26_1_f1_interface_rules", [sys.executable, "tests/tooling/check_phase26_1_f1_interface_rules.py", "{compiler}"]),
     ("check_phase26_1_1_x1_v9", [sys.executable, "tests/tooling/check_phase26_1_1_x1.py", "{compiler}"]),
     ("check_phase27_est_mossi", [sys.executable, "tests/tooling/check_phase27_est_mossi.py", "{compiler}"]),
+    ("check_phase27_est_functional_tree", [sys.executable, "tests/tooling/check_phase27_est_functional_tree.py", "{compiler}"]),
+    ("check_phase27_untyped_pipeline_return", [sys.executable, "tests/tooling/check_phase27_untyped_pipeline_return.py", "{compiler}"]),
     ("check_phase27_accepts_rustc", [sys.executable, "tests/tooling/check_phase27_accepts_rustc.py", "{compiler}"]),
     ("check_phase27_three_engine", [sys.executable, "tests/tooling/check_phase27_three_engine.py", "{compiler}"]),
     ("check_phase26_1_1_x1_v10", [sys.executable, "tests/tooling/check_phase26_1_1_x1_v10.py", "{compiler}"]),

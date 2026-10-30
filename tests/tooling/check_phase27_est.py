@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Focused EST expression dump and off-allocation regression checks."""
+"""Focused EST expression dump and mode-independent tree checks."""
 import os
 import pathlib
 import re
@@ -52,6 +52,26 @@ def main():
         raise SystemExit(f"tuple collection elements were not represented: {tuple_tree.stderr}")
     if not re.search(r"MOSS_EST_SHADOW_COMPARE .* compared=[1-9]", tuple_tree.stderr):
         raise SystemExit("tuple/string legacy shape was not compared")
+    facts = run(ROOT / "tests/phase27/est/side_facts.moss", "shadow",
+                MOSS_EST_FACTS_DUMP="1")
+    if facts.returncode != 0:
+        raise SystemExit(f"checker fact dump failed: {facts.stdout}{facts.stderr}")
+    if not re.search(r'MOSS_EST_FACT expr=\d+ context="[^"]+" type="int"',
+                     facts.stderr):
+        raise SystemExit("checker did not retain a typed fact on the expression tree")
+    if not re.search(r'MOSS_EST_EFFECT_FACT expr=\d+ context="[^"]+" effect=\d+',
+                     facts.stderr):
+        raise SystemExit("effect analysis did not retain a context-scoped EST fact")
+    if not re.search(r'MOSS_EST_FACT expr=\d+ context="[^"]+" type="int" '
+                     r'specialization="" target="callable-v1:[^"]+"',
+                     facts.stderr):
+        raise SystemExit("resolved direct-call target was not retained on its EST node")
+    failure_arm = run(
+        ROOT / "tests/tooling/phase20_review/probes/guard_domain_field_lifecycle.moss",
+        "shadow", MOSS_EST_DUMP="1")
+    if failure_arm.returncode != 0 or "unexpected FileIO error" not in failure_arm.stderr:
+        raise SystemExit(
+            f"failure-arm expression was not built into EST: {failure_arm.stdout}{failure_arm.stderr}")
     mismatch = run(ROOT / "tests/phase27/est/bitwise_shift.moss", "shadow",
                    MOSS_EST_SHADOW_MISMATCH_TEST="1")
     if mismatch.returncode == 0 or "injected mismatch" not in mismatch.stdout:
@@ -62,8 +82,10 @@ def main():
         raise SystemExit(f"pipeline structural-shape cases failed: {pipeline_shapes.stdout}{pipeline_shapes.stderr}")
     probe = ROOT / "tests/phase27/est/bitwise_shift.moss"
     result = run(probe, "off", MOSS_EST_STATS="1")
-    if result.returncode != 0 or "MOSS_EST_STATS arena_size=0 handle_count=0" not in result.stderr:
-        raise SystemExit(f"off allocated EST storage: {result.stdout}{result.stderr}")
+    if result.returncode != 0 or not re.search(
+            r"MOSS_EST_STATS arena_size=[1-9]\d* handle_count=[1-9]\d*",
+            result.stderr):
+        raise SystemExit(f"off did not build the compiler expression tree: {result.stdout}{result.stderr}")
     raw = ROOT / "tests/phase27/est/raw_places.moss"
     result = run(raw, "shadow", MOSS_EST_DUMP="1", MOSS_EST_CONTRACT_TEST="1")
     if "MOSS_EST_RAW" not in result.stderr:
@@ -99,7 +121,7 @@ def main():
                                resource.RLIMIT_CORE, (0, 0)))
     if stale.returncode == 0 or "source_fingerprint" not in stale.stderr:
         raise SystemExit("mutating source did not trip the shadow staleness assertion")
-    print("phase27 EST focused checks passed (4 syntax dumps; raw places; copy/rebuild; off arena size 0; stale guard)")
+    print("phase27 EST focused checks passed (4 syntax dumps; raw places; copy/rebuild; off builds expression arena; stale guard)")
 
 if __name__ == "__main__":
     main()

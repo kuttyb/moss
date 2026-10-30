@@ -64,7 +64,7 @@
     // Only checked lvalue-shaped expressions participate in location lookup.
     size_t end = 0;
     while (end < expression.size() && (std::isalnum(static_cast<unsigned char>(expression[end])) || expression[end] == '_')) ++end;
-    if (!end || !identifier(expression.substr(0, end))) return {};
+    if (!end || !binding_identifier(expression.substr(0, end))) return {};
     std::string root = expression.substr(0, end);
     Place place;
     auto alias = frame.aliases.find(root);
@@ -94,7 +94,7 @@
           if (depth) ++end;
         }
         if (depth) return {};
-        auto index = eval(expression.substr(start, end - start), frame, line, output);
+        auto index = evaluate_expression_source(expression.substr(start, end - start), frame, line, output);
         if (place.value->map) {
           bool found = false;
           for (auto& entry : *place.value->map) {
@@ -128,7 +128,7 @@
     for (size_t i = 0; i < arguments.size(); ++i) {
       std::string type = concrete_types && i < concrete_types->size()
           ? (*concrete_types)[i] : parameters[i].type;
-      if ((type.empty() || internal_semantic_placeholder(type)) && identifier(trim_copy(arguments[i]))) {
+      if ((type.empty() || internal_semantic_placeholder(type)) && binding_identifier(trim_copy(arguments[i]))) {
         auto caller_type = caller.local_types.find(trim_copy(arguments[i]));
         if (caller_type != caller.local_types.end()) type = caller_type->second;
       }
@@ -137,7 +137,7 @@
       auto place = locate(arguments[i], caller, line, output);
       if (effect != Effect::Consume && place.value) frame.aliases[parameters[i].name] = place;
       else {
-        frame.locals[parameters[i].name] = eval(arguments[i], caller, line, output);
+        frame.locals[parameters[i].name] = evaluate_expression_source(arguments[i], caller, line, output);
         if (effect == Effect::Consume && place.value) {
           if (place.domain) state_event("state_consume", caller, line, place, summary(*place.value), "<moved>");
           *place.value = Value::unit();
@@ -186,7 +186,7 @@
       if (instance.concrete->binding != statement.a || instance.concrete->line != statement.line) continue;
       if (instance.initialized) throw RuntimeError(statement.line, "internal error: duplicate domain initialization");
       std::string name; std::vector<std::string> arguments;
-      if (!parse_call(statement.b, name, arguments)) throw RuntimeError(statement.line, "internal error: missing domain constructor");
+      if (!expression_call(statement.b, name, arguments)) throw RuntimeError(statement.line, "internal error: missing domain constructor");
       const auto& specialization = program_.domain_specializations.at(*instance.concrete->specialization_index);
       std::unordered_map<std::string, std::string> initializers;
       for (const auto& argument : arguments) {
@@ -197,8 +197,8 @@
       for (const auto& field : instance.definition->state) {
         auto explicit_value = initializers.find(field.name);
         auto type = specialization.state_types.find(field.name);
-        instance.state[field.name] = explicit_value != initializers.end() ? eval(explicit_value->second, frame, statement.line, output)
-            : !field.init.empty() ? eval(field.init, frame, field.line, output)
+        instance.state[field.name] = explicit_value != initializers.end() ? evaluate_expression_source(explicit_value->second, frame, statement.line, output)
+            : !field.init.empty() ? evaluate_expression_source(field.init, frame, field.line, output)
             : default_semantic_value(type == specialization.state_types.end() ? field.type : type->second, frame, statement.line, output);
       }
       instance.initialized = true;
@@ -225,10 +225,10 @@
   PreparedHandlerCall prepare_handler_call(const std::string& invocation, Frame& caller,
                                            int line, std::ostream& output) {
     std::string callee; std::vector<std::string> arguments;
-    if (!parse_call(invocation, callee, arguments)) throw RuntimeError(line, "internal error: malformed checked message");
-    auto member = top_level_member(callee);
+    if (!expression_call(invocation, callee, arguments)) throw RuntimeError(line, "internal error: malformed checked message");
+    auto member = expression_member(callee);
     if (!member) throw RuntimeError(line, "internal error: missing checked message receiver");
-    Value handle = eval(member->first, caller, line, output);
+    Value handle = evaluate_expression_source(member->first, caller, line, output);
     if (handle.kind != Value::Kind::DomainHandle || !handle.domain || !handle.domain->initialized)
       throw RuntimeError(line, "internal error: message target is not a published concrete domain");
     auto& instance = *handle.domain;
@@ -240,7 +240,7 @@
     call.target = target;
     call.line = line;
     for (const auto& argument : arguments)
-      call.arguments.push_back(independent(eval(argument, caller, line, output)));
+      call.arguments.push_back(independent(evaluate_expression_source(argument, caller, line, output)));
     return call;
   }
 

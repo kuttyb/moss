@@ -28,7 +28,7 @@
       std::vector<std::string> config_arguments;
       if (interp_executor_construction(statement.b, config_arguments)) {
         for (const auto& argument : config_arguments)
-          eval(argument, frame, statement.line, output);  // source order, once
+          evaluate_expression_source(argument, frame, statement.line, output);  // source order, once
         frame.locals[statement.a] = Value::unit();
         frame.local_types[statement.a] = "executor";
         fast_debug_executors_[statement.a].clear();
@@ -69,33 +69,33 @@
 
   // Recognizes `Executor()(.config(arg))*.start()` and collects the
   // configuration arguments in source order.
-  static bool interp_executor_construction(const std::string& text,
-                                           std::vector<std::string>& config_arguments) {
+  bool interp_executor_construction(const std::string& text,
+                                    std::vector<std::string>& config_arguments) const {
     std::string value = trim_copy(text);
     std::vector<std::string> reversed;
     while (true) {
-      auto member = top_level_member(value);
+      auto member = expression_member(value);
       if (!member) {
         std::string callee;
         std::vector<std::string> args;
-        if (!(parse_call(value, callee, args) && callee == "Executor" && args.empty()))
+        if (!(expression_call(value, callee, args) && callee == "Executor" && args.empty()))
           return false;
         config_arguments.assign(reversed.rbegin(), reversed.rend());
         return true;
       }
       std::string method;
       std::vector<std::string> args;
-      if (parse_call(member->second, method, args) && method != "start")
+      if (expression_call(member->second, method, args) && method != "start")
         for (auto it = args.rbegin(); it != args.rend(); ++it) reversed.push_back(*it);
       value = member->first;
     }
   }
 
-  static bool interp_parse_fileio_open(const std::string& text,
-                                       std::vector<std::string>& args) {
-    auto member = top_level_member(text);
+  bool interp_parse_fileio_open(const std::string& text,
+                                std::vector<std::string>& args) const {
+    auto member = expression_member(text);
     if (!member || member->first != "FileIO") return false;
     std::string method_name;
-    return parse_call(member->second, method_name, args) && method_name == "open" &&
+    return expression_call(member->second, method_name, args) && method_name == "open" &&
         args.size() == 2;
   }

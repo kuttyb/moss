@@ -16,6 +16,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -25,6 +26,7 @@
 #include "numeric_runtime.hpp"
 #include "rust_float_display.hpp"
 #include "type_placeholders.hpp"
+#include "semantic_checker_support.hpp"
 
 namespace moss {
 
@@ -433,6 +435,15 @@ class FastInterpreter {
     Value value;
   };
 
+  struct ExpressionHandlesScope {
+    const std::vector<est::Handle>*& slot;
+    const std::vector<est::Handle>* prior;
+    ExpressionHandlesScope(const std::vector<est::Handle>*& target,
+                           const std::vector<est::Handle>* current)
+        : slot(target), prior(target) { slot = current; }
+    ~ExpressionHandlesScope() { slot = prior; }
+  };
+
   struct RaisedSignal {
     RaisedIdentity identity;
     Value value;
@@ -444,6 +455,7 @@ class FastInterpreter {
   };
 
   const Program& program_;
+  const std::vector<est::Handle>* active_expression_handles_ = nullptr;
   Options options_;
   std::unordered_map<const Stmt*, std::set<std::string>> joined_cache_;
   std::vector<TraceEvent> trace_;
@@ -455,11 +467,11 @@ class FastInterpreter {
   std::vector<RaisedSignal> selected_errors_;
   std::map<std::string, std::unique_ptr<DomainValue>> instances_;
 
-  static bool recovery_matches(const std::string& selector,
-                               const RaisedIdentity& identity) {
+  bool recovery_matches(const std::string& selector,
+                        const RaisedIdentity& identity) const {
     if (selector.empty() || selector.find('.') == std::string::npos)
       return true;
-    for (const auto& alternative : split_arguments(selector)) {
+    for (const auto& alternative : expression_alternatives(selector)) {
       const auto dot = alternative.find('.');
       const auto payload = alternative.find('(', dot);
       if (dot != std::string::npos &&
@@ -475,7 +487,7 @@ class FastInterpreter {
   std::vector<std::pair<std::string, std::pair<Value, std::string>>>
   error_pattern_payloads(const std::string& selector,
                          const RaisedSignal& raised, int line) const {
-    for (const auto& alternative : split_arguments(selector)) {
+    for (const auto& alternative : expression_alternatives(selector)) {
       if (!recovery_matches(alternative, raised.identity)) continue;
       const auto open = alternative.find('(');
       if (open == std::string::npos) return {};
@@ -483,7 +495,7 @@ class FastInterpreter {
       if (close == std::string::npos || close <= open ||
           !raised.value.object)
         throw RuntimeError(line, "checked error payload is absent");
-      const auto names = split_arguments(
+      const auto names = expression_elements(
           alternative.substr(open + 1, close - open - 1));
       const EnumCase* variant = nullptr;
       for (const auto& declaration : program_.enums)
@@ -601,7 +613,246 @@ class FastInterpreter {
     return value.substr(begin, end - begin);
   }
 
-  static bool identifier(const std::string& value) {
+  struct ExpressionTreeView {
+    std::unique_ptr<est::Arena> owned;
+    const est::Arena* arena = nullptr;
+    est::ExprId root = 0;
+    std::string source;
+  };
+
+  const ExpressionTreeView* active_expression_tree_ = nullptr;
+  est::ExprId active_expression_node_ = 0;
+
+  std::optional<ExpressionTreeView> expression_tree(
+      std::string_view source) const {
+    ExpressionTreeView view;
+    if (active_expression_tree_ &&
+        expression_node_text(*active_expression_tree_, active_expression_node_) == source) {
+      view.source = active_expression_tree_->source;
+      view.arena = active_expression_tree_->arena;
+      view.root = active_expression_node_;
+      return view;
+    }
+    view.source.assign(source);
+    const auto fingerprint = est::fingerprint(view.source);
+    if (active_expression_handles_) {
+      for (const auto& handle : *active_expression_handles_) {
+        if (handle.source_fingerprint != fingerprint ||
+            handle.arena_index >= program_.expression_arenas.size() ||
+            !program_.expression_arenas[handle.arena_index])
+          continue;
+        est::assert_fresh(handle, view.source);
+        view.arena = program_.expression_arenas[handle.arena_index].get();
+        view.root = handle.expr;
+        const auto span = view.arena->span(view.root);
+        if (span.source_end <= view.source.size()) return view;
+      }
+    }
+    view.owned = std::make_unique<est::Arena>();
+    try {
+      view.root = est::parse_expression(*view.owned, view.source);
+      view.arena = view.owned.get();
+      return view;
+    } catch (const std::invalid_argument&) {
+      return std::nullopt;
+    }
+  }
+
+  Value evaluate_tree_node(const ExpressionTreeView& tree, est::ExprId node,
+                           Frame& frame, int line, std::ostream& output) {
+    const auto* previous_tree = active_expression_tree_;
+    const auto previous_node = active_expression_node_;
+    active_expression_tree_ = &tree;
+    active_expression_node_ = node;
+    try {
+      Value result = evaluate_expression_tree(tree, node, frame, line, output);
+      active_expression_tree_ = previous_tree;
+      active_expression_node_ = previous_node;
+      return result;
+    } catch (...) {
+      active_expression_tree_ = previous_tree;
+      active_expression_node_ = previous_node;
+      throw;
+    }
+  }
+
+  static std::string_view expression_node_text(const ExpressionTreeView& tree,
+                                               est::ExprId id) {
+    const auto span = tree.arena->span(id);
+    if (span.source_begin > span.source_end ||
+        span.source_end > tree.source.size()) return {};
+    return std::string_view(tree.source).substr(
+        span.source_begin, span.source_end - span.source_begin);
+  }
+
+  static std::string message_invocation_from_est(
+      const ExpressionTreeView& tree, const est::Message& message) {
+    std::string invocation(expression_node_text(tree, message.target));
+    invocation += "." + message.handler + "(";
+    for (std::size_t index = 0; index < message.arguments.size(); ++index) {
+      if (index) invocation += ", ";
+      invocation += expression_node_text(tree, message.arguments[index]);
+    }
+    invocation += ")";
+    return invocation;
+  }
+
+  std::optional<std::pair<std::string, std::vector<std::string>>>
+  expression_call(std::string_view source) const {
+    auto tree = expression_tree(source);
+    if (!tree) return std::nullopt;
+    const auto& node = tree->arena->at(tree->root);
+    const std::vector<est::ExprId>* node_arguments = nullptr;
+    est::ExprId callee = 0;
+    if (const auto* call = std::get_if<est::Call>(&node)) {
+      node_arguments = &call->arguments;
+      callee = call->callee;
+    } else if (const auto* constructor =
+                   std::get_if<est::Constructor>(&node)) {
+      node_arguments = &constructor->arguments;
+      callee = constructor->type;
+    } else return std::nullopt;
+    std::vector<std::string> arguments;
+    arguments.reserve(node_arguments->size());
+    for (const auto argument : *node_arguments)
+      arguments.emplace_back(expression_node_text(*tree, argument));
+    return std::make_pair(
+        std::string(expression_node_text(*tree, callee)),
+        std::move(arguments));
+  }
+
+  bool expression_call(std::string_view source, std::string& callee,
+                       std::vector<std::string>& arguments) const {
+    auto parsed = expression_call(source);
+    if (!parsed) return false;
+    callee = std::move(parsed->first);
+    arguments = std::move(parsed->second);
+    return true;
+  }
+
+  std::optional<std::pair<std::string, std::string>> expression_member(
+      std::string_view source) const {
+    auto tree = expression_tree(source);
+    if (!tree) return std::nullopt;
+    const auto& root = tree->arena->at(tree->root);
+    const est::Member* member = std::get_if<est::Member>(&root);
+    const est::Call* call = std::get_if<est::Call>(&root);
+    const est::Constructor* constructor =
+        std::get_if<est::Constructor>(&root);
+    est::ExprId member_callee = 0;
+    const std::vector<est::ExprId>* arguments = nullptr;
+    if (call) {
+      member_callee = call->callee;
+      arguments = &call->arguments;
+    } else if (constructor) {
+      member_callee = constructor->type;
+      arguments = &constructor->arguments;
+    }
+    if (!member && (call || constructor))
+      member = std::get_if<est::Member>(&tree->arena->at(member_callee));
+    if (!member) return std::nullopt;
+    std::string suffix = member->name;
+    if (arguments && member == std::get_if<est::Member>(&
+                                   tree->arena->at(member_callee))) {
+      suffix += "(";
+      for (std::size_t index = 0; index < arguments->size(); ++index) {
+        if (index) suffix += ", ";
+        suffix += expression_node_text(*tree, arguments->at(index));
+      }
+      suffix += ")";
+    }
+    return std::make_pair(
+        std::string(expression_node_text(*tree, member->base)),
+        std::move(suffix));
+  }
+
+  std::optional<std::pair<std::string, std::string>> expression_binary(
+      std::string_view source,
+      const std::vector<std::string>& operators) const {
+    auto tree = expression_tree(source);
+    if (!tree) return std::nullopt;
+    const auto* binary = std::get_if<est::Binary>(&tree->arena->at(tree->root));
+    if (!binary || std::find(operators.begin(), operators.end(), binary->op) ==
+                       operators.end())
+      return std::nullopt;
+    return std::make_pair(
+        std::string(expression_node_text(*tree, binary->left)),
+        std::string(expression_node_text(*tree, binary->right)));
+  }
+
+  std::string expression_binary_operator(std::string_view source) const {
+    auto tree = expression_tree(source);
+    if (!tree) return {};
+    if (const auto* binary =
+            std::get_if<est::Binary>(&tree->arena->at(tree->root)))
+      return binary->op;
+    return {};
+  }
+
+  bool expression_identifier(std::string_view source) const {
+    auto tree = expression_tree(source);
+    if (!tree) return false;
+    return std::holds_alternative<est::Identifier>(
+        tree->arena->at(tree->root));
+  }
+
+  std::vector<std::string> expression_elements(std::string_view source) const {
+    auto tree = expression_tree(source);
+    if (!tree && source.find(',') != std::string_view::npos) {
+      std::string tuple_source = "(";
+      tuple_source.append(source);
+      tuple_source += ")";
+      tree = expression_tree(tuple_source);
+    }
+    if (!tree) return {};
+    const auto& node = tree->arena->at(tree->root);
+    const std::vector<est::ExprId>* elements = nullptr;
+    if (const auto* tuple = std::get_if<est::Tuple>(&node))
+      elements = &tuple->elements;
+    else if (const auto* collection = std::get_if<est::Collection>(&node))
+      elements = &collection->elements;
+    else if (const auto* call = std::get_if<est::Call>(&node))
+      elements = &call->arguments;
+    else if (const auto* constructor =
+                 std::get_if<est::Constructor>(&node))
+      elements = &constructor->arguments;
+    if (!elements) {
+      const auto value = trim_copy(std::string(source));
+      return value.empty() ? std::vector<std::string>{} :
+                             std::vector<std::string>{value};
+    }
+    std::vector<std::string> result;
+    result.reserve(elements->size());
+    for (const auto element : *elements)
+      result.emplace_back(expression_node_text(*tree, element));
+    return result;
+  }
+
+  std::vector<std::string> expression_alternatives(
+      std::string_view source) const {
+    auto tree = expression_tree(source);
+    if (!tree && source.find(',') != std::string_view::npos) {
+      std::string tuple_source = "(";
+      tuple_source.append(source);
+      tuple_source += ")";
+      tree = expression_tree(tuple_source);
+    }
+    if (tree) {
+      if (const auto* tuple =
+              std::get_if<est::Tuple>(&tree->arena->at(tree->root))) {
+        std::vector<std::string> result;
+        result.reserve(tuple->elements.size());
+        for (const auto element : tuple->elements)
+          result.emplace_back(expression_node_text(*tree, element));
+        return result;
+      }
+    }
+    const auto value = trim_copy(std::string(source));
+    return value.empty() ? std::vector<std::string>{} :
+                           std::vector<std::string>{value};
+  }
+
+  static bool binding_identifier(const std::string& value) {
     if (value.empty() || !(std::isalpha(static_cast<unsigned char>(value.front())) || value.front() == '_')) return false;
     for (size_t i = 1; i < value.size(); ++i)
       if (!(std::isalnum(static_cast<unsigned char>(value[i])) || value[i] == '_')) return false;
@@ -756,7 +1007,7 @@ class FastInterpreter {
     return {};
   }
 
-  static bool parse_call(const std::string& input, std::string& callee,
+  static bool parse_call_legacy(const std::string& input, std::string& callee,
                          std::vector<std::string>& args) {
     auto value = trim_copy(input);
     auto lp = value.find('(');
@@ -797,7 +1048,7 @@ class FastInterpreter {
     return true;
   }
 
-  static std::optional<std::pair<std::string, std::string>> top_level_member(
+  static std::optional<std::pair<std::string, std::string>> top_level_member_legacy(
       const std::string& input) {
     int p = 0, b = 0, s = 0; bool quoted = false;
     for (size_t i = input.size(); i-- > 0;) {
@@ -880,26 +1131,47 @@ class FastInterpreter {
                                      static_cast<std::uint64_t>(right));
   }
 
-  static std::vector<std::string> split_pipeline(const std::string& input) {
-    std::vector<std::string> result;
-    int parens = 0, brackets = 0; bool quoted = false; size_t start = 0;
-    for (size_t i = 0; i + 1 < input.size(); ++i) {
-      char c = input[i];
-      if (quoted) {
-        if (c == '\\') ++i;
-        else if (c == '"') quoted = false;
-        continue;
-      }
-      if (c == '"') { quoted = true; continue; }
-      if (c == '(') ++parens; else if (c == ')') --parens;
-      else if (c == '[') ++brackets; else if (c == ']') --brackets;
-      if (!parens && !brackets && c == '|' && input[i + 1] == '>') {
-        result.push_back(trim_copy(input.substr(start, i - start)));
-        start = i + 2; ++i;
-      }
+  std::optional<ParsedFunctionalPipeline> functional_pipeline_from_est(
+      std::string_view expression,
+      const std::vector<est::Handle>* handles = nullptr) const {
+    if (expression.find("|>") == std::string_view::npos)
+      return std::nullopt;
+    const auto resolve_stage = [](std::string_view name)
+        -> std::optional<FunctionalNodeKind> {
+      for (const auto& operation : functional_operations())
+        if (name == operation.name) return operation.kind;
+      // Preserve the legacy interpreter's handling of user-named stages: it
+      // evaluates the pipeline input and reports the first unsupported stage
+      // at runtime. Source denotes an unrecognized stage in EST, not a source
+      // parse failure.
+      return FunctionalNodeKind::Source;
+    };
+    const auto fingerprint = est::fingerprint(std::string(expression));
+    auto convert = [&](std::uint32_t arena_index, est::ExprId root)
+        -> std::optional<ParsedFunctionalPipeline> {
+      if (arena_index >= program_.expression_arenas.size() ||
+          !program_.expression_arenas[arena_index]) return std::nullopt;
+      return est::functional_pipeline(*program_.expression_arenas[arena_index],
+                                      root, expression, resolve_stage);
+    };
+    const auto* selected_handles = handles ? handles : active_expression_handles_;
+    if (selected_handles) {
+      for (const auto& handle : *selected_handles)
+        if (handle.source_fingerprint == fingerprint)
+          if (auto parsed = convert(handle.arena_index, handle.expr))
+            return parsed;
     }
-    if (start) result.push_back(trim_copy(input.substr(start)));
-    return result;
+
+    // Some nested or transformed expressions have no retained source handle.
+    // Parse those into EST and dispatch through the Pipeline node.
+    est::Arena temporary;
+    try {
+      const auto root = est::parse_expression(temporary, expression);
+      return est::functional_pipeline(temporary, root, expression,
+                                      resolve_stage);
+    } catch (const std::invalid_argument&) {
+      return std::nullopt;
+    }
   }
 
   Value invoke_pipeline_callable(const std::string& callable,
@@ -919,26 +1191,28 @@ class FastInterpreter {
     if (auto fn = function(target_callable))
       return call(*fn, names, callback, line, output);
     if (target_callable.find('_') != std::string::npos)
-      return eval(target_callable, callback, line, output);
+      return evaluate_expression_source(target_callable, callback, line, output);
     std::string invocation = target_callable + "(";
     for (size_t i = 0; i < names.size(); ++i) {
       if (i) invocation += ", ";
       invocation += names[i];
     }
-    return eval(invocation + ")", callback, line, output);
+    return evaluate_expression_source(invocation + ")", callback, line, output);
   }
 
   std::optional<std::string> checked_pipeline_stage_output_type(
-      const std::vector<std::string>& stages, size_t stage_index,
+      const ParsedFunctionalPipeline& parsed, size_t stage_index,
       const Frame& frame, int line) const {
     for (const auto& pipeline : program_.functional_pipelines) {
       if (pipeline.line != line || pipeline.context != frame.functional_context ||
-          stage_index >= pipeline.nodes.size() || pipeline.nodes.size() != stages.size() ||
-          trim_copy(pipeline.source_expression) != trim_copy(stages.front()))
+          stage_index >= pipeline.nodes.size() ||
+          pipeline.nodes.size() != parsed.stages.size() + 1 ||
+          trim_copy(pipeline.source_expression) != trim_copy(parsed.source))
         continue;
       bool matches = true;
-      for (size_t index = 1; index < stages.size(); ++index)
-        if (trim_copy(pipeline.nodes[index].source_text) != trim_copy(stages[index])) {
+      for (size_t index = 1; index < pipeline.nodes.size(); ++index)
+        if (trim_copy(pipeline.nodes[index].source_text) !=
+            trim_copy(parsed.stages[index - 1].raw)) {
           matches = false;
           break;
         }
@@ -955,9 +1229,11 @@ class FastInterpreter {
     return type.substr(7, type.size() - 8);
   }
 
-  Value eval_pipeline(const std::vector<std::string>& stages, Frame& frame,
-                      int line, std::ostream& output) {
-    if (stages.size() < 2) return Value::unit();
+  Value eval_pipeline(const ParsedFunctionalPipeline& parsed, Frame& frame,
+                     int line, std::ostream& output,
+                     const ExpressionTreeView& tree,
+                     const est::Pipeline& pipeline_node) {
+    if (parsed.stages.empty()) return Value::unit();
     // A FileIO chunk source (`<fileio>.chunks(n)`) never reaches here in
     // practice: FileIO.open always throws first (see interp_phase20_statement
     // in interpreter_phase20.inc) because there is no Agent B FileIO runtime
@@ -965,10 +1241,18 @@ class FastInterpreter {
     // against native codegen's test-only Rust shim instead; see
     // tests/tooling/check_phase20_executor_fileio.py and AGENTS.md
     // corrective-pass items 2 and 24.
-    Value current = eval(stages.front(), frame, line, output);
-    for (size_t stage_index = 1; stage_index < stages.size(); ++stage_index) {
-      std::string callee; std::vector<std::string> args;
-      if (!parse_call(stages[stage_index], callee, args)) callee = stages[stage_index];
+    Value current = evaluate_tree_node(tree, pipeline_node.input, frame, line, output);
+    for (size_t stage_index = 1; stage_index <= parsed.stages.size(); ++stage_index) {
+      const auto& stage = parsed.stages[stage_index - 1];
+      std::string callee;
+      for (const auto& operation : functional_operations())
+        if (operation.kind == stage.kind) callee = operation.name;
+      if (callee.empty()) {
+        std::vector<std::string> ignored_arguments;
+        if (!expression_call(stage.raw, callee, ignored_arguments))
+          callee = stage.raw;
+      }
+      const auto& args = stage.arguments;
       if (callee == "sum") {
         if (current.kind != Value::Kind::Vector) throw RuntimeError(line, "pipeline sum requires a Vector");
         Value total = (current.element_type == "Float" || current.element_type == "float")
@@ -1007,12 +1291,13 @@ class FastInterpreter {
         }
         std::string element_type = current.element_type;
         if (callee == "map") {
-          auto output_type = checked_pipeline_stage_output_type(stages, stage_index, frame, line);
+          auto output_type = checked_pipeline_stage_output_type(
+              parsed, stage_index, frame, line);
           if (!output_type && !args.empty()) {
             std::string callback = trim_copy(args.front());
             std::string callback_name = callback;
             std::vector<std::string> callback_args;
-            parse_call(callback, callback_name, callback_args);
+            expression_call(callback, callback_name, callback_args);
             for (std::size_t separator = callback_name.find('.');
                  separator != std::string::npos;
                  separator = callback_name.find('.', separator + 2))
@@ -1038,7 +1323,16 @@ class FastInterpreter {
       } else if (callee == "reduce") {
         if (current.kind != Value::Kind::Vector || args.size() != 2)
           throw RuntimeError(line, "invalid checked pipeline stage 'reduce'");
-        Value reduced = eval(args[0], frame, line, output);
+        Value reduced;
+        if (stage_index - 1 < pipeline_node.stages.size()) {
+          const auto* call = std::get_if<est::Call>(
+              &tree.arena->at(pipeline_node.stages[stage_index - 1]));
+          if (!call || call->arguments.empty())
+            throw RuntimeError(line, "internal error: reduce stage has no EST seed");
+          reduced = evaluate_tree_node(tree, call->arguments[0], frame, line, output);
+        } else {
+          throw RuntimeError(line, "internal error: reduce stage has no EST node");
+        }
         for (const auto& value : *current.vector)
           reduced = invoke_pipeline_callable(args[1], {reduced, value}, frame, line, output);
         current = reduced;
@@ -1060,10 +1354,43 @@ class FastInterpreter {
 #include "interpreter_domains.inc"
 #include "interpreter_phase20.inc"
 
-  Value eval(const std::string& expression, Frame& frame, int line,
+  Value evaluate_expression_source(const std::string& expression, Frame& frame, int line,
              std::ostream& output) {
-    std::string e = trim_copy(expression);
-    while (outer_parentheses(e)) e = trim_copy(e.substr(1, e.size() - 2));
+    const std::string e = trim_copy(expression);
+    if (e.empty()) return Value::unit();
+    auto tree = expression_tree(expression);
+    if (!tree) {
+      if (e.rfind("assert ", 0) == 0) {
+        const std::string condition = e.substr(7);
+        auto condition_tree = expression_tree(condition);
+        if (!condition_tree)
+          throw RuntimeError(line, "unsupported assertion condition");
+        if (!evaluate_tree_node(*condition_tree, condition_tree->root,
+                                frame, line, output).truthy()) {
+          emit("AssertionFailure", frame, line, condition);
+          throw RuntimeError(line, "assertion failed: " + condition);
+        }
+        return Value::unit();
+      }
+      throw RuntimeError(line, "unsupported expression '" + e + "'");
+    }
+    return evaluate_expression_tree(*tree, tree->root, frame, line, output);
+  }
+
+  Value evaluate_expression_tree(const ExpressionTreeView& tree_view,
+                                 est::ExprId root, Frame& frame, int line,
+                                 std::ostream& output) {
+    std::string e = trim_copy(
+        std::string(expression_node_text(tree_view, root)));
+    const ExpressionTreeView* tree = &tree_view;
+    est::ExprId current_root = root;
+    while (tree) {
+      const auto* parenthesized =
+          std::get_if<est::Parenthesized>(&tree->arena->at(current_root));
+      if (!parenthesized) break;
+      current_root = parenthesized->inner;
+      e = trim_copy(std::string(expression_node_text(*tree, current_root)));
+    }
     if (e.empty()) return Value::unit();
     if (e.size() >= 9 && e.compare(e.size() - 2, 2, "()") == 0) {
       std::string constructor = e.substr(0, e.size() - 2);
@@ -1072,23 +1399,89 @@ class FastInterpreter {
       if (constructor.rfind("Vector[", 0) == 0 && constructor.back() == ']')
         return Value::vector_value({}, constructor.substr(7, constructor.size() - 8));
     }
-    if (auto stages = split_pipeline(e); !stages.empty())
-      return eval_pipeline(stages, frame, line, output);
-    if (e.rfind("message ", 0) == 0) return message(e.substr(8), frame, line, output);
-    if (auto binary = split_operator(e, {" or "})) {
-      Value left = eval(binary->first, frame, line, output);
-      if (left.truthy()) return Value::boolean_value(true);
-      return Value::boolean_value(eval(binary->second, frame, line, output).truthy());
+    if (auto pipeline = functional_pipeline_from_est(e)) {
+      const auto* pipeline_node = tree
+          ? std::get_if<est::Pipeline>(&tree->arena->at(current_root)) : nullptr;
+      if (!pipeline_node)
+        throw RuntimeError(line, "internal error: checked pipeline has no EST node");
+      return eval_pipeline(*pipeline, frame, line, output, *tree, *pipeline_node);
     }
-    if (auto binary = split_operator(e, {" xor "})) {
-      bool left = eval(binary->first, frame, line, output).truthy();
-      bool right = eval(binary->second, frame, line, output).truthy();
-      return Value::boolean_value(left != right);
+    if (tree) {
+      if (const auto* message_node =
+              std::get_if<est::Message>(&tree->arena->at(current_root)))
+        return message(message_invocation_from_est(*tree, *message_node),
+                       frame, line, output);
     }
-    if (auto binary = split_operator(e, {" and "})) {
-      Value left = eval(binary->first, frame, line, output);
-      if (!left.truthy()) return Value::boolean_value(false);
-      return Value::boolean_value(eval(binary->second, frame, line, output).truthy());
+    if (e.rfind("message ", 0) == 0)
+      return message(e.substr(8), frame, line, output);
+    if (tree) {
+      if (const auto* binary =
+              std::get_if<est::Binary>(&tree->arena->at(current_root))) {
+        Value left = evaluate_tree_node(*tree, binary->left, frame, line, output);
+        if (binary->op == "or" && left.truthy())
+          return Value::boolean_value(true);
+        if (binary->op == "and" && !left.truthy())
+          return Value::boolean_value(false);
+        Value right = evaluate_tree_node(*tree, binary->right, frame, line, output);
+        if (binary->op == "or" || binary->op == "and")
+          return Value::boolean_value(right.truthy());
+        if (binary->op == "xor")
+          return Value::boolean_value(left.truthy() != right.truthy());
+        const auto& op = binary->op;
+        if (op == "==") return Value::boolean_value(equal(left, right));
+        if (op == "!=") return Value::boolean_value(!equal(left, right));
+        if (op == "<" || op == ">" || op == "<=" || op == ">=") {
+          if (left.kind == Value::Kind::Char && right.kind == Value::Kind::Char) {
+            if (op == "<") return Value::boolean_value(left.codepoint < right.codepoint);
+            if (op == ">") return Value::boolean_value(left.codepoint > right.codepoint);
+            if (op == "<=") return Value::boolean_value(left.codepoint <= right.codepoint);
+            return Value::boolean_value(left.codepoint >= right.codepoint);
+          }
+          if (left.kind == Value::Kind::Int && right.kind == Value::Kind::Int) {
+            if (op == "<") return Value::boolean_value(left.integer < right.integer);
+            if (op == ">") return Value::boolean_value(left.integer > right.integer);
+            if (op == "<=") return Value::boolean_value(left.integer <= right.integer);
+            return Value::boolean_value(left.integer >= right.integer);
+          }
+          const double lhs = left.kind == Value::Kind::Int ? left.integer : left.floating;
+          const double rhs = right.kind == Value::Kind::Int ? right.integer : right.floating;
+          if (op == "<") return Value::boolean_value(lhs < rhs);
+          if (op == ">") return Value::boolean_value(lhs > rhs);
+          if (op == "<=") return Value::boolean_value(lhs <= rhs);
+          return Value::boolean_value(lhs >= rhs);
+        }
+        if (op == "|" || op == "^" || op == "&" || op == "<<" || op == ">>") {
+          if (left.kind != Value::Kind::Int || right.kind != Value::Kind::Int)
+            throw RuntimeError(line, "bitwise operations require Int operands");
+          if (op == "|") return Value::int_value(left.integer | right.integer);
+          if (op == "^") return Value::int_value(left.integer ^ right.integer);
+          if (op == "&") return Value::int_value(left.integer & right.integer);
+          if (op == "<<") return Value::int_value(moss_shl(left.integer, right.integer));
+          return Value::int_value(moss_shr(left.integer, right.integer));
+        }
+        if (op == "+" && left.kind == Value::Kind::String &&
+            right.kind == Value::Kind::String)
+          return Value::string_value(left.string + right.string);
+        if (left.kind == Value::Kind::Int && right.kind == Value::Kind::Int) {
+          if (op == "+") return Value::int_value(wrapping_add(left.integer, right.integer));
+          if (op == "-") return Value::int_value(wrapping_sub(left.integer, right.integer));
+          if (op == "*") return Value::int_value(wrapping_mul(left.integer, right.integer));
+          if (right.integer == 0)
+            throw RuntimeError(line, op == "%" ? "integer remainder by zero"
+                                                   : "integer division by zero");
+          if (left.integer == std::numeric_limits<std::int64_t>::min() && right.integer == -1)
+            return Value::int_value(op == "%" ? 0 : std::numeric_limits<std::int64_t>::min());
+          if (op == "%") return Value::int_value(left.integer % right.integer);
+          return Value::int_value(left.integer / right.integer);
+        }
+        const double lhs = left.kind == Value::Kind::Int ? left.integer : left.floating;
+        const double rhs = right.kind == Value::Kind::Int ? right.integer : right.floating;
+        if (op == "+") return Value::float_value(lhs + rhs);
+        if (op == "-") return Value::float_value(lhs - rhs);
+        if (op == "*") return Value::float_value(lhs * rhs);
+        if (op == "%") throw RuntimeError(line, "integer remainder requires Int operands");
+        return Value::float_value(lhs / rhs);
+      }
     }
     if (auto place = locate(e, frame, line, output); place.value) {
       if (place.domain) state_event("state_read", frame, line, place);
@@ -1098,7 +1491,16 @@ class FastInterpreter {
     {
       std::string qualified;
       std::vector<std::string> arguments;
-      bool called = parse_call(e, qualified, arguments);
+      bool called = expression_call(e, qualified, arguments);
+      const std::vector<est::ExprId>* enum_argument_nodes = nullptr;
+      if (tree) {
+        const auto& root_node = tree->arena->at(current_root);
+        if (const auto* call_node = std::get_if<est::Call>(&root_node))
+          enum_argument_nodes = &call_node->arguments;
+        else if (const auto* constructor_node =
+                     std::get_if<est::Constructor>(&root_node))
+          enum_argument_nodes = &constructor_node->arguments;
+      }
       if (!called) qualified = e;
       auto dot = qualified.find('.');
       if (dot != std::string::npos && qualified.find('.', dot + 1) == std::string::npos) {
@@ -1108,13 +1510,23 @@ class FastInterpreter {
           if (declaration.name == enum_name) {
             Value result = Value::struct_value(enum_name);
             result.object->case_name = case_name;
-            for (const auto& argument : arguments) {
+            for (std::size_t index = 0; index < arguments.size(); ++index) {
+              const auto& argument = arguments[index];
               auto colon = argument.find(':');
               if (colon == std::string::npos)
                 throw RuntimeError(line, "enum constructor requires named fields");
-              auto name = trim_copy(argument.substr(0, colon));
-              result.object->fields[name] =
-                  eval(argument.substr(colon + 1), frame, line, output);
+              std::string name = trim_copy(argument.substr(0, colon));
+              if (enum_argument_nodes && index < enum_argument_nodes->size()) {
+                const auto* named = std::get_if<est::NamedArgument>(
+                    &tree->arena->at(enum_argument_nodes->at(index)));
+                if (named) {
+                  name = named->name;
+                  result.object->fields[name] = evaluate_tree_node(
+                      *tree, named->value, frame, line, output);
+                  continue;
+                }
+              }
+              throw RuntimeError(line, "internal error: enum field has no EST named argument");
             }
             return result;
           }
@@ -1123,13 +1535,74 @@ class FastInterpreter {
     if (frame.handler_scope && frame.domain && frame.domain->routes.count(e)) {
       Value value; value.kind = Value::Kind::DomainHandle; value.domain = frame.domain->routes.at(e); return value;
     }
+    if (tree) {
+      if (const auto* identifier_node =
+              std::get_if<est::Identifier>(&tree->arena->at(current_root))) {
+        if (identifier_node->name == "true") return Value::boolean_value(true);
+        if (identifier_node->name == "false") return Value::boolean_value(false);
+      }
+    }
     if (e == "true") return Value::boolean_value(true);
     if (e == "false") return Value::boolean_value(false);
     if (e == "not" || e == "!") return Value::boolean_value(false);
-    if (e.rfind("not ", 0) == 0) return Value::boolean_value(!eval(e.substr(4), frame, line, output).truthy());
+    if (tree) {
+      if (const auto* unary =
+              std::get_if<est::Unary>(&tree->arena->at(current_root))) {
+        const std::string operand(
+            expression_node_text(*tree, unary->operand));
+        if (unary->op == "not")
+          return Value::boolean_value(
+              !evaluate_tree_node(*tree, unary->operand, frame, line, output).truthy());
+        if (unary->op == "~") {
+          Value value = evaluate_tree_node(*tree, unary->operand, frame, line, output);
+          if (value.kind != Value::Kind::Int)
+            throw RuntimeError(line, "bitwise NOT requires Int operand");
+          return Value::int_value(~value.integer);
+        }
+        if (unary->op == "-") {
+          if (trim_copy(operand) == "9223372036854775808")
+            return Value::int_value(std::numeric_limits<std::int64_t>::min());
+          Value value = evaluate_tree_node(*tree, unary->operand, frame, line, output);
+          if (value.kind == Value::Kind::Int)
+            return Value::int_value(wrapping_sub(0, value.integer));
+          if (value.kind == Value::Kind::Float)
+            return Value::float_value(-value.floating);
+        }
+        if (unary->op == "+") {
+          if (auto number = decode_numeric_literal_expression(e))
+            return number->kind == NumericLiteral::Kind::Int
+                ? Value::int_value(number->integer)
+                : Value::float_value(number->floating);
+          est::ExprId operand_node = unary->operand;
+          const auto* operand_parenthesized =
+              std::get_if<est::Parenthesized>(
+                  &tree->arena->at(operand_node));
+          if (operand_parenthesized)
+            operand_node = operand_parenthesized->inner;
+          if (const auto* operand_literal =
+                  std::get_if<est::Literal>(&tree->arena->at(operand_node))) {
+            if (auto number =
+                    decode_numeric_literal_expression(operand_literal->spelling))
+              return number->kind == NumericLiteral::Kind::Int
+                  ? Value::int_value(number->integer)
+                  : Value::float_value(number->floating);
+          }
+          if (const auto* operand_identifier =
+                  std::get_if<est::Identifier>(&tree->arena->at(operand_node))) {
+            auto place = locate(operand_identifier->name, frame, line, output);
+            if (place.value &&
+                (place.value->kind == Value::Kind::Int ||
+                 place.value->kind == Value::Kind::Float))
+              return *place.value;
+          }
+        }
+      }
+    }
     if (e.rfind("assert ", 0) == 0) {
       auto condition = e.substr(7);
-      if (!eval(condition, frame, line, output).truthy()) {
+      auto condition_tree = expression_tree(condition);
+      if (!condition_tree || !evaluate_tree_node(
+              *condition_tree, condition_tree->root, frame, line, output).truthy()) {
         emit("AssertionFailure", frame, line, condition);
         throw RuntimeError(line, "assertion failed: " + condition);
       }
@@ -1138,95 +1611,70 @@ class FastInterpreter {
 
     // Numeric literals decode through the shared specification used by the
     // checker and native lowering (numeric_literal.hpp).
-    if (auto number = decode_numeric_literal_expression(e))
-      return number->kind == NumericLiteral::Kind::Int
-          ? Value::int_value(number->integer)
-          : Value::float_value(number->floating);
+    if (tree) {
+      if (const auto* literal =
+              std::get_if<est::Literal>(&tree->arena->at(current_root))) {
+        if (auto number = decode_numeric_literal_expression(literal->spelling))
+          return number->kind == NumericLiteral::Kind::Int
+              ? Value::int_value(number->integer)
+              : Value::float_value(number->floating);
+        if (literal->spelling.size() >= 2 && literal->spelling.front() == '"')
+          return Value::string_value(decode_string(literal->spelling.substr(
+              1, literal->spelling.size() - 2)));
+        if (literal->spelling.size() >= 2 && literal->spelling.front() == '\'')
+          return Value::char_value(decode_char(literal->spelling.substr(
+              1, literal->spelling.size() - 2)));
+      }
+    }
 
-    if (auto binary = split_operator(e, {"==", "!=", "<=", ">=", "<", ">"}))
-      return compare(binary->first, binary->second, e, frame, line, output);
-    if (auto binary = split_operator(e, {"|"}))
-      return bitwise(binary->first, binary->second, e, frame, line, output);
-    if (auto binary = split_operator(e, {"^"}))
-      return bitwise(binary->first, binary->second, e, frame, line, output);
-    if (auto binary = split_operator(e, {"&"}))
-      return bitwise(binary->first, binary->second, e, frame, line, output);
-    if (auto binary = split_operator(e, {"<<", ">>"}))
-      return bitwise(binary->first, binary->second, e, frame, line, output);
-    if (auto binary = split_operator(e, {"+", "-"}))
-      return arithmetic(binary->first, binary->second, e, frame, line, output);
-    if (auto binary = split_operator(e, {"*", "/", "%"}))
-      return arithmetic(binary->first, binary->second, e, frame, line, output);
-    if (!e.empty() && e.front() == '~') {
-      auto sub = trim_copy(e.substr(1));
-      if (sub.empty()) throw RuntimeError(line, "expected expression after '~'");
-      Value value = eval(sub, frame, line, output);
-      if (value.kind != Value::Kind::Int)
-        throw RuntimeError(line, "bitwise NOT requires Int operand");
-      return Value::int_value(~value.integer);
-    }
-    if (!e.empty() && e.front() == '-' && e.size() > 1) {
-      // The checker admits the magnitude 2^63 only as this negation.
-      if (trim_copy(e.substr(1)) == "9223372036854775808")
-        return Value::int_value(std::numeric_limits<std::int64_t>::min());
-      Value value = eval(e.substr(1), frame, line, output);
-      if (value.kind == Value::Kind::Int) return Value::int_value(wrapping_sub(0, value.integer));
-      if (value.kind == Value::Kind::Float) return Value::float_value(-value.floating);
-    }
-    // As in native lowering, quoted binary expressions must be split before
-    // falling back to a single String literal.
-    if (e.size() >= 2 && e.front() == '"' && e.back() == '"')
-      return Value::string_value(decode_string(e.substr(1, e.size() - 2)));
-    if (e.size() >= 2 && e.front() == '\'' && e.back() == '\'')
-      return Value::char_value(decode_char(e.substr(1, e.size() - 2)));
     // A final index may follow a computed value, including a vector literal.
     // Match the final bracket pair instead of treating every expression that
     // starts and ends with '['/']' as one literal (`[x][0]`). Lvalue-shaped
     // indices were already handled by locate() above.
-    if (e.back() == ']') {
-      std::vector<size_t> brackets;
-      bool quoted = false, escaped = false;
-      for (size_t i = 0; i < e.size(); ++i) {
-        const char c = e[i];
-        if (quoted) {
-          if (escaped) escaped = false;
-          else if (c == '\\') escaped = true;
-          else if (c == '"') quoted = false;
-          continue;
+    if (tree) {
+      if (const auto* index_node =
+              std::get_if<est::Index>(&tree->arena->at(current_root))) {
+        Value base = evaluate_tree_node(*tree, index_node->base, frame, line, output);
+        Value index = evaluate_tree_node(*tree, index_node->index, frame, line, output);
+        if (base.kind == Value::Kind::Map && base.map) {
+          if (auto position = map_position(base, index, frame, line, output))
+            return base.map->at(*position).second;
+          throw RuntimeError(line, "missing map key");
         }
-        if (c == '"') { quoted = true; continue; }
-        if (c == '[') brackets.push_back(i);
-        else if (c == ']' && !brackets.empty()) {
-          const size_t open = brackets.back();
-          brackets.pop_back();
-          if (i == e.size() - 1 && open > 0) {
-            Value base = eval(e.substr(0, open), frame, line, output);
-            Value index = eval(e.substr(open + 1, i - open - 1), frame,
-                               line, output);
-            if (base.kind == Value::Kind::Map && base.map) {
-              if (auto position = map_position(base, index, frame, line, output))
-                return base.map->at(*position).second;
-              throw RuntimeError(line, "missing map key");
-            }
-            auto values = base.kind == Value::Kind::Vector ? base.vector :
-                base.kind == Value::Kind::Queue ? base.queue : nullptr;
-            if (!values || index.kind != Value::Kind::Int || index.integer < 0 ||
-                static_cast<std::uint64_t>(index.integer) >= values->size())
-              throw RuntimeError(line, "vector index out of bounds");
-            return values->at(static_cast<size_t>(index.integer));
-          }
-        }
+        auto values = base.kind == Value::Kind::Vector ? base.vector :
+            base.kind == Value::Kind::Queue ? base.queue : nullptr;
+        if (!values || index.kind != Value::Kind::Int || index.integer < 0 ||
+            static_cast<std::uint64_t>(index.integer) >= values->size())
+          throw RuntimeError(line, "vector index out of bounds");
+        return values->at(static_cast<size_t>(index.integer));
       }
     }
-    if (e.front() == '[' && e.back() == ']') {
+    const auto* collection_node = tree ?
+        std::get_if<est::Collection>(&tree->arena->at(current_root)) : nullptr;
+    if (collection_node && collection_node->delimiter == '[') {
       std::vector<Value> values;
-      auto inside = e.substr(1, e.size() - 2);
-      for (const auto& part : split_arguments(inside)) values.push_back(eval(part, frame, line, output));
+      for (const auto part : collection_node->elements)
+        values.push_back(evaluate_tree_node(*tree, part, frame, line, output));
       return Value::vector_value(std::move(values));
     }
 
     std::string callee; std::vector<std::string> args;
-    if (parse_call(e, callee, args)) {
+    if (expression_call(e, callee, args)) {
+      const std::vector<est::ExprId>* call_argument_nodes = nullptr;
+      if (tree) {
+        const auto& call_root = tree->arena->at(current_root);
+        if (const auto* call_node = std::get_if<est::Call>(&call_root))
+          call_argument_nodes = &call_node->arguments;
+        else if (const auto* constructor_node =
+                     std::get_if<est::Constructor>(&call_root))
+          call_argument_nodes = &constructor_node->arguments;
+      }
+      auto evaluate_call_argument = [&](std::size_t index) {
+        if (call_argument_nodes && index < call_argument_nodes->size())
+          return evaluate_tree_node(*tree, call_argument_nodes->at(index),
+                                    frame, line, output);
+        throw RuntimeError(line, "internal error: callable argument has no EST node");
+      };
       // Fast Debug may see the whitespace-preserving spelling used by typed
       // empty-vector construction through a callable expression.
       std::string compact_callee = callee;
@@ -1237,9 +1685,9 @@ class FastInterpreter {
         return Value::vector_value({}, compact_callee.substr(7, compact_callee.size() - 8));
       if (callee.find('.') == std::string::npos) {
         if (callee == "replace" && args.size() == 2) {
-          Value replacement = eval(args[1], frame, line, output);
+          Value replacement = evaluate_call_argument(1);
           const auto source = trim_copy(args[1]);
-          if (identifier(source) && frame.locals.count(source)) {
+          if (expression_identifier(source) && frame.locals.count(source)) {
             auto type = frame.local_types.find(source);
             if (type == frame.local_types.end() || type->second.empty())
               throw RuntimeError(line, "internal error: replace replacement lacks a checked type");
@@ -1268,7 +1716,7 @@ class FastInterpreter {
           return Value::set_value();
         if (callee == "assert") {
           if (args.size() != 1) throw RuntimeError(line, "assert expects one argument");
-          if (!eval(args.front(), frame, line, output).truthy()) {
+          if (!evaluate_call_argument(0).truthy()) {
             emit("AssertionFailure", frame, line, args.front());
             throw RuntimeError(line, "assertion failed: " + args.front());
           }
@@ -1276,8 +1724,8 @@ class FastInterpreter {
         }
         if (callee == "assertEqual") {
           if (args.size() != 2) throw RuntimeError(line, "assertEqual expects two arguments");
-          auto actual = eval(args[0], frame, line, output);
-          auto expected = eval(args[1], frame, line, output);
+          auto actual = evaluate_call_argument(0);
+          auto expected = evaluate_call_argument(1);
           if (!equal(actual, expected)) {
             emit("AssertionFailure", frame, line, e);
             throw RuntimeError(line, "assertEqual failed: actual=" + actual.display() +
@@ -1287,13 +1735,13 @@ class FastInterpreter {
         }
         if (callee == "sqrt") {
           if (args.size() != 1) throw RuntimeError(line, "sqrt expects one argument");
-          auto value = eval(args.front(), frame, line, output);
+          auto value = evaluate_call_argument(0);
           return Value::float_value(std::sqrt(value.kind == Value::Kind::Int ? value.integer : value.floating));
         }
         if (callee == "is_nan" || callee == "is_finite") {
           if (args.size() != 1)
             throw RuntimeError(line, callee + " expects one Float argument");
-          auto value = eval(args.front(), frame, line, output);
+          auto value = evaluate_call_argument(0);
           if (value.kind != Value::Kind::Float)
             throw RuntimeError(line, callee + " argument must have type Float");
           return Value::boolean_value(callee == "is_nan"
@@ -1301,7 +1749,7 @@ class FastInterpreter {
         }
         const std::string_view numeric_name = numeric_builtin_base(callee);
         if (numeric_name == "parse_int" || numeric_name == "parse_float") {
-          auto argument = eval(args.front(), frame, line, output);
+        auto argument = evaluate_call_argument(0);
           NumericParseError error = NumericParseError::Invalid;
           if (numeric_name == "parse_int") {
             std::int64_t number = 0;
@@ -1322,7 +1770,7 @@ class FastInterpreter {
                              std::move(raised), line, frame.source_file, {}};
         }
         if (numeric_name == "to_int") {
-          auto argument = eval(args.front(), frame, line, output);
+          auto argument = evaluate_call_argument(0);
           const double number = argument.floating;
           const std::string variant = !std::isfinite(number) ? "NonFinite" :
               (std::trunc(number) < -9223372036854775808.0 ||
@@ -1336,7 +1784,7 @@ class FastInterpreter {
                              std::move(raised), line, frame.source_file, {}};
         }
         if (callee == "Char" && args.size() == 1 && !function(callee)) {
-          auto cp_val = eval(args.front(), frame, line, output);
+          auto cp_val = evaluate_call_argument(0);
           if (cp_val.kind != Value::Kind::Int)
             throw RuntimeError(line, "Char expects an Int codepoint");
           int64_t cp = cp_val.integer;
@@ -1345,17 +1793,17 @@ class FastInterpreter {
           return Value::char_value(static_cast<uint32_t>(cp));
         }
         if (callee == "less" && args.size() == 2 && !function(callee)) {
-          auto left = eval(args[0], frame, line, output);
-          auto right = eval(args[1], frame, line, output);
+          auto left = evaluate_call_argument(0);
+          auto right = evaluate_call_argument(1);
           return Value::boolean_value(moss_less(left, right));
         }
         if (callee == "isequal" && args.size() == 2 && !function(callee)) {
-          auto left = eval(args[0], frame, line, output);
-          auto right = eval(args[1], frame, line, output);
+          auto left = evaluate_call_argument(0);
+          auto right = evaluate_call_argument(1);
           return Value::boolean_value(moss_isequal(left, right));
         }
         if (callee == "hash" && args.size() == 1 && !function(callee)) {
-          auto val = eval(args.front(), frame, line, output);
+          auto val = evaluate_call_argument(0);
           return Value::int_value(moss_hash(val));
         }
         if (callee == "sort" && (args.size() == 1 || args.size() == 2) && !function(callee)) {
@@ -1382,7 +1830,7 @@ class FastInterpreter {
             bool is_reverse = false;
             std::string inner_fn = key_expr;
             std::string rev_callee; std::vector<std::string> rev_args;
-            if (parse_call(key_expr, rev_callee, rev_args) && rev_callee == "Reverse" && rev_args.size() == 1) {
+            if (expression_call(key_expr, rev_callee, rev_args) && rev_callee == "Reverse" && rev_args.size() == 1) {
               is_reverse = true;
               inner_fn = rev_args[0];
             }
@@ -1426,16 +1874,42 @@ class FastInterpreter {
       }
     }
 
-    if (auto member = top_level_member(e)) {
+    if (auto member = expression_member(e)) {
+      const est::Member* member_node = nullptr;
+      const std::vector<est::ExprId>* member_argument_nodes = nullptr;
+      if (tree) {
+        const auto& member_root = tree->arena->at(current_root);
+        est::ExprId member_callee = current_root;
+        if (const auto* call_node = std::get_if<est::Call>(&member_root)) {
+          member_callee = call_node->callee;
+          member_argument_nodes = &call_node->arguments;
+        } else if (const auto* constructor_node =
+                       std::get_if<est::Constructor>(&member_root)) {
+          member_callee = constructor_node->type;
+          member_argument_nodes = &constructor_node->arguments;
+        }
+        member_node = std::get_if<est::Member>(&tree->arena->at(member_callee));
+      }
+      auto evaluate_member_receiver = [&]() {
+        if (member_node)
+          return evaluate_tree_node(*tree, member_node->base, frame, line, output);
+        throw RuntimeError(line, "internal error: member expression has no EST base");
+      };
       if (member->second.find('(') != std::string::npos) {
         std::string method_name; std::vector<std::string> method_args;
-        if (parse_call(member->second, method_name, method_args)) {
+        if (expression_call(member->second, method_name, method_args)) {
+          auto evaluate_method_argument = [&](std::size_t index) {
+            if (member_argument_nodes && index < member_argument_nodes->size())
+              return evaluate_tree_node(*tree, member_argument_nodes->at(index),
+                                        frame, line, output);
+            throw RuntimeError(line, "internal error: method argument has no EST node");
+          };
           if ((method_name == "reserve" || method_name == "append") &&
               method_args.size() == 1) {
             Place receiver_place = locate(member->first, frame, line, output);
             if (receiver_place.value &&
                 receiver_place.value->kind == Value::Kind::String) {
-              Value argument = eval(method_args.front(), frame, line, output);
+              Value argument = evaluate_method_argument(0);
               const std::string before = summary(*receiver_place.value);
               if (method_name == "reserve") {
                 if (argument.kind != Value::Kind::Int)
@@ -1459,31 +1933,31 @@ class FastInterpreter {
           if (member->first == "Int" || member->first == "Float" || member->first == "Char" ||
               member->first == "String" || member->first == "Bool") {
             if (method_name == "less" && method_args.size() == 2) {
-              Value a = eval(method_args[0], frame, line, output);
-              Value b = eval(method_args[1], frame, line, output);
+              Value a = evaluate_method_argument(0);
+              Value b = evaluate_method_argument(1);
               return Value::boolean_value(moss_less(a, b));
             }
             if (method_name == "isequal" && method_args.size() == 2) {
-              Value a = eval(method_args[0], frame, line, output);
-              Value b = eval(method_args[1], frame, line, output);
+              Value a = evaluate_method_argument(0);
+              Value b = evaluate_method_argument(1);
               return Value::boolean_value(moss_isequal(a, b));
             }
             if (method_name == "hash" && method_args.size() == 1) {
-              Value a = eval(method_args[0], frame, line, output);
+              Value a = evaluate_method_argument(0);
               return Value::int_value(moss_hash(a));
             }
           }
-          auto receiver = eval(member->first, frame, line, output);
+          auto receiver = evaluate_member_receiver();
           if (receiver.kind == Value::Kind::Float) {
             if (method_name == "to_string" && method_args.empty()) {
               return Value::string_value(rust_f64_to_string(receiver.floating));
             }
             if (method_name == "less" && method_args.size() == 1) {
-              Value other = eval(method_args[0], frame, line, output);
+              Value other = evaluate_method_argument(0);
               return Value::boolean_value(moss_less(receiver, other));
             }
             if (method_name == "isequal" && method_args.size() == 1) {
-              Value other = eval(method_args[0], frame, line, output);
+              Value other = evaluate_method_argument(0);
               return Value::boolean_value(moss_isequal(receiver, other));
             }
             if (method_name == "hash" && method_args.empty()) {
@@ -1495,11 +1969,11 @@ class FastInterpreter {
               return Value::string_value(std::to_string(receiver.integer));
             }
             if (method_name == "less" && method_args.size() == 1) {
-              Value other = eval(method_args[0], frame, line, output);
+              Value other = evaluate_method_argument(0);
               return Value::boolean_value(moss_less(receiver, other));
             }
             if (method_name == "isequal" && method_args.size() == 1) {
-              Value other = eval(method_args[0], frame, line, output);
+              Value other = evaluate_method_argument(0);
               return Value::boolean_value(moss_isequal(receiver, other));
             }
             if (method_name == "hash" && method_args.empty()) {
@@ -1514,11 +1988,11 @@ class FastInterpreter {
               return Value::int_value(static_cast<int64_t>(receiver.codepoint));
             }
             if (method_name == "less" && method_args.size() == 1) {
-              Value other = eval(method_args[0], frame, line, output);
+              Value other = evaluate_method_argument(0);
               return Value::boolean_value(moss_less(receiver, other));
             }
             if (method_name == "isequal" && method_args.size() == 1) {
-              Value other = eval(method_args[0], frame, line, output);
+              Value other = evaluate_method_argument(0);
               return Value::boolean_value(moss_isequal(receiver, other));
             }
             if (method_name == "hash" && method_args.empty()) {
@@ -1546,7 +2020,7 @@ class FastInterpreter {
             if (method_name == "length" && method_args.empty())
               return Value::int_value(static_cast<int64_t>(characters().size()));
             if (method_name == "char_at" && method_args.size() == 1) {
-              Value index = eval(method_args[0], frame, line, output);
+              Value index = evaluate_method_argument(0);
               auto chars = characters();
               if (index.kind != Value::Kind::Int || index.integer < 0 ||
                   static_cast<uint64_t>(index.integer) >= chars.size())
@@ -1561,18 +2035,18 @@ class FastInterpreter {
               return Value::vector_value(std::move(result), "char");
             }
             if (method_name == "less" && method_args.size() == 1) {
-              Value other = eval(method_args[0], frame, line, output);
+              Value other = evaluate_method_argument(0);
               return Value::boolean_value(moss_less(receiver, other));
             }
             if (method_name == "isequal" && method_args.size() == 1) {
-              Value other = eval(method_args[0], frame, line, output);
+              Value other = evaluate_method_argument(0);
               return Value::boolean_value(moss_isequal(receiver, other));
             }
             if (method_name == "hash" && method_args.empty()) {
               return Value::int_value(moss_hash(receiver));
             }
             if (method_name == "find" && method_args.size() == 1) {
-              Value pattern = eval(method_args[0], frame, line, output);
+              Value pattern = evaluate_method_argument(0);
               if (pattern.kind != Value::Kind::String)
                 throw RuntimeError(line, "String find requires a String pattern");
               size_t byte = receiver.string.find(pattern.string);
@@ -1584,8 +2058,8 @@ class FastInterpreter {
               return Value::int_value(index);
             }
             if (method_name == "slice" && method_args.size() == 2) {
-              Value start = eval(method_args[0], frame, line, output);
-              Value length = eval(method_args[1], frame, line, output);
+              Value start = evaluate_method_argument(0);
+              Value length = evaluate_method_argument(1);
               if (start.kind != Value::Kind::Int || length.kind != Value::Kind::Int)
                 throw RuntimeError(line, "String slice requires Int start and length");
               auto chars = characters();
@@ -1613,7 +2087,7 @@ class FastInterpreter {
               return Value::string_value(std::move(result));
             }
             if (method_name == "split" && method_args.size() == 1) {
-              Value separator = eval(method_args[0], frame, line, output);
+              Value separator = evaluate_method_argument(0);
               if (separator.kind != Value::Kind::String || separator.string.empty())
                 throw RuntimeError(line, "String split requires a nonempty separator");
               std::vector<Value> result;
@@ -1630,7 +2104,7 @@ class FastInterpreter {
               return Value::vector_value(std::move(result));
             }
             if (method_name == "join" && method_args.size() == 1) {
-              Value parts = eval(method_args[0], frame, line, output);
+              Value parts = evaluate_method_argument(0);
               if (parts.kind != Value::Kind::Vector)
                 throw RuntimeError(line, "String join requires Vector[String]");
               std::string joined;
@@ -1646,7 +2120,7 @@ class FastInterpreter {
           if (receiver.kind == Value::Kind::Vector || receiver.kind == Value::Kind::Queue) {
             auto values = receiver.kind == Value::Kind::Vector ? receiver.vector : receiver.queue;
             if (method_name == "push" && method_args.size() == 1) {
-              values->push_back(eval(method_args.front(), frame, line, output));
+              values->push_back(evaluate_method_argument(0));
               return Value::unit();
             }
             if (method_name == "pop" && method_args.empty()) {
@@ -1659,8 +2133,8 @@ class FastInterpreter {
           }
           if (receiver.kind == Value::Kind::Map) {
             if (method_name == "delete" && method_args.size() == 3) {
-              Value key = eval(method_args[0], frame, line, output);
-              Value fallback = eval(method_args[1], frame, line, output);
+              Value key = evaluate_method_argument(0);
+              Value fallback = evaluate_method_argument(1);
               if (auto position = map_position(receiver, key, frame, line, output)) {
                 Value removed = independent(receiver.map->at(*position).second);
                 receiver.map->erase(receiver.map->begin() + *position);
@@ -1675,8 +2149,8 @@ class FastInterpreter {
               return independent(fallback);
             }
             if (method_name == "get" && method_args.size() == 2) {
-              Value key = eval(method_args[0], frame, line, output);
-              Value fallback = eval(method_args[1], frame, line, output);
+              Value key = evaluate_method_argument(0);
+              Value fallback = evaluate_method_argument(1);
               if (auto position = map_position(receiver, key, frame, line, output))
                 return independent(receiver.map->at(*position).second);
               return independent(fallback);
@@ -1697,7 +2171,7 @@ class FastInterpreter {
             }
             if ((method_name == "insert" || method_name == "contains") &&
                 method_args.size() == 1) {
-              Value key = eval(method_args[0], frame, line, output);
+              Value key = evaluate_method_argument(0);
               std::int64_t hash = 0;
               if (set_position(receiver, key, frame, line, output, &hash))
                 return method_name == "contains" ? Value::boolean_value(true)
@@ -1720,7 +2194,7 @@ class FastInterpreter {
                              locate(member->first, frame, line, output));
         }
       }
-      auto receiver = eval(member->first, frame, line, output);
+      auto receiver = evaluate_member_receiver();
       if (receiver.kind != Value::Kind::Struct || !receiver.object)
         throw RuntimeError(line, "field receiver is not a Moss object");
       auto field = receiver.object->fields.find(member->second);
@@ -1728,7 +2202,7 @@ class FastInterpreter {
       return field->second;
     }
 
-    if (identifier(e)) {
+    if (expression_identifier(e)) {
       auto found = frame.locals.find(e);
       if (found != frame.locals.end()) {
         emit("LocalRead", frame, line, e);
@@ -1768,7 +2242,7 @@ class FastInterpreter {
     return result;
   }
 
-  static std::vector<std::string> split_arguments(const std::string& input) {
+  static std::vector<std::string> split_arguments_legacy(const std::string& input) {
     std::vector<std::string> result; int p = 0, b = 0, s = 0; bool quoted = false; size_t start = 0;
     for (size_t i = 0; i < input.size(); ++i) {
       char c = input[i];
@@ -1788,35 +2262,6 @@ class FastInterpreter {
     return result;
   }
 
-  Value compare(const std::string& left_text, const std::string& right_text,
-                const std::string& whole, Frame& frame, int line,
-                std::ostream& output) {
-    std::string op = operator_between(
-        whole, left_text, right_text,
-        {"==", "!=", "<=", ">=", "<", ">"});
-    auto left = eval(left_text, frame, line, output), right = eval(right_text, frame, line, output);
-    if (op == "==") return Value::boolean_value(equal(left, right));
-    if (op == "!=") return Value::boolean_value(!equal(left, right));
-    if (left.kind == Value::Kind::Char && right.kind == Value::Kind::Char) {
-      if (op == "<") return Value::boolean_value(left.codepoint < right.codepoint);
-      if (op == ">") return Value::boolean_value(left.codepoint > right.codepoint);
-      if (op == "<=") return Value::boolean_value(left.codepoint <= right.codepoint);
-      return Value::boolean_value(left.codepoint >= right.codepoint);
-    }
-    if (left.kind == Value::Kind::Int && right.kind == Value::Kind::Int) {
-      if (op == "<") return Value::boolean_value(left.integer < right.integer);
-      if (op == ">") return Value::boolean_value(left.integer > right.integer);
-      if (op == "<=") return Value::boolean_value(left.integer <= right.integer);
-      return Value::boolean_value(left.integer >= right.integer);
-    }
-    double l = left.kind == Value::Kind::Int ? left.integer : left.floating;
-    double r = right.kind == Value::Kind::Int ? right.integer : right.floating;
-    if (op == "<") return Value::boolean_value(l < r);
-    if (op == ">") return Value::boolean_value(l > r);
-    if (op == "<=") return Value::boolean_value(l <= r);
-    return Value::boolean_value(l >= r);
-  }
-
   static inline std::int64_t moss_shl(std::int64_t value, std::int64_t shift) {
     if (shift < 0 || shift >= 64) return 0;
     return static_cast<std::int64_t>(static_cast<std::uint64_t>(value) << static_cast<std::uint32_t>(shift));
@@ -1825,52 +2270,6 @@ class FastInterpreter {
   static inline std::int64_t moss_shr(std::int64_t value, std::int64_t shift) {
     if (shift < 0 || shift >= 64) return value < 0 ? -1 : 0;
     return value >> shift;
-  }
-
-  Value bitwise(const std::string& left_text, const std::string& right_text,
-                const std::string& whole, Frame& frame, int line,
-                std::ostream& output) {
-    std::string op = operator_between(whole, left_text, right_text,
-                                      {"|", "^", "&", "<<", ">>"});
-    auto left = eval(left_text, frame, line, output);
-    auto right = eval(right_text, frame, line, output);
-    if (left.kind != Value::Kind::Int || right.kind != Value::Kind::Int)
-      throw RuntimeError(line, "bitwise operations require Int operands");
-    if (op == "|") return Value::int_value(left.integer | right.integer);
-    if (op == "^") return Value::int_value(left.integer ^ right.integer);
-    if (op == "&") return Value::int_value(left.integer & right.integer);
-    if (op == "<<") return Value::int_value(moss_shl(left.integer, right.integer));
-    if (op == ">>") return Value::int_value(moss_shr(left.integer, right.integer));
-    throw RuntimeError(line, "unknown bitwise operator: " + op);
-  }
-
-  Value arithmetic(const std::string& left_text, const std::string& right_text,
-                   const std::string& whole, Frame& frame, int line,
-                   std::ostream& output) {
-    std::string op = operator_between(whole, left_text, right_text,
-                                      {"+", "-", "*", "/", "%"});
-    auto left = eval(left_text, frame, line, output), right = eval(right_text, frame, line, output);
-    if (op == "+" && left.kind == Value::Kind::String && right.kind == Value::Kind::String)
-      return Value::string_value(left.string + right.string);
-    if (left.kind == Value::Kind::Int && right.kind == Value::Kind::Int) {
-      if (op == "+") return Value::int_value(wrapping_add(left.integer, right.integer));
-      if (op == "-") return Value::int_value(wrapping_sub(left.integer, right.integer));
-      if (op == "*") return Value::int_value(wrapping_mul(left.integer, right.integer));
-      if (right.integer == 0)
-        throw RuntimeError(line, op == "%" ? "integer remainder by zero"
-                                                   : "integer division by zero");
-      if (left.integer == std::numeric_limits<std::int64_t>::min() && right.integer == -1)
-        return Value::int_value(op == "%" ? 0 : std::numeric_limits<std::int64_t>::min());
-      if (op == "%") return Value::int_value(left.integer % right.integer);
-      return Value::int_value(left.integer / right.integer);
-    }
-    double l = left.kind == Value::Kind::Int ? left.integer : left.floating;
-    double r = right.kind == Value::Kind::Int ? right.integer : right.floating;
-    if (op == "+") return Value::float_value(l + r);
-    if (op == "-") return Value::float_value(l - r);
-    if (op == "*") return Value::float_value(l * r);
-    if (op == "%") throw RuntimeError(line, "integer remainder requires Int operands");
-    return Value::float_value(l / r);
   }
 
   static bool equal(const Value& left, const Value& right) {
@@ -2089,9 +2488,9 @@ class FastInterpreter {
     for (const auto& field : object.fields) {
       auto found = supplied.find(field.name);
       if (found != supplied.end())
-        result.object->fields[field.name] = eval(found->second, frame, line, output);
+        result.object->fields[field.name] = evaluate_expression_source(found->second, frame, line, output);
       else if (!field.init.empty())
-        result.object->fields[field.name] = eval(field.init, frame, field.line, output);
+        result.object->fields[field.name] = evaluate_expression_source(field.init, frame, field.line, output);
       else result.object->fields[field.name] = default_semantic_value(field.type, frame, line, output);
     }
     for (const auto& entry : supplied)
@@ -2124,11 +2523,13 @@ class FastInterpreter {
     const auto& executable_body = target.execution_body
         ? *target.execution_body : target.body;
     Flow flow = execute(executable_body, frame, output);
+    ExpressionHandlesScope result_handles_scope(
+        active_expression_handles_, &target.expression_handles);
     Value result = flow.returned ? flow.value :
         (target.execution_result_expression
-             ? eval(*target.execution_result_expression, frame, target.result_line, output)
+             ? evaluate_expression_source(*target.execution_result_expression, frame, target.result_line, output)
              : target.result_expression
-                 ? eval(*target.result_expression, frame, target.result_line, output)
+                 ? evaluate_expression_source(*target.result_expression, frame, target.result_line, output)
                  : Value::unit());
     if (!flow.returned)
       emit("Return", frame, target.result_line ? target.result_line : target.line,
@@ -2163,11 +2564,13 @@ class FastInterpreter {
     const auto& executable_body = target.execution_body
         ? *target.execution_body : target.body;
     Flow flow = execute(executable_body, frame, output);
+    ExpressionHandlesScope result_handles_scope(
+        active_expression_handles_, &target.expression_handles);
     Value result = flow.returned ? flow.value :
         (target.execution_result_expression
-             ? eval(*target.execution_result_expression, frame, target.result_line, output)
+             ? evaluate_expression_source(*target.execution_result_expression, frame, target.result_line, output)
              : target.result_expression
-                 ? eval(*target.result_expression, frame, target.result_line, output)
+                 ? evaluate_expression_source(*target.result_expression, frame, target.result_line, output)
                  : Value::unit());
     if (!flow.returned)
       emit("Return", frame, target.result_line ? target.result_line : target.line,
@@ -2182,9 +2585,9 @@ class FastInterpreter {
     if (name == "_") return;
     auto bracket = name.find('[');
     if (bracket != std::string::npos && name.back() == ']') {
-      Value receiver = eval(name.substr(0, bracket), frame, line, output);
+      Value receiver = evaluate_expression_source(name.substr(0, bracket), frame, line, output);
       if (receiver.kind == Value::Kind::Map && receiver.map) {
-        Value key = eval(name.substr(bracket + 1, name.size() - bracket - 2), frame, line, output);
+        Value key = evaluate_expression_source(name.substr(bracket + 1, name.size() - bracket - 2), frame, line, output);
         std::int64_t hash = 0;
         if (auto position = map_position(receiver, key, frame, line, output, &hash)) {
           receiver.map->at(*position).second = std::move(value);
@@ -2210,7 +2613,7 @@ class FastInterpreter {
           trace_.back().after = summary(*place.value);
         }
       }
-    } else if (identifier(name)) {
+    } else if (binding_identifier(name)) {
       std::string after = summary(value);
       // An implicit `name = expr` declares, unless it reinitializes a
       // consumed binding that is still lexically in scope.
@@ -2232,7 +2635,7 @@ class FastInterpreter {
       const Stmt& statement = statements[i];
       if (statement.indent != level) { ++i; continue; }
       if ((statement.kind == Stmt::Kind::Let || statement.kind == Stmt::Kind::Var ||
-           (statement.kind == Stmt::Kind::Assign && identifier(statement.a))) &&
+           (statement.kind == Stmt::Kind::Assign && binding_identifier(statement.a))) &&
           statement.a != "_")
         out.insert(statement.a);
       if (statement.kind == Stmt::Kind::If || statement.kind == Stmt::Kind::Match ||
@@ -2323,6 +2726,8 @@ class FastInterpreter {
     size_t index = begin;
     while (index < end) {
       const Stmt& statement = statements[index];
+      ExpressionHandlesScope expression_handles_scope(
+          active_expression_handles_, &statement.expression_handles);
       if (statement.kind == Stmt::Kind::Try) {
         size_t try_end = index + 1;
         while (try_end < end && statements[try_end].indent > statement.indent)
@@ -2412,11 +2817,11 @@ class FastInterpreter {
         continue;
       }
       if (statement.kind == Stmt::Kind::Match) {
-        Value selected = eval(statement.a, frame, statement.line, output);
+        Value selected = evaluate_expression_source(statement.a, frame, statement.line, output);
         if (selected.kind != Value::Kind::Struct || !selected.object ||
             selected.object->case_name.empty())
           throw RuntimeError(statement.line, "match requires an enum value");
-        if (statement.b == "consume" && identifier(statement.a)) {
+        if (statement.b == "consume" && binding_identifier(statement.a)) {
           frame.locals.erase(statement.a);
           frame.consumed.insert(statement.a);
         }
@@ -2498,7 +2903,7 @@ class FastInterpreter {
           while (else_end < end && statements[else_end].indent > statement.indent) ++else_end;
           after = else_end;
         }
-        bool condition = eval(statement.a, frame, statement.line, output).truthy();
+        bool condition = evaluate_expression_source(statement.a, frame, statement.line, output).truthy();
         int branch_id = emit("BranchTaken", frame, statement.line,
                              condition ? "then" : "else");
         Flow flow;
@@ -2553,14 +2958,14 @@ class FastInterpreter {
         try {
           std::string callee;
           std::vector<std::string> arguments;
-          if (parse_call(trim_copy(statement.b), callee, arguments) &&
+          if (expression_call(trim_copy(statement.b), callee, arguments) &&
               callee == "range") {
             if (arguments.size() != 2 && arguments.size() != 3)
               throw RuntimeError(statement.line, "range requires two or three arguments");
-            const Value start = eval(arguments[0], frame, statement.line, output);
-            const Value finish = eval(arguments[1], frame, statement.line, output);
+            const Value start = evaluate_expression_source(arguments[0], frame, statement.line, output);
+            const Value finish = evaluate_expression_source(arguments[1], frame, statement.line, output);
             const Value stride = arguments.size() == 3
-                ? eval(arguments[2], frame, statement.line, output)
+                ? evaluate_expression_source(arguments[2], frame, statement.line, output)
                 : Value::int_value(1);
             if (start.kind != Value::Kind::Int || finish.kind != Value::Kind::Int ||
                 stride.kind != Value::Kind::Int || stride.integer <= 0)
@@ -2574,7 +2979,7 @@ class FastInterpreter {
               current += stride.integer;
             }
           } else {
-            Value source = eval(statement.b, frame, statement.line, output);
+            Value source = evaluate_expression_source(statement.b, frame, statement.line, output);
             if (source.kind != Value::Kind::Vector || !source.vector)
               throw RuntimeError(statement.line,
                                  "Fast Debug cannot iterate this checked source");
@@ -2596,7 +3001,7 @@ class FastInterpreter {
         // No interpreter-only iteration cap: a checked program must run the
         // same number of iterations as native code.
         uint64_t iterations = 0;
-        while (eval(statement.a, frame, statement.line, output).truthy()) {
+        while (evaluate_expression_source(statement.a, frame, statement.line, output).truthy()) {
           ++iterations;
           int loop_id = emit("LoopIteration", frame, statement.line, std::to_string(iterations));
           Flow flow;
@@ -2614,7 +3019,7 @@ class FastInterpreter {
         while (body_end < end && statements[body_end].indent > statement.indent) ++body_end;
         std::string callee;
         std::vector<std::string> range_args;
-        bool is_range = parse_call(statement.b, callee, range_args) && callee == "range";
+        bool is_range = expression_call(statement.b, callee, range_args) && callee == "range";
 
         Flow flow;
         uint64_t iterations = 0;
@@ -2635,11 +3040,11 @@ class FastInterpreter {
         if (is_range) {
           if (range_args.size() < 2 || range_args.size() > 3)
             throw RuntimeError(statement.line, "range() expects 2 or 3 arguments");
-          int64_t start = eval(range_args[0], frame, statement.line, output).integer;
-          int64_t stop = eval(range_args[1], frame, statement.line, output).integer;
+          int64_t start = evaluate_expression_source(range_args[0], frame, statement.line, output).integer;
+          int64_t stop = evaluate_expression_source(range_args[1], frame, statement.line, output).integer;
           int64_t step = 1;
           if (range_args.size() == 3) {
-            step = eval(range_args[2], frame, statement.line, output).integer;
+            step = evaluate_expression_source(range_args[2], frame, statement.line, output).integer;
             if (step <= 0) throw RuntimeError(statement.line, "range() step must be positive");
           }
           declare_local(frame, statement.a);
@@ -2653,7 +3058,7 @@ class FastInterpreter {
             cur = next;
           }
         } else {
-          Value iterable = eval(statement.b, frame, statement.line, output);
+          Value iterable = evaluate_expression_source(statement.b, frame, statement.line, output);
           std::shared_ptr<std::vector<Value>> source =
               iterable.kind == Value::Kind::Vector ? iterable.vector :
               iterable.kind == Value::Kind::Queue ? iterable.queue : nullptr;
@@ -2681,7 +3086,7 @@ class FastInterpreter {
       switch (statement.kind) {
         case Stmt::Kind::Let:
         case Stmt::Kind::Var: {
-          Value initial = eval(statement.b, frame, statement.line, output);
+          Value initial = evaluate_expression_source(statement.b, frame, statement.line, output);
           declare_local(frame, statement.a);
           frame.locals[statement.a] = std::move(initial);
           frame.local_types[statement.a] = checked_binding_type(statement, frame);
@@ -2690,14 +3095,14 @@ class FastInterpreter {
           break;
         }
         case Stmt::Kind::Assign:
-          assign(statement.a, eval(statement.b, frame, statement.line, output), frame, statement.line, output);
-          if (identifier(statement.a) && statement.a != "_")
+          assign(statement.a, evaluate_expression_source(statement.b, frame, statement.line, output), frame, statement.line, output);
+          if (binding_identifier(statement.a) && statement.a != "_")
             frame.local_types[statement.a] = checked_binding_type(statement, frame);
           break;
         case Stmt::Kind::Echo:
           for (size_t i = 0; i < statement.args.size(); ++i) {
             if (i) output << " ";
-            output << echo_text(eval(statement.args[i], frame, statement.line, output),
+            output << echo_text(evaluate_expression_source(statement.args[i], frame, statement.line, output),
                                 statement.line);
           }
           output << "\n";
@@ -2705,13 +3110,13 @@ class FastInterpreter {
         case Stmt::Kind::Call:
         case Stmt::Kind::Raw:
           if (!statement.text.empty())
-            eval(statement.text, frame, statement.line, output);
+            evaluate_expression_source(statement.text, frame, statement.line, output);
           break;
         case Stmt::Kind::Pass:
           break;
         case Stmt::Kind::Return:
           flow.returned = true;
-          flow.value = statement.a.empty() ? Value::unit() : eval(statement.a, frame, statement.line, output);
+          flow.value = statement.a.empty() ? Value::unit() : evaluate_expression_source(statement.a, frame, statement.line, output);
           emit("Return", frame, statement.line, flow.value.display());
           return flow;
         case Stmt::Kind::Message: {
@@ -2726,7 +3131,7 @@ class FastInterpreter {
         }
         case Stmt::Kind::Reply:
           flow.returned = true;
-          flow.value = independent(eval(statement.a, frame, statement.line, output));
+          flow.value = independent(evaluate_expression_source(statement.a, frame, statement.line, output));
           emit("reply", frame, statement.line, summary(flow.value));
           return flow;
         case Stmt::Kind::Raise: {
@@ -2738,7 +3143,7 @@ class FastInterpreter {
                  selected_errors_.back().identity.canonical());
             throw selected_errors_.back();
           }
-          Value value = independent(eval(statement.a, frame,
+          Value value = independent(evaluate_expression_source(statement.a, frame,
                                          statement.line, output));
           RaisedIdentity identity;
           if (value.kind == Value::Kind::Struct && value.object &&

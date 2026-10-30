@@ -256,6 +256,9 @@ struct Stmt {
     Try, Recover, Raise
   } kind = Kind::Raw;
   int line = 0; int indent = 0; string text, a, b; vector<string> args;
+  // EST-owned binder spelling for lexical reachability. Populated while the
+  // statement's syntax is converted into its expression/statement tree.
+  string est_binding_name;
   vector<est::Handle> expression_handles;
   std::optional<est::RawForm> est_raw_form;
   // A synchronous message may be used as an expression initializer.  The

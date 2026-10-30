@@ -1,0 +1,20 @@
+type Expression:
+  name: String
+  left: Int
+  right: Int
+  opcode: Int
+  enabled: Bool
+  priority: Int
+
+  fn accepted() -> Bool:
+    return enabled
+
+  fn adjusted() -> Int:
+    return left + right + priority
+
+fn expression_values(expressions):
+  return expressions
+    |> filter(_.accepted())
+    |> map(_.adjusted())
+    |> filter(_ > 0)
+    |> map(_ * 2)
