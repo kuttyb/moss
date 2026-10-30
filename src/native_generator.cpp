@@ -6390,7 +6390,10 @@ class Generator {
                 : tree_empty_constructor_named(s.b, "Queue") ? "queue"
                 : staged_abi_v10() && tree_empty_constructor_named(s.b, "Set") ? "set"
                 : (tree_parse_vector_literal(s.b) ? "vector" : "_value");
-            auto source_binding = domain_instance_bindings_.find(trim(s.b));
+            const auto source_name = tree_identifier_name(s.b);
+            auto source_binding = source_name
+                ? domain_instance_bindings_.find(*source_name)
+                : domain_instance_bindings_.end();
             if (source_binding != domain_instance_bindings_.end())
               remember_domain_instance_binding(
                   s.a, source_binding->second.source_domain,
@@ -6416,7 +6419,9 @@ class Generator {
                 key = "(" + key + ").clone()";
               string inserted = expr(s.b, d, locals, &types,
                   statement_functional_pipeline_id(s, functional_context, 0));
-              if (borrowed_function_parameters_.count(trim(s.b)))
+              const auto source_binding = tree_identifier_name(s.b);
+              if (source_binding &&
+                  borrowed_function_parameters_.count(*source_binding))
                 inserted = "(" + inserted + ").clone()";
               if (auto shared_key =
                       shared_protocol_map_key_from_type(*map_assignment_type)) {
@@ -6499,7 +6504,9 @@ class Generator {
                 assigned = expr(s.b, d, locals, &types,
                     statement_functional_pipeline_id(s, functional_context, 0));
               }
-              if (map_assignment && borrowed_function_parameters_.count(trim(s.b)))
+              const auto source_binding = tree_identifier_name(s.b);
+              if (map_assignment && source_binding &&
+                  borrowed_function_parameters_.count(*source_binding))
                 assigned = "(" + assigned + ").clone()";
               if (reuse_string_buffer)
                 o << indent(level) << assigned << ";\n";
@@ -6808,7 +6815,8 @@ class Generator {
             emit_domain_construction(o, *sd, s.b, d, locals, &types);
             types[s.a] = *sd;
           } else {
-            auto source = types.find(trim(s.b));
+            const auto source_name = tree_identifier_name(s.b);
+            auto source = source_name ? types.find(*source_name) : types.end();
             bool domain_capability = source != types.end() && domains_.count(source->second);
             string inferred_map_type;
             if (staged_abi_v10() && tree_empty_constructor_named(s.b, "Map") &&
@@ -6857,7 +6865,9 @@ class Generator {
                 : generated_type ? *generated_type
                 : !statement_type.empty() ? statement_type : "_value";
             if (domain_capability) {
-              auto source_binding = domain_instance_bindings_.find(trim(s.b));
+              auto source_binding = source_name
+                  ? domain_instance_bindings_.find(*source_name)
+                  : domain_instance_bindings_.end();
               if (source_binding != domain_instance_bindings_.end())
                 remember_domain_instance_binding(
                     s.a, source_binding->second.source_domain,
@@ -6931,10 +6941,11 @@ class Generator {
             string rendered = expr(s.a, d, locals, &types,
                       statement_functional_pipeline_id(
                           s, functional_context, 0));
-            string expr_trimmed = trim(s.a);
-            if (view_parameters_.count(expr_trimmed)) {
-              rendered = expr_trimmed + ".__moss_value()";
-            } else if (types.count(expr_trimmed) && view_object_type(types.at(expr_trimmed))) {
+            const auto returned_binding = tree_identifier_name(s.a);
+            if (returned_binding && view_parameters_.count(*returned_binding)) {
+              rendered = *returned_binding + ".__moss_value()";
+            } else if (returned_binding && types.count(*returned_binding) &&
+                       view_object_type(types.at(*returned_binding))) {
               rendered = "(" + rendered + ").clone()";
             }
             o << indent(level) << "return ";
