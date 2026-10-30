@@ -25,7 +25,18 @@ def check(compiler: Path, mode: str, source: Path) -> None:
         compiler, mode, result.returncode, payload, result.stderr)
 
 
+def run_pipeline(compiler: Path, mode: str) -> None:
+    env = dict(os.environ)
+    env["MOSS_EST"] = mode
+    result = subprocess.run(
+        [str(compiler), "run", "--interp", str(PIPELINE_SOURCE)], cwd=ROOT,
+        env=env, text=True, capture_output=True, timeout=60)
+    assert result.returncode == 0 and result.stdout == "14\n", (
+        compiler, mode, result.returncode, result.stdout, result.stderr)
+
+
 for mode in ("off", "shadow"):
     check(COMPILER, mode, NON_PIPELINE_SOURCE)
     check(COMPILER, mode, PIPELINE_SOURCE)
-print("PASS pipeline lifetime and non-pipeline apostrophe checks in EST off/shadow")
+    run_pipeline(COMPILER, mode)
+print("PASS pipeline Fast Debug output and regex apostrophe checks in EST off/shadow")

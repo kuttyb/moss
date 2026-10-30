@@ -16,6 +16,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -25,6 +26,7 @@
 #include "numeric_runtime.hpp"
 #include "rust_float_display.hpp"
 #include "type_placeholders.hpp"
+#include "semantic_checker_support.hpp"
 
 namespace moss {
 
@@ -433,6 +435,15 @@ class FastInterpreter {
     Value value;
   };
 
+  struct ExpressionHandlesScope {
+    const std::vector<est::Handle>*& slot;
+    const std::vector<est::Handle>* prior;
+    ExpressionHandlesScope(const std::vector<est::Handle>*& target,
+                           const std::vector<est::Handle>* current)
+        : slot(target), prior(target) { slot = current; }
+    ~ExpressionHandlesScope() { slot = prior; }
+  };
+
   struct RaisedSignal {
     RaisedIdentity identity;
     Value value;
@@ -444,6 +455,7 @@ class FastInterpreter {
   };
 
   const Program& program_;
+  const std::vector<est::Handle>* active_expression_handles_ = nullptr;
   Options options_;
   std::unordered_map<const Stmt*, std::set<std::string>> joined_cache_;
   std::vector<TraceEvent> trace_;
@@ -880,26 +892,43 @@ class FastInterpreter {
                                      static_cast<std::uint64_t>(right));
   }
 
-  static std::vector<std::string> split_pipeline(const std::string& input) {
-    std::vector<std::string> result;
-    int parens = 0, brackets = 0; bool quoted = false; size_t start = 0;
-    for (size_t i = 0; i + 1 < input.size(); ++i) {
-      char c = input[i];
-      if (quoted) {
-        if (c == '\\') ++i;
-        else if (c == '"') quoted = false;
-        continue;
-      }
-      if (c == '"') { quoted = true; continue; }
-      if (c == '(') ++parens; else if (c == ')') --parens;
-      else if (c == '[') ++brackets; else if (c == ']') --brackets;
-      if (!parens && !brackets && c == '|' && input[i + 1] == '>') {
-        result.push_back(trim_copy(input.substr(start, i - start)));
-        start = i + 2; ++i;
-      }
+  std::optional<ParsedFunctionalPipeline> functional_pipeline_from_est(
+      std::string_view expression,
+      const std::vector<est::Handle>* handles = nullptr) const {
+    if (expression.find("|>") == std::string_view::npos)
+      return std::nullopt;
+    const auto resolve_stage = [](std::string_view name)
+        -> std::optional<FunctionalNodeKind> {
+      for (const auto& operation : functional_operations())
+        if (name == operation.name) return operation.kind;
+      return std::nullopt;
+    };
+    const auto fingerprint = est::fingerprint(std::string(expression));
+    auto convert = [&](std::uint32_t arena_index, est::ExprId root)
+        -> std::optional<ParsedFunctionalPipeline> {
+      if (arena_index >= program_.expression_arenas.size() ||
+          !program_.expression_arenas[arena_index]) return std::nullopt;
+      return est::functional_pipeline(*program_.expression_arenas[arena_index],
+                                      root, expression, resolve_stage);
+    };
+    const auto* selected_handles = handles ? handles : active_expression_handles_;
+    if (selected_handles) {
+      for (const auto& handle : *selected_handles)
+        if (handle.source_fingerprint == fingerprint)
+          if (auto parsed = convert(handle.arena_index, handle.expr))
+            return parsed;
     }
-    if (start) result.push_back(trim_copy(input.substr(start)));
-    return result;
+
+    // Some nested or transformed expressions have no retained source handle.
+    // Parse those into EST and dispatch through the Pipeline node.
+    est::Arena temporary;
+    try {
+      const auto root = est::parse_expression(temporary, expression);
+      return est::functional_pipeline(temporary, root, expression,
+                                      resolve_stage);
+    } catch (const std::invalid_argument&) {
+      return std::nullopt;
+    }
   }
 
   Value invoke_pipeline_callable(const std::string& callable,
@@ -929,16 +958,18 @@ class FastInterpreter {
   }
 
   std::optional<std::string> checked_pipeline_stage_output_type(
-      const std::vector<std::string>& stages, size_t stage_index,
+      const ParsedFunctionalPipeline& parsed, size_t stage_index,
       const Frame& frame, int line) const {
     for (const auto& pipeline : program_.functional_pipelines) {
       if (pipeline.line != line || pipeline.context != frame.functional_context ||
-          stage_index >= pipeline.nodes.size() || pipeline.nodes.size() != stages.size() ||
-          trim_copy(pipeline.source_expression) != trim_copy(stages.front()))
+          stage_index >= pipeline.nodes.size() ||
+          pipeline.nodes.size() != parsed.stages.size() + 1 ||
+          trim_copy(pipeline.source_expression) != trim_copy(parsed.source))
         continue;
       bool matches = true;
-      for (size_t index = 1; index < stages.size(); ++index)
-        if (trim_copy(pipeline.nodes[index].source_text) != trim_copy(stages[index])) {
+      for (size_t index = 1; index < pipeline.nodes.size(); ++index)
+        if (trim_copy(pipeline.nodes[index].source_text) !=
+            trim_copy(parsed.stages[index - 1].raw)) {
           matches = false;
           break;
         }
@@ -955,9 +986,9 @@ class FastInterpreter {
     return type.substr(7, type.size() - 8);
   }
 
-  Value eval_pipeline(const std::vector<std::string>& stages, Frame& frame,
+  Value eval_pipeline(const ParsedFunctionalPipeline& parsed, Frame& frame,
                       int line, std::ostream& output) {
-    if (stages.size() < 2) return Value::unit();
+    if (parsed.stages.empty()) return Value::unit();
     // A FileIO chunk source (`<fileio>.chunks(n)`) never reaches here in
     // practice: FileIO.open always throws first (see interp_phase20_statement
     // in interpreter_phase20.inc) because there is no Agent B FileIO runtime
@@ -965,10 +996,15 @@ class FastInterpreter {
     // against native codegen's test-only Rust shim instead; see
     // tests/tooling/check_phase20_executor_fileio.py and AGENTS.md
     // corrective-pass items 2 and 24.
-    Value current = eval(stages.front(), frame, line, output);
-    for (size_t stage_index = 1; stage_index < stages.size(); ++stage_index) {
-      std::string callee; std::vector<std::string> args;
-      if (!parse_call(stages[stage_index], callee, args)) callee = stages[stage_index];
+    Value current = eval(parsed.source, frame, line, output);
+    for (size_t stage_index = 1; stage_index <= parsed.stages.size(); ++stage_index) {
+      const auto& stage = parsed.stages[stage_index - 1];
+      std::string callee;
+      for (const auto& operation : functional_operations())
+        if (operation.kind == stage.kind) callee = operation.name;
+      const auto& args = stage.arguments;
+      if (callee.empty())
+        throw RuntimeError(line, "unsupported checked pipeline stage");
       if (callee == "sum") {
         if (current.kind != Value::Kind::Vector) throw RuntimeError(line, "pipeline sum requires a Vector");
         Value total = (current.element_type == "Float" || current.element_type == "float")
@@ -1007,7 +1043,8 @@ class FastInterpreter {
         }
         std::string element_type = current.element_type;
         if (callee == "map") {
-          auto output_type = checked_pipeline_stage_output_type(stages, stage_index, frame, line);
+          auto output_type = checked_pipeline_stage_output_type(
+              parsed, stage_index, frame, line);
           if (!output_type && !args.empty()) {
             std::string callback = trim_copy(args.front());
             std::string callback_name = callback;
@@ -1072,8 +1109,8 @@ class FastInterpreter {
       if (constructor.rfind("Vector[", 0) == 0 && constructor.back() == ']')
         return Value::vector_value({}, constructor.substr(7, constructor.size() - 8));
     }
-    if (auto stages = split_pipeline(e); !stages.empty())
-      return eval_pipeline(stages, frame, line, output);
+    if (auto pipeline = functional_pipeline_from_est(e))
+      return eval_pipeline(*pipeline, frame, line, output);
     if (e.rfind("message ", 0) == 0) return message(e.substr(8), frame, line, output);
     if (auto binary = split_operator(e, {" or "})) {
       Value left = eval(binary->first, frame, line, output);
@@ -2124,6 +2161,8 @@ class FastInterpreter {
     const auto& executable_body = target.execution_body
         ? *target.execution_body : target.body;
     Flow flow = execute(executable_body, frame, output);
+    ExpressionHandlesScope result_handles_scope(
+        active_expression_handles_, &target.expression_handles);
     Value result = flow.returned ? flow.value :
         (target.execution_result_expression
              ? eval(*target.execution_result_expression, frame, target.result_line, output)
@@ -2163,6 +2202,8 @@ class FastInterpreter {
     const auto& executable_body = target.execution_body
         ? *target.execution_body : target.body;
     Flow flow = execute(executable_body, frame, output);
+    ExpressionHandlesScope result_handles_scope(
+        active_expression_handles_, &target.expression_handles);
     Value result = flow.returned ? flow.value :
         (target.execution_result_expression
              ? eval(*target.execution_result_expression, frame, target.result_line, output)
@@ -2323,6 +2364,8 @@ class FastInterpreter {
     size_t index = begin;
     while (index < end) {
       const Stmt& statement = statements[index];
+      ExpressionHandlesScope expression_handles_scope(
+          active_expression_handles_, &statement.expression_handles);
       if (statement.kind == Stmt::Kind::Try) {
         size_t try_end = index + 1;
         while (try_end < end && statements[try_end].indent > statement.indent)
