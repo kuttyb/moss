@@ -320,6 +320,91 @@ bool fileio_typed(const TypeEnv& env, const string& name) {
   return fileio_typed(env.to_string_map(), name);
 }
 
+namespace {
+struct CheckerEstViewCache {
+  static constexpr size_t limit = 8192;
+  struct Entry {
+    string source;
+    std::shared_ptr<const moss::est::ExpressionView> view;
+    std::shared_ptr<const moss::est::ExpressionView> named_argument_view;
+  };
+  std::unordered_map<size_t, vector<std::shared_ptr<Entry>>> views;
+  size_t entries = 0;
+  uint64_t hits = 0, misses = 0, after_cap = 0;
+};
+thread_local CheckerEstViewCache checker_est_view_cache;
+
+void reset_checker_est_view_cache() {
+  checker_est_view_cache.views.clear();
+  checker_est_view_cache.entries = 0;
+  checker_est_view_cache.hits = 0;
+  checker_est_view_cache.misses = 0;
+  checker_est_view_cache.after_cap = 0;
+}
+
+std::shared_ptr<const moss::est::ExpressionView> checker_est_view_impl(
+    std::string_view source) {
+  const size_t hash = std::hash<std::string_view>{}(source);
+  auto found = checker_est_view_cache.views.find(hash);
+  if (found != checker_est_view_cache.views.end()) {
+    for (const auto& entry : found->second) {
+      if (entry->source == source) {
+        ++checker_est_view_cache.hits;
+        return entry->view;
+      }
+    }
+  }
+  ++checker_est_view_cache.misses;
+  auto parsed = moss::est::parse_view(source);
+  std::shared_ptr<const moss::est::ExpressionView> view;
+  if (parsed) view = std::make_shared<moss::est::ExpressionView>(std::move(*parsed));
+  if (checker_est_view_cache.entries < CheckerEstViewCache::limit) {
+    auto entry = std::make_shared<CheckerEstViewCache::Entry>();
+    entry->source = string(source);
+    entry->view = view;
+    checker_est_view_cache.views[hash].push_back(entry);
+    ++checker_est_view_cache.entries;
+  } else {
+    ++checker_est_view_cache.after_cap;
+  }
+  return view;
+}
+
+std::shared_ptr<const moss::est::ExpressionView> checker_est_view(
+    std::string_view source) {
+  return checker_est_view_impl(source);
+}
+
+std::shared_ptr<const moss::est::ExpressionView> checker_named_argument_view(
+    std::string_view source) {
+  const string wrapped_text = "__est_named__(" + string(source) + ")";
+  auto wrapped = checker_est_view(wrapped_text);
+  if (!wrapped || !wrapped->arena || wrapped->root >= wrapped->arena->size())
+    return {};
+  const auto make_named_view = [&]() -> std::shared_ptr<const moss::est::ExpressionView> {
+    const auto* call = std::get_if<moss::est::Call>(
+        &wrapped->arena->at(wrapped->root));
+    if (!call || call->arguments.size() != 1 ||
+        !std::holds_alternative<moss::est::NamedArgument>(
+            wrapped->arena->at(call->arguments.front())))
+      return {};
+    return std::make_shared<moss::est::ExpressionView>(
+        moss::est::ExpressionView{wrapped->owned_arena, wrapped->arena,
+            call->arguments.front(), string(source)});
+  };
+  const size_t hash = std::hash<std::string_view>{}(wrapped_text);
+  auto bucket = checker_est_view_cache.views.find(hash);
+  if (bucket == checker_est_view_cache.views.end()) return make_named_view();
+  for (auto& entry : bucket->second) {
+    if (entry->source != wrapped_text || entry->view != wrapped) continue;
+    if (entry->named_argument_view) return entry->named_argument_view;
+    entry->named_argument_view = make_named_view();
+    return entry->named_argument_view;
+  }
+  return make_named_view();
+}
+}  // namespace
+
 class Checker {
  public:
   explicit Checker(Program& p, bool legacy_signature_inference = false)
@@ -328,6 +413,7 @@ class Checker {
             std::getenv("MOSS_PROFILE_COMPILER") != nullptr ||
             std::getenv("MOSS_PROFILE_TRACE") != nullptr ||
             std::getenv("MOSS_PROFILE_HOTSPOTS") != nullptr) {
+    reset_checker_est_view_cache();
     CompilerStageTimer decl_timer("declaration_and_symbol_analysis");
     CompilerTraceRecorder::instance().set_counter("functions_analyzed", p_.functions.size());
     CompilerTraceRecorder::instance().set_counter("types_analyzed",
@@ -1772,6 +1858,14 @@ class Checker {
                   << parse_cache_failed_member_before_cap_ << '\n';
         std::cerr << "MOSS_PROFILE|parse_cache_success_after_cap|"
                   << parse_cache_success_after_cap_ << '\n';
+        std::cerr << "MOSS_PROFILE|est_view_cache_hits|"
+                  << checker_est_view_cache.hits << '\n';
+        std::cerr << "MOSS_PROFILE|est_view_cache_misses|"
+                  << checker_est_view_cache.misses << '\n';
+        std::cerr << "MOSS_PROFILE|est_view_cache_entries|"
+                  << checker_est_view_cache.entries << '\n';
+        std::cerr << "MOSS_PROFILE|est_view_cache_after_cap|"
+                  << checker_est_view_cache.after_cap << '\n';
         std::cerr << "MOSS_PROFILE|binary_parse_overflow_entries|"
                   << binary_parse_cache_overflow_entries_ << '\n';
         std::cerr << "MOSS_PROFILE|binary_parse_overflow_hits|"
@@ -10508,22 +10602,22 @@ class Checker {
   }
 
   static bool tree_simple_identifier(const string& value) {
-    auto syntax = moss::est::parse_view(value);
+    auto syntax = checker_est_view(value);
     return syntax && moss::est::is_identifier(*syntax);
   }
 
   static bool tree_plain_identifier(const string& value) {
-    auto syntax = moss::est::parse_view(value);
+    auto syntax = checker_est_view(value);
     return syntax && moss::est::is_identifier(*syntax);
   }
 
   static bool tree_identifier_named(const string& value, std::string_view name) {
-    auto syntax = moss::est::parse_view(value);
+    auto syntax = checker_est_view(value);
     return syntax && moss::est::identifier_named(*syntax, name);
   }
 
   static std::optional<string> tree_identifier_name(const string& value) {
-    auto syntax = moss::est::parse_view(value);
+    auto syntax = checker_est_view(value);
     if (!syntax) return std::nullopt;
     string name;
     return moss::est::project_identifier(*syntax, name)
@@ -10531,7 +10625,7 @@ class Checker {
   }
 
   static bool tree_is_fileio_open(const string& value) {
-    auto syntax = moss::est::parse_view(value);
+    auto syntax = checker_est_view(value);
     vector<string> arguments;
     return syntax && moss::est::project_fileio_open(*syntax, arguments);
   }
@@ -10587,36 +10681,36 @@ class Checker {
 
   static bool tree_expressions_structurally_equal(const string& left,
                                         const string& right) {
-    auto left_tree = moss::est::parse_view(left);
-    auto right_tree = moss::est::parse_view(right);
+    auto left_tree = checker_est_view(left);
+    auto right_tree = checker_est_view(right);
     return left_tree && right_tree &&
         moss::est::expressions_equal(*left_tree, *right_tree);
   }
 
   static bool tree_empty_constructor_named(const string& source,
                                            std::string_view name) {
-    auto syntax = moss::est::parse_view(source);
+    auto syntax = checker_est_view(source);
     return syntax && moss::est::empty_constructor_named(*syntax, name);
   }
 
   static bool tree_empty_vector_literal(const string& source) {
-    auto syntax = moss::est::parse_view(source);
+    auto syntax = checker_est_view(source);
     return syntax && moss::est::empty_vector_literal(*syntax);
   }
 
   static bool tree_placeholder_expression(const string& source) {
-    auto syntax = moss::est::parse_view(source);
+    auto syntax = checker_est_view(source);
     return syntax && moss::est::placeholder_expression(*syntax);
   }
 
   bool tree_parse_fileio_open(const string& text, vector<string>& arguments) const {
-    auto syntax = moss::est::parse_view(text);
+    auto syntax = checker_est_view(text);
     return syntax && moss::est::project_fileio_open(*syntax, arguments);
   }
 
   bool tree_parse_fileio_chunks_source(const string& text, string& receiver,
                                        string& size_expression) const {
-    auto syntax = moss::est::parse_view(text);
+    auto syntax = checker_est_view(text);
     return syntax && moss::est::project_fileio_chunks_source(
         *syntax, receiver, size_expression);
   }
@@ -10624,23 +10718,23 @@ class Checker {
   bool tree_parse_executor_chain(
       const string& text,
       vector<std::pair<string, vector<string>>>& calls) const {
-    auto syntax = moss::est::parse_view(text);
+    auto syntax = checker_est_view(text);
     return syntax && moss::est::project_executor_chain(*syntax, calls);
   }
 
   bool tree_parse_bound_method_callable(const string& text, string& receiver,
                                         string& method) const {
-    auto syntax = moss::est::parse_view(text);
+    auto syntax = checker_est_view(text);
     return syntax && moss::est::project_bound_method(*syntax, receiver, method);
   }
 
   static string tree_normalize_pipeline(string text) {
-    auto syntax = moss::est::parse_view(text);
+    auto syntax = checker_est_view(text);
     return syntax ? moss::est::normalize_pipeline_tree(*syntax) : trim(std::move(text));
   }
 
   static bool tree_parse_index(const string& text, string& base, string& index) {
-    auto syntax = moss::est::parse_view(text);
+    auto syntax = checker_est_view(text);
     return syntax && moss::est::project_index(*syntax, base, index);
   }
 
@@ -10656,37 +10750,37 @@ class Checker {
 
   static bool tree_parse_member_access(const string& text, string& base,
                                        string& member) {
-    auto syntax = moss::est::parse_view(text);
+    auto syntax = checker_est_view(text);
     return syntax && moss::est::project_member_access(*syntax, base, member);
   }
 
   static bool tree_parse_unary(const string& text, string& operation,
                                string& operand) {
-    auto syntax = moss::est::parse_view(text);
+    auto syntax = checker_est_view(text);
     return syntax && moss::est::project_unary(*syntax, operation, operand);
   }
 
   static bool tree_parse_message(const string& text, string& target,
                                  string& handler, vector<string>& arguments) {
-    auto syntax = moss::est::parse_view(text);
+    auto syntax = checker_est_view(text);
     return syntax && moss::est::project_message(
         *syntax, target, handler, arguments);
   }
 
   static std::optional<char> tree_named_argument_separator(const string& text) {
-    auto syntax = moss::est::parse_named_argument_view(text);
+    auto syntax = checker_named_argument_view(text);
     return syntax ? moss::est::project_named_argument_separator(*syntax)
                   : std::nullopt;
   }
 
   static bool tree_parse_named_argument(const string& text, string& name,
                                  string& value) {
-    auto syntax = moss::est::parse_named_argument_view(text);
+    auto syntax = checker_named_argument_view(text);
     return syntax && moss::est::project_named_argument(*syntax, name, value);
   }
 
   static std::optional<vector<string>> tree_parse_vector_literal(const string& text) {
-    auto syntax = moss::est::parse_view(text);
+    auto syntax = checker_est_view(text);
     if (syntax) return moss::est::project_vector_literal(*syntax);
     auto recovered = moss::est::parse_vector_literal_children(text);
     if (moss::est::mode() == moss::est::Mode::Shadow)
@@ -10696,14 +10790,14 @@ class Checker {
 
   static std::optional<vector<string>> tree_parse_tuple_elements(
       const string& text) {
-    auto syntax = moss::est::parse_view(text);
+    auto syntax = checker_est_view(text);
     return syntax ? moss::est::project_tuple_elements(*syntax) : std::nullopt;
   }
 
   static bool tree_parse_enum_case_expression(const string& text, string& enum_name,
                                        string& case_name, vector<string>& fields,
                                        bool& called) {
-    auto syntax = moss::est::parse_view(text);
+    auto syntax = checker_est_view(text);
     called = false;
     return syntax && moss::est::project_enum_case(*syntax, enum_name, case_name,
                                                    fields, &called);
@@ -10726,7 +10820,7 @@ class Checker {
     const bool cache_full = parse_cache_entries_ >= parse_cache_limit_;
     // Simple-call parsing leaves its output parameters untouched on failure,
     // so a negative result can be replayed without recording caller state.
-    auto syntax = moss::est::parse_view(text);
+    auto syntax = checker_est_view(text);
     const bool tree_ok = syntax && moss::est::project_simple_call(*syntax, callee, args);
     if (!tree_ok) {
       if (profile_concrete_effect_work_) {
@@ -10782,7 +10876,7 @@ class Checker {
     bool outputs_written = false;
     // Member parsing can assign receiver/member before rejecting an empty
     // side. Preserve those observable output mutations for negative hits.
-    auto syntax = moss::est::parse_view(text);
+    auto syntax = checker_est_view(text);
     const bool tree_ok = syntax && moss::est::project_member_call(
         *syntax, receiver, member, args, &outputs_written);
     // The legacy reader assigns receiver/member before rejecting a leading-dot
@@ -10792,7 +10886,7 @@ class Checker {
     if (!syntax) {
       const string value = trim(text);
       if (!value.empty() && value.front() == '.') {
-        auto partial = moss::est::parse_view("_" + value);
+        auto partial = checker_est_view("_" + value);
         string synthetic_receiver, partial_member;
         vector<string> partial_args;
         bool partial_outputs = false;
@@ -10854,7 +10948,7 @@ class Checker {
     ++parse_cache_misses_;
     const bool cache_full = parse_cache_entries_ >= parse_cache_limit_;
     vector<string> result;
-    auto syntax = moss::est::parse_view(text);
+    auto syntax = checker_est_view(text);
     auto projected = syntax ? moss::est::project_delimited_children(*syntax, delimiter)
                             : moss::est::parse_delimited_children(text, delimiter);
     if (syntax && delimiter == ',')
@@ -10878,7 +10972,7 @@ class Checker {
     }
     ++parse_cache_misses_;
     const bool cache_full = parse_cache_entries_ >= parse_cache_limit_;
-    auto syntax = moss::est::parse_view(text);
+    auto syntax = checker_est_view(text);
     auto result = syntax ? moss::est::strip_grouping(*syntax) : trim(text);
     if (cache_full) {
       if (profile_concrete_effect_work_) ++parse_cache_success_after_cap_;
@@ -10915,10 +11009,10 @@ class Checker {
     const bool cache_full = parse_cache_entries_ >= parse_cache_limit_;
     std::optional<std::pair<string,string>> result;
     const bool named_argument =
-        moss::est::parse_named_argument_view(expression).has_value();
-    auto syntax = moss::est::parse_view(expression);
+        static_cast<bool>(checker_named_argument_view(expression));
+    auto syntax = checker_est_view(expression);
     if (!named_argument && !syntax)
-      syntax = moss::est::parse_view("(" + expression + ")");
+      syntax = checker_est_view("(" + expression + ")");
     const bool incomplete_trailing_operator = !syntax &&
         moss::est::incomplete_trailing_operator(expression);
     if (!named_argument && syntax) {
@@ -11734,7 +11828,7 @@ class Checker {
     }
 
     string member_base, field;
-    auto member_access = moss::est::parse_view(e);
+    auto member_access = checker_est_view(e);
     if (member_access && moss::est::project_member_access(
             *member_access, member_base, field)) {
       auto base = inferred_expr(member_base, env);
@@ -15448,7 +15542,7 @@ class Checker {
   };
 
   static string tree_strip_expression_parens(string value) {
-    auto syntax = moss::est::parse_view(value);
+    auto syntax = checker_est_view(value);
     return syntax ? moss::est::strip_grouping(*syntax) : trim(std::move(value));
   }
 
@@ -20168,7 +20262,7 @@ class Checker {
     }
     // Reading a field of a computed object first evaluates its base.  Read
     // the Member node so dots inside string literals never become fake fields.
-    if (auto syntax = moss::est::parse_view(value)) {
+    if (auto syntax = checker_est_view(value)) {
       const auto root = moss::est::unparenthesized(*syntax->arena,
                                                    syntax->root);
       if (const auto* member = std::get_if<moss::est::Member>(
@@ -22113,7 +22207,7 @@ class Checker {
       return;
     }
 
-    if (auto syntax = moss::est::parse_view(value)) {
+    if (auto syntax = checker_est_view(value)) {
       const auto root = moss::est::unparenthesized(*syntax->arena,
                                                    syntax->root);
       if (const auto* member = std::get_if<moss::est::Member>(
@@ -22910,7 +23004,7 @@ class Checker {
     if (compiled_interface_file(function.source_file)) {
       int origin = function.line;
       for (const auto& statement : function.body)
-        if (auto expression = moss::est::parse_view(statement.text);
+        if (auto expression = checker_est_view(statement.text);
             expression && moss::est::contains_member_call(
                 *expression, requirement.subject, requirement.detail)) {
           origin = statement.line;
