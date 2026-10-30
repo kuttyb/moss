@@ -1,0 +1,7 @@
+fn main():
+  lower = 0
+  upper = 3
+  total = 0
+  for index in range(lower, upper):
+    total = total + index
+  echo total

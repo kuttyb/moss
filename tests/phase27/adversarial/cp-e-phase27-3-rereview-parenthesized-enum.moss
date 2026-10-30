@@ -1,0 +1,11 @@
+enum Choice:
+  Value(value: Int)
+  Empty
+fn unwrap(choice) -> Int:
+  match choice:
+    case Value(value):
+      return value
+    case Empty:
+      return 0
+fn main():
+  echo unwrap((Choice.Value(value: 7)))

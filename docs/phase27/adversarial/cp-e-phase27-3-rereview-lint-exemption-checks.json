@@ -1,0 +1,50 @@
+{
+  "api_linter_unexempted_reader_calls_by_consumer": {
+    "checker": 3,
+    "compiler_frontend": 48,
+    "optimizer": 10,
+    "parser": 23
+  },
+  "checker_api_calls_reviewed_as_non_expression": [
+    {
+      "api": "split_top_level",
+      "line": 102,
+      "path": "src/semantic_checker.cpp",
+      "source": "for (const auto& argument : moss::split_top_level("
+    },
+    {
+      "api": "split_top_level",
+      "line": 8248,
+      "path": "src/semantic_checker.cpp",
+      "source": "auto arguments = moss::split_top_level("
+    },
+    {
+      "api": "split_top_level",
+      "line": 8368,
+      "path": "src/semantic_checker.cpp",
+      "source": "for (const auto& argument : moss::split_top_level("
+    }
+  ],
+  "emitter_api_calls": 0,
+  "synthetic_function_api_exemption_checks": {
+    "duplicate": {
+      "reason": "duplicate expression-reader exemption: ('src/functional_optimizer.cpp', 'inert_literal_vector_size', 'split_top_level')",
+      "result": "rejected"
+    },
+    "missing_function": {
+      "reason": "missing exemption function(s): absent_function",
+      "result": "rejected"
+    },
+    "multiple_site": {
+      "reason": "exemption function gained multiple reader sites: ('src/functional_optimizer.cpp', 'inert_literal_vector_size', 'split_top_level') (2)",
+      "result": "rejected"
+    },
+    "valid_exact": {
+      "result": "accepted"
+    },
+    "wrong_api": {
+      "reason": "stale expression-reader exemptions: ('src/functional_optimizer.cpp', 'inert_literal_vector_size', 'parse_simple_call')",
+      "result": "rejected"
+    }
+  }
+}
