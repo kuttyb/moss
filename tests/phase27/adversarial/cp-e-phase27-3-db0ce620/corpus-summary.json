@@ -1,0 +1,44 @@
+{
+  "candidate": "db0ce6203197726d3cd8eca01a0366d1d8283295",
+  "source_count": 2146,
+  "baseline_accepted": 1409,
+  "candidate_accepted": 1409,
+  "candidate_shadow_accepted": 1409,
+  "off_diffs": [
+    {
+      "source": "sdk/advanced-data-acceptance/fixtures/source_free_consumer.moss",
+      "baseline_off": {
+        "verdict": [
+          false,
+          "RECOVERY_PATTERN_REQUIRES_VARIANT",
+          57
+        ],
+        "returncode": 1,
+        "stderr": "",
+        "stdout_hash": "77506cf215941946ac5de7f3e4f1fe0b6b6faabd085948efeb58e34f59b6dcd8"
+      },
+      "candidate_off": {
+        "verdict": [
+          false,
+          "UNKNOWN_ERROR_TYPE",
+          57
+        ],
+        "returncode": 1,
+        "stderr": "",
+        "stdout_hash": "1c1c4f1ef22ac78f818161d7c61a1391a6763be7a4aaef6d5df7b64a334fd89b"
+      },
+      "candidate_shadow": {
+        "verdict": [
+          false,
+          "UNKNOWN_ERROR_TYPE",
+          57
+        ],
+        "returncode": 1,
+        "stderr": "",
+        "stdout_hash": "1c1c4f1ef22ac78f818161d7c61a1391a6763be7a4aaef6d5df7b64a334fd89b"
+      }
+    }
+  ],
+  "shadow_diffs": [],
+  "timeouts": 0
+}
