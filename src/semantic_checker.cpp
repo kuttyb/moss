@@ -18295,13 +18295,10 @@ class Checker {
         collect_local_call_sites(line, element, env, implicit_owner, calls);
       return;
     }
-    if (starts_with(value, "not ")) {
-      collect_local_call_sites(line, trim(value.substr(4)), env,
-                               implicit_owner, calls);
-      return;
-    }
-    if (!value.empty() && value.front() == '~') {
-      collect_local_call_sites(line, trim(value.substr(1)), env,
+    string unary_operation, unary_operand;
+    if (tree_parse_unary(value, unary_operation, unary_operand) &&
+        (unary_operation == "not" || unary_operation == "~")) {
+      collect_local_call_sites(line, unary_operand, env,
                                implicit_owner, calls);
       return;
     }
@@ -18322,11 +18319,10 @@ class Checker {
     // an imported generic call that needs a consumer-side specialization.
     // Confirm a declared field before descending so qualified module names
     // and enum cases retain their call-resolution paths below.
-    if (auto dot = value.rfind('.'); dot != string::npos) {
-      const string base = trim(value.substr(0, dot));
-      const string field = trim(value.substr(dot + 1));
+    string member_base, field;
+    if (tree_parse_member_access(value, member_base, field)) {
       if (tree_plain_identifier(field)) {
-        auto base_type = inferred_expr_type(base, env);
+        auto base_type = inferred_expr_type(member_base, env);
         if (base_type) {
           auto object = objects_.find(canonical_type_name(*base_type));
           if (object != objects_.end() &&
@@ -18335,7 +18331,7 @@ class Checker {
                           [&](const Field& candidate) {
                             return candidate.name == field;
                           })) {
-            collect_local_call_sites(line, base, env, implicit_owner, calls);
+            collect_local_call_sites(line, member_base, env, implicit_owner, calls);
             return;
           }
         }
