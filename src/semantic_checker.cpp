@@ -10927,11 +10927,8 @@ class Checker {
       // also sees comparisons in the statement body even though EST correctly
       // refuses to build an expression root. The diagnostic oracle is
       // INVALID_EXPRESSION in both modes (see the CP-E adversarial probe).
-      const auto trimmed_expression = trim(expression);
       const bool legacy_invalid_if_comparison = legacy && !result && !syntax &&
-          starts_with(trimmed_expression, "if ") &&
-          expression.find(':') != string::npos &&
-          expression.find("else:") != string::npos;
+          moss::est::has_rejected_if_else_fragment_shape(expression);
       // Incomplete trailing operators are rejected by the expression parser.
       // The legacy splitter can still return a partial pair such as ("2", "")
       // for an input like 2 +; validation emits the shared compile diagnostic

@@ -1021,6 +1021,24 @@ bool begins_with_keyword(std::string_view source, std::string_view keyword) {
   }
 }
 
+bool has_rejected_if_else_fragment_shape(std::string_view source) {
+  try {
+    const auto normalized = trim(std::string(source));
+    if (!begins_with_keyword(normalized, "if")) return false;
+    const auto tokens = lex(normalized);
+    bool has_colon = false;
+    for (std::size_t index = 0; index < tokens.size(); ++index) {
+      has_colon |= tokens[index].text == ":";
+      if (tokens[index].text == "else" && index + 1 < tokens.size() &&
+          tokens[index + 1].text == ":" &&
+          tokens[index].source_end == tokens[index + 1].source_begin)
+        return has_colon;
+    }
+  } catch (...) {
+  }
+  return false;
+}
+
 ExprId parse_expression(Arena& arena, std::string_view source,
                         std::uint64_t origin_id, std::uint32_t base_line,
                         std::uint32_t base_column) {
