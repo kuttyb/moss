@@ -1,0 +1,34 @@
+{
+  "baseline_toolchain_identity": {
+    "moss_path": "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/phase27-mossi-baseline/1793392439128440668/active-moss",
+    "moss_sha256": "4a334c71d9b5ea5b2925c311f7a462abd046e479fc4b52df4c0453e612ceb286",
+    "rustc_path": "/home/owner/.cargo/bin/rustup",
+    "rustc_sha256": "dda7234360b7f578ca8b0ddcb80145646fa61a67c1720a5abc7051b35c9fcb71",
+    "rustc_version": "rustup 1.29.1 (d95a37b6a 2026-08-13)"
+  },
+  "candidate_toolchain_identity": {
+    "moss_path": "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tmp/phase27-mossi-baseline/1793392439128440668/active-moss",
+    "moss_sha256": "3ac3846a09e8af85b22aef2e84f1f9c5f6ff4f19b922579675fa5738691c9ea7",
+    "rustc_path": "/home/owner/.cargo/bin/rustup",
+    "rustc_sha256": "dda7234360b7f578ca8b0ddcb80145646fa61a67c1720a5abc7051b35c9fcb71",
+    "rustc_version": "rustup 1.29.1 (d95a37b6a 2026-08-13)"
+  },
+  "results": {
+    "app": {
+      "baseline_execution_body_hash": "1988d6c93dcc1a583e670a34ceed627ab99ee359cf61dccd566d871056410cfc",
+      "baseline_raw_sha256": "15dd7546ca096fa8d77457110025e42851a1455e7f64b9063ae189e26cc734ca",
+      "candidate_raw_sha256": "c77c5172e44b6555ad51c21fc192b44ce656fa014b792feeee086b22f688502d",
+      "normalized_bytes_equal": true,
+      "recomputed_baseline_package_fingerprint": "147f9d68dffda119a163bd1a14853a93ec8ab0d56a9bf332c8e614e22ebdeffe",
+      "recomputed_execution_body_hash": "1988d6c93dcc1a583e670a34ceed627ab99ee359cf61dccd566d871056410cfc"
+    },
+    "library": {
+      "baseline_execution_body_hash": "4a9f1299aa996355572da6b9c78c43d208b56b437ab1b54d233de4d7eebe14b2",
+      "baseline_raw_sha256": "6c3f1f1a1b22a7aa689ae184eaaf593797d1d8d5fe3b385293485c8379a335f4",
+      "candidate_raw_sha256": "95414bb65223f19fc44d95912f785baf56425583d891fa3eb0cbab69fd4671e4",
+      "normalized_bytes_equal": true,
+      "recomputed_baseline_package_fingerprint": "dcf82daacfae9097c5289f8019ff36d7f1b058cd3bb74ec68723708fbd14456b",
+      "recomputed_execution_body_hash": "4a9f1299aa996355572da6b9c78c43d208b56b437ab1b54d233de4d7eebe14b2"
+    }
+  }
+}

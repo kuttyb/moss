@@ -1,0 +1,42 @@
+[
+  {
+    "runs": {
+      "baseline": {
+        "exit": 0,
+        "stderr": "",
+        "stdout": "1536\n"
+      },
+      "candidate_off": {
+        "exit": 0,
+        "stderr": "",
+        "stdout": "1536\n"
+      },
+      "candidate_shadow": {
+        "exit": 0,
+        "stderr": "",
+        "stdout": "1536\n"
+      }
+    },
+    "source": "benchmarks/compiler_torture/fixtures/specialization/w3_spec_repeated_n016.moss"
+  },
+  {
+    "runs": {
+      "baseline": {
+        "exit": 0,
+        "stderr": "",
+        "stdout": "5120\n"
+      },
+      "candidate_off": {
+        "exit": 0,
+        "stderr": "",
+        "stdout": "5120\n"
+      },
+      "candidate_shadow": {
+        "exit": 0,
+        "stderr": "",
+        "stdout": "5120\n"
+      }
+    },
+    "source": "benchmarks/compiler_torture/fixtures/specialization/w2_spec_distinct_n016.moss"
+  }
+]

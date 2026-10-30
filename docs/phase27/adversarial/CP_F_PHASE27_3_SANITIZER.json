@@ -1,0 +1,86 @@
+{
+  "candidate_revision": "2bafad47eb15af1923fbf1673b1a6069dca0f63e",
+  "compiler_sha256": "3cdec1e3398c0e3c6fb13a13ad3b3e90fca5fc532b1faee676fda485a7843c9a",
+  "completed_case_count": 2138,
+  "finding_count": 9,
+  "finding_kinds": {
+    "no_json": 0,
+    "sanitizer": 0,
+    "signal": 7,
+    "timeout": 2
+  },
+  "findings": [
+    {
+      "kind": "timeout",
+      "markers": [],
+      "returncode": "TIMEOUT",
+      "source": "benchmarks/compiler_torture/fixtures/specialization/w2_spec_distinct_n032.moss",
+      "stderr": ""
+    },
+    {
+      "kind": "timeout",
+      "markers": [],
+      "returncode": "TIMEOUT",
+      "source": "benchmarks/compiler_torture/fixtures/specialization/w3_spec_repeated_n032.moss",
+      "stderr": ""
+    },
+    {
+      "kind": "signal",
+      "markers": [],
+      "returncode": -6,
+      "source": "examples/swarm/Surface/repros/swarm_067_pipe_comparison_diagnostic.moss",
+      "stderr": "moss-dev: src/semantic_checker.cpp:10939: std::optional<std::pair<string, string>> moss::Checker::tree_split_binary(const string &, const vector<string> &) const: Assertion `result == legacy' failed.\n"
+    },
+    {
+      "kind": "signal",
+      "markers": [],
+      "returncode": -6,
+      "source": "examples/swarm/control_flow_2026/iterative_planner/failed_attempts/02_untyped_vector_parameters.moss",
+      "stderr": "moss-dev: src/semantic_checker.cpp:10939: std::optional<std::pair<string, string>> moss::Checker::tree_split_binary(const string &, const vector<string> &) const: Assertion `result == legacy' failed.\n"
+    },
+    {
+      "kind": "signal",
+      "markers": [],
+      "returncode": -6,
+      "source": "examples/swarm/control_flow_2026/iterative_planner/failed_attempts/03_pipeline_count_in_condition.moss",
+      "stderr": "moss-dev: src/semantic_checker.cpp:10939: std::optional<std::pair<string, string>> moss::Checker::tree_split_binary(const string &, const vector<string> &) const: Assertion `result == legacy' failed.\n"
+    },
+    {
+      "kind": "signal",
+      "markers": [],
+      "returncode": -6,
+      "source": "examples/swarm/control_flow_2026/simulation_engine/failed_attempts/02_while_pipeline_condition.moss",
+      "stderr": "moss-dev: src/semantic_checker.cpp:10939: std::optional<std::pair<string, string>> moss::Checker::tree_split_binary(const string &, const vector<string> &) const: Assertion `result == legacy' failed.\n"
+    },
+    {
+      "kind": "signal",
+      "markers": [],
+      "returncode": -6,
+      "source": "examples/swarm/expression_surface_2026/numerical_tool/failed_attempts/08_pipeline_comparison_precedence.moss",
+      "stderr": "moss-dev: src/semantic_checker.cpp:10939: std::optional<std::pair<string, string>> moss::Checker::tree_split_binary(const string &, const vector<string> &) const: Assertion `result == legacy' failed.\n"
+    },
+    {
+      "kind": "signal",
+      "markers": [],
+      "returncode": -6,
+      "source": "tests/phase27/adversarial/cp-ca9e8ca/nested-stage.moss",
+      "stderr": "moss-dev: src/est/expression_query.cpp:460: bool moss::est::project_simple_call(const ExpressionView &, std::string &, std::vector<std::string> &): Assertion `legacy == result' failed.\n"
+    },
+    {
+      "kind": "signal",
+      "markers": [],
+      "returncode": -6,
+      "source": "tests/phase27/adversarial/cp-ca9e8ca/stage-flat.moss",
+      "stderr": "moss-dev: src/est/expression_query.cpp:460: bool moss::est::project_simple_call(const ExpressionView &, std::string &, std::vector<std::string> &): Assertion `legacy == result' failed.\n"
+    }
+  ],
+  "jobs": 8,
+  "mode": "shadow",
+  "raw_results": "tests/phase27/adversarial/cp-f-phase27-3/sanitizer.jsonl",
+  "sanitizers": [
+    "ASan",
+    "UBSan"
+  ],
+  "source_count": 2138,
+  "timeout_seconds": 90
+}

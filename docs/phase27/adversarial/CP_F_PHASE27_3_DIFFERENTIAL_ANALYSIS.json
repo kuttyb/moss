@@ -1,0 +1,156 @@
+{
+  "baseline_source_count": 2118,
+  "candidate_baseline_off_diagnostic_differences": [
+    "sdk/advanced-data-acceptance/fixtures/source_free_consumer.moss"
+  ],
+  "candidate_off_shadow_diagnostic_differences": [
+    "examples/swarm/Surface/repros/swarm_067_pipe_comparison_diagnostic.moss",
+    "examples/swarm/control_flow_2026/iterative_planner/failed_attempts/02_untyped_vector_parameters.moss",
+    "examples/swarm/control_flow_2026/iterative_planner/failed_attempts/03_pipeline_count_in_condition.moss",
+    "examples/swarm/control_flow_2026/simulation_engine/failed_attempts/02_while_pipeline_condition.moss",
+    "examples/swarm/expression_surface_2026/numerical_tool/failed_attempts/08_pipeline_comparison_precedence.moss",
+    "benchmarks/compiler_torture/fixtures/specialization/w3_spec_repeated_n032.moss",
+    "benchmarks/compiler_torture/fixtures/specialization/w2_spec_distinct_n032.moss",
+    "tests/phase27/adversarial/cp-ca9e8ca/nested-stage.moss",
+    "tests/phase27/adversarial/cp-ca9e8ca/stage-flat.moss"
+  ],
+  "candidate_shadow_sig_or_timeout_cases": [
+    {
+      "code": -6,
+      "source": "examples/swarm/Surface/repros/swarm_067_pipe_comparison_diagnostic.moss",
+      "stderr": "moss-dev: src/semantic_checker.cpp:10939: std::optional<std::pair<string, string>> moss::Checker::tree_split_binary(const string &, const vector<string> &) const: Assertion `result == legacy' failed.\n"
+    },
+    {
+      "code": -6,
+      "source": "examples/swarm/control_flow_2026/iterative_planner/failed_attempts/02_untyped_vector_parameters.moss",
+      "stderr": "moss-dev: src/semantic_checker.cpp:10939: std::optional<std::pair<string, string>> moss::Checker::tree_split_binary(const string &, const vector<string> &) const: Assertion `result == legacy' failed.\n"
+    },
+    {
+      "code": -6,
+      "source": "examples/swarm/control_flow_2026/iterative_planner/failed_attempts/03_pipeline_count_in_condition.moss",
+      "stderr": "moss-dev: src/semantic_checker.cpp:10939: std::optional<std::pair<string, string>> moss::Checker::tree_split_binary(const string &, const vector<string> &) const: Assertion `result == legacy' failed.\n"
+    },
+    {
+      "code": -6,
+      "source": "examples/swarm/control_flow_2026/simulation_engine/failed_attempts/02_while_pipeline_condition.moss",
+      "stderr": "moss-dev: src/semantic_checker.cpp:10939: std::optional<std::pair<string, string>> moss::Checker::tree_split_binary(const string &, const vector<string> &) const: Assertion `result == legacy' failed.\n"
+    },
+    {
+      "code": -6,
+      "source": "examples/swarm/expression_surface_2026/numerical_tool/failed_attempts/08_pipeline_comparison_precedence.moss",
+      "stderr": "moss-dev: src/semantic_checker.cpp:10939: std::optional<std::pair<string, string>> moss::Checker::tree_split_binary(const string &, const vector<string> &) const: Assertion `result == legacy' failed.\n"
+    },
+    {
+      "code": "TIMEOUT",
+      "source": "benchmarks/compiler_torture/fixtures/specialization/w3_spec_repeated_n032.moss",
+      "stderr": ""
+    },
+    {
+      "code": "TIMEOUT",
+      "source": "benchmarks/compiler_torture/fixtures/specialization/w2_spec_distinct_n032.moss",
+      "stderr": ""
+    },
+    {
+      "code": -6,
+      "source": "tests/phase27/adversarial/cp-ca9e8ca/nested-stage.moss",
+      "stderr": "moss-dev: src/est/expression_query.cpp:460: bool moss::est::project_simple_call(const ExpressionView &, std::string &, std::vector<std::string> &): Assertion `legacy == result' failed.\n"
+    },
+    {
+      "code": -6,
+      "source": "tests/phase27/adversarial/cp-ca9e8ca/stage-flat.moss",
+      "stderr": "moss-dev: src/est/expression_query.cpp:460: bool moss::est::project_simple_call(const ExpressionView &, std::string &, std::vector<std::string> &): Assertion `legacy == result' failed.\n"
+    }
+  ],
+  "candidate_source_count": 2138,
+  "fast_debug_baseline_candidate_off_differences": [
+    "benchmarks/compiler_torture/fixtures/specialization/w3_spec_repeated_n016.moss",
+    "benchmarks/compiler_torture/fixtures/specialization/w2_spec_distinct_n016.moss"
+  ],
+  "fast_debug_candidate_off_shadow_differences": [
+    "benchmarks/compiler_torture/fixtures/specialization/w3_spec_repeated_n008.moss",
+    "benchmarks/compiler_torture/fixtures/traits/w8_traits_dispatch_c100.moss",
+    "benchmarks/compiler_torture/fixtures/inference/w5_infer_wide_w100.moss",
+    "benchmarks/compiler_torture/fixtures/specialization/w2_spec_distinct_n008.moss",
+    "examples/swarm/modules/calc_interpreter/repro/natural_full/src/main.moss",
+    "examples/swarm/modules/calc_interpreter/src/main.moss"
+  ],
+  "fast_debug_cases": 941,
+  "fast_debug_timeout_cases": [
+    "benchmarks/compiler_torture/fixtures/examples/functional_pipeline.moss",
+    "examples/functional_pipeline.moss",
+    "examples/frontend_syntax.moss",
+    "benchmarks/compiler_torture/fixtures/specialization/w3_spec_repeated_n008.moss",
+    "benchmarks/compiler_torture/fixtures/traits/w8_traits_dispatch_c100.moss",
+    "benchmarks/compiler_torture/fixtures/inference/w5_infer_wide_w100.moss",
+    "benchmarks/compiler_torture/fixtures/specialization/w2_spec_distinct_n008.moss",
+    "benchmarks/compiler_torture/fixtures/specialization/w3_spec_repeated_n016.moss",
+    "examples/swarm/modules/calc_interpreter/repro/natural_full/src/main.moss",
+    "examples/swarm/modules/calc_interpreter/src/main.moss",
+    "benchmarks/compiler_torture/fixtures/specialization/w2_spec_distinct_n016.moss"
+  ],
+  "native_profile_cases": 941,
+  "row_count": 2138,
+  "rust_relationships": {
+    "baseline_vs_candidate_off": {
+      "default_rust_hash_differences": [
+        "benchmarks/compiler_torture/fixtures/examples/checkout.moss",
+        "examples/checkout.moss",
+        "projects/cache/src/main.moss",
+        "projects/rolling_window/src/main.moss"
+      ],
+      "emit_or_rustc_status_differences": [],
+      "normalized_native_behavior_differences": [
+        "tests/tooling/fixtures/phase21c_concurrent_roots.moss"
+      ],
+      "optimized_rust_hash_differences": [
+        "benchmarks/compiler_torture/fixtures/examples/checkout.moss",
+        "examples/checkout.moss",
+        "projects/cache/src/main.moss",
+        "projects/rolling_window/src/main.moss"
+      ],
+      "union_difference_sources": [
+        "benchmarks/compiler_torture/fixtures/examples/checkout.moss",
+        "examples/checkout.moss",
+        "projects/cache/src/main.moss",
+        "projects/rolling_window/src/main.moss",
+        "tests/tooling/fixtures/phase21c_concurrent_roots.moss"
+      ]
+    },
+    "baseline_vs_candidate_shadow": {
+      "default_rust_hash_differences": [
+        "benchmarks/compiler_torture/fixtures/examples/checkout.moss",
+        "examples/checkout.moss",
+        "projects/cache/src/main.moss",
+        "projects/rolling_window/src/main.moss"
+      ],
+      "emit_or_rustc_status_differences": [],
+      "normalized_native_behavior_differences": [
+        "tests/tooling/fixtures/phase21c_concurrent_roots.moss"
+      ],
+      "optimized_rust_hash_differences": [
+        "benchmarks/compiler_torture/fixtures/examples/checkout.moss",
+        "examples/checkout.moss",
+        "projects/cache/src/main.moss",
+        "projects/rolling_window/src/main.moss"
+      ],
+      "union_difference_sources": [
+        "benchmarks/compiler_torture/fixtures/examples/checkout.moss",
+        "examples/checkout.moss",
+        "projects/cache/src/main.moss",
+        "projects/rolling_window/src/main.moss",
+        "tests/tooling/fixtures/phase21c_concurrent_roots.moss"
+      ]
+    },
+    "candidate_off_vs_candidate_shadow": {
+      "default_rust_hash_differences": [],
+      "emit_or_rustc_status_differences": [],
+      "normalized_native_behavior_differences": [
+        "tests/tooling/fixtures/phase21c_concurrent_roots.moss"
+      ],
+      "optimized_rust_hash_differences": [],
+      "union_difference_sources": [
+        "tests/tooling/fixtures/phase21c_concurrent_roots.moss"
+      ]
+    }
+  }
+}

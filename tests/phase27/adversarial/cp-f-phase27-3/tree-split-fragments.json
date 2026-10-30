@@ -1,0 +1,37 @@
+{
+  "candidate_sha256": "3ac3846a09e8af85b22aef2e84f1f9c5f6ff4f19b922579675fa5738691c9ea7",
+  "results": [
+    {
+      "probe": "pipe-count-comparison",
+      "source": "fn main():\n  v = [1, 2]\n  if v |> count > 0:\n    echo \\\"y\\\"\n",
+      "exit": -6,
+      "payload": null,
+      "stdout": "",
+      "stderr": "moss-dev: src/semantic_checker.cpp:10939: std::optional<std::pair<string, string>> moss::Checker::tree_split_binary(const string &, const vector<string> &) const: Assertion `result == legacy' failed.\n"
+    },
+    {
+      "probe": "while-vector-count",
+      "source": "fn main():\n  tasks = [1, 2]\n  var index = 0\n  while index < tasks |> count:\n    index = index + 1\n",
+      "exit": -6,
+      "payload": null,
+      "stdout": "",
+      "stderr": "moss-dev: src/semantic_checker.cpp:10939: std::optional<std::pair<string, string>> moss::Checker::tree_split_binary(const string &, const vector<string> &) const: Assertion `result == legacy' failed.\n"
+    },
+    {
+      "probe": "while-vector-count-typed",
+      "source": "fn total(values: Vector[Int]) -> Int:\n  var index = 0\n  while index < values |> count:\n    index = index + 1\n  return index\nfn main():\n  echo total([3, 4])\n",
+      "exit": -6,
+      "payload": null,
+      "stdout": "",
+      "stderr": "moss-dev: src/semantic_checker.cpp:10939: std::optional<std::pair<string, string>> moss::Checker::tree_split_binary(const string &, const vector<string> &) const: Assertion `result == legacy' failed.\n"
+    },
+    {
+      "probe": "pipeline-comparison-stage",
+      "source": "fn has_large_shift(energies: Vector[Int]):\n  return energies |> filter(_ >= 100) |> sum >= 100\nfn main():\n  echo has_large_shift([100])\n",
+      "exit": -6,
+      "payload": null,
+      "stdout": "",
+      "stderr": "moss-dev: src/semantic_checker.cpp:10939: std::optional<std::pair<string, string>> moss::Checker::tree_split_binary(const string &, const vector<string> &) const: Assertion `result == legacy' failed.\n"
+    }
+  ]
+}
