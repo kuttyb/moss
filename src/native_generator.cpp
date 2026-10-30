@@ -316,48 +316,23 @@ class Generator {
   // Keeps this program's interned declarations bound while lowering.
   moss::TypeContext::Binding type_scope_;
   bool program_uses_numeric_builtins() const {
-    const auto contains = [](const string& value) {
-      for (const char* name : {"parse_int", "parse_float", "to_int"}) {
-        if (numeric_builtin_base(value) == name) return true;
-        for (size_t at = value.find(name); at != string::npos;
-             at = value.find(name, at + 1)) {
-          size_t end = at + std::char_traits<char>::length(name);
-          while (end < value.size() &&
-                 std::isspace(static_cast<unsigned char>(value[end]))) ++end;
-          if (end < value.size() && value[end] == '(') return true;
-        }
-      }
-      return false;
-    };
-    const auto body_uses = [&](const vector<Stmt>& body) {
-      for (const auto& statement : body) {
-        if (contains(statement.a) || contains(statement.b) ||
-            contains(statement.text)) return true;
-        for (const auto& argument : statement.args)
-          if (contains(argument)) return true;
-      }
-      return false;
-    };
-    for (const auto& function : p_.functions)
-      if (body_uses(function.body) ||
-          (function.result_expression && contains(*function.result_expression)))
-        return true;
-    for (const auto& object : p_.objects)
-      for (const auto& method : object.methods)
-        if (body_uses(method.body) ||
-            (method.result_expression && contains(*method.result_expression)))
+    auto arena_uses = [](const est::Arena& arena) {
+      for (est::ExprId id = 0; id < arena.size(); ++id) {
+        const auto* call = std::get_if<est::Call>(&arena.at(id));
+        if (!call) continue;
+        const auto& callee = arena.at(call->callee);
+        if (const auto* identifier = std::get_if<est::Identifier>(&callee);
+            identifier && !numeric_builtin_base(identifier->name).empty())
           return true;
-    for (const auto& domain : p_.domains)
-      for (const auto& handler : domain.handlers)
-        if (body_uses(handler.body)) return true;
-    for (const auto& domain : specialized_domains_)
-      for (const auto& handler : domain.handlers)
-        if (body_uses(handler.body)) return true;
-    if (p_.main && body_uses(p_.main->body)) return true;
-    for (const auto& test : p_.tests)
-      if (body_uses(test.body)) return true;
-    for (const auto& benchmark : p_.benchmarks)
-      if (body_uses(benchmark.body)) return true;
+        if (const auto* member = std::get_if<est::Member>(&callee);
+            member && !numeric_builtin_base(member->name).empty())
+          return true;
+      }
+      return false;
+    };
+    if (p_.expression_arena && arena_uses(*p_.expression_arena)) return true;
+    for (const auto& arena : p_.expression_arenas)
+      if (arena && arena_uses(*arena)) return true;
     return false;
   }
   const Program* semantic_program_ = nullptr;
