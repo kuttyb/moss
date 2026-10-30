@@ -10753,6 +10753,11 @@ class Checker {
         *syntax, allow_sign, allow_underscores);
   }
 
+  static bool tree_positive_decimal_integer_literal(const string& value) {
+    auto syntax = checker_est_view(value);
+    return syntax && moss::est::positive_decimal_integer_literal(*syntax);
+  }
+
   static std::optional<string> tree_empty_typed_vector_constructor(
       const string& value) {
     auto syntax = checker_est_view(value);
@@ -11621,7 +11626,7 @@ class Checker {
       return InferredExpr{moss::Type::primitive(name), {}};
     };
     string original = tree_strip_redundant_outer_parentheses(expression);
-    if (original == "_" && current_body_types_ &&
+    if (tree_placeholder_expression(original) && current_body_types_ &&
         !current_body_types_->active_pipeline_placeholder_identity.empty() &&
         current_body_types_->active_pipeline_placeholder_type)
       return InferredExpr{
@@ -17967,17 +17972,17 @@ class Checker {
         return;
       }
     }
-    if (starts_with(value, "message ")) {
+    {
       string receiver, handler;
       vector<string> arguments;
-      if (tree_parse_member_call(trim(value.substr(8)), receiver, handler, arguments)) {
+      if (tree_parse_message(value, receiver, handler, arguments)) {
         analyze_effect_expression(receiver, env, params, parameter_effects,
                                   receiver_effect, receiver_fields, Effect::Read);
         for (const auto& argument : arguments)
           analyze_effect_expression(argument, env, params, parameter_effects,
                                     receiver_effect, receiver_fields, Effect::Read);
+        return;
       }
-      return;
     }
 
     if (simple_effect_identifier(value)) {
@@ -19033,12 +19038,10 @@ class Checker {
     auto retain_message_edge = [&](int line, const string& expression,
                                    const TypeEnv& current_env,
                                    const string& expression_source) {
-      string value = trim(expression);
-      if (!starts_with(value, "message ")) return;
       string receiver_name;
       string handler_name;
       vector<string> arguments;
-      if (!tree_parse_member_call(trim(value.substr(8)), receiver_name,
+      if (!tree_parse_message(expression, receiver_name,
                              handler_name, arguments) ||
           !tree_plain_identifier(receiver_name) ||
           !tree_plain_identifier(handler_name))
@@ -24086,14 +24089,7 @@ class Checker {
           err(line, "range arguments must have type 'Int'");
       }
       if (args.size() == 3) {
-        string step = trim(args[2]);
-        size_t first_digit = !step.empty() && step.front() == '+' ? 1 : 0;
-        bool literal = first_digit < step.size() &&
-            std::all_of(step.begin() + static_cast<std::ptrdiff_t>(first_digit),
-                        step.end(), [](char value) {
-                          return moss::ascii_is_digit(static_cast<unsigned char>(value));
-                        });
-        if (!literal || (step == "0" || step == "+0"))
+        if (!tree_positive_decimal_integer_literal(args[2]))
           err(line, "range step must be a positive non-zero Int literal");
       }
       return;
@@ -26334,7 +26330,7 @@ class Checker {
         occurrence.est_arena_index = tree_cursor->arena_index;
         occurrence.est_expr_id = tree_cursor->expr;
       }
-      if (original == "_" &&
+      if (tree_placeholder_expression(original) &&
           !occurrence_state->active_pipeline_placeholder_identity.empty() &&
           occurrence_state->active_pipeline_placeholder_type) {
         occurrence.resolved_binding_id =
@@ -26564,12 +26560,14 @@ class Checker {
     }
     if (domain_constructor(original))
       err(line, "domain construction is only allowed as a binding in main's composition prefix");
-    if (starts_with(original, "message ")) {
+    string message_receiver, message_handler;
+    vector<string> message_args;
+    if (tree_parse_message(original, message_receiver, message_handler,
+                           message_args)) {
       mark_active_expression(OccurrenceKind::Message);
-      string receiver, handler;
-      vector<string> args;
-      if (!tree_parse_member_call(trim(original.substr(8)), receiver, handler, args) ||
-          !tree_plain_identifier(receiver) || !tree_plain_identifier(handler))
+      string receiver = message_receiver, handler = message_handler;
+      vector<string> args = std::move(message_args);
+      if (!tree_plain_identifier(receiver) || !tree_plain_identifier(handler))
         err(line, "message requires a domain call 'receiver.Handler(args)'");
       check_message_target_existence(line, receiver, env);
       const Handler* target = check_message_call_after_resolution(

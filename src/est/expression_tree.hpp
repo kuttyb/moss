@@ -248,6 +248,7 @@ std::optional<std::string> project_empty_constructor_type(
 LiteralClass root_literal_class(const ExpressionView& view);
 bool decimal_integer_literal(const ExpressionView& view, bool allow_sign,
                              bool allow_underscores);
+bool positive_decimal_integer_literal(const ExpressionView& view);
 std::optional<DecodedNumber> numeric_literal_value(
     const ExpressionView& view);
 bool placeholder_expression(const ExpressionView& view);

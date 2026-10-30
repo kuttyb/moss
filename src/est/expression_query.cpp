@@ -1357,6 +1357,23 @@ bool decimal_integer_literal(const ExpressionView& e, bool allow_sign,
                            : literal->decimal_integer_digits;
 }
 
+bool positive_decimal_integer_literal(const ExpressionView& e) {
+  if (!e.arena || e.root >= e.arena->size()) return false;
+  ExprId root = e.root;
+  bool positive_sign = false;
+  if (const auto* unary = std::get_if<Unary>(&e.arena->at(root))) {
+    if (unary->op != "+") return false;
+    positive_sign = true;
+    root = unary->operand;
+  }
+  const auto* literal = std::get_if<Literal>(&e.arena->at(root));
+  if (!literal || literal->literal_class != LiteralClass::Integer ||
+      !literal->decimal_integer_digits) return false;
+  auto decoded = numeric_literal_value(e);
+  return decoded && decoded->kind == NumericLiteral::Kind::Int &&
+      decoded->integer > 0 && (positive_sign || root == e.root);
+}
+
 std::optional<DecodedNumber> numeric_literal_value(const ExpressionView& e) {
   if (!e.arena || e.root >= e.arena->size()) return std::nullopt;
   ExprId current = unparenthesized(*e.arena, e.root);
