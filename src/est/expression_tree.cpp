@@ -1007,6 +1007,20 @@ void compare_string_shape(const Arena& arena, ExprId id, std::string_view source
 }
 }  // namespace
 
+bool begins_with_keyword(std::string_view source, std::string_view keyword) {
+  try {
+    const auto prefix_length = std::min(source.size(), keyword.size() + 1);
+    const auto prefix = source.substr(0, prefix_length);
+    const auto tokens = lex(prefix);
+    return !tokens.empty() && tokens.front().word &&
+        tokens.front().text == keyword &&
+        tokens.front().source_end == keyword.size() &&
+        source.size() > keyword.size() && source[keyword.size()] == ' ';
+  } catch (...) {
+    return false;
+  }
+}
+
 ExprId parse_expression(Arena& arena, std::string_view source,
                         std::uint64_t origin_id, std::uint32_t base_line,
                         std::uint32_t base_column) {

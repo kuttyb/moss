@@ -9682,7 +9682,7 @@ class Checker {
   }
 
   static bool legacy_spawn_expression(const string& expression) {
-    return starts_with(trim(expression), "spawn ");
+    return moss::est::begins_with_keyword(trim(expression), "spawn");
   }
 
   void build_concrete_domain_graph() {
