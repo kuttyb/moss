@@ -1,0 +1,9 @@
+path	line	field	classification	adjudication
+src/semantic_checker.cpp	13491-13494	Assign.statement.a	index-place textual gate followed by tree_parse_index	residual expression-shape read
+src/semantic_checker.cpp	13537	Assign.statement.a	member-place textual gate followed by known_expression	residual expression-shape read
+src/semantic_checker.cpp	18015	Assign.statement.a	member-place suffix split before effect analysis	residual expression-shape read
+src/semantic_checker.cpp	27899	Let/Var/Assign.statement.b	starts-with-bracket collection classification when type unresolved	residual expression-text interpretation
+src/semantic_checker.cpp	27921	Assign.statement.b	starts-with-bracket collection classification when type unresolved	residual expression-text interpretation
+src/native_generator.cpp	6352	Let/Var.s.b	first-character fallback selects vector type	residual expression-text interpretation
+src/semantic_checker.cpp	28035-28036	Assign.statement.a	dot and call-suffix string tests classify member place	residual expression-shape read
+src/semantic_checker.cpp,src/native_generator.cpp,src/handler_lowering.inc,src/fileio_semantics.inc,src/file_chunk_lowering.inc,src/executor_invoke_lowering.inc,src/static_bounds.inc	search	all expression-bearing slots	tree_expression_text( call-site search	zero occurrences

@@ -1,0 +1,19 @@
+fn bump(x: Int) -> Int:
+  return x + 1
+
+fn sum2(x: Int, y: Int) -> Int:
+  return x + y
+
+fn main():
+  base = sum2(1, 2)
+  values = [base, bump(3)]
+  picked = values[0]
+  grouped = ((picked + 1))
+  if grouped == 4:
+    echo grouped
+  else:
+    echo 0
+  for item in values:
+    echo item
+  mapped = values |> map(bump)
+  echo mapped
