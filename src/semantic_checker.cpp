@@ -20599,8 +20599,11 @@ class Checker {
       if (statement.kind == Stmt::Kind::For) {
         bool bounded = false;
         string iter_expr = trim(statement.b);
-        if (starts_with(iter_expr, "range(") ||
-            (starts_with(iter_expr, "[") && ends_with(iter_expr, "]"))) {
+        string range_callee;
+        vector<string> range_arguments;
+        if ((tree_parse_simple_call(iter_expr, range_callee, range_arguments) &&
+             range_callee == "range") ||
+            tree_parse_vector_literal(iter_expr)) {
           bounded = true;
         } else {
           auto collection_type = inferred_expr_type(iter_expr, env);
