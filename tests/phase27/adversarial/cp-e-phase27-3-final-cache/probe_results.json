@@ -1,0 +1,257 @@
+[
+  {
+    "check": {
+      "code": null,
+      "line": null,
+      "message": null,
+      "ok": true
+    },
+    "mode": "baseline-off",
+    "source": "accepted_expression_shapes.moss"
+  },
+  {
+    "check": {
+      "code": null,
+      "line": null,
+      "message": null,
+      "ok": true
+    },
+    "mode": "candidate-off",
+    "source": "accepted_expression_shapes.moss"
+  },
+  {
+    "check": {
+      "code": null,
+      "line": null,
+      "message": null,
+      "ok": true
+    },
+    "mode": "candidate-shadow",
+    "source": "accepted_expression_shapes.moss"
+  },
+  {
+    "calls": {
+      "ok": true,
+      "transitive": [
+        {
+          "target": "fn:reachable",
+          "target_id": "entity-v1:function:reachable"
+        }
+      ]
+    },
+    "check": {
+      "code": null,
+      "line": null,
+      "message": null,
+      "ok": true
+    },
+    "inspect": [
+      {
+        "error": null,
+        "ok": true,
+        "status": "resolved",
+        "target": "entity-v1:main",
+        "type_origin": "checked_declaration"
+      },
+      {
+        "error": null,
+        "ok": true,
+        "status": "resolved",
+        "target": "entity-v1:function:unreachable_but_checked",
+        "type_origin": "checked_declaration"
+      }
+    ],
+    "mode": "baseline-off",
+    "source": "accepted_closure.moss",
+    "symbols": {
+      "declarations": [
+        {
+          "id": "entity-v1:main",
+          "kind": "main",
+          "name": "main"
+        },
+        {
+          "id": "entity-v1:function:reachable",
+          "kind": "function",
+          "name": "reachable"
+        },
+        {
+          "id": "entity-v1:function:unreachable_but_checked",
+          "kind": "function",
+          "name": "unreachable_but_checked"
+        }
+      ],
+      "ok": true
+    }
+  },
+  {
+    "calls": {
+      "ok": true,
+      "transitive": [
+        {
+          "target": "fn:reachable",
+          "target_id": "entity-v1:function:reachable"
+        }
+      ]
+    },
+    "check": {
+      "code": null,
+      "line": null,
+      "message": null,
+      "ok": true
+    },
+    "inspect": [
+      {
+        "error": null,
+        "ok": true,
+        "status": "resolved",
+        "target": "entity-v1:main",
+        "type_origin": "checked_declaration"
+      },
+      {
+        "error": null,
+        "ok": true,
+        "status": "resolved",
+        "target": "entity-v1:function:unreachable_but_checked",
+        "type_origin": "checked_declaration"
+      }
+    ],
+    "mode": "candidate-off",
+    "source": "accepted_closure.moss",
+    "symbols": {
+      "declarations": [
+        {
+          "id": "entity-v1:main",
+          "kind": "main",
+          "name": "main"
+        },
+        {
+          "id": "entity-v1:function:reachable",
+          "kind": "function",
+          "name": "reachable"
+        },
+        {
+          "id": "entity-v1:function:unreachable_but_checked",
+          "kind": "function",
+          "name": "unreachable_but_checked"
+        }
+      ],
+      "ok": true
+    }
+  },
+  {
+    "calls": {
+      "ok": true,
+      "transitive": [
+        {
+          "target": "fn:reachable",
+          "target_id": "entity-v1:function:reachable"
+        }
+      ]
+    },
+    "check": {
+      "code": null,
+      "line": null,
+      "message": null,
+      "ok": true
+    },
+    "inspect": [
+      {
+        "error": null,
+        "ok": true,
+        "status": "resolved",
+        "target": "entity-v1:main",
+        "type_origin": "checked_declaration"
+      },
+      {
+        "error": null,
+        "ok": true,
+        "status": "resolved",
+        "target": "entity-v1:function:unreachable_but_checked",
+        "type_origin": "checked_declaration"
+      }
+    ],
+    "mode": "candidate-shadow",
+    "source": "accepted_closure.moss",
+    "symbols": {
+      "declarations": [
+        {
+          "id": "entity-v1:main",
+          "kind": "main",
+          "name": "main"
+        },
+        {
+          "id": "entity-v1:function:reachable",
+          "kind": "function",
+          "name": "reachable"
+        },
+        {
+          "id": "entity-v1:function:unreachable_but_checked",
+          "kind": "function",
+          "name": "unreachable_but_checked"
+        }
+      ],
+      "ok": true
+    }
+  },
+  {
+    "check": {
+      "code": "UNKNOWN_SYMBOL_OR_TYPE",
+      "line": 2,
+      "message": "unknown identifier 'unknown_name'",
+      "ok": false
+    },
+    "mode": "baseline-off",
+    "source": "rejected_unreachable.moss"
+  },
+  {
+    "check": {
+      "code": "UNKNOWN_SYMBOL_OR_TYPE",
+      "line": 2,
+      "message": "unknown identifier 'unknown_name'",
+      "ok": false
+    },
+    "mode": "candidate-off",
+    "source": "rejected_unreachable.moss"
+  },
+  {
+    "check": {
+      "code": "UNKNOWN_SYMBOL_OR_TYPE",
+      "line": 2,
+      "message": "unknown identifier 'unknown_name'",
+      "ok": false
+    },
+    "mode": "candidate-shadow",
+    "source": "rejected_unreachable.moss"
+  },
+  {
+    "check": {
+      "code": "MOSS_COMPILE_ERROR",
+      "line": 2,
+      "message": "invalid arithmetic expression",
+      "ok": false
+    },
+    "mode": "baseline-off",
+    "source": "rejected_incomplete.moss"
+  },
+  {
+    "check": {
+      "code": "MOSS_COMPILE_ERROR",
+      "line": 2,
+      "message": "invalid arithmetic expression",
+      "ok": false
+    },
+    "mode": "candidate-off",
+    "source": "rejected_incomplete.moss"
+  },
+  {
+    "check": {
+      "code": "MOSS_COMPILE_ERROR",
+      "line": 2,
+      "message": "invalid arithmetic expression",
+      "ok": false
+    },
+    "mode": "candidate-shadow",
+    "source": "rejected_incomplete.moss"
+  }
+]
