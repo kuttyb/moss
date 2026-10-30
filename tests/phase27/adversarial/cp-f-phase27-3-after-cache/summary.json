@@ -1,0 +1,52 @@
+{
+  "baseline_sha": "04be1a1bbbc7a4fd8fe2e4090b4b5bad5dd573e4",
+  "candidate_sha": "420b31ab6a267c4c8200a81660eb2e2b36fc449d",
+  "checks": {
+    "off": {
+      "common_sources": 2082,
+      "differences": 0,
+      "timeouts": 0
+    },
+    "shadow": {
+      "common_sources": 2082,
+      "differences": 0,
+      "timeouts": 0
+    }
+  },
+  "overflow_probe": {
+    "baseline": {
+      "check_exit": 0,
+      "default_emit_exit": 0,
+      "default_native_stdout": "-9223372036854775808\n",
+      "default_rustc_exit": 0,
+      "fast_debug_stdout": "-9223372036854775808\n",
+      "interpreter_stdout": "-9223372036854775808\n",
+      "optimized_emit_exit": 0,
+      "optimized_native_stdout": "-9223372036854775808\n",
+      "optimized_rustc_exit": 0
+    },
+    "candidate": {
+      "check_exit": 0,
+      "default_emit_exit": 0,
+      "default_native_stdout": "-9223372036854775808\n",
+      "default_rustc_exit": 0,
+      "fast_debug_stdout": "-9223372036854775808\n",
+      "interpreter_stdout": "-9223372036854775808\n",
+      "optimized_emit_exit": 0,
+      "optimized_native_stdout": "-9223372036854775808\n",
+      "optimized_rustc_exit": 0
+    }
+  },
+  "sanitizer": {
+    "baseline": {
+      "compiler_sha256": "4a334c71d9b5ea5b2925c311f7a462abd046e479fc4b52df4c0453e612ceb286",
+      "findings": 0,
+      "source_count": 2082
+    },
+    "candidate": {
+      "compiler_sha256": "745ebfb069257f1d0d94087e2f483bfa97feff12616b6cc22ddd7f5e3c0db7e1",
+      "findings": 0,
+      "source_count": 2082
+    }
+  }
+}
