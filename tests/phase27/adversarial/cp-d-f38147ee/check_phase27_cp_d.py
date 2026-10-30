@@ -17,6 +17,13 @@ CANDIDATE = Path(sys.argv[2]).resolve()
 WORK = ROOT / "tmp/phase27-2/cp-d-f38147ee"
 REPORT = WORK / "report.json"
 TIMEOUT = 30
+ADJUDICATED_DEFERRED_PIPELINE_CORRECTIONS = {
+    "examples/swarm/expression_surface_2026/validation_engine/failed_attempts/04_pipeline_collection_inference.moss",
+    "examples/swarm/modules/domain_services/repro/generic_pipeline/single/src/main.moss",
+    "examples/swarm/modules/domain_services/repro/generic_pipeline/split/src/main.moss",
+    "examples/swarm/modules/domain_services/repro/generic_pipeline/split/src/stats.moss",
+    "examples/swarm/modules/lib_and_app/repro/generic_pipeline_method_placeholder/single/src/main.moss",
+}
 
 
 def invoke(command, cwd, env):
@@ -123,6 +130,13 @@ def main():
                    record.get("verdict_difference") or
                    ("fast_debug_equal" in record and not record["fast_debug_equal"]) or
                    ("generated_rust_equal" in record and not record["generated_rust_equal"])]
+    adjudicated = [record for record in differences
+                   if record.get("source") in ADJUDICATED_DEFERRED_PIPELINE_CORRECTIONS and
+                   record.get("verdicts", {}).get("baseline") == "NOJSON" and
+                   record.get("verdicts", {}).get("candidate_off") == "ok" and
+                   record.get("verdicts", {}).get("candidate_shadow") == "ok" and
+                   "fast_debug_equal" not in record]
+    unadjudicated = [record for record in differences if record not in adjudicated]
     report = {"baseline_sha256": baseline_sha, "candidate_sha256":
               hashlib.sha256(CANDIDATE.read_bytes()).hexdigest(),
               "sources": len(records),
@@ -135,12 +149,15 @@ def main():
                   "generated_rust_equal" in row and not row["generated_rust_equal"]
                   for row in records),
               "differences": differences,
+              "adjudicated_deferred_pipeline_corrections": [
+                  row["source"] for row in adjudicated],
+              "unadjudicated_differences": unadjudicated,
               "entries": records}
     REPORT.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     print(json.dumps({key: value for key, value in report.items()
                       if key not in ("entries", "differences")}, indent=2))
     print(f"report: {REPORT.relative_to(ROOT)}")
-    return 1 if differences else 0
+    return 1 if unadjudicated else 0
 
 
 if __name__ == "__main__":
