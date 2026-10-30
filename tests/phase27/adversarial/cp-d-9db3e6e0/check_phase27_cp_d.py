@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[4]
 BASELINE_SHA256 = "4a9d7d7509f9883194f2d3f147c4ff66c39e9c832e758ddffdd7572d57667ffd"
 BASELINE = Path(sys.argv[1]).resolve()
 CANDIDATE = Path(sys.argv[2]).resolve()
-WORK = ROOT / "tmp/phase27-2/cp-d-f38147ee"
+WORK = ROOT / "tmp/phase27-2/cp-d-9db3e6e0"
 REPORT = WORK / "report.json"
 TIMEOUT = 30
 ADJUDICATED_DEFERRED_PIPELINE_CORRECTIONS = {
@@ -121,10 +121,10 @@ def main():
     if baseline_sha != BASELINE_SHA256:
         raise SystemExit(f"baseline SHA mismatch: {baseline_sha}")
     WORK.mkdir(parents=True, exist_ok=True)
-    raw = subprocess.run(["git", "ls-files", "examples/**/*.moss", "examples/*.moss"],
+    raw = subprocess.run(["git", "ls-files", "*.moss"],
                          cwd=ROOT, text=True, capture_output=True, check=True).stdout
     sources = sorted(set(raw.splitlines()))
-    with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, os.cpu_count() or 4)) as pool:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(16, os.cpu_count() or 4)) as pool:
         records = list(pool.map(source_case, sources))
     differences = [record for record in records if
                    record.get("verdict_difference") or
