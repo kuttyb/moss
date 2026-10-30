@@ -3484,7 +3484,9 @@ class Generator {
       if (base_type && shared_protocol_map_key_from_type(*base_type)) {
         const string key_type = *shared_protocol_map_key_from_type(*base_type);
         const string key = expr(ii, d, locals, types);
-        const string borrowed = borrowed_function_parameters_.count(trim(ii))
+        const auto key_binding = tree_identifier_name(ii);
+        const string borrowed = key_binding &&
+            borrowed_function_parameters_.count(*key_binding)
             ? "__moss_key" : "&__moss_key";
         return "{ let __moss_key = " + key + "; (" +
             expr(ib, d, locals, types) +
@@ -3509,10 +3511,11 @@ class Generator {
         // HashMap<String, _> accepts `str` as a borrowed lookup key. This
         // works for both an owned String and an already-borrowed &String,
         // whereas another `&` would emit an invalid &&String lookup.
+        const auto key_binding = tree_identifier_name(ii);
         auto key_type = generated_expr_type(ii, types);
         if (key_type && canonical_type_name(*key_type) == "string")
           ir = "(" + ir + ").as_str()";
-        else if (!borrowed_function_parameters_.count(trim(ii)))
+        else if (!key_binding || !borrowed_function_parameters_.count(*key_binding))
           ir = "&(" + ir + ")";
       }
       string indexed = "(" + expr(ib, d, locals, types) + ")[" + ir + "]";
@@ -3864,8 +3867,10 @@ class Generator {
             string key = expr(member_arguments[0], d, locals, types);
             if (nominal && is_object_view(member_arguments[0], d, locals, types))
               key = "(" + key + ").__moss_value()";
-            const string borrowed = borrowed_function_parameters_.count(
-                trim(member_arguments[0])) ? "__moss_key" : "&__moss_key";
+            const auto key_binding = tree_identifier_name(member_arguments[0]);
+            const string borrowed = key_binding &&
+                borrowed_function_parameters_.count(*key_binding)
+                ? "__moss_key" : "&__moss_key";
             const string hash = nominal ? "__moss_key.hash()"
                 : tree_strip_expression_grouping(
                       scalar_protocol_rust("hash", key_type, "__moss_key"));
@@ -3887,8 +3892,10 @@ class Generator {
             if (shared_key) {
               const bool view_key = is_object_view(member_arguments[0], d, locals, types);
               if (view_key) key = "(" + key + ").__moss_value()";
-              const string borrowed = !view_key && borrowed_function_parameters_.count(
-                  trim(member_arguments[0])) ? "__moss_key" : "&__moss_key";
+              const auto key_binding = tree_identifier_name(member_arguments[0]);
+              const string borrowed = !view_key && key_binding &&
+                  borrowed_function_parameters_.count(*key_binding)
+                  ? "__moss_key" : "&__moss_key";
               return "{ let __moss_key = " + key +
                   "; let __moss_fallback = " + fallback +
                   "; let __moss_removed = (" + receiver_expression +
@@ -3911,8 +3918,10 @@ class Generator {
               string fallback = expr(member_arguments[1], d, locals, types);
               const bool view_key = is_object_view(member_arguments[0], d, locals, types);
               if (view_key) key = "(" + key + ").__moss_value()";
-              const string borrowed = !view_key && borrowed_function_parameters_.count(
-                  trim(member_arguments[0])) ? "__moss_key" : "&__moss_key";
+              const auto key_binding = tree_identifier_name(member_arguments[0]);
+              const string borrowed = !view_key && key_binding &&
+                  borrowed_function_parameters_.count(*key_binding)
+                  ? "__moss_key" : "&__moss_key";
               return "{ let __moss_key = " + key +
                   "; (" + receiver_expression +
                   ").get_with(" + shared_map_hash(map_types->first, "__moss_key") +
@@ -3961,7 +3970,9 @@ class Generator {
           if (method->receiver_effect == Effect::Consume) {
             if (is_object_view(member_receiver, d, locals, types))
               receiver_expression = "(" + receiver_expression + ").__moss_value()";
-            else if (borrowed_function_parameters_.count(trim(member_receiver)))
+            else if (tree_identifier_name(member_receiver) &&
+                     borrowed_function_parameters_.count(
+                         *tree_identifier_name(member_receiver)))
               receiver_expression = "(*(" + receiver_expression + ")).clone()";
           }
           vector<string> argument_temporaries(member_arguments.size());
@@ -4949,13 +4960,15 @@ class Generator {
                             plan == f.result_functional_pipeline_ids.end()
                                 ? 0 : plan->second);
       if (view_object_type(return_type)) {
-        string expr_trimmed = trim(*f.result_expression);
+        const auto expr_binding = tree_identifier_name(*f.result_expression);
         auto param_it = std::find_if(f.params.begin(), f.params.end(),
-                                     [&](const Param& p) { return p.name == expr_trimmed; });
+                                     [&](const Param& p) {
+          return expr_binding && p.name == *expr_binding;
+        });
         if (param_it != f.params.end()) {
           size_t p_idx = std::distance(f.params.begin(), param_it);
           if (function_effect(f, p_idx, types.at(f.params[p_idx].name), specialization) != Effect::Consume) {
-            if (view) rendered = expr_trimmed + ".__moss_value()";
+            if (view) rendered = *expr_binding + ".__moss_value()";
             else rendered = "(" + rendered + ").clone()";
           }
         }
