@@ -132,8 +132,15 @@ def sites(commit=None):
                     found[("reach_walk", relative, line_no,
                            line.strip(), field)] += 1
             if consumer == "fast_debug":
-                calls = re.findall(r"\beval\s*\(", line)
-                if calls and not re.search(r"\bValue\s+eval\s*\(", line):
+                # `evaluate_expression_source` is the Fast Debug source boundary:
+                # it resolves a retained EST handle (or parses one temporary EST
+                # root for synthetic/declaration expressions) and dispatches to
+                # evaluate_expression_tree. It is not the former recursive
+                # eval(string) implementation. Keep counting the legacy API and
+                # its old renamed spelling so a rename alone cannot clear debt.
+                calls = re.findall(r"\b(?:eval|evaluate_expression)\s*\(", line)
+                if calls and not re.search(
+                        r"\bValue\s+(?:eval|evaluate_expression)\s*\(", line):
                     found[(consumer, relative, line_no, line.strip(), "eval(string)")] += len(calls)
             # Trimming followed by a comparison is a string classification
             # operation. Count at the call site, attributed to its caller.
@@ -192,6 +199,33 @@ def main():
              if value > baseline.get(key, 0)]
     for (consumer, api), amount in sorted(added):
         print(f"new expression-text reader call count ({amount}): {consumer}/{api}", file=sys.stderr)
+    if "--require-zero" in sys.argv:
+        index = sys.argv.index("--require-zero")
+        if index + 1 >= len(sys.argv):
+            raise SystemExit("--require-zero requires a consumer name")
+        consumer = sys.argv[index + 1]
+        remaining = collections.Counter()
+        for (actual_consumer, _path, _line, _text, api), amount in sites().items():
+            if actual_consumer == consumer:
+                remaining[api] += amount
+        if remaining:
+            for api, amount in sorted(remaining.items()):
+                print(f"remaining expression-text reader call count ({amount}): {consumer}/{api}", file=sys.stderr)
+            return 1
+        if consumer == "fast_debug":
+            interpreter = (ROOT / "src/interpreter.hpp").read_text()
+            adapter_start = interpreter.find("Value evaluate_expression_source(")
+            node_start = interpreter.find("Value evaluate_expression_tree(", adapter_start)
+            if adapter_start < 0 or node_start < 0:
+                raise SystemExit("Fast Debug EST evaluator entry points are missing")
+            adapter = interpreter[adapter_start:node_start]
+            node_body = interpreter[node_start:interpreter.find("// Native lowering", node_start)]
+            if "expression_tree(expression)" not in adapter or \
+                    "evaluate_expression_tree(*tree, tree->root" not in adapter:
+                raise SystemExit("Fast Debug source adapter does not dispatch through EST")
+            if "evaluate_tree_node" not in node_body or \
+                    "std::get_if<est::Binary>" not in node_body:
+                raise SystemExit("Fast Debug evaluator is not recursively dispatching EST nodes")
     field_reads = [(path, line, text, api)
                    for (consumer, path, line, text, api), amount in sites().items()
                    if consumer == "reach_walk" and api.startswith("Stmt.") and amount]
