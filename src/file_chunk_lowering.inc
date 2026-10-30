@@ -99,7 +99,7 @@ ObservableEffects chunk_mapper_invocation_effects(
     if (statement.kind == Stmt::Kind::Assign ||
         statement.kind == Stmt::Kind::Let ||
         statement.kind == Stmt::Kind::Var) {
-      if (extract_root_identifier(statement.a) == parameter)
+      if (tree_root_identifier(statement.a) == parameter)
         return map_node.effects;
     }
     // A `for` target and a `case` payload are fresh lexical bindings. The
@@ -117,7 +117,7 @@ ObservableEffects chunk_mapper_invocation_effects(
       vector<string> arguments;
       if (tree_parse_simple_call(expression, callee, arguments) &&
           callee == "replace" && !arguments.empty() &&
-          extract_root_identifier(arguments.front()) == parameter)
+          tree_root_identifier(arguments.front()) == parameter)
         return map_node.effects;
     }
   }

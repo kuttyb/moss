@@ -1129,6 +1129,28 @@ bool project_identifier(const ExpressionView& e, std::string& name) {
   name = id->name; return true;
 }
 
+bool project_root_identifier(const ExpressionView& e, std::string& name) {
+  if (!e.arena || e.root >= e.arena->size()) return false;
+  ExprId root = unparenthesized(*e.arena, e.root);
+  while (root < e.arena->size()) {
+    const auto& node = e.arena->at(root);
+    if (const auto* identifier = std::get_if<Identifier>(&node)) {
+      name = identifier->name;
+      return true;
+    }
+    if (const auto* member = std::get_if<Member>(&node)) {
+      root = unparenthesized(*e.arena, member->base);
+      continue;
+    }
+    if (const auto* index = std::get_if<Index>(&node)) {
+      root = unparenthesized(*e.arena, index->base);
+      continue;
+    }
+    return false;
+  }
+  return false;
+}
+
 bool is_identifier(const ExpressionView& e) {
   std::string name;
   bool result = project_identifier(e, name);

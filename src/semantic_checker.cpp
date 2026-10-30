@@ -20649,60 +20649,45 @@ class Checker {
     return effects;
   }
 
-  static bool is_positive_integer_literal(const string& text) {
-    string s = trim(text);
-    if (s.empty()) return false;
-    size_t start = (s.front() == '+') ? 1 : 0;
-    if (start >= s.size()) return false;
-    for (size_t i = start; i < s.size(); ++i) {
-      if (!moss::ascii_is_digit(static_cast<unsigned char>(s[i]))) return false;
-    }
-    try {
-      return std::stoll(s) > 0;
-    } catch (...) {
+  static bool is_integer_literal_at_least(const string& expression,
+                                          std::int64_t minimum) {
+    auto syntax = checker_est_view(expression);
+    if (!syntax || !syntax->arena || syntax->root >= syntax->arena->size())
       return false;
-    }
+    const auto root = moss::est::unparenthesized(*syntax->arena, syntax->root);
+    const auto& node = syntax->arena->at(root);
+    bool literal_shape = std::holds_alternative<moss::est::Literal>(node);
+    if (const auto* unary = std::get_if<moss::est::Unary>(&node))
+      literal_shape = unary->op == "+" &&
+          std::holds_alternative<moss::est::Literal>(
+              syntax->arena->at(moss::est::unparenthesized(
+                  *syntax->arena, unary->operand)));
+    if (!literal_shape) return false;
+    auto decoded = moss::decode_numeric_literal_expression(expression);
+    return decoded && decoded->kind == moss::NumericLiteral::Kind::Int &&
+        decoded->integer >= minimum;
   }
 
-  static bool is_nonnegative_integer_literal(const string& text) {
-    string s = trim(text);
-    if (s.empty()) return false;
-    size_t start = (s.front() == '+') ? 1 : 0;
-    if (start >= s.size()) return false;
-    for (size_t i = start; i < s.size(); ++i) {
-      if (!moss::ascii_is_digit(static_cast<unsigned char>(s[i]))) return false;
-    }
-    try {
-      return std::stoll(s) >= 0;
-    } catch (...) {
-      return false;
-    }
+  static bool is_positive_integer_literal(const string& expression) {
+    return is_integer_literal_at_least(expression, 1);
   }
 
-  static std::set<string> extract_expression_identifiers(const string& expr) {
-    std::set<string> ids;
-    size_t i = 0;
-    while (i < expr.size()) {
-      if (moss::ascii_is_alpha(static_cast<unsigned char>(expr[i])) || expr[i] == '_') {
-        size_t start = i;
-        while (i < expr.size() && (moss::ascii_is_alnum(static_cast<unsigned char>(expr[i])) || expr[i] == '_')) {
-          ++i;
-        }
-        ids.insert(expr.substr(start, i - start));
-      } else {
-        ++i;
-      }
-    }
-    return ids;
+  static bool is_nonnegative_integer_literal(const string& expression) {
+    return is_integer_literal_at_least(expression, 0);
   }
 
-  static string extract_root_identifier(const string& target) {
-    string root = trim(target);
-    auto dot = root.find('.');
-    auto bracket = root.find('[');
-    size_t end = std::min(dot == string::npos ? root.size() : dot,
-                          bracket == string::npos ? root.size() : bracket);
-    return trim(root.substr(0, end));
+  static bool tree_expression_mentions_identifier(
+      const string& expression, std::string_view name) {
+    auto syntax = checker_est_view(expression);
+    return syntax && moss::est::expression_mentions(*syntax, name);
+  }
+
+  static std::optional<string> tree_root_identifier(
+      const string& expression) {
+    auto syntax = checker_est_view(expression);
+    string name;
+    return syntax && moss::est::project_root_identifier(*syntax, name)
+        ? std::optional<string>(std::move(name)) : std::nullopt;
   }
 
   bool is_bounded_while_loop(
@@ -20714,17 +20699,18 @@ class Checker {
     if (!cmp_less && !cmp_greater) return false;
 
     bool is_less = cmp_less.has_value();
-    string var_name = trim(is_less ? cmp_less->first : cmp_greater->first);
+    const auto induction_binding = tree_identifier_name(
+        is_less ? cmp_less->first : cmp_greater->first);
+    if (!induction_binding) return false;
+    const string& var_name = *induction_binding;
     string bound_expr = trim(is_less ? cmp_less->second : cmp_greater->second);
 
-    if (!tree_plain_identifier(var_name)) return false;
     auto var_type = env.find(var_name);
     if (var_type == env.end() || canonical_type_name(var_type->second) != "int")
       return false;
 
     // No induction-variable dependency in bound
-    auto bound_vars = extract_expression_identifiers(bound_expr);
-    if (bound_vars.count(var_name)) return false;
+    if (tree_expression_mentions_identifier(bound_expr, var_name)) return false;
 
     // Bound must be invariant and side-effect-free
     ObservableEffects bound_effects = observable_expression_effects(bound_expr, env);
@@ -20749,9 +20735,10 @@ class Checker {
       if (s.kind == Stmt::Kind::While) return false;
 
       if (s.kind == Stmt::Kind::Assign || s.kind == Stmt::Kind::Let || s.kind == Stmt::Kind::Var) {
-        string root = extract_root_identifier(s.a);
-        if (bound_vars.count(root)) return false;
-        if (root == var_name) {
+        auto root = tree_root_identifier(s.a);
+        if (root && tree_expression_mentions_identifier(bound_expr, *root))
+          return false;
+        if (root && *root == var_name) {
           if (!tree_identifier_named(s.a, var_name) || s.indent != loop_body_indent)
             return false;
           if (is_less) {
@@ -20760,8 +20747,8 @@ class Checker {
             string left = trim(add->first);
             string right = trim(add->second);
             string step_str;
-            if (left == var_name) step_str = right;
-            else if (right == var_name) step_str = left;
+            if (tree_identifier_named(left, var_name)) step_str = right;
+            else if (tree_identifier_named(right, var_name)) step_str = left;
             else return false;
             if (!is_positive_integer_literal(step_str)) return false;
             ++progress_steps;
@@ -20770,18 +20757,22 @@ class Checker {
             if (!sub) return false;
             string left = trim(sub->first);
             string right = trim(sub->second);
-            if (left != var_name) return false;
+            if (!tree_identifier_named(left, var_name)) return false;
             if (!is_positive_integer_literal(right)) return false;
             ++progress_steps;
           }
         }
       } else if (s.kind == Stmt::Kind::For) {
-        string target = trim(s.a);
-        if (bound_vars.count(target) || target == var_name) return false;
+        const auto target = tree_identifier_name(s.a);
+        if (target && tree_expression_mentions_identifier(bound_expr, *target))
+          return false;
+        if (target && *target == var_name) return false;
       } else if (s.kind == Stmt::Kind::Call && !s.b.empty()) {
-        string root = trim(s.a);
+        const auto root = tree_identifier_name(s.a);
         bool mutating = s.b == "push" || s.b == "pop" || s.b == "pop_front";
-        if (mutating && (bound_vars.count(root) || root == var_name)) return false;
+        if (mutating && root &&
+            (tree_expression_mentions_identifier(bound_expr, *root) ||
+             *root == var_name)) return false;
       }
     }
     return progress_steps == 1;
@@ -20834,8 +20825,9 @@ class Checker {
       if (statement.kind == Stmt::Kind::Assign ||
           statement.kind == Stmt::Kind::Let ||
           statement.kind == Stmt::Kind::Var) {
-        const string root = extract_root_identifier(statement.a);
-        if (root == range_binding || root == induction) return std::nullopt;
+        const auto root = tree_root_identifier(statement.a);
+        if (root && (*root == range_binding || *root == induction))
+          return std::nullopt;
       }
       if (statement.kind == Stmt::Kind::For &&
           (tree_identifier_named(statement.a, range_binding) ||
@@ -20852,7 +20844,7 @@ class Checker {
         vector<string> replace_arguments;
         if (tree_parse_simple_call(expression, replace_callee, replace_arguments) &&
             replace_callee == "replace" && !replace_arguments.empty() &&
-            extract_root_identifier(replace_arguments.front()) == range_binding)
+            tree_root_identifier(replace_arguments.front()) == range_binding)
           return std::nullopt;
       }
     }

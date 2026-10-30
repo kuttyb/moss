@@ -220,6 +220,7 @@ std::optional<std::vector<std::string>> parse_delimited_children(
 void assert_delimited_parity(const ExpressionView& view, char delimiter,
                              const std::optional<std::vector<std::string>>& tree);
 bool project_identifier(const ExpressionView& view, std::string& name);
+bool project_root_identifier(const ExpressionView& view, std::string& name);
 bool is_identifier(const ExpressionView& view);
 bool identifier_named(const ExpressionView& view, std::string_view name);
 bool expressions_equal(const ExpressionView& left, const ExpressionView& right);
