@@ -1,0 +1,29 @@
+{
+  "binding_comparison_count": 9,
+  "bounded_alias_count": 22,
+  "classification_counts": {
+    "EST query/projection": 98,
+    "EST structural equality": 4,
+    "NAME/keyword-or-builtin-exemption": 53,
+    "binding/name comparison exemption": 13,
+    "bounded alias source": 50,
+    "checked/type or emission projection": 88,
+    "other slot value/access; inspect statement kind/context": 570,
+    "raw string shape/emptiness operation; inspect enclosing slot role": 190
+  },
+  "files": [
+    "src/semantic_checker.cpp",
+    "src/fileio_semantics.inc",
+    "src/file_chunk_lowering.inc",
+    "src/executor_invoke_lowering.inc",
+    "src/static_bounds.inc",
+    "src/native_generator.cpp",
+    "src/file_chunk_codegen.inc",
+    "src/borrowed_views.inc",
+    "src/handler_lowering.inc"
+  ],
+  "literal_name_comparison_count": 40,
+  "rendered_expression_text_calls": [],
+  "slot_occurrence_count": 1066,
+  "tree_expression_text_calls": []
+}

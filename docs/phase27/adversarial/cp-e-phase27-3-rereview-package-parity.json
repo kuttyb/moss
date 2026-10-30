@@ -1,0 +1,292 @@
+{
+  "baseline": {
+    "build --json": {
+      "exit": 0,
+      "payload": {
+        "artifacts": {
+          "artifacts": {
+            "cache_metadata": "/home/owner/daji/code/moss/tmp/cp-e-phase27-3-rereview/tmp/baseline/examples/swarm/modules/data_pipeline/analytics/build/debug/analytics.mossbuild",
+            "debug_map": "/home/owner/daji/code/moss/tmp/cp-e-phase27-3-rereview/tmp/baseline/examples/swarm/modules/data_pipeline/analytics/build/debug/analytics.mossmap",
+            "executable": "/home/owner/daji/code/moss/tmp/cp-e-phase27-3-rereview/tmp/baseline/examples/swarm/modules/data_pipeline/analytics/build/debug/analytics",
+            "generated_rust": "/home/owner/daji/code/moss/tmp/cp-e-phase27-3-rereview/tmp/baseline/examples/swarm/modules/data_pipeline/analytics/build/debug/app.rs",
+            "module_interfaces": [
+              "/home/owner/daji/code/moss/tmp/cp-e-phase27-3-rereview/tmp/baseline/examples/swarm/modules/data_pipeline/analytics/build/debug/app.mossi",
+              "/home/owner/daji/code/moss/tmp/cp-e-phase27-3-rereview/tmp/baseline/examples/swarm/modules/data_pipeline/analytics/build/debug/pipeline.mossi",
+              "/home/owner/daji/code/moss/tmp/cp-e-phase27-3-rereview/tmp/baseline/examples/swarm/modules/data_pipeline/analytics/build/debug/report.mossi",
+              "/home/owner/daji/code/moss/tmp/cp-e-phase27-3-rereview/tmp/baseline/examples/swarm/modules/data_pipeline/analytics/build/debug/stats.mossi"
+            ],
+            "module_rlibs": [
+              "/home/owner/daji/code/moss/tmp/cp-e-phase27-3-rereview/tmp/baseline/examples/swarm/modules/data_pipeline/analytics/build/debug/libstats.rlib",
+              "/home/owner/daji/code/moss/tmp/cp-e-phase27-3-rereview/tmp/baseline/examples/swarm/modules/data_pipeline/analytics/build/debug/libpipeline.rlib",
+              "/home/owner/daji/code/moss/tmp/cp-e-phase27-3-rereview/tmp/baseline/examples/swarm/modules/data_pipeline/analytics/build/debug/libreport.rlib",
+              "/home/owner/daji/code/moss/tmp/cp-e-phase27-3-rereview/tmp/baseline/examples/swarm/modules/data_pipeline/analytics/build/debug/libapp.rlib"
+            ],
+            "specialization_rlib": null
+          },
+          "backend_toolchain": {
+            "compile_flags": [
+              "--edition=2021",
+              "-D",
+              "warnings",
+              "-g",
+              "-C",
+              "opt-level=0"
+            ],
+            "fingerprint": "2f48c0ef4ea1736c",
+            "profile": "debug",
+            "resolved_rustc": "/home/owner/.cargo/bin/rustc",
+            "version_verbose": "rustc 1.98.1 (48a229cea 2026-09-01)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: x86_64-unknown-linux-gnu\nrelease: 1.98.1\nLLVM version: 22.1.8"
+          },
+          "incremental": {
+            "generated_rust_units_rewritten": 1,
+            "native_artifact_reused": false,
+            "units_analyzed": 63,
+            "units_reused": 0
+          },
+          "profile": "debug",
+          "project": "analytics",
+          "reused": false,
+          "source": "/home/owner/daji/code/moss/tmp/cp-e-phase27-3-rereview/tmp/baseline/examples/swarm/modules/data_pipeline/analytics/src/main.moss",
+          "sources": [
+            "/home/owner/daji/code/moss/tmp/cp-e-phase27-3-rereview/tmp/baseline/examples/swarm/modules/data_pipeline/analytics/src/main.moss",
+            "/home/owner/daji/code/moss/tmp/cp-e-phase27-3-rereview/tmp/baseline/examples/swarm/modules/data_pipeline/analytics/src/pipeline.moss",
+            "/home/owner/daji/code/moss/tmp/cp-e-phase27-3-rereview/tmp/baseline/examples/swarm/modules/data_pipeline/analytics/src/report.moss",
+            "/home/owner/daji/code/moss/tmp/cp-e-phase27-3-rereview/tmp/baseline/examples/swarm/modules/data_pipeline/analytics/src/stats.moss"
+          ]
+        },
+        "build_order": [
+          "records",
+          "analytics"
+        ],
+        "checked": [
+          "records",
+          "analytics"
+        ],
+        "native_checked": [
+          "records",
+          "analytics"
+        ],
+        "native_skipped": [],
+        "ok": true,
+        "packages": [
+          {
+            "name": "records",
+            "source": {
+              "kind": "path",
+              "path": "/home/owner/daji/code/moss/tmp/cp-e-phase27-3-rereview/tmp/baseline/examples/swarm/modules/data_pipeline/records"
+            }
+          },
+          {
+            "name": "analytics",
+            "source": {
+              "kind": "root"
+            }
+          }
+        ],
+        "root_package": "analytics",
+        "scheduling_events": [
+          {
+            "event": "start",
+            "package": "records"
+          },
+          {
+            "event": "finish",
+            "package": "records"
+          },
+          {
+            "event": "start",
+            "package": "analytics"
+          },
+          {
+            "event": "finish",
+            "package": "analytics"
+          }
+        ],
+        "schema_version": "margo-1",
+        "skipped": []
+      },
+      "stderr": ""
+    },
+    "test --json": {
+      "exit": 1,
+      "payload": {
+        "command": "test",
+        "compiler_version": "0.1.0",
+        "error": {
+          "cause": null,
+          "code": "MODULE_PROVIDER_NOT_FOUND",
+          "column": 1,
+          "details": {
+            "consume_line": null,
+            "ownership_actual": null,
+            "ownership_expected": null,
+            "recursion_witness": null,
+            "resolution": null
+          },
+          "fixes": [],
+          "guidance": null,
+          "legal_alternatives": [],
+          "line": 0,
+          "message": "no provider for imported module 'report'",
+          "related": [],
+          "rule": null,
+          "semantic_identity": null,
+          "severity": "error",
+          "source": null,
+          "source_file": null,
+          "span": null,
+          "symbol": null
+        },
+        "ok": false,
+        "protocol_version": 1,
+        "schema_version": "moss-agent-1"
+      },
+      "stderr": ""
+    }
+  },
+  "candidate": {
+    "build --json": {
+      "exit": 0,
+      "payload": {
+        "artifacts": {
+          "artifacts": {
+            "cache_metadata": "/home/owner/daji/code/moss/tmp/cp-e-phase27-3-rereview/examples/swarm/modules/data_pipeline/analytics/build/debug/analytics.mossbuild",
+            "debug_map": "/home/owner/daji/code/moss/tmp/cp-e-phase27-3-rereview/examples/swarm/modules/data_pipeline/analytics/build/debug/analytics.mossmap",
+            "executable": "/home/owner/daji/code/moss/tmp/cp-e-phase27-3-rereview/examples/swarm/modules/data_pipeline/analytics/build/debug/analytics",
+            "generated_rust": "/home/owner/daji/code/moss/tmp/cp-e-phase27-3-rereview/examples/swarm/modules/data_pipeline/analytics/build/debug/app.rs",
+            "module_interfaces": [
+              "/home/owner/daji/code/moss/tmp/cp-e-phase27-3-rereview/examples/swarm/modules/data_pipeline/analytics/build/debug/app.mossi",
+              "/home/owner/daji/code/moss/tmp/cp-e-phase27-3-rereview/examples/swarm/modules/data_pipeline/analytics/build/debug/pipeline.mossi",
+              "/home/owner/daji/code/moss/tmp/cp-e-phase27-3-rereview/examples/swarm/modules/data_pipeline/analytics/build/debug/report.mossi",
+              "/home/owner/daji/code/moss/tmp/cp-e-phase27-3-rereview/examples/swarm/modules/data_pipeline/analytics/build/debug/stats.mossi"
+            ],
+            "module_rlibs": [
+              "/home/owner/daji/code/moss/tmp/cp-e-phase27-3-rereview/examples/swarm/modules/data_pipeline/analytics/build/debug/libstats.rlib",
+              "/home/owner/daji/code/moss/tmp/cp-e-phase27-3-rereview/examples/swarm/modules/data_pipeline/analytics/build/debug/libpipeline.rlib",
+              "/home/owner/daji/code/moss/tmp/cp-e-phase27-3-rereview/examples/swarm/modules/data_pipeline/analytics/build/debug/libreport.rlib",
+              "/home/owner/daji/code/moss/tmp/cp-e-phase27-3-rereview/examples/swarm/modules/data_pipeline/analytics/build/debug/libapp.rlib"
+            ],
+            "specialization_rlib": null
+          },
+          "backend_toolchain": {
+            "compile_flags": [
+              "--edition=2021",
+              "-D",
+              "warnings",
+              "-g",
+              "-C",
+              "opt-level=0"
+            ],
+            "fingerprint": "2f48c0ef4ea1736c",
+            "profile": "debug",
+            "resolved_rustc": "/home/owner/.cargo/bin/rustc",
+            "version_verbose": "rustc 1.98.1 (48a229cea 2026-09-01)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: x86_64-unknown-linux-gnu\nrelease: 1.98.1\nLLVM version: 22.1.8"
+          },
+          "incremental": {
+            "generated_rust_units_rewritten": 1,
+            "native_artifact_reused": false,
+            "units_analyzed": 63,
+            "units_reused": 0
+          },
+          "profile": "debug",
+          "project": "analytics",
+          "reused": false,
+          "source": "/home/owner/daji/code/moss/tmp/cp-e-phase27-3-rereview/examples/swarm/modules/data_pipeline/analytics/src/main.moss",
+          "sources": [
+            "/home/owner/daji/code/moss/tmp/cp-e-phase27-3-rereview/examples/swarm/modules/data_pipeline/analytics/src/main.moss",
+            "/home/owner/daji/code/moss/tmp/cp-e-phase27-3-rereview/examples/swarm/modules/data_pipeline/analytics/src/pipeline.moss",
+            "/home/owner/daji/code/moss/tmp/cp-e-phase27-3-rereview/examples/swarm/modules/data_pipeline/analytics/src/report.moss",
+            "/home/owner/daji/code/moss/tmp/cp-e-phase27-3-rereview/examples/swarm/modules/data_pipeline/analytics/src/stats.moss"
+          ]
+        },
+        "build_order": [
+          "records",
+          "analytics"
+        ],
+        "checked": [
+          "records",
+          "analytics"
+        ],
+        "native_checked": [
+          "records",
+          "analytics"
+        ],
+        "native_skipped": [],
+        "ok": true,
+        "packages": [
+          {
+            "name": "records",
+            "source": {
+              "kind": "path",
+              "path": "/home/owner/daji/code/moss/tmp/cp-e-phase27-3-rereview/examples/swarm/modules/data_pipeline/records"
+            }
+          },
+          {
+            "name": "analytics",
+            "source": {
+              "kind": "root"
+            }
+          }
+        ],
+        "root_package": "analytics",
+        "scheduling_events": [
+          {
+            "event": "start",
+            "package": "records"
+          },
+          {
+            "event": "finish",
+            "package": "records"
+          },
+          {
+            "event": "start",
+            "package": "analytics"
+          },
+          {
+            "event": "finish",
+            "package": "analytics"
+          }
+        ],
+        "schema_version": "margo-1",
+        "skipped": []
+      },
+      "stderr": ""
+    },
+    "test --json": {
+      "exit": 1,
+      "payload": {
+        "command": "test",
+        "compiler_version": "0.1.0",
+        "error": {
+          "cause": null,
+          "code": "MODULE_PROVIDER_NOT_FOUND",
+          "column": 1,
+          "details": {
+            "consume_line": null,
+            "ownership_actual": null,
+            "ownership_expected": null,
+            "recursion_witness": null,
+            "resolution": null
+          },
+          "fixes": [],
+          "guidance": null,
+          "legal_alternatives": [],
+          "line": 0,
+          "message": "no provider for imported module 'report'",
+          "related": [],
+          "rule": null,
+          "semantic_identity": null,
+          "severity": "error",
+          "source": null,
+          "source_file": null,
+          "span": null,
+          "symbol": null
+        },
+        "ok": false,
+        "protocol_version": 1,
+        "schema_version": "moss-agent-1"
+      },
+      "stderr": ""
+    }
+  }
+}
