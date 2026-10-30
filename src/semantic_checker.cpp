@@ -10871,6 +10871,8 @@ class Checker {
     auto syntax = moss::est::parse_view(expression);
     if (!named_argument && !syntax)
       syntax = moss::est::parse_view("(" + expression + ")");
+    const bool incomplete_trailing_operator = !syntax &&
+        moss::est::incomplete_trailing_operator(expression);
     if (!named_argument && syntax) {
       std::pair<string,string> operands;
       string operation;
@@ -10904,8 +10906,13 @@ class Checker {
           starts_with(trimmed_expression, "if ") &&
           expression.find(':') != string::npos &&
           expression.find("else:") != string::npos;
+      // Incomplete trailing operators are rejected by the expression parser.
+      // The legacy splitter can still return a partial pair such as ("2", "")
+      // for an input like 2 +; validation emits the shared compile diagnostic
+      // before any semantic interpretation.
       if (result != legacy && !(named_argument && legacy && !result) &&
-          !exponent_star_substring && !legacy_invalid_if_comparison) {
+          !exponent_star_substring && !legacy_invalid_if_comparison &&
+          !incomplete_trailing_operator) {
         assert(result == legacy);
       }
     }
@@ -25870,6 +25877,8 @@ class Checker {
                         std::string_view child_role = {}) {
     using OccurrenceKind = BodyTypeState::ExpressionOccurrence::Kind;
     string original = trim(expression);
+    if (moss::est::incomplete_trailing_operator(original))
+      err(line, "invalid arithmetic expression", "MOSS_COMPILE_ERROR");
     const string occurrence_source = original;
     std::uint32_t cursor_child_ordinal = 0;
     if (!active_est_expression_cursors_.empty() &&

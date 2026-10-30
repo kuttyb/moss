@@ -38,4 +38,10 @@ The exhaustive field inventory contains 1,192 line-level occurrences: 113 EST/ex
 
 The off verdict-corpus comparison completed: baseline had 2,118 sources and 1,394 accepted; candidate had 2,124 sources and 1,398 accepted; 2,118 paths were common, with three verdict changes and six candidate-only sources. The checked-declaration closure differential timed out at 90 seconds on a specialization workload; its 300-second retry was stopped before producing a report. No closure pass is claimed.
 
-This SEMANTIC/package verdict change meets the explicit escalation stop rule. No further source edits, gates, CP-F, merge, or tag are in progress.
+## L7 ruling and correction — incomplete expression
+
+L7 ruled that acceptance of malformed REJECTED-SOURCE input is a MIGRATION BUG, not SEMANTIC. The required behavior is identical diagnostics on both paths. The incomplete-expression mismatch is therefore a fix-and-rerun finding, not a stop condition.
+
+The EST incomplete-trailing-operator query now identifies incomplete operator tails. Checker validation emits the baseline MOSS_COMPILE_ERROR / invalid arithmetic expression before semantic interpretation; shadow binary-split parity avoids asserting on the legacy partial pair for that rejected input. Regression coverage in tests/tooling/check_phase27_est.py checks the 27.1 rejected-source fixtures for **, in, &&, ||, incomplete expressions, and all six files containing the seven isolated delimiter fragments. It requires the baseline diagnostic signature in off and shadow. The incomplete-expression repro is also checked in standalone and package modes. The focused EST regression passes.
+
+The prior Agent 2 review's NO-GO still stands due the indirect expression-reader inventory and the incomplete checked-declaration closure comparison. The reviewer identified helper/local aliases that the direct-field lint does not follow. These are the next bounded taint-audit and migration items; no semantic stop is active under the L7 ruling.

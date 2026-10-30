@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """Focused EST expression dump and mode-independent tree checks."""
 import os
+import json
 import pathlib
 import re
 import resource
+import shutil
 import subprocess
 import sys
+import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 COMPILER = pathlib.Path(sys.argv[1]).resolve()
@@ -25,7 +28,109 @@ def run(path, mode, **extra):
                           env=env, text=True, stdout=subprocess.PIPE,
                           stderr=subprocess.PIPE, check=False)
 
+def check_rejected_source_parity():
+    # These are Phase 27.1 REJECTED-SOURCE controls. Keep the baseline
+    # diagnostics stable in both EST modes while expression reads migrate.
+    expected = {
+        "unsupported_exponent.moss":
+            ("MOSS_COMPILE_ERROR", "invalid arithmetic expression", 2, 1),
+        "unsupported_operators.moss":
+            ("MOSS_COMPILE_ERROR", "invalid arithmetic expression", 2, 1),
+        "membership_operator.moss":
+            ("UNSUPPORTED_EXPRESSION_OPERATOR",
+             "binary 'in' expression is not supported; use Map.get, key iteration, or an explicit search", 2, 1),
+        "symbolic_boolean.moss":
+            ("UNSUPPORTED_EXPRESSION_OPERATOR",
+             "binary '&&' expression is not supported", 2, 1),
+        "split_fragment.moss":
+            ("MOSS_COMPILE_ERROR", "indentation jumps more than one block level", 3, 1),
+        "incomplete_expression.moss":
+            ("MOSS_COMPILE_ERROR", "invalid arithmetic expression", 2, 1),
+    }
+    for name, signature in expected.items():
+        path = ROOT / "tests/phase27/est/repro" / name
+        for mode in ("off", "shadow"):
+            result = run(path, mode)
+            try:
+                payload = json.loads(result.stdout)
+            except json.JSONDecodeError as error:
+                raise SystemExit(f"{mode} did not return JSON for {name}: {result.stdout}{result.stderr}") from error
+            diagnostic = payload.get("error", {})
+            actual = (diagnostic.get("code"), diagnostic.get("message"),
+                      diagnostic.get("line"), diagnostic.get("column"))
+            if result.returncode == 0 or payload.get("ok") or actual != signature:
+                raise SystemExit(f"{mode} rejected-source mismatch for {name}: {actual}, expected {signature}")
+
+    rejected_fragments = {
+        "examples/swarm/control_flow_2026/iterative_planner/failed_attempts/01_multiline_task_literal.moss":
+            ("MOSS_COMPILE_ERROR", "indentation jumps more than one block level", 45, 1),
+        "examples/swarm/expression_surface_2026/numerical_tool/failed_attempts/01_len_method.moss":
+            ("UNTYPED_FIELD_ACCESS", "field access 'sample.observed' requires a concrete receiver type; annotate the parameter or expose the behavior through a method/trait", 14, 1),
+        "examples/swarm/expression_surface_2026/parser_evaluator/failed_attempts/01_multiline_vector_literal.moss":
+            ("MOSS_COMPILE_ERROR", "indentation jumps more than one block level", 12, 1),
+        "examples/swarm/expression_surface_2026/validation_engine/failed_attempts/01_multiline_constructor.moss":
+            ("UNTYPED_FIELD_ACCESS", "field access 'rule.value' requires a concrete receiver type; annotate the parameter or expose the behavior through a method/trait", 27, 1),
+        "examples/swarm/expression_surface_2026/validation_engine/failed_attempts/02_multiline_vector.moss":
+            ("MOSS_COMPILE_ERROR", "indentation jumps more than one block level", 4, 1),
+        "examples/swarm/expression_surface_2026/validation_engine/failed_attempts/15_multiline_test_vector.moss":
+            ("MOSS_COMPILE_ERROR", "indentation jumps more than one block level", 3, 1),
+    }
+    for relative, signature in rejected_fragments.items():
+        path = ROOT / relative
+        for mode in ("off", "shadow"):
+            result = run(path, mode)
+            payload = json.loads(result.stdout)
+            diagnostic = payload.get("error", {})
+            actual = (diagnostic.get("code"), diagnostic.get("message"),
+                      diagnostic.get("line"), diagnostic.get("column"))
+            if result.returncode == 0 or payload.get("ok") or actual != signature:
+                raise SystemExit(f"{mode} fragment rejection mismatch for {relative}: {actual}, expected {signature}")
+
+    # The inventory has && but no isolated || probe. Verify both the
+    # unsupported operator and a trailing arithmetic operator independently.
+    with tempfile.TemporaryDirectory(prefix="phase27-rejected-", dir=ROOT / "tmp") as scratch:
+        cases = {
+            "symbolic_or.moss": ("fn main():\n  echo true || false\n",
+                ("UNSUPPORTED_EXPRESSION_OPERATOR", "binary '||' expression is not supported", 2, 1)),
+            "incomplete_subtraction.moss": ("fn main():\n  echo 2 -\n",
+                ("MOSS_COMPILE_ERROR", "invalid arithmetic expression", 2, 1)),
+        }
+        for name, (source, signature) in cases.items():
+            path = pathlib.Path(scratch) / name
+            path.write_text(source, encoding="utf-8")
+            for mode in ("off", "shadow"):
+                result = run(path, mode)
+                payload = json.loads(result.stdout)
+                diagnostic = payload.get("error", {})
+                actual = (diagnostic.get("code"), diagnostic.get("message"),
+                          diagnostic.get("line"), diagnostic.get("column"))
+                if result.returncode == 0 or payload.get("ok") or actual != signature:
+                    raise SystemExit(f"{mode} rejected-source mismatch for {name}: {actual}, expected {signature}")
+
+    package_fixture = ROOT / "tests/phase27/adversarial/cp-e-rawshape-rerun/package_incomplete"
+    with tempfile.TemporaryDirectory(prefix="phase27-incomplete-package-", dir=ROOT / "tmp") as scratch:
+        package = pathlib.Path(scratch) / "package"
+        shutil.copytree(package_fixture, package)
+        for mode in ("off", "shadow"):
+            env = os.environ.copy()
+            env.update({"MOSS": str(COMPILER), "MOSS_EST": mode,
+                        "MARGO_HOME": str(pathlib.Path(scratch) / f"margo-{mode}")})
+            result = subprocess.run(
+                [str(ROOT / "margo"), "build", "--check", "--json"],
+                cwd=package, env=env, text=True, stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE, check=False)
+            try:
+                payload = json.loads(result.stdout)
+            except json.JSONDecodeError as error:
+                raise SystemExit(f"package {mode} check did not return JSON: {result.stdout}{result.stderr}") from error
+            details = payload.get("error", "")
+            if result.returncode == 0 or payload.get("ok") or \
+                    '"code": "MOSS_COMPILE_ERROR"' not in details or \
+                    '"message": "invalid arithmetic expression"' not in details:
+                raise SystemExit(f"package {mode} did not preserve incomplete-expression rejection: {payload}")
+
 def main():
+    check_rejected_source_parity()
     for name, pieces in CASES.items():
         path = ROOT / "tests/phase27/est" / name
         result = run(path, "shadow", MOSS_EST_DUMP="1",

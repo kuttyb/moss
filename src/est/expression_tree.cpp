@@ -1015,6 +1015,20 @@ ExprId parse_expression(Arena& arena, std::string_view source,
   return id;
 }
 
+bool incomplete_trailing_operator(std::string_view source) {
+  std::vector<Token> tokens;
+  try {
+    tokens = lex(source);
+  } catch (const std::invalid_argument&) {
+    return false;
+  }
+  if (tokens.empty()) return false;
+  static const std::set<std::string_view> operators = {
+      "+", "-", "*", "/", "%", "**", "==", "!=", "<", "<=", ">", ">=",
+      "&", "|", "^", "<<", ">>", "&&", "||"};
+  return operators.count(tokens.back().text) != 0;
+}
+
 std::optional<std::vector<std::string>> parse_vector_literal_children(
     std::string_view source) {
   const auto tokens = lex(source);
