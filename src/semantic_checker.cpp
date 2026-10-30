@@ -19956,33 +19956,34 @@ class Checker {
     // `not` is a value transformation, so every observable effect of its
     // operand still occurs.  Recurse before call/identifier fallback; losing
     // a typed raise here would also make Root totality and recovery unsound.
-    if (starts_with(original, "not "))
+    string unary_operation, unary_operand;
+    if (tree_parse_unary(original, unary_operation, unary_operand) &&
+        unary_operation == "not")
       return observable_expression_effects(
-          trim(original.substr(4)), env, domain_fields, implicit_object,
+          unary_operand, env, domain_fields, implicit_object,
           parameters, proven_indices, root_ingress);
 
-    if (starts_with(original, "message ")) {
+    string message_target, message_handler;
+    vector<string> message_arguments;
+    if (tree_parse_message(original, message_target, message_handler,
+                           message_arguments)) {
       effects.message = true;
-      string receiver, handler;
-      vector<string> arguments;
-      if (tree_parse_member_call(trim(original.substr(8)), receiver, handler, arguments)) {
+      effects.merge(observable_expression_effects(
+          message_target, env, domain_fields, implicit_object, parameters,
+          proven_indices, root_ingress));
+      for (const auto& argument : message_arguments)
         effects.merge(observable_expression_effects(
-            receiver, env, domain_fields, implicit_object, parameters,
+            argument, env, domain_fields, implicit_object, parameters,
             proven_indices, root_ingress));
-        for (const auto& argument : arguments)
-          effects.merge(observable_expression_effects(
-              argument, env, domain_fields, implicit_object, parameters,
-              proven_indices, root_ingress));
-        auto receiver_type = env.find(receiver);
-        if (receiver_type != env.end()) {
-          auto domain = domains_.find(canonical_type_name(receiver_type->second));
-          if (domain != domains_.end())
-            if (const Handler* target = find_handler(*domain->second, handler))
-              if (!root_ingress || target->failure_arms.empty())
-                effects.raise_set = raise_set_union(
-                    std::move(effects.raise_set),
-                    target->observable_effects.raise_set);
-        }
+      auto receiver_type = env.find(message_target);
+      if (receiver_type != env.end()) {
+        auto domain = domains_.find(canonical_type_name(receiver_type->second));
+        if (domain != domains_.end())
+          if (const Handler* target = find_handler(*domain->second, message_handler))
+            if (!root_ingress || target->failure_arms.empty())
+              effects.raise_set = raise_set_union(
+                  std::move(effects.raise_set),
+                  target->observable_effects.raise_set);
       } else {
         effects.unresolved = true;
       }
@@ -20080,9 +20081,10 @@ class Checker {
     }
 
     string value = tree_normalize_pipeline(original);
-    if (!value.empty() && value.front() == '~') {
+    if (tree_parse_unary(value, unary_operation, unary_operand) &&
+        unary_operation == "~") {
       return observable_expression_effects(
-          trim(value.substr(1)), env, domain_fields, implicit_object, parameters,
+          unary_operand, env, domain_fields, implicit_object, parameters,
           proven_indices, root_ingress);
     }
     for (const auto& operators :
@@ -21745,8 +21747,10 @@ class Checker {
         return;
       }
     }
-    if (starts_with(value, "not ")) {
-      check_ownership_expression(line, trim(value.substr(4)), env, Effect::Read);
+    string unary_operation, unary_operand;
+    if (tree_parse_unary(value, unary_operation, unary_operand) &&
+        unary_operation == "not") {
+      check_ownership_expression(line, unary_operand, env, Effect::Read);
       return;
     }
     if (auto typed_vector = typed_empty_vector_constructor(value)) {
@@ -21760,8 +21764,9 @@ class Checker {
             "INVALID_TYPED_VECTOR_CONSTRUCTOR");
       return;
     }
-    if (!value.empty() && value.front() == '~') {
-      check_ownership_expression(line, trim(value.substr(1)), env, Effect::Read);
+    if (tree_parse_unary(value, unary_operation, unary_operand) &&
+        unary_operation == "~") {
+      check_ownership_expression(line, unary_operand, env, Effect::Read);
       return;
     }
     for (const auto& operators : vector<vector<string>>{{" or "}, {" xor "}, {" and "},
