@@ -170,6 +170,8 @@ bool project_member_call(const ExpressionView& view, std::string& receiver,
                          bool* outputs_written = nullptr);
 bool project_bound_method(const ExpressionView& view, std::string& receiver,
                           std::string& method);
+bool project_member_access(const ExpressionView& view, std::string& base,
+                           std::string& member);
 std::string strip_grouping(const ExpressionView& view);
 std::string normalize_pipeline_tree(const ExpressionView& view);
 bool project_fileio_open(const ExpressionView& view,
@@ -187,6 +189,8 @@ bool project_index(const ExpressionView& view, std::string& base,
                    std::string& index);
 std::optional<std::vector<std::string>> project_vector_literal(
     const ExpressionView& view);
+std::optional<std::vector<std::string>> parse_vector_literal_children(
+    std::string_view source);
 bool project_enum_case(const ExpressionView& view, std::string& enum_name,
                        std::string& case_name,
                        std::vector<std::string>& fields,

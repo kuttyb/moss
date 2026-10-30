@@ -189,16 +189,66 @@ bool callee_contains_parenthesis(const Arena& arena, ExprId id) {
   }, node);
 }
 
-const Call* trailing_call(const Arena& arena, ExprId id) {
+std::optional<ExprId> trailing_call_id(const Arena& arena, ExprId id) {
   const auto& node = arena.at(id);
-  if (const auto* call = std::get_if<Call>(&node)) return call;
+  if (std::holds_alternative<Call>(node)) return id;
   if (const auto* binary = std::get_if<Binary>(&node))
-    return trailing_call(arena, binary->right);
+    return trailing_call_id(arena, binary->right);
   if (const auto* unary = std::get_if<Unary>(&node))
-    return trailing_call(arena, unary->operand);
+    return trailing_call_id(arena, unary->operand);
   if (const auto* member = std::get_if<Member>(&node))
-    return trailing_call(arena, member->base);
-  return nullptr;
+    return trailing_call_id(arena, member->base);
+  return std::nullopt;
+}
+
+const Call* trailing_call(const Arena& arena, ExprId id) {
+  auto call = trailing_call_id(arena, id);
+  return call ? std::get_if<Call>(&arena.at(*call)) : nullptr;
+}
+
+bool contains_message_node(const Arena& arena, ExprId id) {
+  return std::visit([&](const auto& value) -> bool {
+    using T = std::decay_t<decltype(value)>;
+    if constexpr (std::is_same_v<T, Message>) return true;
+    else if constexpr (std::is_same_v<T, Call>) {
+      if (contains_message_node(arena, value.callee)) return true;
+      for (const auto child : value.arguments)
+        if (contains_message_node(arena, child)) return true;
+      return false;
+    } else if constexpr (std::is_same_v<T, Binary>)
+      return contains_message_node(arena, value.left) ||
+             contains_message_node(arena, value.right);
+    else if constexpr (std::is_same_v<T, Unary>)
+      return contains_message_node(arena, value.operand);
+    else if constexpr (std::is_same_v<T, Member>)
+      return contains_message_node(arena, value.base);
+    else if constexpr (std::is_same_v<T, Index>)
+      return contains_message_node(arena, value.base) ||
+             contains_message_node(arena, value.index);
+    else if constexpr (std::is_same_v<T, Parenthesized>)
+      return contains_message_node(arena, value.inner);
+    else if constexpr (std::is_same_v<T, NamedArgument>)
+      return contains_message_node(arena, value.value);
+    else if constexpr (std::is_same_v<T, Collection> ||
+                       std::is_same_v<T, Tuple>) {
+      for (const auto child : value.elements)
+        if (contains_message_node(arena, child)) return true;
+      return false;
+    } else if constexpr (std::is_same_v<T, Constructor>) {
+      if (contains_message_node(arena, value.type)) return true;
+      for (const auto child : value.type_arguments)
+        if (contains_message_node(arena, child)) return true;
+      for (const auto child : value.arguments)
+        if (contains_message_node(arena, child)) return true;
+      return false;
+    } else if constexpr (std::is_same_v<T, Pipeline>) {
+      if (contains_message_node(arena, value.input)) return true;
+      for (const auto child : value.stages)
+        if (contains_message_node(arena, child)) return true;
+      return false;
+    }
+    return false;
+  }, arena.at(id));
 }
 
 bool has_earlier_call_or_group(const Arena& arena, ExprId id,
@@ -372,10 +422,12 @@ bool project_simple_call(const ExpressionView& e, std::string& callee,
       // (for example `total + item.length()`). Preserve that projection using
       // the terminal Call node, provided no earlier call/group would have
       // made the legacy scan stop before this call.
-      if (const auto* call = trailing_call(*e.arena, e.root)) {
+      if (const auto call_id = trailing_call_id(*e.arena, e.root)) {
+        const auto* call = std::get_if<Call>(&e.arena->at(*call_id));
         const auto root_span = e.arena->span(e.root);
         const auto callee_span = e.arena->span(call->callee);
-        if (callee_span.source_begin >= root_span.source_begin &&
+        if (e.arena->span(*call_id).source_end == root_span.source_end &&
+            callee_span.source_begin >= root_span.source_begin &&
             !callee_contains_parenthesis(*e.arena, call->callee) &&
             !has_earlier_call_or_group(*e.arena, e.root,
                                        callee_span.source_begin) &&
@@ -441,11 +493,14 @@ bool project_member_call(const ExpressionView& e, std::string& receiver,
         assign_member(std::move(*base), message->handler,
                       message->arguments, true);
     if (!result) {
-      if (const auto* call = trailing_call(*e.arena, e.root)) {
+      if (const auto call_id = trailing_call_id(*e.arena, e.root)) {
+        const auto* call = std::get_if<Call>(&e.arena->at(*call_id));
         if (const auto* method = std::get_if<Member>(&e.arena->at(call->callee))) {
           const auto root_span = e.arena->span(e.root);
+          const auto call_span = e.arena->span(*call_id);
           const auto base_span = e.arena->span(method->base);
-          if (base_span.source_end >= root_span.source_begin &&
+          if (call_span.source_end == root_span.source_end &&
+              base_span.source_end >= root_span.source_begin &&
               base_span.source_end <= root_span.source_end) {
             const auto length = base_span.source_end - root_span.source_begin;
             std::string base = e.source.substr(0, length);
@@ -466,12 +521,22 @@ bool project_member_call(const ExpressionView& e, std::string& receiver,
     const auto root = unparenthesized(*e.arena, e.root);
     const bool tree_pipeline = std::holds_alternative<Pipeline>(
         e.arena->at(root));
+    const bool legacy_nested_message_false_positive = legacy && !result &&
+        !std::holds_alternative<Message>(e.arena->at(root)) &&
+        contains_message_node(*e.arena, root);
+    const bool legacy_binary_member_false_positive = legacy && !result &&
+        std::holds_alternative<Binary>(e.arena->at(root));
     // The legacy text reader may select a dotted call nested in a complete
     // pipeline. The EST root is the independent oracle for this false positive.
     const bool legacy_pipeline_false_positive = legacy && !result && tree_pipeline;
-    if (legacy != result && !legacy_pipeline_false_positive)
+    if (legacy != result && !legacy_pipeline_false_positive &&
+        !legacy_nested_message_false_positive &&
+        !legacy_binary_member_false_positive) {
       assert(legacy == result);
-    if (!legacy_pipeline_false_positive) {
+    }
+    if (!legacy_pipeline_false_positive &&
+        !legacy_nested_message_false_positive &&
+        !legacy_binary_member_false_positive) {
       if (old_outputs) assert(old_receiver == receiver && old_member == member);
       if (outputs_written) assert(old_outputs == *outputs_written);
       if (result) assert(old_args == arguments);
@@ -499,6 +564,19 @@ bool project_bound_method(const ExpressionView& e, std::string& receiver,
     if (result) assert(old_receiver == receiver && old_method == method);
   }
   return result;
+}
+
+bool project_member_access(const ExpressionView& e, std::string& base,
+                           std::string& member_name) {
+  if (!e.arena || e.root >= e.arena->size()) return false;
+  const auto root = unparenthesized(*e.arena, e.root);
+  const auto* member = std::get_if<Member>(&e.arena->at(root));
+  if (!member) return false;
+  auto source = e.source_text(member->base);
+  if (!source) return false;
+  base = std::move(*source);
+  member_name = member->name;
+  return true;
 }
 
 std::string strip_grouping(const ExpressionView& e) {
@@ -971,8 +1049,16 @@ bool is_identifier(const ExpressionView& e) {
 
 bool identifier_named(const ExpressionView& e, std::string_view name) {
   std::string actual;
-  const bool result = project_identifier(e, actual) && actual == name;
-  if (mode() == Mode::Shadow) assert(moss::trim(e.source) == name);
+  bool result = false;
+  if (e.arena && e.root < e.arena->size()) {
+    const auto root = unparenthesized(*e.arena, e.root);
+    const auto source = e.source_text(root);
+    result = source && project_identifier(view(*e.arena, root, *source), actual) &&
+        actual == name;
+  }
+  if (mode() == Mode::Shadow)
+    assert(result == (moss::trim(e.source) == name ||
+                      strip_grouping(e) == name));
   return result;
 }
 
@@ -1014,7 +1100,8 @@ bool member_expression(const ExpressionView& e) {
 bool empty_constructor_named(const ExpressionView& e, std::string_view name) {
   bool result = false;
   if (e.arena && e.root < e.arena->size()) {
-    const auto& node = e.arena->at(e.root);
+    const auto root = unparenthesized(*e.arena, e.root);
+    const auto& node = e.arena->at(root);
     if (const auto* constructor = std::get_if<Constructor>(&node)) {
       std::string type;
       result = project_identifier(view(*e.arena, constructor->type,
@@ -1027,8 +1114,15 @@ bool empty_constructor_named(const ExpressionView& e, std::string_view name) {
           callee == name && call->arguments.empty();
     }
   }
-  if (mode() == Mode::Shadow)
-    assert((moss::trim(e.source) == std::string(name) + "()") == result);
+  if (mode() == Mode::Shadow) {
+    const auto source = moss::trim(e.source);
+    if (source == std::string(name) + "()")
+      assert(result);
+    else if (source.find('(') == 0)
+      assert(result == (strip_grouping(e) == std::string(name) + "()"));
+    else
+      assert(!result);
+  }
   return result;
 }
 

@@ -2469,7 +2469,7 @@ class Checker {
         const string& callback_source) {
       if (stage.operation_id != "functional:Map" ||
           stage.source_operands.size() != 1 ||
-          tree_expression_text(stage.source_operands.front()) != tree_expression_text(callback_source) ||
+          !tree_expressions_structurally_equal(stage.source_operands.front(), callback_source) ||
           !expression_uses(callback_source, "_") ||
           stage.semantic_target_id != "builtin:functional:Map" ||
           !stage.input_type_ref || !stage.output_type_ref)
@@ -2582,8 +2582,8 @@ class Checker {
                 child.child_role == "call-argument:0")
               arguments.push_back(&child);
           if (arguments.size() != 1 ||
-              tree_expression_text(statement->args.front()) !=
-                  trim(arguments.front()->source_expression) ||
+              !tree_expressions_structurally_equal(statement->args.front(),
+                  trim(arguments.front()->source_expression)) ||
               !arguments.front()->checked_type ||
               !arguments.front()->checked_type->structurally_equal(
                   *moss::Type::primitive("bool"))) {
@@ -2640,7 +2640,7 @@ class Checker {
           "Map", "Filter", "Reduce", "Sum", "Count", "Any", "All"};
       if (!known_stages.count(stage_name)) return false;
       if (occurrence.source_operands.empty()) {
-        if (tree_expression_text(occurrence.source_expression) != stage_name) return false;
+        if (!tree_identifier_named(occurrence.source_expression, stage_name)) return false;
       } else {
         string source_stage;
         vector<string> source_arguments;
@@ -2651,8 +2651,8 @@ class Checker {
           return false;
         for (std::size_t index = 0;
              index < source_arguments.size(); ++index)
-          if (tree_expression_text(source_arguments[index]) !=
-              trim(occurrence.source_operands[index]))
+          if (!tree_expressions_structurally_equal(source_arguments[index],
+              trim(occurrence.source_operands[index])))
             return false;
       }
       std::size_t callback_operand = 0;
@@ -2865,8 +2865,8 @@ class Checker {
           constraint.arguments.size() != occurrence.source_operands.size())
         return false;
       for (std::size_t index = 0; index < constraint.arguments.size(); ++index)
-        if (tree_expression_text(constraint.arguments[index]) !=
-            trim(occurrence.source_operands[index]))
+        if (!tree_expressions_structurally_equal(constraint.arguments[index],
+            trim(occurrence.source_operands[index])))
           return false;
     }
     return callable_constraint_count == 1;
@@ -3064,8 +3064,8 @@ class Checker {
           bool arguments_match = true;
           for (std::size_t index = 0;
                index < constraint.arguments.size(); ++index)
-            if (tree_expression_text(constraint.arguments[index]) !=
-                trim(expression.source_operands[index]))
+            if (!tree_expressions_structurally_equal(constraint.arguments[index],
+                trim(expression.source_operands[index])))
               arguments_match = false;
           if (!arguments_match) continue;
           matching_constraint_indices.push_back(constraint_index);
@@ -5897,7 +5897,7 @@ class Checker {
           (function.body.front().kind == Stmt::Kind::Let ||
            function.body.front().kind == Stmt::Kind::Var ||
            function.body.front().kind == Stmt::Kind::Assign) &&
-          tree_expression_text(function.body.front().a) == tree_expression_text(function.body.back().a) &&
+          tree_expressions_structurally_equal(function.body.front().a, function.body.back().a) &&
           function.body.front().indent == function.body.back().indent)
         local_result = std::make_pair(trim(function.body.front().b),
                                       function.body.front().line);
@@ -6122,7 +6122,7 @@ class Checker {
                   function.body.back().kind == Stmt::Kind::Return
                   ? &function.body.back().a : nullptr;
           if (returned) {
-            if (tree_expression_text(*returned) != result.substr(9)) {
+            if (!tree_identifier_named(*returned, result.substr(9))) {
               TypeEnv parameter_entry;
               for (const auto& parameter : function.params)
                 parameter_entry[parameter.name] = parameter.type.empty()
@@ -7387,7 +7387,7 @@ class Checker {
             candidate.subject == function.params.front().name;
       });
       if (loop_count != 1 || !loop ||
-          tree_expression_text(loop->b) != function.params.front().name ||
+          !tree_identifier_named(loop->b, function.params.front().name) ||
           constraint == function.constraints.end())
         continue;
       const auto loop_occurrence_id =
@@ -8547,7 +8547,7 @@ class Checker {
     string original = trim(expression);
     if (auto pipeline = functional_pipeline_from_est(original)) {
       for (const auto& parameter : function.params) {
-        if (tree_expression_text(pipeline->source) == parameter.name &&
+        if (tree_identifier_named(pipeline->source, parameter.name) &&
             (parameter.type.empty() || parameter.type == "vector")) {
           auto iterable = std::find_if(function.constraints.begin(),
               function.constraints.end(), [&](const Constraint& constraint) {
@@ -8646,7 +8646,7 @@ class Checker {
     bool member_call = tree_parse_member_call(e, receiver, method, member_args);
     for (const auto& parameter : function.params) {
       bool trait_receiver = !parameter.type.empty() && traits_.count(parameter.type);
-      if (member_call && tree_expression_text(receiver) == parameter.name &&
+      if (member_call && tree_identifier_named(receiver, parameter.name) &&
           (parameter.type.empty() || trait_receiver)) {
         add_method_requirement(function, parameter.name, method, member_args,
                                expected_result);
@@ -8680,7 +8680,7 @@ class Checker {
     }
     string ib, ii;
     if (tree_parse_index(e, ib, ii)) {
-      for (const auto& p : function.params) if (tree_expression_text(ib) == p.name && p.type.empty()) {
+      for (const auto& p : function.params) if (tree_identifier_named(ib, p.name) && p.type.empty()) {
         auto existing = std::find_if(function.constraints.begin(),
             function.constraints.end(), [&](const Constraint& requirement) {
               return requirement.kind == ConstraintKind::Indexable &&
@@ -10017,7 +10017,7 @@ class Checker {
     bool deferred_match = std::any_of(f.body.begin(), f.body.end(), [&](const Stmt& statement) {
       if (statement.kind != Stmt::Kind::Match) return false;
       return std::any_of(f.params.begin(), f.params.end(), [&](const Param& parameter) {
-        return parameter.type.empty() && tree_expression_text(statement.a) == parameter.name;
+        return parameter.type.empty() && tree_identifier_named(statement.a, parameter.name);
       });
     });
     OwnershipEnv ownership;
@@ -10502,6 +10502,17 @@ class Checker {
     return syntax && moss::est::is_identifier(*syntax);
   }
 
+  static bool tree_identifier_named(const string& value, std::string_view name) {
+    auto syntax = moss::est::parse_view(value);
+    return syntax && moss::est::identifier_named(*syntax, name);
+  }
+
+  static bool tree_is_fileio_open(const string& value) {
+    auto syntax = moss::est::parse_view(value);
+    vector<string> arguments;
+    return syntax && moss::est::project_fileio_open(*syntax, arguments);
+  }
+
   static bool expression_uses(const string& expression, const string& name) {
     bool in_string = false, escaped = false;
     for (size_t i = 0; i < expression.size();) {
@@ -10551,7 +10562,7 @@ class Checker {
     return !copy_type(type) && !domains_.count(canonical_type_name(type));
   }
 
-  static bool tree_expression_text_equal(const string& left,
+  static bool tree_expressions_structurally_equal(const string& left,
                                         const string& right) {
     auto left_tree = moss::est::parse_view(left);
     auto right_tree = moss::est::parse_view(right);
@@ -10559,26 +10570,20 @@ class Checker {
         moss::est::expressions_equal(*left_tree, *right_tree);
   }
 
-  struct TreeExpressionText {
-    string source;
-    bool operator==(const string& other) const {
-      return tree_expression_text_equal(source, other);
-    }
-    bool operator!=(const string& other) const {
-      return !(*this == other);
-    }
-    friend bool operator==(const TreeExpressionText& left,
-                           const TreeExpressionText& right) {
-      return tree_expression_text_equal(left.source, right.source);
-    }
-    friend bool operator!=(const TreeExpressionText& left,
-                           const TreeExpressionText& right) {
-      return !(left == right);
-    }
-  };
+  static bool tree_empty_constructor_named(const string& source,
+                                           std::string_view name) {
+    auto syntax = moss::est::parse_view(source);
+    return syntax && moss::est::empty_constructor_named(*syntax, name);
+  }
 
-  static TreeExpressionText tree_expression_text(const string& source) {
-    return TreeExpressionText{source};
+  static bool tree_empty_vector_literal(const string& source) {
+    auto syntax = moss::est::parse_view(source);
+    return syntax && moss::est::empty_vector_literal(*syntax);
+  }
+
+  static bool tree_placeholder_expression(const string& source) {
+    auto syntax = moss::est::parse_view(source);
+    return syntax && moss::est::placeholder_expression(*syntax);
   }
 
   bool tree_parse_fileio_open(const string& text, vector<string>& arguments) const {
@@ -10630,7 +10635,11 @@ class Checker {
 
   static std::optional<vector<string>> tree_parse_vector_literal(const string& text) {
     auto syntax = moss::est::parse_view(text);
-    return syntax ? moss::est::project_vector_literal(*syntax) : std::nullopt;
+    if (syntax) return moss::est::project_vector_literal(*syntax);
+    auto recovered = moss::est::parse_vector_literal_children(text);
+    if (moss::est::mode() == moss::est::Mode::Shadow)
+      assert(moss::parse_vector_literal(text) == recovered);
+    return recovered;
   }
 
   static bool tree_parse_enum_case_expression(const string& text, string& enum_name,
@@ -10855,8 +10864,21 @@ class Checker {
       const auto legacy = split_binary_uncached(expression, operators);
       // A named-argument node proves that operators in its value are nested
       // inside the argument, despite the legacy top-level text scan.
-      if (result != legacy && !(named_argument && legacy && !result))
+      bool exponent_star_substring = false;
+      if (legacy && !result && syntax) {
+        const auto root = moss::est::unparenthesized(*syntax->arena,
+                                                     syntax->root);
+        if (const auto* binary = std::get_if<moss::est::Binary>(
+                &syntax->arena->at(root)); binary && binary->op == "**")
+          exponent_star_substring = std::find(operators.begin(), operators.end(),
+                                               "*") != operators.end();
+      }
+      // The legacy splitter sees the first `*` inside unsupported `**`.
+      // The EST root supplies the independent operator boundary.
+      if (result != legacy && !(named_argument && legacy && !result) &&
+          !exponent_star_substring) {
         assert(result == legacy);
+      }
     }
     if (cache_full) {
       if (profile_concrete_effect_work_) ++parse_cache_success_after_cap_;
@@ -11288,13 +11310,13 @@ class Checker {
       // Preserve S's contextual empty-vector siblings using checked terms.
       const bool has_typed_vector_sibling = std::any_of(
           parts->begin(), parts->end(), [&](const string& part) {
-            if (tree_expression_text(part) == "[]") return false;
+            if (tree_empty_vector_literal(part)) return false;
             auto item = inferred_expr(part, env);
             return item && item->term &&
                 applied_builtin(item->term, {"vector"});
           });
       for (const auto& part : *parts) {
-        if (has_typed_vector_sibling && tree_expression_text(part) == "[]") continue;
+        if (has_typed_vector_sibling && tree_empty_vector_literal(part)) continue;
         auto element = inferred_expr(part, env);
         if (!element) return std::nullopt;
         elements.push_back(std::move(*element));
@@ -11515,7 +11537,7 @@ class Checker {
     if (object_call) return object_call;
     string method_receiver, method_name; vector<string> method_args;
     if (tree_parse_member_call(e, method_receiver, method_name, method_args)) {
-      if (staged_abi_v10() && tree_expression_text(method_receiver) == "Map()" &&
+      if (staged_abi_v10() && tree_empty_constructor_named(method_receiver, "Map") &&
           method_name == "get" && method_args.size() == 2) {
         auto key = inferred_expr_type(method_args[0], env);
         auto value = inferred_expr_type(method_args[1], env);
@@ -11613,10 +11635,11 @@ class Checker {
       }
     }
 
-    auto dot = e.rfind('.');
-    if (dot != string::npos) {
-      auto base = inferred_expr(e.substr(0, dot), env);
-      string field = trim(e.substr(dot + 1));
+    string member_base, field;
+    auto member_access = moss::est::parse_view(e);
+    if (member_access && moss::est::project_member_access(
+            *member_access, member_base, field)) {
+      auto base = inferred_expr(member_base, env);
       const auto receiver = base ? inferred_shape(*base) : nullptr;
       if (receiver && receiver->kind == moss::TypeKind::NominalInstance &&
           receiver->declaration)
@@ -12166,7 +12189,7 @@ class Checker {
             container->second = retained;
             if (record_semantic_types)
               for (auto& prior : const_cast<vector<Stmt>&>(statements))
-                if (prior.a == base && prior.b == "Map()") {
+                if (prior.a == base && tree_empty_constructor_named(prior.b, "Map")) {
                   prior.semantic_type = canonical_type_name(retained);
                   if (!join_context.empty()) {
                     prior.semantic_types_by_context[join_context] = canonical_type_name(retained);
@@ -12187,7 +12210,7 @@ class Checker {
                 container->second = moss::Type::parse_canonical(*refined).value_or(nullptr);
                 if (record_semantic_types) {
                   for (auto& prior : const_cast<vector<Stmt>&>(statements))
-                    if (prior.a == base && prior.b == "Map()") {
+                    if (prior.a == base && tree_empty_constructor_named(prior.b, "Map")) {
                       prior.semantic_type = *refined;
                       if (!join_context.empty()) {
                         prior.semantic_types_by_context[join_context] = *refined;
@@ -12236,8 +12259,9 @@ class Checker {
         if (record_semantic_types)
           for (auto& prior : const_cast<vector<Stmt>&>(statements))
             if (prior.a == statement.a &&
-                (prior.b == "[]" || prior.b == "Queue()" ||
-                 (staged_abi_v10() && prior.b == "Set()") ||
+                (tree_empty_vector_literal(prior.b) ||
+                 tree_empty_constructor_named(prior.b, "Queue") ||
+                 (staged_abi_v10() && tree_empty_constructor_named(prior.b, "Set")) ||
                  tree_parse_vector_literal(prior.b).has_value() ||
                  starts_with(prior.semantic_type, "vector") ||
                  starts_with(prior.semantic_type, "queue") ||
@@ -12258,9 +12282,10 @@ class Checker {
           container->second = moss::Type::parse_canonical(*refined).value_or(nullptr);
           if (record_semantic_types) {
             for (auto& prior : const_cast<vector<Stmt>&>(statements)) {
-              if (prior.a == statement.a &&
-                  (prior.b == "[]" || prior.b == "Queue()" ||
-                   (staged_abi_v10() && prior.b == "Set()") ||
+              if (tree_expressions_structurally_equal(prior.a, statement.a) &&
+                  (tree_empty_vector_literal(prior.b) ||
+                   tree_empty_constructor_named(prior.b, "Queue") ||
+                   (staged_abi_v10() && tree_empty_constructor_named(prior.b, "Set")) ||
                    tree_parse_vector_literal(prior.b).has_value() ||
                    starts_with(prior.semantic_type, "vector") ||
                    starts_with(prior.semantic_type, "queue") ||
@@ -12500,7 +12525,8 @@ class Checker {
               const Stmt* found = nullptr;
               for (std::size_t cursor = begin; cursor < end; ++cursor) {
                 const auto& candidate = statements[cursor];
-                if (candidate.indent != level + 1 || candidate.a != name ||
+                if (candidate.indent != level + 1 ||
+                    candidate.a != name ||
                     (candidate.kind != Stmt::Kind::Let &&
                      candidate.kind != Stmt::Kind::Var))
                   continue;
@@ -14628,7 +14654,7 @@ class Checker {
       for (const auto& statement : function.body)
         if (statement.kind == Stmt::Kind::Match)
           for (const auto& parameter : function.params)
-            if (parameter.type.empty() && tree_expression_text(statement.a) == parameter.name) {
+            if (parameter.type.empty() && tree_identifier_named(statement.a, parameter.name)) {
               function.generic = true;
               function.static_dispatch = true;
             }
@@ -14703,13 +14729,13 @@ class Checker {
       // helper and poison later domain specializations.
       for (const auto& parameter : function.params) {
         bool identity_result = function.result_expression &&
-            tree_expression_text(*function.result_expression) == parameter.name;
+            tree_identifier_named(*function.result_expression, parameter.name);
         if (!identity_result) {
           identity_result = std::any_of(
               function.body.begin(), function.body.end(),
               [&](const Stmt& statement) {
                 return statement.kind == Stmt::Kind::Return &&
-                    tree_expression_text(statement.a) == parameter.name;
+                    tree_identifier_named(statement.a, parameter.name);
               });
         }
         if (parameter.type.empty() && identity_result) {
@@ -14740,7 +14766,7 @@ class Checker {
           auto binary = tree_split_binary(trim(expression), {"+", "-", "*", "/", "%"});
           if (binary) {
             for (const auto& p : function.params) {
-              if (tree_expression_text(binary->first) == p.name && tree_expression_text(binary->second) == p.name) {
+              if (tree_identifier_named(binary->first, p.name) && tree_identifier_named(binary->second, p.name)) {
                 function.generic = true;
                 function.static_dispatch = true;
                 string e = trim(expression);
@@ -14752,7 +14778,7 @@ class Checker {
           }
           string base, idx;
           if (tree_parse_index(expression, base, idx)) {
-            for (const auto& p : function.params) if (tree_expression_text(base) == p.name) {
+            for (const auto& p : function.params) if (tree_identifier_named(base, p.name)) {
               function.generic = true;
               function.static_dispatch = true;
               auto existing = std::find_if(function.constraints.begin(),
@@ -14789,7 +14815,7 @@ class Checker {
       for (const auto& s : function.body) {
         if (s.kind == Stmt::Kind::For) {
           for (const auto& parameter : function.params) {
-            if (parameter.type.empty() && tree_expression_text(s.b) == parameter.name) {
+            if (parameter.type.empty() && tree_identifier_named(s.b, parameter.name)) {
               if (!has_structural_requirement(function, parameter.name,
                                                ConstraintKind::Iterable,
                                                "static iterator"))
@@ -15125,8 +15151,8 @@ class Checker {
           bool p1_found = false, p2_found = false;
           for (const auto& p : function.params) {
             if (p.type.empty()) {
-              if (tree_expression_text(binary->first) == p.name) p1_found = true;
-              if (tree_expression_text(binary->second) == p.name) p2_found = true;
+              if (tree_identifier_named(binary->first, p.name)) p1_found = true;
+              if (tree_identifier_named(binary->second, p.name)) p2_found = true;
             }
           }
           if (p1_found && p2_found) {
@@ -15135,7 +15161,7 @@ class Checker {
             string be = trim(*function.result_expression);
             string op = be.find('+') != string::npos ? "+" : be.find('-') != string::npos ? "-" : be.find('*') != string::npos ? "*" : be.find('/') != string::npos ? "/" : "%";
             for (const auto& p : function.params) {
-              if (tree_expression_text(binary->first) == p.name || tree_expression_text(binary->second) == p.name) {
+              if (tree_identifier_named(binary->first, p.name) || tree_identifier_named(binary->second, p.name)) {
                 function.constraints.push_back({ConstraintKind::Operator, p.name, op, p.name});
                 function.generic_results[p.name] = p.name;
               }
@@ -15147,13 +15173,13 @@ class Checker {
       if (!function.generic) {
         for (const auto& parameter : function.params) {
           bool identity_result = function.result_expression &&
-              tree_expression_text(*function.result_expression) == parameter.name;
+              tree_identifier_named(*function.result_expression, parameter.name);
           if (!identity_result) {
             identity_result = std::any_of(
                 function.body.begin(), function.body.end(),
                 [&](const Stmt& statement) {
                   return statement.kind == Stmt::Kind::Return &&
-                      tree_expression_text(statement.a) == parameter.name;
+                      tree_identifier_named(statement.a, parameter.name);
                 });
           }
           if (parameter.type.empty() && identity_result) {
@@ -17559,8 +17585,8 @@ class Checker {
             analyze_effect_expression(receiver, env, params, parameter_effects,
                                       receiver_effect, receiver_fields, *effect);
           for (const auto& argument : arguments)
-            if (tree_expression_text(argument) != "ro" && tree_expression_text(argument) != "rw" &&
-                tree_expression_text(argument) != "create" && tree_expression_text(argument) != "dataonly")
+            if (!tree_identifier_named(argument, "ro") && !tree_identifier_named(argument, "rw") &&
+                !tree_identifier_named(argument, "create") && !tree_identifier_named(argument, "dataonly"))
               analyze_effect_expression(argument, env, params, parameter_effects,
                                         receiver_effect, receiver_fields, Effect::Read);
           return;
@@ -19305,7 +19331,7 @@ class Checker {
           alternatives = phase21_raised_identities(
               statement.line, statement.a, env);
           if (!selected_binding.empty() &&
-              tree_expression_text(statement.a) == selected_binding) {
+              statement.a == selected_binding) {
             std::set<string> selected_types;
             for (const auto& identity : selected)
               selected_types.insert(identity.type);
@@ -20354,7 +20380,7 @@ class Checker {
         string root = extract_root_identifier(s.a);
         if (bound_vars.count(root)) return false;
         if (root == var_name) {
-          if (tree_expression_text(s.a) != var_name || s.indent != loop_body_indent)
+          if (!tree_identifier_named(s.a, var_name) || s.indent != loop_body_indent)
             return false;
           if (is_less) {
             auto add = tree_split_binary(trim(s.b), {"+"});
@@ -20440,8 +20466,8 @@ class Checker {
         if (root == range_binding || root == induction) return std::nullopt;
       }
       if (statement.kind == Stmt::Kind::For &&
-          (tree_expression_text(statement.a) == range_binding ||
-           tree_expression_text(statement.a) == induction))
+          (tree_identifier_named(statement.a, range_binding) ||
+           tree_identifier_named(statement.a, induction)))
         return std::nullopt;
       if (statement.kind == Stmt::Kind::Case &&
           (std::find(statement.args.begin(), statement.args.end(),
@@ -21764,8 +21790,8 @@ class Checker {
           check_ownership_expression(line, receiver, env,
               fileio_operation_effect(method).value_or(Effect::Read));
           for (const auto& argument : arguments)
-            if (tree_expression_text(argument) != "ro" && tree_expression_text(argument) != "rw" &&
-                tree_expression_text(argument) != "create" && tree_expression_text(argument) != "dataonly")
+            if (!tree_identifier_named(argument, "ro") && !tree_identifier_named(argument, "rw") &&
+                !tree_identifier_named(argument, "create") && !tree_identifier_named(argument, "dataonly"))
               check_ownership_expression(line, argument, env, Effect::Read);
           return;
         }
@@ -22517,7 +22543,7 @@ class Checker {
           if ((existing_owner && prior_type &&
                canonical_type_name(*prior_type) == "FileIO") ||
               (new_type && canonical_type_name(*new_type) == "FileIO" &&
-               tree_expression_text(s.b) != "FileIO.open" &&
+               !tree_is_fileio_open(s.b) &&
                storage_location(s.b, env.types)))
             err(s.line, "FileIO ownership is pinned and cannot be reassigned",
                 "FILEIO_PINNED_OWNERSHIP");
@@ -23883,7 +23909,7 @@ class Checker {
                                    prior_arguments) ||
                 prior_name != nested_name) continue;
             ++target_occurrence;
-            if (tree_expression_text(args[prior]) == tree_expression_text(argument))
+            if (tree_expressions_structurally_equal(args[prior], argument))
               ++expression_occurrence;
           }
           check_function_call(line, nested_name, nested_arguments, env,
@@ -24481,7 +24507,7 @@ class Checker {
       vector<string> capture_arguments;
       if (tree_parse_member_call(identity, capture_receiver, capture_method,
                             capture_arguments) &&
-          tree_expression_text(capture_receiver) != "_") {
+          !tree_placeholder_expression(capture_receiver)) {
         auto capture_type = inferred_expr_type(capture_receiver, env);
         bool mutates_collection = capture_type &&
             (canonical_type_name(*capture_type) == "vector" ||
@@ -25318,10 +25344,10 @@ class Checker {
       for (const auto& child : current_body_types_->expression_occurrences) {
         if (child.parent_id != parent || !child.checked_type) continue;
         if (!left && child.child_role == "left" &&
-            tree_expression_text(child.source_expression) == tree_expression_text(left_expression))
+            tree_expressions_structurally_equal(child.source_expression, left_expression))
           left = child.checked_type;
         if (!right && child.child_role == "right" &&
-            tree_expression_text(child.source_expression) == tree_expression_text(right_expression))
+            tree_expressions_structurally_equal(child.source_expression, right_expression))
           right = child.checked_type;
       }
     }
@@ -25612,8 +25638,10 @@ class Checker {
     const auto length = child_span.source_end - child_span.source_begin;
     if (begin > parent_source.size() || length > parent_source.size() - begin)
       return false;
-    return tree_expression_text(std::string(parent_source.substr(begin, length))) ==
-        trim(std::string(child_source));
+    const string projected_source =
+        trim(std::string(parent_source.substr(begin, length)));
+    const string expected_source = trim(std::string(child_source));
+    return projected_source == expected_source;
   }
 
   static std::optional<est::ExprId> matching_expression_child(
@@ -25736,8 +25764,8 @@ class Checker {
       if (auto found = select(statement.expression_handles)) return found;
     if (current_check_result_function_ &&
         current_check_result_function_->result_expression &&
-        tree_expression_text(*current_check_result_function_->result_expression) ==
-            std::string(source))
+        est::fingerprint(*current_check_result_function_->result_expression) ==
+            est::fingerprint(std::string(source)))
       return select(current_check_result_function_->expression_handles);
     return std::nullopt;
   }
@@ -26263,9 +26291,15 @@ class Checker {
         (value.size() == 1 || value[1] != '='))
       err(line, "unary '!' is not supported; use 'not' for Boolean negation",
           "UNSUPPORTED_EXPRESSION_OPERATOR");
-    if (auto binary = tree_split_binary(value, {" in "})) {
+    auto membership = tree_split_binary(value, {" not in "});
+    if (!membership) membership = tree_split_binary(value, {" in "});
+    if (membership) {
       err(line, "binary 'in' expression is not supported; use Map.get, key iteration, or an explicit search",
           "UNSUPPORTED_EXPRESSION_OPERATOR");
+      return;
+    }
+    if (tree_split_binary(value, {"**"})) {
+      err(line, "invalid arithmetic expression");
       return;
     }
     for (const auto& op :
@@ -26644,7 +26678,7 @@ class Checker {
       }
       if (auto receiver_type = inferred_expr_type(receiver, env)) {
         if (staged_abi_v10() && *receiver_type == "map" &&
-            tree_expression_text(receiver) == "Map()" && handler == "get" &&
+            tree_empty_constructor_named(receiver, "Map") && handler == "get" &&
             args.size() == 2) {
           auto key = inferred_expr_type(args[0], env);
           auto value = inferred_expr_type(args[1], env);
@@ -26668,7 +26702,7 @@ class Checker {
           err(line, "Set operation requires a concrete key type before use",
               "TYPE_AMBIGUOUS_OPEN_RESULT");
         if (builtin_receiver_family(*receiver_type)) {
-          if (staged_abi_v10() && tree_expression_text(receiver) == "Map()" &&
+          if (staged_abi_v10() && tree_empty_constructor_named(receiver, "Map") &&
               starts_with(*receiver_type, "map["))
             check_map_key_type(line, map_key_value_types(*receiver_type)->first);
           for (size_t index = 0; index < args.size(); ++index)
@@ -28266,9 +28300,9 @@ class Checker {
                   call_occurrence_id).non_expression_operand_ordinals.push_back(1);
             continue;
           }
-          if (!(fileio_builtin && (tree_expression_text(argument) == "ro" ||
-                tree_expression_text(argument) == "rw" || tree_expression_text(argument) == "create" ||
-                tree_expression_text(argument) == "dataonly"))) {
+          if (!(fileio_builtin && (tree_identifier_named(argument, "ro") ||
+                tree_identifier_named(argument, "rw") || tree_identifier_named(argument, "create") ||
+                tree_identifier_named(argument, "dataonly")))) {
             string name, val;
             const string slot = "call-argument:" + std::to_string(index);
             const auto occurrence_slot = statement.b.empty()
@@ -28968,7 +29002,8 @@ class Checker {
             if (prior.line < source_position->line &&
                 (prior.kind == Stmt::Kind::Let ||
                  prior.kind == Stmt::Kind::Var ||
-                 prior.kind == Stmt::Kind::Assign) && prior.a == name) {
+                 prior.kind == Stmt::Kind::Assign) &&
+                prior.a == name) {
               shadowed = true;
               break;
             }
@@ -32207,7 +32242,7 @@ fn inspect_sample(sample: Sample) -> Int:
         [](const auto& occurrence) {
           return occurrence.kind ==
                   BodyTypeState::ExpressionOccurrence::Kind::Identifier &&
-              tree_expression_text(occurrence.source_expression) == "local" &&
+              tree_identifier_named(occurrence.source_expression, "local") &&
               !occurrence.resolved_binding_id.empty();
         });
     if (local_reads != 1 ||
@@ -32219,7 +32254,7 @@ fn inspect_sample(sample: Sample) -> Int:
         [](const auto& occurrence) {
       return occurrence.kind ==
               BodyTypeState::ExpressionOccurrence::Kind::Identifier &&
-          tree_expression_text(occurrence.source_expression) == "local";
+          tree_identifier_named(occurrence.source_expression, "local");
     });
     if (joined_read == branch_state->second->expression_occurrences.end() ||
         if_node->bindings.size() != 1 ||

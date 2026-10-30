@@ -338,12 +338,18 @@ int precedence(const std::string& op) {
   if (op == "xor") return 2;
   if (op == "and") return 3;
   if (op == "==" || op == "!=" || op == "<" || op == ">" || op == "<=" || op == ">=") return 4;
+  // These operators are represented so checker projections can issue the
+  // established unsupported-operator diagnostics. Their presence here does
+  // not make them legal Moss operations.
+  if (op == "in" || op == "&&" || op == "||") return 4;
+  if (op == "not in") return 4;
   if (op == "|") return 5;
   if (op == "^") return 6;
   if (op == "&") return 7;
   if (op == "<<" || op == ">>") return 8;
   if (op == "+" || op == "-") return 9;
   if (op == "*" || op == "/" || op == "%") return 10;
+  if (op == "**") return 11;
   return -1;
 }
 
@@ -547,10 +553,16 @@ class Reader {
   ExprId expression(int min_precedence) {
     auto left = primary();
     while (position_ < tokens_.size()) {
-      const auto op = tokens_[position_].text;
+      std::string op = tokens_[position_].text;
+      std::size_t operator_tokens = 1;
+      if (op == "not" && position_ + 1 < tokens_.size() &&
+          tokens_[position_ + 1].text == "in") {
+        op = "not in";
+        operator_tokens = 2;
+      }
       const auto level = precedence(op);
       if (level < min_precedence) break;
-      ++position_;
+      position_ += operator_tokens;
       const auto right = expression(level + 1);
       if (op == "|>") {
         const auto* existing = std::get_if<Pipeline>(&arena_.at(left));
@@ -1001,6 +1013,45 @@ ExprId parse_expression(Arena& arena, std::string_view source,
   const auto id = Reader(arena, source, origin_id, base_line, base_column).parse();
   if (mode() == Mode::Shadow) compare_string_shape(arena, id, source);
   return id;
+}
+
+std::optional<std::vector<std::string>> parse_vector_literal_children(
+    std::string_view source) {
+  const auto tokens = lex(source);
+  if (tokens.size() < 2 || tokens.front().text != "[" ||
+      tokens.back().text != "]") return std::nullopt;
+  std::vector<std::string> children;
+  std::size_t segment_begin = tokens.front().source_end;
+  int depth = 0;
+  for (std::size_t i = 1; i + 1 < tokens.size(); ++i) {
+    const auto& token = tokens[i].text;
+    if (token == "(" || token == "[" || token == "{") ++depth;
+    else if (token == ")" || token == "]" || token == "}") {
+      if (depth == 0) return std::nullopt;
+      --depth;
+    } else if (token == "," && depth == 0) {
+      const auto begin = std::min<std::size_t>(segment_begin, source.size());
+      const auto end = std::min<std::size_t>(tokens[i].source_begin, source.size());
+      const auto part = source.substr(begin, end - begin);
+      const auto first = part.find_first_not_of(" \t\r\n");
+      if (first == std::string_view::npos) return std::nullopt;
+      const auto last = part.find_last_not_of(" \t\r\n");
+      children.emplace_back(part.substr(first, last - first + 1));
+      segment_begin = tokens[i].source_end;
+    }
+  }
+  if (depth != 0) return std::nullopt;
+  const auto content_end = tokens.back().source_begin;
+  const auto begin = std::min<std::size_t>(segment_begin, source.size());
+  const auto end = std::min<std::size_t>(content_end, source.size());
+  const auto part = source.substr(begin, end - begin);
+  const auto first = part.find_first_not_of(" \t\r\n");
+  if (first == std::string_view::npos)
+    return children.empty() ? std::optional<std::vector<std::string>>(children)
+                            : std::nullopt;
+  const auto last = part.find_last_not_of(" \t\r\n");
+  children.emplace_back(part.substr(first, last - first + 1));
+  return children;
 }
 
 namespace {

@@ -1035,6 +1035,17 @@ class Generator {
     return est::project_identifier(*syntax, name);
   }
 
+  bool tree_empty_constructor_named(std::string_view expression,
+                                    std::string_view name) const {
+    auto syntax = expression_view_from_est(expression);
+    return syntax && est::empty_constructor_named(*syntax, name);
+  }
+
+  bool tree_empty_vector_literal(std::string_view expression) const {
+    auto syntax = expression_view_from_est(expression);
+    return syntax && est::empty_vector_literal(*syntax);
+  }
+
   std::optional<string> tree_identifier_name(
       std::string_view expression) const {
     auto syntax = expression_view_from_est(expression);
@@ -1050,12 +1061,6 @@ class Generator {
     auto right_tree = expression_view_from_est(right);
     return left_tree && right_tree &&
         est::structurally_equal(*left_tree, *right_tree);
-  }
-
-  bool tree_empty_constructor_named(std::string_view expression,
-                                    std::string_view name) const {
-    auto syntax = expression_view_from_est(expression);
-    return syntax && est::empty_constructor_named(*syntax, name);
   }
 
   bool tree_empty_string_literal(std::string_view expression) const {
@@ -3182,12 +3187,14 @@ class Generator {
       string element = trim(typed_vector->substr(7, typed_vector->size() - 8));
       return "std::vec::Vec::<" + rust_type(element) + ">::new()";
     }
-    if (e == "Map()") return staged_abi_v10()
+    auto expression_shape = expression_view_from_est(e);
+    if (expression_shape && est::empty_constructor_named(*expression_shape, "Map")) return staged_abi_v10()
         ? "std::default::Default::default()"
         : "std::collections::HashMap::new()";
-    if (staged_abi_v10() && e == "Set()")
+    if (expression_shape && staged_abi_v10() && est::empty_constructor_named(*expression_shape, "Set"))
       return "moss_runtime::MossSet::new()";
-    if (e == "Queue()") return "std::collections::VecDeque::new()";
+    if (expression_shape && est::empty_constructor_named(*expression_shape, "Queue"))
+      return "std::collections::VecDeque::new()";
     {
       string callee;
       vector<string> arguments;
@@ -6300,7 +6307,7 @@ class Generator {
                             "LOCAL assignment: introduce an inferred Moss binding");
             string annotation;
             string inferred_map_type;
-            if (staged_abi_v10() && s.b == "Map()" &&
+            if (staged_abi_v10() && tree_empty_constructor_named(s.b, "Map") &&
                 !starts_with(statement_type, "map[")) {
               // A bare Map constructor has no intrinsic element types. The
               // checked body may close it at a later indexed assignment;
@@ -6339,9 +6346,9 @@ class Generator {
                    starts_with(statement_type, "set[")) ? statement_type
                 : generated_type ? *generated_type
                 : !statement_type.empty() ? statement_type
-                : s.b == "Map()" ? "map"
-                : s.b == "Queue()" ? "queue"
-                : staged_abi_v10() && s.b == "Set()" ? "set"
+                : tree_empty_constructor_named(s.b, "Map") ? "map"
+                : tree_empty_constructor_named(s.b, "Queue") ? "queue"
+                : staged_abi_v10() && tree_empty_constructor_named(s.b, "Set") ? "set"
                 : (s.b.size() && s.b.front() == '[' ? "vector" : "_value");
             auto source_binding = domain_instance_bindings_.find(trim(s.b));
             if (source_binding != domain_instance_bindings_.end())
@@ -6764,7 +6771,7 @@ class Generator {
             auto source = types.find(trim(s.b));
             bool domain_capability = source != types.end() && domains_.count(source->second);
             string inferred_map_type;
-            if (staged_abi_v10() && s.b == "Map()" &&
+            if (staged_abi_v10() && tree_empty_constructor_named(s.b, "Map") &&
                 !starts_with(statement_type, "map[")) {
               for (size_t next = i + 1; next < ss.size(); ++next) {
                 string map_base, index_expression;

@@ -224,7 +224,8 @@
       fail("FileIO.chunks expects a chunk size");
     if (method == "sync" && args.size() > 1) fail("FileIO.sync accepts at most dataonly");
     if (method == "close" && !args.empty()) fail("FileIO.close accepts no arguments");
-    if (method == "sync" && args.size() == 1 && tree_expression_text(args[0]) != "dataonly")
+    if (method == "sync" && args.size() == 1 &&
+        !tree_identifier_named(args[0], "dataonly"))
       fail("FileIO.sync accepts only dataonly");
     if ((method == "open" && args.size() != 2) ||
         (method == "read" && args.size() != 1 && args.size() != 2) ||
@@ -331,8 +332,10 @@
     }
     if (!constructor) check_expression(line, receiver, env);
     for (const auto& arg : args)
-      if (tree_expression_text(arg) != "ro" && tree_expression_text(arg) != "rw" &&
-          tree_expression_text(arg) != "create" && tree_expression_text(arg) != "dataonly")
+      if (!tree_identifier_named(arg, "ro") &&
+          !tree_identifier_named(arg, "rw") &&
+          !tree_identifier_named(arg, "create") &&
+          !tree_identifier_named(arg, "dataonly"))
         check_expression(line, arg, env);
     return true;
   }

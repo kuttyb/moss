@@ -27,6 +27,31 @@ APIS = (
     "top_level_assignment", "top_level_colon", "identifier",
 )
 PATTERN = re.compile(r"\b(" + "|".join(map(re.escape, APIS)) + r")\s*\(")
+# Raw Stmt slots are expression text unless the consumer knows, by node kind,
+# that the slot carries a name/keyword. These remaining literal comparisons
+# are audited NAME fields; expression-shaped literals (constructors and
+# collections) are intentionally absent and must use EST queries.
+RAW_NAME_COUNTS = {
+    ("checker", "push"): 5, ("checker", "insert"): 2,
+    ("checker", "invoke"): 4, ("checker", "join"): 3,
+    ("checker", "consume"): 2,
+    ("checker", "pop"): 3, ("checker", "pop_front"): 3,
+    ("checker", "assert"): 2, ("checker", "sort"): 1,
+    ("checker", "pass"): 1,
+    ("emitter", "consume"): 3, ("emitter", "_"): 1,
+    ("emitter", "delete"): 1, ("emitter", "assert"): 1,
+    ("emitter", "assertEqual"): 1, ("emitter", "sort"): 1,
+    ("emitter", "pop"): 1, ("emitter", "write"): 1,
+    ("emitter", "open"): 1, ("emitter", "sync"): 1,
+    ("emitter", "close"): 1,
+}
+RAW_NAME_COMPARE = re.compile(
+    r"\b(?:s|prior|statement|stmt)\.(?:a|b|text)\s*(?:==|!=)\s*\"([^\"\n]*)\"")
+RAW_FIELD_VARIABLE_COMPARE = re.compile(
+    r"\b[A-Za-z_]\w*(?:\([^()]*\))?(?:\.[A-Za-z_]\w*|\[[^]]+\])*"
+    r"\.(a|b|text)\s*(?:==|!=)\s*[A-Za-z_]\w*"
+    r"(?:\.[A-Za-z_]\w*|\[[^]]+\])*\b")
+RAW_BINDING_COMPARE_COUNTS = {("checker", "a"): 9}
 CONSUMER_PATHS = {
     "checker": ("semantic_checker.cpp", "fileio_semantics.inc",
                 "file_chunk_lowering.inc", "executor_invoke_lowering.inc",
@@ -241,6 +266,12 @@ def sites(commit=None):
             # helper definitions while also containing the reach walk.)
             for match in PATTERN.finditer(line):
                 api = match[1]
+                # The recovered vector projection keeps its legacy parser as
+                # an assertion-only parity oracle in shadow mode. It does not
+                # classify or consume an expression in the checker.
+                if api == "parse_vector_literal" and \
+                        "assert(moss::parse_vector_literal" in line:
+                    continue
                 function = next((name for name, (start, end) in ranges.items()
                                  if start <= line_no <= end), None)
                 key = (relative, function, api)
@@ -371,6 +402,44 @@ def main():
             if "evaluate_tree_node" not in node_body or \
                     "std::get_if<est::Binary>" not in node_body:
                 raise SystemExit("Fast Debug evaluator is not recursively dispatching EST nodes")
+    name_comparisons = collections.Counter()
+    unclassified = []
+    raw_field_variables = collections.Counter()
+    for relative in paths():
+        consumer = consumer_for(relative)
+        if consumer not in ("checker", "emitter"):
+            continue
+        for line_no, line in enumerate(read_source(relative).splitlines(), 1):
+            for variable_match in RAW_FIELD_VARIABLE_COMPARE.finditer(line):
+                raw_field_variables[(consumer, variable_match[1])] += 1
+            for match in RAW_NAME_COMPARE.finditer(line):
+                key = (consumer, match[1])
+                if key not in RAW_NAME_COUNTS:
+                    unclassified.append(f"{relative}:{line_no}: {line.strip()}")
+                else:
+                    name_comparisons[key] += 1
+    if unclassified:
+        raise SystemExit("unclassified raw Stmt comparison(s):\n" +
+                         "\n".join(unclassified))
+    if raw_field_variables != collections.Counter(RAW_BINDING_COMPARE_COUNTS):
+        raise SystemExit("audited raw Stmt binding comparison counts changed: " +
+                         repr(dict(sorted(raw_field_variables.items()))))
+    if name_comparisons != collections.Counter(RAW_NAME_COUNTS):
+        raise SystemExit("audited raw Stmt NAME comparison counts changed: " +
+                         repr(dict(sorted(name_comparisons.items()))))
+    # The wrapper was removed from checker/emitter. Keep this explicit guard
+    # so a later textual classifier cannot re-enter under the same spelling.
+    tree_text_reads = [(path, line_no, line.strip())
+                       for path in paths()
+                       if consumer_for(path) in ("checker", "emitter")
+                       for line_no, line in enumerate(read_source(path).splitlines(), 1)
+                       if re.search(r"\btree_expression_text\s*\(", line)]
+    if tree_text_reads:
+        raise SystemExit("tree_expression_text comparison/read found: " +
+                         repr(tree_text_reads))
+    print("audited raw Stmt NAME comparisons: " + str(sum(name_comparisons.values())))
+    print("audited raw Stmt binding comparisons: " +
+          str(sum(raw_field_variables.values())))
     field_reads = [(path, line, text, api)
                    for (consumer, path, line, text, api), amount in sites().items()
                    if consumer == "reach_walk" and api.startswith("Stmt.") and amount]
