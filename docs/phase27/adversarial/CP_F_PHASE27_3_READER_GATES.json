@@ -1,0 +1,38 @@
+[
+  {
+    "consumer": "checker",
+    "exit": 0,
+    "stderr": "",
+    "stdout": "audited raw Stmt NAME comparisons: 40\naudited raw Stmt binding comparisons: 9\n"
+  },
+  {
+    "consumer": "emitter",
+    "exit": 0,
+    "stderr": "",
+    "stdout": "audited raw Stmt NAME comparisons: 40\naudited raw Stmt binding comparisons: 9\n"
+  },
+  {
+    "consumer": "reach_walk",
+    "exit": 0,
+    "stderr": "",
+    "stdout": "audited raw Stmt NAME comparisons: 40\naudited raw Stmt binding comparisons: 9\n"
+  },
+  {
+    "consumer": "fast_debug",
+    "exit": 0,
+    "stderr": "",
+    "stdout": "audited raw Stmt NAME comparisons: 40\naudited raw Stmt binding comparisons: 9\n"
+  },
+  {
+    "consumer": "parser",
+    "exit": 1,
+    "stderr": "remaining expression-text reader call count (2): parser/parse_member_call\nremaining expression-text reader call count (2): parser/parse_simple_call\nremaining expression-text reader call count (6): parser/plain_identifier\nremaining expression-text reader call count (5): parser/split_top_level\nremaining expression-text reader call count (3): parser/top_level_assignment\nremaining expression-text reader call count (2): parser/top_level_colon\nremaining expression-text reader call count (3): parser/trim_compare\n",
+    "stdout": ""
+  },
+  {
+    "consumer": "optimizer",
+    "exit": 1,
+    "stderr": "remaining expression-text reader call count (2): optimizer/plain_identifier\nremaining expression-text reader call count (1): optimizer/split_top_level\nremaining expression-text reader call count (4): optimizer/trim_compare\nremaining expression-text reader call count (3): optimizer/word_occurrences\n",
+    "stdout": ""
+  }
+]

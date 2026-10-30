@@ -1,0 +1,287 @@
+{
+  "baseline_compiler_sha256": "4a334c71d9b5ea5b2925c311f7a462abd046e479fc4b52df4c0453e612ceb286",
+  "candidate_compiler_sha256": "3ac3846a09e8af85b22aef2e84f1f9c5f6ff4f19b922579675fa5738691c9ea7",
+  "results": {
+    "baseline": {
+      "check": {
+        "command": [
+          "/home/owner/daji/code/moss/tmp/cpf-phase27-3/baseline/build/compiler/moss-dev",
+          "check",
+          "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tests/phase27/adversarial/cp-f-phase27-3/wrapping-message-argument.moss",
+          "--json"
+        ],
+        "exit": 0,
+        "stderr": "",
+        "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tests/phase27/adversarial/cp-f-phase27-3/wrapping-message-argument.moss\", \"diagnostics\": []}\n}\n"
+      },
+      "default": {
+        "emit": {
+          "command": [
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/baseline/build/compiler/moss-dev",
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tests/phase27/adversarial/cp-f-phase27-3/wrapping-message-argument.moss",
+            "-o",
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tests/phase27/adversarial/cp-f-phase27-3/wrapping-rust/baseline-default.rs"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": "generated /home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tests/phase27/adversarial/cp-f-phase27-3/wrapping-rust/baseline-default.rs\ngenerated /home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tests/phase27/adversarial/cp-f-phase27-3/wrapping-rust/baseline-default.mossmap\n"
+        },
+        "native": {
+          "command": [
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tests/phase27/adversarial/cp-f-phase27-3/wrapping-rust/baseline-default.bin"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": "-9223372036854775808\n"
+        },
+        "rust_sha256": "da23321697986376420ae4255b175bba5982293157544671a16296cde5147cfb",
+        "rustc": {
+          "command": [
+            "rustc",
+            "--edition=2021",
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tests/phase27/adversarial/cp-f-phase27-3/wrapping-rust/baseline-default.rs",
+            "-o",
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tests/phase27/adversarial/cp-f-phase27-3/wrapping-rust/baseline-default.bin"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": ""
+        }
+      },
+      "fast_debug": {
+        "command": [
+          "/home/owner/daji/code/moss/tmp/cpf-phase27-3/baseline/build/compiler/moss-dev",
+          "run",
+          "--interp",
+          "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tests/phase27/adversarial/cp-f-phase27-3/wrapping-message-argument.moss"
+        ],
+        "exit": 0,
+        "stderr": "",
+        "stdout": "-9223372036854775808\n"
+      },
+      "optimized": {
+        "emit": {
+          "command": [
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/baseline/build/compiler/moss-dev",
+            "-O",
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tests/phase27/adversarial/cp-f-phase27-3/wrapping-message-argument.moss",
+            "-o",
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tests/phase27/adversarial/cp-f-phase27-3/wrapping-rust/baseline-optimized.rs"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": "generated /home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tests/phase27/adversarial/cp-f-phase27-3/wrapping-rust/baseline-optimized.rs\ngenerated /home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tests/phase27/adversarial/cp-f-phase27-3/wrapping-rust/baseline-optimized.mossmap\n"
+        },
+        "native": {
+          "command": [
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tests/phase27/adversarial/cp-f-phase27-3/wrapping-rust/baseline-optimized.bin"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": "-9223372036854775808\n"
+        },
+        "rust_sha256": "da23321697986376420ae4255b175bba5982293157544671a16296cde5147cfb",
+        "rustc": {
+          "command": [
+            "rustc",
+            "--edition=2021",
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tests/phase27/adversarial/cp-f-phase27-3/wrapping-rust/baseline-optimized.rs",
+            "-o",
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tests/phase27/adversarial/cp-f-phase27-3/wrapping-rust/baseline-optimized.bin"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": ""
+        }
+      }
+    },
+    "candidate_off": {
+      "check": {
+        "command": [
+          "/home/owner/daji/code/moss/tmp/cpf-phase27-3/candidate/build/compiler/moss-dev",
+          "check",
+          "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tests/phase27/adversarial/cp-f-phase27-3/wrapping-message-argument.moss",
+          "--json"
+        ],
+        "exit": 0,
+        "stderr": "",
+        "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tests/phase27/adversarial/cp-f-phase27-3/wrapping-message-argument.moss\", \"diagnostics\": []}\n}\n"
+      },
+      "default": {
+        "emit": {
+          "command": [
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/candidate/build/compiler/moss-dev",
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tests/phase27/adversarial/cp-f-phase27-3/wrapping-message-argument.moss",
+            "-o",
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tests/phase27/adversarial/cp-f-phase27-3/wrapping-rust/candidate_off-default.rs"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": "generated /home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tests/phase27/adversarial/cp-f-phase27-3/wrapping-rust/candidate_off-default.rs\ngenerated /home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tests/phase27/adversarial/cp-f-phase27-3/wrapping-rust/candidate_off-default.mossmap\n"
+        },
+        "native": {
+          "command": [
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tests/phase27/adversarial/cp-f-phase27-3/wrapping-rust/candidate_off-default.bin"
+          ],
+          "exit": 101,
+          "stderr": "\nthread 'main' (2348781) panicked at /home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tests/phase27/adversarial/cp-f-phase27-3/wrapping-rust/candidate_off-default.rs:3521:90:\nattempt to add with overflow\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n",
+          "stdout": ""
+        },
+        "rust_sha256": "064d32e44c4856c6ae0c881437895df72e829db0cd9ed55b3b8dacd6861e7324",
+        "rustc": {
+          "command": [
+            "rustc",
+            "--edition=2021",
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tests/phase27/adversarial/cp-f-phase27-3/wrapping-rust/candidate_off-default.rs",
+            "-o",
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tests/phase27/adversarial/cp-f-phase27-3/wrapping-rust/candidate_off-default.bin"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": ""
+        }
+      },
+      "fast_debug": {
+        "command": [
+          "/home/owner/daji/code/moss/tmp/cpf-phase27-3/candidate/build/compiler/moss-dev",
+          "run",
+          "--interp",
+          "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tests/phase27/adversarial/cp-f-phase27-3/wrapping-message-argument.moss"
+        ],
+        "exit": 0,
+        "stderr": "",
+        "stdout": "-9223372036854775808\n"
+      },
+      "optimized": {
+        "emit": {
+          "command": [
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/candidate/build/compiler/moss-dev",
+            "-O",
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tests/phase27/adversarial/cp-f-phase27-3/wrapping-message-argument.moss",
+            "-o",
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tests/phase27/adversarial/cp-f-phase27-3/wrapping-rust/candidate_off-optimized.rs"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": "generated /home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tests/phase27/adversarial/cp-f-phase27-3/wrapping-rust/candidate_off-optimized.rs\ngenerated /home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tests/phase27/adversarial/cp-f-phase27-3/wrapping-rust/candidate_off-optimized.mossmap\n"
+        },
+        "native": {
+          "command": [
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tests/phase27/adversarial/cp-f-phase27-3/wrapping-rust/candidate_off-optimized.bin"
+          ],
+          "exit": 101,
+          "stderr": "\nthread 'main' (2348820) panicked at /home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tests/phase27/adversarial/cp-f-phase27-3/wrapping-rust/candidate_off-optimized.rs:3521:90:\nattempt to add with overflow\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n",
+          "stdout": ""
+        },
+        "rust_sha256": "064d32e44c4856c6ae0c881437895df72e829db0cd9ed55b3b8dacd6861e7324",
+        "rustc": {
+          "command": [
+            "rustc",
+            "--edition=2021",
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tests/phase27/adversarial/cp-f-phase27-3/wrapping-rust/candidate_off-optimized.rs",
+            "-o",
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tests/phase27/adversarial/cp-f-phase27-3/wrapping-rust/candidate_off-optimized.bin"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": ""
+        }
+      }
+    },
+    "candidate_shadow": {
+      "check": {
+        "command": [
+          "/home/owner/daji/code/moss/tmp/cpf-phase27-3/candidate/build/compiler/moss-dev",
+          "check",
+          "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tests/phase27/adversarial/cp-f-phase27-3/wrapping-message-argument.moss",
+          "--json"
+        ],
+        "exit": 0,
+        "stderr": "",
+        "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tests/phase27/adversarial/cp-f-phase27-3/wrapping-message-argument.moss\", \"diagnostics\": []}\n}\n"
+      },
+      "default": {
+        "emit": {
+          "command": [
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/candidate/build/compiler/moss-dev",
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tests/phase27/adversarial/cp-f-phase27-3/wrapping-message-argument.moss",
+            "-o",
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tests/phase27/adversarial/cp-f-phase27-3/wrapping-rust/candidate_shadow-default.rs"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": "generated /home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tests/phase27/adversarial/cp-f-phase27-3/wrapping-rust/candidate_shadow-default.rs\ngenerated /home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tests/phase27/adversarial/cp-f-phase27-3/wrapping-rust/candidate_shadow-default.mossmap\n"
+        },
+        "native": {
+          "command": [
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tests/phase27/adversarial/cp-f-phase27-3/wrapping-rust/candidate_shadow-default.bin"
+          ],
+          "exit": 101,
+          "stderr": "\nthread 'main' (2348861) panicked at /home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tests/phase27/adversarial/cp-f-phase27-3/wrapping-rust/candidate_shadow-default.rs:3521:90:\nattempt to add with overflow\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n",
+          "stdout": ""
+        },
+        "rust_sha256": "064d32e44c4856c6ae0c881437895df72e829db0cd9ed55b3b8dacd6861e7324",
+        "rustc": {
+          "command": [
+            "rustc",
+            "--edition=2021",
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tests/phase27/adversarial/cp-f-phase27-3/wrapping-rust/candidate_shadow-default.rs",
+            "-o",
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tests/phase27/adversarial/cp-f-phase27-3/wrapping-rust/candidate_shadow-default.bin"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": ""
+        }
+      },
+      "fast_debug": {
+        "command": [
+          "/home/owner/daji/code/moss/tmp/cpf-phase27-3/candidate/build/compiler/moss-dev",
+          "run",
+          "--interp",
+          "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tests/phase27/adversarial/cp-f-phase27-3/wrapping-message-argument.moss"
+        ],
+        "exit": 0,
+        "stderr": "",
+        "stdout": "-9223372036854775808\n"
+      },
+      "optimized": {
+        "emit": {
+          "command": [
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/candidate/build/compiler/moss-dev",
+            "-O",
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tests/phase27/adversarial/cp-f-phase27-3/wrapping-message-argument.moss",
+            "-o",
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tests/phase27/adversarial/cp-f-phase27-3/wrapping-rust/candidate_shadow-optimized.rs"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": "generated /home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tests/phase27/adversarial/cp-f-phase27-3/wrapping-rust/candidate_shadow-optimized.rs\ngenerated /home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tests/phase27/adversarial/cp-f-phase27-3/wrapping-rust/candidate_shadow-optimized.mossmap\n"
+        },
+        "native": {
+          "command": [
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tests/phase27/adversarial/cp-f-phase27-3/wrapping-rust/candidate_shadow-optimized.bin"
+          ],
+          "exit": 101,
+          "stderr": "\nthread 'main' (2348900) panicked at /home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tests/phase27/adversarial/cp-f-phase27-3/wrapping-rust/candidate_shadow-optimized.rs:3521:90:\nattempt to add with overflow\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n",
+          "stdout": ""
+        },
+        "rust_sha256": "064d32e44c4856c6ae0c881437895df72e829db0cd9ed55b3b8dacd6861e7324",
+        "rustc": {
+          "command": [
+            "rustc",
+            "--edition=2021",
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tests/phase27/adversarial/cp-f-phase27-3/wrapping-rust/candidate_shadow-optimized.rs",
+            "-o",
+            "/home/owner/daji/code/moss/tmp/cpf-phase27-3/evidence/tests/phase27/adversarial/cp-f-phase27-3/wrapping-rust/candidate_shadow-optimized.bin"
+          ],
+          "exit": 0,
+          "stderr": "",
+          "stdout": ""
+        }
+      }
+    }
+  },
+  "sha256": "47e8a7bc6a063050d4324c00befac93f00a84b1e0f442096b4b36660838fb71e",
+  "source": "tests/phase27/adversarial/cp-f-phase27-3/wrapping-message-argument.moss"
+}

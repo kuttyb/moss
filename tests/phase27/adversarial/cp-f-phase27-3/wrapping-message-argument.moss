@@ -1,0 +1,14 @@
+domain Source:
+  fn MaxValue() -> Int:
+    reply 9223372036854775807
+
+domain Sink:
+  fn Identity(value: Int) -> Int:
+    reply value
+
+fn main():
+  source = Source()
+  sink = Sink()
+  maximum = message source.MaxValue()
+  wrapped = message sink.Identity(maximum + 1)
+  echo wrapped

@@ -1,0 +1,115 @@
+{
+  "candidate_revision": "2bafad47eb15af1923fbf1673b1a6069dca0f63e",
+  "items": [
+    {
+      "baseline_diagnostic": "UNKNOWN_SYMBOL_OR_TYPE",
+      "baseline_exit": 1,
+      "candidate_off_diagnostic": "UNKNOWN_SYMBOL_OR_TYPE",
+      "candidate_off_exit": 1,
+      "candidate_shadow_exit": -6,
+      "candidate_shadow_stderr": "moss-dev: src/semantic_checker.cpp:10939: std::optional<std::pair<string, string>> moss::Checker::tree_split_binary(const string &, const vector<string> &) const: Assertion `result == legacy' failed.\n",
+      "comparison_operator_set": [
+        "==",
+        "!=",
+        "<=",
+        ">=",
+        "<",
+        ">"
+      ],
+      "reproducer_fragment": "v |> count > 0",
+      "source": "examples/swarm/Surface/repros/swarm_067_pipe_comparison_diagnostic.moss",
+      "source_sha256": "316f8e6e2f15dbc1e4952be46aa16b9fcf20a739c6a32d176a7c851e50df019c"
+    },
+    {
+      "baseline_diagnostic": "UNKNOWN_SYMBOL_OR_TYPE",
+      "baseline_exit": 1,
+      "candidate_off_diagnostic": "UNKNOWN_SYMBOL_OR_TYPE",
+      "candidate_off_exit": 1,
+      "candidate_shadow_exit": -6,
+      "candidate_shadow_stderr": "moss-dev: src/semantic_checker.cpp:10939: std::optional<std::pair<string, string>> moss::Checker::tree_split_binary(const string &, const vector<string> &) const: Assertion `result == legacy' failed.\n",
+      "comparison_operator_set": [
+        "==",
+        "!=",
+        "<=",
+        ">=",
+        "<",
+        ">"
+      ],
+      "reproducer_fragment": "index < tasks |> count",
+      "source": "examples/swarm/control_flow_2026/iterative_planner/failed_attempts/02_untyped_vector_parameters.moss",
+      "source_sha256": "95777d647d13c8e15fa24aadfbdd4210570bb44ef3110c612200a38ca121f7b5"
+    },
+    {
+      "baseline_diagnostic": "UNKNOWN_SYMBOL_OR_TYPE",
+      "baseline_exit": 1,
+      "candidate_off_diagnostic": "UNKNOWN_SYMBOL_OR_TYPE",
+      "candidate_off_exit": 1,
+      "candidate_shadow_exit": -6,
+      "candidate_shadow_stderr": "moss-dev: src/semantic_checker.cpp:10939: std::optional<std::pair<string, string>> moss::Checker::tree_split_binary(const string &, const vector<string> &) const: Assertion `result == legacy' failed.\n",
+      "comparison_operator_set": [
+        "==",
+        "!=",
+        "<=",
+        ">=",
+        "<",
+        ">"
+      ],
+      "reproducer_fragment": "index < selected |> count",
+      "source": "examples/swarm/control_flow_2026/iterative_planner/failed_attempts/03_pipeline_count_in_condition.moss",
+      "source_sha256": "3bb896912269c92b3fdf434980a8668976c6c96f38f528d2a374efdca2503756"
+    },
+    {
+      "baseline_diagnostic": "UNKNOWN_SYMBOL_OR_TYPE",
+      "baseline_exit": 1,
+      "candidate_off_diagnostic": "UNKNOWN_SYMBOL_OR_TYPE",
+      "candidate_off_exit": 1,
+      "candidate_shadow_exit": -6,
+      "candidate_shadow_stderr": "moss-dev: src/semantic_checker.cpp:10939: std::optional<std::pair<string, string>> moss::Checker::tree_split_binary(const string &, const vector<string> &) const: Assertion `result == legacy' failed.\n",
+      "comparison_operator_set": [
+        "==",
+        "!=",
+        "<=",
+        ">=",
+        "<",
+        ">"
+      ],
+      "reproducer_fragment": "index < values |> count",
+      "source": "examples/swarm/control_flow_2026/simulation_engine/failed_attempts/02_while_pipeline_condition.moss",
+      "source_sha256": "2f1671aa3c833188b4b03d0dfe97bcb8ddcbdbf66d6a48176deafcafdea8fdd3"
+    },
+    {
+      "baseline_diagnostic": "UNKNOWN_SYMBOL_OR_TYPE",
+      "baseline_exit": 1,
+      "candidate_off_diagnostic": "UNKNOWN_SYMBOL_OR_TYPE",
+      "candidate_off_exit": 1,
+      "candidate_shadow_exit": -6,
+      "candidate_shadow_stderr": "moss-dev: src/semantic_checker.cpp:10939: std::optional<std::pair<string, string>> moss::Checker::tree_split_binary(const string &, const vector<string> &) const: Assertion `result == legacy' failed.\n",
+      "comparison_operator_set": [
+        "==",
+        "!=",
+        "<=",
+        ">=",
+        "<",
+        ">"
+      ],
+      "reproducer_fragment": "energies |> filter(_ >= 100) |> sum >= 100",
+      "source": "examples/swarm/expression_surface_2026/numerical_tool/failed_attempts/08_pipeline_comparison_precedence.moss",
+      "source_sha256": "236c1629f652c4f12c8cfd277b2e82dff2d2ae167f4626d3b7c0d8ede30bc799"
+    },
+    {
+      "candidate_shadow_exit": -6,
+      "candidate_shadow_stderr": "moss-dev: src/est/expression_query.cpp:460: bool moss::est::project_simple_call(const ExpressionView &, std::string &, std::vector<std::string> &): Assertion `legacy == result' failed.\n",
+      "kind": "project_simple_call assertion",
+      "source": "tests/phase27/adversarial/cp-ca9e8ca/nested-stage.moss",
+      "source_sha256": "12e9a057ea6f6909b4a44822e375989e1f22e8811b36ec6e586bcec43f8db896"
+    },
+    {
+      "candidate_shadow_exit": -6,
+      "candidate_shadow_stderr": "moss-dev: src/est/expression_query.cpp:460: bool moss::est::project_simple_call(const ExpressionView &, std::string &, std::vector<std::string> &): Assertion `legacy == result' failed.\n",
+      "kind": "project_simple_call assertion",
+      "source": "tests/phase27/adversarial/cp-ca9e8ca/stage-flat.moss",
+      "source_sha256": "e1b26a0f2241ff133c636d5b7518165275d351741c8263c8973df972e30d476c"
+    }
+  ],
+  "note": "The comparison operator set is the static comparison dispatch set at Checker::inferred_expr. The assertion does not print the runtime expression argument; no compiler source instrumentation was performed."
+}
