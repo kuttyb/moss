@@ -19963,26 +19963,28 @@ class Checker {
           proven_indices, root_ingress));
       return effects;
     }
-    // Reading a field of a computed object first evaluates its base.  A
-    // function or method producing that object may raise before projection.
-    // Confirm this is an object field so enum tags and module members keep
-    // their existing effect paths below.
-    if (auto dot = value.rfind('.'); dot != string::npos) {
-      const string base = trim(value.substr(0, dot));
-      const string field = trim(value.substr(dot + 1));
-      if (tree_plain_identifier(field)) {
-        auto base_type = inferred_expr_type(base, env);
-        if (base_type) {
-          auto object = objects_.find(canonical_type_name(*base_type));
-          if (object != objects_.end() &&
-              std::any_of(object->second->fields.begin(),
-                          object->second->fields.end(),
-                          [&](const Field& candidate) {
-                            return candidate.name == field;
-                          }))
-            return observable_expression_effects(
-                base, env, domain_fields, implicit_object, parameters,
-                proven_indices, root_ingress);
+    // Reading a field of a computed object first evaluates its base.  Read
+    // the Member node so dots inside string literals never become fake fields.
+    if (auto syntax = moss::est::parse_view(value)) {
+      const auto root = moss::est::unparenthesized(*syntax->arena,
+                                                   syntax->root);
+      if (const auto* member = std::get_if<moss::est::Member>(
+              &syntax->arena->at(root))) {
+        auto base_source = syntax->source_text(member->base);
+        if (base_source) {
+          auto base_type = inferred_expr_type(*base_source, env);
+          if (base_type) {
+            auto object = objects_.find(canonical_type_name(*base_type));
+            if (object != objects_.end() &&
+                std::any_of(object->second->fields.begin(),
+                            object->second->fields.end(),
+                            [&](const Field& candidate) {
+                              return candidate.name == member->name;
+                            }))
+              return observable_expression_effects(
+                  *base_source, env, domain_fields, implicit_object, parameters,
+                  proven_indices, root_ingress);
+          }
         }
       }
     }
@@ -21902,12 +21904,19 @@ class Checker {
       return;
     }
 
-    auto dot = value.rfind('.');
-    if (dot != string::npos && value.find('(', dot) == string::npos) {
-      check_ownership_expression(line, value.substr(0, dot), env,
-                                 requested == Effect::Write ? Effect::Read :
-                                 projection_effect(value, requested, env.types));
-      return;
+    if (auto syntax = moss::est::parse_view(value)) {
+      const auto root = moss::est::unparenthesized(*syntax->arena,
+                                                   syntax->root);
+      if (const auto* member = std::get_if<moss::est::Member>(
+              &syntax->arena->at(root))) {
+        if (auto member_base = syntax->source_text(member->base)) {
+          check_ownership_expression(
+              line, *member_base, env,
+              requested == Effect::Write ? Effect::Read :
+                  projection_effect(value, requested, env.types));
+          return;
+        }
+      }
     }
     require_available(line, value, env);
   }

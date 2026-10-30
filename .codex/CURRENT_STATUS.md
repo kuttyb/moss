@@ -13253,9 +13253,9 @@ check` passed 154/154, zero failures or skips. Branch remains unmerged.
 
 ## Phase 27.3 continuation — pattern nodes and final readers (2026-10-30)
 
-- Restarted on `phase27-3-work` at pushed `8e571a8e` (emitter slice `e024162d`); worktree was clean. `AGENTS.md` explicitly records the user's scoped push authorization for this task. Bootstrap reports Moss 0.1.
-- Current widened lint: checker has 6 `split_top_level` reader sites; emitter has 2. Reach walk and Fast Debug are both zero. The only exemptions in `27_3_STRING_READER_EXEMPTIONS.md` are the three type-argument splits keyed by function and reader API; pattern sites are not exempted.
-- Reproduced the open shadow failure with `MOSS_EST=shadow ./moss check tests/tooling/fixtures/phase20_fileio_runtime_integration.moss --json`: aborts in `Checker::tree_split_binary` with input fragment `<"tmp/phase20-fileio-integration`, tree result absent, legacy result `("tmp/phase20-fileio,integration)`. Log: `tmp/phase27-3/fileio-shadow.stderr`. This is an unresolved migration bug; inspect continuation joining and FileIO-specific producers, and fix the producer.
+- Restarted on phase27-3-work at pushed 8e571a8e (emitter slice e024162d); worktree was clean. AGENTS.md explicitly records the user's scoped push authorization for this task. Bootstrap reports Moss 0.1.
+- Current widened lint: checker has 6 split_top_level reader sites; emitter has 2. Reach walk and Fast Debug are both zero. The only exemptions in 27_3_STRING_READER_EXEMPTIONS.md are the three type-argument splits keyed by function and reader API; pattern sites are not exempted.
+- Fixed the reproduced FileIO shadow migration bug: checker observable-effect and ownership walks split member expressions at the last dot, so the dotted FileIO path literal generated an incomplete recursive expression. Both now project Member nodes structurally. make --jobs="$(nproc)" moss-dev passed; the fixture off/shadow JSON outputs match byte-for-byte, and its shadow check exits successfully. Logs: tmp/phase27-3/r4-fixed-build.log, tmp/phase27-3/r4-fixed-shadow.json, tmp/phase27-3/r4-off.json. Feedback record added.
 - Pattern-node family and the 8 pattern sites remain to migrate. Checker/emitter zero-site checkpoints, CP-E/CP-F, full parity, sanitizer, performance, merge, and tag gates remain outstanding. The Phase 27.4 optimizer remains out of scope.
 
 ### Phase 27.3 blocked shadow parity follow-up (2026-10-30)
