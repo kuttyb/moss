@@ -648,8 +648,12 @@
         bool range_batch_iteration = s.kind == Stmt::Kind::For &&
             canonical_type_name(inferred_expr_type(s.b, flow.types).value_or("")) ==
                 "RangeBatch";
-        if (range_batch_iteration)
-          branch.range_origin[s.a] = {trim(s.b), branch.batch_generation[trim(s.b)]};
+        if (range_batch_iteration) {
+          const auto batch_binding = tree_identifier_name(s.b);
+          if (batch_binding)
+            branch.range_origin[s.a] = {
+                *batch_binding, branch.batch_generation[*batch_binding]};
+        }
         check_fileio_lifecycle_block(body, index, indent + 1, branch,
                                      normal_exits);
         if (s.kind == Stmt::Kind::If && index < body.size() &&
@@ -677,15 +681,20 @@
         if (type && canonical_type_name(*type) == "RangeBatch")
           ++flow.batch_generation[s.a];
         string source, offset;
+        const auto source_binding = tree_identifier_name(s.b);
         if (type && canonical_type_name(*type) == "Range" &&
             tree_parse_index(trim(s.b), source, offset) &&
             canonical_type_name(inferred_expr_type(source, flow.types).value_or("")) ==
-                "RangeBatch")
-          flow.range_origin[s.a] = {source, flow.batch_generation[source]};
-        else if (type && canonical_type_name(*type) == "Range" &&
-                 tree_simple_identifier(trim(s.b)) &&
-                 flow.range_origin.count(trim(s.b)))
-          flow.range_origin[s.a] = flow.range_origin[trim(s.b)];
+                "RangeBatch") {
+          const auto batch_binding = tree_identifier_name(source);
+          if (batch_binding)
+            flow.range_origin[s.a] = {
+                *batch_binding, flow.batch_generation[*batch_binding]};
+          else
+            flow.range_origin.erase(s.a);
+        } else if (type && canonical_type_name(*type) == "Range" &&
+                   source_binding && flow.range_origin.count(*source_binding))
+          flow.range_origin[s.a] = flow.range_origin[*source_binding];
         else flow.range_origin.erase(s.a);
         vector<string> open_args;
         if (type && canonical_type_name(*type) == "FileIO" &&

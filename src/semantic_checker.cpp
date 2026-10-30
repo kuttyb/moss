@@ -15202,14 +15202,19 @@ class Checker {
             tree_plain_identifier(statement.a))
           local_sources[statement.a] = statement.b;
         if (statement.kind == Stmt::Kind::Return) {
-          auto source = local_sources.find(trim(statement.a));
+          const auto returned_binding = tree_identifier_name(statement.a);
+          auto source = returned_binding
+              ? local_sources.find(*returned_binding) : local_sources.end();
           if (source != local_sources.end())
             derive_expression_constraints(function, source->second,
                                           result_expectation());
         }
       }
       if (function.result_expression) {
-        auto source = local_sources.find(trim(*function.result_expression));
+        const auto returned_binding = tree_identifier_name(
+            *function.result_expression);
+        auto source = returned_binding
+            ? local_sources.find(*returned_binding) : local_sources.end();
         if (source != local_sources.end())
           derive_expression_constraints(function, source->second,
                                         result_expectation());
