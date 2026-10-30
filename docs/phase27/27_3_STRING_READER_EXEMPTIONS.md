@@ -23,6 +23,7 @@ lint until reviewed and recorded here.
 | checker | `invoke` | 4 | Executor method name |
 | checker | `join` | 3 | Executor method name |
 | checker | `consume` | 2 | Effect keyword |
+| checker | `FileIO` | 1 | Static FileIO receiver binding name |
 | checker | `pop` | 3 | Collection method name |
 | checker | `pop_front` | 3 | Collection method name |
 | checker | `assert` | 2 | Builtin call name |
