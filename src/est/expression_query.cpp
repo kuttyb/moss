@@ -1077,6 +1077,27 @@ bool expressions_equal(const ExpressionView& left, const ExpressionView& right) 
   return result;
 }
 
+bool contains_member_call(const ExpressionView& expression,
+                          std::string_view receiver,
+                          std::string_view member_name) {
+  if (!expression.arena || expression.root >= expression.arena->size())
+    return false;
+  auto expected = parse_view(receiver);
+  if (!expected) return false;
+  for (ExprId id = 0; id < expression.arena->size(); ++id) {
+    const auto* call = std::get_if<Call>(&expression.arena->at(id));
+    if (!call) continue;
+    const auto callee = unparenthesized(*expression.arena, call->callee);
+    const auto* access = std::get_if<Member>(&expression.arena->at(callee));
+    if (!access || access->name != member_name) continue;
+    auto source = expression.source_text(access->base);
+    if (!source) continue;
+    auto actual = parse_view(*source);
+    if (actual && structurally_equal(*actual, *expected)) return true;
+  }
+  return false;
+}
+
 bool empty_vector_literal(const ExpressionView& e) {
   bool result = false;
   if (e.arena && e.root < e.arena->size()) {

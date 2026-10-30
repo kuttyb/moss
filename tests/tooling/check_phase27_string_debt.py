@@ -52,6 +52,21 @@ RAW_FIELD_VARIABLE_COMPARE = re.compile(
     r"\.(a|b|text)\s*(?:==|!=)\s*[A-Za-z_]\w*"
     r"(?:\.[A-Za-z_]\w*|\[[^]]+\])*\b")
 RAW_BINDING_COMPARE_COUNTS = {("checker", "a"): 9}
+# Shape tests on expression-bearing Stmt fields are readers even when they do
+# not call one of the legacy parser APIs. Keep this fail-closed for direct
+# punctuation searches, first-character dispatch, and trimmed-prefix tests.
+RAW_FIELD_SHAPE = re.compile(
+    r"\b[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*\.(?:a|b|text)\s*"
+    r"\.\s*(?:find|rfind|find_first_of|find_first_not_of|front|back)\s*\("
+)
+RAW_FIELD_PREFIX = re.compile(
+    r"\b(?:starts_with|ends_with)\s*\(\s*(?:trim\s*\(\s*)?"
+    r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*\.(?:a|b|text)"
+)
+RAW_FIELD_FRONT_DISPATCH = re.compile(
+    r"\b[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*\.(?:a|b|text)\s*"
+    r"\.\s*(?:size\s*\(\s*\)\s*&&\s*)?[^;\n]*\.front\s*\("
+)
 CONSUMER_PATHS = {
     "checker": ("semantic_checker.cpp", "fileio_semantics.inc",
                 "file_chunk_lowering.inc", "executor_invoke_lowering.inc",
@@ -405,11 +420,15 @@ def main():
     name_comparisons = collections.Counter()
     unclassified = []
     raw_field_variables = collections.Counter()
+    raw_field_shapes = []
     for relative in paths():
         consumer = consumer_for(relative)
         if consumer not in ("checker", "emitter"):
             continue
         for line_no, line in enumerate(read_source(relative).splitlines(), 1):
+            if (RAW_FIELD_SHAPE.search(line) or RAW_FIELD_PREFIX.search(line) or
+                    RAW_FIELD_FRONT_DISPATCH.search(line)):
+                raw_field_shapes.append(f"{relative}:{line_no}: {line.strip()}")
             for variable_match in RAW_FIELD_VARIABLE_COMPARE.finditer(line):
                 raw_field_variables[(consumer, variable_match[1])] += 1
             for match in RAW_NAME_COMPARE.finditer(line):
@@ -421,6 +440,9 @@ def main():
     if unclassified:
         raise SystemExit("unclassified raw Stmt comparison(s):\n" +
                          "\n".join(unclassified))
+    if raw_field_shapes:
+        raise SystemExit("raw expression-shape test on Stmt field(s):\n" +
+                         "\n".join(raw_field_shapes))
     if raw_field_variables != collections.Counter(RAW_BINDING_COMPARE_COUNTS):
         raise SystemExit("audited raw Stmt binding comparison counts changed: " +
                          repr(dict(sorted(raw_field_variables.items()))))

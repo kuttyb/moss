@@ -45,6 +45,12 @@ remaining expression-to-expression equivalence checks call
 `tree_expressions_structurally_equal`; name, placeholder, constructor, and
 collection checks use EST queries.
 
+The widened lint also rejects punctuation searches, first-character dispatch,
+and trimmed-prefix tests applied directly to `Stmt.a`, `Stmt.b`, or `Stmt.text`.
+The assignment-place index/member classifiers, vector-literal prefix checks,
+and source-free member-call origin search found by fresh CP-E were converted
+to EST projections. No raw expression-shape exemption remains.
+
 The checker has nine additional raw `Stmt.a` comparisons against binding
 names (`name`, `base`, `statement.a`, or `selected_binding`). In each site the
 statement kind makes `a` the assignment/loop binding slot. The lint counts

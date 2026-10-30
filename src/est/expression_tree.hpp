@@ -211,6 +211,9 @@ bool project_identifier(const ExpressionView& view, std::string& name);
 bool is_identifier(const ExpressionView& view);
 bool identifier_named(const ExpressionView& view, std::string_view name);
 bool expressions_equal(const ExpressionView& left, const ExpressionView& right);
+bool contains_member_call(const ExpressionView& expression,
+                          std::string_view receiver,
+                          std::string_view member);
 bool empty_vector_literal(const ExpressionView& view);
 bool member_expression(const ExpressionView& view);
 bool empty_constructor_named(const ExpressionView& view, std::string_view name);

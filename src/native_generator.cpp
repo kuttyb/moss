@@ -6349,7 +6349,7 @@ class Generator {
                 : tree_empty_constructor_named(s.b, "Map") ? "map"
                 : tree_empty_constructor_named(s.b, "Queue") ? "queue"
                 : staged_abi_v10() && tree_empty_constructor_named(s.b, "Set") ? "set"
-                : (s.b.size() && s.b.front() == '[' ? "vector" : "_value");
+                : (tree_parse_vector_literal(s.b) ? "vector" : "_value");
             auto source_binding = domain_instance_bindings_.find(trim(s.b));
             if (source_binding != domain_instance_bindings_.end())
               remember_domain_instance_binding(

@@ -10507,6 +10507,14 @@ class Checker {
     return syntax && moss::est::identifier_named(*syntax, name);
   }
 
+  static std::optional<string> tree_identifier_name(const string& value) {
+    auto syntax = moss::est::parse_view(value);
+    if (!syntax) return std::nullopt;
+    string name;
+    return moss::est::project_identifier(*syntax, name)
+        ? std::optional<string>(std::move(name)) : std::nullopt;
+  }
+
   static bool tree_is_fileio_open(const string& value) {
     auto syntax = moss::est::parse_view(value);
     vector<string> arguments;
@@ -10619,6 +10627,18 @@ class Checker {
   static bool tree_parse_index(const string& text, string& base, string& index) {
     auto syntax = moss::est::parse_view(text);
     return syntax && moss::est::project_index(*syntax, base, index);
+  }
+
+  static bool tree_index_expression(const string& text) {
+    string base, index;
+    return tree_parse_index(text, base, index);
+  }
+
+  static bool tree_member_access(const string& text) {
+    auto syntax = moss::est::parse_view(text);
+    if (!syntax) return false;
+    string base, member;
+    return moss::est::project_member_access(*syntax, base, member);
   }
 
   static std::optional<char> tree_named_argument_separator(const string& text) {
@@ -13489,7 +13509,7 @@ class Checker {
         }
         scan[statement.a] = solver.resolve(local->second)->to_canonical_string();
       } else if (statement.kind == Stmt::Kind::Assign &&
-                 statement.a.find('[') != string::npos) {
+                 tree_index_expression(statement.a)) {
         string base, index;
         if (!tree_parse_index(statement.a, base, index)) continue;
         auto container = body_types.known_expression(base);
@@ -13534,7 +13554,7 @@ class Checker {
           err(statement.line, "indexed assignment conflicts with the binding's type",
               "TYPE_MISMATCH");
       } else if (statement.kind == Stmt::Kind::Assign &&
-                 statement.a.find('.') != string::npos) {
+                 tree_member_access(statement.a)) {
         auto field = body_types.known_expression(statement.a);
         auto rhs = term_for(statement.b);
         if (!field || !rhs) continue;
@@ -18012,8 +18032,7 @@ class Checker {
             analyze_effect_expression(statement.a, env, params, parameter_effects,
                                       receiver_effect, receiver_fields, Effect::Write);
           else {
-            auto dot = statement.a.rfind('.');
-            if (dot != string::npos)
+            if (tree_member_access(statement.a))
               analyze_effect_expression(statement.a, env, params,
                                         parameter_effects, receiver_effect,
                                         receiver_fields, Effect::Write);
@@ -22560,8 +22579,7 @@ class Checker {
           if (tree_parse_index(s.a, lhs_base, lhs_index))
             check_ownership_expression(s.line, s.a, env, Effect::Write);
           else {
-            auto dot = s.a.rfind('.');
-            if (dot != string::npos)
+            if (tree_member_access(s.a))
               check_ownership_expression(s.line, s.a, env, Effect::Write);
             else if (tree_simple_identifier(s.a))
               check_ownership_expression(s.line, s.a, env, Effect::Write);
@@ -22809,10 +22827,11 @@ class Checker {
     CompileError error(line, message, code);
     if (!current_source_file_.empty()) error.source_file = current_source_file_;
     if (compiled_interface_file(function.source_file)) {
-      const string use = requirement.subject + "." + requirement.detail + "(";
       int origin = function.line;
       for (const auto& statement : function.body)
-        if (statement.text.find(use) != string::npos) {
+        if (auto expression = moss::est::parse_view(statement.text);
+            expression && moss::est::contains_member_call(
+                *expression, requirement.subject, requirement.detail)) {
           origin = statement.line;
           break;
         }
@@ -27896,7 +27915,7 @@ class Checker {
         if (statement.kind == Stmt::Kind::Assign &&
             tree_simple_identifier(statement.a) && !current_env.count(statement.a)) {
           auto inferred = inferred_expr_type(statement.b, current_env);
-          if (!inferred && starts_with(trim(statement.b), "["))
+          if (!inferred && tree_parse_vector_literal(statement.b))
             err(statement.line, "heterogeneous or unresolved collection element type");
         }
         if (statement.kind == Stmt::Kind::Assign &&
@@ -27918,7 +27937,7 @@ class Checker {
           if (tree_simple_identifier(statement.a)) {
             if (!current_env.count(statement.a)) {
               auto inferred = inferred_expr_type(statement.b, current_env);
-              if (!inferred && starts_with(trim(statement.b), "["))
+              if (!inferred && tree_parse_vector_literal(statement.b))
                 err(statement.line, "heterogeneous or unresolved collection element type");
             } else {
               auto bound_type = current_env.at(statement.a);
@@ -28032,8 +28051,7 @@ class Checker {
                 if (key_type) check_map_key_type(statement.line, *key_type);
               }
             } else {
-              size_t dot = statement.a.rfind('.');
-              if (dot != string::npos && statement.a.find('(', dot) == string::npos) {
+              if (tree_member_access(statement.a)) {
                 auto field_type = inferred_expr_type(statement.a, current_env);
                 auto rhs_type = inferred_expr_type(statement.b, current_env);
                 auto field_term = checked_term(statement.a, field_type);

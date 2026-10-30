@@ -709,9 +709,9 @@
           fileio_lifecycle_expression(s.line, argument, flow);
       } else if (s.kind == Stmt::Kind::Call || s.kind == Stmt::Kind::Raw) {
         string call_text = s.text;
-        if (s.kind == Stmt::Kind::Call && s.b.empty() && !s.a.empty() &&
-            s.a.find('.') == string::npos) {
-          call_text = s.a + "(";
+        auto call_name = tree_identifier_name(s.a);
+        if (s.kind == Stmt::Kind::Call && s.b.empty() && call_name) {
+          call_text = *call_name + "(";
           for (size_t i = 0; i < s.args.size(); ++i) {
             if (i) call_text += ", ";
             call_text += s.args[i];
