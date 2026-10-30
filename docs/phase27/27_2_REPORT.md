@@ -48,4 +48,14 @@ L7 accepted the `w5_infer_wide_w050` overhead conditionally: it is expected from
 
 ## Merge delivery
 
-The merge is ready to proceed: current `origin/main` remains `a4f4790f1434197a7cd995644bbf5d7ebce3fb0f`; no `rw_*` or aggregate repeat slowdown is beyond noise, and L7 accepted the retained `w5_infer_wide_w050` overhead conditionally. The five package-mode checks accept in candidate off/shadow and crash in the baseline, as allowed by LANGUAGE_SYNTAX §Functional pipelines. The updated merge candidate and evidence are recorded on `phase27-2-merge`; the merge-head gates, push to `main`, tag, and delivery entry remain to be completed.
+Merged as `04be1a1bbbc7a4fd8fe2e4090b4b5bad5dd573e4`; first parent `a4f4790f1434197a7cd995644bbf5d7ebce3fb0f`, second parent `db94ec49e49ef150ff3c5cc4c56d04aa4c1aaf08`. The merge commit is pushed to `origin/main` and annotated tag `phase27-2-m1` points to it.
+
+Merge-commit gates:
+
+- `MOSS_EST=off make --jobs="$(nproc)" check`: 159/159, no failures/skips; `tmp/phase27-2/gates/check-off-merge-04be1a1b.log`.
+- `MOSS_EST=shadow make --jobs="$(nproc)" check`: 159/159, no failures/skips; `tmp/phase27-2/gates/check-shadow-merge-04be1a1b.log`. Both conformance checks (`check_phase27_accepts_rustc` and `check_phase27_three_engine`) pass in both logs.
+- Fresh CP-D: 2,118 sources; 1,389 accepted generated-Rust comparisons; 932 accepted main Fast Debug comparisons; zero unadjudicated verdict differences, zero Rust hash differences, and zero Fast Debug differences. `tmp/phase27-2/gates/cp-d-merge-04be1a1b.log` and `tmp/phase27-2/cp-d-9db3e6e0/report.json`.
+- Package-mode checks: all five baseline crashes reproduced; candidate off and shadow accept all five, with outcomes detailed above. `tmp/phase27-2/gates/cp-d-package-mode-merge-04be1a1b.log` and `tmp/phase27-2/package-mode-cp-d/report.json`.
+- `.mossi` baseline parity: normalized Section 1/2 bytes equal and execution-body hashes equal. `tmp/phase27-2/gates/mossi-merge-04be1a1b.log` and `tmp/phase27-mossi-baseline/1793344647256598712/report.json`.
+- Widened string-debt lint passes, including `--require-zero fast_debug`; feedback validation passes. The final full-corpus ASan/UBSan shadow scan recorded zero findings before the report-only package-mode harness addition; compiler sources are unchanged in the merge.
+- Compiler performance against first parent `a4f4790f` is recorded above. Repeated `w5_infer_wide_w050` overhead is conditionally accepted by L7; repeat aggregate and all `rw_*` workloads remain within the noise floor. 27.3 must pass the stated acceptance gate against `phase27-1-m1`.
