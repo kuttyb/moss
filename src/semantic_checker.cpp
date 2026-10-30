@@ -26395,9 +26395,11 @@ class Checker {
         return;
       }
     }
-    if (starts_with(value, "not ")) {
+    string unary_operation, unary_operand;
+    if (tree_parse_unary(value, unary_operation, unary_operand) &&
+        unary_operation == "not") {
       mark_active_expression(OccurrenceKind::Unary, "not");
-      string operand = trim(value.substr(4));
+      string operand = unary_operand;
       check_expression(line, operand, env, {}, "operand");
       retain_open_unary_operation(line, "not", operand, env);
       auto operand_type = inferred_expr_type(operand, env);
@@ -26561,13 +26563,16 @@ class Checker {
         err(line, "shift operator '" + op + "' requires Int operands", "TYPE_MISMATCH");
       return;
     }
-    if (!value.empty() && value.front() == '-' &&
+    if (tree_parse_unary(value, unary_operation, unary_operand) &&
+        unary_operation == "-" &&
         !tree_split_binary(value, {"+", "-", "*", "/", "%"})) {
       // Prefix '-' applies to its whole postfix operand: `-s.length()` negates
       // the call result, so the operand is checked as one expression
       // (P25-S-ARCH-021) rather than letting member-call parsing see `-s`.
-      string operand = trim(value.substr(1));
-      if (!operand.empty() && operand.front() != '-') {
+      string operand = unary_operand;
+      string nested_operation, nested_operand;
+      if (!tree_parse_unary(operand, nested_operation, nested_operand) ||
+          nested_operation != "-") {
         check_expression(line, operand, env, {}, "operand");
         mark_active_expression(OccurrenceKind::Unary, "unary-");
         retain_open_unary_operation(line, "unary-", operand, env);
@@ -26654,8 +26659,9 @@ class Checker {
           return;
         }
     }
-    if (!value.empty() && value.front() == '~') {
-      string operand = trim(value.substr(1));
+    if (tree_parse_unary(value, unary_operation, unary_operand) &&
+        unary_operation == "~") {
+      string operand = unary_operand;
       check_expression(line, operand, env, {}, "operand");
       mark_active_expression(OccurrenceKind::Unary, "~");
       retain_open_unary_operation(line, "~", operand, env);
