@@ -40,6 +40,83 @@ ExprId Arena::append(Node node, SourceSpan source_span) {
 
 const Node& Arena::at(ExprId id) const { return nodes_.at(id); }
 
+void Arena::record_facts(ExprId id, std::string specialization_context,
+                         SemanticFacts facts) {
+  if (id >= nodes_.size())
+    throw std::out_of_range("EST semantic facts refer to an unknown ExprId");
+  auto& destination = semantic_facts_[
+      FactKey{id, std::move(specialization_context)}];
+  if (facts.type) destination.type = std::move(facts.type);
+  if (!facts.specialization_result.empty())
+    destination.specialization_result =
+        std::move(facts.specialization_result);
+  if (!facts.resolved_target.empty())
+    destination.resolved_target = std::move(facts.resolved_target);
+  if (facts.inferred_effect)
+    destination.inferred_effect = facts.inferred_effect;
+}
+
+const SemanticFacts* Arena::facts(
+    ExprId id, std::string_view specialization_context) const {
+  if (id >= nodes_.size()) return nullptr;
+  auto found = semantic_facts_.find(
+      FactKey{id, std::string(specialization_context)});
+  return found == semantic_facts_.end() ? nullptr : &found->second;
+}
+
+std::optional<ParsedFunctionalPipeline> functional_pipeline(
+    const Arena& arena, ExprId expression, std::string_view source,
+    const std::function<std::optional<FunctionalNodeKind>(
+        std::string_view)>& resolve_stage) {
+  const auto* pipeline = std::get_if<Pipeline>(&arena.at(expression));
+  if (!pipeline || pipeline->stages.empty()) return std::nullopt;
+  const auto root_span = arena.span(expression);
+  const auto source_slice = [&](ExprId id) -> std::optional<std::string> {
+    const auto span = arena.span(id);
+    if (span.source_begin < root_span.source_begin ||
+        span.source_end < span.source_begin ||
+        span.source_end > root_span.source_end)
+      return std::nullopt;
+    const auto begin = span.source_begin - root_span.source_begin;
+    const auto length = span.source_end - span.source_begin;
+    if (begin > source.size() || length > source.size() - begin)
+      return std::nullopt;
+    auto text = source.substr(begin, length);
+    const auto first = text.find_first_not_of(" \t\r\n");
+    if (first == std::string_view::npos) return std::string{};
+    const auto last = text.find_last_not_of(" \t\r\n");
+    return std::string(text.substr(first, last - first + 1));
+  };
+  auto source_text = source_slice(pipeline->input);
+  if (!source_text || source_text->empty()) return std::nullopt;
+  ParsedFunctionalPipeline result;
+  result.source = std::move(*source_text);
+  for (const auto stage_id : pipeline->stages) {
+    auto raw = source_slice(stage_id);
+    if (!raw || raw->empty()) return std::nullopt;
+    std::string callee = *raw;
+    std::vector<ExprId> arguments;
+    if (const auto* call = std::get_if<Call>(&arena.at(stage_id))) {
+      auto call_name = source_slice(call->callee);
+      if (!call_name) return std::nullopt;
+      callee = std::move(*call_name);
+      arguments = call->arguments;
+    }
+    auto kind = resolve_stage(callee);
+    if (!kind) return std::nullopt;
+    ParsedFunctionalStage parsed_stage;
+    parsed_stage.kind = *kind;
+    parsed_stage.raw = std::move(*raw);
+    for (const auto argument : arguments) {
+      auto argument_text = source_slice(argument);
+      if (!argument_text) return std::nullopt;
+      parsed_stage.arguments.push_back(std::move(*argument_text));
+    }
+    result.stages.push_back(std::move(parsed_stage));
+  }
+  return result;
+}
+
 void Arena::note(std::uint64_t owner, ExprSlot slot,
                  std::uint32_t argument_index, Outcome outcome) {
   auto& count = coverage_.at(static_cast<std::size_t>(slot));
@@ -138,7 +215,6 @@ void assert_fresh(const Handle& handle, const std::string& source) {
 const Handle* lookup(const std::vector<Handle>& handles, const Arena& arena,
                      std::uint64_t owner, ExprSlot slot,
                      std::uint32_t argument_index, const std::string& source) {
-  if (mode() == Mode::Off) return nullptr;
   for (const auto& handle : handles) {
     if (handle.owner != owner || handle.slot != slot ||
         handle.argument_index != argument_index) continue;
@@ -192,7 +268,8 @@ Mode mode() {
 
 namespace {
 struct Token { std::string text; bool word = false; bool literal = false;
-               std::uint32_t line = 1, column = 1; };
+               std::uint32_t line = 1, column = 1;
+               std::uint32_t source_begin = 0, source_end = 0; };
 
 std::vector<Token> lex(std::string_view source) {
   std::vector<Token> result;
@@ -211,14 +288,18 @@ std::vector<Token> lex(std::string_view source) {
     if (std::isalpha(c) || c == '_') {
       while (i < source.size() && (std::isalnum(static_cast<unsigned char>(source[i])) || source[i] == '_')) ++i;
       result.push_back({std::string(source.substr(start, i-start)), true, false,
-                        start_line, start_column});
+                        start_line, start_column,
+                        static_cast<std::uint32_t>(start),
+                        static_cast<std::uint32_t>(i)});
     } else if (std::isdigit(c) || (c == '.' && i + 1 < source.size() &&
                                     std::isdigit(static_cast<unsigned char>(source[i + 1])))) {
       const auto literal = scan_numeric_literal(source, i);
       if (!literal.ok || literal.end <= i)
         throw std::invalid_argument("EST invalid numeric literal");
       i = literal.end;
-      result.push_back({literal.spelling, false, true, start_line, start_column});
+      result.push_back({literal.spelling, false, true, start_line, start_column,
+                        static_cast<std::uint32_t>(start),
+                        static_cast<std::uint32_t>(i)});
     } else if (c == '"' || c == '\'') {
       const char quote = c;
       ++i;
@@ -230,7 +311,9 @@ std::vector<Token> lex(std::string_view source) {
         if (next == quote) break;
       }
       result.push_back({std::string(source.substr(start, i-start)), false, true,
-                        start_line, start_column});
+                        start_line, start_column,
+                        static_cast<std::uint32_t>(start),
+                        static_cast<std::uint32_t>(i)});
     } else {
       ++i;
       if (i < source.size()) {
@@ -240,7 +323,9 @@ std::vector<Token> lex(std::string_view source) {
             pair == "||" || pair == "**") ++i;
       }
       result.push_back({std::string(source.substr(start, i-start)), false, false,
-                        start_line, start_column});
+                        start_line, start_column,
+                        static_cast<std::uint32_t>(start),
+                        static_cast<std::uint32_t>(i)});
     }
     advance(start, i);
   }
@@ -281,15 +366,23 @@ class Reader {
   std::size_t position_ = 0;
   std::uint64_t origin_id_ = 0;
   std::uint32_t base_line_ = 1, base_column_ = 1;
-  ExprId append(Node node) {
+  ExprId append(Node node, std::uint32_t source_begin = UINT32_MAX) {
     const auto index = position_ == 0 ? 0 : position_ - 1;
-    const auto span = tokens_.empty() ? SourceSpan{} :
-        SourceSpan{base_line_ + tokens_[std::min(index, tokens_.size() - 1)].line - 1,
-                   tokens_[std::min(index, tokens_.size() - 1)].line == 1
-                       ? base_column_ + tokens_[std::min(index, tokens_.size() - 1)].column - 1
-                       : tokens_[std::min(index, tokens_.size() - 1)].column,
-                   origin_id_};
+    SourceSpan span;
+    if (!tokens_.empty()) {
+      const auto& last = tokens_[std::min(index, tokens_.size() - 1)];
+      span.line = base_line_ + last.line - 1;
+      span.column = last.line == 1
+          ? base_column_ + last.column - 1 : last.column;
+      span.origin_id = origin_id_;
+      span.source_begin = source_begin == UINT32_MAX
+          ? last.source_begin : source_begin;
+      span.source_end = last.source_end;
+    }
     return arena_.append(std::move(node), span);
+  }
+  std::uint32_t source_begin(ExprId id) const {
+    return arena_.span(id).source_begin;
   }
   bool take(const char* spelling) {
     if (position_ < tokens_.size() && tokens_[position_].text == spelling) { ++position_; return true; }
@@ -306,9 +399,11 @@ class Reader {
         if (position_ + 1 < tokens_.size() && tokens_[position_].word &&
             (tokens_[position_ + 1].text == ":" ||
              tokens_[position_ + 1].text == "=")) {
+          const auto argument_begin = tokens_[position_].source_begin;
           const auto name = tokens_[position_++].text;
           ++position_;
-          args.push_back(append(NamedArgument{name, expression(0)}));
+          args.push_back(append(NamedArgument{name, expression(0)},
+                                argument_begin));
         } else {
           args.push_back(expression(0));
         }
@@ -324,68 +419,84 @@ class Reader {
       if (position_ + 1 < tokens_.size() && tokens_[position_].word &&
           (tokens_[position_ + 1].text == ":" ||
            tokens_[position_ + 1].text == "=")) {
+        const auto item_begin = tokens_[position_].source_begin;
         const auto name = tokens_[position_++].text;
         ++position_;
-        items.push_back(append(NamedArgument{name, expression(0)}));
+        items.push_back(append(NamedArgument{name, expression(0)}, item_begin));
       } else items.push_back(expression(0));
     } while (take(","));
     expect(close == ']' ? "]" : "}");
     return items;
   }
-  ExprId message_primary() {
+  ExprId message_primary(std::uint32_t message_begin) {
     if (position_ == tokens_.size() || !tokens_[position_].word)
       throw std::invalid_argument("EST message requires a target");
-    ExprId target = append(Identifier{tokens_[position_++].text});
+    const auto target_begin = tokens_[position_].source_begin;
+    ExprId target = append(Identifier{tokens_[position_++].text}, target_begin);
     for (;;) {
       if (!take(".")) throw std::invalid_argument("EST message requires target.Handler");
       if (position_ == tokens_.size() || !tokens_[position_].word)
         throw std::invalid_argument("EST message requires handler name");
       const auto name = tokens_[position_++].text;
       if (position_ < tokens_.size() && tokens_[position_].text == "(")
-        return append(Message{target, name, call_arguments()});
-      target = append(Member{target, name});
+        return append(Message{target, name, call_arguments()}, message_begin);
+      target = append(Member{target, name}, source_begin(target));
     }
   }
   ExprId primary() {
-    if (take("not")) return append(Unary{"not", expression(4)});
-    if (take("~")) return append(Unary{"~", expression(11)});
-    if (take("-")) return append(Unary{"-", expression(11)});
-    if (take("+")) return append(Unary{"+", expression(11)});
+    if (position_ < tokens_.size() && tokens_[position_].text == "not") {
+      const auto begin = tokens_[position_++].source_begin;
+      return append(Unary{"not", expression(4)}, begin);
+    }
+    for (const auto* op : {"~", "-", "+"}) {
+      if (position_ < tokens_.size() && tokens_[position_].text == op) {
+        const auto begin = tokens_[position_++].source_begin;
+        return append(Unary{op, expression(11)}, begin);
+      }
+    }
     if (position_ + 2 < tokens_.size() && tokens_[position_].text == "message" &&
         tokens_[position_ + 1].word && tokens_[position_ + 2].text == ".") {
+      const auto message_begin = tokens_[position_].source_begin;
       ++position_;
-      return message_primary();
+      return message_primary(message_begin);
     }
     ExprId id = 0;
-    if (take("[")) {
-      id = append(Collection{'[', collection_items(']')});
-    } else if (take("{")) {
-      id = append(Collection{'{', collection_items('}')});
+    if (position_ < tokens_.size() && tokens_[position_].text == "[") {
+      const auto collection_begin = tokens_[position_].source_begin;
+      ++position_;
+      id = append(Collection{'[', collection_items(']')},
+                   collection_begin);
+    } else if (position_ < tokens_.size() && tokens_[position_].text == "{") {
+      const auto collection_begin = tokens_[position_].source_begin;
+      ++position_;
+      id = append(Collection{'{', collection_items('}')},
+                   collection_begin);
     } else if (take("(")) {
+      const auto group_begin = tokens_[position_ - 1].source_begin;
       const auto first = expression(0);
       if (take(",")) {
         std::vector<ExprId> elements{first};
         do { elements.push_back(expression(0)); } while (take(","));
         expect(")");
-        id = append(Tuple{std::move(elements)});
+        id = append(Tuple{std::move(elements)}, group_begin);
       } else {
         expect(")");
-        id = append(Parenthesized{first});
+        id = append(Parenthesized{first}, group_begin);
       }
     } else {
       if (position_ == tokens_.size()) throw std::invalid_argument("EST missing expression");
       const auto token = tokens_[position_++];
-      id = token.text == "_" ? append(Placeholder{})
+      id = token.text == "_" ? append(Placeholder{}, token.source_begin)
           : token.literal || token.text == "true" || token.text == "false"
-          ? append(Literal{token.text})
-          : token.word ? append(Identifier{token.text})
+          ? append(Literal{token.text}, token.source_begin)
+          : token.word ? append(Identifier{token.text}, token.source_begin)
           : throw std::invalid_argument("EST unsupported expression token");
     }
     while (position_ < tokens_.size()) {
       if (take(".")) {
         if (position_ == tokens_.size() || !tokens_[position_].word)
           throw std::invalid_argument("EST expected member name");
-        id = append(Member{id, tokens_[position_++].text});
+        id = append(Member{id, tokens_[position_++].text}, source_begin(id));
       } else if (take("[")) {
         const auto* type_name = std::get_if<Identifier>(&arena_.at(id));
         if (type_name && !type_name->name.empty() &&
@@ -398,15 +509,16 @@ class Reader {
           if (position_ < tokens_.size() && tokens_[position_].text == "(") {
             auto arguments = call_arguments();
             id = append(Constructor{id, std::move(type_arguments),
-                                           std::move(arguments)});
+                                           std::move(arguments)}, source_begin(id));
             continue;
           }
-          id = append(Constructor{id, std::move(type_arguments), {}});
+          id = append(Constructor{id, std::move(type_arguments), {}},
+                      source_begin(id));
           continue;
         }
         const auto index = expression(0);
         expect("]");
-        id = append(Index{id, index});
+        id = append(Index{id, index}, source_begin(id));
       } else if (take("(")) {
         --position_;
         auto arguments = call_arguments();
@@ -419,8 +531,9 @@ class Reader {
              std::isupper(static_cast<unsigned char>(named->name.front()))) ||
             (member_base && !member_base->name.empty() &&
              std::isupper(static_cast<unsigned char>(member_base->name.front())));
-        id = constructor ? append(Constructor{id, {}, std::move(arguments)})
-                         : append(Call{id, std::move(arguments)});
+        id = constructor ? append(Constructor{id, {}, std::move(arguments)},
+                                   source_begin(id))
+                         : append(Call{id, std::move(arguments)}, source_begin(id));
       } else break;
     }
     return id;
@@ -438,9 +551,10 @@ class Reader {
         if (existing) {
           auto stages = existing->stages;
           stages.push_back(right);
-          left = append(Pipeline{existing->input, std::move(stages)});
-        } else left = append(Pipeline{left, {right}});
-      } else left = append(Binary{op, left, right});
+          left = append(Pipeline{existing->input, std::move(stages)},
+                        source_begin(existing->input));
+        } else left = append(Pipeline{left, {right}}, source_begin(left));
+      } else left = append(Binary{op, left, right}, source_begin(left));
     }
     return left;
   }
@@ -1074,13 +1188,6 @@ std::string dump_node(const Arena& arena, ExprId id) {
 
 static void populate_impl(Program& program, std::vector<Stmt>* additional,
                           std::uint64_t origin_id) {
-  const auto current_mode = mode();
-  if (current_mode == Mode::Off) {
-    if (const char* stats = std::getenv("MOSS_EST_STATS"); stats &&
-        std::string_view(stats) == "1")
-      std::cerr << "MOSS_EST_STATS arena_size=0 handle_count=0\n";
-    return;
-  }
   const auto compare_attempts_before = shadow_attempts;
   const auto compare_matches_before = shadow_compared;
   const auto compare_unparsed_before = shadow_unparsed;
@@ -1232,6 +1339,8 @@ static void populate_impl(Program& program, std::vector<Stmt>* additional,
     if (additional && (!s.expression_handles.empty() || s.est_raw_form)) return;
     set_location(s.line, s.text);
     const auto owner = next_owner++;
+    if (s.kind == Stmt::Kind::For || s.kind == Stmt::Kind::Var)
+      s.est_binding_name = trim(s.a);
     switch (s.kind) {
       case Stmt::Kind::If: case Stmt::Kind::While:
         bind(s.expression_handles, owner, ExprSlot::Condition, 0, s.a); break;
@@ -1276,6 +1385,7 @@ static void populate_impl(Program& program, std::vector<Stmt>* additional,
       case Stmt::Kind::Call: {
         assert(!s.est_raw_form.has_value());
         s.est_raw_form = RawForm::ExprStmt;
+        bind(s.expression_handles, owner, ExprSlot::Expression, 0, s.text);
         bind(s.expression_handles, owner, ExprSlot::Receiver, 0, s.a);
         for (std::uint32_t index = 0; index < s.args.size(); ++index)
           bind(s.expression_handles, owner, ExprSlot::Argument, index, s.args[index]);
@@ -1324,11 +1434,23 @@ static void populate_impl(Program& program, std::vector<Stmt>* additional,
   auto body = [&](std::vector<Stmt>& statements) {
     for (auto& current : statements) statement(current);
   };
+  auto failure_arms = [&](std::vector<FailureArm>& arms) {
+    if (dump_enabled)
+      std::cerr << "MOSS_EST_FAILURE_ARMS count=" << arms.size() << '\n';
+    for (auto& arm : arms) {
+      if (dump_enabled)
+        std::cerr << "MOSS_EST_FAILURE_ARM line=" << arm.line
+                  << " body=" << arm.body.size() << '\n';
+      body(arm.body);
+      if (arm.execution_body) body(*arm.execution_body);
+    }
+  };
   if (additional) body(*additional);
   else if (program.main) body(program.main->body);
   if (!additional) {
   for (auto& function : program.functions) {
     body(function.body);
+    if (function.execution_body) body(*function.execution_body);
     if (function.result_expression) {
       set_location(function.result_line, *function.result_expression);
       bind(function.expression_handles, next_owner++, ExprSlot::ReturnValue, 0,
@@ -1341,10 +1463,17 @@ static void populate_impl(Program& program, std::vector<Stmt>* additional,
       bind(field.expression_handles, next_owner++, ExprSlot::Initializer, 0,
            field.init);
     }
-    for (auto& handler : domain.handlers) body(handler.body);
+  for (auto& handler : domain.handlers) {
+      body(handler.body);
+      if (handler.execution_body) body(*handler.execution_body);
+      failure_arms(handler.failure_arms);
+      if (handler.execution_failure_arms)
+        failure_arms(*handler.execution_failure_arms);
+    }
   }
   for (auto& object : program.objects) for (auto& method : object.methods) {
     body(method.body);
+    if (method.execution_body) body(*method.execution_body);
     if (method.result_expression) {
       set_location(method.result_line, *method.result_expression);
       bind(method.expression_handles, next_owner++, ExprSlot::ReturnValue, 0,
@@ -1434,6 +1563,29 @@ static void populate_impl(Program& program, std::vector<Stmt>* additional,
     auto same_a = parse_expression(arena, "same.path[index]");
     auto same_b = parse_expression(arena, "same.path[index]");
     assert(same_a != same_b);
+    TypeContext fact_type_context;
+    auto parsed_fact_type = Type::parse_canonical("Int");
+    assert(parsed_fact_type);
+    SemanticFacts recorded_facts;
+    recorded_facts.type = *parsed_fact_type;
+    recorded_facts.specialization_result = "spec-result-v1:test";
+    recorded_facts.resolved_target = "callable-v1:test";
+    recorded_facts.inferred_effect = Effect::Consume;
+    arena.record_facts(same_a, "fn:fact-test@Int", recorded_facts);
+    const auto* retained_facts = arena.facts(same_a, "fn:fact-test@Int");
+    assert(retained_facts && retained_facts->type &&
+           retained_facts->type->structurally_equal(**parsed_fact_type) &&
+           retained_facts->specialization_result == "spec-result-v1:test" &&
+           retained_facts->resolved_target == "callable-v1:test" &&
+           retained_facts->inferred_effect == Effect::Consume);
+    assert(!arena.facts(same_a, "fn:fact-test@String"));
+    Program copied_with_facts = copied;
+    assert(copied_with_facts.expression_arena == program.expression_arena &&
+           copied_with_facts.expression_arena->facts(
+               same_a, "fn:fact-test@Int"));
+    const auto fresh_fact_occurrence = fresh_occurrence(arena, same_a);
+    assert(fresh_fact_occurrence != same_a &&
+           !arena.facts(fresh_fact_occurrence, "fn:fact-test@Int"));
     const auto* old_chain = std::get_if<Index>(&arena.at(same_a));
     assert(old_chain);
     const auto fresh = fresh_occurrence(arena, same_a);
@@ -1447,6 +1599,22 @@ static void populate_impl(Program& program, std::vector<Stmt>* additional,
     const auto location = arena.span(located);
     assert(location.line == 2 && location.column == 3 &&
            location.origin_id == 0x271b);
+    const std::string ranged_source = "  alpha + beta[k]  ";
+    const auto ranged = parse_expression(arena, ranged_source);
+    const auto ranged_span = arena.span(ranged);
+    assert(ranged_span.source_begin == 2 &&
+           ranged_span.source_end == ranged_source.size() - 2 &&
+           ranged_source.substr(ranged_span.source_begin,
+               ranged_span.source_end - ranged_span.source_begin) ==
+               "alpha + beta[k]");
+    const auto* ranged_binary = std::get_if<Binary>(&arena.at(ranged));
+    assert(ranged_binary &&
+           ranged_source.substr(arena.span(ranged_binary->left).source_begin,
+               arena.span(ranged_binary->left).source_end -
+                   arena.span(ranged_binary->left).source_begin) == "alpha" &&
+           ranged_source.substr(arena.span(ranged_binary->right).source_begin,
+               arena.span(ranged_binary->right).source_end -
+                   arena.span(ranged_binary->right).source_begin) == "beta[k]");
     for (ExprId id = 0; id < arena.size(); ++id) {
       const auto node_span = arena.span(id);
       assert(node_span.line > 0 && node_span.column > 0);
@@ -1460,11 +1628,18 @@ static void populate_impl(Program& program, std::vector<Stmt>* additional,
            arena.span(loaded[0].expression_handles.front().expr).origin_id == 0x27b);
     const auto old_id = retained.front().expr;
     const auto old_dump = dump_node(arena, old_id);
+    SemanticFacts rebuilt_facts;
+    rebuilt_facts.resolved_target = "callable-v1:old";
+    arena.record_facts(old_id, "fn:rebuild-test", rebuilt_facts);
     auto rebuilt = retained;
     const auto& old_handle = retained.front();
     rebuild_slot(arena, rebuilt, old_handle.owner, old_handle.slot,
                  old_handle.argument_index, "replacement + 1");
     assert(rebuilt.front().expr != old_id && dump_node(arena, old_id) == old_dump);
+    assert(arena.facts(old_id, "fn:rebuild-test") &&
+           arena.facts(old_id, "fn:rebuild-test")->resolved_target ==
+               "callable-v1:old" &&
+           !arena.facts(rebuilt.front().expr, "fn:rebuild-test"));
     const char* stale = std::getenv("MOSS_EST_STALE_TEST");
     if (stale && std::string_view(stale) == "1") {
       Stmt stale_stmt;

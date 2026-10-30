@@ -1,0 +1,11 @@
+fn f(value: Int) -> Int:
+  return value
+
+fn g(value: Int) -> Int:
+  return value
+
+fn main():
+  xs = [1, 2]
+  grouped = (xs |> map(f)) |> count
+  flat = xs |> map(f) |> count
+  echo grouped + flat
