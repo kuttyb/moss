@@ -45,9 +45,10 @@
     } else leaves.emplace_back(path, type);
   }
 
-  static string physical_leaf_binding(string path) {
+  string physical_leaf_binding(string path) const {
     string result = "__moss_storage_";
-    for (const auto& part : split_top_level(path, '.')) result += std::to_string(part.size()) + "_" + part;
+    const auto parts = tree_member_path(path).value_or(vector<string>{});
+    for (const auto& part : parts) result += std::to_string(part.size()) + "_" + part;
     return result;
   }
 

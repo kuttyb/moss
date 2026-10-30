@@ -42,7 +42,7 @@ CONSUMER_PATHS = {
 }
 EXTENSIONS = (".cpp", ".hpp", ".inc")
 EXEMPTIONS = ROOT / "docs/phase27/27_3_STRING_READER_EXEMPTIONS.md"
-EXEMPTION_ENTRY = re.compile(r"^- `([^`:]+):(\d+) \| ([a-z_]+)` — (.+)$")
+EXEMPTION_ENTRY = re.compile(r"^- `([^`|]+) \| ([A-Za-z_][A-Za-z0-9_:]*) \| ([a-z_]+)` — (.+)$")
 
 
 def load_exemptions():
@@ -55,14 +55,75 @@ def load_exemptions():
         match = EXEMPTION_ENTRY.match(line)
         if not match:
             raise SystemExit(f"malformed expression-reader exemption at {EXEMPTIONS}:{line_no}")
-        path, source_line, api, reason = match.groups()
+        path, function, api, reason = match.groups()
         if not reason.strip():
             raise SystemExit(f"empty expression-reader exemption at {EXEMPTIONS}:{line_no}")
-        key = (path, int(source_line), api)
+        key = (path.strip(), function, api)
         if key in entries:
             raise SystemExit(f"duplicate expression-reader exemption: {key}")
         entries[key] = reason
     return entries
+
+
+def function_ranges(source, names):
+    """Find named C++ function bodies for fail-closed exemption accounting."""
+    ranges = {}
+    for name in names:
+        candidates = []
+        for match in re.finditer(r"\b" + re.escape(name) + r"\s*\(", source):
+            opening = source.find("(", match.start())
+            depth = 0
+            quote = None
+            escaped = False
+            closing = None
+            for index in range(opening, len(source)):
+                char = source[index]
+                if quote:
+                    if escaped: escaped = False
+                    elif char == "\\": escaped = True
+                    elif char == quote: quote = None
+                    continue
+                if char in ('"', "'"): quote = char
+                elif char == "(": depth += 1
+                elif char == ")":
+                    depth -= 1
+                    if depth == 0:
+                        closing = index + 1
+                        break
+            if closing is None: continue
+            cursor = closing
+            while cursor < len(source) and source[cursor].isspace(): cursor += 1
+            if source.startswith("const", cursor):
+                cursor += len("const")
+                while cursor < len(source) and source[cursor].isspace(): cursor += 1
+            if cursor >= len(source) or source[cursor] != "{": continue
+            body_depth = 0
+            quote = None
+            escaped = False
+            end = None
+            for index in range(cursor, len(source)):
+                char = source[index]
+                if quote:
+                    if escaped: escaped = False
+                    elif char == "\\": escaped = True
+                    elif char == quote: quote = None
+                    continue
+                if char in ('"', "'"): quote = char
+                elif char == "{": body_depth += 1
+                elif char == "}":
+                    body_depth -= 1
+                    if body_depth == 0:
+                        end = index + 1
+                        break
+            if end is not None:
+                start_line = source.count("\n", 0, match.start()) + 1
+                end_line = source.count("\n", 0, end) + 1
+                candidates.append((start_line, end_line))
+        if len(candidates) == 1:
+            ranges[name] = candidates[0]
+        elif candidates:
+            raise SystemExit(f"ambiguous function exemption target {name}: {candidates}")
+    return ranges
 
 
 REACH_FUNCTIONS = (
@@ -163,9 +224,16 @@ def sites(commit=None):
     found = collections.Counter()
     exemptions = load_exemptions() if commit is None else {}
     matched_exemptions = set()
+    exemption_site_counts = collections.Counter()
     for relative in paths(commit):
         consumer = consumer_for(relative)
         source = read_source(relative, commit)
+        exemption_names = {function for path, function, _api in exemptions
+                           if path == relative} if commit is None else set()
+        ranges = function_ranges(source, exemption_names)
+        missing_functions = exemption_names - set(ranges)
+        if missing_functions:
+            raise SystemExit("missing exemption function(s): " + ", ".join(sorted(missing_functions)))
         reach = reach_lines(source) if relative == "src/moss.cpp" else set()
         for line_no, line in enumerate(source.splitlines(), 1):
             site_consumer = ("reach_walk" if line_no in reach else consumer)
@@ -173,8 +241,12 @@ def sites(commit=None):
             # helper definitions while also containing the reach walk.)
             for match in PATTERN.finditer(line):
                 api = match[1]
-                if (relative, line_no, api) in exemptions:
-                    matched_exemptions.add((relative, line_no, api))
+                function = next((name for name, (start, end) in ranges.items()
+                                 if start <= line_no <= end), None)
+                key = (relative, function, api)
+                if function is not None and key in exemptions:
+                    matched_exemptions.add(key)
+                    exemption_site_counts[key] += 1
                     continue
                 site_consumer = ("reach_walk" if line_no in reach else consumer)
                 # The source parser's local identifier predicate validates
@@ -217,6 +289,10 @@ def sites(commit=None):
     stale = sorted(set(exemptions) - matched_exemptions)
     if stale:
         raise SystemExit("stale expression-reader exemptions: " + ", ".join(map(str, stale)))
+    duplicated = sorted(key for key, count in exemption_site_counts.items() if count != 1)
+    if duplicated:
+        raise SystemExit("exemption function gained multiple reader sites: " +
+                         ", ".join(f"{key} ({exemption_site_counts[key]})" for key in duplicated))
     return found
 
 
