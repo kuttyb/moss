@@ -884,20 +884,7 @@
             parameter.type;
     }
     for (const auto& statement : function->second->body) {
-      string expression = statement.kind == Stmt::Kind::Message
-          ? fileio_message_source(statement) :
-          statement.kind == Stmt::Kind::Call ||
-          statement.kind == Stmt::Kind::Raw ||
-          statement.kind == Stmt::Kind::Echo ? statement.text :
-          statement.kind == Stmt::Kind::Reply ||
-          statement.kind == Stmt::Kind::Return ||
-          statement.kind == Stmt::Kind::If ||
-          statement.kind == Stmt::Kind::While ||
-          statement.kind == Stmt::Kind::Match ? statement.a : statement.b;
-      auto blocking = statement.kind == Stmt::Kind::Message
-          ? fileio_blocking_message(statement.a, statement.b, env,
-                                    statement.args, visited)
-          : fileio_blocking_expression(expression, env, visited);
+      auto blocking = fileio_blocking_statement(statement, env, visited);
       if (blocking)
         return blocking;
       if (statement.kind == Stmt::Kind::Let ||
@@ -958,20 +945,7 @@
           : parameter.type;
     }
     for (const auto& statement : handler->body) {
-      string expression = statement.kind == Stmt::Kind::Message
-          ? fileio_message_source(statement) :
-          statement.kind == Stmt::Kind::Call ||
-          statement.kind == Stmt::Kind::Raw ||
-          statement.kind == Stmt::Kind::Echo ? statement.text :
-          statement.kind == Stmt::Kind::Reply ||
-          statement.kind == Stmt::Kind::Return ||
-          statement.kind == Stmt::Kind::If ||
-          statement.kind == Stmt::Kind::While ||
-          statement.kind == Stmt::Kind::Match ? statement.a : statement.b;
-      auto blocking = statement.kind == Stmt::Kind::Message
-          ? fileio_blocking_message(statement.a, statement.b, env,
-                                    statement.args, visited)
-          : fileio_blocking_expression(expression, env, visited);
+      auto blocking = fileio_blocking_statement(statement, env, visited);
       if (blocking)
         return blocking;
       if (statement.kind == Stmt::Kind::Let ||
@@ -1005,21 +979,8 @@
         for (const auto& route : domain.routes) env[route.name] = route.type;
         for (const auto& param : handler.params) env[param.name] = param.type;
         for (const auto& statement : handler.body) {
-          string operation = statement.kind == Stmt::Kind::Message
-              ? fileio_message_source(statement) :
-              statement.kind == Stmt::Kind::Call ||
-              statement.kind == Stmt::Kind::Raw ||
-              statement.kind == Stmt::Kind::Echo ? statement.text :
-              statement.kind == Stmt::Kind::Reply ||
-              statement.kind == Stmt::Kind::Return ||
-              statement.kind == Stmt::Kind::If ||
-              statement.kind == Stmt::Kind::While ||
-              statement.kind == Stmt::Kind::Match ? statement.a : statement.b;
           std::set<string> visited;
-          auto blocking = statement.kind == Stmt::Kind::Message
-              ? fileio_blocking_message(statement.a, statement.b, env,
-                                        statement.args, visited)
-              : fileio_blocking_expression(operation, env, visited);
+          auto blocking = fileio_blocking_statement(statement, env, visited);
           if (blocking) {
             string states;
             for (const auto& state : other_state) {
