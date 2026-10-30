@@ -13368,3 +13368,9 @@ check` passed 154/154, zero failures or skips. Branch remains unmerged.
 - Five alternating `moss-opt` off repeats vs phase27-2-m1 n032 medians now match within noise: w2 baseline 1.866s / candidate 1.875s (+0.5%); w3 baseline 0.868s / candidate 0.865s (-0.3%). The optimized historical Phase 25.4 off performance script passes all workloads; log `tmp/phase27-3/perf-gate-off-opt-cache-final.log`.
 - Three shadow repeats n032 medians: w2 2.126s vs off 1.875s (1.13x); w3 1.031s vs off 0.865s (1.19x). No timeout; complete CP-F sanitizer/corpus evidence and fresh CP-E remain necessary for final source.
 - Detailed timing artifacts: `tmp/phase27-3/strip-cache-opt-repeats/`, `pipeline-opt-repeats/`, `opt-shadow-cache-final/`; focused logs `check-est-strip-cache.log`, `check-string-debt-strip-cache.log`. No full `make check`, conformance, final compiler-perf comparison vs merge first parent/phase27-1m1, merge, or tag has run.
+
+### Phase 27.3 final-cache CP-F — 2026-10-30
+
+- Exact verdict: **CP-F verdict: GO**. Frozen candidate `2bdc2ea16cff57882dcfb45f99b5c2df39d6d98f`; baseline `04be1a1bbbc7a4fd8fe2e4090b4b5bad5dd573e4`; evidence commit `2bc7386ead3e6f5042acce3810ed63505bccf5fe`, imported to this branch as `4a194cd8`.
+- Off/shadow sweeps: 2,082 common sources each, zero verdict/diagnostic differences and zero timeouts. ASan/UBSan: candidate 2,141, baseline 2,118, zero findings. Overflow, Fast Debug, Rust default/`-O`, package-mode and `.mossi` comparisons all pass. Full report/artifacts are under `docs/phase27/adversarial/CP_F_PHASE27_3_FINAL_CACHE.md` and `tests/phase27/adversarial/cp-f-phase27-3-final-cache/`.
+- CP-F ran no compiler perf tests. Relative optimized w2/w3 off timing is now within noise on n032; the historical optimized off gate passes. Fresh CP-E, full `make check` off/shadow, conformance gates, final compiler-perf vs merge first parent/phase27-1m1, merge, and tag remain outstanding.
