@@ -1,0 +1,22 @@
+[optimizer] exit=1
+remaining expression-text reader call count (2): optimizer/plain_identifier
+remaining expression-text reader call count (1): optimizer/split_top_level
+remaining expression-text reader call count (4): optimizer/trim_compare
+remaining expression-text reader call count (3): optimizer/word_occurrences
+
+[parser] exit=1
+remaining expression-text reader call count (2): parser/parse_member_call
+remaining expression-text reader call count (2): parser/parse_simple_call
+remaining expression-text reader call count (6): parser/plain_identifier
+remaining expression-text reader call count (5): parser/split_top_level
+remaining expression-text reader call count (3): parser/top_level_assignment
+remaining expression-text reader call count (2): parser/top_level_colon
+remaining expression-text reader call count (3): parser/trim_compare
+
+[reach_walk] exit=0
+audited raw Stmt NAME comparisons: 40
+audited raw Stmt binding comparisons: 9
+
+[fast_debug] exit=0
+audited raw Stmt NAME comparisons: 40
+audited raw Stmt binding comparisons: 9

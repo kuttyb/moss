@@ -1,0 +1,8 @@
+{
+  "protocol_version": 1,
+  "schema_version": "moss-agent-1",
+  "compiler_version": "0.1.0",
+  "command": "check",
+  "ok": true,
+  "result": {"source_file": "/home/owner/daji/code/moss/tmp/cp-e-phase27-3/tests/phase27/adversarial/cp-e-c211da42/closure_enum_recovery.moss", "diagnostics": []}
+}
