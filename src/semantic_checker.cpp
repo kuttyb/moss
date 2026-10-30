@@ -18442,8 +18442,8 @@ class Checker {
       collect_local_call_sites(line, index, env, implicit_owner, calls);
       return;
     }
-    if (value.size() > 1 && (value.front() == '-' || value.front() == '+'))
-      collect_local_call_sites(line, trim(value.substr(1)), env,
+    if (tree_parse_unary(value, unary_operation, unary_operand))
+      collect_local_call_sites(line, unary_operand, env,
                                implicit_owner, calls);
   }
 
@@ -18480,11 +18480,9 @@ class Checker {
       if (auto binary = tree_split_binary(value, operators))
         return has_unresolved_local_callable_call(binary->first, env) ||
             has_unresolved_local_callable_call(binary->second, env);
-    if (starts_with(value, "not "))
-      return has_unresolved_local_callable_call(trim(value.substr(4)), env);
-    if (!value.empty() && (value.front() == '-' || value.front() == '+' ||
-                           value.front() == '~'))
-      return has_unresolved_local_callable_call(trim(value.substr(1)), env);
+    string unary_operation, unary_operand;
+    if (tree_parse_unary(value, unary_operation, unary_operand))
+      return has_unresolved_local_callable_call(unary_operand, env);
 
     string receiver, member;
     vector<string> arguments;
