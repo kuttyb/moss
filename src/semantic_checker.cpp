@@ -2413,10 +2413,10 @@ class Checker {
             return solver.resolve(container->type_args[1]);
         }
       }
-      const size_t dot = value.rfind('.');
-      if (dot != string::npos) {
-        auto receiver = known_expression(value.substr(0, dot));
-        if (auto field = nominal_field(receiver, value.substr(dot + 1)))
+      string member_base, member_name;
+      if (tree_parse_member_access(value, member_base, member_name)) {
+        auto receiver = known_expression(member_base);
+        if (auto field = nominal_field(receiver, member_name))
           return solver.resolve(field);
       }
       return nullptr;
@@ -15441,11 +15441,11 @@ class Checker {
       location->path.push_back("[]");
       return location;
     }
-    auto dot = value.rfind('.');
-    if (dot != string::npos && tree_simple_identifier(trim(value.substr(dot + 1)))) {
-      auto location = storage_location(value.substr(0, dot), env, require_known_root);
+    string member_base, member_name;
+    if (tree_parse_member_access(value, member_base, member_name)) {
+      auto location = storage_location(member_base, env, require_known_root);
       if (!location) return std::nullopt;
-      location->path.push_back(trim(value.substr(dot + 1)));
+      location->path.push_back(member_name);
       return location;
     }
     return std::nullopt;
@@ -17432,11 +17432,15 @@ class Checker {
     {
       // Prefix '-' reads its whole postfix operand (P25-S-ARCH-023): walk
       // `s.length()` for `-s.length()` rather than a method on `-s`.
-      string trimmed = trim(expression);
-      if (trimmed.size() > 1 && trimmed.front() == '-' && trimmed[1] != '-' &&
+      string trimmed = trim(expression), unary_operation, unary_operand;
+      string nested_operation, nested_operand;
+      if (tree_parse_unary(trimmed, unary_operation, unary_operand) &&
+          unary_operation == "-" &&
+          (!tree_parse_unary(unary_operand, nested_operation, nested_operand) ||
+           nested_operation != "-") &&
           !tree_split_binary(trimmed, {"+", "-", "*", "/", "%", "==", "!=", "<", ">",
                                   "<=", ">=", " and ", " or ", " xor "})) {
-        analyze_effect_expression(trim(trimmed.substr(1)), env, params, parameter_effects,
+        analyze_effect_expression(unary_operand, env, params, parameter_effects,
                                   receiver_effect, receiver_fields, Effect::Read);
         return;
       }
