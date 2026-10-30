@@ -15740,6 +15740,12 @@ class Checker {
       const EnvT& env,
       bool require_known_root = true) const {
     string value = tree_strip_expression_parens(tree_normalize_pipeline(trim(expression)));
+    if (auto syntax = checker_est_view(value); syntax && syntax->arena &&
+        syntax->root < syntax->arena->size() &&
+        std::holds_alternative<moss::est::Placeholder>(
+            syntax->arena->at(moss::est::unparenthesized(
+                *syntax->arena, syntax->root))))
+      return StorageLocation{"_", {}};
     if (tree_simple_identifier(value)) {
       if (require_known_root && !env.count(value)) return std::nullopt;
       if (current_object_ && value != "self" &&
