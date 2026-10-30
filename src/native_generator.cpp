@@ -1021,8 +1021,16 @@ class Generator {
         if (handle.source_fingerprint != fingerprint ||
             handle.arena_index >= p_.expression_arenas.size() ||
             !p_.expression_arenas[handle.arena_index]) continue;
-        return est::view(*p_.expression_arenas[handle.arena_index],
-                         handle.expr, expression);
+        const auto& arena = *p_.expression_arenas[handle.arena_index];
+        const auto span = arena.span(handle.expr);
+        // A fingerprint can match an identical expression nested in a larger
+        // source slot. Its node spans are relative to that parent buffer, so
+        // pairing it with the child text breaks EST projections (notably
+        // arithmetic in a Root message argument). Reparse unless this handle
+        // is rooted at the complete supplied expression.
+        if (span.source_begin != 0 || span.source_end != expression.size())
+          continue;
+        return est::view(arena, handle.expr, expression);
       }
     }
     return est::parse_view(expression);

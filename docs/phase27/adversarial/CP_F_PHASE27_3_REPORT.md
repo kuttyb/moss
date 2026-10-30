@@ -76,3 +76,8 @@ python3 tests/phase27/adversarial/cp-f-phase27-3/sanitize.py CANDIDATE_ASAN_UBSA
 ```
 
 No other full gate or compiler-perf run was started concurrently with this CP-F corpus/sanitizer work. No source files were edited. The complete streamed corpus, sanitizer rows, normalized summary, and exact reproducers are committed on `review/cp-f-phase27-3`.
+
+
+## Overflow correction follow-up
+
+Fixed at candidate checkpoint `NEXT COMMIT`: `expression_view_from_est` had reused a nested EST handle because its text fingerprint matched, even though its source span was relative to the parent expression. The emitter now requires a retained node span of `[0, expression.size())`; otherwise it reparses the exact child string. This preserves source ownership and restores EST binary projection. Build and the CP-F repro passed for baseline, candidate off, and candidate shadow across Fast Debug, native default, and native `-O`; every path prints `-9223372036854775808`. Focused EST and all four reader lint gates pass. Fresh CP-F re-review is still required.
