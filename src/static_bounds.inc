@@ -41,18 +41,13 @@
                                      const std::set<string>& fileio_owners,
                                      std::set<string>& mutated) const {
     expression = tree_strip_redundant_outer_parentheses(trim(expression));
-    for (const auto& prefix : vector<string>{"echo ", "reply ",
-                                              "return ", "message "})
-      if (starts_with(expression, prefix))
-        expression = trim(expression.substr(prefix.size()));
-    // Moss statements can contain expression sequences (notably echo's
-    // comma-separated operands). Inspect every component before trying to
-    // recognize a single call; otherwise a later call can mutate a value
-    // while an earlier component hides it from the bound proof.
-    auto sequence = tree_split_top_level(expression, ',');
-    if (sequence.size() > 1) {
-      for (const auto& item : sequence)
-        static_mark_possible_mutation(item, fileio_owners, mutated);
+    string message_target, message_handler;
+    vector<string> message_arguments;
+    if (tree_parse_message(expression, message_target, message_handler,
+                           message_arguments)) {
+      static_mark_possible_mutation(message_target, fileio_owners, mutated);
+      for (const auto& argument : message_arguments)
+        static_mark_possible_mutation(argument, fileio_owners, mutated);
       return;
     }
     // Split compound expressions before call recognition: the textual call
@@ -112,9 +107,9 @@
       }
       return;
     }
-    if (starts_with(expression, "not ") || starts_with(expression, "-")) {
-      static_mark_possible_mutation(expression.substr(
-          starts_with(expression, "not ") ? 4 : 1), fileio_owners, mutated);
+    string unary_operation, unary_operand;
+    if (tree_parse_unary(expression, unary_operation, unary_operand)) {
+      static_mark_possible_mutation(unary_operand, fileio_owners, mutated);
       return;
     }
     string base, index;
@@ -123,14 +118,13 @@
       static_mark_possible_mutation(index, fileio_owners, mutated);
       return;
     }
-    auto dot = expression.rfind('.');
-    if (dot != string::npos && tree_simple_identifier(trim(expression.substr(dot + 1)))) {
-      static_mark_possible_mutation(expression.substr(0, dot), fileio_owners, mutated);
+    string member_base, member_name;
+    if (tree_parse_member_access(expression, member_base, member_name)) {
+      static_mark_possible_mutation(member_base, fileio_owners, mutated);
       return;
     }
-    if (starts_with(expression, "[") && ends_with(expression, "]"))
-      for (const auto& item : tree_split_top_level(
-               expression.substr(1, expression.size() - 2), ','))
+    if (auto elements = tree_parse_vector_literal(expression))
+      for (const auto& item : *elements)
         static_mark_possible_mutation(item, fileio_owners, mutated);
   }
 
@@ -153,9 +147,18 @@
         break;
       case Stmt::Kind::Call:
       case Stmt::Kind::Raw:
-      case Stmt::Kind::Echo:
-      case Stmt::Kind::Message:
         expression = statement.text;
+        if (!statement.message_result.empty())
+          mutated.insert(statement.message_result);
+        break;
+      case Stmt::Kind::Echo:
+        for (const auto& argument : statement.args)
+          static_mark_possible_mutation(argument, fileio_owners, mutated);
+        break;
+      case Stmt::Kind::Message:
+        static_mark_possible_mutation(statement.a, fileio_owners, mutated);
+        for (const auto& argument : statement.args)
+          static_mark_possible_mutation(argument, fileio_owners, mutated);
         if (!statement.message_result.empty())
           mutated.insert(statement.message_result);
         break;
@@ -452,20 +455,14 @@
     string value = static_source_expression(source);
     if (auto fact = static_bound_bindings_.find(value);
         fact != static_bound_bindings_.end()) return fact->second.entries;
-    if (!starts_with(value, "[") || !ends_with(value, "]"))
-      return std::nullopt;
-    string items = trim(value.substr(1, value.size() - 2));
-    return items.empty() ? vector<string>{} : tree_split_top_level(items, ',');
+    return tree_parse_vector_literal(value);
   }
 
   std::optional<std::pair<string, string>> static_batch_request(
       string entry) const {
-    entry = trim(entry);
-    if (starts_with(entry, "(") && ends_with(entry, ")")) {
-      auto coordinates = tree_split_top_level(entry.substr(1, entry.size() - 2), ',');
-      if (coordinates.size() == 2)
-        return std::make_pair(coordinates[0], coordinates[1]);
-    }
+    if (auto coordinates = tree_parse_tuple_elements(entry);
+        coordinates && coordinates->size() == 2)
+      return std::make_pair((*coordinates)[0], (*coordinates)[1]);
     string constructor;
     vector<string> fields;
     if (tree_parse_simple_call(entry, constructor, fields) &&
@@ -525,9 +522,10 @@
         [&](string expression) -> std::optional<uint64_t> {
       expression = tree_strip_redundant_outer_parentheses(trim(expression));
       expression = static_source_expression(expression);
-      if (expression.size() >= 2 && expression.front() == '"' &&
-          expression.back() == '"')
-        return static_cast<uint64_t>(expression.size() - 2);
+      if (auto syntax = moss::est::parse_view(expression))
+        if (auto bytes =
+                moss::est::string_literal_source_payload_bytes(*syntax))
+          return bytes;
       if (auto concatenation = tree_split_binary(expression, {"+"})) {
         auto left = bounded_string(concatenation->first);
         auto right = bounded_string(concatenation->second);

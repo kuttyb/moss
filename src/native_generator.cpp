@@ -1120,6 +1120,25 @@ class Generator {
                                     outputs_written);
   }
 
+  bool tree_parse_member_access(const string& expression, string& base,
+                               string& member) const {
+    auto syntax = expression_view_from_est(expression);
+    return syntax && est::project_member_access(*syntax, base, member);
+  }
+
+  bool tree_parse_unary(const string& expression, string& operation,
+                        string& operand) const {
+    auto syntax = expression_view_from_est(expression);
+    return syntax && est::project_unary(*syntax, operation, operand);
+  }
+
+  bool tree_parse_message(const string& expression, string& target,
+                          string& handler, vector<string>& arguments) const {
+    auto syntax = expression_view_from_est(expression);
+    return syntax && est::project_message(
+        *syntax, target, handler, arguments);
+  }
+
   bool tree_parse_fileio_open(const string& expression,
                               vector<string>& arguments) const {
     auto syntax = expression_view_from_est(expression);

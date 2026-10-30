@@ -10635,10 +10635,27 @@ class Checker {
   }
 
   static bool tree_member_access(const string& text) {
-    auto syntax = moss::est::parse_view(text);
-    if (!syntax) return false;
     string base, member;
-    return moss::est::project_member_access(*syntax, base, member);
+    return tree_parse_member_access(text, base, member);
+  }
+
+  static bool tree_parse_member_access(const string& text, string& base,
+                                       string& member) {
+    auto syntax = moss::est::parse_view(text);
+    return syntax && moss::est::project_member_access(*syntax, base, member);
+  }
+
+  static bool tree_parse_unary(const string& text, string& operation,
+                               string& operand) {
+    auto syntax = moss::est::parse_view(text);
+    return syntax && moss::est::project_unary(*syntax, operation, operand);
+  }
+
+  static bool tree_parse_message(const string& text, string& target,
+                                 string& handler, vector<string>& arguments) {
+    auto syntax = moss::est::parse_view(text);
+    return syntax && moss::est::project_message(
+        *syntax, target, handler, arguments);
   }
 
   static std::optional<char> tree_named_argument_separator(const string& text) {
@@ -10660,6 +10677,12 @@ class Checker {
     if (moss::est::mode() == moss::est::Mode::Shadow)
       assert(moss::parse_vector_literal(text) == recovered);
     return recovered;
+  }
+
+  static std::optional<vector<string>> tree_parse_tuple_elements(
+      const string& text) {
+    auto syntax = moss::est::parse_view(text);
+    return syntax ? moss::est::project_tuple_elements(*syntax) : std::nullopt;
   }
 
   static bool tree_parse_enum_case_expression(const string& text, string& enum_name,

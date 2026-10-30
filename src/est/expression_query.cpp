@@ -579,6 +579,99 @@ bool project_member_access(const ExpressionView& e, std::string& base,
   return true;
 }
 
+bool project_unary(const ExpressionView& e, std::string& operation,
+                   std::string& operand) {
+  if (!e.arena || e.root >= e.arena->size()) return false;
+  const auto root = unparenthesized(*e.arena, e.root);
+  const auto* unary = std::get_if<Unary>(&e.arena->at(root));
+  if (!unary) return false;
+  auto source = e.source_text(unary->operand);
+  if (!source) return false;
+  operation = unary->op;
+  operand = std::move(*source);
+  return true;
+}
+
+bool project_message(const ExpressionView& e, std::string& target,
+                     std::string& handler,
+                     std::vector<std::string>& arguments) {
+  if (!e.arena || e.root >= e.arena->size()) return false;
+  const auto root = unparenthesized(*e.arena, e.root);
+  const auto* message = std::get_if<Message>(&e.arena->at(root));
+  if (!message) return false;
+  auto target_source = e.source_text(message->target);
+  auto argument_sources = child_texts(e, message->arguments);
+  if (!target_source || !argument_sources) return false;
+  target = std::move(*target_source);
+  handler = message->handler;
+  arguments = std::move(*argument_sources);
+  return true;
+}
+
+std::vector<MessageCall> message_calls(const ExpressionView& e) {
+  std::vector<MessageCall> result;
+  if (!e.arena || e.root >= e.arena->size()) return result;
+  std::function<void(ExprId)> visit = [&](ExprId id) {
+    if (id >= e.arena->size()) return;
+    const auto& node = e.arena->at(id);
+    if (const auto* message = std::get_if<Message>(&node)) {
+      auto target = e.source_text(message->target);
+      auto arguments = child_texts(e, message->arguments);
+      if (target && arguments)
+        result.push_back({std::move(*target), message->handler,
+                          std::move(*arguments)});
+      visit(message->target);
+      for (const auto argument : message->arguments) visit(argument);
+    } else if (const auto* call = std::get_if<Call>(&node)) {
+      visit(call->callee);
+      for (const auto argument : call->arguments) visit(argument);
+    } else if (const auto* unary = std::get_if<Unary>(&node)) {
+      visit(unary->operand);
+    } else if (const auto* binary = std::get_if<Binary>(&node)) {
+      visit(binary->left);
+      visit(binary->right);
+    } else if (const auto* member = std::get_if<Member>(&node)) {
+      visit(member->base);
+    } else if (const auto* index = std::get_if<Index>(&node)) {
+      visit(index->base);
+      visit(index->index);
+    } else if (const auto* grouped = std::get_if<Parenthesized>(&node)) {
+      visit(grouped->inner);
+    } else if (const auto* named = std::get_if<NamedArgument>(&node)) {
+      visit(named->value);
+    } else if (const auto* collection = std::get_if<Collection>(&node)) {
+      for (const auto child : collection->elements) visit(child);
+    } else if (const auto* tuple = std::get_if<Tuple>(&node)) {
+      for (const auto child : tuple->elements) visit(child);
+    } else if (const auto* constructor = std::get_if<Constructor>(&node)) {
+      visit(constructor->type);
+      for (const auto child : constructor->type_arguments) visit(child);
+      for (const auto child : constructor->arguments) visit(child);
+    } else if (const auto* pipeline = std::get_if<Pipeline>(&node)) {
+      visit(pipeline->input);
+      for (const auto child : pipeline->stages) visit(child);
+    }
+  };
+  visit(e.root);
+  return result;
+}
+
+std::optional<std::uint64_t> string_literal_source_payload_bytes(
+    const ExpressionView& e) {
+  if (!e.arena || e.root >= e.arena->size()) return std::nullopt;
+  const auto root = unparenthesized(*e.arena, e.root);
+  const auto* literal = std::get_if<Literal>(&e.arena->at(root));
+  if (!literal || literal->spelling.size() < 2 ||
+      literal->spelling.front() != '"' || literal->spelling.back() != '"')
+    return std::nullopt;
+  return static_cast<std::uint64_t>(literal->spelling.size() - 2);
+}
+
+bool contains_message(const ExpressionView& e) {
+  return e.arena && e.root < e.arena->size() &&
+      contains_message_node(*e.arena, e.root);
+}
+
 std::string strip_grouping(const ExpressionView& e) {
   std::string result;
   if (e.arena && e.root < e.arena->size() &&

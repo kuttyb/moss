@@ -75,6 +75,10 @@ struct Member { ExprId base; std::string name; };
 struct Index { ExprId base, index; };
 struct Parenthesized { ExprId inner; };
 struct Message { ExprId target; std::string handler; std::vector<ExprId> arguments; };
+struct MessageCall {
+  std::string target, handler;
+  std::vector<std::string> arguments;
+};
 struct NamedArgument { std::string name; ExprId value; char separator = '='; };
 struct Placeholder {};
 struct Collection { char delimiter; std::vector<ExprId> elements; };
@@ -172,6 +176,14 @@ bool project_bound_method(const ExpressionView& view, std::string& receiver,
                           std::string& method);
 bool project_member_access(const ExpressionView& view, std::string& base,
                            std::string& member);
+bool project_unary(const ExpressionView& view, std::string& operation,
+                   std::string& operand);
+bool project_message(const ExpressionView& view, std::string& target,
+                     std::string& handler, std::vector<std::string>& arguments);
+std::vector<MessageCall> message_calls(const ExpressionView& view);
+std::optional<std::uint64_t> string_literal_source_payload_bytes(
+    const ExpressionView& view);
+bool contains_message(const ExpressionView& view);
 std::string strip_grouping(const ExpressionView& view);
 std::string normalize_pipeline_tree(const ExpressionView& view);
 bool project_fileio_open(const ExpressionView& view,

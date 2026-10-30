@@ -438,9 +438,8 @@
         fileio_lifecycle_expression(line, binary->second, flow);
         return;
       }
-    if (starts_with(value, "[") && ends_with(value, "]")) {
-      for (const auto& item : tree_split_top_level(
-               value.substr(1, value.size() - 2), ','))
+    if (auto elements = tree_parse_vector_literal(value)) {
+      for (const auto& item : *elements)
         fileio_lifecycle_expression(line, item, flow);
       return;
     }
@@ -767,19 +766,14 @@
       string expression, const TypeEnv& env,
       std::set<string>& visited) const {
     expression = tree_strip_redundant_outer_parentheses(trim(expression));
-    if (starts_with(expression, "message ")) {
-      string target, handler;
-      vector<string> arguments;
-      if (tree_parse_member_call(trim(expression.substr(8)), target, handler,
-                            arguments))
-        if (auto nested = fileio_blocking_message(
-                target, handler, env, arguments, visited))
-          return *nested + " via message " + target + "." + handler;
+    string message_target, message_handler;
+    vector<string> message_arguments;
+    if (tree_parse_message(expression, message_target, message_handler,
+                           message_arguments)) {
+      if (auto nested = fileio_blocking_message(
+              message_target, message_handler, env, message_arguments, visited))
+        return *nested + " via message " + message_target + "." + message_handler;
     }
-    for (const auto& prefix : vector<string>{"echo ", "reply ",
-                                              "return ", "message "})
-      if (starts_with(expression, prefix))
-        expression = trim(expression.substr(prefix.size()));
     if (expression.empty()) return std::nullopt;
     auto values = tree_split_top_level(expression, ',');
     if (values.size() > 1) {
@@ -819,12 +813,56 @@
           return left;
         return fileio_blocking_expression(binary->second, env, visited);
       }
-    if (starts_with(expression, "[") && ends_with(expression, "]"))
-      for (const auto& item : tree_split_top_level(
-               expression.substr(1, expression.size() - 2), ','))
+    if (auto elements = tree_parse_vector_literal(expression))
+      for (const auto& item : *elements)
         if (auto nested = fileio_blocking_expression(item, env, visited))
           return nested;
     return std::nullopt;
+  }
+
+  std::optional<string> fileio_blocking_statement(
+      const Stmt& statement, const TypeEnv& env,
+      std::set<string>& visited) const {
+    if (statement.kind == Stmt::Kind::Message)
+      return fileio_blocking_message(statement.a, statement.b, env,
+                                     statement.args, visited);
+    auto inspect_arguments = [&](const vector<string>& arguments)
+        -> std::optional<string> {
+      for (const auto& argument : arguments)
+        if (auto nested = fileio_blocking_expression(argument, env, visited))
+          return nested;
+      return std::nullopt;
+    };
+    if (statement.kind == Stmt::Kind::Echo)
+      return inspect_arguments(statement.args);
+    if (statement.kind == Stmt::Kind::Call) {
+      if (statement.b.empty()) {
+        if (auto nested = inspect_arguments(statement.args)) return nested;
+        if (auto nested = fileio_blocking_helper(
+                statement.a, visited, env, statement.args))
+          return *nested + " via " + statement.a;
+        return std::nullopt;
+      }
+      if (auto nested = fileio_blocking_expression(statement.a, env, visited))
+        return nested;
+      if (auto nested = inspect_arguments(statement.args)) return nested;
+      if (fileio_operation_effect(statement.b) &&
+          (statement.a == "FileIO" ||
+           canonical_type_name(inferred_expr_type(statement.a, env).value_or("")) ==
+               "FileIO"))
+        return statement.b;
+      return std::nullopt;
+    }
+    if (statement.kind == Stmt::Kind::Raw)
+      return fileio_blocking_expression(statement.text, env, visited);
+    const string& expression =
+        statement.kind == Stmt::Kind::Return ||
+        statement.kind == Stmt::Kind::Reply ||
+        statement.kind == Stmt::Kind::If ||
+        statement.kind == Stmt::Kind::While ||
+        statement.kind == Stmt::Kind::Match
+            ? statement.a : statement.b;
+    return fileio_blocking_expression(expression, env, visited);
   }
 
   std::optional<string> fileio_blocking_helper(
