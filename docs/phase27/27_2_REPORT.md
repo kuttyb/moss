@@ -37,4 +37,4 @@ Compiler performance was measured against the merge's first parent `a4f4790f1434
 
 ## Merge delivery
 
-The local merge candidate has first parent `a4f4790f1434197a7cd995644bbf5d7ebce3fb0f`, the fetched `origin/main` head. Its full off and shadow suites passed 159/159 each before the performance escalation. It is pushed on `phase27-2-merge` for review; it is not integrated into `main` and has no `phase27-2-m1` tag.
+The pushed local merge candidate `adc70080` (report-only amendment of `a1242a1f`) has first parent `a4f4790f1434197a7cd995644bbf5d7ebce3fb0f`, the fetched `origin/main` head. Its full off and shadow suites passed 159/159 each on `a1242a1f` before the report-only amendment; no code or tests changed in that amendment. The repeated beyond-noise performance result triggers escalation. It is pushed on `phase27-2-merge` for review; it is not integrated into `main` and has no `phase27-2-m1` tag.
