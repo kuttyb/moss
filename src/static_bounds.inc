@@ -420,21 +420,25 @@
         auto right = static_exact_integer(binary->second, depth + 1);
         if (!left || !right) return std::nullopt;
         int64_t answer = 0;
-        // Recover the actual operator from the original split boundary.
-        size_t at = binary->first.size();
-        while (at < source.size() && std::isspace(
-            static_cast<unsigned char>(source[at]))) ++at;
-        char operation = at < source.size() ? source[at] : '\0';
-        if (operation == '+') {
+        // Recover the selected operator by asking EST for that exact root
+        // split, rather than inspecting characters between rendered children.
+        string operation;
+        for (const auto& candidate : vector<string>{"+", "-", "*", "/", "%"})
+          if (auto selected = tree_split_binary(source, {candidate});
+              selected && *selected == *binary) {
+            operation = candidate;
+            break;
+          }
+        if (operation == "+") {
           if (__builtin_add_overflow(*left, *right, &answer)) return std::nullopt;
-        } else if (operation == '-') {
+        } else if (operation == "-") {
           if (__builtin_sub_overflow(*left, *right, &answer)) return std::nullopt;
-        } else if (operation == '*') {
+        } else if (operation == "*") {
           if (__builtin_mul_overflow(*left, *right, &answer)) return std::nullopt;
-        } else if (operation == '/' || operation == '%') {
+        } else if (operation == "/" || operation == "%") {
           if (*right == 0 || (*left == INT64_MIN && *right == -1))
             return std::nullopt;
-          answer = operation == '/' ? *left / *right : *left % *right;
+          answer = operation == "/" ? *left / *right : *left % *right;
         } else return std::nullopt;
         return answer;
       }
