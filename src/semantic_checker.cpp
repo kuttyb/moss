@@ -327,10 +327,15 @@ struct CheckerEstViewCache {
     string source;
     std::shared_ptr<const moss::est::ExpressionView> view;
     std::shared_ptr<const moss::est::ExpressionView> named_argument_view;
+    bool index_projection_attempted = false;
+    std::optional<std::pair<string, string>> index_projection;
+    bool member_projection_attempted = false;
+    std::optional<std::pair<string, string>> member_projection;
   };
   std::unordered_map<size_t, vector<std::shared_ptr<Entry>>> views;
   size_t entries = 0;
   uint64_t hits = 0, misses = 0, after_cap = 0;
+  uint64_t projection_hits = 0, projection_misses = 0;
 };
 thread_local CheckerEstViewCache checker_est_view_cache;
 
@@ -340,6 +345,17 @@ void reset_checker_est_view_cache() {
   checker_est_view_cache.hits = 0;
   checker_est_view_cache.misses = 0;
   checker_est_view_cache.after_cap = 0;
+  checker_est_view_cache.projection_hits = 0;
+  checker_est_view_cache.projection_misses = 0;
+}
+
+CheckerEstViewCache::Entry* checker_est_view_entry(std::string_view source) {
+  const size_t hash = std::hash<std::string_view>{}(source);
+  auto found = checker_est_view_cache.views.find(hash);
+  if (found == checker_est_view_cache.views.end()) return nullptr;
+  for (const auto& entry : found->second)
+    if (entry->source == source) return entry.get();
+  return nullptr;
 }
 
 std::shared_ptr<const moss::est::ExpressionView> checker_est_view_impl(
@@ -1866,6 +1882,10 @@ class Checker {
                   << checker_est_view_cache.entries << '\n';
         std::cerr << "MOSS_PROFILE|est_view_cache_after_cap|"
                   << checker_est_view_cache.after_cap << '\n';
+        std::cerr << "MOSS_PROFILE|est_projection_cache_hits|"
+                  << checker_est_view_cache.projection_hits << '\n';
+        std::cerr << "MOSS_PROFILE|est_projection_cache_misses|"
+                  << checker_est_view_cache.projection_misses << '\n';
         std::cerr << "MOSS_PROFILE|binary_parse_overflow_entries|"
                   << binary_parse_cache_overflow_entries_ << '\n';
         std::cerr << "MOSS_PROFILE|binary_parse_overflow_hits|"
@@ -10734,8 +10754,24 @@ class Checker {
   }
 
   static bool tree_parse_index(const string& text, string& base, string& index) {
-    auto syntax = checker_est_view(text);
-    return syntax && moss::est::project_index(*syntax, base, index);
+    auto* cached = checker_est_view_entry(text);
+    if (cached && cached->index_projection_attempted) {
+      ++checker_est_view_cache.projection_hits;
+      if (!cached->index_projection) return false;
+      base = cached->index_projection->first;
+      index = cached->index_projection->second;
+      return true;
+    }
+    ++checker_est_view_cache.projection_misses;
+    auto syntax = cached ? cached->view : checker_est_view(text);
+    if (!cached) cached = checker_est_view_entry(text);
+    const bool matched = syntax &&
+        moss::est::project_index(*syntax, base, index);
+    if (cached) {
+      cached->index_projection_attempted = true;
+      if (matched) cached->index_projection = std::make_pair(base, index);
+    }
+    return matched;
   }
 
   static bool tree_index_expression(const string& text) {
@@ -10750,8 +10786,24 @@ class Checker {
 
   static bool tree_parse_member_access(const string& text, string& base,
                                        string& member) {
-    auto syntax = checker_est_view(text);
-    return syntax && moss::est::project_member_access(*syntax, base, member);
+    auto* cached = checker_est_view_entry(text);
+    if (cached && cached->member_projection_attempted) {
+      ++checker_est_view_cache.projection_hits;
+      if (!cached->member_projection) return false;
+      base = cached->member_projection->first;
+      member = cached->member_projection->second;
+      return true;
+    }
+    ++checker_est_view_cache.projection_misses;
+    auto syntax = cached ? cached->view : checker_est_view(text);
+    if (!cached) cached = checker_est_view_entry(text);
+    const bool matched = syntax &&
+        moss::est::project_member_access(*syntax, base, member);
+    if (cached) {
+      cached->member_projection_attempted = true;
+      if (matched) cached->member_projection = std::make_pair(base, member);
+    }
+    return matched;
   }
 
   static bool tree_parse_unary(const string& text, string& operation,
@@ -20262,27 +20314,20 @@ class Checker {
     }
     // Reading a field of a computed object first evaluates its base.  Read
     // the Member node so dots inside string literals never become fake fields.
-    if (auto syntax = checker_est_view(value)) {
-      const auto root = moss::est::unparenthesized(*syntax->arena,
-                                                   syntax->root);
-      if (const auto* member = std::get_if<moss::est::Member>(
-              &syntax->arena->at(root))) {
-        auto base_source = syntax->source_text(member->base);
-        if (base_source) {
-          auto base_type = inferred_expr_type(*base_source, env);
-          if (base_type) {
-            auto object = objects_.find(canonical_type_name(*base_type));
-            if (object != objects_.end() &&
-                std::any_of(object->second->fields.begin(),
-                            object->second->fields.end(),
-                            [&](const Field& candidate) {
-                              return candidate.name == member->name;
-                            }))
-              return observable_expression_effects(
-                  *base_source, env, domain_fields, implicit_object, parameters,
-                  proven_indices, root_ingress);
-          }
-        }
+    string member_base, member_name;
+    if (tree_parse_member_access(value, member_base, member_name)) {
+      auto base_type = inferred_expr_type(member_base, env);
+      if (base_type) {
+        auto object = objects_.find(canonical_type_name(*base_type));
+        if (object != objects_.end() &&
+            std::any_of(object->second->fields.begin(),
+                        object->second->fields.end(),
+                        [&](const Field& candidate) {
+                          return candidate.name == member_name;
+                        }))
+          return observable_expression_effects(
+              member_base, env, domain_fields, implicit_object, parameters,
+              proven_indices, root_ingress);
       }
     }
     string receiver, method;
@@ -22207,19 +22252,14 @@ class Checker {
       return;
     }
 
-    if (auto syntax = checker_est_view(value)) {
-      const auto root = moss::est::unparenthesized(*syntax->arena,
-                                                   syntax->root);
-      if (const auto* member = std::get_if<moss::est::Member>(
-              &syntax->arena->at(root))) {
-        if (auto member_base = syntax->source_text(member->base)) {
-          check_ownership_expression(
-              line, *member_base, env,
-              requested == Effect::Write ? Effect::Read :
-                  projection_effect(value, requested, env.types));
-          return;
-        }
-      }
+    string member_base, member_name;
+    if (tree_parse_member_access(value, member_base, member_name)) {
+      (void)member_name;
+      check_ownership_expression(
+          line, member_base, env,
+          requested == Effect::Write ? Effect::Read :
+              projection_effect(value, requested, env.types));
+      return;
     }
     require_available(line, value, env);
   }
