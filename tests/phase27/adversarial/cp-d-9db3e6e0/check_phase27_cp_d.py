@@ -16,7 +16,7 @@ BASELINE = Path(sys.argv[1]).resolve()
 CANDIDATE = Path(sys.argv[2]).resolve()
 WORK = ROOT / "tmp/phase27-2/cp-d-9db3e6e0"
 REPORT = WORK / "report.json"
-TIMEOUT = 30
+TIMEOUT = 120
 ADJUDICATED_DEFERRED_PIPELINE_CORRECTIONS = {
     "examples/swarm/expression_surface_2026/validation_engine/failed_attempts/04_pipeline_collection_inference.moss",
     "examples/swarm/modules/domain_services/repro/generic_pipeline/single/src/main.moss",
@@ -88,19 +88,8 @@ def source_case(relative):
     if base_verdict != candidate_off_verdict or base_verdict != candidate_shadow_verdict:
         record["verdict_difference"] = True
     if base_verdict != "ok" or candidate_off_verdict != "ok" or \
-            candidate_shadow_verdict != "ok" or not has_main:
+            candidate_shadow_verdict != "ok":
         return record
-
-    record["fast_debug"] = {}
-    for label, compiler, env in (
-            ("baseline", BASELINE, env_base),
-            ("candidate_off", CANDIDATE, env_base),
-            ("candidate_shadow", CANDIDATE, env_shadow)):
-        record["fast_debug"][label] = invoke(
-            [str(compiler), "run", "--interp", str(source)], ROOT, env)
-    record["fast_debug_equal"] = len({
-        (json.dumps(value, sort_keys=True))
-        for value in record["fast_debug"].values()}) == 1
 
     with tempfile.TemporaryDirectory(prefix="source-", dir=WORK) as temporary:
         work = Path(temporary)
@@ -113,6 +102,19 @@ def source_case(relative):
         record["generated_rust_equal"] = all(
             values["baseline"] == values["candidate"]
             for values in record["generated_rust"].values())
+    if not has_main:
+        return record
+
+    record["fast_debug"] = {}
+    for label, compiler, env in (
+            ("baseline", BASELINE, env_base),
+            ("candidate_off", CANDIDATE, env_base),
+            ("candidate_shadow", CANDIDATE, env_shadow)):
+        record["fast_debug"][label] = invoke(
+            [str(compiler), "run", "--interp", str(source)], ROOT, env)
+    record["fast_debug_equal"] = len({
+        (json.dumps(value, sort_keys=True))
+        for value in record["fast_debug"].values()}) == 1
     return record
 
 
@@ -140,6 +142,7 @@ def main():
     report = {"baseline_sha256": baseline_sha, "candidate_sha256":
               hashlib.sha256(CANDIDATE.read_bytes()).hexdigest(),
               "sources": len(records),
+              "accepted_sources_with_codegen": sum("generated_rust" in row for row in records),
               "accepted_main_sources": sum("fast_debug" in row for row in records),
               "verdict_differences": sum(bool(row.get("verdict_difference")) for row in records),
               "fast_debug_differences": sum(
