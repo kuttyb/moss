@@ -324,7 +324,10 @@ namespace {
 struct CheckerEstViewCache {
   static constexpr size_t limit = 8192;
   struct Entry {
-    string source;
+    // Successful views own their spelling in ExpressionView::source. Keep a
+    // separate key only for parse failures so common entries do not retain
+    // the same spelling twice.
+    string failed_source;
     std::shared_ptr<const moss::est::ExpressionView> view;
     std::shared_ptr<const moss::est::ExpressionView> named_argument_view;
     bool index_projection_attempted = false;
@@ -338,6 +341,12 @@ struct CheckerEstViewCache {
   uint64_t projection_hits = 0, projection_misses = 0;
 };
 thread_local CheckerEstViewCache checker_est_view_cache;
+
+std::string_view checker_est_view_key(
+    const CheckerEstViewCache::Entry& entry) {
+  return entry.view ? std::string_view(entry.view->source)
+                    : std::string_view(entry.failed_source);
+}
 
 void reset_checker_est_view_cache() {
   checker_est_view_cache.views.clear();
@@ -354,7 +363,7 @@ CheckerEstViewCache::Entry* checker_est_view_entry(std::string_view source) {
   auto found = checker_est_view_cache.views.find(hash);
   if (found == checker_est_view_cache.views.end()) return nullptr;
   for (const auto& entry : found->second)
-    if (entry->source == source) return entry.get();
+    if (checker_est_view_key(*entry) == source) return entry.get();
   return nullptr;
 }
 
@@ -364,7 +373,7 @@ std::shared_ptr<const moss::est::ExpressionView> checker_est_view_impl(
   auto found = checker_est_view_cache.views.find(hash);
   if (found != checker_est_view_cache.views.end()) {
     for (const auto& entry : found->second) {
-      if (entry->source == source) {
+      if (checker_est_view_key(*entry) == source) {
         ++checker_est_view_cache.hits;
         return entry->view;
       }
@@ -376,7 +385,7 @@ std::shared_ptr<const moss::est::ExpressionView> checker_est_view_impl(
   if (parsed) view = std::make_shared<moss::est::ExpressionView>(std::move(*parsed));
   if (checker_est_view_cache.entries < CheckerEstViewCache::limit) {
     auto entry = std::make_shared<CheckerEstViewCache::Entry>();
-    entry->source = string(source);
+    if (!view) entry->failed_source = string(source);
     entry->view = view;
     checker_est_view_cache.views[hash].push_back(entry);
     ++checker_est_view_cache.entries;
@@ -412,7 +421,8 @@ std::shared_ptr<const moss::est::ExpressionView> checker_named_argument_view(
   auto bucket = checker_est_view_cache.views.find(hash);
   if (bucket == checker_est_view_cache.views.end()) return make_named_view();
   for (auto& entry : bucket->second) {
-    if (entry->source != wrapped_text || entry->view != wrapped) continue;
+    if (checker_est_view_key(*entry) != wrapped_text || entry->view != wrapped)
+      continue;
     if (entry->named_argument_view) return entry->named_argument_view;
     entry->named_argument_view = make_named_view();
     return entry->named_argument_view;
