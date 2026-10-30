@@ -1803,10 +1803,14 @@ class Generator {
         if (callee == "hash" && arguments.size() == 1) return string("int");
       }
     }
-    if (types && starts_with(original, "message ")) {
-      string receiver, handler;
-      vector<string> arguments;
-      if (tree_parse_member_call(trim(original.substr(8)), receiver, handler, arguments)) {
+    string message_target, message_handler;
+    vector<string> message_arguments;
+    if (types && tree_parse_message(original, message_target, message_handler,
+                                    message_arguments)) {
+      string receiver = message_target;
+      string handler = message_handler;
+      vector<string> arguments = std::move(message_arguments);
+      if (tree_plain_identifier(receiver)) {
         auto type = types->find(receiver);
         if (type != types->end()) {
           auto domain = domains_.find(type->second);
@@ -1839,8 +1843,10 @@ class Generator {
           !contains_internal_placeholder(local->second))
         return canonical_type_name(local->second);
     }
-    if (starts_with(value, "not ")) {
-      auto operand = generated_expr_type(trim(value.substr(4)), types);
+    string unary_operation, unary_operand;
+    if (tree_parse_unary(value, unary_operation, unary_operand) &&
+        unary_operation == "not") {
+      auto operand = generated_expr_type(unary_operand, types);
       return operand && canonical_type_name(*operand) == "bool"
           ? std::optional<string>("bool") : std::nullopt;
     }
@@ -1988,14 +1994,14 @@ class Generator {
       }
     }
 
-    auto member = value.rfind('.');
-    if (member != string::npos && value.find('(', member) == string::npos) {
-      auto base = generated_expr_type(value.substr(0, member), types);
+    string member_base, member_name;
+    if (tree_parse_member_access(value, member_base, member_name)) {
+      auto base = generated_expr_type(member_base, types);
       if (base) {
         string tname = nominal_template_name(*base);
         auto object = objects_.find(tname);
         if (object != objects_.end()) {
-          string field_name = trim(value.substr(member + 1));
+          string field_name = member_name;
           if (auto sub_type = nominal_field_type(*base, field_name)) {
             return canonical_type_name(*sub_type);
           }
@@ -2043,14 +2049,16 @@ class Generator {
           return (*left == "float" || *right == "float") ? "float" : "int";
       }
     }
-    if (value.size() > 1 && (value.front() == '-' || value.front() == '+')) {
-      auto operand = generated_expr_type(trim(value.substr(1)), types);
+    if (tree_parse_unary(value, unary_operation, unary_operand) &&
+        (unary_operation == "-" || unary_operation == "+")) {
+      auto operand = generated_expr_type(unary_operand, types);
       if (operand && (canonical_type_name(*operand) == "int" ||
                       canonical_type_name(*operand) == "float"))
         return operand;
     }
-    if (!value.empty() && value.front() == '~') {
-      auto operand = generated_expr_type(trim(value.substr(1)), types);
+    if (tree_parse_unary(value, unary_operation, unary_operand) &&
+        unary_operation == "~") {
+      auto operand = generated_expr_type(unary_operand, types);
       if (operand && canonical_type_name(*operand) == "int")
         return string("int");
     }
@@ -2070,7 +2078,9 @@ class Generator {
     string value = trim(expression);
     // This prelude is solely a Rust evaluation-order repair.  Do not move a
     // source call or message across an earlier WRITE argument.
-    if (starts_with(value, "message ")) return false;
+    string target, handler;
+    vector<string> message_arguments;
+    if (tree_parse_message(value, target, handler, message_arguments)) return false;
     string callee, receiver, method;
     vector<string> arguments;
     return !tree_parse_simple_call(value, callee, arguments) &&
@@ -3133,11 +3143,14 @@ class Generator {
     // statements have a dedicated lowering path, but expression positions
     // (for example `echo message d.Get()`) must retain the same synchronous
     // completion and reply semantics through synchronized handler entry.
-    if (starts_with(e, "message ")) {
-      string receiver, handler;
-      vector<string> arguments;
-      if (!tree_parse_member_call(trim(e.substr(8)), receiver, handler, arguments) ||
-          !types || !tree_plain_identifier(receiver))
+    string message_target, message_handler;
+    vector<string> message_arguments;
+    if (tree_parse_message(e, message_target, message_handler,
+                           message_arguments)) {
+      string receiver = message_target;
+      string handler = message_handler;
+      vector<string> arguments = std::move(message_arguments);
+      if (!types || !tree_plain_identifier(receiver))
         throw std::runtime_error("internal error: malformed message expression");
       auto receiver_type = types->find(receiver);
       if (receiver_type == types->end())
@@ -3258,8 +3271,10 @@ class Generator {
             boolean_operator.second + " (" +
             expr(binary->right, d, locals, types) + ")";
     }
-    if (starts_with(e, "not "))
-      return "!(" + expr(e.substr(4), d, locals, types) + ")";
+    string unary_operation, unary_operand;
+    if (tree_parse_unary(e, unary_operation, unary_operand) &&
+        unary_operation == "not")
+      return "!(" + expr(unary_operand, d, locals, types) + ")";
     if (auto comparison =
             tree_generated_binary(e, {"==", "!=", "<=", ">=", "<", ">"})) {
       string left = expr(comparison->left, d, locals, types);
@@ -3409,8 +3424,9 @@ class Generator {
       return "(" + left + ") " + binary->op + " (" + right + ")";
     }
     // Moss Int arithmetic wraps; Rust's `-x` panics on Int min in debug.
-    if (e.size() > 1 && e.front() == '-') {
-      const string inner = trim(e.substr(1));
+    if (tree_parse_unary(e, unary_operation, unary_operand) &&
+        unary_operation == "-") {
+      const string inner = unary_operand;
       if (!inner.empty() && std::isdigit(static_cast<unsigned char>(inner.front())) &&
           generated_integer_literal(inner))
         if (auto rust = rust_numeric_literal("-" + inner)) return *rust;
@@ -3430,9 +3446,10 @@ class Generator {
         return "-(" + operand + ")";
       }
     }
-    if (!e.empty() && e.front() == '~') {
-      string operand = expr(trim(e.substr(1)), d, locals, types);
-      operand = value_from_borrowed_message_parameter(trim(e.substr(1)), operand, types);
+    if (tree_parse_unary(e, unary_operation, unary_operand) &&
+        unary_operation == "~") {
+      string operand = expr(unary_operand, d, locals, types);
+      operand = value_from_borrowed_message_parameter(unary_operand, operand, types);
       return "!(" + operand + ")";
     }
     // Only classify a quoted source form as a single literal after top-level
@@ -3495,11 +3512,8 @@ class Generator {
       return borrowed_view_expression(ib, d, locals, types) ? indexed : "(" + indexed + ").clone()";
     }
 
-    auto projection_dot = e.rfind('.');
-    if (projection_dot != string::npos &&
-        e.find('(', projection_dot) == string::npos) {
-      string projection_base = trim(e.substr(0, projection_dot));
-      string projection_field = trim(e.substr(projection_dot + 1));
+    string projection_base, projection_field;
+    if (tree_parse_member_access(e, projection_base, projection_field)) {
       if (tree_plain_identifier(projection_field)) {
         auto projection_type = generated_expr_type(projection_base, types);
         if (projection_type) {
