@@ -113,7 +113,7 @@ void check_executor_invoke(const Stmt& statement, const TypeEnv& env,
         "EXECUTOR_INVOKE_ARITY");
   string domain_binding, handler_name;
   vector<string> handler_args;
-  if (!parse_member_call(statement.args.front(), domain_binding, handler_name,
+  if (!tree_parse_member_call(statement.args.front(), domain_binding, handler_name,
                          handler_args) ||
       !plain_identifier(domain_binding) || !plain_identifier(handler_name))
     err(statement.line,
@@ -309,7 +309,7 @@ void phase21_validate_root_ingress_totality(const TypeEnv& main_env) {
               "ROOT_MESSAGE_TARGET_UNRESOLVED");
         string binding, handler;
         vector<string> arguments;
-        if (!parse_member_call(expression.substr(start, end - start),
+        if (!tree_parse_member_call(expression.substr(start, end - start),
                                binding, handler, arguments) ||
             !plain_identifier(binding))
           err(statement.line, "unresolved Root message target",
@@ -363,7 +363,7 @@ bool check_executor_or_fileio_statement(const Stmt& statement,
     // file_chunk_lowering.inc); parse_member_call on the whole multi-stage
     // text would otherwise misparse past the first '|>'.
     if (!parse_functional_pipeline(statement.b) &&
-        parse_member_call(statement.b, receiver, method, arguments) &&
+        tree_parse_member_call(statement.b, receiver, method, arguments) &&
         fileio_typed(env, receiver) && method == "chunks") {
       // Report A's operand/bound diagnostics before the shape rule.
       check_expression(statement.line, statement.b, env);

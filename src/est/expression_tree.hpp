@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <functional>
 #include <map>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -122,6 +123,48 @@ class Arena {
   std::array<Count, slot_count> coverage_{};
   std::set<std::tuple<std::uint64_t, std::uint8_t, std::uint32_t>> seen_;
 };
+
+// A query view keeps the exact source buffer paired with an immutable EST
+// occurrence. `owned_arena` is populated only for on-demand queries that do
+// not have a retained handle; existing checker/emitter paths should bind their
+// retained arena and ExprId whenever one is available.
+struct ExpressionView {
+  std::shared_ptr<Arena> owned_arena;
+  const Arena* arena = nullptr;
+  ExprId root = 0;
+  std::string source;
+
+  std::optional<std::string> source_text(ExprId expression) const;
+};
+ExpressionView view(const Arena& arena, ExprId root,
+                    std::string_view source);
+std::optional<ExpressionView> parse_view(std::string_view source);
+ExprId unparenthesized(const Arena& arena, ExprId expression);
+bool project_simple_call(const ExpressionView& view, std::string& callee,
+                         std::vector<std::string>& arguments);
+bool project_member_call(const ExpressionView& view, std::string& receiver,
+                         std::string& member,
+                         std::vector<std::string>& arguments,
+                         bool* outputs_written = nullptr);
+bool project_named_argument(const ExpressionView& view, std::string& name,
+                            std::string& value);
+bool project_index(const ExpressionView& view, std::string& base,
+                   std::string& index);
+std::optional<std::vector<std::string>> project_vector_literal(
+    const ExpressionView& view);
+bool project_enum_case(const ExpressionView& view, std::string& enum_name,
+                       std::string& case_name,
+                       std::vector<std::string>& fields);
+bool project_binary(const ExpressionView& view,
+                    const std::vector<std::string>& operators,
+                    std::pair<std::string, std::string>& operands,
+                    std::string& operation);
+std::optional<std::vector<std::string>> project_delimited_children(
+    const ExpressionView& view, char delimiter);
+bool project_identifier(const ExpressionView& view, std::string& name);
+bool expression_mentions(const ExpressionView& view, std::string_view name);
+bool structurally_equal(const ExpressionView& left,
+                        const ExpressionView& right);
 
 std::uint64_t fingerprint(const std::string& source);
 void assert_fresh(const Handle& handle, const std::string& source);

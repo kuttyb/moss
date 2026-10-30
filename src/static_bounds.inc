@@ -31,7 +31,7 @@
     string initializer = strip_redundant_outer_parentheses(trim(expression));
     string receiver, method;
     vector<string> args;
-    bool direct = parse_member_call(initializer, receiver, method, args) &&
+    bool direct = tree_parse_member_call(initializer, receiver, method, args) &&
         receiver == "FileIO" && method == "open" && args.size() == 2;
     if (direct && open_args) *open_args = std::move(args);
     return direct;
@@ -67,7 +67,7 @@
       }
     string receiver, method;
     vector<string> args;
-    if (parse_member_call(expression, receiver, method, args)) {
+    if (tree_parse_member_call(expression, receiver, method, args)) {
       bool fileio_borrow = fileio_owners.count(receiver) &&
           (method == "read" || method == "write" || method == "chunks" ||
            method == "open" || method == "sync" || method == "close");
@@ -94,7 +94,7 @@
       return;
     }
     string callee;
-    if (parse_simple_call(expression, callee, args)) {
+    if (tree_parse_simple_call(expression, callee, args)) {
       if (!objects_.count(callee) && callee != "range" && callee != "Some")
         for (const auto& argument : args) {
           string argument_name, argument_value;
@@ -468,7 +468,7 @@
     }
     string constructor;
     vector<string> fields;
-    if (parse_simple_call(entry, constructor, fields) &&
+    if (tree_parse_simple_call(entry, constructor, fields) &&
         fileio_request_record_type(constructor) && fields.size() == 2) {
       std::map<string, string> named;
       for (const auto& field : fields) {
@@ -504,7 +504,7 @@
         fact != static_bound_bindings_.end()) return fact->second.batch_entries;
     string receiver, method;
     vector<string> arguments;
-    if (!parse_member_call(value, receiver, method, arguments) ||
+    if (!tree_parse_member_call(value, receiver, method, arguments) ||
         method != "read" || arguments.size() != 1) return std::nullopt;
     auto sizes = static_request_size_values(arguments[0]);
     if (!sizes) return std::nullopt;
@@ -541,7 +541,7 @@
     if (auto bound = bounded_string(value)) return bound;
     string receiver, method;
     vector<string> arguments;
-    if (parse_member_call(value, receiver, method, arguments)) {
+    if (tree_parse_member_call(value, receiver, method, arguments)) {
       if (method == "read" && arguments.size() == 2)
         return static_upper_bound(arguments[1]);
       if (method == "chunks" && arguments.size() == 1)

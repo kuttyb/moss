@@ -150,7 +150,7 @@
     if (parse_functional_pipeline(expression)) return std::nullopt;
     string receiver, method;
     vector<string> args;
-    if (!parse_member_call(expression, receiver, method, args)) return std::nullopt;
+    if (!tree_parse_member_call(expression, receiver, method, args)) return std::nullopt;
     if (receiver == "FileIO" && method == "open") return string("FileIO");
     auto owner = inferred_expr_type(receiver, env);
     if (!owner) return std::nullopt;
@@ -182,7 +182,7 @@
     if (constructor) {
       string owner_receiver, owner_method;
       vector<string> owner_args;
-      if (!parse_member_call(trim(fileio_owner_initializer_), owner_receiver,
+      if (!tree_parse_member_call(trim(fileio_owner_initializer_), owner_receiver,
                              owner_method, owner_args) ||
           owner_receiver != "FileIO" || owner_method != "open")
         err(line, "FileIO.open must initialize a pinned local owner",
@@ -444,9 +444,9 @@
     vector<string> call_args;
     string member_receiver, member_method;
     vector<string> member_args;
-    bool is_member_call = parse_member_call(value, member_receiver,
+    bool is_member_call = tree_parse_member_call(value, member_receiver,
                                              member_method, member_args);
-    if (!is_member_call && parse_simple_call(value, callee, call_args)) {
+    if (!is_member_call && tree_parse_simple_call(value, callee, call_args)) {
       for (const auto& argument : call_args)
         fileio_lifecycle_expression(line, argument, flow);
       auto function = functions_.find(callee);
@@ -513,7 +513,7 @@
     }
     string receiver, method;
     vector<string> args;
-    if (!parse_member_call(value, receiver, method, args)) return;
+    if (!tree_parse_member_call(value, receiver, method, args)) return;
     fileio_lifecycle_expression(line, receiver, flow);
     for (const auto& argument : args)
       fileio_lifecycle_expression(line, argument, flow);
@@ -766,7 +766,7 @@
     if (starts_with(expression, "message ")) {
       string target, handler;
       vector<string> arguments;
-      if (parse_member_call(trim(expression.substr(8)), target, handler,
+      if (tree_parse_member_call(trim(expression.substr(8)), target, handler,
                             arguments))
         if (auto nested = fileio_blocking_message(
                 target, handler, env, arguments, visited))
@@ -786,7 +786,7 @@
     }
     string receiver, method;
     vector<string> args;
-    if (parse_member_call(expression, receiver, method, args)) {
+    if (tree_parse_member_call(expression, receiver, method, args)) {
       if (auto nested = fileio_blocking_expression(receiver, env, visited))
         return nested;
       for (const auto& argument : args)
@@ -799,7 +799,7 @@
       return std::nullopt;
     }
     string callee;
-    if (parse_simple_call(expression, callee, args)) {
+    if (tree_parse_simple_call(expression, callee, args)) {
       for (const auto& argument : args)
         if (auto nested = fileio_blocking_expression(argument, env, visited))
           return nested;

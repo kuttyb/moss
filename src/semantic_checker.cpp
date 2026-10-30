@@ -1496,7 +1496,7 @@ class Checker {
                 *function.open_summary->parameter_types.front()) &&
             (*member.result)->structurally_equal(
                 *function.open_summary->result_type) &&
-            parse_simple_call(trim(function.body.front().a), target_name,
+            tree_parse_simple_call(trim(function.body.front().a), target_name,
                               arguments) &&
             arguments.size() == function.params.size() &&
             std::all_of(arguments.begin(), arguments.end(),
@@ -1566,7 +1566,7 @@ class Checker {
                 leaf_summary.result_type &&
                 (*leaf_member.result)->structurally_equal(
                     *leaf_summary.result_type) &&
-                parse_member_call(trim(leaf.body.front().a), receiver,
+                tree_parse_member_call(trim(leaf.body.front().a), receiver,
                                   member_name, member_arguments) &&
                 receiver == leaf.params.front().name &&
                 member_name == member.member_name &&
@@ -2615,7 +2615,7 @@ class Checker {
         string wrapper;
         vector<string> wrapper_arguments;
         bool reverse_order = false;
-        if (parse_simple_call(key, wrapper, wrapper_arguments) &&
+        if (tree_parse_simple_call(key, wrapper, wrapper_arguments) &&
             wrapper == "Reverse") {
           if (wrapper_arguments.size() != 1) return false;
           reverse_order = true;
@@ -2644,7 +2644,7 @@ class Checker {
       } else {
         string source_stage;
         vector<string> source_arguments;
-        if (!parse_simple_call(occurrence.source_expression, source_stage,
+        if (!tree_parse_simple_call(occurrence.source_expression, source_stage,
                                source_arguments) ||
             source_stage != stage_name ||
             source_arguments.size() != occurrence.source_operands.size())
@@ -5603,7 +5603,7 @@ class Checker {
         }
         string callee;
         vector<string> arguments;
-        if (parse_simple_call(value, callee, arguments) && expected) {
+        if (tree_parse_simple_call(value, callee, arguments) && expected) {
           // A source spelling and a dependency-set membership do not identify
           // this call occurrence. Require one exact checker call edge at the
           // return site before retaining a callable target in the body IR.
@@ -5905,7 +5905,7 @@ class Checker {
           function.body.front().kind == Stmt::Kind::Return) {
         string target;
         vector<string> arguments;
-        if (parse_simple_call(trim(function.body.front().a), target, arguments)) {
+        if (tree_parse_simple_call(trim(function.body.front().a), target, arguments)) {
           string qualified = target;
           if (!functions_.count(qualified) && !objects_.count(qualified) &&
               !function.defining_module.empty())
@@ -5924,7 +5924,7 @@ class Checker {
       if (local_result) {
         string target;
         vector<string> arguments;
-        if (parse_simple_call(local_result->first, target, arguments)) {
+        if (tree_parse_simple_call(local_result->first, target, arguments)) {
           string qualified = target;
           if (!functions_.count(qualified) && !objects_.count(qualified) &&
               !function.defining_module.empty())
@@ -6093,7 +6093,7 @@ class Checker {
                 ? &function.body.back().a : nullptr;
         string callee;
         vector<string> arguments;
-        if (returned && parse_simple_call(trim(*returned), callee, arguments) &&
+        if (returned && tree_parse_simple_call(trim(*returned), callee, arguments) &&
             std::any_of(function.constraints.begin(), function.constraints.end(),
                         [&](const Constraint& constraint) {
               return constraint.kind == ConstraintKind::Callable &&
@@ -6136,7 +6136,7 @@ class Checker {
               else {
                 string receiver, member;
                 vector<string> arguments;
-                if (parse_member_call(trim(*returned), receiver, member,
+                if (tree_parse_member_call(trim(*returned), receiver, member,
                                       arguments) &&
                     std::any_of(function.constraints.begin(),
                                 function.constraints.end(),
@@ -8643,7 +8643,7 @@ class Checker {
     }
     string receiver, method;
     vector<string> member_args;
-    bool member_call = parse_member_call(e, receiver, method, member_args);
+    bool member_call = tree_parse_member_call(e, receiver, method, member_args);
     for (const auto& parameter : function.params) {
       bool trait_receiver = !parameter.type.empty() && traits_.count(parameter.type);
       if (member_call && trim(receiver) == parameter.name &&
@@ -8722,7 +8722,7 @@ class Checker {
       derive_expression_constraints(function, trim(e.substr(1)), "int");
     }
     string callee; vector<string> call_args;
-    if (parse_simple_call(e, callee, call_args) && !member_call) {
+    if (tree_parse_simple_call(e, callee, call_args) && !member_call) {
       for (const auto& parameter : function.params)
         if (callee == parameter.name && parameter.type.empty()) {
           auto existing = std::find_if(function.constraints.begin(),
@@ -9696,7 +9696,7 @@ class Checker {
     auto parse_bindings = [&](const string& expression) {
       vector<std::pair<string,string>> result;
       string callee; vector<string> args;
-      if (!parse_simple_call(expression, callee, args)) return result;
+      if (!tree_parse_simple_call(expression, callee, args)) return result;
       for (const auto& arg : args) {
         string name, value;
         if (!parse_named_argument(arg, name, value)) continue;
@@ -9777,7 +9777,7 @@ class Checker {
 
         string constructor_name;
         vector<string> constructor_arguments;
-        if (!parse_simple_call(statement.b, constructor_name, constructor_arguments))
+        if (!tree_parse_simple_call(statement.b, constructor_name, constructor_arguments))
           fail_at(statement, "domain construction requires a direct constructor call");
         for (const auto& argument : constructor_arguments) {
           string member_name, member_value;
@@ -10083,7 +10083,7 @@ class Checker {
     string e = trim(expr);
     string name;
     vector<string> args;
-    if (!parse_simple_call(e, name, args) || !domains_.count(name))
+    if (!tree_parse_simple_call(e, name, args) || !domains_.count(name))
       return std::nullopt;
     return name;
   }
@@ -10479,7 +10479,7 @@ class Checker {
       for (const auto& statement : p_.main->body) {
         string constructor;
         vector<string> arguments;
-        if (!parse_simple_call(statement.b, constructor, arguments)) continue;
+        if (!tree_parse_simple_call(statement.b, constructor, arguments)) continue;
         auto domain = domains_.find(canonical_type_name(constructor));
         if (domain == domains_.end()) continue;
         p_.semantic_uses.push_back(
@@ -10549,7 +10549,7 @@ class Checker {
     return !copy_type(type) && !domains_.count(canonical_type_name(type));
   }
 
-  bool parse_simple_call(const string& text, string& callee,
+  bool tree_parse_simple_call(const string& text, string& callee,
                          vector<string>& args) const {
     auto found = simple_call_parse_cache_.find(text);
     if (found != simple_call_parse_cache_.end()) {
@@ -10566,7 +10566,9 @@ class Checker {
     const bool cache_full = parse_cache_entries_ >= parse_cache_limit_;
     // Simple-call parsing leaves its output parameters untouched on failure,
     // so a negative result can be replayed without recording caller state.
-    if (!moss::parse_simple_call(text, callee, args)) {
+    auto syntax = moss::est::parse_view(text);
+    const bool tree_ok = syntax && moss::est::project_simple_call(*syntax, callee, args);
+    if (!tree_ok) {
       if (profile_concrete_effect_work_) {
         if (cache_full) ++parse_cache_failed_simple_after_cap_;
         else ++parse_cache_failed_simple_before_cap_;
@@ -10597,7 +10599,7 @@ class Checker {
     return true;
   }
 
-  bool parse_member_call(const string& text, string& receiver, string& member,
+  bool tree_parse_member_call(const string& text, string& receiver, string& member,
                          vector<string>& args) const {
     auto found = member_call_parse_cache_.find(text);
     if (found != member_call_parse_cache_.end()) {
@@ -10620,8 +10622,10 @@ class Checker {
     bool outputs_written = false;
     // Member parsing can assign receiver/member before rejecting an empty
     // side. Preserve those observable output mutations for negative hits.
-    if (!moss::parse_member_call(text, receiver, member, args,
-                                 &outputs_written)) {
+    auto syntax = moss::est::parse_view(text);
+    const bool tree_ok = syntax && moss::est::project_member_call(
+        *syntax, receiver, member, args, &outputs_written);
+    if (!tree_ok) {
       if (profile_concrete_effect_work_) {
         if (cache_full) ++parse_cache_failed_member_after_cap_;
         else ++parse_cache_failed_member_before_cap_;
@@ -11078,7 +11082,7 @@ class Checker {
     {
       string callee;
       vector<string> arguments;
-      if (parse_simple_call(original, callee, arguments) && callee == "replace" &&
+      if (tree_parse_simple_call(original, callee, arguments) && callee == "replace" &&
           arguments.size() == 2)
         return inferred_expr(arguments[0], env);
     }
@@ -11093,7 +11097,7 @@ class Checker {
     if (starts_with(original, "message ")) {
       string receiver, handler;
       vector<string> args;
-      if (!parse_member_call(trim(original.substr(8)), receiver, handler, args) ||
+      if (!tree_parse_member_call(trim(original.substr(8)), receiver, handler, args) ||
           !plain_identifier(receiver) || !plain_identifier(handler))
         return std::nullopt;
       auto binding = env.find(receiver);
@@ -11260,7 +11264,7 @@ class Checker {
     auto object_call = [&]() -> R {
       string callee;
       vector<string> args;
-      if (!parse_simple_call(e, callee, args)) return std::nullopt;
+      if (!tree_parse_simple_call(e, callee, args)) return std::nullopt;
       if (auto builtin = builtin_call_semantics(callee, args, env))
         return inferred_leaf(builtin->result_type);
       string target = callee;
@@ -11369,7 +11373,7 @@ class Checker {
     }();
     if (object_call) return object_call;
     string method_receiver, method_name; vector<string> method_args;
-    if (parse_member_call(e, method_receiver, method_name, method_args)) {
+    if (tree_parse_member_call(e, method_receiver, method_name, method_args)) {
       if (staged_abi_v10() && trim(method_receiver) == "Map()" &&
           method_name == "get" && method_args.size() == 2) {
         auto key = inferred_expr_type(method_args[0], env);
@@ -11487,7 +11491,7 @@ class Checker {
     }
 
     string mr, mh; vector<string> ma;
-    if (parse_member_call(e, mr, mh, ma)) {
+    if (tree_parse_member_call(e, mr, mh, ma)) {
       auto bt = env.find(mr);
       if (bt != env.end()) {
         auto receiver = inferred_shape(inferred_leaf(bt->second));
@@ -11680,7 +11684,7 @@ class Checker {
     string normalized = normalize_pipeline(trim(expression));
     string constructor;
     vector<string> args;
-    if (!parse_simple_call(normalized, constructor, args)) {
+    if (!tree_parse_simple_call(normalized, constructor, args)) {
       for (const auto& operators : vector<vector<string>>{{"==", "!=", "<=", ">=", "<", ">"},
                                                            {"+", "-", "*", "/", "%"}}) {
         if (auto binary = split_binary(normalized, operators)) {
@@ -12623,7 +12627,7 @@ class Checker {
       if (!staged_abi_v10()) return;
       string receiver, method;
       vector<string> arguments;
-      if (!parse_member_call(trim(expression), receiver, method, arguments) ||
+      if (!tree_parse_member_call(trim(expression), receiver, method, arguments) ||
           (method != "get" && method != "delete") ||
           arguments.size() != (method == "get" ? 2u : 3u)) return;
       auto map = body_types.known_expression(receiver);
@@ -12643,7 +12647,7 @@ class Checker {
                             const string& expected, const string& context) {
       string callee;
       vector<string> arguments;
-      if (parse_simple_call(trim(expression), callee, arguments)) {
+      if (tree_parse_simple_call(trim(expression), callee, arguments)) {
         auto function = functions_.find(callee);
         if (function != functions_.end()) {
           const auto* summary = function->second->open_summary
@@ -12690,7 +12694,7 @@ class Checker {
     auto constrain_call = [&](int line, const string& expression) {
       string callee;
       vector<string> arguments;
-      if (!parse_simple_call(trim(expression), callee, arguments)) return;
+      if (!tree_parse_simple_call(trim(expression), callee, arguments)) return;
       auto function = functions_.find(callee);
       if (function == functions_.end()) return;
       for (size_t index = 0;
@@ -12708,7 +12712,7 @@ class Checker {
                                    const Stmt* statement) -> moss::TypeRef {
       string callee;
       vector<string> arguments;
-      if (!parse_simple_call(trim(expression), callee, arguments)) return nullptr;
+      if (!tree_parse_simple_call(trim(expression), callee, arguments)) return nullptr;
       auto function = functions_.find(callee);
       if (function == functions_.end() || !function->second->open_summary ||
           !function->second->open_summary->scheme_complete) return nullptr;
@@ -13112,7 +13116,7 @@ class Checker {
         moss::TypeRef loop_term;
         string callee;
         vector<string> arguments;
-        if (parse_simple_call(trim(statement.b), callee, arguments) &&
+        if (tree_parse_simple_call(trim(statement.b), callee, arguments) &&
             callee == "range") {
           loop_term = moss::Type::primitive("int");
         } else if (auto source = term_for(statement.b)) {
@@ -13218,7 +13222,7 @@ class Checker {
         body_types.provider_origins.erase(statement.a);
         string assigned_callee;
         vector<string> assigned_arguments;
-        if (parse_simple_call(trim(statement.b), assigned_callee,
+        if (tree_parse_simple_call(trim(statement.b), assigned_callee,
                               assigned_arguments)) {
           auto target = functions_.find(assigned_callee);
           if (target != functions_.end() &&
@@ -13427,7 +13431,7 @@ class Checker {
       if (!result->is_closed()) continue;
       string callee;
       vector<string> arguments;
-      if (!parse_simple_call(trim(statement->b), callee, arguments)) continue;
+      if (!tree_parse_simple_call(trim(statement->b), callee, arguments)) continue;
       auto function = functions_.find(callee);
       if (function == functions_.end()) continue;
       OpenCallResultFacts facts;
@@ -13553,7 +13557,7 @@ class Checker {
               executor_typed(current_env, statement.a) && statement.args.size() == 1) {
             string target, handler_name;
             vector<string> handler_args;
-            auto receiver = parse_member_call(statement.args.front(), target, handler_name, handler_args)
+            auto receiver = tree_parse_member_call(statement.args.front(), target, handler_name, handler_args)
                 ? current_env.find(target) : current_env.end();
             if (receiver != current_env.end() && domains_.count(canonical_type_name(receiver->second))) {
               if (auto* handler = find_handler(*domains_.at(canonical_type_name(receiver->second)), handler_name)) {
@@ -13828,7 +13832,7 @@ class Checker {
       bool invoke_site = false;
       if (statement.kind == Stmt::Kind::Call && statement.b == "invoke" &&
           statement.args.size() == 1 && executor_typed(main_env, statement.a) &&
-          parse_member_call(statement.args.front(), invoke_view.a, invoke_view.b,
+          tree_parse_member_call(statement.args.front(), invoke_view.a, invoke_view.b,
                             invoke_view.args)) {
         invoke_view.kind = Stmt::Kind::Message;
         invoke_view.line = statement.line;
@@ -13927,7 +13931,7 @@ class Checker {
               for (const auto& expression : statement_expressions(body_statement)) {
                 string callee;
                 vector<string> arguments;
-                if (!parse_simple_call(expression, callee, arguments)) continue;
+                if (!tree_parse_simple_call(expression, callee, arguments)) continue;
                 auto function = functions_.find(callee);
                 if (function == functions_.end() || !function->second->static_dispatch)
                   continue;
@@ -17323,7 +17327,7 @@ class Checker {
     {
       string callee;
       vector<string> arguments;
-      if (parse_simple_call(value, callee, arguments) && callee == "sort" &&
+      if (tree_parse_simple_call(value, callee, arguments) && callee == "sort" &&
           !functions_.count(callee) &&
           (arguments.size() == 1 || arguments.size() == 2)) {
         // sort writes its Vector place; the key is a pure named callable.
@@ -17331,7 +17335,7 @@ class Checker {
                                   receiver_effect, receiver_fields, Effect::Write);
         return;
       }
-      if (parse_simple_call(value, callee, arguments) && callee == "replace" &&
+      if (tree_parse_simple_call(value, callee, arguments) && callee == "replace" &&
           arguments.size() == 2) {
         analyze_effect_expression(arguments[0], env, params, parameter_effects,
                                   receiver_effect, receiver_fields, Effect::Write);
@@ -17368,7 +17372,7 @@ class Checker {
     if (starts_with(value, "message ")) {
       string receiver, handler;
       vector<string> arguments;
-      if (parse_member_call(trim(value.substr(8)), receiver, handler, arguments)) {
+      if (tree_parse_member_call(trim(value.substr(8)), receiver, handler, arguments)) {
         analyze_effect_expression(receiver, env, params, parameter_effects,
                                   receiver_effect, receiver_fields, Effect::Read);
         for (const auto& argument : arguments)
@@ -17401,7 +17405,7 @@ class Checker {
     }
     string receiver, method;
     vector<string> arguments;
-    if (parse_member_call(value, receiver, method, arguments)) {
+    if (tree_parse_member_call(value, receiver, method, arguments)) {
       auto receiver_type = inferred_expr_type(receiver, env);
       if (receiver_type) {
         const string concrete_receiver = canonical_type_name(*receiver_type);
@@ -17515,7 +17519,7 @@ class Checker {
 
     string callee;
     vector<string> call_arguments;
-    if (parse_simple_call(value, callee, call_arguments)) {
+    if (tree_parse_simple_call(value, callee, call_arguments)) {
       if (objects_.count(callee)) {
         auto object = objects_.at(callee);
         std::unordered_map<string,string> supplied;
@@ -18113,7 +18117,7 @@ class Checker {
 
     string receiver, method_name;
     vector<string> arguments;
-    if (parse_member_call(value, receiver, method_name, arguments)) {
+    if (tree_parse_member_call(value, receiver, method_name, arguments)) {
       vector<string> argument_types;
       for (const auto& argument : arguments)
         argument_types.push_back(inferred_expr_type(argument, env).value_or(""));
@@ -18147,7 +18151,7 @@ class Checker {
 
     string callee;
     vector<string> call_arguments;
-    if (parse_simple_call(value, callee, call_arguments)) {
+    if (tree_parse_simple_call(value, callee, call_arguments)) {
       vector<string> argument_types;
       for (const auto& argument : call_arguments)
         argument_types.push_back(inferred_expr_type(argument, env).value_or(""));
@@ -18161,7 +18165,7 @@ class Checker {
         vector<string> reverse_args;
         if (parse_named_argument(call_arguments[1], label, key) && label == "by") {
           key = trim(key);
-          if (parse_simple_call(key, reverse_callee, reverse_args) &&
+          if (tree_parse_simple_call(key, reverse_callee, reverse_args) &&
               reverse_callee == "Reverse" && reverse_args.size() == 1)
             key = trim(reverse_args.front());
           string vector_type = canonical_type_name(argument_types.front());
@@ -18261,7 +18265,7 @@ class Checker {
 
     string receiver, member;
     vector<string> arguments;
-    if (parse_member_call(value, receiver, member, arguments)) {
+    if (tree_parse_member_call(value, receiver, member, arguments)) {
       if (has_unresolved_local_callable_call(receiver, env)) return true;
       return std::any_of(arguments.begin(), arguments.end(),
           [&](const string& argument) {
@@ -18269,7 +18273,7 @@ class Checker {
           });
     }
     string callee;
-    if (parse_simple_call(value, callee, arguments)) {
+    if (tree_parse_simple_call(value, callee, arguments)) {
       // A local call target can acquire its callable identity in a later
       // inference pass. Keep this function on the conservative consumer list
       // until the surrounding callable signatures have settled.
@@ -18297,7 +18301,7 @@ class Checker {
       signature_unresolved_consumers_.insert(caller);
     string direct_callee;
     vector<string> direct_arguments;
-    if (parse_simple_call(trim(expression), direct_callee, direct_arguments) &&
+    if (tree_parse_simple_call(trim(expression), direct_callee, direct_arguments) &&
         direct_callee == "sort" && direct_arguments.size() == 2) {
       string label, callable;
       if (parse_named_argument(direct_arguments[1], label, callable) &&
@@ -18435,7 +18439,7 @@ class Checker {
       string receiver_name;
       string handler_name;
       vector<string> arguments;
-      if (!parse_member_call(trim(value.substr(8)), receiver_name,
+      if (!tree_parse_member_call(trim(value.substr(8)), receiver_name,
                              handler_name, arguments) ||
           !plain_identifier(receiver_name) ||
           !plain_identifier(handler_name))
@@ -19683,7 +19687,7 @@ class Checker {
       effects.message = true;
       string receiver, handler;
       vector<string> arguments;
-      if (parse_member_call(trim(original.substr(8)), receiver, handler, arguments)) {
+      if (tree_parse_member_call(trim(original.substr(8)), receiver, handler, arguments)) {
         effects.merge(observable_expression_effects(
             receiver, env, domain_fields, implicit_object, parameters,
             proven_indices, root_ingress));
@@ -19904,7 +19908,7 @@ class Checker {
         return effects;
       }
     }
-    if (parse_member_call(value, receiver, method, arguments)) {
+    if (tree_parse_member_call(value, receiver, method, arguments)) {
       if (receiver != "FileIO")
         effects.merge(observable_expression_effects(
             receiver, env, domain_fields, implicit_object, parameters,
@@ -19978,7 +19982,7 @@ class Checker {
     }
     string callee;
     vector<string> arguments_call;
-    if (parse_simple_call(value, callee, arguments_call)) {
+    if (tree_parse_simple_call(value, callee, arguments_call)) {
       if (callee == "sort" && !functions_.count(callee) &&
           (arguments_call.size() == 1 || arguments_call.size() == 2)) {
         auto place = storage_location(arguments_call[0], env);
@@ -20217,7 +20221,7 @@ class Checker {
     if (loop.kind != Stmt::Kind::For) return std::nullopt;
     string callee;
     vector<string> arguments;
-    if (!parse_simple_call(trim(loop.b), callee, arguments) ||
+    if (!tree_parse_simple_call(trim(loop.b), callee, arguments) ||
         callee != "range" ||
         (arguments.size() != 2 && arguments.size() != 3) ||
         !is_nonnegative_integer_literal(arguments[0]) ||
@@ -20226,7 +20230,7 @@ class Checker {
       return std::nullopt;
     string range_binding, method;
     vector<string> method_arguments;
-    if (!parse_member_call(trim(arguments[1]), range_binding, method,
+    if (!tree_parse_member_call(trim(arguments[1]), range_binding, method,
                            method_arguments) ||
         method != "length" || !method_arguments.empty() ||
         !plain_identifier(range_binding))
@@ -20259,7 +20263,7 @@ class Checker {
       for (const auto& expression : statement_expressions(statement)) {
         string replace_callee;
         vector<string> replace_arguments;
-        if (parse_simple_call(expression, replace_callee, replace_arguments) &&
+        if (tree_parse_simple_call(expression, replace_callee, replace_arguments) &&
             replace_callee == "replace" && !replace_arguments.empty() &&
             extract_root_identifier(replace_arguments.front()) == range_binding)
           return std::nullopt;
@@ -21365,7 +21369,7 @@ class Checker {
                                    called) && enums_.count(enum_name))
       return {};
     string receiver, method;
-    if (parse_member_call(value, receiver, method, arguments)) {
+    if (tree_parse_member_call(value, receiver, method, arguments)) {
       auto receiver_type = inferred_expr_type(receiver, types);
       if ((receiver == "FileIO" && method == "open") ||
           (receiver_type && canonical_type_name(*receiver_type) == "FileIO"))
@@ -21382,7 +21386,7 @@ class Checker {
       return {};
     }
     string callee;
-    if (parse_simple_call(value, callee, arguments)) {
+    if (tree_parse_simple_call(value, callee, arguments)) {
       vector<string> argument_types;
       for (const auto& argument : arguments)
         argument_types.push_back(inferred_expr_type(argument, types).value_or(""));
@@ -21563,7 +21567,7 @@ class Checker {
 
     string receiver, method;
     vector<string> arguments;
-    if (parse_member_call(value, receiver, method, arguments)) {
+    if (tree_parse_member_call(value, receiver, method, arguments)) {
       auto receiver_type = inferred_expr_type(receiver, env.types);
       if (receiver_type) {
         string concrete = canonical_type_name(*receiver_type);
@@ -21677,7 +21681,7 @@ class Checker {
 
     string callee;
     vector<string> call_arguments;
-    if (parse_simple_call(value, callee, call_arguments)) {
+    if (tree_parse_simple_call(value, callee, call_arguments)) {
       auto resolved_callee = env.binding_identities.find(callee);
       if (resolved_callee != env.binding_identities.end())
         retain_semantic_use(resolved_callee->second, "binding_use", line);
@@ -23669,7 +23673,7 @@ class Checker {
       auto required = parameter.type.empty() ? std::nullopt :
           moss::Type::parse_canonical(canonical_type_name(parameter.type));
       if (required && (*required)->is_closed() &&
-          parse_simple_call(trim(argument), nested_name, nested_arguments)) {
+          tree_parse_simple_call(trim(argument), nested_name, nested_arguments)) {
         auto nested = functions_.find(nested_name);
         if (nested != functions_.end() && nested->second->open_summary &&
             nested->second->open_summary->scheme_complete &&
@@ -23680,7 +23684,7 @@ class Checker {
           for (size_t prior = 0; prior < index; ++prior) {
             string prior_name;
             vector<string> prior_arguments;
-            if (!parse_simple_call(trim(args[prior]), prior_name,
+            if (!tree_parse_simple_call(trim(args[prior]), prior_name,
                                    prior_arguments) ||
                 prior_name != nested_name) continue;
             ++target_occurrence;
@@ -23962,7 +23966,7 @@ class Checker {
                              statement.kind == Stmt::Kind::Var)) {
           string direct_callee;
           vector<string> direct_arguments;
-          direct_call = parse_simple_call(trim(statement.b), direct_callee,
+          direct_call = tree_parse_simple_call(trim(statement.b), direct_callee,
                                           direct_arguments) &&
               direct_callee == name && direct_arguments == args;
         }
@@ -24049,7 +24053,7 @@ class Checker {
             (statement.kind == Stmt::Kind::Assign ||
              statement.kind == Stmt::Kind::Let ||
              statement.kind == Stmt::Kind::Var) &&
-            parse_simple_call(trim(statement.b), direct_callee,
+            tree_parse_simple_call(trim(statement.b), direct_callee,
                               direct_arguments) &&
             direct_callee == name && direct_arguments == args &&
             retained->second.callable_id ==
@@ -24073,7 +24077,7 @@ class Checker {
         string direct_callee;
         vector<string> direct_arguments;
         if (result_expression &&
-            parse_simple_call(trim(*result_expression), direct_callee,
+            tree_parse_simple_call(trim(*result_expression), direct_callee,
                               direct_arguments) &&
             direct_callee == name && direct_arguments == args &&
             checking_specialization_->return_type_ref) {
@@ -24280,7 +24284,7 @@ class Checker {
       placeholder_env["_"] = input_types.front();
       string capture_receiver, capture_method;
       vector<string> capture_arguments;
-      if (parse_member_call(identity, capture_receiver, capture_method,
+      if (tree_parse_member_call(identity, capture_receiver, capture_method,
                             capture_arguments) &&
           trim(capture_receiver) != "_") {
         auto capture_type = inferred_expr_type(capture_receiver, env);
@@ -24388,7 +24392,7 @@ class Checker {
     if (!function_ptr) {
       string invoked;
       vector<string> invoked_arguments;
-      if (parse_simple_call(identity, invoked, invoked_arguments) &&
+      if (tree_parse_simple_call(identity, invoked, invoked_arguments) &&
           functions_.count(invoked)) {
         const Function& candidate = *functions_.at(invoked);
         if (provably_compatible_functional_callable(
@@ -24562,7 +24566,7 @@ class Checker {
     string reverse_callee;
     vector<string> reverse_args;
     bool reverse_order = false;
-    if (parse_simple_call(key, reverse_callee, reverse_args) &&
+    if (tree_parse_simple_call(key, reverse_callee, reverse_args) &&
         reverse_callee == "Reverse") {
       if (reverse_args.size() != 1)
         err(line, "Reverse expects one key function", "SORT_SIGNATURE");
@@ -25922,7 +25926,7 @@ class Checker {
       mark_active_expression(OccurrenceKind::Message);
       string receiver, handler;
       vector<string> args;
-      if (!parse_member_call(trim(original.substr(8)), receiver, handler, args) ||
+      if (!tree_parse_member_call(trim(original.substr(8)), receiver, handler, args) ||
           !plain_identifier(receiver) || !plain_identifier(handler))
         err(line, "message requires a domain call 'receiver.Handler(args)'");
       check_message_target_existence(line, receiver, env);
@@ -26365,7 +26369,7 @@ class Checker {
     {
       string callee;
       vector<string> arguments;
-      if (parse_simple_call(value, callee, arguments) &&
+      if (tree_parse_simple_call(value, callee, arguments) &&
           callee == "assertEqual" && arguments.size() == 2) {
         for (const auto& argument : arguments) {
           auto type = inferred_expr_type(argument, env);
@@ -26377,7 +26381,7 @@ class Checker {
     }
     string receiver, handler;
     vector<string> args;
-    if (parse_member_call(value, receiver, handler, args)) {
+    if (tree_parse_member_call(value, receiver, handler, args)) {
       mark_active_expression(OccurrenceKind::MemberCall, "method:" + handler);
       if (current_body_types_ && !checking_specialization_ &&
           !current_body_types_->active_expression_occurrences.empty()) {
@@ -26837,7 +26841,7 @@ class Checker {
       }
     }
     string callee;
-    if (parse_simple_call(value, callee, args) && callee.find('.') == string::npos) {
+    if (tree_parse_simple_call(value, callee, args) && callee.find('.') == string::npos) {
       mark_active_expression(objects_.count(callee)
           ? OccurrenceKind::Constructor
           : (callee == "Map" || callee == "Queue" || callee == "Set" ||
@@ -27418,7 +27422,7 @@ class Checker {
                                               const TypeEnv& env) const {
     string callee;
     vector<string> arguments;
-    if (parse_simple_call(trim(source), callee, arguments) && callee == "range") {
+    if (tree_parse_simple_call(trim(source), callee, arguments) && callee == "range") {
       if (arguments.size() != 2 && arguments.size() != 3)
         err(line, "range expects range(start, end) or range(start, end, step)");
       return "int";
@@ -27507,7 +27511,7 @@ class Checker {
                         std::string_view root_slot = {}) {
     string callee;
     vector<string> arguments;
-    if (parse_simple_call(trim(source), callee, arguments) && callee == "range") {
+    if (tree_parse_simple_call(trim(source), callee, arguments) && callee == "range") {
       check_function_call(line, callee, arguments, env);
       for (size_t index = 0; index < arguments.size(); ++index) {
         const string slot = "for-range-argument:" + std::to_string(index);
@@ -30263,7 +30267,7 @@ class Checker {
           {
             string callee;
             vector<string> arguments;
-            if (parse_simple_call(trim(statement.b), callee, arguments) &&
+            if (tree_parse_simple_call(trim(statement.b), callee, arguments) &&
                 callee == "range") {
               for (size_t index = 0; index < arguments.size(); ++index)
                 require_root(statement,
@@ -32761,13 +32765,13 @@ export fn fresh(x):
 
     string callee = "preserve-callee";
     vector<string> arguments = {"preserve-argument"};
-    if (checker.parse_simple_call("not a call", callee, arguments) ||
+    if (checker.tree_parse_simple_call("not a call", callee, arguments) ||
         callee != "preserve-callee" ||
         arguments != vector<string>{"preserve-argument"})
       return false;
     callee = "different-callee";
     arguments = {"different-argument"};
-    if (checker.parse_simple_call("not a call", callee, arguments) ||
+    if (checker.tree_parse_simple_call("not a call", callee, arguments) ||
         callee != "different-callee" ||
         arguments != vector<string>{"different-argument"})
       return false;
@@ -32775,14 +32779,14 @@ export fn fresh(x):
     string receiver;
     string member = "foo";
     arguments = {"first-argument"};
-    if (checker.parse_member_call(".foo()", receiver, member, arguments) ||
+    if (checker.tree_parse_member_call(".foo()", receiver, member, arguments) ||
         !receiver.empty() || member != "foo" ||
         arguments != vector<string>{"first-argument"})
       return false;
     receiver = "stale-receiver";
     member = "stale-member";
     arguments = {"second-argument"};
-    if (checker.parse_member_call(".foo()", receiver, member, arguments) ||
+    if (checker.tree_parse_member_call(".foo()", receiver, member, arguments) ||
         !receiver.empty() || member != "foo" ||
         arguments != vector<string>{"second-argument"})
       return false;
@@ -32790,7 +32794,7 @@ export fn fresh(x):
     receiver = "preserve-receiver";
     member = "preserve-member";
     arguments = {"preserve-arguments"};
-    if (checker.parse_member_call("no member call", receiver, member,
+    if (checker.tree_parse_member_call("no member call", receiver, member,
                                   arguments) ||
         receiver != "preserve-receiver" || member != "preserve-member" ||
         arguments != vector<string>{"preserve-arguments"})
@@ -32798,7 +32802,7 @@ export fn fresh(x):
     receiver = "different-receiver";
     member = "different-member";
     arguments = {"different-arguments"};
-    return !checker.parse_member_call("no member call", receiver, member,
+    return !checker.tree_parse_member_call("no member call", receiver, member,
                                       arguments) &&
         receiver == "different-receiver" && member == "different-member" &&
         arguments == vector<string>{"different-arguments"};
