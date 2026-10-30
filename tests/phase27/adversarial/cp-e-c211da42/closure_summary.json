@@ -1,0 +1,439 @@
+{
+  "baseline": {
+    "callable_census": [
+      {
+        "entity_id": "entity-v1:function:fail_twice",
+        "name": "fail_twice",
+        "reachable_from_main": true,
+        "status": "resolved",
+        "type_origin": "checked_declaration"
+      },
+      {
+        "entity_id": "entity-v1:function:grouped_match",
+        "name": "grouped_match",
+        "reachable_from_main": true,
+        "status": "resolved",
+        "type_origin": "checked_declaration"
+      },
+      {
+        "entity_id": "entity-v1:main",
+        "name": "main",
+        "reachable_from_main": true,
+        "status": "resolved",
+        "type_origin": "checked_declaration"
+      },
+      {
+        "entity_id": "entity-v1:function:recover_group",
+        "name": "recover_group",
+        "reachable_from_main": true,
+        "status": "resolved",
+        "type_origin": "checked_declaration"
+      },
+      {
+        "entity_id": "entity-v1:function:unused_leaf",
+        "name": "unused_leaf",
+        "reachable_from_main": false,
+        "status": "resolved",
+        "type_origin": "checked_declaration"
+      },
+      {
+        "entity_id": "entity-v1:function:unused_middle",
+        "name": "unused_middle",
+        "reachable_from_main": false,
+        "status": "resolved",
+        "type_origin": "checked_declaration"
+      },
+      {
+        "entity_id": "entity-v1:function:used_leaf",
+        "name": "used_leaf",
+        "reachable_from_main": true,
+        "status": "resolved",
+        "type_origin": "checked_declaration"
+      },
+      {
+        "entity_id": "entity-v1:function:used_middle",
+        "name": "used_middle",
+        "reachable_from_main": true,
+        "status": "resolved",
+        "type_origin": "checked_declaration"
+      }
+    ],
+    "calls": {
+      "callers": [],
+      "direct_calls": [
+        {
+          "argument_types": [
+            "bool"
+          ],
+          "boundary": "ordinary_call",
+          "call_site_id": "entity-v1:call:main:fn:grouped_match",
+          "call_site_semantic_identity": "main@52:call:fn:grouped_match",
+          "caller_specialization_key": null,
+          "line": 52,
+          "receiver": null,
+          "resolved": true,
+          "source_file": "/home/owner/daji/code/moss/tmp/cp-e-phase27-3/tests/phase27/adversarial/cp-e-c211da42/closure_enum_recovery.moss",
+          "specialization_identity": null,
+          "specialization_key": null,
+          "target": "fn:grouped_match",
+          "target_id": "entity-v1:function:grouped_match",
+          "target_kind": "function",
+          "target_source": {
+            "column": 1,
+            "file": "/home/owner/daji/code/moss/tmp/cp-e-phase27-3/tests/phase27/adversarial/cp-e-c211da42/closure_enum_recovery.moss",
+            "line": 22,
+            "range_precision": "line"
+          }
+        },
+        {
+          "argument_types": [
+            "bool"
+          ],
+          "boundary": "ordinary_call",
+          "call_site_id": "entity-v1:call:main:fn:recover_group",
+          "call_site_semantic_identity": "main@53:call:fn:recover_group",
+          "caller_specialization_key": null,
+          "line": 53,
+          "receiver": null,
+          "resolved": true,
+          "source_file": "",
+          "specialization_identity": null,
+          "specialization_key": null,
+          "target": "fn:recover_group",
+          "target_id": "entity-v1:function:recover_group",
+          "target_kind": "function",
+          "target_source": {
+            "column": 1,
+            "file": "",
+            "line": 41,
+            "range_precision": "line"
+          }
+        }
+      ],
+      "domain": {
+        "status": "not_applicable"
+      },
+      "status": "resolved",
+      "transitive_calls": [
+        {
+          "target": "fn:fail_twice",
+          "target_id": "entity-v1:function:fail_twice"
+        },
+        {
+          "target": "fn:grouped_match",
+          "target_id": "entity-v1:function:grouped_match"
+        },
+        {
+          "target": "fn:recover_group",
+          "target_id": "entity-v1:function:recover_group"
+        },
+        {
+          "target": "fn:used_leaf",
+          "target_id": "entity-v1:function:used_leaf"
+        },
+        {
+          "target": "fn:used_middle",
+          "target_id": "entity-v1:function:used_middle"
+        }
+      ]
+    },
+    "declared_symbols": [
+      {
+        "id": "entity-v1:enum:Fault",
+        "kind": "enum",
+        "name": "Fault"
+      },
+      {
+        "id": "entity-v1:enum-case:Fault.First",
+        "kind": "enum_case",
+        "name": "Fault.First"
+      },
+      {
+        "id": "entity-v1:enum-case:Fault.Second",
+        "kind": "enum_case",
+        "name": "Fault.Second"
+      },
+      {
+        "id": "entity-v1:enum:Outcome",
+        "kind": "enum",
+        "name": "Outcome"
+      },
+      {
+        "id": "entity-v1:enum-case:Outcome.First",
+        "kind": "enum_case",
+        "name": "Outcome.First"
+      },
+      {
+        "id": "entity-v1:enum-case:Outcome.Ok",
+        "kind": "enum_case",
+        "name": "Outcome.Ok"
+      },
+      {
+        "id": "entity-v1:enum-case:Outcome.Second",
+        "kind": "enum_case",
+        "name": "Outcome.Second"
+      },
+      {
+        "id": "entity-v1:function:fail_twice",
+        "kind": "function",
+        "name": "fail_twice"
+      },
+      {
+        "id": "entity-v1:function:grouped_match",
+        "kind": "function",
+        "name": "grouped_match"
+      },
+      {
+        "id": "entity-v1:main",
+        "kind": "main",
+        "name": "main"
+      },
+      {
+        "id": "entity-v1:function:recover_group",
+        "kind": "function",
+        "name": "recover_group"
+      },
+      {
+        "id": "entity-v1:function:unused_leaf",
+        "kind": "function",
+        "name": "unused_leaf"
+      },
+      {
+        "id": "entity-v1:function:unused_middle",
+        "kind": "function",
+        "name": "unused_middle"
+      },
+      {
+        "id": "entity-v1:function:used_leaf",
+        "kind": "function",
+        "name": "used_leaf"
+      },
+      {
+        "id": "entity-v1:function:used_middle",
+        "kind": "function",
+        "name": "used_middle"
+      }
+    ],
+    "diagnostics": [],
+    "ok": true
+  },
+  "candidate": {
+    "callable_census": [
+      {
+        "entity_id": "entity-v1:function:fail_twice",
+        "name": "fail_twice",
+        "reachable_from_main": true,
+        "status": "resolved",
+        "type_origin": "checked_declaration"
+      },
+      {
+        "entity_id": "entity-v1:function:grouped_match",
+        "name": "grouped_match",
+        "reachable_from_main": true,
+        "status": "resolved",
+        "type_origin": "checked_declaration"
+      },
+      {
+        "entity_id": "entity-v1:main",
+        "name": "main",
+        "reachable_from_main": true,
+        "status": "resolved",
+        "type_origin": "checked_declaration"
+      },
+      {
+        "entity_id": "entity-v1:function:recover_group",
+        "name": "recover_group",
+        "reachable_from_main": true,
+        "status": "resolved",
+        "type_origin": "checked_declaration"
+      },
+      {
+        "entity_id": "entity-v1:function:unused_leaf",
+        "name": "unused_leaf",
+        "reachable_from_main": false,
+        "status": "resolved",
+        "type_origin": "checked_declaration"
+      },
+      {
+        "entity_id": "entity-v1:function:unused_middle",
+        "name": "unused_middle",
+        "reachable_from_main": false,
+        "status": "resolved",
+        "type_origin": "checked_declaration"
+      },
+      {
+        "entity_id": "entity-v1:function:used_leaf",
+        "name": "used_leaf",
+        "reachable_from_main": true,
+        "status": "resolved",
+        "type_origin": "checked_declaration"
+      },
+      {
+        "entity_id": "entity-v1:function:used_middle",
+        "name": "used_middle",
+        "reachable_from_main": true,
+        "status": "resolved",
+        "type_origin": "checked_declaration"
+      }
+    ],
+    "calls": {
+      "callers": [],
+      "direct_calls": [
+        {
+          "argument_types": [
+            "bool"
+          ],
+          "boundary": "ordinary_call",
+          "call_site_id": "entity-v1:call:main:fn:grouped_match",
+          "call_site_semantic_identity": "main@52:call:fn:grouped_match",
+          "caller_specialization_key": null,
+          "line": 52,
+          "receiver": null,
+          "resolved": true,
+          "source_file": "/home/owner/daji/code/moss/tmp/cp-e-phase27-3/tests/phase27/adversarial/cp-e-c211da42/closure_enum_recovery.moss",
+          "specialization_identity": null,
+          "specialization_key": null,
+          "target": "fn:grouped_match",
+          "target_id": "entity-v1:function:grouped_match",
+          "target_kind": "function",
+          "target_source": {
+            "column": 1,
+            "file": "/home/owner/daji/code/moss/tmp/cp-e-phase27-3/tests/phase27/adversarial/cp-e-c211da42/closure_enum_recovery.moss",
+            "line": 22,
+            "range_precision": "line"
+          }
+        },
+        {
+          "argument_types": [
+            "bool"
+          ],
+          "boundary": "ordinary_call",
+          "call_site_id": "entity-v1:call:main:fn:recover_group",
+          "call_site_semantic_identity": "main@53:call:fn:recover_group",
+          "caller_specialization_key": null,
+          "line": 53,
+          "receiver": null,
+          "resolved": true,
+          "source_file": "",
+          "specialization_identity": null,
+          "specialization_key": null,
+          "target": "fn:recover_group",
+          "target_id": "entity-v1:function:recover_group",
+          "target_kind": "function",
+          "target_source": {
+            "column": 1,
+            "file": "",
+            "line": 41,
+            "range_precision": "line"
+          }
+        }
+      ],
+      "domain": {
+        "status": "not_applicable"
+      },
+      "status": "resolved",
+      "transitive_calls": [
+        {
+          "target": "fn:fail_twice",
+          "target_id": "entity-v1:function:fail_twice"
+        },
+        {
+          "target": "fn:grouped_match",
+          "target_id": "entity-v1:function:grouped_match"
+        },
+        {
+          "target": "fn:recover_group",
+          "target_id": "entity-v1:function:recover_group"
+        },
+        {
+          "target": "fn:used_leaf",
+          "target_id": "entity-v1:function:used_leaf"
+        },
+        {
+          "target": "fn:used_middle",
+          "target_id": "entity-v1:function:used_middle"
+        }
+      ]
+    },
+    "declared_symbols": [
+      {
+        "id": "entity-v1:enum:Fault",
+        "kind": "enum",
+        "name": "Fault"
+      },
+      {
+        "id": "entity-v1:enum-case:Fault.First",
+        "kind": "enum_case",
+        "name": "Fault.First"
+      },
+      {
+        "id": "entity-v1:enum-case:Fault.Second",
+        "kind": "enum_case",
+        "name": "Fault.Second"
+      },
+      {
+        "id": "entity-v1:enum:Outcome",
+        "kind": "enum",
+        "name": "Outcome"
+      },
+      {
+        "id": "entity-v1:enum-case:Outcome.First",
+        "kind": "enum_case",
+        "name": "Outcome.First"
+      },
+      {
+        "id": "entity-v1:enum-case:Outcome.Ok",
+        "kind": "enum_case",
+        "name": "Outcome.Ok"
+      },
+      {
+        "id": "entity-v1:enum-case:Outcome.Second",
+        "kind": "enum_case",
+        "name": "Outcome.Second"
+      },
+      {
+        "id": "entity-v1:function:fail_twice",
+        "kind": "function",
+        "name": "fail_twice"
+      },
+      {
+        "id": "entity-v1:function:grouped_match",
+        "kind": "function",
+        "name": "grouped_match"
+      },
+      {
+        "id": "entity-v1:main",
+        "kind": "main",
+        "name": "main"
+      },
+      {
+        "id": "entity-v1:function:recover_group",
+        "kind": "function",
+        "name": "recover_group"
+      },
+      {
+        "id": "entity-v1:function:unused_leaf",
+        "kind": "function",
+        "name": "unused_leaf"
+      },
+      {
+        "id": "entity-v1:function:unused_middle",
+        "kind": "function",
+        "name": "unused_middle"
+      },
+      {
+        "id": "entity-v1:function:used_leaf",
+        "kind": "function",
+        "name": "used_leaf"
+      },
+      {
+        "id": "entity-v1:function:used_middle",
+        "kind": "function",
+        "name": "used_middle"
+      }
+    ],
+    "diagnostics": [],
+    "ok": true
+  },
+  "equal": true
+}

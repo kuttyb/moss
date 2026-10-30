@@ -1,0 +1,50 @@
+classification	path	line	source_line	matched_value
+binding-name identity	src/semantic_checker.cpp	9655	if (stmt.a == name) {	a
+binding-name identity	src/semantic_checker.cpp	12255	"if (prior.a == base && tree_empty_constructor_named(prior.b, ""Map"")) {"	a
+binding-name identity	src/semantic_checker.cpp	12276	"if (prior.a == base && tree_empty_constructor_named(prior.b, ""Map"")) {"	a
+literal NAME/keyword	src/semantic_checker.cpp	12313	"(statement.b == ""push"" ||"	push
+literal NAME/keyword	src/semantic_checker.cpp	12314	"(staged_abi_v10() && statement.b == ""insert"")) &&"	insert
+binding-name identity	src/semantic_checker.cpp	12324	if (prior.a == statement.a &&	a
+binding-name identity	src/semantic_checker.cpp	12592	candidate.a != name ||	a
+literal NAME/keyword	src/semantic_checker.cpp	13505	"(statement.b == ""push"" ||"	push
+literal NAME/keyword	src/semantic_checker.cpp	13506	"(staged_abi_v10() && statement.b == ""insert"")) &&"	insert
+literal NAME/keyword	src/semantic_checker.cpp	13785	"if (statement.kind == Stmt::Kind::Call && statement.b == ""invoke"" &&"	invoke
+literal NAME/keyword	src/semantic_checker.cpp	14062	"if (statement.kind == Stmt::Kind::Call && statement.b == ""invoke"" &&"	invoke
+literal NAME/keyword	src/semantic_checker.cpp	17926	"statement.b == ""consume"" ? Effect::Consume : Effect::Read);"	consume
+binding-name identity	src/semantic_checker.cpp	19400	statement.a == selected_binding) {	a
+binding-name identity	src/semantic_checker.cpp	19487	if (statement.a == selected_binding) selected_binding.clear();	a
+literal NAME/keyword	src/semantic_checker.cpp	20479	"bool mutating = s.b == ""push"" || s.b == ""pop"" || s.b == ""pop_front"";"	push
+literal NAME/keyword	src/semantic_checker.cpp	20479	"bool mutating = s.b == ""push"" || s.b == ""pop"" || s.b == ""pop_front"";"	pop
+literal NAME/keyword	src/semantic_checker.cpp	20479	"bool mutating = s.b == ""push"" || s.b == ""pop"" || s.b == ""pop_front"";"	pop_front
+literal NAME/keyword	src/semantic_checker.cpp	20648	"bool mutating = statement.b == ""push"" || statement.b == ""pop"" || statement.b == ""pop_front"";"	push
+literal NAME/keyword	src/semantic_checker.cpp	20648	"bool mutating = statement.b == ""push"" || statement.b == ""pop"" || statement.b == ""pop_front"";"	pop
+literal NAME/keyword	src/semantic_checker.cpp	20648	"bool mutating = statement.b == ""push"" || statement.b == ""pop"" || statement.b == ""pop_front"";"	pop_front
+literal NAME/keyword	src/semantic_checker.cpp	20649	"if (statement.b == ""pop"" || statement.b == ""pop_front"") {"	pop
+literal NAME/keyword	src/semantic_checker.cpp	20649	"if (statement.b == ""pop"" || statement.b == ""pop_front"") {"	pop_front
+literal NAME/keyword	src/semantic_checker.cpp	22258	"bool consuming = s.b == ""consume"";"	consume
+literal NAME/keyword	src/semantic_checker.cpp	22736	"if (s.b == ""push"" && s.args.size() == 1) {"	push
+binding-name identity	src/semantic_checker.cpp	24254	statement.b.empty() && statement.a == name &&	a
+literal NAME/keyword	src/semantic_checker.cpp	28295	"const bool delayed_assert_check = statement.a == ""assert"" &&"	assert
+literal NAME/keyword	src/semantic_checker.cpp	28340	"const bool sort_builtin = statement.b.empty() && statement.a == ""sort"" &&"	sort
+literal NAME/keyword	src/semantic_checker.cpp	28377	"if (statement.b.empty() && statement.a == ""assert"" &&"	assert
+literal NAME/keyword	src/semantic_checker.cpp	28460	"tree_plain_identifier(statement.text) && statement.text != ""pass"")"	pass
+binding-name identity	src/semantic_checker.cpp	29059	prior.a == name) {	a
+literal NAME/keyword	src/fileio_semantics.inc	850	"(statement.a == ""FileIO"" ||"	FileIO
+literal NAME/keyword	src/executor_invoke_lowering.inc	324	"if (statement.b == ""invoke"") {"	invoke
+literal NAME/keyword	src/executor_invoke_lowering.inc	328	"if (statement.b == ""join"") {"	join
+literal NAME/keyword	src/executor_invoke_lowering.inc	521	"(statement.b == ""invoke"" || statement.b == ""join"")) {"	invoke
+literal NAME/keyword	src/executor_invoke_lowering.inc	521	"(statement.b == ""invoke"" || statement.b == ""join"")) {"	join
+literal NAME/keyword	src/executor_invoke_lowering.inc	534	"if (statement.b == ""join"")"	join
+literal NAME/keyword	src/native_generator.cpp	5918	"if (s.b != ""consume"" && !recovery_slot) o << ""&"";"	consume
+literal NAME/keyword	src/native_generator.cpp	5920	"if (recovery_slot && s.b == ""consume"")"	consume
+literal NAME/keyword	src/native_generator.cpp	5957	"if (s.b != ""consume"") {"	consume
+literal NAME/keyword	src/native_generator.cpp	6266	"if (s.a == ""_"") {"	_
+literal NAME/keyword	src/native_generator.cpp	6523	"(s.b == ""delete"" && (statement_receiver_type == ""map"" ||"	delete
+literal NAME/keyword	src/native_generator.cpp	6535	"if (s.b.empty() && s.a == ""assert"") {"	assert
+literal NAME/keyword	src/native_generator.cpp	6548	"if (s.b.empty() && s.a == ""assertEqual"") {"	assertEqual
+literal NAME/keyword	src/native_generator.cpp	6578	"if (s.b.empty() && s.a == ""sort"" && !functions_.count(s.a) &&"	sort
+literal NAME/keyword	src/native_generator.cpp	6777	"if (!s.b.empty() && s.b == ""pop"" && receiver_type &&"	pop
+literal NAME/keyword	src/file_chunk_codegen.inc	70	"if (s.b == ""write"" && s.args.size() == 2) {"	write
+literal NAME/keyword	src/file_chunk_codegen.inc	80	"if (s.b == ""open"" && s.args.size() == 2) {"	open
+literal NAME/keyword	src/file_chunk_codegen.inc	90	"if (s.b == ""sync"" && s.args.size() <= 1) {"	sync
+literal NAME/keyword	src/file_chunk_codegen.inc	101	"if (s.b == ""close"" && s.args.empty()) {"	close

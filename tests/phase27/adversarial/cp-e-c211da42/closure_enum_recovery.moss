@@ -1,0 +1,53 @@
+enum Outcome:
+  Ok(value: Int)
+  First
+  Second
+
+enum Fault:
+  First
+  Second
+
+fn used_leaf(value: Int) -> Int:
+  return value + 1
+
+fn used_middle(value: Int) -> Int:
+  return used_leaf(value)
+
+fn unused_leaf(value: Int) -> Int:
+  return value + 9
+
+fn unused_middle(value: Int) -> Int:
+  return unused_leaf(value)
+
+fn grouped_match(flag: Bool) -> Int:
+  if flag:
+    value = used_middle(4)
+  else:
+    value = 2
+  match (Outcome.Ok(value: value)):
+    case Ok(value):
+      return value
+    case First:
+      return 1
+    case Second:
+      return 2
+
+fn fail_twice(first: Bool):
+  if first:
+    raise Fault.First
+  else:
+    raise Fault.Second
+
+fn recover_group(first: Bool):
+  try:
+    fail_twice(first)
+  recover error:
+    match error:
+      case First:
+        echo "first"
+      case Second:
+        echo "second"
+
+fn main():
+  echo grouped_match(true)
+  recover_group(false)

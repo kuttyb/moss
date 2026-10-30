@@ -1,0 +1,3 @@
+checker_lint_exit=0
+raw_iterable_shape_read=found
+sink_excerpt='string iter_expr = trim(statement.b);\n        if (starts_with(iter_expr, "range(") ||\n            (starts_with(iter_expr, "[") && ends_with(iter_expr, "]"))) {\n          bounded = true;\n        } else {\n          '

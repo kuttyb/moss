@@ -1,0 +1,4 @@
+module closure_app
+import closure_lib
+fn main():
+  echo closure_lib.used(8)
