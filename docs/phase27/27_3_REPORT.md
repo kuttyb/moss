@@ -44,4 +44,26 @@ L7 ruled that acceptance of malformed REJECTED-SOURCE input is a MIGRATION BUG, 
 
 The EST incomplete-trailing-operator query now identifies incomplete operator tails. Checker validation emits the baseline MOSS_COMPILE_ERROR / invalid arithmetic expression before semantic interpretation; shadow binary-split parity avoids asserting on the legacy partial pair for that rejected input. Regression coverage in tests/tooling/check_phase27_est.py checks the 27.1 rejected-source fixtures for **, in, &&, ||, incomplete expressions, and all six files containing the seven isolated delimiter fragments. It requires the baseline diagnostic signature in off and shadow. The incomplete-expression repro is also checked in standalone and package modes. The focused EST regression passes.
 
-The prior Agent 2 review's NO-GO still stands due the indirect expression-reader inventory and the incomplete checked-declaration closure comparison. The reviewer identified helper/local aliases that the direct-field lint does not follow. These are the next bounded taint-audit and migration items; no semantic stop is active under the L7 ruling.
+
+## Latest checkpoint — 2026-10-30
+
+The preceding review sections describe historical frozen checkpoints. The current Phase 27.3 branch is `phase27-3-work`, pushed through `175c7592`; the source checkpoint reviewed by CP-F is `ea7bf9f47cca36f5815481a683bbda3d7e766631` (CP-F freeze `2bafad47` includes only evidence/status commits afterward).
+
+### Final CP-E review
+
+- Fresh CP-E at `c211da42` returned `CP-E verdict: NO-GO` because `observable_body_effects` copied `For.b` into `iter_expr` then classified `range(...)` and vector shapes with raw prefix/suffix checks. This is a MIGRATION BUG under L7. Correction: checker now uses EST simple-call and vector-literal projections in `semantic_checker.cpp` (fix `ea7bf9f4`). Oracle: Phase 27.2-m1 compiler `04be1a1bbbc7a4fd8fe2e4090b4b5bad5dd573e4`; candidate off and shadow match it. Reproducer: `tests/phase27/adversarial/cp-e-phase27-3-rereview-for-alias.moss`.
+- Fresh re-review at `ea7bf9f47cca36f5815481a683bbda3d7e766631` returned `CP-E verdict: GO`; evidence commit `6b43550294a206891fda449b3590538df47d0322` is recorded on this branch as `2bafad47`. It found parity across 934 `.moss` sources. Checked-declaration closure accounts for 537 accepted sources; the 397 rejected sources are explicitly listed as exclusions with diagnostics. Callable census: 1,322 reachable and 163 unreachable. Parenthesized enum, recovery, malformed-source, and for-alias probes matched. Package build matched; package test failed identically with `MODULE_PROVIDER_NOT_FOUND`. Full report and raw evidence: `docs/phase27/adversarial/CP_E_PHASE27_3_REREVIEW.md` and adjacent CP-E JSONL files.
+- Fresh CP-E independently confirmed 40 literal NAME comparisons and 9 binding-name comparisons, three function/API-keyed type-argument exemptions, zero `tree_expression_text` source reads, and zero checker/emitter reader sites. The regex lint still missed the `For.b` alias; a bounded taint audit caught it. That lint blind spot and its resolution are recorded in `agent-feedback/phase27/phase27-3-expression-tree/checker-reader-audit/observations.jsonl`.
+
+### Emitter semantic-fact audit (record only; no moves in 27.3)
+
+- Parameter ABI mode: `src/native_generator.cpp:1223` — `function_parameter_abi` chooses value/shared-borrow/mutable-borrow using parameter effects, concrete type, and generic constraint operations. Specialization facts take a separate path through `concrete_parameter_abi`.
+- Synchronization fragment locks: `src/handler_lowering.inc:146` — `path_fragment_plan` rebuilds a fragment lock set from writes, consumes, and protected reads, then maps leaves to classes/modes from the domain plan.
+- Domain construction ordering: `src/native_generator.cpp:5381` and `src/native_generator.cpp:5393` — the emitter separates constructor statements from executable statements and orders constructors by reverse domain rank; `src/native_generator.cpp:6967` recognizes constructor expressions.
+- Functional lowering choice: `src/native_generator.cpp:3117` — the emitter dispatches to fused or eager code generation from `planned->fused`; nested unplanned pipelines use eager lowering. This consumes checked/optimized plan fields but still selects the backend path.
+
+These decisions remain for a later backend-contract phase; Phase 27.3 did not move them.
+
+### CP-F and remaining gates
+
+CP-F is running at frozen candidate `2bafad47` against baseline `04be1a1bbbc7a4fd8fe2e4090b4b5bad5dd573e4`. It must finish Rust default and `-O`, Fast Debug, `.mossi`, and ASan/UBSan corpus differentials. At report update time the full union corpus had not completed and sanitizer was queued. Idle-machine off/shadow full gates, conformance, sanitizer confirmation, compiler-perf vs the merge first parent and `phase27-1-m1`, merge, push, and tag remain outstanding. No Phase 27.3 completion is claimed.
