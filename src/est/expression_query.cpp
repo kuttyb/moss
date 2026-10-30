@@ -3,6 +3,7 @@
 #include "../parser_support.hpp"
 #include <algorithm>
 #include <cassert>
+#include <cstdio>
 #include <stdexcept>
 #include <type_traits>
 
@@ -566,6 +567,76 @@ bool is_identifier(const ExpressionView& e) {
     const bool legacy = moss::plain_identifier(e.source);
     assert(legacy == result);
   }
+  return result;
+}
+
+bool identifier_named(const ExpressionView& e, std::string_view name) {
+  std::string actual;
+  const bool result = project_identifier(e, actual) && actual == name;
+  if (mode() == Mode::Shadow) assert(moss::trim(e.source) == name);
+  return result;
+}
+
+bool expressions_equal(const ExpressionView& left, const ExpressionView& right) {
+  const bool result = structurally_equal(left, right);
+  if (mode() == Mode::Shadow) {
+    const bool legacy = moss::trim(left.source) == moss::trim(right.source);
+    if (legacy != result)
+      std::fprintf(stderr, "tree equality mismatch left=<%s> right=<%s> tree=%d legacy=%d\n", left.source.c_str(), right.source.c_str(), result, legacy);
+    assert(result == legacy);
+  }
+  return result;
+}
+
+bool empty_vector_literal(const ExpressionView& e) {
+  bool result = false;
+  if (e.arena && e.root < e.arena->size()) {
+    const auto root = unparenthesized(*e.arena, e.root);
+    if (const auto* collection = std::get_if<Collection>(&e.arena->at(root)))
+      result = collection->delimiter == '[' && collection->elements.empty();
+  }
+  if (mode() == Mode::Shadow) assert((moss::trim(e.source) == "[]") == result);
+  return result;
+}
+
+bool member_expression(const ExpressionView& e) {
+  bool result = false;
+  if (e.arena && e.root < e.arena->size()) {
+    const auto& node = e.arena->at(e.root);
+    result = std::holds_alternative<Member>(node);
+    if (const auto* call = std::get_if<Call>(&node))
+      result = std::holds_alternative<Member>(e.arena->at(call->callee));
+  }
+  if (mode() == Mode::Shadow)
+    assert((moss::trim(e.source).find('.') != std::string::npos) == result);
+  return result;
+}
+
+bool empty_constructor_named(const ExpressionView& e, std::string_view name) {
+  bool result = false;
+  if (e.arena && e.root < e.arena->size()) {
+    const auto& node = e.arena->at(e.root);
+    if (const auto* constructor = std::get_if<Constructor>(&node)) {
+      std::string type;
+      result = project_identifier(view(*e.arena, constructor->type,
+          e.source_text(constructor->type).value_or(std::string{})), type) &&
+          type == name && constructor->arguments.empty();
+    } else if (const auto* call = std::get_if<Call>(&node)) {
+      std::string callee;
+      result = project_identifier(view(*e.arena, call->callee,
+          e.source_text(call->callee).value_or(std::string{})), callee) &&
+          callee == name && call->arguments.empty();
+    }
+  }
+  if (mode() == Mode::Shadow)
+    assert((moss::trim(e.source) == std::string(name) + "()") == result);
+  return result;
+}
+
+bool placeholder_expression(const ExpressionView& e) {
+  const bool result = e.arena && e.root < e.arena->size() &&
+      std::holds_alternative<Placeholder>(e.arena->at(e.root));
+  if (mode() == Mode::Shadow) assert((moss::trim(e.source) == "_") == result);
   return result;
 }
 

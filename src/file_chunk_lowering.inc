@@ -107,7 +107,7 @@ ObservableEffects chunk_mapper_invocation_effects(
     // later binding that happens to have the same spelling. Conservatively
     // decline the contextual proof if any such shadow can reach the mapper.
     if ((statement.kind == Stmt::Kind::For &&
-         trim(statement.a) == parameter) ||
+         tree_expression_text(statement.a) == parameter) ||
         (statement.kind == Stmt::Kind::Case &&
          std::find(statement.args.begin(), statement.args.end(), parameter) !=
              statement.args.end()))
