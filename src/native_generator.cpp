@@ -1064,10 +1064,10 @@ class Generator {
     return syntax && est::decimal_integer_literal(*syntax, true, false);
   }
 
-  std::optional<string> tree_numeric_literal_spelling(
+  std::optional<DecodedNumber> tree_numeric_literal_value(
       std::string_view expression) const {
     auto syntax = expression_view_from_est(expression);
-    return syntax ? est::project_numeric_literal_spelling(*syntax)
+    return syntax ? est::numeric_literal_value(*syntax)
                   : std::nullopt;
   }
 
@@ -1611,9 +1611,7 @@ class Generator {
 
   string generated_integer_literal_as_float(string expression) const {
     // An Int literal in a Float context converts exactly as `as f64` does.
-    auto numeric = tree_numeric_literal_spelling(expression);
-    auto decoded = numeric ? decode_numeric_literal_expression(*numeric)
-                           : std::nullopt;
+    auto decoded = tree_numeric_literal_value(expression);
     if (!decoded || decoded->kind != NumericLiteral::Kind::Int)
       throw std::runtime_error("internal error: numeric literal '" + expression +
                                "' was not validated by the lexer");
@@ -3246,9 +3244,8 @@ class Generator {
     // canonical suffixed Rust literal (`16_i64`, `2.5_f64`), never from Moss
     // spelling.
     if (generated_integer_literal(e) || literal == est::LiteralClass::Float) {
-      auto numeric = tree_numeric_literal_spelling(e);
-      if (numeric)
-        if (auto rust = rust_numeric_literal(*numeric)) return *rust;
+      if (auto numeric = tree_numeric_literal_value(e))
+        return rust_numeric_literal(*numeric);
       throw std::runtime_error("internal error: numeric literal '" + e +
                                "' was not validated by the lexer");
     }
@@ -3465,8 +3462,8 @@ class Generator {
         unary_operation == "-") {
       const string inner = unary_operand;
       if (generated_integer_literal(inner))
-        if (auto numeric = tree_numeric_literal_spelling("-" + inner))
-          if (auto rust = rust_numeric_literal(*numeric)) return *rust;
+        if (auto numeric = tree_numeric_literal_value("-" + inner))
+          return rust_numeric_literal(*numeric);
       auto operand_type = generated_expr_type(inner, types);
       if (operand_type && canonical_type_name(*operand_type) == "int") {
         string operand = expr(inner, d, locals, types);

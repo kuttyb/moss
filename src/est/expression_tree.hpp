@@ -16,6 +16,7 @@
 
 #include "../constraints.hpp"
 #include "../functional_source_pipeline.hpp"
+#include "../numeric_literal.hpp"
 #include "../type_ir.hpp"
 
 namespace moss { struct Program; struct Stmt; }
@@ -65,8 +66,20 @@ struct SemanticFacts {
   std::optional<Effect> inferred_effect;
 };
 
+enum class LiteralClass : std::uint8_t {
+  None, Integer, Float, String, Character, Boolean
+};
+
 // Child IDs always denote distinct occurrences. The arena never interns text.
-struct Literal { std::string spelling; };
+// Lexical facts are captured by the EST lexer so semantic consumers do not
+// have to classify a rendered expression or re-read the token spelling.
+struct Literal {
+  std::string spelling;
+  LiteralClass literal_class = LiteralClass::None;
+  NumericLiteral numeric;
+  bool decimal_integer_digits = false;
+  bool decimal_integer_separators = false;
+};
 struct Identifier { std::string name; };
 struct Unary { std::string op; ExprId operand; };
 struct Binary { std::string op; ExprId left, right; };
@@ -232,11 +245,10 @@ bool member_expression(const ExpressionView& view);
 bool empty_constructor_named(const ExpressionView& view, std::string_view name);
 std::optional<std::string> project_empty_constructor_type(
     const ExpressionView& view);
-enum class LiteralClass : std::uint8_t { None, Integer, Float, String, Character, Boolean };
 LiteralClass root_literal_class(const ExpressionView& view);
 bool decimal_integer_literal(const ExpressionView& view, bool allow_sign,
                              bool allow_underscores);
-std::optional<std::string> project_numeric_literal_spelling(
+std::optional<DecodedNumber> numeric_literal_value(
     const ExpressionView& view);
 bool placeholder_expression(const ExpressionView& view);
 bool contains_identifier(const ExpressionView& view, std::string_view name);

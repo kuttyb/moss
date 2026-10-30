@@ -269,7 +269,11 @@ Mode mode() {
 namespace {
 struct Token { std::string text; bool word = false; bool literal = false;
                std::uint32_t line = 1, column = 1;
-               std::uint32_t source_begin = 0, source_end = 0; };
+               std::uint32_t source_begin = 0, source_end = 0;
+               LiteralClass literal_class = LiteralClass::None;
+               NumericLiteral numeric;
+               bool decimal_integer_digits = false;
+               bool decimal_integer_separators = false; };
 
 std::vector<Token> lex(std::string_view source) {
   std::vector<Token> result;
@@ -297,9 +301,21 @@ std::vector<Token> lex(std::string_view source) {
       if (!literal.ok || literal.end <= i)
         throw std::invalid_argument("EST invalid numeric literal");
       i = literal.end;
+      const auto spelling = source.substr(start, i - start);
+      const bool decimal_digits = literal.kind == NumericLiteral::Kind::Int &&
+          std::all_of(spelling.begin(), spelling.end(), [](unsigned char ch) {
+            return moss::ascii_is_digit(ch);
+          });
+      const bool decimal_separators = literal.kind == NumericLiteral::Kind::Int &&
+          std::all_of(spelling.begin(), spelling.end(), [](unsigned char ch) {
+            return moss::ascii_is_digit(ch) || ch == '_';
+          });
       result.push_back({literal.spelling, false, true, start_line, start_column,
                         static_cast<std::uint32_t>(start),
-                        static_cast<std::uint32_t>(i)});
+                        static_cast<std::uint32_t>(i),
+                        literal.kind == NumericLiteral::Kind::Int
+                            ? LiteralClass::Integer : LiteralClass::Float,
+                        literal, decimal_digits, decimal_separators});
     } else if (c == '"' || c == '\'') {
       const char quote = c;
       ++i;
@@ -313,7 +329,9 @@ std::vector<Token> lex(std::string_view source) {
       result.push_back({std::string(source.substr(start, i-start)), false, true,
                         start_line, start_column,
                         static_cast<std::uint32_t>(start),
-                        static_cast<std::uint32_t>(i)});
+                        static_cast<std::uint32_t>(i),
+                        quote == '"' ? LiteralClass::String
+                                      : LiteralClass::Character});
     } else {
       ++i;
       if (i < source.size()) {
@@ -494,7 +512,12 @@ class Reader {
       const auto token = tokens_[position_++];
       id = token.text == "_" ? append(Placeholder{}, token.source_begin)
           : token.literal || token.text == "true" || token.text == "false"
-          ? append(Literal{token.text}, token.source_begin)
+          ? append(Literal{token.text,
+                           token.literal_class == LiteralClass::None
+                               ? LiteralClass::Boolean : token.literal_class,
+                           token.numeric, token.decimal_integer_digits,
+                           token.decimal_integer_separators},
+                   token.source_begin)
           : token.word ? append(Identifier{token.text}, token.source_begin)
           : throw std::invalid_argument("EST unsupported expression token");
     }

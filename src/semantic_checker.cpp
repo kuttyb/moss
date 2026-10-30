@@ -5749,9 +5749,7 @@ class Checker {
         if (syntax && syntax->arena &&
             std::holds_alternative<moss::est::Literal>(
                 syntax->arena->at(literal_root))) {
-          auto numeric = tree_numeric_literal_spelling(value);
-          auto decoded = numeric
-              ? moss::decode_numeric_literal_expression(*numeric) : std::nullopt;
+          auto decoded = tree_numeric_literal_value(value);
           if (decoded && decoded->kind == moss::NumericLiteral::Kind::Int) {
             auto integer = moss::Type::primitive("int");
             if (!expected || integer->structurally_equal(*expected))
@@ -10740,9 +10738,10 @@ class Checker {
                   : moss::est::LiteralClass::None;
   }
 
-  static std::optional<string> tree_numeric_literal_spelling(const string& value) {
+  static std::optional<moss::DecodedNumber> tree_numeric_literal_value(
+      const string& value) {
     auto syntax = checker_est_view(value);
-    return syntax ? moss::est::project_numeric_literal_spelling(*syntax)
+    return syntax ? moss::est::numeric_literal_value(*syntax)
                   : std::nullopt;
   }
 
@@ -11410,42 +11409,13 @@ class Checker {
   // `%` by such a divisor cannot fail in any engine. `-1` stays conservative
   // (Int.MIN / -1 overflows; every engine currently wraps it), and every other
   // divisor (names, calls, arithmetic, 0) stays a possible panic.
-  static bool proven_safe_integer_divisor(const string& divisor) {
-    string value = trim(divisor);
-    bool negative = false;
-    for (;;) {
-      if (value.size() >= 2 && value.front() == '(' && value.back() == ')') {
-        int depth = 0;
-        bool encloses = true;
-        for (size_t index = 0; index < value.size(); ++index) {
-          if (value[index] == '(') ++depth;
-          else if (value[index] == ')' && --depth == 0 && index + 1 != value.size()) {
-            encloses = false;
-            break;
-          }
-        }
-        if (!encloses) return false;
-        value = trim(value.substr(1, value.size() - 2));
-        continue;
-      }
-      if (!value.empty() && (value.front() == '-' || value.front() == '+')) {
-        if (value.front() == '-') negative = !negative;
-        value = trim(value.substr(1));
-        continue;
-      }
-      break;
-    }
-    if (value.empty() ||
-        !std::all_of(value.begin(), value.end(), [](char ch) {
-          return moss::ascii_is_digit(static_cast<unsigned char>(ch));
-        }))
+  bool proven_safe_integer_divisor(const string& divisor) const {
+    auto syntax = checker_est_view(divisor);
+    if (!syntax || !moss::est::decimal_integer_literal(*syntax, true, false))
       return false;
-    // Compare digit strings: no numeric conversion, so no overflow. A literal
-    // outside Int range is rejected separately (INT_LITERAL_OUT_OF_RANGE).
-    const size_t significant = value.find_first_not_of('0');
-    if (significant == string::npos) return false;            // 0
-    if (negative && value.substr(significant) == "1") return false;  // -1
-    return true;
+    auto decoded = moss::est::numeric_literal_value(*syntax);
+    return decoded && decoded->kind == moss::NumericLiteral::Kind::Int &&
+        decoded->integer != 0 && decoded->integer != -1;
   }
 
   struct BuiltinCallSemantics {
@@ -20748,21 +20718,7 @@ class Checker {
 
   static bool is_integer_literal_at_least(const string& expression,
                                           std::int64_t minimum) {
-    auto syntax = checker_est_view(expression);
-    if (!syntax || !syntax->arena || syntax->root >= syntax->arena->size())
-      return false;
-    const auto root = moss::est::unparenthesized(*syntax->arena, syntax->root);
-    const auto& node = syntax->arena->at(root);
-    bool literal_shape = std::holds_alternative<moss::est::Literal>(node);
-    if (const auto* unary = std::get_if<moss::est::Unary>(&node))
-      literal_shape = unary->op == "+" &&
-          std::holds_alternative<moss::est::Literal>(
-              syntax->arena->at(moss::est::unparenthesized(
-                  *syntax->arena, unary->operand)));
-    if (!literal_shape) return false;
-    auto numeric = tree_numeric_literal_spelling(expression);
-    auto decoded = numeric
-        ? moss::decode_numeric_literal_expression(*numeric) : std::nullopt;
+    auto decoded = tree_numeric_literal_value(expression);
     return decoded && decoded->kind == moss::NumericLiteral::Kind::Int &&
         decoded->integer >= minimum;
   }

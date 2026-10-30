@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cstdio>
+#include <limits>
 #include <stdexcept>
 #include <type_traits>
 
@@ -1329,22 +1330,12 @@ std::optional<std::string> project_empty_constructor_type(
 LiteralClass root_literal_class(const ExpressionView& e) {
   if (!e.arena || e.root >= e.arena->size()) return LiteralClass::None;
   const auto root = unparenthesized(*e.arena, e.root);
-  auto spelling = project_numeric_literal_spelling(e);
-  if (!spelling) {
-    const auto* literal = std::get_if<Literal>(&e.arena->at(root));
-    if (!literal) return LiteralClass::None;
-    spelling = literal->spelling;
-  }
-  if (spelling->size() >= 2 && spelling->front() == '"' &&
-      spelling->back() == '"') return LiteralClass::String;
-  if (spelling->size() >= 2 && spelling->front() == '\'' &&
-      spelling->back() == '\'') return LiteralClass::Character;
-  if (*spelling == "true" || *spelling == "false")
-    return LiteralClass::Boolean;
-  if (auto decoded = decode_numeric_literal_expression(*spelling))
+  if (auto decoded = numeric_literal_value(e))
     return decoded->kind == NumericLiteral::Kind::Int
         ? LiteralClass::Integer : LiteralClass::Float;
-  return LiteralClass::None;
+  const auto* literal = std::get_if<Literal>(&e.arena->at(root));
+  if (!literal) return LiteralClass::None;
+  return literal->literal_class;
 }
 
 bool decimal_integer_literal(const ExpressionView& e, bool allow_sign,
@@ -1352,37 +1343,44 @@ bool decimal_integer_literal(const ExpressionView& e, bool allow_sign,
   if (!e.arena || e.root >= e.arena->size()) return false;
   const auto root = unparenthesized(*e.arena, e.root);
   ExprId literal_id = root;
-  if (const auto* unary = std::get_if<Unary>(&e.arena->at(root))) {
-    if (!allow_sign || (unary->op != "+" && unary->op != "-")) return false;
-    literal_id = unparenthesized(*e.arena, unary->operand);
+  for (;;) {
+    if (const auto* unary = std::get_if<Unary>(&e.arena->at(literal_id))) {
+      if (!allow_sign || (unary->op != "+" && unary->op != "-")) return false;
+      literal_id = unparenthesized(*e.arena, unary->operand);
+      continue;
+    }
+    break;
   }
   const auto* literal = std::get_if<Literal>(&e.arena->at(literal_id));
-  if (!literal) return false;
-  const std::string_view spelling = literal->spelling;
-  if (spelling.empty()) return false;
-  for (const unsigned char character : spelling)
-    if (!(moss::ascii_is_digit(character) ||
-          (allow_underscores && character == '_'))) return false;
-  return true;
+  if (!literal || literal->literal_class != LiteralClass::Integer) return false;
+  return allow_underscores ? literal->decimal_integer_separators
+                           : literal->decimal_integer_digits;
 }
 
-std::optional<std::string> project_numeric_literal_spelling(
-    const ExpressionView& e) {
+std::optional<DecodedNumber> numeric_literal_value(const ExpressionView& e) {
   if (!e.arena || e.root >= e.arena->size()) return std::nullopt;
-  const auto root = unparenthesized(*e.arena, e.root);
-  if (const auto* literal = std::get_if<Literal>(&e.arena->at(root))) {
-    if (decode_numeric_literal_expression(literal->spelling))
-      return literal->spelling;
+  ExprId current = unparenthesized(*e.arena, e.root);
+  bool negative = false;
+  while (const auto* unary = std::get_if<Unary>(&e.arena->at(current))) {
+    if (unary->op != "+" && unary->op != "-") return std::nullopt;
+    if (unary->op == "-") negative = !negative;
+    current = unparenthesized(*e.arena, unary->operand);
+  }
+  const auto* literal = std::get_if<Literal>(&e.arena->at(current));
+  if (!literal || (literal->literal_class != LiteralClass::Integer &&
+                   literal->literal_class != LiteralClass::Float))
     return std::nullopt;
-  }
-  if (const auto* unary = std::get_if<Unary>(&e.arena->at(root));
-      unary && (unary->op == "+" || unary->op == "-")) {
-    const auto operand = unparenthesized(*e.arena, unary->operand);
-    if (const auto* literal = std::get_if<Literal>(&e.arena->at(operand));
-        literal && decode_numeric_literal_expression(literal->spelling))
-      return unary->op + literal->spelling;
-  }
-  return std::nullopt;
+  if (literal->literal_class == LiteralClass::Float)
+    return DecodedNumber{NumericLiteral::Kind::Float, 0,
+        negative ? -literal->numeric.floating : literal->numeric.floating};
+  if (!int_literal_in_range(literal->numeric, negative)) return std::nullopt;
+  const auto magnitude = literal->numeric.magnitude;
+  const std::int64_t integer = negative
+      ? magnitude == kNumericIntMinMagnitude
+          ? std::numeric_limits<std::int64_t>::min()
+          : -static_cast<std::int64_t>(magnitude)
+      : static_cast<std::int64_t>(magnitude);
+  return DecodedNumber{NumericLiteral::Kind::Int, integer, 0.0};
 }
 
 bool placeholder_expression(const ExpressionView& e) {
