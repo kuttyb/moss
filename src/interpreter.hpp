@@ -1140,7 +1140,11 @@ class FastInterpreter {
         -> std::optional<FunctionalNodeKind> {
       for (const auto& operation : functional_operations())
         if (name == operation.name) return operation.kind;
-      return std::nullopt;
+      // Preserve the legacy interpreter's handling of user-named stages: it
+      // evaluates the pipeline input and reports the first unsupported stage
+      // at runtime. Source denotes an unrecognized stage in EST, not a source
+      // parse failure.
+      return FunctionalNodeKind::Source;
     };
     const auto fingerprint = est::fingerprint(std::string(expression));
     auto convert = [&](std::uint32_t arena_index, est::ExprId root)
@@ -1243,9 +1247,12 @@ class FastInterpreter {
       std::string callee;
       for (const auto& operation : functional_operations())
         if (operation.kind == stage.kind) callee = operation.name;
+      if (callee.empty()) {
+        std::vector<std::string> ignored_arguments;
+        if (!expression_call(stage.raw, callee, ignored_arguments))
+          callee = stage.raw;
+      }
       const auto& args = stage.arguments;
-      if (callee.empty())
-        throw RuntimeError(line, "unsupported checked pipeline stage");
       if (callee == "sum") {
         if (current.kind != Value::Kind::Vector) throw RuntimeError(line, "pipeline sum requires a Vector");
         Value total = (current.element_type == "Float" || current.element_type == "float")
