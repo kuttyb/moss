@@ -450,10 +450,10 @@ bool project_simple_call(const ExpressionView& e, std::string& callee,
     const auto& root_node = e.arena->at(root);
     const bool tree_call_shape = std::holds_alternative<Call>(root_node) ||
         std::holds_alternative<Constructor>(root_node) ||
-        std::holds_alternative<Message>(root_node) ||
-        std::holds_alternative<Pipeline>(root_node);
+        std::holds_alternative<Message>(root_node);
     // A legacy trailing-call scan can mistake a call nested inside a larger
-    // comparison or arithmetic expression for the expression's call shape.
+    // comparison, arithmetic expression, or multi-stage pipeline for the
+    // expression's simple-call shape.
     const bool legacy_noncall_false_positive =
         legacy && !result && !tree_call_shape;
     if (legacy != result && !legacy_noncall_false_positive)

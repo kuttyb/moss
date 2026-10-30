@@ -66,4 +66,10 @@ These decisions remain for a later backend-contract phase; Phase 27.3 did not mo
 
 ### CP-F and remaining gates
 
-CP-F is running at frozen candidate `2bafad47` against baseline `04be1a1bbbc7a4fd8fe2e4090b4b5bad5dd573e4`. It must finish Rust default and `-O`, Fast Debug, `.mossi`, and ASan/UBSan corpus differentials. At report update time the full union corpus had not completed and sanitizer was queued. Idle-machine off/shadow full gates, conformance, sanitizer confirmation, compiler-perf vs the merge first parent and `phase27-1-m1`, merge, push, and tag remain outstanding. No Phase 27.3 completion is claimed.
+CP-F completed at frozen candidate `2bafad47` against baseline `04be1a1bbbc7a4fd8fe2e4090b4b5bad5dd573e4`. Its exact verdict is **CP-F verdict: NO-GO**. The valid-source overflow finding is awaiting L7 classification; details and raw evidence are in `docs/phase27/adversarial/CP_F_PHASE27_3_REPORT.md` and `tests/phase27/adversarial/cp-f-phase27-3/`. Full differential, sanitizer, and shadow findings are recorded there. Idle-machine full gates, conformance, final sanitizer disposition, compiler-perf vs the merge first parent and `phase27-1-m1`, merge, push, and tag remain outstanding. No Phase 27.3 completion is claimed.
+
+### CP-F shadow assertion follow-up
+
+CP-F exposed two `project_simple_call` shadow assertions on `nested-stage.moss` and `stage-flat.moss`. In both, the EST root is a multi-stage `Pipeline`, so it has no simple-call projection; the legacy trailing-call scan nevertheless returns a call from a nested stage. The shadow check now treats a missing simple-call projection on a non-Call/Constructor/Message root as that legacy false positive. This leaves off-mode and shadow-mode semantics unchanged.
+
+Oracle and two-path reproducer: CP-F's committed probe sources `tests/phase27/adversarial/cp-ca9e8ca/nested-stage.moss` and `stage-flat.moss`; phase27-2-m1, candidate off, and candidate shadow return identical diagnostics (`TYPE_AMBIGUOUS_OPEN_RESULT` and `UNKNOWN_SYMBOL_OR_TYPE`, respectively). The EST root kind independently establishes that neither expression is a simple call. Classification: LEGACY MISPARSE. Focused build and all three-path JSON comparisons pass. This correction is checkpointed at `1707a0cc` with the CP-F evidence import.
