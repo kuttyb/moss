@@ -3,7 +3,6 @@
 #include "../parser_support.hpp"
 #include <algorithm>
 #include <cassert>
-#include <cstdio>
 #include <stdexcept>
 #include <type_traits>
 
@@ -11,6 +10,12 @@ namespace moss::est {
 
 std::optional<std::string> ExpressionView::source_text(ExprId expression) const {
   if (!arena || root >= arena->size() || expression >= arena->size()) return std::nullopt;
+  if (expression == root) {
+    const auto first = source.find_first_not_of(" \t\r\n");
+    if (first == std::string::npos) return std::string{};
+    const auto last = source.find_last_not_of(" \t\r\n");
+    return source.substr(first, last - first + 1);
+  }
   const auto r = arena->span(root), c = arena->span(expression);
   if (c.source_begin < r.source_begin || c.source_end < c.source_begin ||
       c.source_end > r.source_end) return std::nullopt;
@@ -92,7 +97,8 @@ bool equal_node(const Arena& left, ExprId lhs, const Arena& right, ExprId rhs) {
              equal_node(left, node.target, right, other->target) &&
              same_children(node.arguments, other->arguments);
     else if constexpr (std::is_same_v<T, NamedArgument>)
-      return node.name == other->name && equal_node(left, node.value, right, other->value);
+      return node.name == other->name && node.separator == other->separator &&
+             equal_node(left, node.value, right, other->value);
     else if constexpr (std::is_same_v<T, Placeholder>) return true;
     else if constexpr (std::is_same_v<T, Collection>)
       return node.delimiter == other->delimiter && same_children(node.elements, other->elements);
@@ -167,7 +173,6 @@ bool project_simple_call(const ExpressionView& e, std::string& callee,
   if (mode() == Mode::Shadow) {
     std::string old_name; std::vector<std::string> old_args;
     const bool legacy = moss::parse_simple_call(e.source, old_name, old_args);
-    if (legacy != result) std::fprintf(stderr, "EST simple-call mismatch: <%s> legacy=%d tree=%d\n", e.source.c_str(), legacy, result);
     assert(legacy == result);
     if (result) assert(old_name == callee && old_args == arguments);
   }
@@ -205,11 +210,156 @@ bool project_member_call(const ExpressionView& e, std::string& receiver,
     bool old_outputs = false;
     const bool legacy = moss::parse_member_call(e.source, old_receiver, old_member,
                                                 old_args, &old_outputs);
-    if (legacy != result) std::fprintf(stderr, "EST member-call mismatch: <%s> legacy=%d tree=%d\n", e.source.c_str(), legacy, result);
     assert(legacy == result);
     if (old_outputs) assert(old_receiver == receiver && old_member == member);
     if (outputs_written) assert(old_outputs == *outputs_written);
     if (result) assert(old_args == arguments);
+  }
+  return result;
+}
+
+bool project_bound_method(const ExpressionView& e, std::string& receiver,
+                          std::string& method) {
+  bool result = false;
+  if (e.arena && e.root < e.arena->size())
+    if (const auto* member = std::get_if<Member>(&e.arena->at(e.root)))
+      if (auto base = e.source_text(member->base)) {
+        std::string ignored;
+        const bool simple = project_identifier(view(*e.arena, member->base, *base), ignored);
+        if (simple && !ignored.empty() && ignored != "_") {
+          receiver = std::move(*base); method = member->name; result = true;
+        }
+      }
+  if (mode() == Mode::Shadow) {
+    std::string old_receiver, old_method;
+    const bool legacy = moss::parse_bound_method_callable(e.source, old_receiver, old_method);
+    assert(legacy == result);
+    if (result) assert(old_receiver == receiver && old_method == method);
+  }
+  return result;
+}
+
+std::string strip_grouping(const ExpressionView& e) {
+  std::string result = e.source_text(unparenthesized(*e.arena, e.root)).value_or(e.source);
+  if (mode() == Mode::Shadow)
+    assert(result == moss::strip_redundant_outer_parentheses(e.source));
+  return result;
+}
+
+std::string normalize_pipeline_tree(const ExpressionView& e) {
+  auto trim_source = [](std::string value) {
+    const auto first = value.find_first_not_of(" \t\r\n");
+    if (first == std::string::npos) return std::string{};
+    const auto last = value.find_last_not_of(" \t\r\n");
+    return value.substr(first, last - first + 1);
+  };
+  std::string result = trim_source(e.source);
+  if (e.arena && e.root < e.arena->size()) {
+    const auto root = e.root;
+    if (const auto* pipeline = std::get_if<Pipeline>(&e.arena->at(root))) {
+      auto input = e.source_text(pipeline->input);
+      if (input) {
+        result = std::move(*input);
+        for (const auto stage_id : pipeline->stages) {
+          std::string callee;
+          std::vector<std::string> args;
+          if (const auto* call = std::get_if<Call>(&e.arena->at(stage_id))) {
+            auto name = e.source_text(call->callee);
+            auto children = child_texts(e, call->arguments);
+            if (!name || !children) { result = trim_source(e.source); break; }
+            callee = std::move(*name); args = std::move(*children);
+          } else {
+            auto name = e.source_text(stage_id);
+            if (!name) { result = trim_source(e.source); break; }
+            callee = std::move(*name);
+          }
+          std::string rewritten = callee + "(" + result;
+          for (const auto& arg : args) rewritten += ", " + arg;
+          rewritten += ")";
+          result = std::move(rewritten);
+        }
+      }
+    }
+  }
+  if (mode() == Mode::Shadow) assert(result == moss::normalize_pipeline(e.source));
+  return result;
+}
+
+bool project_fileio_open(const ExpressionView& e,
+                         std::vector<std::string>& arguments) {
+  std::string receiver, method;
+  const auto old_arguments = arguments;
+  const bool member_call = project_member_call(e, receiver, method, arguments);
+  const bool result = member_call && receiver == "FileIO" && method == "open" &&
+                      arguments.size() == 2;
+  if (mode() == Mode::Shadow) {
+    auto old_arguments_copy = old_arguments;
+    const bool legacy = moss::parse_fileio_open(e.source, old_arguments_copy);
+    assert(legacy == result && old_arguments_copy == arguments);
+  }
+  return result;
+}
+
+bool project_fileio_chunks_source(const ExpressionView& e, std::string& receiver,
+                                  std::string& size_expression) {
+  std::string method;
+  std::vector<std::string> arguments;
+  const bool result = project_member_call(e, receiver, method, arguments) &&
+                      method == "chunks" && arguments.size() == 1;
+  if (result) size_expression = arguments.front();
+  if (mode() == Mode::Shadow) {
+    std::string old_receiver, old_size;
+    const bool legacy = moss::parse_fileio_chunks_source(e.source, old_receiver, old_size);
+    assert(legacy == result);
+    if (legacy) assert(old_receiver == receiver && old_size == size_expression);
+  }
+  return result;
+}
+
+bool project_executor_chain(
+    const ExpressionView& e,
+    std::vector<std::pair<std::string, std::vector<std::string>>>& calls) {
+  calls.clear();
+  bool result = false;
+  if (e.arena && e.root < e.arena->size()) {
+    ExprId current = e.root;
+    std::vector<std::pair<std::string, std::vector<std::string>>> reverse;
+    while (current < e.arena->size()) {
+      const auto& node = e.arena->at(current);
+      if (const auto* base = std::get_if<Constructor>(&node)) {
+        std::string name;
+        const bool executor = project_identifier(view(*e.arena, base->type,
+            e.source_text(base->type).value_or(std::string{})), name) && name == "Executor";
+        if (executor && base->arguments.empty() && base->type_arguments.empty()) {
+          std::reverse(reverse.begin(), reverse.end()); calls = std::move(reverse);
+          result = true;
+        }
+        break;
+      }
+      if (const auto* call = std::get_if<Call>(&node)) {
+        if (const auto* member = std::get_if<Member>(&e.arena->at(call->callee))) {
+          auto arguments = child_texts(e, call->arguments);
+          if (!arguments) break;
+          reverse.emplace_back(member->name, std::move(*arguments));
+          current = member->base;
+          continue;
+        }
+      }
+      if (const auto* message = std::get_if<Message>(&node)) {
+        auto arguments = child_texts(e, message->arguments);
+        if (!arguments) break;
+        reverse.emplace_back(message->handler, std::move(*arguments));
+        current = message->target;
+        continue;
+      }
+      break;
+    }
+    if (!result) calls = std::move(reverse);
+  }
+  if (mode() == Mode::Shadow) {
+    std::vector<std::pair<std::string, std::vector<std::string>>> legacy;
+    const bool old = moss::parse_executor_chain(e.source, legacy);
+    assert(old == result && legacy == calls);
   }
   return result;
 }
@@ -227,6 +377,23 @@ bool project_named_argument(const ExpressionView& e, std::string& name,
     const bool legacy = moss::parse_named_argument(e.source, old_name, old_value);
     assert(legacy == result);
     if (result) assert(old_name == name && old_value == value);
+  }
+  return result;
+}
+
+std::optional<char> project_named_argument_separator(const ExpressionView& e) {
+  std::optional<char> result;
+  if (e.arena && e.root < e.arena->size())
+    if (const auto* argument = std::get_if<NamedArgument>(&e.arena->at(e.root)))
+      result = argument->separator;
+  if (mode() == Mode::Shadow) {
+    const auto equal = moss::top_level_assignment(e.source);
+    const auto colon = moss::top_level_colon(e.source);
+    std::optional<char> legacy;
+    if (equal != std::string::npos &&
+        (colon == std::string::npos || equal < colon)) legacy = '=';
+    else if (colon != std::string::npos) legacy = ':';
+    assert(result == legacy);
   }
   return result;
 }
@@ -303,7 +470,6 @@ bool project_enum_case(const ExpressionView& e, std::string& enum_name,
     bool old_called = false;
     const bool legacy = moss::parse_enum_case_expression(e.source, old_enum,
         old_case, old_fields, old_called);
-    if (legacy != result) std::fprintf(stderr, "EST enum-case mismatch: <%s> legacy=%d tree=%d called=%d\n", e.source.c_str(), legacy, result, old_called);
     assert(legacy == result);
     if (result) assert(old_enum == enum_name && old_case == case_name &&
                        old_fields == fields && old_called == is_called);
@@ -365,15 +531,20 @@ std::optional<std::vector<std::string>> project_delimited_children(
     const ExpressionView& e, char delimiter) {
   if (delimiter != ',' || !e.arena || e.root >= e.arena->size()) return std::nullopt;
   const auto& node = e.arena->at(e.root);
-  if (const auto* call = std::get_if<Call>(&node)) return child_texts(e, call->arguments);
-  if (const auto* message = std::get_if<Message>(&node)) return child_texts(e, message->arguments);
-  if (const auto* ctor = std::get_if<Constructor>(&node)) return child_texts(e, ctor->arguments);
-  if (const auto* collection = std::get_if<Collection>(&node)) return child_texts(e, collection->elements);
-  if (const auto* tuple = std::get_if<Tuple>(&node)) return child_texts(e, tuple->elements);
+  if (const auto* tuple = std::get_if<Tuple>(&node))
+    return child_texts(e, tuple->elements);
   auto root = e.source_text(e.root);
   if (root && root->empty()) return std::vector<std::string>{};
   if (root) return std::vector<std::string>{std::move(*root)};
   return std::nullopt;
+}
+
+void assert_delimited_parity(
+    const ExpressionView& e, char delimiter,
+    const std::optional<std::vector<std::string>>& tree) {
+  if (mode() != Mode::Shadow) return;
+  const auto legacy = moss::split_top_level(e.source, delimiter);
+  assert(tree && *tree == legacy);
 }
 
 bool project_identifier(const ExpressionView& e, std::string& name) {
@@ -393,7 +564,6 @@ bool is_identifier(const ExpressionView& e) {
   }
   if (mode() == Mode::Shadow) {
     const bool legacy = moss::plain_identifier(e.source);
-    if (legacy != result) std::fprintf(stderr, "EST identifier mismatch: <%s> legacy=%d tree=%d\n", e.source.c_str(), legacy, result);
     assert(legacy == result);
   }
   return result;

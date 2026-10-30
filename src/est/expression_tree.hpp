@@ -75,7 +75,7 @@ struct Member { ExprId base; std::string name; };
 struct Index { ExprId base, index; };
 struct Parenthesized { ExprId inner; };
 struct Message { ExprId target; std::string handler; std::vector<ExprId> arguments; };
-struct NamedArgument { std::string name; ExprId value; };
+struct NamedArgument { std::string name; ExprId value; char separator = '='; };
 struct Placeholder {};
 struct Collection { char delimiter; std::vector<ExprId> elements; };
 struct Tuple { std::vector<ExprId> elements; };
@@ -146,8 +146,21 @@ bool project_member_call(const ExpressionView& view, std::string& receiver,
                          std::string& member,
                          std::vector<std::string>& arguments,
                          bool* outputs_written = nullptr);
+bool project_bound_method(const ExpressionView& view, std::string& receiver,
+                          std::string& method);
+std::string strip_grouping(const ExpressionView& view);
+std::string normalize_pipeline_tree(const ExpressionView& view);
+bool project_fileio_open(const ExpressionView& view,
+                         std::vector<std::string>& arguments);
+bool project_fileio_chunks_source(const ExpressionView& view,
+                                  std::string& receiver,
+                                  std::string& size_expression);
+bool project_executor_chain(
+    const ExpressionView& view,
+    std::vector<std::pair<std::string, std::vector<std::string>>>& calls);
 bool project_named_argument(const ExpressionView& view, std::string& name,
                             std::string& value);
+std::optional<char> project_named_argument_separator(const ExpressionView& view);
 bool project_index(const ExpressionView& view, std::string& base,
                    std::string& index);
 std::optional<std::vector<std::string>> project_vector_literal(
@@ -162,6 +175,8 @@ bool project_binary(const ExpressionView& view,
                     std::string& operation);
 std::optional<std::vector<std::string>> project_delimited_children(
     const ExpressionView& view, char delimiter);
+void assert_delimited_parity(const ExpressionView& view, char delimiter,
+                             const std::optional<std::vector<std::string>>& tree);
 bool project_identifier(const ExpressionView& view, std::string& name);
 bool is_identifier(const ExpressionView& view);
 bool expression_mentions(const ExpressionView& view, std::string_view name);

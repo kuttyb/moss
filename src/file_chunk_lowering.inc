@@ -43,7 +43,7 @@ bool build_fileio_chunk_parallel_plan(
     FunctionalPipeline::ChunkParallelPlan& plan,
     const ParsedFunctionalPipeline& parsed, const TypeEnv& env) const {
   string fileio_receiver, size_expression;
-  if (!parse_fileio_chunks_source(parsed.source, fileio_receiver, size_expression) ||
+  if (!tree_parse_fileio_chunks_source(parsed.source, fileio_receiver, size_expression) ||
       !fileio_typed(env, fileio_receiver))
     return false;
   plan.is_chunk_pipeline = true;

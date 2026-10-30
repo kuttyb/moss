@@ -335,7 +335,7 @@ bool check_executor_or_fileio_statement(const Stmt& statement,
   if (statement.kind == Stmt::Kind::Let || statement.kind == Stmt::Kind::Var ||
       statement.kind == Stmt::Kind::Assign) {
     vector<std::pair<string, vector<string>>> calls;
-    if (parse_executor_chain(statement.b, calls)) {
+    if (tree_parse_executor_chain(statement.b, calls)) {
       if (!in_main)
         err(statement.line,
             "an Executor may only be configured and started directly in "
@@ -362,7 +362,7 @@ bool check_executor_or_fileio_statement(const Stmt& statement,
     // is handled entirely by the existing functional-pipeline IR (see
     // file_chunk_lowering.inc); parse_member_call on the whole multi-stage
     // text would otherwise misparse past the first '|>'.
-    if (!parse_functional_pipeline(statement.b) &&
+    if (!functional_pipeline_from_est(statement.b) &&
         tree_parse_member_call(statement.b, receiver, method, arguments) &&
         fileio_typed(env, receiver) && method == "chunks") {
       // Report A's operand/bound diagnostics before the shape rule.
@@ -564,7 +564,7 @@ std::map<string, ExecutorLifecycle> check_executor_lifecycle_block(
     vector<std::pair<string, vector<string>>> calls;
     if ((statement.kind == Stmt::Kind::Assign || statement.kind == Stmt::Kind::Let ||
          statement.kind == Stmt::Kind::Var) &&
-        parse_executor_chain(statement.b, calls) && !calls.empty() &&
+        tree_parse_executor_chain(statement.b, calls) && !calls.empty() &&
         calls.back().first == "start") {
       for (const auto& entry : state)
         if (entry.second.state == ExecutorLifecycleState::Active)

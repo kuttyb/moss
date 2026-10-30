@@ -6,7 +6,8 @@
     string saved;
     FileIOOwnerScope(string& target, string value)
         : target(target), saved(target) {
-      target = moss::strip_redundant_outer_parentheses(trim(value));
+      auto syntax = est::parse_view(trim(value));
+      target = syntax ? est::strip_grouping(*syntax) : trim(value);
     }
     ~FileIOOwnerScope() { target = std::move(saved); }
   };
@@ -27,7 +28,7 @@
         if (fileio_contains_scoped_type(field.type, visited)) return true;
     auto open = t.find('[');
     if (open == string::npos || !ends_with(t, "]")) return false;
-    auto arguments = split_top_level(
+    auto arguments = tree_split_top_level(
         t.substr(open + 1, t.size() - open - 2), ',');
     for (const auto& argument : arguments)
       if (fileio_contains_scoped_type(argument, visited)) return true;
@@ -147,7 +148,7 @@
                                             const TypeEnv& env) const {
     // `file.chunks(n) |> map(f) |> reduce(...)` is typed by the functional
     // pipeline IR; parse_member_call would misread it as `file.chunks(...)`.
-    if (parse_functional_pipeline(expression)) return std::nullopt;
+    if (functional_pipeline_from_est(expression)) return std::nullopt;
     string receiver, method;
     vector<string> args;
     if (!tree_parse_member_call(expression, receiver, method, args)) return std::nullopt;
@@ -416,7 +417,7 @@
 
   void fileio_lifecycle_expression(int line, const string& expression,
                                    FileIOFlow& flow) const {
-    string value = strip_redundant_outer_parentheses(trim(expression));
+    string value = tree_strip_redundant_outer_parentheses(trim(expression));
     if (value.empty()) return;
     for (const auto& operation : vector<string>{" or ", " and "})
       if (auto binary = tree_split_binary(value, {operation})) {
@@ -435,7 +436,7 @@
         return;
       }
     if (starts_with(value, "[") && ends_with(value, "]")) {
-      for (const auto& item : split_top_level(
+      for (const auto& item : tree_split_top_level(
                value.substr(1, value.size() - 2), ','))
         fileio_lifecycle_expression(line, item, flow);
       return;
@@ -762,7 +763,7 @@
   std::optional<string> fileio_blocking_expression(
       string expression, const TypeEnv& env,
       std::set<string>& visited) const {
-    expression = strip_redundant_outer_parentheses(trim(expression));
+    expression = tree_strip_redundant_outer_parentheses(trim(expression));
     if (starts_with(expression, "message ")) {
       string target, handler;
       vector<string> arguments;
@@ -777,7 +778,7 @@
       if (starts_with(expression, prefix))
         expression = trim(expression.substr(prefix.size()));
     if (expression.empty()) return std::nullopt;
-    auto values = split_top_level(expression, ',');
+    auto values = tree_split_top_level(expression, ',');
     if (values.size() > 1) {
       for (const auto& value : values)
         if (auto nested = fileio_blocking_expression(value, env, visited))
@@ -816,7 +817,7 @@
         return fileio_blocking_expression(binary->second, env, visited);
       }
     if (starts_with(expression, "[") && ends_with(expression, "]"))
-      for (const auto& item : split_top_level(
+      for (const auto& item : tree_split_top_level(
                expression.substr(1, expression.size() - 2), ','))
         if (auto nested = fileio_blocking_expression(item, env, visited))
           return nested;

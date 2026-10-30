@@ -9,7 +9,7 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 BASELINE = ROOT / "docs/phase27/STRING_DEBT_BASELINE.md"
-BASELINE_REV = "a4f4790"
+BASELINE_REV = "04be1a1"
 # Helpers that inspect or split an expression string. `trim_compare` below also
 # catches expression-text trim calls used as a textual classifier.
 APIS = (
@@ -41,6 +41,30 @@ CONSUMER_PATHS = {
     "compiler_frontend": ("moss.cpp",),
 }
 EXTENSIONS = (".cpp", ".hpp", ".inc")
+EXEMPTIONS = ROOT / "docs/phase27/27_3_STRING_READER_EXEMPTIONS.md"
+EXEMPTION_ENTRY = re.compile(r"^- `([^`:]+):(\d+) \| ([a-z_]+)` — (.+)$")
+
+
+def load_exemptions():
+    entries = {}
+    if not EXEMPTIONS.exists():
+        return entries
+    for line_no, line in enumerate(EXEMPTIONS.read_text().splitlines(), 1):
+        if not line.startswith("- `"):
+            continue
+        match = EXEMPTION_ENTRY.match(line)
+        if not match:
+            raise SystemExit(f"malformed expression-reader exemption at {EXEMPTIONS}:{line_no}")
+        path, source_line, api, reason = match.groups()
+        if not reason.strip():
+            raise SystemExit(f"empty expression-reader exemption at {EXEMPTIONS}:{line_no}")
+        key = (path, int(source_line), api)
+        if key in entries:
+            raise SystemExit(f"duplicate expression-reader exemption: {key}")
+        entries[key] = reason
+    return entries
+
+
 REACH_FUNCTIONS = (
     "has_expression_slot", "lhs_root_name", "expression_arena_for",
     "callable_spelling", "callable_leaf_spelling",
@@ -102,17 +126,56 @@ def paths(commit=None):
     return [p for p in candidates if p.endswith(EXTENSIONS) and consumer_for(p)]
 
 
+def trim_result_followed_by_comparison(line, start):
+    opening = line.find("(", start)
+    if opening < 0:
+        return False
+    depth = 0
+    quote = None
+    escaped = False
+    closing = None
+    for index in range(opening, len(line)):
+        char = line[index]
+        if quote:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == quote:
+                quote = None
+            continue
+        if char in ("\"", "'"):
+            quote = char
+        elif char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+            if depth == 0:
+                closing = index + 1
+                break
+    if closing is None:
+        return False
+    remainder = line[closing:].lstrip()
+    return re.match(r"(?:==|!=|<=|>=|(?<!-)[<>])", remainder) is not None
+
+
 def sites(commit=None):
     found = collections.Counter()
+    exemptions = load_exemptions() if commit is None else {}
+    matched_exemptions = set()
     for relative in paths(commit):
         consumer = consumer_for(relative)
         source = read_source(relative, commit)
         reach = reach_lines(source) if relative == "src/moss.cpp" else set()
         for line_no, line in enumerate(source.splitlines(), 1):
+            site_consumer = ("reach_walk" if line_no in reach else consumer)
             # Definitions are not consumer call sites. (moss.cpp owns many
             # helper definitions while also containing the reach walk.)
             for match in PATTERN.finditer(line):
                 api = match[1]
+                if (relative, line_no, api) in exemptions:
+                    matched_exemptions.add((relative, line_no, api))
+                    continue
                 site_consumer = ("reach_walk" if line_no in reach else consumer)
                 # The source parser's local identifier predicate validates
                 # declaration names; expression identifier reads are tracked
@@ -144,10 +207,16 @@ def sites(commit=None):
                     found[(consumer, relative, line_no, line.strip(), "eval(string)")] += len(calls)
             # Trimming followed by a comparison is a string classification
             # operation. Count at the call site, attributed to its caller.
-            comparisons = list(re.finditer(r"(?:==|!=|<=|>=|(?<!-)[<>])", line))
-            if ("trim(" in line and any(line[match.end():].strip()
-                                         for match in comparisons)):
-                found[(site_consumer, relative, line_no, line.strip(), "trim_compare")] += line.count("trim(")
+            trim_calls = list(re.finditer(r"\btrim\s*\(", line))
+            compared_trims = sum(
+                trim_result_followed_by_comparison(line, trim_call.start())
+                for trim_call in trim_calls)
+            if compared_trims:
+                found[(site_consumer, relative, line_no,
+                       line.strip(), "trim_compare")] += compared_trims
+    stale = sorted(set(exemptions) - matched_exemptions)
+    if stale:
+        raise SystemExit("stale expression-reader exemptions: " + ", ".join(map(str, stale)))
     return found
 
 

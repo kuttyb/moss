@@ -99,7 +99,7 @@ bool phase20_is_nontransferable_capability(const string& type) {
     return true;
   auto bracket = concrete.find('[');
   if (bracket != string::npos && ends_with(concrete, "]"))
-    for (const auto& argument : split_top_level(
+    for (const auto& argument : moss::split_top_level(
              concrete.substr(bracket + 1, concrete.size() - bracket - 2), ','))
       if (phase20_is_nontransferable_capability(trim(argument))) return true;
   return false;
@@ -2747,7 +2747,7 @@ class Checker {
           return false;
         }
         string receiver, method;
-        if (parse_bound_method_callable(source_callback, receiver, method)) {
+        if (tree_parse_bound_method_callable(source_callback, receiver, method)) {
           if (!tree_plain_identifier(receiver) ||
               occurrence.statement_id >= body.statement_occurrences.size())
             return false;
@@ -8615,10 +8615,10 @@ class Checker {
         function.set_return_type("_functional_result:" + function.name);
       return;
     }
-    string e = normalize_pipeline(std::move(original));
+    string e = tree_normalize_pipeline(std::move(original));
     if (e.empty()) return;
     auto constrain_boolean_operand = [&](const string& operand) {
-      string candidate = strip_redundant_outer_parentheses(trim(operand));
+      string candidate = tree_strip_redundant_outer_parentheses(trim(operand));
       for (auto& parameter : function.params)
         if (parameter.type.empty() && candidate == parameter.name)
           parameter.bind_type(moss::Type::primitive("bool"));
@@ -9173,7 +9173,7 @@ class Checker {
           if (contains_domain_handle(field.type)) return true;
     auto bracket = value.find('[');
     if (bracket != string::npos && value.back() == ']')
-      for (const auto& argument : split_top_level(
+      for (const auto& argument : tree_split_top_level(
                value.substr(bracket + 1, value.size() - bracket - 2), ','))
         if (contains_domain_handle(trim(argument))) return true;
     return false;
@@ -9215,7 +9215,7 @@ class Checker {
       }
       auto bracket = name.find('[');
       if (bracket != string::npos && ends_with(name, "]"))
-        for (const auto& argument : split_top_level(
+        for (const auto& argument : tree_split_top_level(
                  name.substr(bracket + 1, name.size() - bracket - 2), ','))
           visit_type(argument, file, line);
     };
@@ -10182,7 +10182,7 @@ class Checker {
     }
 
     string bound_receiver, bound_method;
-    if (parse_bound_method_callable(value, bound_receiver, bound_method)) {
+    if (tree_parse_bound_method_callable(value, bound_receiver, bound_method)) {
       auto receiver_type = inferred_expr_type(bound_receiver, env);
       if (!receiver_type) return std::nullopt;
       const Method* method = resolve_method(
@@ -10414,7 +10414,7 @@ class Checker {
       p_.semantic_uses.push_back(
           {target, "type_use", source_file, line, enclosing, {}});
     if (bracket != string::npos && ends_with(type, "]"))
-      for (const auto& argument : split_top_level(
+      for (const auto& argument : tree_split_top_level(
                type.substr(bracket + 1, type.size() - bracket - 2), ','))
         retain_resolved_type_uses(argument, source_file, line, enclosing);
   }
@@ -10551,9 +10551,45 @@ class Checker {
     return !copy_type(type) && !domains_.count(canonical_type_name(type));
   }
 
+  bool tree_parse_fileio_open(const string& text, vector<string>& arguments) const {
+    auto syntax = moss::est::parse_view(text);
+    return syntax && moss::est::project_fileio_open(*syntax, arguments);
+  }
+
+  bool tree_parse_fileio_chunks_source(const string& text, string& receiver,
+                                       string& size_expression) const {
+    auto syntax = moss::est::parse_view(text);
+    return syntax && moss::est::project_fileio_chunks_source(
+        *syntax, receiver, size_expression);
+  }
+
+  bool tree_parse_executor_chain(
+      const string& text,
+      vector<std::pair<string, vector<string>>>& calls) const {
+    auto syntax = moss::est::parse_view(text);
+    return syntax && moss::est::project_executor_chain(*syntax, calls);
+  }
+
+  bool tree_parse_bound_method_callable(const string& text, string& receiver,
+                                        string& method) const {
+    auto syntax = moss::est::parse_view(text);
+    return syntax && moss::est::project_bound_method(*syntax, receiver, method);
+  }
+
+  static string tree_normalize_pipeline(string text) {
+    auto syntax = moss::est::parse_view(text);
+    return syntax ? moss::est::normalize_pipeline_tree(*syntax) : trim(std::move(text));
+  }
+
   static bool tree_parse_index(const string& text, string& base, string& index) {
     auto syntax = moss::est::parse_view(text);
     return syntax && moss::est::project_index(*syntax, base, index);
+  }
+
+  static std::optional<char> tree_named_argument_separator(const string& text) {
+    auto syntax = moss::est::parse_view(text);
+    return syntax ? moss::est::project_named_argument_separator(*syntax)
+                  : std::nullopt;
   }
 
   static bool tree_parse_named_argument(const string& text, string& name,
@@ -10689,7 +10725,7 @@ class Checker {
     return true;
   }
 
-  vector<string> split_top_level(const string& text, char delimiter) const {
+  vector<string> tree_split_top_level(const string& text, char delimiter) const {
     auto found = top_level_parse_cache_.find(text);
     if (found != top_level_parse_cache_.end()) {
       auto split = found->second.find(delimiter);
@@ -10700,7 +10736,13 @@ class Checker {
     }
     ++parse_cache_misses_;
     const bool cache_full = parse_cache_entries_ >= parse_cache_limit_;
-    auto result = moss::split_top_level(text, delimiter);
+    vector<string> result;
+    auto syntax = moss::est::parse_view(text);
+    auto projected = syntax ? moss::est::project_delimited_children(*syntax, delimiter)
+                            : std::nullopt;
+    if (syntax && delimiter == ',')
+      moss::est::assert_delimited_parity(*syntax, delimiter, projected);
+    if (projected) result = std::move(*projected);
     if (cache_full) {
       if (profile_concrete_effect_work_) ++parse_cache_success_after_cap_;
     } else {
@@ -10711,7 +10753,7 @@ class Checker {
     return result;
   }
 
-  string strip_redundant_outer_parentheses(const string& text) const {
+  string tree_strip_redundant_outer_parentheses(const string& text) const {
     auto found = outer_parentheses_parse_cache_.find(text);
     if (found != outer_parentheses_parse_cache_.end()) {
       ++parse_cache_hits_;
@@ -10719,7 +10761,8 @@ class Checker {
     }
     ++parse_cache_misses_;
     const bool cache_full = parse_cache_entries_ >= parse_cache_limit_;
-    auto result = moss::strip_redundant_outer_parentheses(text);
+    auto syntax = moss::est::parse_view(text);
+    auto result = syntax ? moss::est::strip_grouping(*syntax) : trim(text);
     if (cache_full) {
       if (profile_concrete_effect_work_) ++parse_cache_success_after_cap_;
     } else {
@@ -11093,7 +11136,7 @@ class Checker {
     auto primitive = [](const char* name) -> R {
       return InferredExpr{moss::Type::primitive(name), {}};
     };
-    string original = strip_redundant_outer_parentheses(expression);
+    string original = tree_strip_redundant_outer_parentheses(expression);
     if (original == "_" && current_body_types_ &&
         !current_body_types_->active_pipeline_placeholder_identity.empty() &&
         current_body_types_->active_pipeline_placeholder_type)
@@ -11148,7 +11191,7 @@ class Checker {
     }
     if (auto functional = inferred_functional_pipeline_type(original, env))
       return inferred_leaf(*functional);
-    string e = strip_redundant_outer_parentheses(normalize_pipeline(std::move(original)));
+    string e = tree_strip_redundant_outer_parentheses(tree_normalize_pipeline(std::move(original)));
     for (const auto& op : vector<string>{" or ", " xor ", " and "}) {
       if (auto binary = tree_split_binary(e, {op})) {
         return primitive_term(operand_term(binary->first), "bool") &&
@@ -11177,7 +11220,7 @@ class Checker {
     if (e == "Executor()") return primitive("executor");
     {
       vector<string> open_arguments;
-      if (parse_fileio_open(e, open_arguments)) return primitive("FileIO");
+      if (tree_parse_fileio_open(e, open_arguments)) return primitive("FileIO");
     }
     if (auto parts = tree_parse_vector_literal(e)) {
       if (parts->empty()) return InferredExpr{nullptr, "vector"};
@@ -11719,7 +11762,7 @@ class Checker {
 
   void constrain_constructor_fields(int line, const string& expression,
                                     const TypeEnv& env) {
-    string normalized = normalize_pipeline(trim(expression));
+    string normalized = tree_normalize_pipeline(trim(expression));
     string constructor;
     vector<string> args;
     if (!tree_parse_simple_call(normalized, constructor, args)) {
@@ -12335,7 +12378,7 @@ class Checker {
                 ? *selected_types.begin() : "_selected_error";
           }
           else if (!arm.a.empty()) {
-            auto alternatives = split_top_level(arm.a, ',');
+            auto alternatives = moss::split_top_level(arm.a, ',');
             if (alternatives.size() == 1)
               for (const auto& binding :
                    phase21_pattern_bindings(arm.line, alternatives.front()))
@@ -15221,12 +15264,9 @@ class Checker {
     vector<string> path;
   };
 
-  static string strip_expression_parens(string value) {
-    value = trim(std::move(value));
-    while (value.size() >= 2 && value.front() == '(' && value.back() == ')' &&
-           matching_paren(value, 0) == value.size() - 1)
-      value = trim(value.substr(1, value.size() - 2));
-    return value;
+  static string tree_strip_expression_parens(string value) {
+    auto syntax = moss::est::parse_view(value);
+    return syntax ? moss::est::strip_grouping(*syntax) : trim(std::move(value));
   }
 
   template <typename EnvT>
@@ -15234,7 +15274,7 @@ class Checker {
       const string& expression,
       const EnvT& env,
       bool require_known_root = true) const {
-    string value = strip_expression_parens(normalize_pipeline(trim(expression)));
+    string value = tree_strip_expression_parens(tree_normalize_pipeline(trim(expression)));
     if (tree_simple_identifier(value)) {
       if (require_known_root && !env.count(value)) return std::nullopt;
       if (current_object_ && value != "self" &&
@@ -16759,7 +16799,7 @@ class Checker {
         if (selected_types.size() == 1)
           local_types[trim(arm.a)] = *selected_types.begin();
       } else if (!arm.a.empty() && arm.a.find('.') != string::npos) {
-        auto alternatives = split_top_level(arm.a, ',');
+        auto alternatives = moss::split_top_level(arm.a, ',');
         if (alternatives.size() == 1)
           for (const auto& binding :
                phase21_pattern_bindings(arm.line, alternatives.front()))
@@ -17298,7 +17338,7 @@ class Checker {
     }
     // The observation path uses checked storage locations before the legacy
     // parameter summary collapses projections to their root.
-    string value = strip_expression_parens(normalize_pipeline(trim(expression)));
+    string value = tree_strip_expression_parens(tree_normalize_pipeline(trim(expression)));
     if (value.empty()) return;
     if (auto elements = tree_parse_vector_literal(value)) {
       // Construction owns its elements, even when the new vector is READ.
@@ -17321,7 +17361,7 @@ class Checker {
           } else {
             auto dot = projected.rfind('.');
             if (dot == string::npos) break;
-            projected = strip_expression_parens(projected.substr(0, dot));
+            projected = tree_strip_expression_parens(projected.substr(0, dot));
           }
         }
         return;
@@ -17434,7 +17474,7 @@ class Checker {
 
     {
       vector<string> open_arguments;
-      if (parse_fileio_open(value, open_arguments)) {
+      if (tree_parse_fileio_open(value, open_arguments)) {
         for (const auto& argument : open_arguments)
           analyze_effect_expression(argument, env, params, parameter_effects,
                                     receiver_effect, receiver_fields, Effect::Read);
@@ -17784,7 +17824,7 @@ class Checker {
                 ? *selected_types.begin() : "_selected_error";
           }
           else if (!arm.a.empty()) {
-            auto alternatives = split_top_level(arm.a, ',');
+            auto alternatives = moss::split_top_level(arm.a, ',');
             if (alternatives.size() == 1)
               for (const auto& binding :
                    phase21_pattern_bindings(arm.line, alternatives.front()))
@@ -18059,7 +18099,7 @@ class Checker {
         } else {
           string identity = trim(callable);
           string bound_receiver, bound_method;
-          if (parse_bound_method_callable(identity, bound_receiver,
+          if (tree_parse_bound_method_callable(identity, bound_receiver,
                                           bound_method)) {
             auto receiver_type = inferred_expr_type(bound_receiver, env);
             if (receiver_type) {
@@ -18091,7 +18131,7 @@ class Checker {
       }
       return;
     }
-    string value = normalize_pipeline(std::move(original));
+    string value = tree_normalize_pipeline(std::move(original));
     if (value.empty()) return;
     while (value.size() >= 2 && value.front() == '(' && value.back() == ')' &&
            matching_paren(value, 0) == value.size() - 1)
@@ -18925,7 +18965,7 @@ class Checker {
     if (item == declaration->second->cases.end()) return {};
     vector<string> names;
     const string inside = trim(pattern.substr(open + 1, close - open - 1));
-    if (!inside.empty()) names = split_top_level(inside, ',');
+    if (!inside.empty()) names = tree_split_top_level(inside, ',');
     if (names.size() != item->fields.size())
       err(line, "error variant '" + type + "." + variant +
                     "' must bind all " +
@@ -19012,7 +19052,7 @@ class Checker {
                                     string* binding_type = nullptr) const {
     const string value = trim(selector);
     if (value.empty()) return remaining;
-    auto alternatives = split_top_level(value, ',');
+    auto alternatives = moss::split_top_level(value, ',');
     const bool qualified = std::all_of(
         alternatives.begin(), alternatives.end(), [](const string& item) {
           return trim(item).find('.') != string::npos;
@@ -19123,7 +19163,7 @@ class Checker {
           if (!binding_type.empty() && tree_plain_identifier(trim(arm.a)))
             arm_env[trim(arm.a)] = binding_type;
           if (!arm.a.empty() && arm.a.find('.') != string::npos) {
-            auto alternatives = split_top_level(arm.a, ',');
+            auto alternatives = moss::split_top_level(arm.a, ',');
             if (alternatives.size() == 1)
               for (const auto& binding :
                    phase21_pattern_bindings(arm.line, alternatives.front()))
@@ -19697,7 +19737,7 @@ class Checker {
       if (location && domain_fields.count(location->root))
         effects.domain_write = true;
     };
-    string original = strip_redundant_outer_parentheses(expression);
+    string original = tree_strip_redundant_outer_parentheses(expression);
     if (original.empty()) return effects;
 
     // A message remains a Root ingress anywhere within a main expression.
@@ -19783,7 +19823,7 @@ class Checker {
         } else {
           string identity = trim(callable);
           string bound_receiver, bound_method;
-          if (parse_bound_method_callable(identity, bound_receiver,
+          if (tree_parse_bound_method_callable(identity, bound_receiver,
                                           bound_method)) {
             auto receiver_type = inferred_expr_type(bound_receiver, env);
             vector<string> input_types;
@@ -19839,7 +19879,7 @@ class Checker {
       return effects;
     }
 
-    string value = normalize_pipeline(original);
+    string value = tree_normalize_pipeline(original);
     if (!value.empty() && value.front() == '~') {
       return observable_expression_effects(
           trim(value.substr(1)), env, domain_fields, implicit_object, parameters,
@@ -19933,7 +19973,7 @@ class Checker {
     }
     {
       vector<string> open_arguments;
-      if (parse_fileio_open(value, open_arguments)) {
+      if (tree_parse_fileio_open(value, open_arguments)) {
         for (const auto& argument : open_arguments)
           effects.merge(observable_expression_effects(
               argument, env, domain_fields, implicit_object, parameters,
@@ -20699,7 +20739,7 @@ class Checker {
       return effects;
     }
     string bound_receiver, bound_method;
-    if (parse_bound_method_callable(identity, bound_receiver, bound_method)) {
+    if (tree_parse_bound_method_callable(identity, bound_receiver, bound_method)) {
       auto receiver_type = inferred_expr_type(bound_receiver, env);
       const Method* method = receiver_type
           ? resolve_method(canonical_type_name(*receiver_type), bound_method,
@@ -20879,7 +20919,7 @@ class Checker {
           node.ownership = concrete_function_parameter_effect(
               *function, 0, callback_input_types);
         string bound_receiver, bound_method;
-        if (parse_bound_method_callable(node.callable_identity, bound_receiver,
+        if (tree_parse_bound_method_callable(node.callable_identity, bound_receiver,
                                         bound_method)) {
           auto receiver_type = inferred_expr_type(bound_receiver, env);
           const Method* method = receiver_type
@@ -21309,7 +21349,7 @@ class Checker {
       } else {
         string identity = trim(callable);
         string bound_receiver, bound_method;
-        if (parse_bound_method_callable(identity, bound_receiver, bound_method)) {
+        if (tree_parse_bound_method_callable(identity, bound_receiver, bound_method)) {
           check_ownership_expression(line, bound_receiver, env, Effect::Read);
           auto receiver_type = inferred_expr_type(bound_receiver, env.types);
           const Method* method = receiver_type
@@ -21397,9 +21437,9 @@ class Checker {
 
   RaiseSet direct_ownership_expression_raises(
       const string& expression, const TypeEnv& types) const {
-    const string value = strip_expression_parens(normalize_pipeline(trim(expression)));
+    const string value = tree_strip_expression_parens(tree_normalize_pipeline(trim(expression)));
     vector<string> arguments;
-    if (parse_fileio_open(value, arguments))
+    if (tree_parse_fileio_open(value, arguments))
       return fileio_operation_raise_set("open");
     string enum_name, case_name;
     bool called = false;
@@ -21474,7 +21514,7 @@ class Checker {
                                        OwnershipEnv& env, Effect requested) {
     string original = trim(expression);
     if (check_functional_pipeline_ownership(line, original, env)) return;
-    string value = strip_expression_parens(normalize_pipeline(std::move(original)));
+    string value = tree_strip_expression_parens(tree_normalize_pipeline(std::move(original)));
     if (value.empty()) return;
     if (auto elements = tree_parse_vector_literal(value)) {
       for (const auto& element : *elements)
@@ -22147,7 +22187,7 @@ class Checker {
             recovered.immutable_locals.insert(arm.a);
             recovered.moved.erase(arm.a);
           } else if (!arm.a.empty()) {
-            auto alternatives = split_top_level(arm.a, ',');
+            auto alternatives = moss::split_top_level(arm.a, ',');
             if (alternatives.size() == 1)
               for (const auto& binding :
                    phase21_pattern_bindings(arm.line, alternatives.front())) {
@@ -22579,7 +22619,7 @@ class Checker {
           std::to_string(operation->argument_types.size()) + " arguments, got " +
           std::to_string(argument_types.size()), "TYPE_MISMATCH");
     string signature = operation->signature;
-    auto names = split_top_level(signature.substr(signature.find('(') + 1,
+    auto names = tree_split_top_level(signature.substr(signature.find('(') + 1,
         signature.size() - signature.find('(') - 2), ',');
     for (size_t index = 0; index < argument_types.size(); ++index) {
       auto expected = builtin_operation_type(receiver_type, operation->argument_types[index]);
@@ -24368,7 +24408,7 @@ class Checker {
     }
 
     string bound_receiver, bound_method;
-    if (parse_bound_method_callable(identity, bound_receiver, bound_method)) {
+    if (tree_parse_bound_method_callable(identity, bound_receiver, bound_method)) {
       auto receiver_type = inferred_expr_type(bound_receiver, env);
       if (!receiver_type)
         err(line, "cannot statically resolve bound method receiver '" +
@@ -24599,7 +24639,7 @@ class Checker {
     }
     string label, key;
     if (!tree_parse_named_argument(args[1], label, key) || label != "by" ||
-        top_level_colon(args[1]) == string::npos)
+        tree_named_argument_separator(args[1]) != ':')
       err(line, "sort's second argument must be 'by: key'", "SORT_SIGNATURE");
     string reverse_callee;
     vector<string> reverse_args;
@@ -25934,9 +25974,7 @@ class Checker {
         std::set<string> supplied;
         for (const auto& argument : arguments) {
           string name, value;
-          size_t equal = top_level_assignment(argument);
-          size_t colon = top_level_colon(argument);
-          if (equal != string::npos && (colon == string::npos || equal < colon))
+          if (tree_named_argument_separator(argument) == '=')
             err(line, "enum constructor fields use ':' rather than '='",
                 "ENUM_FIELD_REQUIRES_COLON");
           if (!tree_parse_named_argument(argument, name, value))
@@ -26103,7 +26141,7 @@ class Checker {
                              "functional-pipeline-v1");
       return;
     }
-    string value = normalize_pipeline(std::move(original));
+    string value = tree_normalize_pipeline(std::move(original));
     if (!value.empty() && value.front() == '!' &&
         (value.size() == 1 || value[1] != '='))
       err(line, "unary '!' is not supported; use 'not' for Boolean negation",

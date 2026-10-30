@@ -28,7 +28,7 @@
 
   bool is_direct_fileio_open_initializer(
       const string& expression, vector<string>* open_args = nullptr) const {
-    string initializer = strip_redundant_outer_parentheses(trim(expression));
+    string initializer = tree_strip_redundant_outer_parentheses(trim(expression));
     string receiver, method;
     vector<string> args;
     bool direct = tree_parse_member_call(initializer, receiver, method, args) &&
@@ -40,7 +40,7 @@
   void static_mark_possible_mutation(string expression,
                                      const std::set<string>& fileio_owners,
                                      std::set<string>& mutated) const {
-    expression = strip_redundant_outer_parentheses(trim(expression));
+    expression = tree_strip_redundant_outer_parentheses(trim(expression));
     for (const auto& prefix : vector<string>{"echo ", "reply ",
                                               "return ", "message "})
       if (starts_with(expression, prefix))
@@ -49,7 +49,7 @@
     // comma-separated operands). Inspect every component before trying to
     // recognize a single call; otherwise a later call can mutate a value
     // while an earlier component hides it from the bound proof.
-    auto sequence = split_top_level(expression, ',');
+    auto sequence = tree_split_top_level(expression, ',');
     if (sequence.size() > 1) {
       for (const auto& item : sequence)
         static_mark_possible_mutation(item, fileio_owners, mutated);
@@ -129,7 +129,7 @@
       return;
     }
     if (starts_with(expression, "[") && ends_with(expression, "]"))
-      for (const auto& item : split_top_level(
+      for (const auto& item : tree_split_top_level(
                expression.substr(1, expression.size() - 2), ','))
         static_mark_possible_mutation(item, fileio_owners, mutated);
   }
@@ -319,7 +319,7 @@
            statement.kind == Stmt::Kind::Assign) &&
           tree_simple_identifier(statement.a)) {
         StaticBoundFact fact;
-        string value = strip_redundant_outer_parentheses(trim(statement.b));
+        string value = tree_strip_redundant_outer_parentheses(trim(statement.b));
         if (tree_simple_identifier(value)) {
           auto existing = facts.find(value);
           if (existing != facts.end()) fact = existing->second;
@@ -403,7 +403,7 @@
   std::optional<int64_t> static_exact_integer(string source,
                                               int depth = 0) const {
     if (depth > 32) return std::nullopt;
-    source = strip_redundant_outer_parentheses(
+    source = tree_strip_redundant_outer_parentheses(
         static_source_expression(source));
     if (auto fact = static_bound_bindings_.find(source);
         fact != static_bound_bindings_.end()) return fact->second.integer;
@@ -455,14 +455,14 @@
     if (!starts_with(value, "[") || !ends_with(value, "]"))
       return std::nullopt;
     string items = trim(value.substr(1, value.size() - 2));
-    return items.empty() ? vector<string>{} : split_top_level(items, ',');
+    return items.empty() ? vector<string>{} : tree_split_top_level(items, ',');
   }
 
   std::optional<std::pair<string, string>> static_batch_request(
       string entry) const {
     entry = trim(entry);
     if (starts_with(entry, "(") && ends_with(entry, ")")) {
-      auto coordinates = split_top_level(entry.substr(1, entry.size() - 2), ',');
+      auto coordinates = tree_split_top_level(entry.substr(1, entry.size() - 2), ',');
       if (coordinates.size() == 2)
         return std::make_pair(coordinates[0], coordinates[1]);
     }
@@ -483,7 +483,7 @@
 
   std::optional<vector<std::optional<int64_t>>> static_request_size_values(
       const string& source) const {
-    string value = strip_redundant_outer_parentheses(trim(source));
+    string value = tree_strip_redundant_outer_parentheses(trim(source));
     if (auto fact = static_bound_bindings_.find(value);
         fact != static_bound_bindings_.end()) return fact->second.request_sizes;
     auto entries = static_collection_entries(value);
@@ -499,7 +499,7 @@
 
   std::optional<vector<uint64_t>> static_batch_entry_bounds(
       const string& source) const {
-    string value = strip_redundant_outer_parentheses(trim(source));
+    string value = tree_strip_redundant_outer_parentheses(trim(source));
     if (auto fact = static_bound_bindings_.find(value);
         fact != static_bound_bindings_.end()) return fact->second.batch_entries;
     string receiver, method;
@@ -523,7 +523,7 @@
         fact != static_bound_bindings_.end()) return fact->second.bytes;
     std::function<std::optional<uint64_t>(string)> bounded_string =
         [&](string expression) -> std::optional<uint64_t> {
-      expression = strip_redundant_outer_parentheses(trim(expression));
+      expression = tree_strip_redundant_outer_parentheses(trim(expression));
       expression = static_source_expression(expression);
       if (expression.size() >= 2 && expression.front() == '"' &&
           expression.back() == '"')

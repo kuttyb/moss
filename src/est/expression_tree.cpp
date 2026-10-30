@@ -160,7 +160,7 @@ ExprId Arena::duplicate(ExprId id) {
                             std::move(arguments)}, span(id));
     }
     else if constexpr (std::is_same_v<T, NamedArgument>)
-      return append(NamedArgument{value.name, duplicate(value.value)}, span(id));
+      return append(NamedArgument{value.name, duplicate(value.value), value.separator}, span(id));
     else if constexpr (std::is_same_v<T, Collection>) {
       std::vector<ExprId> elements;
       for (const auto element : value.elements) elements.push_back(duplicate(element));
@@ -401,8 +401,8 @@ class Reader {
              tokens_[position_ + 1].text == "=")) {
           const auto argument_begin = tokens_[position_].source_begin;
           const auto name = tokens_[position_++].text;
-          ++position_;
-          args.push_back(append(NamedArgument{name, expression(0)},
+          const char separator = tokens_[position_++].text.front();
+          args.push_back(append(NamedArgument{name, expression(0), separator},
                                 argument_begin));
         } else {
           args.push_back(expression(0));
@@ -421,8 +421,8 @@ class Reader {
            tokens_[position_ + 1].text == "=")) {
         const auto item_begin = tokens_[position_].source_begin;
         const auto name = tokens_[position_++].text;
-        ++position_;
-        items.push_back(append(NamedArgument{name, expression(0)}, item_begin));
+        const char separator = tokens_[position_++].text.front();
+        items.push_back(append(NamedArgument{name, expression(0), separator}, item_begin));
       } else items.push_back(expression(0));
     } while (take(","));
     expect(close == ']' ? "]" : "}");
@@ -637,7 +637,7 @@ Shape shape_of(const Arena& arena, ExprId id) {
       Shape result{"message", node.handler, {shape_of(arena, node.target)}};
       for (auto child : node.arguments) result.children.push_back(shape_of(arena, child));
       return result;
-    } else if constexpr (std::is_same_v<T, NamedArgument>) return {"named", node.name, {shape_of(arena, node.value)}};
+    } else if constexpr (std::is_same_v<T, NamedArgument>) return {"named", node.name + node.separator, {shape_of(arena, node.value)}};
     else if constexpr (std::is_same_v<T, Placeholder>) return {"placeholder", {}, {}};
     else if constexpr (std::is_same_v<T, Collection>) {
       Shape result{"collection", std::string(1, node.delimiter), {}};
