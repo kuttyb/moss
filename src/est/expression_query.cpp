@@ -3,6 +3,7 @@
 #include "../parser_support.hpp"
 #include <algorithm>
 #include <cassert>
+#include <cstdio>
 #include <stdexcept>
 #include <type_traits>
 
@@ -134,15 +135,39 @@ void mentions_node(const Arena& arena, ExprId id, std::string_view name, bool& f
 bool project_simple_call(const ExpressionView& e, std::string& callee,
                          std::vector<std::string>& arguments) {
   bool result = false;
-  if (e.arena && e.root < e.arena->size())
-    if (const auto* call = std::get_if<Call>(&e.arena->at(e.root)))
+  if (e.arena && e.root < e.arena->size()) {
+    if (const auto* call = std::get_if<Call>(&e.arena->at(e.root))) {
       if (auto name = e.source_text(call->callee))
         if (auto args = child_texts(e, call->arguments)) {
           callee = std::move(*name); arguments = std::move(*args); result = true;
         }
+    } else if (const auto* constructor =
+                   std::get_if<Constructor>(&e.arena->at(e.root))) {
+      if (auto name = e.source_text(constructor->type))
+        if (auto args = child_texts(e, constructor->arguments)) {
+          callee = std::move(*name); arguments = std::move(*args); result = true;
+        }
+    } else if (const auto* message = std::get_if<Message>(&e.arena->at(e.root))) {
+      if (auto target = e.source_text(message->target))
+        if (auto args = child_texts(e, message->arguments)) {
+          callee = "message " + *target + "." + message->handler;
+          arguments = std::move(*args); result = true;
+        }
+    } else if (const auto* pipeline = std::get_if<Pipeline>(&e.arena->at(e.root))) {
+      if (pipeline->stages.size() == 1)
+        if (const auto* stage = std::get_if<Call>(&e.arena->at(pipeline->stages.front())))
+          if (auto input = e.source_text(pipeline->input))
+            if (auto name = e.source_text(stage->callee))
+              if (auto args = child_texts(e, stage->arguments)) {
+                callee = *input + " |> " + *name;
+                arguments = std::move(*args); result = true;
+              }
+    }
+  }
   if (mode() == Mode::Shadow) {
     std::string old_name; std::vector<std::string> old_args;
     const bool legacy = moss::parse_simple_call(e.source, old_name, old_args);
+    if (legacy != result) std::fprintf(stderr, "EST simple-call mismatch: <%s> legacy=%d tree=%d\n", e.source.c_str(), legacy, result);
     assert(legacy == result);
     if (result) assert(old_name == callee && old_args == arguments);
   }
@@ -154,23 +179,33 @@ bool project_member_call(const ExpressionView& e, std::string& receiver,
                          bool* outputs_written) {
   if (outputs_written) *outputs_written = false;
   bool result = false;
-  if (e.arena && e.root < e.arena->size())
-    if (const auto* call = std::get_if<Call>(&e.arena->at(e.root)))
-      if (const auto* method = std::get_if<Member>(&e.arena->at(call->callee))) {
-        if (auto base = e.source_text(method->base)) {
-          receiver = std::move(*base); member = method->name;
-          if (outputs_written) *outputs_written = true;
-          if (!receiver.empty())
-            if (auto args = child_texts(e, call->arguments)) {
-              arguments = std::move(*args); result = true;
-            }
+  if (e.arena && e.root < e.arena->size()) {
+    const auto assign_member = [&](std::string base, const std::string& name,
+                                   const std::vector<ExprId>& children,
+                                   bool message_form) {
+      receiver = message_form ? "message " + base : std::move(base);
+      member = name;
+      if (outputs_written) *outputs_written = true;
+      if (!receiver.empty())
+        if (auto args = child_texts(e, children)) {
+          arguments = std::move(*args); result = true;
         }
-      }
+    };
+    if (const auto* call = std::get_if<Call>(&e.arena->at(e.root)))
+      if (const auto* method = std::get_if<Member>(&e.arena->at(call->callee)))
+        if (auto base = e.source_text(method->base))
+          assign_member(std::move(*base), method->name, call->arguments, false);
+    if (const auto* message = std::get_if<Message>(&e.arena->at(e.root)))
+      if (auto base = e.source_text(message->target))
+        assign_member(std::move(*base), message->handler,
+                      message->arguments, true);
+  }
   if (mode() == Mode::Shadow) {
     std::string old_receiver, old_member; std::vector<std::string> old_args;
     bool old_outputs = false;
     const bool legacy = moss::parse_member_call(e.source, old_receiver, old_member,
                                                 old_args, &old_outputs);
+    if (legacy != result) std::fprintf(stderr, "EST member-call mismatch: <%s> legacy=%d tree=%d\n", e.source.c_str(), legacy, result);
     assert(legacy == result);
     if (old_outputs) assert(old_receiver == receiver && old_member == member);
     if (outputs_written) assert(old_outputs == *outputs_written);
@@ -280,6 +315,22 @@ bool project_identifier(const ExpressionView& e, std::string& name) {
   const auto* id = std::get_if<Identifier>(&e.arena->at(e.root));
   if (!id) return false;
   name = id->name; return true;
+}
+
+bool is_identifier(const ExpressionView& e) {
+  std::string name;
+  bool result = project_identifier(e, name);
+  if (!result && e.arena && e.root < e.arena->size()) {
+    if (std::holds_alternative<Placeholder>(e.arena->at(e.root))) result = true;
+    if (const auto* literal = std::get_if<Literal>(&e.arena->at(e.root)))
+      result = literal->spelling == "true" || literal->spelling == "false";
+  }
+  if (mode() == Mode::Shadow) {
+    const bool legacy = moss::plain_identifier(e.source);
+    if (legacy != result) std::fprintf(stderr, "EST identifier mismatch: <%s> legacy=%d tree=%d\n", e.source.c_str(), legacy, result);
+    assert(legacy == result);
+  }
+  return result;
 }
 
 bool expression_mentions(const ExpressionView& e, std::string_view name) {

@@ -460,7 +460,7 @@
           const auto& parameter = function->second->params[i];
           auto actual = trim(call_args[i]);
           auto actual_type = inferred_expr_type(actual, flow.types);
-          if (!simple_identifier(actual) || !actual_type ||
+          if (!tree_simple_identifier(actual) || !actual_type ||
               canonical_type_name(*actual_type) != "FileIO") continue;
           int actual_state = flow.state.count(actual) ?
               flow.state.at(actual) : 2;
@@ -680,7 +680,7 @@
                 "RangeBatch")
           flow.range_origin[s.a] = {source, flow.batch_generation[source]};
         else if (type && canonical_type_name(*type) == "Range" &&
-                 simple_identifier(trim(s.b)) &&
+                 tree_simple_identifier(trim(s.b)) &&
                  flow.range_origin.count(trim(s.b)))
           flow.range_origin[s.a] = flow.range_origin[trim(s.b)];
         else flow.range_origin.erase(s.a);
@@ -697,7 +697,7 @@
             if (flow.mode[s.a] == "ro") flow.may_be_read_only.insert(s.a);
             else flow.may_be_read_only.erase(s.a);
           }
-        } else if (type && simple_identifier(s.a)) {
+        } else if (type && tree_simple_identifier(s.a)) {
           flow.types[s.a] = *type;
         }
       } else if (s.kind == Stmt::Kind::Echo) {
@@ -862,7 +862,7 @@
           statement.kind == Stmt::Kind::Var ||
           statement.kind == Stmt::Kind::Assign) {
         auto type = inferred_expr_type(statement.b, env);
-        if (type && simple_identifier(statement.a)) env[statement.a] = *type;
+        if (type && tree_simple_identifier(statement.a)) env[statement.a] = *type;
       }
     }
     if (function->second->result_expression)
@@ -936,7 +936,7 @@
           statement.kind == Stmt::Kind::Var ||
           statement.kind == Stmt::Kind::Assign) {
         auto type = inferred_expr_type(statement.b, env);
-        if (type && simple_identifier(statement.a)) env[statement.a] = *type;
+        if (type && tree_simple_identifier(statement.a)) env[statement.a] = *type;
       }
     }
     return std::nullopt;
@@ -992,7 +992,7 @@
               statement.kind == Stmt::Kind::Var ||
               statement.kind == Stmt::Kind::Assign) {
             auto type = inferred_expr_type(statement.b, env);
-            if (type && simple_identifier(statement.a)) env[statement.a] = *type;
+            if (type && tree_simple_identifier(statement.a)) env[statement.a] = *type;
           }
         }
       }

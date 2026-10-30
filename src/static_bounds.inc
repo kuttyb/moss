@@ -124,7 +124,7 @@
       return;
     }
     auto dot = expression.rfind('.');
-    if (dot != string::npos && simple_identifier(trim(expression.substr(dot + 1)))) {
+    if (dot != string::npos && tree_simple_identifier(trim(expression.substr(dot + 1)))) {
       static_mark_possible_mutation(expression.substr(0, dot), fileio_owners, mutated);
       return;
     }
@@ -317,10 +317,10 @@
       if ((statement.kind == Stmt::Kind::Let ||
            statement.kind == Stmt::Kind::Var ||
            statement.kind == Stmt::Kind::Assign) &&
-          simple_identifier(statement.a)) {
+          tree_simple_identifier(statement.a)) {
         StaticBoundFact fact;
         string value = strip_redundant_outer_parentheses(trim(statement.b));
-        if (simple_identifier(value)) {
+        if (tree_simple_identifier(value)) {
           auto existing = facts.find(value);
           if (existing != facts.end()) fact = existing->second;
         } else {
@@ -357,7 +357,7 @@
       // A projected store or call can mutate shared collection storage.
       bool binding = (statement.kind == Stmt::Kind::Let ||
           statement.kind == Stmt::Kind::Var || statement.kind == Stmt::Kind::Assign) &&
-          simple_identifier(statement.a);
+          tree_simple_identifier(statement.a);
       if (binding) mutated.erase(statement.a);
       if (!mutated.empty()) {
         // A collection alias may refer to the same mutable storage. Drop all
@@ -372,7 +372,7 @@
       if ((statement.kind == Stmt::Kind::Let ||
            statement.kind == Stmt::Kind::Var ||
            statement.kind == Stmt::Kind::Assign) &&
-          simple_identifier(statement.a)) {
+          tree_simple_identifier(statement.a)) {
         fileio_owners.erase(statement.a);
         if (is_direct_fileio_open_initializer(statement.b))
           fileio_owners.insert(statement.a);

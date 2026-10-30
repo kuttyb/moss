@@ -115,7 +115,7 @@ void check_executor_invoke(const Stmt& statement, const TypeEnv& env,
   vector<string> handler_args;
   if (!tree_parse_member_call(statement.args.front(), domain_binding, handler_name,
                          handler_args) ||
-      !plain_identifier(domain_binding) || !plain_identifier(handler_name))
+      !tree_plain_identifier(domain_binding) || !tree_plain_identifier(handler_name))
     err(statement.line,
         "executor.invoke requires a statically known "
         "'domain.Handler(args...)' call expression",
@@ -311,7 +311,7 @@ void phase21_validate_root_ingress_totality(const TypeEnv& main_env) {
         vector<string> arguments;
         if (!tree_parse_member_call(expression.substr(start, end - start),
                                binding, handler, arguments) ||
-            !plain_identifier(binding))
+            !tree_plain_identifier(binding))
           err(statement.line, "unresolved Root message target",
               "ROOT_MESSAGE_TARGET_UNRESOLVED");
         target_for(binding, handler, statement.line,

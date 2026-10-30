@@ -162,6 +162,7 @@ bool project_binary(const ExpressionView& view,
 std::optional<std::vector<std::string>> project_delimited_children(
     const ExpressionView& view, char delimiter);
 bool project_identifier(const ExpressionView& view, std::string& name);
+bool is_identifier(const ExpressionView& view);
 bool expression_mentions(const ExpressionView& view, std::string_view name);
 bool structurally_equal(const ExpressionView& left,
                         const ExpressionView& right);

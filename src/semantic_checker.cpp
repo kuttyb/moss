@@ -749,7 +749,7 @@ class Checker {
       std::set<string> assigned_binding_ids;
       for (auto& occurrence : state.statement_occurrences) {
         if (!occurrence.source || occurrence.kind != Stmt::Kind::Assign ||
-            !simple_identifier(occurrence.source->a)) {
+            !tree_simple_identifier(occurrence.source->a)) {
           if (!occurrence.assigned_binding_identity.empty())
             state.expression_occurrence_ledger_complete = false;
           continue;
@@ -2622,7 +2622,7 @@ class Checker {
           key = trim(wrapper_arguments.front());
         }
         const auto named_target = functions_.find(key);
-        if (!plain_identifier(key) || named_target == functions_.end() ||
+        if (!tree_plain_identifier(key) || named_target == functions_.end() ||
             named_target->second->semantic_callable_id !=
                 callable.semantic_callable_id ||
             callable.reverse_order != reverse_order)
@@ -2699,7 +2699,7 @@ class Checker {
             occurrence.semantic_target_id ==
                 "placeholder:" + source_callback)
           continue;
-        if (plain_identifier(source_callback)) {
+        if (tree_plain_identifier(source_callback)) {
           bool parameter_found = false;
           for (std::size_t parameter = 0;
                parameter < function.params.size(); ++parameter)
@@ -2748,7 +2748,7 @@ class Checker {
         }
         string receiver, method;
         if (parse_bound_method_callable(source_callback, receiver, method)) {
-          if (!plain_identifier(receiver) ||
+          if (!tree_plain_identifier(receiver) ||
               occurrence.statement_id >= body.statement_occurrences.size())
             return false;
           const Stmt* statement =
@@ -2767,7 +2767,7 @@ class Checker {
         return false;
       }
       const string& target_id = occurrence.semantic_target_id;
-      if (!plain_identifier(source_callback) ||
+      if (!tree_plain_identifier(source_callback) ||
           target_id != named_callback->second->semantic_callable_id ||
           !expected_dependencies.count(target_id) ||
           !has_matching_call_edge(occurrence, *named_callback->second))
@@ -3967,7 +3967,7 @@ class Checker {
       }
       const bool introduced_assignment =
           source_statement.kind == Stmt::Kind::Assign &&
-          simple_identifier(source_statement.a) &&
+          tree_simple_identifier(source_statement.a) &&
           binding_fact != state.binding_facts.end() &&
           binding_fact->second.introduced;
       const bool introduced_for_binding =
@@ -4038,7 +4038,7 @@ class Checker {
     // prior binding fact and post-write binding occurrence agree exactly.
     for (const auto& source_statement : function.body) {
       if (source_statement.kind != Stmt::Kind::Assign ||
-          !simple_identifier(source_statement.a)) continue;
+          !tree_simple_identifier(source_statement.a)) continue;
       const auto fact = state.binding_facts.find(&source_statement);
       const auto statement = state.statement_occurrence_ids.find(
           &source_statement);
@@ -4895,7 +4895,7 @@ class Checker {
           auto expression = expression_for("initializer");
           if (!expression || !expression->type) return std::nullopt;
           const auto fact = state.binding_facts.find(&source);
-          if (simple_identifier(source.a) &&
+          if (tree_simple_identifier(source.a) &&
               fact != state.binding_facts.end() && fact->second.introduced) {
             const auto& occurrence = state.statement_occurrences.at(id);
             const auto local = local_ordinals.find(fact->second.identity);
@@ -4921,7 +4921,7 @@ class Checker {
             lowered.expr = std::move(*expression);
             return lowered;
           }
-          if (!simple_identifier(source.a)) {
+          if (!tree_simple_identifier(source.a)) {
             // Indexed assignment consumes the exact checked place tree. This
             // initial producer subset admits only a mutable local Map target;
             // the decoder independently enforces ordinal, mutability, and
@@ -5893,7 +5893,7 @@ class Checker {
       vector<moss::MemberDispatchRequirement> forwarded_member_requirements;
       if (function.body.size() == 2 &&
           function.body.back().kind == Stmt::Kind::Return &&
-          plain_identifier(trim(function.body.back().a)) &&
+          tree_plain_identifier(trim(function.body.back().a)) &&
           (function.body.front().kind == Stmt::Kind::Let ||
            function.body.front().kind == Stmt::Kind::Var ||
            function.body.front().kind == Stmt::Kind::Assign) &&
@@ -6191,7 +6191,7 @@ class Checker {
             expression.find('.', dot + 1) == string::npos) {
           auto receiver = parameter_variables.find(trim(expression.substr(0, dot)));
           const string field = trim(expression.substr(dot + 1));
-          if (receiver != parameter_variables.end() && plain_identifier(field)) {
+          if (receiver != parameter_variables.end() && tree_plain_identifier(field)) {
             const auto& type = receiver->second;
             if (type && type->kind == moss::TypeKind::NominalInstance &&
                 type->declaration) {
@@ -9711,7 +9711,7 @@ class Checker {
     for (const auto& statement : p_.main->body) {
       auto constructed = domain_constructor(statement.b);
       if (!constructed || statement.indent != 0) continue;
-      if (!plain_identifier(statement.a)) continue;
+      if (!tree_plain_identifier(statement.a)) continue;
       if (by_binding.count(statement.a))
         fail_at(statement, "duplicate domain instance binding '" + statement.a + "'");
       const Domain& domain = *domains_.at(*constructed);
@@ -9765,7 +9765,7 @@ class Checker {
       if (constructed) {
         if (statement.indent != 0 ||
             !(statement.kind == Stmt::Kind::Let || statement.kind == Stmt::Kind::Var ||
-              statement.kind == Stmt::Kind::Assign) || !plain_identifier(statement.a))
+              statement.kind == Stmt::Kind::Assign) || !tree_plain_identifier(statement.a))
           fail_at(statement,
                   "domain construction is only allowed as a top-level binding in main's composition prefix");
         if (!composition_open)
@@ -10492,12 +10492,14 @@ class Checker {
     }
   }
 
-  static bool simple_identifier(const string& value) {
-    string s = trim(value);
-    if (s.empty() || !(moss::ascii_is_alpha(static_cast<unsigned char>(s.front())) || s.front() == '_')) return false;
-    return std::all_of(s.begin() + 1, s.end(), [](char c) {
-      return moss::ascii_is_alnum(static_cast<unsigned char>(c)) || c == '_';
-    });
+  static bool tree_simple_identifier(const string& value) {
+    auto syntax = moss::est::parse_view(value);
+    return syntax && moss::est::is_identifier(*syntax);
+  }
+
+  static bool tree_plain_identifier(const string& value) {
+    auto syntax = moss::est::parse_view(value);
+    return syntax && moss::est::is_identifier(*syntax);
   }
 
   static bool expression_uses(const string& expression, const string& name) {
@@ -11098,7 +11100,7 @@ class Checker {
       string receiver, handler;
       vector<string> args;
       if (!tree_parse_member_call(trim(original.substr(8)), receiver, handler, args) ||
-          !plain_identifier(receiver) || !plain_identifier(handler))
+          !tree_plain_identifier(receiver) || !tree_plain_identifier(handler))
         return std::nullopt;
       auto binding = env.find(receiver);
       if (binding == env.end()) return std::nullopt;
@@ -11123,7 +11125,7 @@ class Checker {
           ? primitive("bool") : std::nullopt;
     if (auto type = obvious_expr_type(e, env))
       return inferred_leaf(canonical_type_name(*type));
-    if (plain_identifier(e)) {
+    if (tree_plain_identifier(e)) {
       auto fn_it = functions_.find(e);
       if (fn_it != functions_.end() && fn_it->second) {
         const string& cid = !fn_it->second->semantic_callable_id.empty()
@@ -11972,7 +11974,7 @@ class Checker {
                                 const TypeEnv& solved_collections = {}) const {
     if (statement.kind == Stmt::Kind::Let || statement.kind == Stmt::Kind::Var ||
         statement.kind == Stmt::Kind::Assign) {
-      if (statement.kind != Stmt::Kind::Assign || simple_identifier(statement.a)) {
+      if (statement.kind != Stmt::Kind::Assign || tree_simple_identifier(statement.a)) {
         auto existing = env.find(statement.a);
         if (statement.kind == Stmt::Kind::Assign && existing != env.end() &&
             existing->second && existing->second->is_closed()) {
@@ -12528,7 +12530,7 @@ class Checker {
           (statement.kind == Stmt::Kind::Let ||
            statement.kind == Stmt::Kind::Var ||
            statement.kind == Stmt::Kind::Assign) &&
-          simple_identifier(statement.a)) {
+          tree_simple_identifier(statement.a)) {
         if (auto term = current_body_types_->assignment_value(statement))
           env.terms[statement.a] = term;
       }
@@ -12640,7 +12642,7 @@ class Checker {
       if (value && !solver.unify(map->type_args[1], value))
         err(line, "Map fallback conflicts with the binding's value type", "TYPE_MISMATCH");
       auto resolved = solver.resolve(map);
-      if (resolved && resolved->is_closed() && simple_identifier(receiver))
+      if (resolved && resolved->is_closed() && tree_simple_identifier(receiver))
         scan[receiver] = resolved->to_canonical_string();
     };
     auto require_type = [&](int line, const string& expression,
@@ -13210,7 +13212,7 @@ class Checker {
       if ((statement.kind == Stmt::Kind::Let ||
            statement.kind == Stmt::Kind::Var ||
            statement.kind == Stmt::Kind::Assign) &&
-          simple_identifier(statement.a)) {
+          tree_simple_identifier(statement.a)) {
         if (auto constructed = domain_constructor(statement.b)) {
           scan[statement.a] = *constructed;
           continue;
@@ -14674,7 +14676,7 @@ class Checker {
         if ((statement.kind == Stmt::Kind::Assign ||
              statement.kind == Stmt::Kind::Let ||
              statement.kind == Stmt::Kind::Var) &&
-            plain_identifier(statement.a))
+            tree_plain_identifier(statement.a))
           local_sources[statement.a] = statement.b;
         if (statement.kind == Stmt::Kind::Return) {
           auto source = local_sources.find(trim(statement.a));
@@ -15149,7 +15151,7 @@ class Checker {
   }
 
   static bool simple_effect_identifier(const string& value) {
-    return simple_identifier(trim(value));
+    return tree_simple_identifier(trim(value));
   }
 
   // An inferred nominal field takes the type of the value each constructor
@@ -15197,7 +15199,7 @@ class Checker {
       const EnvT& env,
       bool require_known_root = true) const {
     string value = strip_expression_parens(normalize_pipeline(trim(expression)));
-    if (simple_identifier(value)) {
+    if (tree_simple_identifier(value)) {
       if (require_known_root && !env.count(value)) return std::nullopt;
       if (current_object_ && value != "self" &&
           std::any_of(current_object_->fields.begin(), current_object_->fields.end(),
@@ -15213,7 +15215,7 @@ class Checker {
       return location;
     }
     auto dot = value.rfind('.');
-    if (dot != string::npos && simple_identifier(trim(value.substr(dot + 1)))) {
+    if (dot != string::npos && tree_simple_identifier(trim(value.substr(dot + 1)))) {
       auto location = storage_location(value.substr(0, dot), env, require_known_root);
       if (!location) return std::nullopt;
       location->path.push_back(trim(value.substr(dot + 1)));
@@ -16714,7 +16716,7 @@ class Checker {
           source.body, index + 1, end, arm.indent + 1);
       TypeEnv local_types = phase21_local_types_before(
           domain, source, specialization, index);
-      if (!arm.a.empty() && plain_identifier(trim(arm.a))) {
+      if (!arm.a.empty() && tree_plain_identifier(trim(arm.a))) {
         std::set<string> selected_types;
         for (const auto& identity : arm.exceptional_alternatives)
           selected_types.insert(identity.type);
@@ -17275,7 +17277,7 @@ class Checker {
       if (auto location = storage_location(value, env)) {
         observe_leaf_access(*location, projection_effect(value, requested, env));
         string projected = value, base, index;
-        while (!simple_identifier(projected)) {
+        while (!tree_simple_identifier(projected)) {
           if (parse_index(projected, base, index)) {
             analyze_effect_expression(index, env, params, parameter_effects,
                                       receiver_effect, receiver_fields, Effect::Read);
@@ -17639,7 +17641,7 @@ class Checker {
     }
 
     auto dot = value.rfind('.');
-    if (!leaf_effect_capture_ && dot != string::npos && simple_identifier(trim(value.substr(dot + 1)))) {
+    if (!leaf_effect_capture_ && dot != string::npos && tree_simple_identifier(trim(value.substr(dot + 1)))) {
       analyze_effect_expression(value.substr(0, dot), env, params,
                                 parameter_effects, receiver_effect,
                                 receiver_fields,
@@ -18098,7 +18100,7 @@ class Checker {
     if (auto dot = value.rfind('.'); dot != string::npos) {
       const string base = trim(value.substr(0, dot));
       const string field = trim(value.substr(dot + 1));
-      if (plain_identifier(field)) {
+      if (tree_plain_identifier(field)) {
         auto base_type = inferred_expr_type(base, env);
         if (base_type) {
           auto object = objects_.find(canonical_type_name(*base_type));
@@ -18441,8 +18443,8 @@ class Checker {
       vector<string> arguments;
       if (!tree_parse_member_call(trim(value.substr(8)), receiver_name,
                              handler_name, arguments) ||
-          !plain_identifier(receiver_name) ||
-          !plain_identifier(handler_name))
+          !tree_plain_identifier(receiver_name) ||
+          !tree_plain_identifier(handler_name))
         return;
       auto receiver = current_env.find(receiver_name);
       if (receiver == current_env.end()) return;
@@ -18897,7 +18899,7 @@ class Checker {
     std::set<string> seen;
     for (size_t index = 0; index < names.size(); ++index) {
       const string name = trim(names[index]);
-      if (!plain_identifier(name))
+      if (!tree_plain_identifier(name))
         err(line, "error payload patterns support only plain field bindings",
             "INVALID_RECOVERY_PATTERN");
       if (name != item->fields[index].name)
@@ -18994,7 +18996,7 @@ class Checker {
       }
       return result;
     }
-    if (alternatives.size() != 1 || !plain_identifier(value))
+    if (alternatives.size() != 1 || !tree_plain_identifier(value))
       err(line, "recover requires qualified variants, one error binding, or an unbound catch-all",
           "INVALID_RECOVERY_PATTERN");
     std::set<string> types;
@@ -19082,7 +19084,7 @@ class Checker {
                                    arm.source_file});
           }
           TypeEnv arm_env = env;
-          if (!binding_type.empty() && plain_identifier(trim(arm.a)))
+          if (!binding_type.empty() && tree_plain_identifier(trim(arm.a)))
             arm_env[trim(arm.a)] = binding_type;
           if (!arm.a.empty() && arm.a.find('.') != string::npos) {
             auto alternatives = split_top_level(arm.a, ',');
@@ -19093,7 +19095,7 @@ class Checker {
           }
           RaiseSet arm_raises = phase21_raise_set_block(
               body, index, level + 1, std::move(arm_env), reachable_matched,
-              plain_identifier(trim(arm.a)) ? trim(arm.a) : string(), true);
+              tree_plain_identifier(trim(arm.a)) ? trim(arm.a) : string(), true);
           if (!reachable_matched.empty())
             recovered_raises = raise_set_union(
                 std::move(recovered_raises), arm_raises);
@@ -19301,7 +19303,7 @@ class Checker {
       if (statement.kind != Stmt::Kind::Let &&
           statement.kind != Stmt::Kind::Var &&
           statement.kind != Stmt::Kind::Assign) return;
-      if (!plain_identifier(statement.a) || entry.count(statement.a)) return;
+      if (!tree_plain_identifier(statement.a) || entry.count(statement.a)) return;
       auto type = inferred_expr_type(statement.b, current);
       if (!type || contains_internal_placeholder(*type)) return;
       auto [item, inserted] = candidates.emplace(statement.a, *type);
@@ -19320,7 +19322,7 @@ class Checker {
                                      const TypeEnv& current) {
       for (const auto& expression : statement_expressions(statement)) {
         if (statement.kind == Stmt::Kind::Assign &&
-            plain_identifier(expression) && expression == statement.a)
+            tree_plain_identifier(expression) && expression == statement.a)
           continue;
         for (const auto& name : functional_captures(expression, candidates))
           if (!current.count(name)) result.insert(name);
@@ -19857,7 +19859,7 @@ class Checker {
     if (auto dot = value.rfind('.'); dot != string::npos) {
       const string base = trim(value.substr(0, dot));
       const string field = trim(value.substr(dot + 1));
-      if (plain_identifier(field)) {
+      if (tree_plain_identifier(field)) {
         auto base_type = inferred_expr_type(base, env);
         if (base_type) {
           auto object = objects_.find(canonical_type_name(*base_type));
@@ -20130,7 +20132,7 @@ class Checker {
     string var_name = trim(is_less ? cmp_less->first : cmp_greater->first);
     string bound_expr = trim(is_less ? cmp_less->second : cmp_greater->second);
 
-    if (!plain_identifier(var_name)) return false;
+    if (!tree_plain_identifier(var_name)) return false;
     auto var_type = env.find(var_name);
     if (var_type == env.end() || canonical_type_name(var_type->second) != "int")
       return false;
@@ -20233,7 +20235,7 @@ class Checker {
     if (!tree_parse_member_call(trim(arguments[1]), range_binding, method,
                            method_arguments) ||
         method != "length" || !method_arguments.empty() ||
-        !plain_identifier(range_binding))
+        !tree_plain_identifier(range_binding))
       return std::nullopt;
     auto range_type = env.find(range_binding);
     if (range_type == env.end() ||
@@ -21149,7 +21151,7 @@ class Checker {
       return "use replace(" + source + ", replacement) to obtain an owned enum before matching";
     if (env.message_payloads.count(source))
       return "incoming payloads are immutable; compute an independent value from this READ view";
-    return simple_identifier(source)
+    return tree_simple_identifier(source)
         ? "use 'match consume " + source + ":'"
         : "obtain an owned enum value with replace before a consuming match";
   }
@@ -21548,7 +21550,7 @@ class Checker {
         return;
       }
     }
-    if (simple_identifier(value)) {
+    if (tree_simple_identifier(value)) {
       if (functions_.count(value)) return;  // Statically closed callable identity.
       auto resolved_binding = env.binding_identities.find(value);
       if (resolved_binding != env.binding_identities.end())
@@ -21964,11 +21966,11 @@ class Checker {
           err(s.line, "match scrutinee must have a known enum type", "MATCH_REQUIRES_ENUM");
         bool consuming = s.b == "consume";
         if (consuming) {
-          if (storage_location(s.a, env.types) && !simple_identifier(s.a))
+          if (storage_location(s.a, env.types) && !tree_simple_identifier(s.a))
             err(s.line, "consuming match cannot move an enum from an interior place; "
                 "use replace(place, replacement) to obtain an owned value",
                 "MATCH_CONSUME_INTERIOR_PLACE");
-          if (simple_identifier(s.a)) {
+          if (tree_simple_identifier(s.a)) {
             require_available(s.line, s.a, env);
             consume_binding(s.line, s.a, env, "consuming match");
           } else {
@@ -22272,7 +22274,7 @@ class Checker {
               effect_requires_borrow(*source_type) &&
               !fileio_scoped_type(*source_type);
           if (transfers) {
-            if (simple_identifier(source)) {
+            if (tree_simple_identifier(source)) {
               require_available(s.line, source, env);
               consume_binding(s.line, source, env, s.a);
             } else {
@@ -22333,7 +22335,7 @@ class Checker {
             auto dot = s.a.rfind('.');
             if (dot != string::npos)
               check_ownership_expression(s.line, s.a, env, Effect::Write);
-            else if (simple_identifier(s.a))
+            else if (tree_simple_identifier(s.a))
               check_ownership_expression(s.line, s.a, env, Effect::Write);
           }
           string source = trim(s.b);
@@ -22342,7 +22344,7 @@ class Checker {
               effect_requires_borrow(*source_type) &&
               !fileio_scoped_type(*source_type);
           if (transfers) {
-            if (simple_identifier(source)) {
+            if (tree_simple_identifier(source)) {
               require_available(s.line, source, env);
               consume_binding(s.line, source, env, s.a);
             } else {
@@ -22358,7 +22360,7 @@ class Checker {
             ++index;
             break;
           }
-          if (simple_identifier(s.a)) {
+          if (tree_simple_identifier(s.a)) {
             if (source_type) {
               auto checked = s.semantic_types_by_context.find(current_semantic_context_);
               const string& checked_type = checked == s.semantic_types_by_context.end()
@@ -22413,7 +22415,7 @@ class Checker {
           }
           record_direct_raise();
           if (!s.message_result.empty() && env.types.count(s.message_result) &&
-              simple_identifier(s.message_result))
+              tree_simple_identifier(s.message_result))
             // Assigning an existing binding or state field is a WRITE.
             check_ownership_expression(s.line, s.message_result, env, Effect::Write);
           if (!s.message_result.empty()) {
@@ -23937,7 +23939,7 @@ class Checker {
     bool open_local_argument = std::any_of(args.begin(), args.end(),
         [&](const string& argument) {
           const string name = trim(argument);
-          if (!plain_identifier(name)) return false;
+          if (!tree_plain_identifier(name)) return false;
           auto binding = env.find(name);
           if (binding == env.end()) return false;
           auto term = moss::Type::parse_canonical(
@@ -24416,7 +24418,7 @@ class Checker {
                 "' is not compatible with the stage input",
             "FUNCTIONAL_SEMANTIC_ERROR");
       }
-      if (!plain_identifier(identity)) {
+      if (!tree_plain_identifier(identity)) {
         teaching_err(
             line, "FUNCTIONAL_PLACEHOLDER_REQUIRED",
             "callback expression '" + identity + "' for " + operation_name +
@@ -24574,7 +24576,7 @@ class Checker {
       key = trim(reverse_args.front());
     }
     auto function = functions_.find(key);
-    if (!plain_identifier(key) || function == functions_.end())
+    if (!tree_plain_identifier(key) || function == functions_.end())
       err(line, "sort key must be a named function, found '" + key + "'",
           "SORT_KEY_CALLABLE");
     auto result = check_functional_callable(line, key, {element}, env, "sort");
@@ -25927,7 +25929,7 @@ class Checker {
       string receiver, handler;
       vector<string> args;
       if (!tree_parse_member_call(trim(original.substr(8)), receiver, handler, args) ||
-          !plain_identifier(receiver) || !plain_identifier(handler))
+          !tree_plain_identifier(receiver) || !tree_plain_identifier(handler))
         err(line, "message requires a domain call 'receiver.Handler(args)'");
       check_message_target_existence(line, receiver, env);
       const Handler* target = check_message_call_after_resolution(
@@ -26751,7 +26753,7 @@ class Checker {
           mark_active_expression(OccurrenceKind::Field, "field:" + field);
           check_expression(line, base, env, {}, "receiver");
         }
-        if (receiver_type && !float_literal && (plain_identifier(field) || all_digits(field))) {
+        if (receiver_type && !float_literal && (tree_plain_identifier(field) || all_digits(field))) {
           // P25-S-ARCH-024: a projection must name a declared record field;
           // compiler-defined values have no fields.
           string type = canonical_type_name(*receiver_type);
@@ -27334,7 +27336,7 @@ class Checker {
       if (contains_domain_handle(env.at(binding)))
         err(line, "domain handle '" + binding +
             "' is not an ordinary value; use domainroutes and message targets only");
-    if (plain_identifier(value) && value != "true" && value != "false" && value != "None" &&
+    if (tree_plain_identifier(value) && value != "true" && value != "false" && value != "None" &&
         !functions_.count(value) && !objects_.count(value) && !domains_.count(value) &&
         !traits_.count(value) && !env.count(value)) {
       err(line, "unknown identifier '" + value + "'");
@@ -27345,7 +27347,7 @@ class Checker {
           current_body_types_->active_expression_occurrences.back();
       if (current_body_types_->expression_occurrences[occurrence].kind ==
           OccurrenceKind::Unknown) {
-        if (plain_identifier(value) && value != "true" && value != "false" &&
+        if (tree_plain_identifier(value) && value != "true" && value != "false" &&
             value != "None")
           mark_active_expression(OccurrenceKind::Identifier);
         else if (value == "true" || value == "false" || value == "None" ||
@@ -27658,13 +27660,13 @@ class Checker {
         check_expression(statement.line, statement.b, current_env,
                          "initializer");
         if (statement.kind == Stmt::Kind::Assign &&
-            simple_identifier(statement.a) && !current_env.count(statement.a)) {
+            tree_simple_identifier(statement.a) && !current_env.count(statement.a)) {
           auto inferred = inferred_expr_type(statement.b, current_env);
           if (!inferred && starts_with(trim(statement.b), "["))
             err(statement.line, "heterogeneous or unresolved collection element type");
         }
         if (statement.kind == Stmt::Kind::Assign &&
-            simple_identifier(statement.a) && current_env.count(statement.a)) {
+            tree_simple_identifier(statement.a) && current_env.count(statement.a)) {
           const auto prior_type = current_env.at(statement.a);
           auto new_type = inferred_expr_type(statement.b, current_env);
           if (new_type && !contains_internal_placeholder(prior_type) &&
@@ -27679,7 +27681,7 @@ class Checker {
           }
         }
         if (statement.kind == Stmt::Kind::Assign) {
-          if (simple_identifier(statement.a)) {
+          if (tree_simple_identifier(statement.a)) {
             if (!current_env.count(statement.a)) {
               auto inferred = inferred_expr_type(statement.b, current_env);
               if (!inferred && starts_with(trim(statement.b), "["))
@@ -28142,7 +28144,7 @@ class Checker {
                   checking_specialization_);
           else if (parse_vector_literal(trim(argument)))
             check_echo_display(statement.line, "vector");  // `echo []`, `echo [[]]`
-          else if (plain_identifier(trim(argument))) {
+          else if (tree_plain_identifier(trim(argument))) {
             auto binding = current_env.find(trim(argument));
             if (binding != current_env.end() &&
                 (canonical_type_name(binding->second) == "vector" ||
@@ -28177,7 +28179,7 @@ class Checker {
       }
 
       if (statement.kind == Stmt::Kind::Raw &&
-          plain_identifier(statement.text) && statement.text != "pass")
+          tree_plain_identifier(statement.text) && statement.text != "pass")
         err(statement.line, "bare identifier is not a statement; use 'pass' for a no-op",
             "INVALID_BARE_IDENTIFIER_STATEMENT");
 
@@ -28484,7 +28486,7 @@ class Checker {
         occurrence.introduces_binding = true;
         occurrence.mutable_binding = statement->kind == Stmt::Kind::Var;
       } else if (statement->kind == Stmt::Kind::Assign &&
-                 simple_identifier(statement->a)) {
+                 tree_simple_identifier(statement->a)) {
         occurrence.binding_identity = statement_binding_identity(
             current_semantic_context_, statement->line) + ":" + statement->a;
         occurrence.binding_type = checked_types.assignment_value(*statement);
@@ -30253,7 +30255,7 @@ class Checker {
           break;
         case Stmt::Kind::Assign:
           require_root(statement, "initializer");
-          if (!simple_identifier(statement.a))
+          if (!tree_simple_identifier(statement.a))
             require_root(statement, "assignment-place");
           break;
         case Stmt::Kind::If:
