@@ -12713,42 +12713,49 @@ class Checker {
           const Stmt& arm = statements[index];
           if (arm.kind != Stmt::Kind::Case)
             err(arm.line, "match body requires case arms", "MATCH_REQUIRES_CASE");
+          if (!arm.est_pattern ||
+              (arm.est_pattern->kind != moss::est::PatternNode::Kind::EnumTag &&
+               arm.est_pattern->kind != moss::est::PatternNode::Kind::EnumCase))
+            err(arm.line, "match body requires case arms", "MATCH_REQUIRES_CASE");
+          const auto& pattern = *arm.est_pattern;
+          const auto& case_name = pattern.case_name;
+          const auto& bindings = pattern.payload_bindings;
           auto item = declaration ? std::find_if(declaration->cases.begin(), declaration->cases.end(),
-              [&](const EnumCase& candidate) { return candidate.name == arm.a; }) :
+              [&](const EnumCase& candidate) { return candidate.name == case_name; }) :
               vector<EnumCase>::const_iterator{};
           if (declaration && item == declaration->cases.end()) {
             bool other_enum = false;
             for (const auto& candidate : p_.enums)
               if (candidate.name != declaration->name)
                 for (const auto& candidate_case : candidate.cases)
-                  other_enum |= candidate_case.name == arm.a;
+                  other_enum |= candidate_case.name == case_name;
             err(arm.line, (other_enum ? "case belongs to another enum: " :
-                           "unknown enum case: ") + arm.a,
+                           "unknown enum case: ") + case_name,
                 other_enum ? "WRONG_ENUM_CASE" : "UNKNOWN_ENUM_CASE");
           }
-          if (!seen.insert(arm.a).second)
-            err(arm.line, "duplicate match case '" + arm.a + "'", "DUPLICATE_MATCH_CASE");
-          if (declaration && arm.args.size() != item->fields.size())
-            err(arm.line, "case '" + arm.a + "' must bind all " +
+          if (!seen.insert(case_name).second)
+            err(arm.line, "duplicate match case '" + case_name + "'", "DUPLICATE_MATCH_CASE");
+          if (declaration && bindings.size() != item->fields.size())
+            err(arm.line, "case '" + case_name + "' must bind all " +
                 std::to_string(item->fields.size()) + " field(s)", "MATCH_BINDING_COUNT");
           TypeEnv branch = env;
           std::set<string> pattern_names;
-          for (size_t field_index = 0; field_index < arm.args.size(); ++field_index) {
-            if (declaration && arm.args[field_index] != item->fields[field_index].name)
-              err(arm.line, "case '" + arm.a + "' requires payload field '" +
+          for (size_t field_index = 0; field_index < bindings.size(); ++field_index) {
+            if (declaration && bindings[field_index] != item->fields[field_index].name)
+              err(arm.line, "case '" + case_name + "' requires payload field '" +
                   item->fields[field_index].name + "' in declaration order",
                   "MATCH_FIELD_NAME_MISMATCH");
-            if (!pattern_names.insert(arm.args[field_index]).second)
+            if (!pattern_names.insert(bindings[field_index]).second)
               err(arm.line, "duplicate enum pattern binding: " +
-                  arm.args[field_index], "DUPLICATE_PATTERN_BINDING");
+                  bindings[field_index], "DUPLICATE_PATTERN_BINDING");
             string field_type = declaration
-                ? item->fields[field_index].type : "_generic:" + arm.args[field_index];
-            branch[arm.args[field_index]] = field_type;
+                ? item->fields[field_index].type : "_generic:" + bindings[field_index];
+            branch[bindings[field_index]] = field_type;
             if (declaration) {
               if (auto parsed = moss::Type::parse_canonical(canonical_type_name(field_type)))
-                branch.terms[arm.args[field_index]] = *parsed;
+                branch.terms[bindings[field_index]] = *parsed;
               else
-                branch.terms[arm.args[field_index]] = moss::Type::primitive(field_type);
+                branch.terms[bindings[field_index]] = moss::Type::primitive(field_type);
             }
           }
           ++index;
@@ -12757,7 +12764,7 @@ class Checker {
           walk_type_environment_block(statements, index, level + 2, branch,
                                       visitor, reject_conflicts, record_join_types,
                                       record_semantic_types, join_context, solved_collections);
-          for (const auto& name : arm.args) {
+          for (const auto& name : bindings) {
             auto prior = env.find(name);
             if (prior == env.end()) branch.erase(name);
             else branch[name] = prior->second;
@@ -12817,10 +12824,9 @@ class Checker {
             std::set<string> selected_types;
             for (const auto& identity : arm.exceptional_alternatives)
               selected_types.insert(identity.type);
-            recovered[arm.a] = selected_types.size() == 1
+            recovered[arm.est_pattern->binding] = selected_types.size() == 1
                 ? *selected_types.begin() : "_selected_error";
-          }
-          else if (!arm.a.empty()) {
+          } else {
             auto alternatives = recovery_case_patterns(arm);
             if (alternatives.size() == 1)
               for (const auto& binding :
@@ -17243,12 +17249,12 @@ class Checker {
           source.body, index + 1, end, arm.indent + 1);
       TypeEnv local_types = phase21_local_types_before(
           domain, source, specialization, index);
-      if (!arm.a.empty() && tree_plain_identifier(trim(arm.a))) {
+      if (recovery_binding_pattern(arm)) {
         std::set<string> selected_types;
         for (const auto& identity : arm.exceptional_alternatives)
           selected_types.insert(identity.type);
         if (selected_types.size() == 1)
-          local_types[trim(arm.a)] = *selected_types.begin();
+          local_types[arm.est_pattern->binding] = *selected_types.begin();
       } else if (arm.est_pattern &&
                  (arm.est_pattern->kind == moss::est::PatternNode::Kind::QualifiedRecoveryCase ||
                   arm.est_pattern->kind == moss::est::PatternNode::Kind::GroupedAlternatives)) {
@@ -18244,18 +18250,19 @@ class Checker {
           const Stmt& arm = statements[index];
           auto branch = env;
           if (declaration) {
+            const auto& pattern = *arm.est_pattern;
             auto item = std::find_if(declaration->cases.begin(), declaration->cases.end(),
-                [&](const EnumCase& candidate) { return candidate.name == arm.a; });
+                [&](const EnumCase& candidate) { return candidate.name == pattern.case_name; });
             if (item != declaration->cases.end())
               for (size_t field_index = 0;
-                   field_index < arm.args.size() && field_index < item->fields.size();
+                   field_index < pattern.payload_bindings.size() && field_index < item->fields.size();
                    ++field_index)
-                branch[arm.args[field_index]] = item->fields[field_index].type;
+                branch[pattern.payload_bindings[field_index]] = item->fields[field_index].type;
           }
           ++index;
           analyze_effect_block(statements, index, level + 2, branch, params,
                                parameter_effects, receiver_effect, receiver_fields);
-          for (const auto& binding : arm.args) branch.erase(binding);
+          for (const auto& binding : arm.est_pattern->payload_bindings) branch.erase(binding);
           paths.push_back(std::move(branch));
         }
         if (leaf_effect_capture_ && !paths.empty())
@@ -18282,10 +18289,9 @@ class Checker {
             std::set<string> selected_types;
             for (const auto& identity : arm.exceptional_alternatives)
               selected_types.insert(identity.type);
-            recovered[arm.a] = selected_types.size() == 1
+            recovered[arm.est_pattern->binding] = selected_types.size() == 1
                 ? *selected_types.begin() : "_selected_error";
-          }
-          else if (!arm.a.empty()) {
+          } else {
             auto alternatives = recovery_case_patterns(arm);
             if (alternatives.size() == 1)
               for (const auto& binding :
@@ -19622,8 +19628,8 @@ class Checker {
           if (saw_catch_all)
             err(arm.line, "no recover arm may follow a catch-all",
                 "RECOVER_AFTER_CATCH_ALL");
-          const auto pattern = arm.est_pattern
-              ? *arm.est_pattern : moss::est::recovery_pattern(arm.a);
+          const auto pattern = arm.est_pattern.value_or(
+              moss::est::PatternNode{});
           string binding_type;
           RaiseSet matched = phase21_recovery_pattern(
               arm.line, pattern, remaining, &binding_type);
@@ -19872,16 +19878,17 @@ class Checker {
                  handler.body[index].indent == statement.indent + 1 &&
                  handler.body[index].kind == Stmt::Kind::Case) {
             const Stmt& arm = handler.body[index];
+            const auto& pattern = *arm.est_pattern;
             auto variant = std::find_if(
                 declaration->second->cases.begin(),
                 declaration->second->cases.end(),
-                [&](const EnumCase& item) { return item.name == arm.a; });
+                [&](const EnumCase& item) { return item.name == pattern.case_name; });
             if (variant != declaration->second->cases.end())
               for (size_t field = 0;
-                   field < arm.args.size() && field < variant->fields.size();
+                   field < pattern.payload_bindings.size() && field < variant->fields.size();
                    ++field)
-                if (!entry.count(arm.args[field]))
-                  candidates.emplace(arm.args[field],
+                if (!entry.count(pattern.payload_bindings[field]))
+                  candidates.emplace(pattern.payload_bindings[field],
                                      variant->fields[field].type);
             ++index;
             while (index < handler.body.size() &&
@@ -22575,14 +22582,15 @@ class Checker {
         ++index;
         while (index < statements.size() && statements[index].indent == level + 1) {
           const Stmt& arm = statements[index];
+          const auto& pattern = *arm.est_pattern;
           auto item = std::find_if(declaration.cases.begin(), declaration.cases.end(),
-              [&](const EnumCase& candidate) { return candidate.name == arm.a; });
+              [&](const EnumCase& candidate) { return candidate.name == pattern.case_name; });
           if (item == declaration.cases.end())
-            err(arm.line, "unknown enum case '" + arm.a + "'", "UNKNOWN_ENUM_CASE");
+            err(arm.line, "unknown enum case '" + pattern.case_name + "'", "UNKNOWN_ENUM_CASE");
           OwnershipEnv branch = incoming;
           if (read_place) branch.active_read_traversals.insert(s.a);
-          for (size_t field_index = 0; field_index < arm.args.size(); ++field_index) {
-            const string& name = arm.args[field_index];
+          for (size_t field_index = 0; field_index < pattern.payload_bindings.size(); ++field_index) {
+            const string& name = pattern.payload_bindings[field_index];
             const string& field_type = item->fields[field_index].type;
             branch.types[name] = field_type;
             branch.binding_identities[name] =
@@ -22598,7 +22606,7 @@ class Checker {
           ++index;
           check_ownership_block(statements, index, level + 2, branch,
                                 current_domain, current_handler, exceptional);
-          for (const auto& name : arm.args) {
+          for (const auto& name : pattern.payload_bindings) {
             if (incoming.types.count(name)) branch.types[name] = incoming.types.at(name);
             else branch.types.erase(name);
             if (incoming.binding_identities.count(name))
@@ -22690,11 +22698,11 @@ class Checker {
             std::set<string> selected_types;
             for (const auto& identity : arm.exceptional_alternatives)
               selected_types.insert(identity.type);
-            recovered.types[arm.a] = selected_types.size() == 1
+            recovered.types[arm.est_pattern->binding] = selected_types.size() == 1
                 ? *selected_types.begin() : "_selected_error";
-            recovered.immutable_locals.insert(arm.a);
-            recovered.moved.erase(arm.a);
-          } else if (!arm.a.empty()) {
+            recovered.immutable_locals.insert(arm.est_pattern->binding);
+            recovered.moved.erase(arm.est_pattern->binding);
+          } else {
             auto alternatives = recovery_case_patterns(arm);
             if (alternatives.size() == 1)
               for (const auto& binding :

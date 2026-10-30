@@ -5935,21 +5935,27 @@ class Generator {
           ++i;
           while (i < ss.size() && ss[i].indent == level + 1) {
             const Stmt& arm = ss[i];
+            if (!arm.est_pattern ||
+                (arm.est_pattern->kind != est::PatternNode::Kind::EnumTag &&
+                 arm.est_pattern->kind != est::PatternNode::Kind::EnumCase))
+              throw std::runtime_error("unchecked enum pattern");
+            const auto& pattern = *arm.est_pattern;
             auto item = std::find_if(declaration.cases.begin(), declaration.cases.end(),
-                [&](const EnumCase& candidate) { return candidate.name == arm.a; });
+                [&](const EnumCase& candidate) { return candidate.name == pattern.case_name; });
             if (item == declaration.cases.end())
               throw std::runtime_error("unchecked enum case");
             o << indent(level + 1) << declaration.name << "::"
-              << rust_identifier(arm.a);
+              << rust_identifier(pattern.case_name);
             if (!item->fields.empty()) {
               o << " { ";
-              for (size_t field_index = 0; field_index < arm.args.size(); ++field_index) {
+              for (size_t field_index = 0;
+                   field_index < pattern.payload_bindings.size(); ++field_index) {
                 if (field_index) o << ", ";
                 string field_name = rust_identifier(item->fields[field_index].name);
-                if (field_name == arm.args[field_index])
+                if (field_name == pattern.payload_bindings[field_index])
                   o << field_name;
                 else
-                  o << field_name << ": " << arm.args[field_index];
+                  o << field_name << ": " << pattern.payload_bindings[field_index];
               }
               o << " }";
             }
@@ -5957,8 +5963,9 @@ class Generator {
             auto branch_locals = locals;
             auto branch_types = types;
             auto saved_borrowed = borrowed_function_parameters_;
-            for (size_t field_index = 0; field_index < arm.args.size(); ++field_index) {
-              const string& name = arm.args[field_index];
+            for (size_t field_index = 0;
+                 field_index < pattern.payload_bindings.size(); ++field_index) {
+              const string& name = pattern.payload_bindings[field_index];
               const string& type = item->fields[field_index].type;
               branch_locals.insert(name);
               branch_types[name] = type;
