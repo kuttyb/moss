@@ -1,0 +1,6 @@
+fn pick(values, index):
+  return values[index]
+
+fn main():
+  values = [3, 5]
+  echo pick(values, 1)

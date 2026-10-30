@@ -1,0 +1,9 @@
+type Box:
+  value: Int
+
+fn identity(value):
+  return value
+
+fn main():
+  box = identity(Box(value: 7))
+  echo box.value

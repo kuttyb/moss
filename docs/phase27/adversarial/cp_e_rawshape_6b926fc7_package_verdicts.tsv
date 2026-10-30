@@ -1,0 +1,2 @@
+probe	baseline_package_check	candidate_package_check
+package_incomplete/src/main.moss	MOSS_COMPILE_ERROR:2	ok
