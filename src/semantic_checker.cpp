@@ -10929,13 +10929,21 @@ class Checker {
       // INVALID_EXPRESSION in both modes (see the CP-E adversarial probe).
       const bool legacy_invalid_if_comparison = legacy && !result && !syntax &&
           moss::est::has_rejected_if_else_fragment_shape(expression);
+      // The EST parser treats an unparenthesized comparison suffix as part of
+      // the final pipeline stage. The legacy reverse scan instead finds that
+      // suffix as a top-level binary expression, even though the baseline
+      // rejects it as an unknown pipeline stage. Parenthesizing the pipeline
+      // makes the comparison an ordinary Binary root.
+      const bool legacy_pipeline_comparison = legacy && !result && syntax &&
+          std::holds_alternative<moss::est::Pipeline>(
+              syntax->arena->at(syntax->root));
       // Incomplete trailing operators are rejected by the expression parser.
       // The legacy splitter can still return a partial pair such as ("2", "")
       // for an input like 2 +; validation emits the shared compile diagnostic
       // before any semantic interpretation.
       if (result != legacy && !(named_argument && legacy && !result) &&
           !exponent_star_substring && !legacy_invalid_if_comparison &&
-          !incomplete_trailing_operator) {
+          !legacy_pipeline_comparison && !incomplete_trailing_operator) {
         assert(result == legacy);
       }
     }

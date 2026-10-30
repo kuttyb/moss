@@ -61,6 +61,41 @@ def check_rejected_source_parity():
             if result.returncode == 0 or payload.get("ok") or actual != signature:
                 raise SystemExit(f"{mode} rejected-source mismatch for {name}: {actual}, expected {signature}")
 
+    # These Phase 27.1 source fixtures put a comparison suffix after a
+    # pipeline without grouping. Moss parses that suffix as part of the final
+    # pipeline stage and rejects the unknown stage name. The legacy text
+    # splitter mistakes it for a top-level comparison; shadow mode must retain
+    # the baseline diagnostic instead of asserting on the known parse delta.
+    pipeline_precedence = {
+        "examples/swarm/Surface/repros/swarm_067_pipe_comparison_diagnostic.moss":
+            "unknown identifier 'count'",
+        "examples/swarm/control_flow_2026/iterative_planner/failed_attempts/02_untyped_vector_parameters.moss":
+            "unknown local function 'count'",
+        "examples/swarm/control_flow_2026/iterative_planner/failed_attempts/03_pipeline_count_in_condition.moss":
+            "unknown local function 'count'",
+        "examples/swarm/control_flow_2026/simulation_engine/failed_attempts/02_while_pipeline_condition.moss":
+            "unknown local function 'count'",
+        "examples/swarm/expression_surface_2026/numerical_tool/failed_attempts/08_pipeline_comparison_precedence.moss":
+            "unknown identifier 'sum'",
+    }
+    for relative, message in pipeline_precedence.items():
+        path = ROOT / relative
+        payloads = []
+        for mode in ("off", "shadow"):
+            result = run(path, mode)
+            try:
+                payload = json.loads(result.stdout)
+            except json.JSONDecodeError as error:
+                raise SystemExit(f"{mode} pipeline diagnostic did not return JSON for {relative}: {result.stdout}{result.stderr}") from error
+            error = payload.get("error", {})
+            if result.returncode == 0 or payload.get("ok") or \
+                    error.get("code") != "UNKNOWN_SYMBOL_OR_TYPE" or \
+                    error.get("message") != message:
+                raise SystemExit(f"{mode} pipeline precedence diagnostic changed for {relative}: {error}")
+            payloads.append(payload)
+        if payloads[0] != payloads[1]:
+            raise SystemExit(f"off/shadow pipeline diagnostic payload differs for {relative}")
+
     rejected_fragments = {
         "examples/swarm/control_flow_2026/iterative_planner/failed_attempts/01_multiline_task_literal.moss":
             ("MOSS_COMPILE_ERROR", "indentation jumps more than one block level", 45, 1),
