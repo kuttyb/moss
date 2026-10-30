@@ -324,6 +324,12 @@ namespace {
 struct CheckerEstViewCache {
   static constexpr size_t limit = 8192;
   struct Entry {
+    struct EnumCaseProjection {
+      string enum_name;
+      string case_name;
+      vector<string> fields;
+      bool called = false;
+    };
     // Successful views own their spelling in ExpressionView::source. Keep a
     // separate key only for parse failures so common entries do not retain
     // the same spelling twice.
@@ -334,11 +340,23 @@ struct CheckerEstViewCache {
     std::optional<std::pair<string, string>> index_projection;
     bool member_projection_attempted = false;
     std::optional<std::pair<string, string>> member_projection;
+    bool identifier_projection_attempted = false;
+    std::unique_ptr<string> identifier_projection;
+    bool unary_projection_attempted = false;
+    std::unique_ptr<std::pair<string, string>> unary_projection;
+    bool enum_case_projection_attempted = false;
+    std::unique_ptr<EnumCaseProjection> enum_case_projection;
+    bool pipeline_normalization_attempted = false;
+    std::unique_ptr<string> pipeline_normalization;
+    bool expression_parens_attempted = false;
+    std::unique_ptr<string> expression_parens;
   };
   std::unordered_map<size_t, vector<std::shared_ptr<Entry>>> views;
   size_t entries = 0;
   uint64_t hits = 0, misses = 0, after_cap = 0;
   uint64_t projection_hits = 0, projection_misses = 0;
+  uint64_t identifier_hits = 0, identifier_misses = 0;
+  uint64_t pipeline_normalization_hits = 0, pipeline_normalization_misses = 0;
 };
 thread_local CheckerEstViewCache checker_est_view_cache;
 
@@ -356,6 +374,10 @@ void reset_checker_est_view_cache() {
   checker_est_view_cache.after_cap = 0;
   checker_est_view_cache.projection_hits = 0;
   checker_est_view_cache.projection_misses = 0;
+  checker_est_view_cache.identifier_hits = 0;
+  checker_est_view_cache.identifier_misses = 0;
+  checker_est_view_cache.pipeline_normalization_hits = 0;
+  checker_est_view_cache.pipeline_normalization_misses = 0;
 }
 
 CheckerEstViewCache::Entry* checker_est_view_entry(std::string_view source) {
@@ -365,6 +387,35 @@ CheckerEstViewCache::Entry* checker_est_view_entry(std::string_view source) {
   for (const auto& entry : found->second)
     if (checker_est_view_key(*entry) == source) return entry.get();
   return nullptr;
+}
+
+std::shared_ptr<const moss::est::ExpressionView> checker_est_view(
+    std::string_view source);
+
+std::optional<string> checker_identifier_name(std::string_view source) {
+  auto* cached = checker_est_view_entry(source);
+  if (cached && cached->identifier_projection_attempted) {
+    ++checker_est_view_cache.identifier_hits;
+    return cached->identifier_projection
+        ? std::optional<string>(*cached->identifier_projection)
+        : std::nullopt;
+  }
+  ++checker_est_view_cache.identifier_misses;
+  auto syntax = cached ? cached->view : nullptr;
+  if (!cached) {
+    auto handle = checker_est_view(source);
+    syntax = handle;
+    cached = checker_est_view_entry(source);
+  }
+  string name;
+  const bool is_identifier = syntax &&
+      moss::est::project_identifier(*syntax, name);
+  if (cached) {
+    cached->identifier_projection_attempted = true;
+    if (is_identifier)
+      cached->identifier_projection = std::make_unique<string>(name);
+  }
+  return is_identifier ? std::optional<string>(std::move(name)) : std::nullopt;
 }
 
 std::shared_ptr<const moss::est::ExpressionView> checker_est_view_impl(
@@ -1896,6 +1947,14 @@ class Checker {
                   << checker_est_view_cache.projection_hits << '\n';
         std::cerr << "MOSS_PROFILE|est_projection_cache_misses|"
                   << checker_est_view_cache.projection_misses << '\n';
+        std::cerr << "MOSS_PROFILE|est_identifier_cache_hits|"
+                  << checker_est_view_cache.identifier_hits << '\n';
+        std::cerr << "MOSS_PROFILE|est_identifier_cache_misses|"
+                  << checker_est_view_cache.identifier_misses << '\n';
+        std::cerr << "MOSS_PROFILE|est_pipeline_normalization_hits|"
+                  << checker_est_view_cache.pipeline_normalization_hits << '\n';
+        std::cerr << "MOSS_PROFILE|est_pipeline_normalization_misses|"
+                  << checker_est_view_cache.pipeline_normalization_misses << '\n';
         std::cerr << "MOSS_PROFILE|binary_parse_overflow_entries|"
                   << binary_parse_cache_overflow_entries_ << '\n';
         std::cerr << "MOSS_PROFILE|binary_parse_overflow_hits|"
@@ -10632,26 +10691,20 @@ class Checker {
   }
 
   static bool tree_simple_identifier(const string& value) {
-    auto syntax = checker_est_view(value);
-    return syntax && moss::est::is_identifier(*syntax);
+    return checker_identifier_name(value).has_value();
   }
 
   static bool tree_plain_identifier(const string& value) {
-    auto syntax = checker_est_view(value);
-    return syntax && moss::est::is_identifier(*syntax);
+    return checker_identifier_name(value).has_value();
   }
 
   static bool tree_identifier_named(const string& value, std::string_view name) {
-    auto syntax = checker_est_view(value);
-    return syntax && moss::est::identifier_named(*syntax, name);
+    auto identifier = checker_identifier_name(value);
+    return identifier && *identifier == name;
   }
 
   static std::optional<string> tree_identifier_name(const string& value) {
-    auto syntax = checker_est_view(value);
-    if (!syntax) return std::nullopt;
-    string name;
-    return moss::est::project_identifier(*syntax, name)
-        ? std::optional<string>(std::move(name)) : std::nullopt;
+    return checker_identifier_name(value);
   }
 
   static bool tree_is_fileio_open(const string& value) {
@@ -10759,8 +10812,22 @@ class Checker {
   }
 
   static string tree_normalize_pipeline(string text) {
-    auto syntax = checker_est_view(text);
-    return syntax ? moss::est::normalize_pipeline_tree(*syntax) : trim(std::move(text));
+    auto* cached = checker_est_view_entry(text);
+    if (cached && cached->pipeline_normalization_attempted) {
+      ++checker_est_view_cache.pipeline_normalization_hits;
+      return *cached->pipeline_normalization;
+    }
+    ++checker_est_view_cache.pipeline_normalization_misses;
+    auto syntax = cached ? cached->view : checker_est_view(text);
+    if (!cached) cached = checker_est_view_entry(text);
+    string normalized = syntax
+        ? moss::est::normalize_pipeline_tree(*syntax) : trim(text);
+    if (cached) {
+      cached->pipeline_normalization_attempted = true;
+      cached->pipeline_normalization =
+          std::make_unique<string>(normalized);
+    }
+    return normalized;
   }
 
   static bool tree_parse_index(const string& text, string& base, string& index) {
@@ -10818,8 +10885,24 @@ class Checker {
 
   static bool tree_parse_unary(const string& text, string& operation,
                                string& operand) {
-    auto syntax = checker_est_view(text);
-    return syntax && moss::est::project_unary(*syntax, operation, operand);
+    auto* cached = checker_est_view_entry(text);
+    if (cached && cached->unary_projection_attempted) {
+      if (!cached->unary_projection) return false;
+      operation = cached->unary_projection->first;
+      operand = cached->unary_projection->second;
+      return true;
+    }
+    auto syntax = cached ? cached->view : checker_est_view(text);
+    if (!cached) cached = checker_est_view_entry(text);
+    const bool matched = syntax &&
+        moss::est::project_unary(*syntax, operation, operand);
+    if (cached) {
+      cached->unary_projection_attempted = true;
+      if (matched)
+        cached->unary_projection =
+            std::make_unique<std::pair<string, string>>(operation, operand);
+    }
+    return matched;
   }
 
   static bool tree_parse_message(const string& text, string& target,
@@ -10859,10 +10942,32 @@ class Checker {
   static bool tree_parse_enum_case_expression(const string& text, string& enum_name,
                                        string& case_name, vector<string>& fields,
                                        bool& called) {
-    auto syntax = checker_est_view(text);
     called = false;
-    return syntax && moss::est::project_enum_case(*syntax, enum_name, case_name,
-                                                   fields, &called);
+    auto* cached = checker_est_view_entry(text);
+    if (cached && cached->enum_case_projection_attempted) {
+      if (!cached->enum_case_projection) return false;
+      enum_name = cached->enum_case_projection->enum_name;
+      case_name = cached->enum_case_projection->case_name;
+      fields = cached->enum_case_projection->fields;
+      called = cached->enum_case_projection->called;
+      return true;
+    }
+    auto syntax = cached ? cached->view : checker_est_view(text);
+    if (!cached) cached = checker_est_view_entry(text);
+    const bool matched = syntax && moss::est::project_enum_case(
+        *syntax, enum_name, case_name, fields, &called);
+    if (cached) {
+      cached->enum_case_projection_attempted = true;
+      if (matched) {
+        cached->enum_case_projection =
+            std::make_unique<CheckerEstViewCache::Entry::EnumCaseProjection>();
+        cached->enum_case_projection->enum_name = enum_name;
+        cached->enum_case_projection->case_name = case_name;
+        cached->enum_case_projection->fields = fields;
+        cached->enum_case_projection->called = called;
+      }
+    }
+    return matched;
   }
 
   bool tree_parse_simple_call(const string& text, string& callee,
@@ -15604,8 +15709,18 @@ class Checker {
   };
 
   static string tree_strip_expression_parens(string value) {
-    auto syntax = checker_est_view(value);
-    return syntax ? moss::est::strip_grouping(*syntax) : trim(std::move(value));
+    auto* cached = checker_est_view_entry(value);
+    if (cached && cached->expression_parens_attempted)
+      return *cached->expression_parens;
+    auto syntax = cached ? cached->view : checker_est_view(value);
+    if (!cached) cached = checker_est_view_entry(value);
+    string stripped = syntax
+        ? moss::est::strip_grouping(*syntax) : trim(std::move(value));
+    if (cached) {
+      cached->expression_parens_attempted = true;
+      cached->expression_parens = std::make_unique<string>(stripped);
+    }
+    return stripped;
   }
 
   template <typename EnvT>

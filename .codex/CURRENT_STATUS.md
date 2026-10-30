@@ -13361,3 +13361,10 @@ check` passed 154/154, zero failures or skips. Branch remains unmerged.
 - Correct `MOSS_EST=off` historical performance script using `build/compiler/moss-opt` passes all workloads (`tmp/phase27-3/perf-gate-off-opt-420b31ab.log`). This does not clear the Phase 27 relative-perf regression in repeated n032 comparisons.
 - Optimized shadow n032 medians are 2.285s w2 / 1.151s w3, 1.16x / 1.25x candidate-off. No shadow timeout remains on these fixtures; full future corpus parity remains required.
 - A pointer identity-cache trial had 2,398,362 hits out of 3,496,812 lookups but did not improve O2: five-repeat n032 medians were +7.8% w2 and +7.0% w3. It was discarded. Keep profiling off overhead and reduce the repeatable n032 deltas before declaring compiler-perf complete.
+
+### Phase 27.3 optimized w2/w3 perf closeout candidate — 2026-10-30
+
+- Added bounded per-view memoization for identifier classification, unary and enum-case projections, normalized pipeline output, and redundant grouping. Focused EST and string-debt checks pass.
+- Five alternating `moss-opt` off repeats vs phase27-2-m1 n032 medians now match within noise: w2 baseline 1.866s / candidate 1.875s (+0.5%); w3 baseline 0.868s / candidate 0.865s (-0.3%). The optimized historical Phase 25.4 off performance script passes all workloads; log `tmp/phase27-3/perf-gate-off-opt-cache-final.log`.
+- Three shadow repeats n032 medians: w2 2.126s vs off 1.875s (1.13x); w3 1.031s vs off 0.865s (1.19x). No timeout; complete CP-F sanitizer/corpus evidence and fresh CP-E remain necessary for final source.
+- Detailed timing artifacts: `tmp/phase27-3/strip-cache-opt-repeats/`, `pipeline-opt-repeats/`, `opt-shadow-cache-final/`; focused logs `check-est-strip-cache.log`, `check-string-debt-strip-cache.log`. No full `make check`, conformance, final compiler-perf comparison vs merge first parent/phase27-1m1, merge, or tag has run.
