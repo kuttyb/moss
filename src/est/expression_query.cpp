@@ -1,5 +1,6 @@
 #include "expression_tree.hpp"
 #include "../native_generator_support.hpp"
+#include "../numeric_literal.hpp"
 #include "../parser_support.hpp"
 #include <algorithm>
 #include <cassert>
@@ -1299,6 +1300,89 @@ bool empty_constructor_named(const ExpressionView& e, std::string_view name) {
       assert(!result);
   }
   return result;
+}
+
+std::optional<std::string> project_empty_constructor_type(
+    const ExpressionView& e) {
+  if (!e.arena || e.root >= e.arena->size()) return std::nullopt;
+  const auto root = unparenthesized(*e.arena, e.root);
+  if (const auto* constructor = std::get_if<Constructor>(&e.arena->at(root));
+      constructor && constructor->arguments.empty()) {
+    auto type = e.source_text(constructor->type);
+    if (!type) return std::nullopt;
+    if (!constructor->type_arguments.empty()) {
+      *type += "[";
+      for (std::size_t index = 0;
+           index < constructor->type_arguments.size(); ++index) {
+        if (index) *type += ", ";
+        auto argument = e.source_text(constructor->type_arguments[index]);
+        if (!argument) return std::nullopt;
+        *type += *argument;
+      }
+      *type += "]";
+    }
+    return type;
+  }
+  return std::nullopt;
+}
+
+LiteralClass root_literal_class(const ExpressionView& e) {
+  if (!e.arena || e.root >= e.arena->size()) return LiteralClass::None;
+  const auto root = unparenthesized(*e.arena, e.root);
+  auto spelling = project_numeric_literal_spelling(e);
+  if (!spelling) {
+    const auto* literal = std::get_if<Literal>(&e.arena->at(root));
+    if (!literal) return LiteralClass::None;
+    spelling = literal->spelling;
+  }
+  if (spelling->size() >= 2 && spelling->front() == '"' &&
+      spelling->back() == '"') return LiteralClass::String;
+  if (spelling->size() >= 2 && spelling->front() == '\'' &&
+      spelling->back() == '\'') return LiteralClass::Character;
+  if (*spelling == "true" || *spelling == "false")
+    return LiteralClass::Boolean;
+  if (auto decoded = decode_numeric_literal_expression(*spelling))
+    return decoded->kind == NumericLiteral::Kind::Int
+        ? LiteralClass::Integer : LiteralClass::Float;
+  return LiteralClass::None;
+}
+
+bool decimal_integer_literal(const ExpressionView& e, bool allow_sign,
+                             bool allow_underscores) {
+  if (!e.arena || e.root >= e.arena->size()) return false;
+  const auto root = unparenthesized(*e.arena, e.root);
+  ExprId literal_id = root;
+  if (const auto* unary = std::get_if<Unary>(&e.arena->at(root))) {
+    if (!allow_sign || (unary->op != "+" && unary->op != "-")) return false;
+    literal_id = unparenthesized(*e.arena, unary->operand);
+  }
+  const auto* literal = std::get_if<Literal>(&e.arena->at(literal_id));
+  if (!literal) return false;
+  const std::string_view spelling = literal->spelling;
+  if (spelling.empty()) return false;
+  for (const unsigned char character : spelling)
+    if (!(moss::ascii_is_digit(character) ||
+          (allow_underscores && character == '_'))) return false;
+  return true;
+}
+
+std::optional<std::string> project_numeric_literal_spelling(
+    const ExpressionView& e) {
+  if (!e.arena || e.root >= e.arena->size()) return std::nullopt;
+  const auto root = unparenthesized(*e.arena, e.root);
+  if (const auto* literal = std::get_if<Literal>(&e.arena->at(root))) {
+    if (decode_numeric_literal_expression(literal->spelling))
+      return literal->spelling;
+    return std::nullopt;
+  }
+  if (const auto* unary = std::get_if<Unary>(&e.arena->at(root));
+      unary && (unary->op == "+" || unary->op == "-")) {
+    const auto operand = unparenthesized(*e.arena, unary->operand);
+    if (const auto* literal = std::get_if<Literal>(&e.arena->at(operand));
+        literal && decode_numeric_literal_expression(literal->spelling))
+      return unary->op + literal->spelling;
+  }
+  return std::nullopt;
 }
 
 bool placeholder_expression(const ExpressionView& e) {

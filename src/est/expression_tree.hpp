@@ -230,6 +230,14 @@ bool contains_member_call(const ExpressionView& expression,
 bool empty_vector_literal(const ExpressionView& view);
 bool member_expression(const ExpressionView& view);
 bool empty_constructor_named(const ExpressionView& view, std::string_view name);
+std::optional<std::string> project_empty_constructor_type(
+    const ExpressionView& view);
+enum class LiteralClass : std::uint8_t { None, Integer, Float, String, Character, Boolean };
+LiteralClass root_literal_class(const ExpressionView& view);
+bool decimal_integer_literal(const ExpressionView& view, bool allow_sign,
+                             bool allow_underscores);
+std::optional<std::string> project_numeric_literal_spelling(
+    const ExpressionView& view);
 bool placeholder_expression(const ExpressionView& view);
 bool contains_identifier(const ExpressionView& view, std::string_view name);
 bool expression_mentions(const ExpressionView& view, std::string_view name);

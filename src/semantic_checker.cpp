@@ -4438,7 +4438,7 @@ class Checker {
               return std::nullopt;
             }
           } else if (type->name == "float" &&
-                     decimal_float_literal(source)) {
+                     tree_literal_class(source) == moss::est::LiteralClass::Float) {
             result.kind = checked_ir::ExprKind::FloatLiteral;
             result.literal_value = source;
           } else if (type->name == "string" &&
@@ -5749,7 +5749,9 @@ class Checker {
         if (syntax && syntax->arena &&
             std::holds_alternative<moss::est::Literal>(
                 syntax->arena->at(literal_root))) {
-          auto decoded = moss::decode_numeric_literal_expression(value);
+          auto numeric = tree_numeric_literal_spelling(value);
+          auto decoded = numeric
+              ? moss::decode_numeric_literal_expression(*numeric) : std::nullopt;
           if (decoded && decoded->kind == moss::NumericLiteral::Kind::Int) {
             auto integer = moss::Type::primitive("int");
             if (!expected || integer->structurally_equal(*expected))
@@ -10350,17 +10352,15 @@ class Checker {
   static std::optional<string> obvious_expr_type(const string& expression,
                                                   const TypeEnv& env) {
     string e = trim(expression);
-    if (e == "None") return "_none";
-    if (e == "true" || e == "false") return "bool";
-    if (is_single_string_literal(e)) return "string";
-    if (is_single_char_literal(e)) return "char";
+    if (tree_identifier_named(e, "None")) return "_none";
+    const auto literal = tree_literal_class(e);
+    if (literal == moss::est::LiteralClass::Boolean) return "bool";
+    if (literal == moss::est::LiteralClass::String) return "string";
+    if (literal == moss::est::LiteralClass::Character) return "char";
     auto local = env.find(e);
     if (local != env.end() && local->second && local->second->name != "_value") return local->second->to_canonical_string();
-    size_t start = (!e.empty() && (e.front() == '+' || e.front() == '-')) ? 1 : 0;
-    if (start < e.size() && std::all_of(e.begin() + static_cast<std::ptrdiff_t>(start), e.end(), [](char c) {
-          return moss::ascii_is_digit(static_cast<unsigned char>(c));
-        })) return "int";
-    if (decimal_float_literal(e)) return "float";
+    if (tree_decimal_integer_literal(e, true, false)) return "int";
+    if (literal == moss::est::LiteralClass::Float) return "float";
     return std::nullopt;
   }
 
@@ -10732,6 +10732,37 @@ class Checker {
     auto syntax = checker_est_view(value);
     vector<string> arguments;
     return syntax && moss::est::project_fileio_open(*syntax, arguments);
+  }
+
+  static moss::est::LiteralClass tree_literal_class(const string& value) {
+    auto syntax = checker_est_view(value);
+    return syntax ? moss::est::root_literal_class(*syntax)
+                  : moss::est::LiteralClass::None;
+  }
+
+  static std::optional<string> tree_numeric_literal_spelling(const string& value) {
+    auto syntax = checker_est_view(value);
+    return syntax ? moss::est::project_numeric_literal_spelling(*syntax)
+                  : std::nullopt;
+  }
+
+  static bool tree_decimal_integer_literal(const string& value,
+                                           bool allow_sign,
+                                           bool allow_underscores) {
+    auto syntax = checker_est_view(value);
+    return syntax && moss::est::decimal_integer_literal(
+        *syntax, allow_sign, allow_underscores);
+  }
+
+  static std::optional<string> tree_empty_typed_vector_constructor(
+      const string& value) {
+    auto syntax = checker_est_view(value);
+    if (!syntax) return std::nullopt;
+    auto type = moss::est::project_empty_constructor_type(*syntax);
+    if (!type) return std::nullopt;
+    string canonical = canonical_type_name(*type);
+    return starts_with(canonical, "vector[") && ends_with(canonical, "]")
+        ? std::optional<string>(std::move(canonical)) : std::nullopt;
   }
 
   static bool expression_uses(const string& expression, const string& name) {
@@ -11700,7 +11731,7 @@ class Checker {
         return InferredExpr{nullptr, "callable:" + e, cid};
       }
     }
-    if (auto typed_vector = typed_empty_vector_constructor(e))
+    if (auto typed_vector = tree_empty_typed_vector_constructor(e))
       return inferred_leaf(*typed_vector);
     // Phase 20: `Executor()` begins a compiler-recognized configuration chain
     // (see parse_executor_chain); it is not a general object construction.
@@ -20705,7 +20736,7 @@ class Checker {
         effects.merge(builtin->observable_effects);
         return effects;
       }
-      if (typed_empty_vector_constructor(value))
+      if (tree_empty_typed_vector_constructor(value))
         return effects;
       effects.unresolved = true;
       return effects;
@@ -20729,7 +20760,9 @@ class Checker {
               syntax->arena->at(moss::est::unparenthesized(
                   *syntax->arena, unary->operand)));
     if (!literal_shape) return false;
-    auto decoded = moss::decode_numeric_literal_expression(expression);
+    auto numeric = tree_numeric_literal_spelling(expression);
+    auto decoded = numeric
+        ? moss::decode_numeric_literal_expression(*numeric) : std::nullopt;
     return decoded && decoded->kind == moss::NumericLiteral::Kind::Int &&
         decoded->integer >= minimum;
   }
@@ -22115,7 +22148,7 @@ class Checker {
       check_ownership_expression(line, unary_operand, env, Effect::Read);
       return;
     }
-    if (auto typed_vector = typed_empty_vector_constructor(value)) {
+    if (auto typed_vector = tree_empty_typed_vector_constructor(value)) {
       if (contains_trait_type(*typed_vector))
         err(line,
             "trait types are static structural constraints and cannot be stored "
@@ -26494,7 +26527,8 @@ class Checker {
           "' is followed by '" + juxtaposed->second +
           "' with no operator between them (if, while, and for are statements, not expressions)",
           "INVALID_EXPRESSION");
-    if (is_single_string_literal(original) || is_single_char_literal(original)) {
+    if (tree_literal_class(original) == moss::est::LiteralClass::String ||
+        tree_literal_class(original) == moss::est::LiteralClass::Character) {
       mark_active_expression(OccurrenceKind::Literal);
       return;
     }
@@ -27484,7 +27518,7 @@ class Checker {
       mark_active_expression(objects_.count(callee)
           ? OccurrenceKind::Constructor
           : (callee == "Map" || callee == "Queue" || callee == "Set" ||
-             typed_empty_vector_constructor(value)
+             tree_empty_typed_vector_constructor(value)
                 ? OccurrenceKind::CollectionLiteral : OccurrenceKind::Call),
           objects_.count(callee) ? "constructor:" + callee : "call:" + callee);
       if (current_body_types_ && !checking_specialization_ &&
@@ -27492,7 +27526,7 @@ class Checker {
         current_body_types_->expression_occurrences.at(
             current_body_types_->active_expression_occurrences.back())
             .source_operands = args;
-      if (typed_empty_vector_constructor(value) && current_body_types_ &&
+      if (tree_empty_typed_vector_constructor(value) && current_body_types_ &&
           !checking_specialization_ &&
           !current_body_types_->active_expression_occurrences.empty()) {
         auto& occurrence = current_body_types_->expression_occurrences.at(
@@ -27579,7 +27613,7 @@ class Checker {
               "REPLACE_TYPE_MISMATCH");
         return;
       }
-      if (auto typed_vector = typed_empty_vector_constructor(value)) {
+      if (auto typed_vector = tree_empty_typed_vector_constructor(value)) {
         if (contains_trait_type(*typed_vector))
           err(line,
               "trait types are static structural constraints and cannot be stored "
@@ -27987,13 +28021,9 @@ class Checker {
         if (tree_plain_identifier(value) && value != "true" && value != "false" &&
             value != "None")
           mark_active_expression(OccurrenceKind::Identifier);
-        else if (value == "true" || value == "false" || value == "None" ||
-                 is_single_string_literal(value) || is_single_char_literal(value) ||
-                 decimal_float_literal(value) ||
-                 (!value.empty() && std::all_of(value.begin(), value.end(),
-                     [](unsigned char character) {
-                       return moss::ascii_is_digit(character) || character == '_';
-                     })))
+        else if (tree_literal_class(value) != moss::est::LiteralClass::None ||
+                 tree_identifier_named(value, "None") ||
+                 tree_decimal_integer_literal(value, false, true))
           mark_active_expression(OccurrenceKind::Literal);
       }
     }

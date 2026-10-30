@@ -1054,6 +1054,34 @@ class Generator {
     return syntax && est::empty_vector_literal(*syntax);
   }
 
+  est::LiteralClass tree_literal_class(std::string_view expression) const {
+    auto syntax = expression_view_from_est(expression);
+    return syntax ? est::root_literal_class(*syntax) : est::LiteralClass::None;
+  }
+
+  bool tree_decimal_integer_literal(std::string_view expression) const {
+    auto syntax = expression_view_from_est(expression);
+    return syntax && est::decimal_integer_literal(*syntax, true, false);
+  }
+
+  std::optional<string> tree_numeric_literal_spelling(
+      std::string_view expression) const {
+    auto syntax = expression_view_from_est(expression);
+    return syntax ? est::project_numeric_literal_spelling(*syntax)
+                  : std::nullopt;
+  }
+
+  std::optional<string> tree_empty_typed_vector_constructor(
+      std::string_view expression) const {
+    auto syntax = expression_view_from_est(expression);
+    if (!syntax) return std::nullopt;
+    auto type = est::project_empty_constructor_type(*syntax);
+    if (!type) return std::nullopt;
+    string canonical = canonical_type_name(*type);
+    return starts_with(canonical, "vector[") && ends_with(canonical, "]")
+        ? std::optional<string>(std::move(canonical)) : std::nullopt;
+  }
+
   std::optional<string> tree_identifier_name(
       std::string_view expression) const {
     auto syntax = expression_view_from_est(expression);
@@ -1577,20 +1605,15 @@ class Generator {
     string right;
   };
 
-  static bool generated_integer_literal(const string& expression) {
-    string value = trim(expression);
-    size_t start = !value.empty() && (value.front() == '+' || value.front() == '-')
-        ? 1 : 0;
-    return start < value.size() &&
-        std::all_of(value.begin() + static_cast<std::ptrdiff_t>(start), value.end(),
-                    [](char ch) {
-                      return std::isdigit(static_cast<unsigned char>(ch));
-                    });
+  bool generated_integer_literal(const string& expression) const {
+    return tree_decimal_integer_literal(expression);
   }
 
-  static string generated_integer_literal_as_float(string expression) {
+  string generated_integer_literal_as_float(string expression) const {
     // An Int literal in a Float context converts exactly as `as f64` does.
-    auto decoded = decode_numeric_literal_expression(expression);
+    auto numeric = tree_numeric_literal_spelling(expression);
+    auto decoded = numeric ? decode_numeric_literal_expression(*numeric)
+                           : std::nullopt;
     if (!decoded || decoded->kind != NumericLiteral::Kind::Int)
       throw std::runtime_error("internal error: numeric literal '" + expression +
                                "' was not validated by the lexer");
@@ -1841,10 +1864,12 @@ class Generator {
           enums_.count(enum_name))
         return enum_name;
     }
-    if (value == "true" || value == "false") return string("bool");
-    if (is_single_char_literal(value)) return string("char");
-    if (value == "None") return string("_none");
-    if (is_single_string_literal(value))
+    const auto literal = tree_literal_class(value);
+    if (literal == est::LiteralClass::Boolean) return string("bool");
+    if (literal == est::LiteralClass::Character) return string("char");
+    if (tree_identifier_name(value) == std::optional<string>("None"))
+      return string("_none");
+    if (literal == est::LiteralClass::String)
       return string("string");
     if (types) {
       auto local = types->find(value);
@@ -1861,10 +1886,10 @@ class Generator {
     }
     if (tree_plain_identifier(value) && functions_.count(value))
       return "callable:" + value;
-    if (auto typed_vector = typed_empty_vector_constructor(value)) return *typed_vector;
+    if (auto typed_vector = tree_empty_typed_vector_constructor(value)) return *typed_vector;
     if (generated_integer_literal(value))
       return string("int");
-    if (decimal_float_literal(value)) return string("float");
+    if (literal == est::LiteralClass::Float) return string("float");
     if (auto elements = tree_parse_vector_literal(value)) {
       if (elements->empty()) return string("vector");
       string element_type;
@@ -3214,17 +3239,20 @@ class Generator {
       return *functional;
     e = tree_normalize_pipeline(std::move(e));
     // Minimal surface rewrites.
-    if (e == "true" || e == "false") return e;
-    if (e == "None") return "None";
+    const auto literal = tree_literal_class(e);
+    if (literal == est::LiteralClass::Boolean) return e;
+    if (tree_identifier_name(e) == std::optional<string>("None")) return "None";
     // Numeric literals are emitted from the shared decoder's value as a
     // canonical suffixed Rust literal (`16_i64`, `2.5_f64`), never from Moss
     // spelling.
-    if (generated_integer_literal(e) || decimal_float_literal(e)) {
-      if (auto rust = rust_numeric_literal(e)) return *rust;
+    if (generated_integer_literal(e) || literal == est::LiteralClass::Float) {
+      auto numeric = tree_numeric_literal_spelling(e);
+      if (numeric)
+        if (auto rust = rust_numeric_literal(*numeric)) return *rust;
       throw std::runtime_error("internal error: numeric literal '" + e +
                                "' was not validated by the lexer");
     }
-    if (auto typed_vector = typed_empty_vector_constructor(e)) {
+    if (auto typed_vector = tree_empty_typed_vector_constructor(e)) {
       string element = trim(typed_vector->substr(7, typed_vector->size() - 8));
       return "std::vec::Vec::<" + rust_type(element) + ">::new()";
     }
@@ -3436,9 +3464,9 @@ class Generator {
     if (tree_parse_unary(e, unary_operation, unary_operand) &&
         unary_operation == "-") {
       const string inner = unary_operand;
-      if (!inner.empty() && std::isdigit(static_cast<unsigned char>(inner.front())) &&
-          generated_integer_literal(inner))
-        if (auto rust = rust_numeric_literal("-" + inner)) return *rust;
+      if (generated_integer_literal(inner))
+        if (auto numeric = tree_numeric_literal_spelling("-" + inner))
+          if (auto rust = rust_numeric_literal(*numeric)) return *rust;
       auto operand_type = generated_expr_type(inner, types);
       if (operand_type && canonical_type_name(*operand_type) == "int") {
         string operand = expr(inner, d, locals, types);
@@ -3447,9 +3475,7 @@ class Generator {
       }
       // Float: negate the whole postfix operand (P25-S-ARCH-022), so `-v[0]`
       // is `-(v[0])`, never `(-v)[0]`.
-      if (operand_type && canonical_type_name(*operand_type) == "float" &&
-          !std::isdigit(static_cast<unsigned char>(inner.front())) && inner.front() != '.' &&
-          inner.front() != '(') {
+      if (operand_type && canonical_type_name(*operand_type) == "float") {
         string operand = expr(inner, d, locals, types);
         operand = value_from_borrowed_message_parameter(inner, operand, types);
         return "-(" + operand + ")";
@@ -3464,9 +3490,9 @@ class Generator {
     // Only classify a quoted source form as a single literal after top-level
     // operators have had a chance to split it. Expressions such as
     // "a" + "b" and "a" == "b" also begin and end with quote characters.
-    if (is_single_string_literal(e))
+    if (tree_literal_class(e) == est::LiteralClass::String)
       return "MossStr::from(" + e + ")";
-    if (is_single_char_literal(e))
+    if (tree_literal_class(e) == est::LiteralClass::Character)
       return e;
     if (auto parts = tree_parse_vector_literal(e)) {
       std::ostringstream r; r << "vec![";
