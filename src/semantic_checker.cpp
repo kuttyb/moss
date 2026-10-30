@@ -1772,6 +1772,10 @@ class Checker {
                   << parse_cache_failed_member_before_cap_ << '\n';
         std::cerr << "MOSS_PROFILE|parse_cache_success_after_cap|"
                   << parse_cache_success_after_cap_ << '\n';
+        std::cerr << "MOSS_PROFILE|binary_parse_overflow_entries|"
+                  << binary_parse_cache_overflow_entries_ << '\n';
+        std::cerr << "MOSS_PROFILE|binary_parse_overflow_hits|"
+                  << binary_parse_cache_overflow_hits_ << '\n';
         std::cerr << "MOSS_PROFILE|parse_cache_failed_simple_after_cap|"
                   << parse_cache_failed_simple_after_cap_ << '\n';
         std::cerr << "MOSS_PROFILE|parse_cache_failed_member_after_cap|"
@@ -1853,6 +1857,10 @@ class Checker {
   // Syntax-only results live for one check. The cap prevents a large source
   // file with mostly distinct expressions from retaining every spelling.
   static constexpr size_t parse_cache_limit_ = 32768;
+  // Binary expressions remain hot after the shared W1 cache reaches its cap:
+  // the same syntax projections recur across concrete specializations. Keep
+  // a separate bounded tail cache so repeated calls do not reparse/recompare.
+  static constexpr size_t binary_parse_cache_overflow_limit_ = 32768;
   struct BinaryParseEntry {
     vector<string> operators;
     std::optional<std::pair<string, string>> result;
@@ -1872,6 +1880,10 @@ class Checker {
   // Results must depend only on the key; the miss path must not read checker
   // state. Keep all five parsers below pure with respect to their keys.
   mutable std::unordered_map<string, vector<BinaryParseEntry>> binary_parse_cache_;
+  mutable std::unordered_map<string, vector<BinaryParseEntry>>
+      binary_parse_cache_overflow_;
+  mutable size_t binary_parse_cache_overflow_entries_ = 0;
+  mutable uint64_t binary_parse_cache_overflow_hits_ = 0;
   mutable std::unordered_map<string, CallParseEntry> simple_call_parse_cache_;
   mutable std::unordered_map<string, MemberParseEntry> member_call_parse_cache_;
   mutable std::unordered_map<string, std::unordered_map<char, vector<string>>>
@@ -10889,6 +10901,16 @@ class Checker {
         }
       }
     }
+    auto overflow = binary_parse_cache_overflow_.find(expression);
+    if (overflow != binary_parse_cache_overflow_.end()) {
+      for (const auto& entry : overflow->second) {
+        if (entry.operators == operators) {
+          ++parse_cache_hits_;
+          ++binary_parse_cache_overflow_hits_;
+          return entry.result;
+        }
+      }
+    }
     ++parse_cache_misses_;
     const bool cache_full = parse_cache_entries_ >= parse_cache_limit_;
     std::optional<std::pair<string,string>> result;
@@ -10949,6 +10971,11 @@ class Checker {
     }
     if (cache_full) {
       if (profile_concrete_effect_work_) ++parse_cache_success_after_cap_;
+      if (binary_parse_cache_overflow_entries_ <
+          binary_parse_cache_overflow_limit_) {
+        binary_parse_cache_overflow_[expression].push_back({operators, result});
+        ++binary_parse_cache_overflow_entries_;
+      }
     } else {
       binary_parse_cache_[expression].push_back({operators, result});
       ++parse_cache_entries_;
