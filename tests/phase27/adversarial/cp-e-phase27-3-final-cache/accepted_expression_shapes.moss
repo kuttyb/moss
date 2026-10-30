@@ -1,0 +1,15 @@
+enum Outcome:
+  Value(value: Int)
+  Empty
+
+fn main():
+  var first = Map()
+  first["k"] = 1
+  var second = (Map())
+  second["k"] = (first["k"] + (2 * 3))
+  value = Outcome.Value(value: second["k"])
+  match value:
+    case Value(value):
+      echo value
+    case Empty:
+      echo 0
