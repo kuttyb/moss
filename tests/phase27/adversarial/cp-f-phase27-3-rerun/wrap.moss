@@ -1,0 +1,8 @@
+domain Sink:
+  fn Put(value: Int):
+    echo value
+
+fn main():
+  sink = Sink()
+  value = 9223372036854775807
+  message sink.Put(value + 1)
