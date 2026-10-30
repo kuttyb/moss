@@ -17504,9 +17504,9 @@ class Checker {
                                       receiver_effect, receiver_fields, Effect::Read);
             projected = base;
           } else {
-            auto dot = projected.rfind('.');
-            if (dot == string::npos) break;
-            projected = tree_strip_expression_parens(projected.substr(0, dot));
+            string member;
+            if (!tree_parse_member_access(projected, base, member)) break;
+            projected = tree_strip_expression_parens(base);
           }
         }
         return;
@@ -17535,13 +17535,16 @@ class Checker {
           return;
         }
       }
-      if (starts_with(value, "not ")) {
-        analyze_effect_expression(value.substr(4), env, params, parameter_effects,
+      string unary_operation, unary_operand;
+      if (tree_parse_unary(value, unary_operation, unary_operand) &&
+          unary_operation == "not") {
+        analyze_effect_expression(unary_operand, env, params, parameter_effects,
                                   receiver_effect, receiver_fields, Effect::Read);
         return;
       }
-      if (!value.empty() && value.front() == '~') {
-        analyze_effect_expression(trim(value.substr(1)), env, params, parameter_effects,
+      if (tree_parse_unary(value, unary_operation, unary_operand) &&
+          unary_operation == "~") {
+        analyze_effect_expression(unary_operand, env, params, parameter_effects,
                                   receiver_effect, receiver_fields, Effect::Read);
         return;
       }
@@ -17845,8 +17848,10 @@ class Checker {
         return;
       }
     }
-    if (!value.empty() && value.front() == '~') {
-      analyze_effect_expression(trim(value.substr(1)), env, params, parameter_effects,
+    string unary_operation, unary_operand;
+    if (tree_parse_unary(value, unary_operation, unary_operand) &&
+        unary_operation == "~") {
+      analyze_effect_expression(unary_operand, env, params, parameter_effects,
                                 receiver_effect, receiver_fields, Effect::Read);
       return;
     }
@@ -17861,9 +17866,10 @@ class Checker {
       return;
     }
 
-    auto dot = value.rfind('.');
-    if (!leaf_effect_capture_ && dot != string::npos && tree_simple_identifier(trim(value.substr(dot + 1)))) {
-      analyze_effect_expression(value.substr(0, dot), env, params,
+    string member_base, member_name;
+    if (!leaf_effect_capture_ &&
+        tree_parse_member_access(value, member_base, member_name)) {
+      analyze_effect_expression(member_base, env, params,
                                 parameter_effects, receiver_effect,
                                 receiver_fields,
                                 projection_effect(value, requested, env));
