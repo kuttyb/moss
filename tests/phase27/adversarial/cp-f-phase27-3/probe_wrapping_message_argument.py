@@ -19,7 +19,7 @@ for label,compiler in (("baseline",BASELINE),("candidate_off",CANDIDATE),("candi
   rust=ARTIFACTS/f"{label}-{profile}.rs"; binary=ARTIFACTS/f"{label}-{profile}.bin"
   emit=[str(compiler)]+(["-O"] if profile=="optimized" else [])+[str(SOURCE),"-o",str(rust)]
   emitted=run(emit,env)
-  item={"emit":emitted,"rust_sha256":hashlib.sha256(rust.read_bytes()).hexdigest() if rust.exists() else None}
+  item={"emit":emitted,"rust_sha256":hashlib.sha256(rust.read_bytes()).hexdigest() if rust.exists() else None,"rust_source":rust.read_text(encoding="utf-8") if rust.exists() else None}
   if rust.exists():
    compiled=run(["rustc","--edition=2021",str(rust),"-o",str(binary)],env); item["rustc"]=compiled
    if compiled["exit"]==0: item["native"]=run([str(binary)],env)
