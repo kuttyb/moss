@@ -27024,40 +27024,15 @@ class Checker {
       return;
     }
     {
-      auto dot = top_level_field_dot(value);
-      if (dot != string::npos && value.find('(', dot) == string::npos) {
-        auto receiver_type = inferred_expr_type(value.substr(0, dot), env);
+      string base, field;
+      if (tree_parse_member_access(value, base, field)) {
+        auto receiver_type = inferred_expr_type(base, env);
         if (receiver_type && enums_.count(canonical_type_name(*receiver_type)))
           err(line, "enum payload fields require match; field projection is unsupported",
               "ENUM_FIELD_PROJECTION_UNSUPPORTED");
-        string field = trim(value.substr(dot + 1));
-        string base = trim(value.substr(0, dot));
-        string digits = !base.empty() && (base.front() == '-' || base.front() == '+')
-            ? trim(base.substr(1)) : base;
-        auto all_digits = [](const string& text) {
-          return !text.empty() && std::all_of(text.begin(), text.end(), [](char c) {
-            return moss::ascii_is_digit(static_cast<unsigned char>(c)) || c == '_';
-          });
-        };
-        // An exponent field is only `e`/`E`, an optional sign, then digits
-        // (`1.e5`, `2.5E-3`); `1.exp` is Int `1` plus a member (P25-S-ARCH-027).
-        auto exponent = [&](const string& text) {
-          if (text.size() < 2 || (text[0] != 'e' && text[0] != 'E')) return false;
-          size_t at = (text[1] == '+' || text[1] == '-') ? 2 : 1;
-          return at < text.size() && all_digits(text.substr(at));
-        };
-        auto fraction_exponent = [&](const string& text) {
-          size_t e = text.find_first_of("eE");
-          return e != string::npos && e > 0 && all_digits(text.substr(0, e)) &&
-              exponent(text.substr(e));
-        };
-        bool float_literal = all_digits(digits) && (field.empty() || all_digits(field) ||
-            exponent(field) || fraction_exponent(field));
-        if (!float_literal) {
-          mark_active_expression(OccurrenceKind::Field, "field:" + field);
-          check_expression(line, base, env, {}, "receiver");
-        }
-        if (receiver_type && !float_literal && (tree_plain_identifier(field) || all_digits(field))) {
+        mark_active_expression(OccurrenceKind::Field, "field:" + field);
+        check_expression(line, base, env, {}, "receiver");
+        if (receiver_type && !field.empty()) {
           // P25-S-ARCH-024: a projection must name a declared record field;
           // compiler-defined values have no fields.
           string type = canonical_type_name(*receiver_type);
@@ -27101,7 +27076,7 @@ class Checker {
           }
         }
         if (field_owner) {
-          string field_name = trim(value.substr(dot + 1));
+          string field_name = field;
           const ObjectType* obj = field_owner;
           auto it = std::find_if(obj->fields.begin(), obj->fields.end(),
               [&](const Field& f) { return f.name == field_name; });
