@@ -13354,3 +13354,10 @@ check` passed 154/154, zero failures or skips. Branch remains unmerged.
 - The review did not run perf. Off candidate-vs-phase27-2 performance and the historical gate remain failing as recorded above. Current evidence is for frozen `420b31ab`; current source is unchanged since that freeze, with only this docs/evidence import commit after it.
 
 - A raw-view-handle/inline-entry optimization experiment was built and measured, then discarded because it did not help: direct off medians were w2 2.016s candidate vs 1.849s baseline (+9.0%) and w3 1.299s vs 1.230s (+5.6%). Current source returns to the reviewed `420b31ab` implementation. Continue profiling before declaring the off perf gate complete.
+
+### Phase 27.3 optimized performance correction — 2026-10-30
+
+- Correct compiler mode: `make check` uses `moss-opt`; prior `./moss` timing samples were development `-O0` and are not performance-gate evidence. Built optimized phase27-2 baseline and candidate. Three alternating off repeats: n016 w2 baseline 0.375s/candidate 0.396s (+5.6%), n016 w3 0.230s/0.234s (+1.7%), n032 w2 1.815s/1.961s (+8.0%), n032 w3 0.874s/0.922s (+5.5%). Five-repeat n032 medians are +7.3% w2 and +6.9% w3. Logs under `tmp/phase27-3/opt-off-repeats/` and `opt-off-repeat5/`.
+- Correct `MOSS_EST=off` historical performance script using `build/compiler/moss-opt` passes all workloads (`tmp/phase27-3/perf-gate-off-opt-420b31ab.log`). This does not clear the Phase 27 relative-perf regression in repeated n032 comparisons.
+- Optimized shadow n032 medians are 2.285s w2 / 1.151s w3, 1.16x / 1.25x candidate-off. No shadow timeout remains on these fixtures; full future corpus parity remains required.
+- A pointer identity-cache trial had 2,398,362 hits out of 3,496,812 lookups but did not improve O2: five-repeat n032 medians were +7.8% w2 and +7.0% w3. It was discarded. Keep profiling off overhead and reduce the repeatable n032 deltas before declaring compiler-perf complete.
