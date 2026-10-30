@@ -8634,8 +8634,10 @@ class Checker {
         return;
       }
     }
-    if (starts_with(e, "not ")) {
-      constrain_boolean_operand(trim(e.substr(4)));
+    string unary_operation, unary_operand;
+    if (tree_parse_unary(e, unary_operation, unary_operand) &&
+        unary_operation == "not") {
+      constrain_boolean_operand(unary_operand);
       if (expected_result == "$function_result" &&
           (!function.return_type || contains_internal_placeholder(*function.return_type)))
         function.bind_return_type(moss::Type::primitive("bool"));
@@ -8718,8 +8720,9 @@ class Checker {
         derive_expression_constraints(function, binary->first, left_expected);
         derive_expression_constraints(function, binary->second, right_expected);
       }
-    if (!e.empty() && e.front() == '~') {
-      derive_expression_constraints(function, trim(e.substr(1)), "int");
+    if (tree_parse_unary(e, unary_operation, unary_operand) &&
+        unary_operation == "~") {
+      derive_expression_constraints(function, unary_operand, "int");
     }
     string callee; vector<string> call_args;
     if (tree_parse_simple_call(e, callee, call_args) && !member_call) {
@@ -11316,11 +11319,13 @@ class Checker {
           enums_.count(enum_name))
         return inferred_leaf(enum_name);
     }
-    if (starts_with(original, "message ")) {
-      string receiver, handler;
-      vector<string> args;
-      if (!tree_parse_member_call(trim(original.substr(8)), receiver, handler, args) ||
-          !tree_plain_identifier(receiver) || !tree_plain_identifier(handler))
+    string message_target, message_handler;
+    vector<string> message_args;
+    if (tree_parse_message(original, message_target, message_handler,
+                           message_args)) {
+      string receiver = message_target;
+      string handler = message_handler;
+      if (!tree_plain_identifier(receiver) || !tree_plain_identifier(handler))
         return std::nullopt;
       auto binding = env.find(receiver);
       if (binding == env.end()) return std::nullopt;
@@ -11340,8 +11345,10 @@ class Checker {
             ? primitive("bool") : std::nullopt;
       }
     }
-    if (starts_with(e, "not "))
-      return primitive_term(operand_term(trim(e.substr(4))), "bool")
+    string unary_operation, unary_operand;
+    if (tree_parse_unary(e, unary_operation, unary_operand) &&
+        unary_operation == "not")
+      return primitive_term(operand_term(unary_operand), "bool")
           ? primitive("bool") : std::nullopt;
     if (auto type = obvious_expr_type(e, env))
       return inferred_leaf(canonical_type_name(*type));
@@ -11410,7 +11417,7 @@ class Checker {
       if (left && right && left->kind == moss::TypeKind::Primitive &&
           right->kind == moss::TypeKind::Primitive) {
         if (left->name == "string" && right->name == "string" &&
-            e.find('+') != string::npos)
+            tree_split_binary(e, {"+"}))
           return primitive("string");
         if (arithmetic->first.empty() || arithmetic->second.empty()) return std::nullopt;
         if (tree_split_binary(e, {"%"}) &&
@@ -11430,20 +11437,20 @@ class Checker {
           open_generic(left_open->legacy))
         return left_open;
     }
-    if (!e.empty() && e.front() == '~')
-      return primitive_term(operand_term(trim(e.substr(1))), "int")
+    if (tree_parse_unary(e, unary_operation, unary_operand) &&
+        unary_operation == "~")
+      return primitive_term(operand_term(unary_operand), "int")
           ? primitive("int") : std::nullopt;
-    if (!e.empty() && e.front() == '-' && e.size() > 1 && !moss::ascii_is_digit(static_cast<unsigned char>(e[1]))) {
-      auto operand = operand_term(trim(e.substr(1)));
+    if (tree_parse_unary(e, unary_operation, unary_operand) &&
+        unary_operation == "-") {
+      auto operand = operand_term(unary_operand);
       if (primitive_term(operand, "int") || primitive_term(operand, "float"))
         return InferredExpr{operand, {}};
-    }
-    // Unary minus keeps its numeric operand's type (`return -x`).
-    if (e.size() > 1 && e.front() == '-') {
-      auto operand = inferred_expr_type(trim(e.substr(1)), env);
-      if (operand && (canonical_type_name(*operand) == "int" ||
-                      canonical_type_name(*operand) == "float"))
-        return inferred_leaf(canonical_type_name(*operand));
+      // Unary minus keeps its numeric operand's type (`return -x`).
+      auto operand_type = inferred_expr_type(unary_operand, env);
+      if (operand_type && (canonical_type_name(*operand_type) == "int" ||
+                           canonical_type_name(*operand_type) == "float"))
+        return inferred_leaf(canonical_type_name(*operand_type));
     }
     string index_base, index_expr;
     if (tree_parse_index(e, index_base, index_expr)) {
