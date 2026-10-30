@@ -405,25 +405,35 @@
     o << "        result\n";
   }
 
-  RaisedIdentity generated_failure_pattern_identity(string pattern) const {
-    pattern = trim(std::move(pattern));
-    const auto open = pattern.find('(');
-    if (open != string::npos) pattern = trim(pattern.substr(0, open));
-    const auto dot = pattern.rfind('.');
-    if (dot == string::npos)
+  RaisedIdentity generated_failure_pattern_identity(
+      const est::PatternNode& pattern) const {
+    if (pattern.kind != est::PatternNode::Kind::QualifiedRecoveryCase ||
+        pattern.type_name.empty() || pattern.case_name.empty())
       throw std::runtime_error(
           "internal error: checked on_fail pattern lost its enum variant");
     return RaisedIdentity::enum_variant(
-        canonical_type_name(trim(pattern.substr(0, dot))),
-        trim(pattern.substr(dot + 1)));
+        generated_failure_pattern_type(pattern.type_name), pattern.case_name);
+  }
+
+  string generated_failure_pattern_type(const string& source_name) const {
+    const string canonical = canonical_type_name(source_name);
+    if (enums_.count(canonical)) return canonical;
+    string module_qualified = source_name;
+    for (size_t dot = module_qualified.find('.'); dot != string::npos;
+         dot = module_qualified.find('.', dot + 2))
+      module_qualified.replace(dot, 1, "__");
+    if (enums_.count(module_qualified)) return module_qualified;
+    const EnumType* selected = nullptr;
+    for (const auto& entry : enums_)
+      if (entry.second->declaration_name == source_name) {
+        if (selected) return canonical;
+        selected = entry.second;
+      }
+    return selected ? selected->name : canonical;
   }
 
   vector<std::pair<string,string>> generated_error_pattern_bindings(
-      const string& pattern, const RaisedIdentity& identity) const {
-    const auto open = pattern.find('(');
-    if (open == string::npos) return {};
-    const auto close = matching_paren(pattern, open);
-    if (close == string::npos) return {};
+      const est::PatternNode& pattern, const RaisedIdentity& identity) const {
     string enum_key = canonical_type_name(identity.type);
     if (!enums_.count(enum_key)) {
       for (size_t separator = enum_key.find("::");
@@ -439,12 +449,11 @@
           return candidate.name == identity.variant;
         });
     if (item == declaration->second->cases.end()) return {};
-    auto names = split_top_level(
-        pattern.substr(open + 1, close - open - 1), ',');
     vector<std::pair<string,string>> result;
     for (size_t index = 0;
-         index < names.size() && index < item->fields.size(); ++index)
-      result.push_back({trim(names[index]), item->fields[index].type});
+         index < pattern.payload_bindings.size() && index < item->fields.size(); ++index)
+      result.push_back({trim(pattern.payload_bindings[index]),
+                        item->fields[index].type});
     return result;
   }
 
@@ -596,11 +605,11 @@
           locals.insert(arm.binding);
           types[arm.binding] = identity.type;
         }
-        if (arm.patterns.size() == 1)
+        if (arm.est_patterns.size() == 1)
           emit_generated_error_payload_bindings(
               o, 24, inner, identity,
               generated_error_pattern_bindings(
-                  arm.patterns.front(), identity),
+                  arm.est_patterns.front(), identity),
               locals, types);
         view_domain_ = true;
         view_domain_access_ = true;
@@ -745,11 +754,11 @@
           locals.insert(capture.name);
           types[capture.name] = capture.type;
         }
-        if (arm.patterns.size() == 1)
+        if (arm.est_patterns.size() == 1)
           emit_generated_error_payload_bindings(
               o, 12, inner, identity,
               generated_error_pattern_bindings(
-                  arm.patterns.front(), identity),
+                  arm.est_patterns.front(), identity),
               locals, types);
         view_domain_ = true;
         view_domain_access_ = true;

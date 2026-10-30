@@ -138,6 +138,25 @@ struct ExpressionView {
 
   std::optional<std::string> source_text(ExprId expression) const;
 };
+
+// Pattern syntax is represented separately from expression syntax. These
+// nodes are immutable value records attached to the owning statement/arm;
+// their child order is source order and no expression-text re-splitting is
+// needed by checker or emitter consumers.
+struct PatternNode {
+  enum class Kind : std::uint8_t {
+    Unknown, EnumTag, EnumCase, QualifiedRecoveryCase,
+    GroupedAlternatives, RecoveryCatchall, RecoveryBinding
+  } kind = Kind::Unknown;
+  std::string type_name, case_name, binding;
+  std::vector<std::string> payload_bindings;
+  std::vector<PatternNode> alternatives;
+  bool payload_pattern = false;
+};
+PatternNode match_pattern(std::string_view tag,
+                          const std::vector<std::string>& bindings);
+PatternNode recovery_pattern(std::string_view selector);
+PatternNode qualified_recovery_pattern(std::string_view source);
 ExpressionView view(const Arena& arena, ExprId root,
                     std::string_view source);
 std::optional<ExpressionView> parse_view(std::string_view source);
@@ -178,6 +197,10 @@ bool project_binary(const ExpressionView& view,
                     std::string& operation);
 std::optional<std::vector<std::string>> project_delimited_children(
     const ExpressionView& view, char delimiter);
+std::optional<std::vector<std::string>> project_tuple_elements(
+    const ExpressionView& view);
+std::optional<std::vector<std::string>> parse_delimited_children(
+    std::string_view source, char delimiter);
 void assert_delimited_parity(const ExpressionView& view, char delimiter,
                              const std::optional<std::vector<std::string>>& tree);
 bool project_identifier(const ExpressionView& view, std::string& name);

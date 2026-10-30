@@ -1094,10 +1094,7 @@ class Generator {
   std::optional<vector<string>> tree_tuple_elements(
       std::string_view expression) const {
     auto syntax = expression_view_from_est(expression);
-    if (!syntax || !syntax->arena || syntax->root >= syntax->arena->size() ||
-        !std::holds_alternative<est::Tuple>(syntax->arena->at(syntax->root)))
-      return std::nullopt;
-    return est::project_delimited_children(*syntax, ',');
+    return syntax ? est::project_tuple_elements(*syntax) : std::nullopt;
   }
 
   bool tree_parse_simple_call(const string& expression, string& callee,
@@ -1140,7 +1137,7 @@ class Generator {
 
   bool tree_parse_named_argument(const string& expression, string& name,
                                  string& value) const {
-    auto syntax = expression_view_from_est(expression);
+    auto syntax = est::parse_named_argument_view(expression);
     return syntax && est::project_named_argument(*syntax, name, value);
   }
 
@@ -3205,7 +3202,8 @@ class Generator {
       string enum_name, case_name;
       vector<string> fields;
       bool called = false;
-      if (tree_parse_enum_case_expression(e, enum_name, case_name, fields, called) &&
+      if (tree_parse_enum_case_expression(e, enum_name, case_name,
+                                          fields, called) &&
           enums_.count(enum_name)) {
         std::ostringstream rendered;
         rendered << enum_name << "::" << rust_identifier(case_name);
@@ -3216,7 +3214,8 @@ class Generator {
             if (!tree_parse_named_argument(fields[index], name, value))
               throw std::runtime_error("unchecked enum constructor field");
             if (index) rendered << ", ";
-            rendered << rust_identifier(name) << ": " << expr(value, d, locals, types);
+            rendered << rust_identifier(name) << ": "
+                     << expr(value, d, locals, types);
           }
           rendered << " }";
         }
@@ -5697,14 +5696,20 @@ class Generator {
 
               auto arm_locals = locals;
               auto arm_types = types;
-              if (!arm.a.empty() && arm.a.find('.') == string::npos &&
-                  arm.a.find(',') == string::npos) {
-                o << indent(level + 2) << "let " << arm.a << " = " << inner
+              if (arm.est_pattern && arm.est_pattern->kind ==
+                  est::PatternNode::Kind::RecoveryBinding) {
+                const auto& binding = arm.est_pattern->binding;
+                o << indent(level + 2) << "let " << binding << " = " << inner
                   << ";\n";
-                arm_locals.insert(arm.a);
-                arm_types[arm.a] = identity.type;
-              } else if (!arm.a.empty()) {
-                auto alternatives = split_top_level(arm.a, ',');
+                arm_locals.insert(binding);
+                arm_types[binding] = identity.type;
+              } else if (arm.est_pattern &&
+                  (arm.est_pattern->kind == est::PatternNode::Kind::QualifiedRecoveryCase ||
+                   arm.est_pattern->kind == est::PatternNode::Kind::GroupedAlternatives)) {
+                const auto alternatives = arm.est_pattern->kind ==
+                        est::PatternNode::Kind::GroupedAlternatives
+                    ? arm.est_pattern->alternatives
+                    : std::vector<est::PatternNode>{*arm.est_pattern};
                 for (const auto& pattern : alternatives) {
                   if (!(generated_failure_pattern_identity(pattern) == identity))
                     continue;

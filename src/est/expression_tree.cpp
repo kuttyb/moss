@@ -1347,6 +1347,13 @@ static void populate_impl(Program& program, std::vector<Stmt>* additional,
     const auto owner = next_owner++;
     if (s.kind == Stmt::Kind::For || s.kind == Stmt::Kind::Var)
       s.est_binding_name = trim(s.a);
+    if (s.kind == Stmt::Kind::Case) {
+      s.est_pattern = match_pattern(s.a, s.args);
+      arena.note(owner, ExprSlot::Pattern, 0, Outcome::Built);
+    } else if (s.kind == Stmt::Kind::Recover) {
+      s.est_pattern = recovery_pattern(s.a);
+      arena.note(owner, ExprSlot::Pattern, 0, Outcome::Built);
+    }
     switch (s.kind) {
       case Stmt::Kind::If: case Stmt::Kind::While:
         bind(s.expression_handles, owner, ExprSlot::Condition, 0, s.a); break;
@@ -1444,6 +1451,35 @@ static void populate_impl(Program& program, std::vector<Stmt>* additional,
     if (dump_enabled)
       std::cerr << "MOSS_EST_FAILURE_ARMS count=" << arms.size() << '\n';
     for (auto& arm : arms) {
+      arm.est_patterns.clear();
+      arm.est_pattern.reset();
+      const auto pattern_owner = next_owner++;
+      if (!arm.binding.empty()) {
+        PatternNode binding;
+        binding.kind = PatternNode::Kind::RecoveryBinding;
+        binding.binding = arm.binding;
+        arm.est_patterns.push_back(std::move(binding));
+        arena.note(pattern_owner, ExprSlot::Pattern, 0, Outcome::Built);
+      }
+      for (std::uint32_t index = 0; index < arm.patterns.size(); ++index) {
+        arm.est_patterns.push_back(qualified_recovery_pattern(arm.patterns[index]));
+        arena.note(pattern_owner, ExprSlot::Pattern,
+                   index + (arm.binding.empty() ? 0U : 1U), Outcome::Built);
+      }
+      if (arm.binding.empty() && arm.patterns.empty()) {
+        PatternNode catchall;
+        catchall.kind = PatternNode::Kind::RecoveryCatchall;
+        arm.est_patterns.push_back(std::move(catchall));
+        arena.note(pattern_owner, ExprSlot::Pattern, 0, Outcome::Built);
+      }
+      if (arm.est_patterns.size() > 1 && arm.binding.empty()) {
+        PatternNode grouped;
+        grouped.kind = PatternNode::Kind::GroupedAlternatives;
+        grouped.alternatives = arm.est_patterns;
+        arm.est_pattern = std::move(grouped);
+      } else if (!arm.est_patterns.empty()) {
+        arm.est_pattern = arm.est_patterns.front();
+      }
       if (dump_enabled)
         std::cerr << "MOSS_EST_FAILURE_ARM line=" << arm.line
                   << " body=" << arm.body.size() << '\n';
@@ -1451,7 +1487,19 @@ static void populate_impl(Program& program, std::vector<Stmt>* additional,
       if (arm.execution_body) body(*arm.execution_body);
     }
   };
-  if (additional) body(*additional);
+  if (additional) {
+    body(*additional);
+    for (auto& domain : program.domains)
+      for (auto& handler : domain.handlers) {
+        if (&handler.body == additional) {
+          failure_arms(handler.failure_arms);
+        }
+        if (handler.execution_body &&
+            &*handler.execution_body == additional &&
+            handler.execution_failure_arms)
+          failure_arms(*handler.execution_failure_arms);
+      }
+  }
   else if (program.main) body(program.main->body);
   if (!additional) {
   for (auto& function : program.functions) {

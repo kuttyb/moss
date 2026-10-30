@@ -9552,9 +9552,9 @@ class Checker {
                 "AMBIGUOUS_RECOVERY_BINDING");
           arm_env[arm.binding] = *error_types.begin();
         }
-        if (arm.patterns.size() == 1)
+        if (arm.est_patterns.size() == 1)
           for (const auto& binding :
-               phase21_pattern_bindings(arm.line, arm.patterns.front()))
+               phase21_pattern_bindings(arm.line, arm.est_patterns.front()))
             arm_env[binding.first] = binding.second;
         arm.captures.clear();
         for (const auto& name :
@@ -10718,6 +10718,26 @@ class Checker {
     auto syntax = moss::est::parse_view(text);
     const bool tree_ok = syntax && moss::est::project_member_call(
         *syntax, receiver, member, args, &outputs_written);
+    // The legacy reader assigns receiver/member before rejecting a leading-dot
+    // call such as `.foo()`. Preserve that failure output contract by parsing
+    // the same shape with a synthetic receiver, then dropping its value.
+    // Arguments remain untouched, as they do on the legacy early return.
+    if (!syntax) {
+      const string value = trim(text);
+      if (!value.empty() && value.front() == '.') {
+        auto partial = moss::est::parse_view("_" + value);
+        string synthetic_receiver, partial_member;
+        vector<string> partial_args;
+        bool partial_outputs = false;
+        if (partial && moss::est::project_member_call(
+                *partial, synthetic_receiver, partial_member, partial_args,
+                &partial_outputs) && partial_outputs) {
+          receiver.clear();
+          member = std::move(partial_member);
+          outputs_written = true;
+        }
+      }
+    }
     if (!tree_ok) {
       if (profile_concrete_effect_work_) {
         if (cache_full) ++parse_cache_failed_member_after_cap_;
@@ -10769,7 +10789,7 @@ class Checker {
     vector<string> result;
     auto syntax = moss::est::parse_view(text);
     auto projected = syntax ? moss::est::project_delimited_children(*syntax, delimiter)
-                            : std::nullopt;
+                            : moss::est::parse_delimited_children(text, delimiter);
     if (syntax && delimiter == ',')
       moss::est::assert_delimited_parity(*syntax, delimiter, projected);
     if (projected) result = std::move(*projected);
@@ -10817,9 +10837,12 @@ class Checker {
     ++parse_cache_misses_;
     const bool cache_full = parse_cache_entries_ >= parse_cache_limit_;
     std::optional<std::pair<string,string>> result;
+    const bool named_argument =
+        moss::est::parse_named_argument_view(expression).has_value();
     auto syntax = moss::est::parse_view(expression);
-    if (!syntax) syntax = moss::est::parse_view("(" + expression + ")");
-    if (syntax) {
+    if (!named_argument && !syntax)
+      syntax = moss::est::parse_view("(" + expression + ")");
+    if (!named_argument && syntax) {
       std::pair<string,string> operands;
       string operation;
       const bool is_tuple = std::holds_alternative<moss::est::Tuple>(
@@ -10830,8 +10853,10 @@ class Checker {
     }
     if (moss::est::mode() == moss::est::Mode::Shadow) {
       const auto legacy = split_binary_uncached(expression, operators);
-      if (result != legacy) std::fprintf(stderr, "EST binary mismatch: <%s> tree=(%s,%s) legacy=(%s,%s)\n", expression.c_str(), result ? result->first.c_str() : "<none>", result ? result->second.c_str() : "<none>", legacy ? legacy->first.c_str() : "<none>", legacy ? legacy->second.c_str() : "<none>");
-      assert(result == legacy);
+      // A named-argument node proves that operators in its value are nested
+      // inside the argument, despite the legacy top-level text scan.
+      if (result != legacy && !(named_argument && legacy && !result))
+        assert(result == legacy);
     }
     if (cache_full) {
       if (profile_concrete_effect_work_) ++parse_cache_success_after_cap_;
@@ -12404,8 +12429,7 @@ class Checker {
             err(arm.line, "recover requires a statement body",
                 "EMPTY_RECOVER_BODY");
           TypeEnv recovered = incoming;
-          if (!arm.a.empty() && arm.a.find('.') == string::npos &&
-              arm.a.find(',') == string::npos) {
+          if (recovery_binding_pattern(arm)) {
             std::set<string> selected_types;
             for (const auto& identity : arm.exceptional_alternatives)
               selected_types.insert(identity.type);
@@ -12413,7 +12437,7 @@ class Checker {
                 ? *selected_types.begin() : "_selected_error";
           }
           else if (!arm.a.empty()) {
-            auto alternatives = moss::split_top_level(arm.a, ',');
+            auto alternatives = recovery_case_patterns(arm);
             if (alternatives.size() == 1)
               for (const auto& binding :
                    phase21_pattern_bindings(arm.line, alternatives.front()))
@@ -15573,9 +15597,9 @@ class Checker {
       if (selected_types.size() == 1)
         arm_types[arm.binding] = *selected_types.begin();
     }
-    if (arm.patterns.size() == 1)
+    if (arm.est_patterns.size() == 1)
       for (const auto& binding :
-           phase21_pattern_bindings(arm.line, arm.patterns.front()))
+           phase21_pattern_bindings(arm.line, arm.est_patterns.front()))
         arm_types[binding.first] = binding.second;
     return arm_types;
   }
@@ -16089,9 +16113,7 @@ class Checker {
              body[arm_index].kind == Stmt::Kind::Recover) {
         const auto& arm = body[arm_index];
         const size_t arm_end = statement_subtree_end(body, arm_index);
-        const bool catch_all = arm.a.empty() ||
-            (arm.a.find('.') == string::npos &&
-             arm.a.find(',') == string::npos);
+        const bool catch_all = recovery_catchall_pattern(arm);
         if (catch_all && !arm.exceptional_alternatives.empty() &&
             phase21_noop_body(body, arm_index + 1, arm_end)) {
           StateLeafSet written;
@@ -16289,9 +16311,7 @@ class Checker {
              source.body[arm_index].kind == Stmt::Kind::Recover) {
         const Stmt& arm = source.body[arm_index];
         size_t arm_end = statement_subtree_end(source.body, arm_index);
-        const bool catch_all = arm.a.empty() ||
-            (arm.a.find('.') == string::npos &&
-             arm.a.find(',') == string::npos);
+        const bool catch_all = recovery_catchall_pattern(arm);
         StateLeafSet writes;
         if (catch_all && !arm.exceptional_alternatives.empty() &&
             phase21_noop_body(source.body, arm_index + 1, arm_end))
@@ -16444,9 +16464,7 @@ class Checker {
              method->body[arm_index].kind == Stmt::Kind::Recover) {
         const Stmt& arm = method->body[arm_index];
         const size_t arm_end = statement_subtree_end(method->body, arm_index);
-        const bool catch_all = arm.a.empty() ||
-            (arm.a.find('.') == string::npos &&
-             arm.a.find(',') == string::npos);
+        const bool catch_all = recovery_catchall_pattern(arm);
         if (catch_all && !arm.exceptional_alternatives.empty() &&
             phase21_noop_body(method->body, arm_index + 1, arm_end)) {
           StateLeafSet written;
@@ -16602,9 +16620,7 @@ class Checker {
           const Stmt& arm = function.body[arm_index];
           const size_t arm_end = statement_subtree_end(function.body,
                                                         arm_index);
-          const bool catch_all = arm.a.empty() ||
-              (arm.a.find('.') == string::npos &&
-               arm.a.find(',') == string::npos);
+          const bool catch_all = recovery_catchall_pattern(arm);
           if (catch_all && !arm.exceptional_alternatives.empty() &&
               phase21_noop_body(function.body, arm_index + 1, arm_end)) {
             StateLeafSet written_formals;
@@ -16833,8 +16849,10 @@ class Checker {
           selected_types.insert(identity.type);
         if (selected_types.size() == 1)
           local_types[trim(arm.a)] = *selected_types.begin();
-      } else if (!arm.a.empty() && arm.a.find('.') != string::npos) {
-        auto alternatives = moss::split_top_level(arm.a, ',');
+      } else if (arm.est_pattern &&
+                 (arm.est_pattern->kind == moss::est::PatternNode::Kind::QualifiedRecoveryCase ||
+                  arm.est_pattern->kind == moss::est::PatternNode::Kind::GroupedAlternatives)) {
+        auto alternatives = recovery_case_patterns(arm);
         if (alternatives.size() == 1)
           for (const auto& binding :
                phase21_pattern_bindings(arm.line, alternatives.front()))
@@ -17850,8 +17868,7 @@ class Checker {
           saw_recover = true;
           const Stmt& arm = statements[index++];
           auto recovered = env;
-          if (!arm.a.empty() && arm.a.find('.') == string::npos &&
-              arm.a.find(',') == string::npos) {
+          if (recovery_binding_pattern(arm)) {
             std::set<string> selected_types;
             for (const auto& identity : arm.exceptional_alternatives)
               selected_types.insert(identity.type);
@@ -17859,7 +17876,7 @@ class Checker {
                 ? *selected_types.begin() : "_selected_error";
           }
           else if (!arm.a.empty()) {
-            auto alternatives = moss::split_top_level(arm.a, ',');
+            auto alternatives = recovery_case_patterns(arm);
             if (alternatives.size() == 1)
               for (const auto& binding :
                    phase21_pattern_bindings(arm.line, alternatives.front()))
@@ -18976,31 +18993,45 @@ class Checker {
     return phase21_bounded_error_type(type, visiting);
   }
 
+  vector<moss::est::PatternNode> recovery_case_patterns(
+      const Stmt& statement) const {
+    if (!statement.est_pattern) return {};
+    if (statement.est_pattern->kind ==
+        moss::est::PatternNode::Kind::GroupedAlternatives)
+      return statement.est_pattern->alternatives;
+    if (statement.est_pattern->kind ==
+        moss::est::PatternNode::Kind::QualifiedRecoveryCase)
+      return {*statement.est_pattern};
+    return {};
+  }
+
+  bool recovery_binding_pattern(const Stmt& statement) const {
+    return statement.est_pattern && statement.est_pattern->kind ==
+        moss::est::PatternNode::Kind::RecoveryBinding;
+  }
+
+  bool recovery_catchall_pattern(const Stmt& statement) const {
+    return statement.est_pattern &&
+        (statement.est_pattern->kind ==
+             moss::est::PatternNode::Kind::RecoveryBinding ||
+         statement.est_pattern->kind ==
+             moss::est::PatternNode::Kind::RecoveryCatchall);
+  }
+
   vector<std::pair<string,string>> phase21_pattern_bindings(
-      int line, string pattern) const {
-    pattern = trim(std::move(pattern));
-    const auto open = pattern.find('(');
-    if (open == string::npos) return {};
-    const auto close = matching_paren(pattern, open);
-    if (close == string::npos || close + 1 != pattern.size())
-      err(line, "error payload patterns support only plain field bindings",
-          "INVALID_RECOVERY_PATTERN");
-    const string qualified = trim(pattern.substr(0, open));
-    const auto dot = qualified.rfind('.');
-    if (dot == string::npos)
-      err(line, "error payload patterns require a qualified enum variant",
-          "RECOVERY_PATTERN_REQUIRES_VARIANT");
-    const string type = canonical_type_name(trim(qualified.substr(0, dot)));
-    const string variant = trim(qualified.substr(dot + 1));
+      int line, const moss::est::PatternNode& pattern) const {
+    if (pattern.kind != moss::est::PatternNode::Kind::QualifiedRecoveryCase)
+      return {};
+    if (!pattern.payload_pattern) return {};
+    const string type = phase21_pattern_enum_name(pattern.type_name);
+    const string variant = pattern.case_name;
     auto declaration = enums_.find(type);
     if (declaration == enums_.end()) return {};
     auto item = std::find_if(
         declaration->second->cases.begin(), declaration->second->cases.end(),
         [&](const EnumCase& candidate) { return candidate.name == variant; });
     if (item == declaration->second->cases.end()) return {};
-    vector<string> names;
-    const string inside = trim(pattern.substr(open + 1, close - open - 1));
-    if (!inside.empty()) names = tree_split_top_level(inside, ',');
+    const auto& names = pattern.payload_bindings;
     if (names.size() != item->fields.size())
       err(line, "error variant '" + type + "." + variant +
                     "' must bind all " +
@@ -19026,16 +19057,14 @@ class Checker {
     return result;
   }
 
-  RaisedIdentity phase21_pattern_identity(int line, string pattern) const {
-    pattern = trim(std::move(pattern));
-    const auto open = pattern.find('(');
-    if (open != string::npos) pattern = trim(pattern.substr(0, open));
-    const auto dot = pattern.find('.');
-    if (dot == string::npos || pattern.find('.', dot + 1) != string::npos)
+  RaisedIdentity phase21_pattern_identity(
+      int line, const moss::est::PatternNode& pattern) const {
+    const string type = phase21_pattern_enum_name(pattern.type_name);
+    const string variant = pattern.case_name;
+    if (pattern.kind != moss::est::PatternNode::Kind::QualifiedRecoveryCase ||
+        type.empty() || variant.empty())
       err(line, "recovery patterns must name a qualified enum variant",
           "RECOVERY_PATTERN_REQUIRES_VARIANT");
-    const string type = canonical_type_name(trim(pattern.substr(0, dot)));
-    const string variant = trim(pattern.substr(dot + 1));
     auto declaration = enums_.find(type);
     if (declaration == enums_.end())
       err(line, "unknown error enum '" + type + "'",
@@ -19054,6 +19083,35 @@ class Checker {
     return {RaisedIdentityKind::EnumVariant, type, variant};
   }
 
+  string phase21_pattern_enum_name(const string& source_name) const {
+    const string canonical = canonical_type_name(source_name);
+    if (enums_.count(canonical)) return canonical;
+    string module_qualified = source_name;
+    for (size_t dot = module_qualified.find('.'); dot != string::npos;
+         dot = module_qualified.find('.', dot + 2))
+      module_qualified.replace(dot, 1, "__");
+    if (enums_.count(module_qualified)) return module_qualified;
+    const string current_module = p_.main_module.empty() ? string{} :
+        program_module_identity(p_, p_.main_module);
+    const EnumType* same_module = nullptr;
+    const EnumType* unique_name = nullptr;
+    bool ambiguous_name = false;
+    for (const auto& entry : enums_) {
+      const auto& declaration = *entry.second;
+      if (declaration.declaration_name != source_name) continue;
+      if (!unique_name) unique_name = &declaration;
+      else ambiguous_name = true;
+      if (!current_module.empty() &&
+          program_module_identity(p_, declaration.defining_module) ==
+              current_module) {
+        if (same_module) return canonical;
+        same_module = &declaration;
+      }
+    }
+    if (same_module) return same_module->name;
+    return unique_name && !ambiguous_name ? unique_name->name : canonical;
+  }
+
   RaiseSet phase21_raised_identities(int line, const string& expression,
                                     const TypeEnv& env) const {
     string enum_name, case_name;
@@ -19061,8 +19119,13 @@ class Checker {
     bool called = false;
     if (tree_parse_enum_case_expression(expression, enum_name, case_name, fields,
                                    called) &&
-        enums_.count(canonical_type_name(enum_name)))
-      return {phase21_pattern_identity(line, enum_name + "." + case_name)};
+        enums_.count(canonical_type_name(enum_name))) {
+      moss::est::PatternNode pattern;
+      pattern.kind = moss::est::PatternNode::Kind::QualifiedRecoveryCase;
+      pattern.type_name = enum_name;
+      pattern.case_name = case_name;
+      return {phase21_pattern_identity(line, pattern)};
+    }
     auto type = inferred_expr_type(expression, env);
     if (!type || contains_internal_placeholder(*type))
       err(line, "raise requires a statically typed error value",
@@ -19074,25 +19137,30 @@ class Checker {
     auto declaration = enums_.find(concrete);
     if (declaration != enums_.end()) {
       RaiseSet alternatives;
-      for (const auto& item : declaration->second->cases)
-        alternatives.insert(phase21_pattern_identity(
-            line, concrete + "." + item.name));
+      for (const auto& item : declaration->second->cases) {
+        moss::est::PatternNode pattern;
+        pattern.kind = moss::est::PatternNode::Kind::QualifiedRecoveryCase;
+        pattern.type_name = concrete;
+        pattern.case_name = item.name;
+        alternatives.insert(phase21_pattern_identity(line, pattern));
+      }
       return alternatives;
     }
     return {{RaisedIdentityKind::ScalarType, concrete, {}}};
   }
 
-  RaiseSet phase21_recovery_pattern(int line, const string& selector,
+  RaiseSet phase21_recovery_pattern(
+                                    int line,
+                                    const moss::est::PatternNode& pattern,
                                     const RaiseSet& remaining,
                                     string* binding_type = nullptr) const {
-    const string value = trim(selector);
-    if (value.empty()) return remaining;
-    auto alternatives = moss::split_top_level(value, ',');
-    const bool qualified = std::all_of(
-        alternatives.begin(), alternatives.end(), [](const string& item) {
-          return trim(item).find('.') != string::npos;
-        });
-    if (qualified) {
+    if (pattern.kind == moss::est::PatternNode::Kind::RecoveryCatchall)
+      return remaining;
+    if (pattern.kind == moss::est::PatternNode::Kind::QualifiedRecoveryCase ||
+        pattern.kind == moss::est::PatternNode::Kind::GroupedAlternatives) {
+      const auto& alternatives = pattern.kind ==
+              moss::est::PatternNode::Kind::GroupedAlternatives
+          ? pattern.alternatives : vector<moss::est::PatternNode>{pattern};
       RaiseSet result;
       for (const auto& alternative : alternatives) {
         auto identity = phase21_pattern_identity(line, alternative);
@@ -19107,7 +19175,8 @@ class Checker {
       }
       return result;
     }
-    if (alternatives.size() != 1 || !tree_plain_identifier(value))
+    if (pattern.kind != moss::est::PatternNode::Kind::RecoveryBinding ||
+        !tree_plain_identifier(pattern.binding))
       err(line, "recover requires qualified variants, one error binding, or an unbound catch-all",
           "INVALID_RECOVERY_PATTERN");
     std::set<string> types;
@@ -19150,16 +19219,19 @@ class Checker {
           if (saw_catch_all)
             err(arm.line, "no recover arm may follow a catch-all",
                 "RECOVER_AFTER_CATCH_ALL");
+          const auto pattern = arm.est_pattern
+              ? *arm.est_pattern : moss::est::recovery_pattern(arm.a);
           string binding_type;
           RaiseSet matched = phase21_recovery_pattern(
-              arm.line, arm.a, remaining, &binding_type);
+              arm.line, pattern, remaining, &binding_type);
           RaiseSet reachable_matched;
           for (const auto& identity : matched)
             if (remaining.count(identity)) reachable_matched.insert(identity);
           const_cast<Stmt&>(arm).exceptional_alternatives =
               reachable_matched;
-          const bool catch_all = arm.a.empty() ||
-              (arm.a.find('.') == string::npos && arm.a.find(',') == string::npos);
+          const bool catch_all = pattern.kind ==
+                  moss::est::PatternNode::Kind::RecoveryCatchall ||
+              pattern.kind == moss::est::PatternNode::Kind::RecoveryBinding;
           if (catch_all) saw_catch_all = true;
           for (const auto& identity : matched) {
             if (!named.insert(identity).second)
@@ -19195,10 +19267,13 @@ class Checker {
                                    arm.source_file});
           }
           TypeEnv arm_env = env;
-          if (!binding_type.empty() && tree_plain_identifier(trim(arm.a)))
-            arm_env[trim(arm.a)] = binding_type;
-          if (!arm.a.empty() && arm.a.find('.') != string::npos) {
-            auto alternatives = moss::split_top_level(arm.a, ',');
+          if (!binding_type.empty() && pattern.kind ==
+                  moss::est::PatternNode::Kind::RecoveryBinding)
+            arm_env[pattern.binding] = binding_type;
+          if (arm.est_pattern &&
+              (arm.est_pattern->kind == moss::est::PatternNode::Kind::QualifiedRecoveryCase ||
+               arm.est_pattern->kind == moss::est::PatternNode::Kind::GroupedAlternatives)) {
+            auto alternatives = recovery_case_patterns(arm);
             if (alternatives.size() == 1)
               for (const auto& binding :
                    phase21_pattern_bindings(arm.line, alternatives.front()))
@@ -19206,7 +19281,8 @@ class Checker {
           }
           RaiseSet arm_raises = phase21_raise_set_block(
               body, index, level + 1, std::move(arm_env), reachable_matched,
-              tree_plain_identifier(trim(arm.a)) ? trim(arm.a) : string(), true);
+              pattern.kind == moss::est::PatternNode::Kind::RecoveryBinding
+                  ? pattern.binding : string(), true);
           if (!reachable_matched.empty())
             recovered_raises = raise_set_union(
                 std::move(recovered_raises), arm_raises);
@@ -19676,23 +19752,19 @@ class Checker {
       if (saw_catch_all)
         err(arm.line, "no on_fail arm may follow a catch-all",
             "ON_FAIL_AFTER_CATCH_ALL");
-      string selector;
-      if (!arm.patterns.empty()) {
-        for (const auto& pattern : arm.patterns) {
-          if (!selector.empty()) selector += ", ";
-          selector += pattern;
-        }
-      } else {
-        selector = arm.binding;
-      }
+      const auto pattern = arm.est_pattern ? *arm.est_pattern :
+          (arm.binding.empty() ? moss::est::recovery_pattern("") :
+                                 moss::est::recovery_pattern(arm.binding));
       string binding_type;
       RaiseSet matched = phase21_recovery_pattern(
-          arm.line, selector, remaining, &binding_type);
+          arm.line, pattern, remaining, &binding_type);
       RaiseSet reachable;
       for (const auto& identity : matched)
         if (remaining.count(identity)) reachable.insert(identity);
       arm.exceptional_alternatives = reachable;
-      const bool catch_all = arm.patterns.empty();
+      const bool catch_all = pattern.kind ==
+              moss::est::PatternNode::Kind::RecoveryCatchall ||
+          pattern.kind == moss::est::PatternNode::Kind::RecoveryBinding;
       if (catch_all) saw_catch_all = true;
       for (const auto& identity : matched) {
         if (!named.insert(identity).second)
@@ -19724,9 +19796,11 @@ class Checker {
       for (const auto& parameter : handler.params)
         env[parameter.name] = parameter.type;
       if (!arm.binding.empty()) env[arm.binding] = binding_type;
-      if (arm.patterns.size() == 1)
+      if (arm.est_patterns.size() == 1 && arm.binding.empty() &&
+          arm.est_patterns.front().kind ==
+              moss::est::PatternNode::Kind::QualifiedRecoveryCase)
         for (const auto& binding :
-             phase21_pattern_bindings(arm.line, arm.patterns.front()))
+             phase21_pattern_bindings(arm.line, arm.est_patterns.front()))
           env[binding.first] = binding.second;
       for (const auto& name :
            phase21_failure_capture_reads(arm, env, local_candidates))
@@ -22221,8 +22295,7 @@ class Checker {
           }
           handled.insert(arm.exceptional_alternatives.begin(),
                          arm.exceptional_alternatives.end());
-          if (!arm.a.empty() && arm.a.find('.') == string::npos &&
-              arm.a.find(',') == string::npos) {
+          if (recovery_binding_pattern(arm)) {
             std::set<string> selected_types;
             for (const auto& identity : arm.exceptional_alternatives)
               selected_types.insert(identity.type);
@@ -22231,7 +22304,7 @@ class Checker {
             recovered.immutable_locals.insert(arm.a);
             recovered.moved.erase(arm.a);
           } else if (!arm.a.empty()) {
-            auto alternatives = moss::split_top_level(arm.a, ',');
+            auto alternatives = recovery_case_patterns(arm);
             if (alternatives.size() == 1)
               for (const auto& binding :
                    phase21_pattern_bindings(arm.line, alternatives.front())) {
@@ -28683,8 +28756,9 @@ class Checker {
         for (const auto& identity : occurrence.recover_identities)
           occurrence.branch_role += ":" + std::to_string(identity.size()) +
               ":" + identity;
-        for (const auto& binding :
-             phase21_pattern_bindings(statement->line, statement->a)) {
+        for (const auto& pattern : recovery_case_patterns(*statement))
+          for (const auto& binding :
+               phase21_pattern_bindings(statement->line, pattern)) {
           auto parsed = moss::Type::parse_canonical(
               canonical_type_name(binding.second));
           if (!parsed) {
