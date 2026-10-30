@@ -15084,46 +15084,13 @@ class Checker {
             ? "_generic:" + parameter.name : parameter.type;
       auto reject_untyped_fields = [&](int line, const string& expression,
                                        const TypeEnv& env) {
-        bool quoted = false;
-        bool escaped = false;
-        for (size_t i = 0; i < expression.size();) {
-          char ch = expression[i];
-          if (quoted) {
-            if (escaped) escaped = false;
-            else if (ch == '\\') escaped = true;
-            else if (ch == '"') quoted = false;
-            ++i;
-            continue;
-          }
-          if (ch == '"') { quoted = true; ++i; continue; }
-          if (!moss::ascii_is_alpha(static_cast<unsigned char>(ch)) && ch != '_') {
-            ++i;
-            continue;
-          }
-          size_t start = i++;
-          while (i < expression.size() &&
-                 (moss::ascii_is_alnum(static_cast<unsigned char>(expression[i])) ||
-                  expression[i] == '_')) ++i;
-          string receiver = expression.substr(start, i - start);
-          size_t dot = i;
-          while (dot < expression.size() && moss::ascii_is_space(static_cast<unsigned char>(expression[dot]))) ++dot;
-          if (dot >= expression.size() || expression[dot] != '.') continue;
-          size_t member = dot + 1;
-          while (member < expression.size() && moss::ascii_is_space(static_cast<unsigned char>(expression[member]))) ++member;
-          if (member >= expression.size() ||
-              (!moss::ascii_is_alpha(static_cast<unsigned char>(expression[member])) &&
-               expression[member] != '_')) continue;
-          size_t end = member + 1;
-          while (end < expression.size() &&
-                 (moss::ascii_is_alnum(static_cast<unsigned char>(expression[end])) ||
-                  expression[end] == '_')) ++end;
-          size_t next = end;
-          while (next < expression.size() && moss::ascii_is_space(static_cast<unsigned char>(expression[next]))) ++next;
-          auto binding = env.find(receiver);
+        auto syntax = checker_est_view(expression);
+        if (!syntax) return;
+        for (const auto& access : moss::est::member_accesses(*syntax)) {
+          const auto binding = env.find(access.receiver);
           if (binding != env.end() && open_generic(binding->second) &&
-              (next >= expression.size() || expression[next] != '('))
-            err(line, "field access '" + receiver + "." +
-                expression.substr(member, end - member) +
+              !access.invoked)
+            err(line, "field access '" + access.receiver + "." + access.member +
                 "' requires a concrete receiver type; annotate the parameter or "
                 "expose the behavior through a method/trait", "UNTYPED_FIELD_ACCESS");
         }

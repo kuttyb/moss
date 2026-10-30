@@ -92,6 +92,12 @@ struct MessageCall {
   std::string target, handler;
   std::vector<std::string> arguments;
 };
+struct MemberAccess {
+  std::string receiver;
+  std::string member;
+  bool invoked = false;
+  std::uint32_t source_begin = 0;
+};
 struct NamedArgument { std::string name; ExprId value; char separator = '='; };
 struct Placeholder {};
 struct Collection { char delimiter; std::vector<ExprId> elements; };
@@ -228,6 +234,7 @@ std::optional<std::vector<std::string>> project_delimited_children(
     const ExpressionView& view, char delimiter);
 std::optional<std::vector<std::string>> project_tuple_elements(
     const ExpressionView& view);
+std::vector<MemberAccess> member_accesses(const ExpressionView& view);
 std::optional<std::vector<std::string>> parse_delimited_children(
     std::string_view source, char delimiter);
 void assert_delimited_parity(const ExpressionView& view, char delimiter,

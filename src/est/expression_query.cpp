@@ -1140,6 +1140,64 @@ std::optional<std::vector<std::string>> project_tuple_elements(
   return tuple ? child_texts(e, tuple->elements) : std::nullopt;
 }
 
+std::vector<MemberAccess> member_accesses(const ExpressionView& e) {
+  std::vector<MemberAccess> result;
+  if (!e.arena || e.root >= e.arena->size()) return result;
+  std::function<void(ExprId, bool)> visit = [&](ExprId id, bool invoked) {
+    if (id >= e.arena->size()) return;
+    const auto& node = e.arena->at(id);
+    std::visit([&](const auto& value) {
+      using T = std::decay_t<decltype(value)>;
+      auto visit_one = [&](ExprId child, bool child_invoked = false) {
+        visit(child, child_invoked);
+      };
+      auto visit_all = [&](const std::vector<ExprId>& children) {
+        for (const auto child : children) visit_one(child);
+      };
+      if constexpr (std::is_same_v<T, Member>) {
+        std::string receiver;
+        if (const auto* identifier = std::get_if<Identifier>(
+                &e.arena->at(value.base)))
+          receiver = identifier->name;
+        else if (const auto* member = std::get_if<Member>(
+                     &e.arena->at(value.base)))
+          receiver = member->name;
+        if (!receiver.empty())
+          result.push_back({std::move(receiver), value.name, invoked,
+                            e.arena->span(id).source_begin});
+        visit_one(value.base);
+      } else if constexpr (std::is_same_v<T, Call>) {
+        visit_one(value.callee, true);
+        visit_all(value.arguments);
+      } else if constexpr (std::is_same_v<T, Unary>) visit_one(value.operand);
+      else if constexpr (std::is_same_v<T, Binary>) {
+        visit_one(value.left); visit_one(value.right);
+      } else if constexpr (std::is_same_v<T, Index>) {
+        visit_one(value.base); visit_one(value.index);
+      } else if constexpr (std::is_same_v<T, Parenthesized>)
+        visit_one(value.inner);
+      else if constexpr (std::is_same_v<T, Message>) {
+        visit_one(value.target); visit_all(value.arguments);
+      } else if constexpr (std::is_same_v<T, NamedArgument>)
+        visit_one(value.value);
+      else if constexpr (std::is_same_v<T, Collection> ||
+                         std::is_same_v<T, Tuple>) visit_all(value.elements);
+      else if constexpr (std::is_same_v<T, Constructor>) {
+        visit_one(value.type); visit_all(value.type_arguments);
+        visit_all(value.arguments);
+      } else if constexpr (std::is_same_v<T, Pipeline>) {
+        visit_one(value.input); visit_all(value.stages);
+      }
+    }, node);
+  };
+  visit(e.root, false);
+  std::stable_sort(result.begin(), result.end(), [](const auto& left,
+                                                     const auto& right) {
+    return left.source_begin < right.source_begin;
+  });
+  return result;
+}
+
 std::optional<std::vector<std::string>> parse_delimited_children(
     std::string_view source, char delimiter) {
   if (delimiter != ',') return std::nullopt;
