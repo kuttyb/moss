@@ -26636,6 +26636,30 @@ class Checker {
                          "argument:" + std::to_string(index));
       return;
     }
+    if (auto syntax = checker_est_view(original); syntax &&
+        std::holds_alternative<moss::est::Collection>(
+            syntax->arena->at(syntax->root))) {
+      const auto& collection = std::get<moss::est::Collection>(
+          syntax->arena->at(syntax->root));
+      if (collection.delimiter == '{') {
+        for (const auto entry_id : collection.elements) {
+          const auto* entry = std::get_if<moss::est::Tuple>(
+              &syntax->arena->at(entry_id));
+          if (!entry || entry->elements.size() != 2) continue;
+          const auto value_text = syntax->source_text(entry->elements[1]);
+          if (!value_text) continue;
+          auto value_type = inferred_expr_type(*value_text, env);
+          if (value_type && contains_domain_handle(*value_type)) {
+            const string binding = checker_identifier_name(*value_text)
+                .value_or(*value_text);
+            err(line, "domain handle '" + binding +
+                "' is not an ordinary value; use domainroutes and message targets only",
+                "MOSS_COMPILE_ERROR");
+            return;
+          }
+        }
+      }
+    }
     if (auto type = inferred_expr_type(original, env))
       if (contains_domain_handle(*type))
         err(line, "domain handles cannot be used as ordinary values or payloads; "

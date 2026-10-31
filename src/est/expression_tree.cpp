@@ -518,6 +518,29 @@ class Reader {
     }
     return items;
   }
+  std::vector<ExprId> brace_items() {
+    std::vector<ExprId> items;
+    if (take("}")) return items;
+
+    // Brace literals are maps. Keep every key and value as a child in an
+    // ordered two-element Tuple so visitors see names in either position.
+    for (;;) {
+      const auto entry_begin = tokens_.at(position_).source_begin;
+      const auto key = expression(0);
+      expect(":");
+      const auto value = position_ < tokens_.size() &&
+          (tokens_[position_].text == "," || tokens_[position_].text == "}")
+          ? missing_expression() : expression(0);
+      items.push_back(append(Tuple{{key, value}}, entry_begin));
+      if (take(",")) {
+        if (take("}")) break;
+        continue;
+      }
+      expect("}");
+      break;
+    }
+    return items;
+  }
   ExprId message_primary(std::uint32_t message_begin) {
     if (position_ == tokens_.size() || !tokens_[position_].word)
       throw std::invalid_argument("EST message requires a target");
@@ -559,7 +582,7 @@ class Reader {
     } else if (position_ < tokens_.size() && tokens_[position_].text == "{") {
       const auto collection_begin = tokens_[position_].source_begin;
       ++position_;
-      id = append(Collection{'{', collection_items('}')},
+      id = append(Collection{'{', brace_items()},
                    collection_begin);
     } else if (take("(")) {
       const auto group_begin = tokens_[position_ - 1].source_begin;
@@ -873,6 +896,22 @@ std::optional<Shape> string_shape(std::string source) {
       }
       return result;
     }
+  }
+  if (source.front() == '{' && source.back() == '}' &&
+      matching_paren(source, 0) == source.size() - 1) {
+    const auto inside = trim(source.substr(1, source.size() - 2));
+    Shape result{"collection", "{", {}};
+    if (inside.empty()) return result;
+    for (const auto& entry : split_top_level(inside, ',')) {
+      const auto pair = split_top_level(entry, ':');
+      if (pair.size() != 2) return std::nullopt;
+      auto key = string_shape(pair.front());
+      auto value = string_shape(pair.back());
+      if (!key || !value) return std::nullopt;
+      result.children.push_back(
+          Shape{"tuple", {}, {std::move(*key), std::move(*value)}});
+    }
+    return result;
   }
   if (auto pipeline = legacy_operator(source, {"|>"})) {
     auto input = string_shape(pipeline->first), stage = string_shape(pipeline->second);
