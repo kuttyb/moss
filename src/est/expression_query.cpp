@@ -1009,12 +1009,14 @@ bool project_enum_case(const ExpressionView& e, std::string& enum_name,
             (std::get_if<Literal>(&base_node) &&
              (std::get<Literal>(base_node).spelling == "true" ||
               std::get<Literal>(base_node).spelling == "false"));
+        const bool valid_case_name = moss::plain_identifier(member->name);
         if (call_arguments) {
           if (auto args = child_texts(e, *call_arguments)) {
-            fields = std::move(*args); is_called = true; result = simple_enum;
+            fields = std::move(*args); is_called = true;
+            result = simple_enum && valid_case_name;
           }
         } else {
-          fields.clear(); result = simple_enum;
+          fields.clear(); result = simple_enum && valid_case_name;
         }
       }
   }

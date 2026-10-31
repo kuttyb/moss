@@ -302,8 +302,13 @@ std::vector<Token> lex(std::string_view source) {
                         start_line, start_column,
                         static_cast<std::uint32_t>(start),
                         static_cast<std::uint32_t>(i)});
-    } else if (std::isdigit(c) || (c == '.' && i + 1 < source.size() &&
-                                    std::isdigit(static_cast<unsigned char>(source[i + 1])))) {
+    } else if (std::isdigit(c) ||
+               (c == '.' && i + 1 < source.size() &&
+                std::isdigit(static_cast<unsigned char>(source[i + 1])) &&
+                (result.empty() ||
+                 !(result.back().word || result.back().literal ||
+                   result.back().text == ")" || result.back().text == "]" ||
+                   result.back().text == "}")))) {
       const auto literal = scan_numeric_literal(source, i);
       if (!literal.ok || literal.end <= i)
         throw std::invalid_argument("EST invalid numeric literal");
@@ -567,8 +572,15 @@ class Reader {
     }
     while (position_ < tokens_.size()) {
       if (take(".")) {
-        if (position_ == tokens_.size() || !tokens_[position_].word)
+        if (position_ == tokens_.size() ||
+            (!tokens_[position_].word &&
+             !(tokens_[position_].literal_class == LiteralClass::Integer &&
+               tokens_[position_].decimal_integer_digits)))
           throw std::invalid_argument("EST expected member name");
+        // Preserve the legacy checker diagnostic for malformed numeric field
+        // spellings such as `record.0`: model the suffix as a member name so
+        // the normal field lookup reports UNKNOWN_FIELD instead of silently
+        // dropping the field projection when the EST parser rejects it.
         id = append(Member{id, tokens_[position_++].text}, source_begin(id));
       } else if (take("[")) {
         const auto* type_name = std::get_if<Identifier>(&arena_.at(id));

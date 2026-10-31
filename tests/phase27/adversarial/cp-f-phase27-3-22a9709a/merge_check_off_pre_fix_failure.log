@@ -1,0 +1,511 @@
+clang++ --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13  -std=c++17 -Wall -Wextra -pedantic -O0  -include-pch build/compiler/obj/dev-3716945734/compiler_pch.pch -MMD -MP -MF build/compiler/obj/dev-3716945734/src/checked_body_ir.d -MT build/compiler/obj/dev-3716945734/src/checked_body_ir.o -c src/checked_body_ir.cpp -o build/compiler/obj/dev-3716945734/src/checked_body_ir.o
+clang++ --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13  -std=c++17 -Wall -Wextra -pedantic -O0  -include-pch build/compiler/obj/dev-3716945734/compiler_pch.pch -MMD -MP -MF build/compiler/obj/dev-3716945734/src/diagnostic_identity.d -MT build/compiler/obj/dev-3716945734/src/diagnostic_identity.o -c src/diagnostic_identity.cpp -o build/compiler/obj/dev-3716945734/src/diagnostic_identity.o
+clang++ --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13  -std=c++17 -Wall -Wextra -pedantic -O0  -include-pch build/compiler/obj/dev-3716945734/compiler_pch.pch -MMD -MP -MF build/compiler/obj/dev-3716945734/src/est/expression_tree.d -MT build/compiler/obj/dev-3716945734/src/est/expression_tree.o -c src/est/expression_tree.cpp -o build/compiler/obj/dev-3716945734/src/est/expression_tree.o
+clang++ --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13  -std=c++17 -Wall -Wextra -pedantic -O0  -include-pch build/compiler/obj/dev-3716945734/compiler_pch.pch -MMD -MP -MF build/compiler/obj/dev-3716945734/src/est/expression_query.d -MT build/compiler/obj/dev-3716945734/src/est/expression_query.o -c src/est/expression_query.cpp -o build/compiler/obj/dev-3716945734/src/est/expression_query.o
+clang++ --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13  -std=c++17 -Wall -Wextra -pedantic -O0  -include-pch build/compiler/obj/dev-3716945734/compiler_pch.pch -MMD -MP -MF build/compiler/obj/dev-3716945734/src/functional_optimizer.d -MT build/compiler/obj/dev-3716945734/src/functional_optimizer.o -c src/functional_optimizer.cpp -o build/compiler/obj/dev-3716945734/src/functional_optimizer.o
+clang++ --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13  -std=c++17 -Wall -Wextra -pedantic -O0  -include-pch build/compiler/obj/dev-3716945734/compiler_pch.pch -MMD -MP -MF build/compiler/obj/dev-3716945734/src/native_generator.d -MT build/compiler/obj/dev-3716945734/src/native_generator.o -c src/native_generator.cpp -o build/compiler/obj/dev-3716945734/src/native_generator.o
+clang++ --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13  -std=c++17 -Wall -Wextra -pedantic -O0  -include-pch build/compiler/obj/dev-3716945734/compiler_pch.pch -MMD -MP -MF build/compiler/obj/dev-3716945734/src/parser.d -MT build/compiler/obj/dev-3716945734/src/parser.o -c src/parser.cpp -o build/compiler/obj/dev-3716945734/src/parser.o
+clang++ --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13  -std=c++17 -Wall -Wextra -pedantic -O0  -include-pch build/compiler/obj/dev-3716945734/compiler_pch.pch -MMD -MP -MF build/compiler/obj/dev-3716945734/src/program_identity.d -MT build/compiler/obj/dev-3716945734/src/program_identity.o -c src/program_identity.cpp -o build/compiler/obj/dev-3716945734/src/program_identity.o
+clang++ --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13  -std=c++17 -Wall -Wextra -pedantic -O0  -include-pch build/compiler/obj/dev-3716945734/compiler_pch.pch -MMD -MP -MF build/compiler/obj/dev-3716945734/src/semantic_checker.d -MT build/compiler/obj/dev-3716945734/src/semantic_checker.o -c src/semantic_checker.cpp -o build/compiler/obj/dev-3716945734/src/semantic_checker.o
+clang++ --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13  -std=c++17 -Wall -Wextra -pedantic -O0  -include-pch build/compiler/obj/dev-3716945734/compiler_pch.pch -MMD -MP -MF build/compiler/obj/dev-3716945734/src/typed_semantic_api.d -MT build/compiler/obj/dev-3716945734/src/typed_semantic_api.o -c src/typed_semantic_api.cpp -o build/compiler/obj/dev-3716945734/src/typed_semantic_api.o
+clang++ --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13  -std=c++17 -Wall -Wextra -pedantic -O0  -include-pch build/compiler/obj/dev-3716945734/compiler_pch.pch -MMD -MP -MF build/compiler/obj/dev-3716945734/src/moss.d -MT build/compiler/obj/dev-3716945734/src/moss.o -c src/moss.cpp -o build/compiler/obj/dev-3716945734/src/moss.o
+clang++ --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13  -std=c++17 -Wall -Wextra -pedantic -O2  -include-pch build/compiler/obj/opt-3851646706/compiler_pch.pch -MMD -MP -MF build/compiler/obj/opt-3851646706/src/checked_body_ir.d -MT build/compiler/obj/opt-3851646706/src/checked_body_ir.o -c src/checked_body_ir.cpp -o build/compiler/obj/opt-3851646706/src/checked_body_ir.o
+In file included from src/checked_body_ir.cpp:1:
+In file included from src/checked_body_ir.hpp:19:
+In file included from src/ast.hpp:16:
+src/type_ir.hpp:911:71: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  911 |         trail->push_back({Undo::Kind::Parent, id, found->second.parent});
+      |                                                                       ^
+src/type_ir.hpp:957:67: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  957 |       trail.push_back({Undo::Kind::Parent, other, secondary.parent});
+      |                                                                   ^
+In file included from src/diagnostic_identity.cpp:3:
+In file included from src/ast.hpp:16:
+src/type_ir.hpp:911:71: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  911 |         trail->push_back({Undo::Kind::Parent, id, found->second.parent});
+      |                                                                       ^
+src/type_ir.hpp:957:67: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  957 |       trail.push_back({Undo::Kind::Parent, other, secondary.parent});
+      |                                                                   ^
+clang++ --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13  -std=c++17 -Wall -Wextra -pedantic -O2  -include-pch build/compiler/obj/opt-3851646706/compiler_pch.pch -MMD -MP -MF build/compiler/obj/opt-3851646706/src/diagnostic_identity.d -MT build/compiler/obj/opt-3851646706/src/diagnostic_identity.o -c src/diagnostic_identity.cpp -o build/compiler/obj/opt-3851646706/src/diagnostic_identity.o
+In file included from src/est/expression_tree.cpp:1:
+In file included from src/est/expression_tree.hpp:20:
+src/est/../type_ir.hpp:911:71: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  911 |         trail->push_back({Undo::Kind::Parent, id, found->second.parent});
+      |                                                                       ^
+src/est/../type_ir.hpp:957:67: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  957 |       trail.push_back({Undo::Kind::Parent, other, secondary.parent});
+      |                                                                   ^
+In file included from src/est/expression_query.cpp:1:
+In file included from src/est/expression_tree.hpp:20:
+src/est/../type_ir.hpp:911:71: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  911 |         trail->push_back({Undo::Kind::Parent, id, found->second.parent});
+      |                                                                       ^
+src/est/../type_ir.hpp:957:67: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  957 |       trail.push_back({Undo::Kind::Parent, other, secondary.parent});
+      |                                                                   ^
+clang++ --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13  -std=c++17 -Wall -Wextra -pedantic -O2  -include-pch build/compiler/obj/opt-3851646706/compiler_pch.pch -MMD -MP -MF build/compiler/obj/opt-3851646706/src/est/expression_tree.d -MT build/compiler/obj/opt-3851646706/src/est/expression_tree.o -c src/est/expression_tree.cpp -o build/compiler/obj/opt-3851646706/src/est/expression_tree.o
+clang++ --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13  -std=c++17 -Wall -Wextra -pedantic -O2  -include-pch build/compiler/obj/opt-3851646706/compiler_pch.pch -MMD -MP -MF build/compiler/obj/opt-3851646706/src/est/expression_query.d -MT build/compiler/obj/opt-3851646706/src/est/expression_query.o -c src/est/expression_query.cpp -o build/compiler/obj/opt-3851646706/src/est/expression_query.o
+In file included from src/functional_optimizer.cpp:11:
+In file included from src/ast.hpp:16:
+src/type_ir.hpp:911:71: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  911 |         trail->push_back({Undo::Kind::Parent, id, found->second.parent});
+      |                                                                       ^
+src/type_ir.hpp:957:67: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  957 |       trail.push_back({Undo::Kind::Parent, other, secondary.parent});
+      |                                                                   ^
+clang++ --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13  -std=c++17 -Wall -Wextra -pedantic -O2  -include-pch build/compiler/obj/opt-3851646706/compiler_pch.pch -MMD -MP -MF build/compiler/obj/opt-3851646706/src/functional_optimizer.d -MT build/compiler/obj/opt-3851646706/src/functional_optimizer.o -c src/functional_optimizer.cpp -o build/compiler/obj/opt-3851646706/src/functional_optimizer.o
+In file included from src/native_generator.cpp:23:
+In file included from src/ast.hpp:16:
+src/type_ir.hpp:911:71: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  911 |         trail->push_back({Undo::Kind::Parent, id, found->second.parent});
+      |                                                                       ^
+src/type_ir.hpp:957:67: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  957 |       trail.push_back({Undo::Kind::Parent, other, secondary.parent});
+      |                                                                   ^
+In file included from src/parser.cpp:10:
+In file included from src/ast.hpp:16:
+src/type_ir.hpp:911:71: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  911 |         trail->push_back({Undo::Kind::Parent, id, found->second.parent});
+      |                                                                       ^
+src/type_ir.hpp:957:67: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  957 |       trail.push_back({Undo::Kind::Parent, other, secondary.parent});
+      |                                                                   ^
+In file included from src/program_identity.cpp:3:
+In file included from src/ast.hpp:16:
+src/type_ir.hpp:911:71: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  911 |         trail->push_back({Undo::Kind::Parent, id, found->second.parent});
+      |                                                                       ^
+src/type_ir.hpp:957:67: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  957 |       trail.push_back({Undo::Kind::Parent, other, secondary.parent});
+      |                                                                   ^
+In file included from src/semantic_checker.cpp:35:
+In file included from src/ast.hpp:16:
+src/type_ir.hpp:911:71: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  911 |         trail->push_back({Undo::Kind::Parent, id, found->second.parent});
+      |                                                                       ^
+src/type_ir.hpp:957:67: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  957 |       trail.push_back({Undo::Kind::Parent, other, secondary.parent});
+      |                                                                   ^
+In file included from src/typed_semantic_api.cpp:1:
+In file included from src/typed_semantic_api.hpp:9:
+In file included from src/ast.hpp:16:
+src/type_ir.hpp:911:71: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  911 |         trail->push_back({Undo::Kind::Parent, id, found->second.parent});
+      |                                                                       ^
+src/type_ir.hpp:957:67: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  957 |       trail.push_back({Undo::Kind::Parent, other, secondary.parent});
+      |                                                                   ^
+In file included from src/moss.cpp:33:
+In file included from src/ast.hpp:16:
+src/type_ir.hpp:911:71: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  911 |         trail->push_back({Undo::Kind::Parent, id, found->second.parent});
+      |                                                                       ^
+src/type_ir.hpp:957:67: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  957 |       trail.push_back({Undo::Kind::Parent, other, secondary.parent});
+      |                                                                   ^
+In file included from src/checked_body_ir.cpp:1:
+In file included from src/checked_body_ir.hpp:19:
+In file included from src/ast.hpp:16:
+src/type_ir.hpp:911:71: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  911 |         trail->push_back({Undo::Kind::Parent, id, found->second.parent});
+      |                                                                       ^
+src/type_ir.hpp:957:67: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  957 |       trail.push_back({Undo::Kind::Parent, other, secondary.parent});
+      |                                                                   ^
+In file included from src/diagnostic_identity.cpp:3:
+In file included from src/ast.hpp:16:
+src/type_ir.hpp:911:71: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  911 |         trail->push_back({Undo::Kind::Parent, id, found->second.parent});
+      |                                                                       ^
+In file included from src/est/expression_tree.cpp:1:
+In file included from src/est/expression_tree.hpp:20:
+src/est/../type_ir.hpp:911:71: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  src/type_ir.hpp:957:67: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+911 |   957 |       trail.push_back({Undo::Kind::Parent, other, secondary.parent});
+      |                                                                   ^
+        trail->push_back({Undo::Kind::Parent, id, found->second.parent});
+      |                                                                       ^
+src/est/../type_ir.hpp:957:67: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  957 |       trail.push_back({Undo::Kind::Parent, other, secondary.parent});
+      |                                                                   ^
+In file included from src/est/expression_query.cpp:1:
+In file included from src/est/expression_tree.hpp:20:
+src/est/../type_ir.hpp:911:71: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  911 |         trail->push_back({Undo::Kind::Parent, id, found->second.parent});
+      |                                                                       ^
+src/est/../type_ir.hpp:957:67: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  957 |       trail.push_back({Undo::Kind::Parent, other, secondary.parent});
+      |                                                                   ^
+src/est/expression_tree.cpp:304:54: warning: missing field 'numeric' initializer [-Wmissing-field-initializers]
+  304 |                         static_cast<std::uint32_t>(i)});
+      |                                                      ^
+src/est/expression_tree.cpp:341:64: warning: missing field 'numeric' initializer [-Wmissing-field-initializers]
+  341 |                                       : LiteralClass::Character});
+      |                                                                ^
+src/est/expression_tree.cpp:353:54: warning: missing field 'numeric' initializer [-Wmissing-field-initializers]
+  353 |                         static_cast<std::uint32_t>(i)});
+      |                                                      ^
+In file included from src/functional_optimizer.cpp:11:
+In file included from src/ast.hpp:16:
+src/type_ir.hpp:911:71: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  911 |         trail->push_back({Undo::Kind::Parent, id, found->second.parent});
+      |                                                                       ^
+src/type_ir.hpp:957:67: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  957 |       trail.push_back({Undo::Kind::Parent, other, secondary.parent});
+      |                                                                   ^
+src/est/expression_tree.cpp:1921:82: warning: missing field 'numeric' initializer [-Wmissing-field-initializers]
+ 1921 |     const auto imported_id = arena_source.expression_arena->append(Literal{"kept"});
+      |                                                                                  ^
+src/est/expression_tree.cpp:304:54: warning: missing field 'numeric' initializer [-Wmissing-field-initializers]
+  304 |                         static_cast<std::uint32_t>(i)});
+      |                                                      ^
+src/est/expression_tree.cpp:341:64: warning: missing field 'numeric' initializer [-Wmissing-field-initializers]
+  341 |                                       : LiteralClass::Character});
+      |                                                                ^
+src/est/expression_tree.cpp:353:54: warning: missing field 'numeric' initializer [-Wmissing-field-initializers]
+  353 |                         static_cast<std::uint32_t>(i)});
+      |                                                      ^
+2 warnings generated.
+clang++ --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13  -std=c++17 -Wall -Wextra -pedantic -O2  -include-pch build/compiler/obj/opt-3851646706/compiler_pch.pch -MMD -MP -MF build/compiler/obj/opt-3851646706/src/native_generator.d -MT build/compiler/obj/opt-3851646706/src/native_generator.o -c src/native_generator.cpp -o build/compiler/obj/opt-3851646706/src/native_generator.o
+2 warnings generated.
+clang++ --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13  -std=c++17 -Wall -Wextra -pedantic -O2  -include-pch build/compiler/obj/opt-3851646706/compiler_pch.pch -MMD -MP -MF build/compiler/obj/opt-3851646706/src/parser.d -MT build/compiler/obj/opt-3851646706/src/parser.o -c src/parser.cpp -o build/compiler/obj/opt-3851646706/src/parser.o
+2 warnings generated.
+clang++ --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13  -std=c++17 -Wall -Wextra -pedantic -O2  -include-pch build/compiler/obj/opt-3851646706/compiler_pch.pch -MMD -MP -MF build/compiler/obj/opt-3851646706/src/program_identity.d -MT build/compiler/obj/opt-3851646706/src/program_identity.o -c src/program_identity.cpp -o build/compiler/obj/opt-3851646706/src/program_identity.o
+src/est/expression_tree.cpp:1921:82: warning: missing field 'numeric' initializer [-Wmissing-field-initializers]
+ 1921 |     const auto imported_id = arena_source.expression_arena->append(Literal{"kept"});
+      |                                                                                  ^
+In file included from src/native_generator.cpp:23:
+In file included from src/ast.hpp:16:
+src/type_ir.hpp:911:71: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  911 |         trail->push_back({Undo::Kind::Parent, id, found->second.parent});
+      |                                                                       ^
+src/type_ir.hpp:957:67: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  957 |       trail.push_back({Undo::Kind::Parent, other, secondary.parent});
+      |                                                                   ^
+2 warnings generated.
+clang++ --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13  -std=c++17 -Wall -Wextra -pedantic -O2  -include-pch build/compiler/obj/opt-3851646706/compiler_pch.pch -MMD -MP -MF build/compiler/obj/opt-3851646706/src/semantic_checker.d -MT build/compiler/obj/opt-3851646706/src/semantic_checker.o -c src/semantic_checker.cpp -o build/compiler/obj/opt-3851646706/src/semantic_checker.o
+In file included from src/parser.cpp:10:
+In file included from src/ast.hpp:16:
+src/type_ir.hpp:911:71: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  911 |         trail->push_back({Undo::Kind::Parent, id, found->second.parent});
+      |                                                                       ^
+src/type_ir.hpp:957:67: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  957 |       trail.push_back({Undo::Kind::Parent, other, secondary.parent});
+      |                                                                   ^
+2 warnings generated.
+In file included from src/program_identity.cpp:3:
+In file included from src/ast.hpp:16:
+src/type_ir.hpp:911:71: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  911 |         trail->push_back({Undo:clang++ --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13  -std=c++17 -Wall -Wextra -pedantic -O2  -include-pch build/compiler/obj/opt-3851646706/compiler_pch.pch -MMD -MP -MF build/compiler/obj/opt-3851646706/src/typed_semantic_api.d -MT build/compiler/obj/opt-3851646706/src/typed_semantic_api.o -c src/typed_semantic_api.cpp -o build/compiler/obj/opt-3851646706/src/typed_semantic_api.o
+:Kind::Parent, id, found->second.parent});
+      |                                                                       ^
+src/type_ir.hpp:957:67: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  957 |       trail.push_back({Undo::Kind::Parent, other, secondary.parent});
+      |                                                                   ^
+src/semantic_checker.cpp:3964:32: warning: captured structured bindings are a C++20 extension [-Wc++20-extensions]
+ 3964 |         return candidate.id == root_id && candidate.statement_id == slot.first;
+      |                                ^
+src/semantic_checker.cpp:3959:29: note: 'root_id' declared here
+ 3959 |     for (const auto& [slot, root_id] : state.expression_root_slots) {
+      |                             ^
+src/semantic_checker.cpp:3964:69: warning: captured structured bindings are a C++20 extension [-Wc++20-extensions]
+ 3964 |         return candidate.id == root_id && candidate.statement_id == slot.first;
+      |                                                                     ^
+src/semantic_checker.cpp:3959:23: note: 'slot' declared here
+ 3959 |     for (const auto& [slot, root_id] : state.expression_root_slots) {
+      |                       ^
+2 warnings generated.
+clang++ --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13  -std=c++17 -Wall -Wextra -pedantic -O2  -include-pch build/compiler/obj/opt-3851646706/compiler_pch.pch -MMD -MP -MF build/compiler/obj/opt-3851646706/src/moss.d -MT build/compiler/obj/opt-3851646706/src/moss.o -c src/moss.cpp -o build/compiler/obj/opt-3851646706/src/moss.o
+In file included from src/semantic_checker.cpp:35:
+In file included from src/ast.hpp:16:
+src/type_ir.hpp:911:71: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  911 |         trail->push_back({Undo::Kind::Parent, id, found->second.parent});
+      |                                                                       ^
+2 warnings generated.
+src/type_ir.hpp:957:67: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  957 |       trail.push_back({Undo::Kind::Parent, other, secondary.parent});
+      |                                                                   ^
+2 warnings generated.
+In file included from src/typed_semantic_api.cpp:1:
+In file included from src/typed_semantic_api.hpp:9:
+In file included from src/ast.hpp:16:
+src/type_ir.hpp:911:71: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  911 |         trail->push_back({Undo::Kind::Parent, id, found->second.parent});
+      |                                                                       ^
+src/type_ir.hpp:957:67: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  957 |       trail.push_back({Undo::Kind::Parent, other, secondary.parent});
+      |                                                                   ^
+In file included from src/moss.cpp:33:
+In file included from src/ast.hpp:16:
+src/type_ir.hpp:911:71: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  911 |         trail->push_back({Undo::Kind::Parent, id, found->second.parent});
+      |                                                                       ^
+src/type_ir.hpp:957:67: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  957 |       trail.push_back({Undo::Kind::Parent, other, secondary.parent});
+      |                                                                   ^
+2 warnings generated.
+2 warnings generated.
+src/semantic_checker.cpp:13023:36: warning: captured structured bindings are a C++20 extension [-Wc++20-extensions]
+ 13023 |                     candidate.a != name ||
+       |                                    ^
+src/semantic_checker.cpp:13015:29: note: 'name' declared here
+ 13015 |           for (const auto& [name, joined_type] : env) {
+       |                             ^
+src/semantic_checker.cpp:3964:32: warning: captured structured bindings are a C++20 extension [-Wc++20-extensions]
+ 3964 |         return candidate.id == root_id && candidate.statement_id == slot.first;
+      |                                ^
+src/semantic_checker.cpp:3959:29: note: 'root_id' declared here
+ 3959 |     for (const auto& [slot, root_id] : state.expression_root_slots) {
+      |                             ^
+src/semantic_checker.cpp:3964:69: warning: captured structured bindings are a C++20 extension [-Wc++20-extensions]
+ 3964 |         return candidate.id == root_id && candidate.statement_id == slot.first;
+      |                                                                     ^
+src/semantic_checker.cpp:3959:23: note: 'slot' declared here
+ 3959 |     for (const auto& [slot, root_id] : state.expression_root_slots) {
+      |                       ^
+6 warnings generated.
+2 warnings generated.
+2 warnings generated.
+src/semantic_checker.cpp:13023:36: warning: captured structured bindings are a C++20 extension [-Wc++20-extensions]
+ 13023 |                     candidate.a != name ||
+       |                                    ^
+src/semantic_checker.cpp:13015:29: note: 'name' declared here
+ 13015 |           for (const auto& [name, joined_type] : env) {
+       |                             ^
+2 warnings generated.
+2 warnings generated.
+2 warnings generated.
+6 warnings generated.
+2 warnings generated.
+5 warnings generated.
+clang++ --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13 -std=c++17 -Wall -Wextra -pedantic -O0  -fuse-ld=mold build/compiler/obj/dev-3716945734/src/char_string_ordering_runtime.o build/compiler/obj/dev-3716945734/src/checked_body_ir.o build/compiler/obj/dev-3716945734/src/diagnostic_identity.o build/compiler/obj/dev-3716945734/src/display_runtime.o build/compiler/obj/dev-3716945734/src/est/expression_tree.o build/compiler/obj/dev-3716945734/src/est/expression_query.o build/compiler/obj/dev-3716945734/src/executor_runtime.o build/compiler/obj/dev-3716945734/src/fileio_runtime.o build/compiler/obj/dev-3716945734/src/float_format_runtime.o build/compiler/obj/dev-3716945734/src/functional_optimizer.o build/compiler/obj/dev-3716945734/src/handler_runtime.o build/compiler/obj/dev-3716945734/src/native_generator.o build/compiler/obj/dev-3716945734/src/numeric_literal.o build/compiler/obj/dev-3716945734/src/numeric_runtime.o build/compiler/obj/dev-3716945734/src/parser.o build/compiler/obj/dev-3716945734/src/program_identity.o build/compiler/obj/dev-3716945734/src/semantic_checker.o build/compiler/obj/dev-3716945734/src/typed_semantic_api.o build/compiler/obj/dev-3716945734/src/type_ir.o build/compiler/obj/dev-3716945734/src/moss.o  -o build/compiler/moss-dev.tmp
+2 warnings generated.
+5 warnings generated.
+2 warnings generated.
+clang++ --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13 -std=c++17 -Wall -Wextra -pedantic -O2  -fuse-ld=mold build/compiler/obj/opt-3851646706/src/char_string_ordering_runtime.o build/compiler/obj/opt-3851646706/src/checked_body_ir.o build/compiler/obj/opt-3851646706/src/diagnostic_identity.o build/compiler/obj/opt-3851646706/src/display_runtime.o build/compiler/obj/opt-3851646706/src/est/expression_tree.o build/compiler/obj/opt-3851646706/src/est/expression_query.o build/compiler/obj/opt-3851646706/src/executor_runtime.o build/compiler/obj/opt-3851646706/src/fileio_runtime.o build/compiler/obj/opt-3851646706/src/float_format_runtime.o build/compiler/obj/opt-3851646706/src/functional_optimizer.o build/compiler/obj/opt-3851646706/src/handler_runtime.o build/compiler/obj/opt-3851646706/src/native_generator.o build/compiler/obj/opt-3851646706/src/numeric_literal.o build/compiler/obj/opt-3851646706/src/numeric_runtime.o build/compiler/obj/opt-3851646706/src/parser.o build/compiler/obj/opt-3851646706/src/program_identity.o build/compiler/obj/opt-3851646706/src/semantic_checker.o build/compiler/obj/opt-3851646706/src/typed_semantic_api.o build/compiler/obj/opt-3851646706/src/type_ir.o build/compiler/obj/opt-3851646706/src/moss.o  -o build/compiler/moss-opt.tmp
+python3 tests/tooling/check_phase27_string_debt.py
+audited raw Stmt NAME comparisons: 40
+audited raw Stmt binding comparisons: 9
+python3 tests/tooling/check_phase27_est.py build/compiler/moss-dev
+phase27 EST focused checks passed (4 syntax dumps; raw places; copy/rebuild; off builds expression arena; stale guard)
+python3 tests/run_parallel.py --jobs 16 --compiler-dev build/compiler/moss-dev --compiler-opt build/compiler/moss-opt
+========================================================================
+MOSS PARALLEL REGRESSION SUITE
+  Concurrency:   16 worker threads
+  Selected jobs: 159 of 159
+  Dev compiler:  build/compiler/moss-dev
+  Opt compiler:  build/compiler/moss-opt
+  Output base:   build/tests/parallel
+========================================================================
+  [PASS] check_run_parallel_timeout                     (  0.55s)
+  [PASS] check_agent_skills                             (  0.47s)
+  [PASS] check_agent_feedback                           (  0.06s)
+  [PASS] check_retired_syntax                           (  0.22s)
+  [PASS] check_phase21_abi_v9_migration                 (  1.34s)
+  [PASS] check_phase21_source_free_cache_binding        (  1.46s)
+  [PASS] check_phase21_shared_abi                       (  3.07s)
+  [PASS] check_phase21_source_free_abi                  (  7.77s)
+  [PASS] check_phase21_standard_write_order             (  3.59s)
+  [PASS] check_phase21_source_free_standard_write_recovery (  2.82s)
+  [PASS] check_phase21_sourcefree_noop_warning          (  1.34s)
+  [PASS] check_phase21_source_free_proof_edges          (  1.09s)
+  [PASS] check_phase21_addendum_a_c                     (  4.35s)
+  [PASS] check_phase21_original_af                      (  3.94s)
+  [PASS] check_phase21_imported_effects                 (  3.60s)
+  [PASS] repro_phase21_mossi_pattern_forgery            (  0.97s)
+  [PASS] check_phase21_peer_recovery                    (  2.77s)
+  [PASS] check_make_incremental_dependencies            ( 19.17s)
+  [PASS] check_phase21_abi_v9_external_cache            (  4.85s)
+  [PASS] check_phase21_unary_not_effects                (  0.28s)
+  [PASS] check_phase21_peer_warnings                    (  1.34s)
+  [PASS] check_phase20_cross_crate_range_abi            (  4.71s)
+  [PASS] check_phase21_on_fail_capture                  (  3.88s)
+  [PASS] check_phase21_recovery_semantics               (  2.95s)
+  [PASS] check_phase21_field_projection_effects         (  0.24s)
+  [PASS] check_phase21_early_condition_raise            (  0.63s)
+  [PASS] check_phase21_recover_reinit                   (  0.60s)
+  [PASS] check_phase21_raising_iterators                (  0.09s)
+  [PASS] check_phase21_expression_ownership_edges       (  1.76s)
+  [PASS] check_phase21_early_placement_proof            (  0.46s)
+  [PASS] check_phase21_method_noop_warning              (  0.49s)
+  [PASS] check_phase21_recovery_native                  (  0.41s)
+  [PASS] check_phase21_root_totality                    (  1.89s)
+  [PASS] check_phase21_root_expression_ingress          (  1.61s)
+  [PASS] check_phase21_handler_failure_native           (  1.01s)
+  [PASS] check_phase21_fileio_errors                    (  0.32s)
+  [PASS] check_phase21_absolute_root_boundary           (  2.40s)
+  [PASS] check_phase21_fileio_close_full                (  0.34s)
+  [PASS] check_phase21_fileio_root_cleanup              (  0.27s)
+  [PASS] check_phase21_lock_fileio_adversarial          (  2.13s)
+  [PASS] check_phase21_numeric_parse                    (  1.61s)
+  [PASS] check_phase21_float_ieee                       (  3.35s)
+  [PASS] check_phase21_builtin_error_contract           (  2.17s)
+  [PASS] check_phase21_borrowed_view_write              (  1.20s)
+  [PASS] check_phase21_standard_error_namespace         (  2.86s)
+  [PASS] check_phase24_same_module_type_resolution      (  0.63s)
+  [PASS] check_phase24_imported_generic_expressions     (  2.12s)
+  [PASS] check_phase25_recursive_layout                 (  0.04s)
+  [PASS] check_phase26_w1_parse_cache                   (  0.03s)
+  [PASS] check_phase24_bitwise_operations               (  2.22s)
+  [PASS] check_phase26_w2_inference_worklist            (  1.97s)
+  [PASS] check_phase26_1_1_x1_v9                        (  1.22s)
+  [PASS] check_phase27_est_mossi                        (  0.18s)
+  [PASS] check_phase26_3_test_scopes                    (  5.73s)
+  [PASS] check_phase26_1_f1_interface_rules             (  3.66s)
+  [PASS] check_phase27_untyped_pipeline_return          (  0.06s)
+  [PASS] check_generic_specialization                   ( 14.71s)
+  [PASS] check_phase27_est_functional_tree              (  2.17s)
+  [PASS] check_phase27_three_engine                     (  0.62s)
+  [PASS] check_phase26_1_1_x1_v10                       (  0.23s)
+  [PASS] check_phase26_1_1_x4                           (  0.20s)
+  [PASS] check_phase26_1_1_x2                           (  1.60s)
+  [PASS] check_phase26_1_g1_fingerprints                (  1.70s)
+  [PASS] check_phase26_1_c1_scope                       (  2.43s)
+  [PASS] check_phase26_1_t1_generic_imports             (  0.47s)
+  [PASS] check_phase26_1_c1_corpus_cases                (  3.52s)
+  [PASS] check_phase25_a3_specialization                (  0.04s)
+  [PASS] check_phase25_type_ir                          (  3.06s)
+  [PASS] check_phase26_3_native_packages                ( 22.47s)
+  [PASS] check_phase25_field_visibility                 (  1.46s)
+  [PASS] check_phase25_typed_semantic_api               (  2.59s)
+  [PASS] check_phase25_r2_wp4_oracle_inventory          (  0.04s)
+  [PASS] check_phase25_checked_body_ir                  (  5.97s)
+  [PASS] check_runtime                                  (  1.45s)
+  [PASS] check_phase25_conformance                      ( 13.54s)
+  [PASS] check_phase25_nominal_identity                 (  6.30s)
+  [PASS] sdk_adv_data_cbor                              (  0.10s)
+  [PASS] check_shared_string_linkage                    (  7.28s)
+  [PASS] sdk_text_encoding                              ( 14.07s)
+  [PASS] sdk_adv_data_oracle_fast_debug                 (  2.60s)
+  [PASS] check_phase25_r2_wp3_nominal                   ( 17.03s)
+  [PASS] sdk_adv_data_oracle_debug                      ( 11.74s)
+  [PASS] sdk_adv_data_margo_debug                       (  4.82s)
+  [PASS] sdk_adv_data_oracle_release                    ( 12.29s)
+  [PASS] check_phase25_r2_wp1_call_chain                ( 27.51s)
+  [PASS] sdk_adv_data_margo_run                         ( 16.12s)
+  [PASS] check_phase25_g4_unicode                       (  6.67s)
+  [PASS] sdk_adv_data_margo_release                     ( 16.43s)
+  [PASS] check_phase25_g3_ordering                      (  4.05s)
+  [PASS] check_phase25_indexed_string                   (  9.74s)
+  [PASS] check_phase25_r2_wp2_member                    ( 29.51s)
+  [PASS] sdk_foundations                                ( 33.68s)
+  [FAIL] check_phase25_s2_char_string                   (exit 1,   8.47s)
+  [PASS] check_phase24_adversarial_architect            ( 23.81s)
+  [PASS] check_phase25_sa_numeric_literals              (  4.35s)
+  [PASS] check_phase25_s4_fast_debug_adversarial        ( 10.10s)
+  [PASS] check_phase25_s1_checker_authority             (  8.66s)
+  [PASS] sdk_adv_data_source_free                       ( 24.81s)
+  [PASS] check_swarm_feedback                           (  0.08s)
+  [PASS] check_phase25_team_a_semantics                 ( 52.85s)
+  [PASS] check_swarm_issues                             (  0.04s)
+  [PASS] check_agent_baseline_analysis                  (  0.68s)
+  [PASS] check_phase25_sc_safe_arithmetic               ( 11.32s)
+  [PASS] check_agent_baseline                           (  1.79s)
+  [PASS] check_phase25_s3_key_protocol                  ( 20.39s)
+  [PASS] phase25_key_protocol_fixtures                  ( 13.08s)
+  [PASS] check_phase22_3_ab                             (  2.22s)
+  [PASS] check_phase21_peer_open_pipelines              (  2.76s)
+  [PASS] check_phase20_domain_field_physical            (  0.64s)
+  [PASS] check_phase21c_branch_errors                   (  6.32s)
+  [PASS] check_phase21_peer_effects                     (  2.82s)
+  [PASS] check_phase27_accepts_rustc                    ( 82.17s)
+  [PASS] check_phase21_unary_not_speculation            (  1.35s)
+  [PASS] check_phase21_chunk_fileio_raise               (  0.82s)
+  [PASS] check_agent_benchmark                          ( 11.90s)
+  [PASS] check_phase15_15_string_api                    (  0.08s)
+  [PASS] check_phase20_r5_fair                          (  0.19s)
+  [PASS] check_teaching_diagnostics                     (  0.29s)
+  [PASS] check_phase25_l7_repairs                       ( 37.96s)
+  [PASS] check_phase20_executor_fileio                  ( 15.26s)
+  [PASS] check_semantic_queries                         (  0.77s)
+  [PASS] check_phase25_sb_check_display                 ( 27.45s)
+  [PASS] check_phase21_pipeline_try_placeholder         (  1.53s)
+  [PASS] check_phase225_semantic_ide                    (  1.49s)
+  [PASS] check_phase24_string_concat                    (  1.61s)
+  [PASS] check_swarm_003_formatter                      (  0.35s)
+  [PASS] check_builtin_generic_typing                   ( 27.68s)
+  [PASS] check_no_internal_type_leak                    (  5.90s)
+  [PASS] check_swarm_032_formatter_parentheses          (  0.08s)
+  [PASS] check_formatter_indexing                       (  0.26s)
+  [PASS] check_swarm_059_project_diagnostics            (  0.25s)
+  [PASS] check_phase15_7_formatter_convergence          (  0.07s)
+  [PASS] check_swarm_039_project_fast_debug_tests       (  0.32s)
+  [PASS] check_swarm_059_diagnostic_provenance          (  0.22s)
+  [PASS] check_phase25_char_string_sdk_packages         (  8.68s)
+  [PASS] check_swarm_060_qualified_rename               (  0.09s)
+  [PASS] check_phase15_9_cross_package_specialization   (  4.08s)
+  [PASS] check_phase20_fileio_semantics                 (  0.47s)
+  [PASS] check_phase15_8_cross_package_fast_debug       (  7.58s)
+  [PASS] check_phase20_doc_examples                     (  0.02s)
+  [PASS] check_phase20_fileio_runtime                   (  3.86s)
+  [PASS] shard_negative                                 (  0.52s)
+  [PASS] check_phase26_inference_verify_modes           (115.44s)
+  [PASS] check_phase26_0_1_c3_parse_cache               (105.31s)
+  [PASS] shard_showcase                                 (  4.94s)
+  [PASS] shard_phase46_opt                              (  3.48s)
+  [PASS] shard_enum_modules                             (  7.46s)
+  [PASS] shard_phase25_int_payloads                     ( 12.48s)
+  [PASS] shard_swarm_cases                              ( 19.38s)
+  [PASS] phase20_review_probes                          ( 27.96s)
+  [PASS] shard_concurrency                              ( 19.19s)
+  [PASS] shard_fast_debug                               ( 19.81s)
+  [PASS] shard_phase4_diff                              ( 30.09s)
+  [PASS] shard_phase106_runtime                         ( 29.81s)
+  [PASS] check_phase25_g1_regressions                   (132.96s)
+  [PASS] shard_phase5_tooling                           ( 32.27s)
+  [PASS] shard_abi_v10_units                            (104.25s)
+  [PASS] check_phase20_release_semantics                (167.15s)
+  [PASS] check_phase25_4_performance_baseline           (  1.74s)
+
+========================================================================
+REGRESSION SUITE SUMMARY
+  Total jobs:      159
+  Passed:          158
+  Failed:          1
+  Skipped:         0
+  Suite wall time: 331.47s (5.5m)
+  Cumulative time: 1690.70s (28.2m)
+  Parallel speedup:   5.1x
+========================================================================
+
+Top 10 slowest test jobs:
+   1. check_phase20_release_semantics              167.15s  [PASS]
+   2. check_phase25_g1_regressions                 132.96s  [PASS]
+   3. check_phase26_inference_verify_modes         115.44s  [PASS]
+   4. check_phase26_0_1_c3_parse_cache             105.31s  [PASS]
+   5. shard_abi_v10_units                          104.25s  [PASS]
+   6. check_phase27_accepts_rustc                   82.17s  [PASS]
+   7. check_phase25_team_a_semantics                52.85s  [PASS]
+   8. check_phase25_l7_repairs                      37.96s  [PASS]
+   9. sdk_foundations                               33.68s  [PASS]
+  10. shard_phase5_tooling                          32.27s  [PASS]
+
+========================================================================
+FAILED JOBS DETAIL:
+
+--- [FAIL] check_phase25_s2_char_string (exit 1, 8.47s) ---
+Build output: /home/owner/daji/code/moss/build/tests/parallel/check_phase25_s2_char_string
+Last log lines:
+  
+  Traceback (most recent call last):
+    File "/home/owner/daji/code/moss/build/tests/parallel/check_phase25_s2_char_string/wt/tests/tooling/check_phase25_s2_char_string.py", line 525, in <module>
+      main()
+    File "/home/owner/daji/code/moss/build/tests/parallel/check_phase25_s2_char_string/wt/tests/tooling/check_phase25_s2_char_string.py", line 515, in main
+      test_architect_next_cycle_findings()
+    File "/home/owner/daji/code/moss/build/tests/parallel/check_phase25_s2_char_string/wt/tests/tooling/check_phase25_s2_char_string.py", line 220, in test_architect_next_cycle_findings
+      rejected(record + "fn main():\n  p = P(n: 1)\n  x = 3\n  s = \"ab\"\n  v = [1]\n  "
+    File "/home/owner/daji/code/moss/build/tests/parallel/check_phase25_s2_char_string/wt/tests/tooling/check_phase25_s2_char_string.py", line 96, in rejected
+      assert result.returncode != 0, f"[{name}] accepted:\n{result.stdout}"
+             ^^^^^^^^^^^^^^^^^^^^^^
+  AssertionError: [024 numeric record field] accepted:
+  {
+    "protocol_version": 1,
+    "schema_version": "moss-agent-1",
+    "compiler_version": "0.1.0",
+    "command": "check",
+    "ok": true,
+    "result": {"source_file": "/home/owner/daji/code/moss/build/tests/parallel/check_phase25_s2_char_string/wt/tmp/p25-s2-qlcpzkxm/case.moss", "diagnostics": []}
+  }
+========================================================================
+make: *** [Makefile:153: check-parallel] Error 1

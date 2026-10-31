@@ -32,6 +32,8 @@ def check_rejected_source_parity():
     # These are Phase 27.1 REJECTED-SOURCE controls. Keep the baseline
     # diagnostics stable in both EST modes while expression reads migrate.
     expected = {
+        "numeric_member_field.moss":
+            ("UNKNOWN_FIELD", "record 'P' has no field '0'", 6, 1),
         "unsupported_exponent.moss":
             ("MOSS_COMPILE_ERROR", "invalid arithmetic expression", 2, 1),
         "unsupported_operators.moss":
