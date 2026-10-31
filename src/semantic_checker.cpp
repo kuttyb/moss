@@ -26384,7 +26384,7 @@ class Checker {
                 }
               })
             : std::function<void()>{});
-    if (starts_with(original, "match "))
+    if (est::begins_with_keyword(original, "match"))
       err(line, "match is a statement, not an expression",
           "MATCH_EXPRESSION_UNSUPPORTED");
     if (auto juxtaposed = est::juxtaposed_operands(original))
