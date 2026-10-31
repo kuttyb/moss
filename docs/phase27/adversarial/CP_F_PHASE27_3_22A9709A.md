@@ -1,3 +1,13 @@
+## L7 adjudication follow-up — CP-F verdict: GO
+
+L7 resolved the original coverage notes as follows. The single paired 600-second Fast Debug check for `examples/functional_pipeline.moss` timed out on both the exact pinned phase27-1 compiler and candidate, each with empty stdout/stderr/trace. Record this as **BOTH-TIMEOUT** and exclude the fixture from output comparison; it is not a blocker. Machine-readable result: `tests/phase27/adversarial/cp-f-phase27-3-22a9709a/fastdebug_pipeline_600s_both_timeout.json`.
+
+Reach acceptance compares Phase 27.3 against Phase 27.2's own off-vs-shadow result: 160 existing failure rows versus 161 candidate rows. All pre-existing rows match after removing the one new standalone source-free diagnostic-code delta; no reach edges, checked declarations, or trace-completeness fields changed. CP-E already adjudicated that standalone-only diagnostic delta BENIGN, and both package-context checks pass. Evidence and checksums: `tests/phase27/adversarial/cp-f-phase27-3-22a9709a/reach_l7_adjudication.json`.
+
+No source change was required. Per L7's ruling, the adjudicated **CP-F verdict: GO**. The original reviewer NO-GO reflected the two now-resolved coverage notes above.
+
+---
+
 # CP-F review: Phase 27.3 candidate `22a9709a`
 
 ## Verdict
