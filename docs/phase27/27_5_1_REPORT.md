@@ -27,5 +27,6 @@
 
 ## Validation state
 
-- Targeted Phase 27.5.1 fixture driver passes after implementation and is registered in `tests/run_parallel.py` for off/shadow `make check`.
-- Final full suites, three-engine check, final parity, performance comparison, Agent 2 review, merge, and tag are pending.
+- `MOSS_EST=off make --jobs="$(nproc)" check` passed all regression jobs. `MOSS_EST=shadow make --jobs="$(nproc)" check` passed all regression jobs. Both include the Phase 27.5.1 fixture driver and three-engine check.
+- The driver passed against both `moss-dev` and `moss-opt`. After the full suites, a test-only follow-up made `MOSS_TEST_DISABLE_GUARD_HOOKS=1` prevent fact injection; the normal driver passed and the hook-off removal check failed as expected. Compiler source was unchanged after the full suites.
+- Performance comparison against the final merge first parent, Agent 2 review, merge, and tag are pending.

@@ -104,8 +104,10 @@ def main():
         raise SystemExit(f"unexpected G1 selection counters: {hits!r}\n{count.stderr}")
 
     dropped_env = os.environ.copy()
-    dropped_env["MOSS_TEST_DROP_FACT"] = "g1"
-    dropped_env.pop("MOSS_TEST_DISABLE_GUARD_HOOKS", None)
+    if dropped_env.get("MOSS_TEST_DISABLE_GUARD_HOOKS") == "1":
+        dropped_env.pop("MOSS_TEST_DROP_FACT", None)
+    else:
+        dropped_env["MOSS_TEST_DROP_FACT"] = "g1"
     dropped = subprocess.run([str(COMPILER), str(FIXTURES / "call_edges.moss"),
                               "-o", str(work / "dropped.rs")], cwd=ROOT,
                              env=dropped_env, text=True, capture_output=True)
