@@ -26715,6 +26715,7 @@ class Checker {
       return;
     }
     string value = tree_normalize_pipeline(std::move(original));
+    string unary_operation, unary_operand;
     if (tree_parse_unary(value, unary_operation, unary_operand) &&
         unary_operation == "!")
       err(line, "unary '!' is not supported; use 'not' for Boolean negation",
