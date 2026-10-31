@@ -1,0 +1,50 @@
+[
+  {
+    "engine": "baseline",
+    "mode": "off",
+    "returncode": 1,
+    "ok": false,
+    "code": "MOSS_COMPILE_ERROR",
+    "message": "invalid arithmetic expression",
+    "line": 2,
+    "column": 1,
+    "stdout": "{\"schema_version\": \"margo-1\", \"ok\": false, \"error\": \"command failed (/home/owner/daji/code/moss-cp-f-22a9709a-base/build/compiler/moss-dev build --check --json): {\\n  \\\"protocol_version\\\": 1,\\n  \\\"schema_version\\\": \\\"moss-agent-1\\\",\\n  \\\"compiler_version\\\": \\\"0.1.0\\\",\\n  \\\"command\\\": \\\"build\\\",\\n  \\\"ok\\\": false,\\n  \\\"error\\\": {\\\"code\\\": \\\"MOSS_COMPILE_ERROR\\\", \\\"severity\\\": \\\"error\\\", \\\"message\\\": \\\"invalid arithmetic expression\\\", \\\"source_file\\\": \\\"/home/owner/daji/code/moss-cp-f-22a9709a-base/tmp/cpf/pkg-malformed/src/main.moss\\\", \\\"line\\\": 2, \\\"column\\\": 1, \\\"span\\\": {\\\"start_line\\\": 2, \\\"start_column\\\": 1, \\\"end_line\\\": 2, \\\"end_column\\\": 1}, \\\"source\\\": {\\\"file\\\": \\\"/home/owner/daji/code/moss-cp-f-22a9709a-base/tmp/cpf/pkg-malformed/src/main.moss\\\", \\\"line\\\": 2, \\\"column\\\": 1, \\\"span\\\": {\\\"start_line\\\": 2, \\\"start_column\\\": 1, \\\"end_line\\\": 2, \\\"end_column\\\": 1}}, \\\"semantic_identity\\\": \\\"main@1\\\", \\\"symbol\\\": null, \\\"rule\\\": null, \\\"cause\\\": null, \\\"related\\\": [], \\\"guidance\\\": null, \\\"details\\\": {\\\"ownership_expected\\\": null, \\\"ownership_actual\\\": null, \\\"consume_line\\\": null, \\\"recursion_witness\\\": null, \\\"resolution\\\": null}, \\\"fixes\\\": [], \\\"legal_alternatives\\\": []}\\n}\"}\n",
+    "stderr": ""
+  },
+  {
+    "engine": "baseline",
+    "mode": "shadow",
+    "returncode": 1,
+    "ok": false,
+    "code": "MOSS_COMPILE_ERROR",
+    "message": "invalid arithmetic expression",
+    "line": 2,
+    "column": 1,
+    "stdout": "{\"schema_version\": \"margo-1\", \"ok\": false, \"error\": \"command failed (/home/owner/daji/code/moss-cp-f-22a9709a-base/build/compiler/moss-dev build --check --json): {\\n  \\\"protocol_version\\\": 1,\\n  \\\"schema_version\\\": \\\"moss-agent-1\\\",\\n  \\\"compiler_version\\\": \\\"0.1.0\\\",\\n  \\\"command\\\": \\\"build\\\",\\n  \\\"ok\\\": false,\\n  \\\"error\\\": {\\\"code\\\": \\\"MOSS_COMPILE_ERROR\\\", \\\"severity\\\": \\\"error\\\", \\\"message\\\": \\\"invalid arithmetic expression\\\", \\\"source_file\\\": \\\"/home/owner/daji/code/moss-cp-f-22a9709a-base/tmp/cpf/pkg-malformed/src/main.moss\\\", \\\"line\\\": 2, \\\"column\\\": 1, \\\"span\\\": {\\\"start_line\\\": 2, \\\"start_column\\\": 1, \\\"end_line\\\": 2, \\\"end_column\\\": 1}, \\\"source\\\": {\\\"file\\\": \\\"/home/owner/daji/code/moss-cp-f-22a9709a-base/tmp/cpf/pkg-malformed/src/main.moss\\\", \\\"line\\\": 2, \\\"column\\\": 1, \\\"span\\\": {\\\"start_line\\\": 2, \\\"start_column\\\": 1, \\\"end_line\\\": 2, \\\"end_column\\\": 1}}, \\\"semantic_identity\\\": \\\"main@1\\\", \\\"symbol\\\": null, \\\"rule\\\": null, \\\"cause\\\": null, \\\"related\\\": [], \\\"guidance\\\": null, \\\"details\\\": {\\\"ownership_expected\\\": null, \\\"ownership_actual\\\": null, \\\"consume_line\\\": null, \\\"recursion_witness\\\": null, \\\"resolution\\\": null}, \\\"fixes\\\": [], \\\"legal_alternatives\\\": []}\\n}\"}\n",
+    "stderr": ""
+  },
+  {
+    "engine": "candidate",
+    "mode": "off",
+    "returncode": 1,
+    "ok": false,
+    "code": "MOSS_COMPILE_ERROR",
+    "message": "invalid arithmetic expression",
+    "line": 2,
+    "column": 1,
+    "stdout": "{\"schema_version\": \"margo-1\", \"ok\": false, \"error\": \"command failed (/home/owner/daji/code/moss-cp-f-22a9709a/build/compiler/moss-dev build --check --json): {\\n  \\\"protocol_version\\\": 1,\\n  \\\"schema_version\\\": \\\"moss-agent-1\\\",\\n  \\\"compiler_version\\\": \\\"0.1.0\\\",\\n  \\\"command\\\": \\\"build\\\",\\n  \\\"ok\\\": false,\\n  \\\"error\\\": {\\\"code\\\": \\\"MOSS_COMPILE_ERROR\\\", \\\"severity\\\": \\\"error\\\", \\\"message\\\": \\\"invalid arithmetic expression\\\", \\\"source_file\\\": \\\"/home/owner/daji/code/moss-cp-f-22a9709a/tmp/cpf/pkg-malformed/src/main.moss\\\", \\\"line\\\": 2, \\\"column\\\": 1, \\\"span\\\": {\\\"start_line\\\": 2, \\\"start_column\\\": 1, \\\"end_line\\\": 2, \\\"end_column\\\": 1}, \\\"source\\\": {\\\"file\\\": \\\"/home/owner/daji/code/moss-cp-f-22a9709a/tmp/cpf/pkg-malformed/src/main.moss\\\", \\\"line\\\": 2, \\\"column\\\": 1, \\\"span\\\": {\\\"start_line\\\": 2, \\\"start_column\\\": 1, \\\"end_line\\\": 2, \\\"end_column\\\": 1}}, \\\"semantic_identity\\\": \\\"main@1\\\", \\\"symbol\\\": null, \\\"rule\\\": null, \\\"cause\\\": null, \\\"related\\\": [], \\\"guidance\\\": null, \\\"details\\\": {\\\"ownership_expected\\\": null, \\\"ownership_actual\\\": null, \\\"consume_line\\\": null, \\\"recursion_witness\\\": null, \\\"resolution\\\": null}, \\\"fixes\\\": [], \\\"legal_alternatives\\\": []}\\n}\"}\n",
+    "stderr": ""
+  },
+  {
+    "engine": "candidate",
+    "mode": "shadow",
+    "returncode": 1,
+    "ok": false,
+    "code": "MOSS_COMPILE_ERROR",
+    "message": "invalid arithmetic expression",
+    "line": 2,
+    "column": 1,
+    "stdout": "{\"schema_version\": \"margo-1\", \"ok\": false, \"error\": \"command failed (/home/owner/daji/code/moss-cp-f-22a9709a/build/compiler/moss-dev build --check --json): {\\n  \\\"protocol_version\\\": 1,\\n  \\\"schema_version\\\": \\\"moss-agent-1\\\",\\n  \\\"compiler_version\\\": \\\"0.1.0\\\",\\n  \\\"command\\\": \\\"build\\\",\\n  \\\"ok\\\": false,\\n  \\\"error\\\": {\\\"code\\\": \\\"MOSS_COMPILE_ERROR\\\", \\\"severity\\\": \\\"error\\\", \\\"message\\\": \\\"invalid arithmetic expression\\\", \\\"source_file\\\": \\\"/home/owner/daji/code/moss-cp-f-22a9709a/tmp/cpf/pkg-malformed/src/main.moss\\\", \\\"line\\\": 2, \\\"column\\\": 1, \\\"span\\\": {\\\"start_line\\\": 2, \\\"start_column\\\": 1, \\\"end_line\\\": 2, \\\"end_column\\\": 1}, \\\"source\\\": {\\\"file\\\": \\\"/home/owner/daji/code/moss-cp-f-22a9709a/tmp/cpf/pkg-malformed/src/main.moss\\\", \\\"line\\\": 2, \\\"column\\\": 1, \\\"span\\\": {\\\"start_line\\\": 2, \\\"start_column\\\": 1, \\\"end_line\\\": 2, \\\"end_column\\\": 1}}, \\\"semantic_identity\\\": \\\"main@1\\\", \\\"symbol\\\": null, \\\"rule\\\": null, \\\"cause\\\": null, \\\"related\\\": [], \\\"guidance\\\": null, \\\"details\\\": {\\\"ownership_expected\\\": null, \\\"ownership_actual\\\": null, \\\"consume_line\\\": null, \\\"recursion_witness\\\": null, \\\"resolution\\\": null}, \\\"fixes\\\": [], \\\"legal_alternatives\\\": []}\\n}\"}\n",
+    "stderr": ""
+  }
+]

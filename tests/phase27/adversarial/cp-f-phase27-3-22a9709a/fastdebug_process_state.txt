@@ -1,0 +1,4 @@
+Fast Debug command: ./build/compiler/moss-dev debug examples/functional_pipeline.moss --trace
+Baseline and candidate were run with MOSS_EST=off and their respective checkout as cwd. Both exceeded 60 seconds with no stdout, stderr, or trace events. During the run, `ps -o pid,stat,etime,pcpu,cmd -C moss-dev` showed each process in `R` state at 99.9% CPU after 19 seconds and again at 1 minute 48 seconds. This was CPU-bound execution, not a process waiting on an external session.
+The no-trace form `moss-dev debug examples/functional_pipeline.moss` exceeded 30 seconds on both with empty stdout/stderr.
+The control `moss-dev debug tests/phase27/conformance/three_engine.moss` returned 0 on both and printed the same four lines; the three-engine conformance script also passed on both.

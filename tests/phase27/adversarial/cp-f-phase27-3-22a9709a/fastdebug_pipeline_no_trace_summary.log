@@ -1,0 +1,14 @@
+[
+  {
+    "engine": "baseline",
+    "timeout_seconds": 30,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "engine": "candidate",
+    "timeout_seconds": 30,
+    "stdout": "",
+    "stderr": ""
+  }
+]

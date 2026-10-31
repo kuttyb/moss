@@ -1,0 +1,6 @@
+Invalid first corpus invocation (do not count):
+python3 tests/phase27/adversarial/cp-f-phase27-3-22a9709a/differential_corpus.py "$PWD" "$PWD/../moss-cp-f-22a9709a-base"
+
+The diagnostic command omitted the `check` subcommand. It invoked the source-to-Rust compile form, generating `.rs` and `.mossmap` files beside some source files in the isolated candidate worktree. The invalid corpus JSON and captured harness log are retained as method-correction evidence and are not parity results.
+
+Cleanup derived every path only from the invalid run's captured `generated ...` stdout lines. For each path the cleanup script verified path containment beneath the isolated candidate worktree and queried `git ls-files --error-unmatch`; all 2,664 generated paths were untracked, all 2,664 were removed, none were missing, and none were tracked. Exact removed paths are in generated_outputs_cleanup.txt. The corrected diagnostic command includes `check`; Rust emission outputs go only under tmp/cpf/rust.

@@ -1,0 +1,46 @@
+Moss v0.1 - static compiler to Rust with domains and functional dataflow
+
+Usage:
+  moss <input.moss> [-Oshared-memory] [--debug] [--dump-functional-ir] [--explain-fusion] [-o output.rs]
+  moss --check <input.moss>
+  moss check <input.moss> [--json]
+  moss agent bootstrap|capabilities|schema --json
+  moss references <target> --source <source> --json
+  moss symbols [prefix] --source <source> --json
+  moss complete at:<line>:<column> --source <source> --json
+  moss agent session-report-template --json
+  moss agent benchmark list|show|validate|run [--json]
+  moss resolve|inspect|type|effects|ownership|calls|why|cost <target> --source <input.moss> [--kind KIND] [--enclosing TARGET] --json
+  moss debug-query <operation> [selector] --source <input.moss> --json [bounds]
+  moss impact <target> [--source <input.moss>] --json
+  moss fmt [--check] [--json]
+  moss edit rename|replace-expression|change-argument ... --json
+  moss build [--release] [--json]
+  moss test --check [--json]
+  moss clean [--json]
+  moss test [filter] [--affected] [--json]
+  moss bench [filter] [--json] [--save NAME] [--compare NAME] [--fail-over PERCENT]
+
+  moss run --interp <input.moss> [--trace]
+
+  moss debug <project-or-source> [--trace]
+
+Backend optimization:
+  -O, -Oshared-memory    apply safe functional rewrites/fusion; use planned handler-level 2PL
+  -O0                    retain eager pipelines; use planned handler-level 2PL
+
+  --dump-functional-ir   print typed nodes, semantic rewrites, and lowering decisions
+  --explain-fusion       print deterministic functional optimization decisions
+
+  --debug                 emit -O0 Rust with stable native symbols for source debugging
+  --emit-debug-map FILE   write the shared Moss provenance map to FILE
+  --native-output FILE    record the intended native executable in the debug map
+  --diagnostic-paths      prefix diagnostics with the Moss source path
+
+Request/reply:
+  message domain.Message(args...)
+  fn Message(args...) [-> Type]
+  reply value
+  value = message domain.Message(args...)
+  fn square(x) = x * x
+  type Quote:

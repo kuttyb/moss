@@ -1,0 +1,68 @@
+[
+  {
+    "engine": "baseline",
+    "runs": [
+      {
+        "moss_profile": "default",
+        "rust_profile": "default",
+        "returncode": 0,
+        "stdout": "81\n",
+        "stderr": ""
+      },
+      {
+        "moss_profile": "default",
+        "rust_profile": "optimized",
+        "returncode": 0,
+        "stdout": "81\n",
+        "stderr": ""
+      },
+      {
+        "moss_profile": "optimized",
+        "rust_profile": "default",
+        "returncode": 0,
+        "stdout": "81\n",
+        "stderr": ""
+      },
+      {
+        "moss_profile": "optimized",
+        "rust_profile": "optimized",
+        "returncode": 0,
+        "stdout": "81\n",
+        "stderr": ""
+      }
+    ]
+  },
+  {
+    "engine": "candidate",
+    "runs": [
+      {
+        "moss_profile": "default",
+        "rust_profile": "default",
+        "returncode": 0,
+        "stdout": "81\n",
+        "stderr": ""
+      },
+      {
+        "moss_profile": "default",
+        "rust_profile": "optimized",
+        "returncode": 0,
+        "stdout": "81\n",
+        "stderr": ""
+      },
+      {
+        "moss_profile": "optimized",
+        "rust_profile": "default",
+        "returncode": 0,
+        "stdout": "81\n",
+        "stderr": ""
+      },
+      {
+        "moss_profile": "optimized",
+        "rust_profile": "optimized",
+        "returncode": 0,
+        "stdout": "81\n",
+        "stderr": ""
+      }
+    ]
+  }
+]
