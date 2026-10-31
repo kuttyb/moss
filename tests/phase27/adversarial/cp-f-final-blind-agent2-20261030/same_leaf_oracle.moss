@@ -1,0 +1,16 @@
+trait Keyed:
+  fn key() -> Int
+
+type Entry:
+  value: Int
+  fn key() -> Int:
+    return value
+  fn key_of() -> Int:
+    return value
+
+fn key_of(item: Keyed) -> Int:
+  return item.key()
+
+fn main():
+  entry = Entry(value: 7)
+  echo key_of(entry)

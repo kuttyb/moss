@@ -1,0 +1,32 @@
+{
+  "default_off": {
+    "baseline_sources": 2213,
+    "candidate_sources": 2213,
+    "value_diff_paths": [
+      "sdk/advanced-data-acceptance/fixtures/source_free_consumer.moss",
+      "tests/phase27/adversarial/cp-e-phase27-3-22a9709a/source_free_consumer.moss"
+    ],
+    "generated_rust_hash_diff_paths": [],
+    "matched_generated_rust_hash_count": 1407
+  },
+  "default_shadow": {
+    "baseline_sources": 2213,
+    "candidate_sources": 2213,
+    "value_diff_paths": [
+      "sdk/advanced-data-acceptance/fixtures/source_free_consumer.moss",
+      "tests/phase27/adversarial/cp-e-phase27-3-22a9709a/source_free_consumer.moss"
+    ],
+    "generated_rust_hash_diff_paths": [],
+    "matched_generated_rust_hash_count": 1407
+  },
+  "optimized": {
+    "baseline_sources": 2213,
+    "candidate_sources": 2213,
+    "value_diff_paths": [
+      "sdk/advanced-data-acceptance/fixtures/source_free_consumer.moss",
+      "tests/phase27/adversarial/cp-e-phase27-3-22a9709a/source_free_consumer.moss"
+    ],
+    "generated_rust_hash_diff_paths": [],
+    "matched_generated_rust_hash_count": 1407
+  }
+}
