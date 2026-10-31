@@ -50,6 +50,8 @@ def check_rejected_source_parity():
             ("MOSS_COMPILE_ERROR", "heterogeneous or unresolved collection element type", 2, 1),
         "incomplete_vector.moss":
             ("MOSS_COMPILE_ERROR", "heterogeneous or unresolved collection element type", 2, 1),
+        "trailing_member_after_empty_vector.moss":
+            ("TYPE_AMBIGUOUS_OPEN_RESULT", "unbound open result type for variable 'result'; heterogeneous or unresolved collection element type", 3, 1),
         "juxtaposed_operands.moss":
             ("INVALID_EXPRESSION",
              "invalid expression '2 3': '2' is followed by '3' with no operator between them (if, while, and for are statements, not expressions)",

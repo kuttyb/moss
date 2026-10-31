@@ -9912,7 +9912,8 @@ class Checker {
             body.begin(), body.end(), [&](const Stmt& statement) {
           return statement.kind == Stmt::Kind::Assign &&
               statement.est_binding_name == expected_binding_name &&
-              moss::est::incomplete_expression_syntax(statement.b);
+              moss::est::incomplete_collection_initializer_syntax(
+                  statement.b);
         });
         if (incomplete_initializer) {
           err(err_line, "heterogeneous or unresolved collection element type");

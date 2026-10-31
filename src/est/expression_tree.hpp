@@ -287,7 +287,7 @@ ExprId parse_expression(Arena& arena, std::string_view source,
                         std::uint32_t base_line = 1,
                         std::uint32_t base_column = 1);
 bool incomplete_trailing_operator(std::string_view source);
-bool incomplete_expression_syntax(std::string_view source);
+bool incomplete_collection_initializer_syntax(std::string_view source);
 std::optional<ParsedFunctionalPipeline> functional_pipeline(
     const Arena& arena, ExprId expression, std::string_view source,
     const std::function<std::optional<FunctionalNodeKind>(

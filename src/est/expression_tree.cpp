@@ -1160,7 +1160,7 @@ bool incomplete_trailing_operator(std::string_view source) {
   return operators.count(tokens.back().text) != 0;
 }
 
-bool incomplete_expression_syntax(std::string_view source) {
+bool incomplete_collection_initializer_syntax(std::string_view source) {
   std::vector<Token> tokens;
   try {
     tokens = lex(source);
@@ -1168,6 +1168,8 @@ bool incomplete_expression_syntax(std::string_view source) {
     return false;
   }
   if (tokens.empty()) return false;
+  if (tokens.front().text != "[" && tokens.front().text != "{")
+    return false;
   if (incomplete_trailing_operator(source)) return true;
   std::vector<std::string_view> delimiters;
   for (const auto& token : tokens) {
@@ -1185,8 +1187,11 @@ bool incomplete_expression_syntax(std::string_view source) {
     delimiters.pop_back();
   }
   if (!delimiters.empty()) return true;
-  return tokens.back().text == "." || tokens.back().text == "," ||
-         tokens.back().text == ":";
+  if (tokens.back().text != ".") return false;
+  const auto prefix = source.substr(0, tokens.back().source_begin);
+  const auto parsed = parse_view(prefix);
+  return parsed &&
+      std::holds_alternative<Collection>(parsed->arena->at(parsed->root));
 }
 
 std::optional<std::vector<std::string>> parse_vector_literal_children(
