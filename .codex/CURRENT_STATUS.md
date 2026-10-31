@@ -13440,3 +13440,7 @@ check` passed 154/154, zero failures or skips. Branch remains unmerged.
 ### Phase 27.3 semantic-fact audit refresh — 2026-10-30
 
 - Refreshed the report's emitter-local semantic/lowering decision audit with current file:line references. It records parameter passing mode (`native_generator.cpp:1288-1303`, consumed at 4920-4936), path-fragment synchronization lock sets (`handler_lowering.inc:144-160`), domain constructor recognition/order (`native_generator.cpp:7063-7067`, 5459-5477), and fused/eager lowering (`native_generator.cpp:3182-3186`). No decisions were moved in this phase.
+
+### Phase 27.3 CP-F freeze — 2026-10-30
+
+- Fresh Agent 2 CP-F is running in an isolated worktree at source freeze `22a9709a76539df7dc35c0d20e22582fc82f03a6` against `04be1a1bbbc7a4fd8fe2e4090b4b5bad5dd573e4`. Scope: full verdict/diagnostic, default and `-O` Rust, Fast Debug, `.mossi` source-free, and baseline/candidate ASan/UBSan differential. The reviewer does not write under `src/`; no compiler-perf run will overlap this review/corpus. Output is to the Phase 27 adversarial evidence paths.
