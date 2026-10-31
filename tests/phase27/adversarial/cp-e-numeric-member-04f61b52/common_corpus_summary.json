@@ -1,0 +1,17 @@
+{
+  "comparison": "ok/code/message/line/column, with checkout path normalized",
+  "corpus_roots": [
+    "examples/**/*.moss",
+    "tests/**/*.moss"
+  ],
+  "deltas": 0,
+  "excluded": "tests/**/adversarial/**",
+  "files": 1620,
+  "modes": [
+    "baseline/off",
+    "baseline/shadow",
+    "candidate/off",
+    "candidate/shadow"
+  ],
+  "result": "0 normalized verdict/diagnostic deltas"
+}
