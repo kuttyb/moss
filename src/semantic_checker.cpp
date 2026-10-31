@@ -26242,6 +26242,7 @@ class Checker {
         err(line, "unknown identifier 'not'");
         return;
       case moss::est::SourceSyntaxIssue::UnclosedCollection:
+        if (root_slot != "initializer") break;
         err(line, "heterogeneous or unresolved collection element type",
             "MOSS_COMPILE_ERROR");
         return;

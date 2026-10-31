@@ -10,6 +10,8 @@ At frozen candidate `914d59dcb0d4825f1ae652b6a23a7db742a5b3fd`, fresh blind CP-E
 
 CP-E found four malformed-source MIGRATION BUGs: bare `not`, `[1, 2`, `item.`, and `1 + * 2` are rejected by baseline but accepted by candidate, with the last also asserting in shadow. The shared `items[` acceptance is recorded as LEGACY MISPARSE. The correction adds EST-owned lexical/syntax issue classification and preserves baseline diagnostics for the four candidate-only cases. Regressions are `tests/phase27/est/repro/{incomplete_unary_not,unclosed_vector_expression,trailing_member_expression,invalid_operator_adjacency}.moss`; the trailing-member path retains the existing open-result diagnostic for bound collection bases. `check_phase27_est.py`, widened string-debt lint, and `git diff --check` pass after this change. The correction is not yet committed or reviewed; fresh CP-E, full gates, CP-F, merge, and tag remain outstanding.
 
+During independent re-review, the new unclosed-vector regression was initially written as `echo [1, 2`, but baseline accepts that statement form in both modes. The CP-E counterexample is an assignment initializer (`value = [1, 2`), which baseline rejects. The correction is scoped to EST initializer roots; the echo-form acceptance is preserved. The revised initializer regression and focused EST harness pass.
+
 ## Corrections and independent reproductions
 
 | Classification | Finding and correction | Oracle | Reproducer |
