@@ -1104,6 +1104,22 @@ class FastInterpreter {
     return selected;
   }
 
+  bool checked_call_requires_specialization(
+      const Function& target, const Frame& caller, int line) const {
+    if (!target.static_dispatch) return false;
+    for (const auto& edge : program_.semantic_call_edges) {
+      if (edge.source != caller.functional_context ||
+          edge.target != "fn:" + target.name || edge.line != line)
+        continue;
+      if (std::any_of(target.specializations.begin(), target.specializations.end(),
+              [&](const FunctionSpecialization& candidate) {
+                return candidate.parameter_types == edge.argument_types;
+              }))
+        return true;
+    }
+    return false;
+  }
+
   const ObjectType* object_type(const std::string& name) const {
     for (const auto& candidate : program_.objects)
       if (candidate.name == name) return &candidate;
@@ -1293,6 +1309,14 @@ class FastInterpreter {
         if (callee == "map") {
           auto output_type = checked_pipeline_stage_output_type(
               parsed, stage_index, frame, line);
+          if (!output_type) {
+#ifndef NDEBUG
+            if (const char* count = std::getenv("MOSS_TEST_COUNT_FACT");
+                count && std::string(count) == "g3")
+              std::cerr << "MOSS_TEST_FACT_COUNTER|g3|line=" << line
+                        << "|context=" << frame.functional_context << "\n";
+#endif
+          }
           if (!output_type && !args.empty()) {
             std::string callback = trim_copy(args.front());
             std::string callback_name = callback;
@@ -1540,10 +1564,20 @@ class FastInterpreter {
               std::get_if<est::Identifier>(&tree->arena->at(current_root))) {
         if (identifier_node->name == "true") return Value::boolean_value(true);
         if (identifier_node->name == "false") return Value::boolean_value(false);
+        if (identifier_node->name == "None") {
+          Value none = Value::struct_value("option");
+          none.object->case_name = "None";
+          return none;
+        }
       }
     }
     if (e == "true") return Value::boolean_value(true);
     if (e == "false") return Value::boolean_value(false);
+    if (e == "None") {
+      Value none = Value::struct_value("option");
+      none.object->case_name = "None";
+      return none;
+    }
     if (e == "not" || e == "!") return Value::boolean_value(false);
     if (tree) {
       if (const auto* unary =
@@ -1706,6 +1740,12 @@ class FastInterpreter {
                         summary(*place.value));
           else emit("LocalWrite", frame, line, args[0]);
           return previous;
+        }
+        if (callee == "Some" && args.size() == 1) {
+          Value some = Value::struct_value("option");
+          some.object->case_name = "Some";
+          some.object->fields["value"] = evaluate_call_argument(0);
+          return some;
         }
         if (args.empty() && callee.rfind("Vector[", 0) == 0 &&
             callee.size() > 8 && callee.back() == ']')
@@ -2209,6 +2249,11 @@ class FastInterpreter {
         return found->second;
       }
       if (function(e)) return Value::callable_value(e);
+      if (e == "None") {
+        Value none = Value::struct_value("option");
+        none.object->case_name = "None";
+        return none;
+      }
       throw RuntimeError(line, "unknown local '" + e + "'");
     }
     throw RuntimeError(line, "unsupported expression '" + e + "'");
@@ -2506,6 +2551,15 @@ class FastInterpreter {
     Frame frame;
     frame.function = target.name;
     const auto* specialization = specialization_for_call(target, caller, line);
+    if (!specialization && checked_call_requires_specialization(target, caller, line)) {
+#ifndef NDEBUG
+      if (const char* count = std::getenv("MOSS_TEST_COUNT_FACT");
+          count && std::string(count) == "g4")
+        std::cerr << "MOSS_TEST_FACT_COUNTER|g4|line=" << line
+                  << "|context=" << caller.functional_context
+                  << "|callee=" << target.name << "\n";
+#endif
+    }
     frame.functional_context = functional_function_context(target, specialization);
     frame.source_file = target.execution_source_file.empty()
         ? target.source_file : target.execution_source_file;
@@ -2864,9 +2918,7 @@ class FastInterpreter {
               if (field == selected.object->fields.end())
                 throw RuntimeError(arm.line, "missing enum payload");
               if (statement.b == "consume" ||
-                  field->second.kind == Value::Kind::Int ||
-                  field->second.kind == Value::Kind::Bool ||
-                  field->second.kind == Value::Kind::Float)
+                  copy_type_name(item->fields[field_index].type))
                 frame.locals[arm.args[field_index]] = field->second;
               else
                 frame.aliases[arm.args[field_index]] = Place{&field->second, nullptr, {}};
@@ -2921,80 +2973,6 @@ class FastInterpreter {
         continue;
       }
       if (statement.kind == Stmt::Kind::Else) { ++index; continue; }
-      if (statement.kind == Stmt::Kind::For) {
-        size_t body_end = index + 1;
-        while (body_end < end && statements[body_end].indent > statement.indent)
-          ++body_end;
-        const auto old_local = frame.locals.find(statement.a);
-        const std::optional<Value> prior_value = old_local == frame.locals.end()
-            ? std::nullopt : std::optional<Value>(old_local->second);
-        const auto old_type = frame.local_types.find(statement.a);
-        const std::optional<std::string> prior_type = old_type == frame.local_types.end()
-            ? std::nullopt : std::optional<std::string>(old_type->second);
-        const auto old_alias = frame.aliases.find(statement.a);
-        const std::optional<Place> prior_alias = old_alias == frame.aliases.end()
-            ? std::nullopt : std::optional<Place>(old_alias->second);
-        const auto restore = [&] {
-          if (prior_value) frame.locals[statement.a] = *prior_value;
-          else frame.locals.erase(statement.a);
-          if (prior_type) frame.local_types[statement.a] = *prior_type;
-          else frame.local_types.erase(statement.a);
-          if (prior_alias) frame.aliases[statement.a] = *prior_alias;
-          else frame.aliases.erase(statement.a);
-        };
-        // Checked for loops run to their native termination condition. An
-        // interpreter-only cap would change valid program behavior.
-        uint64_t iterations = 0;
-        const auto iteration = [&](Value value, const std::string& type) -> Flow {
-          ++iterations;
-          frame.aliases.erase(statement.a);
-          frame.locals[statement.a] = std::move(value);
-          frame.local_types[statement.a] = type;
-          int loop_id = emit("LoopIteration", frame, statement.line,
-                             std::to_string(iterations));
-          EventScope loop_scope(*this, loop_id, false, false, true);
-          return execute_block(statements, frame, output, index + 1, body_end);
-        };
-        try {
-          std::string callee;
-          std::vector<std::string> arguments;
-          if (expression_call(trim_copy(statement.b), callee, arguments) &&
-              callee == "range") {
-            if (arguments.size() != 2 && arguments.size() != 3)
-              throw RuntimeError(statement.line, "range requires two or three arguments");
-            const Value start = evaluate_expression_source(arguments[0], frame, statement.line, output);
-            const Value finish = evaluate_expression_source(arguments[1], frame, statement.line, output);
-            const Value stride = arguments.size() == 3
-                ? evaluate_expression_source(arguments[2], frame, statement.line, output)
-                : Value::int_value(1);
-            if (start.kind != Value::Kind::Int || finish.kind != Value::Kind::Int ||
-                stride.kind != Value::Kind::Int || stride.integer <= 0)
-              throw RuntimeError(statement.line, "range bounds and positive step must be Int");
-            std::int64_t current = start.integer;
-            while (current < finish.integer) {
-              Flow flow = iteration(Value::int_value(current), "int");
-              if (flow.returned) { restore(); return flow; }
-              if (current > std::numeric_limits<std::int64_t>::max() - stride.integer)
-                break;
-              current += stride.integer;
-            }
-          } else {
-            Value source = evaluate_expression_source(statement.b, frame, statement.line, output);
-            if (source.kind != Value::Kind::Vector || !source.vector)
-              throw RuntimeError(statement.line,
-                                 "Fast Debug cannot iterate this checked source");
-            const std::string element_type = !statement.semantic_type.empty()
-                ? statement.semantic_type : source.element_type;
-            for (size_t item = 0; item < source.vector->size(); ++item) {
-              Flow flow = iteration(independent((*source.vector)[item]), element_type);
-              if (flow.returned) { restore(); return flow; }
-            }
-          }
-        } catch (...) { restore(); throw; }
-        restore();
-        index = body_end;
-        continue;
-      }
       if (statement.kind == Stmt::Kind::While) {
         size_t body_end = index + 1;
         while (body_end < end && statements[body_end].indent > statement.indent) ++body_end;
@@ -3059,17 +3037,51 @@ class FastInterpreter {
           }
         } else {
           Value iterable = evaluate_expression_source(statement.b, frame, statement.line, output);
-          std::shared_ptr<std::vector<Value>> source =
-              iterable.kind == Value::Kind::Vector ? iterable.vector :
-              iterable.kind == Value::Kind::Queue ? iterable.queue : nullptr;
-          if (!source)
-            throw RuntimeError(statement.line, "for loop requires an iterable collection or range");
           declare_local(frame, statement.a);
-          if (!iterable.element_type.empty())
-            frame.local_types[statement.a] = iterable.element_type;
-          const auto elements = *source;
-          for (const auto& element : elements)
-            if (!run_iteration(element)) break;
+          if (iterable.kind == Value::Kind::Vector) {
+            auto source = iterable.vector;
+            if (!iterable.element_type.empty())
+              frame.local_types[statement.a] = iterable.element_type;
+            const auto elements = *source;
+            for (const auto& element : elements)
+              if (!run_iteration(element)) break;
+          } else if (iterable.kind == Value::Kind::Struct && iterable.object) {
+            const Method* next = method(iterable.object->type, "next");
+            const Method* factory = next ? nullptr : method(iterable.object->type, "iter");
+            Value iterator = iterable;
+            if (factory) {
+              iterator = call_method(*factory, iterable, {}, frame, statement.line,
+                                     output, locate(statement.b, frame,
+                                                    statement.line, output));
+              if (iterator.kind != Value::Kind::Struct || !iterator.object)
+                throw RuntimeError(statement.line,
+                                   "internal error: checked Iterator factory returned no object");
+              next = method(iterator.object->type, "next");
+            }
+            if (!next)
+              throw RuntimeError(statement.line,
+                                 "internal error: checked Iterator has no next method");
+            if (!statement.semantic_type.empty())
+              frame.local_types[statement.a] = statement.semantic_type;
+            while (true) {
+              Value result = call_method(*next, iterator, {}, frame,
+                  statement.line, output,
+                  locate(statement.b, frame, statement.line, output));
+              if (result.kind != Value::Kind::Struct || !result.object ||
+                  result.object->type != "option")
+                throw RuntimeError(statement.line,
+                                   "internal error: checked Iterator next returned no Option");
+              if (result.object->case_name == "None") break;
+              if (result.object->case_name != "Some" ||
+                  !result.object->fields.count("value"))
+                throw RuntimeError(statement.line,
+                                   "internal error: checked Iterator returned malformed Option");
+              if (!run_iteration(result.object->fields.at("value"))) break;
+            }
+          } else {
+            throw RuntimeError(statement.line,
+                               "internal error: checked For source has no Fast Debug iterator");
+          }
         }
         } catch (RaisedSignal& raised) {
           record_edge_locals(frame, raised);

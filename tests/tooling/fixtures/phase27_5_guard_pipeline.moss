@@ -1,0 +1,7 @@
+fn twice(value):
+  return value * 2
+
+fn main():
+  values = [1, 2]
+  mapped = values |> map(twice)
+  echo mapped

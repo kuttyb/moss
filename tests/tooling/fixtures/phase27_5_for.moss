@@ -1,0 +1,22 @@
+type Counter:
+  current: Int
+  fn next() -> option[Int]:
+    if current <= 0:
+      return None
+    value = current
+    current = current - 1
+    Some(value)
+
+fn main():
+  for item in range(1, 3):
+    echo item
+  values = [4, 5]
+  for item in values:
+    echo item
+  data = Map()
+  data[1] = 7
+  for item in data.keys():
+    echo item
+  source = Counter(current = 2)
+  for item in source:
+    echo item

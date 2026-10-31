@@ -1531,6 +1531,18 @@ class Generator {
     vector<string> concrete_types;
     for (const auto& argument : arguments)
       concrete_types.push_back(generated_expr_type(argument, types).value_or(""));
+#ifndef NDEBUG
+    if (function.static_dispatch) {
+      if (const char* count = std::getenv("MOSS_TEST_COUNT_FACT");
+          count && string(count) == "g1") {
+        const int line = phase21_codegen_statement_
+            ? phase21_codegen_statement_->line : 0;
+        std::cerr << "MOSS_TEST_FACT_COUNTER|g1|line=" << line
+                  << "|context=" << codegen_body_context_
+                  << "|callee=" << function.name << "\n";
+      }
+    }
+#endif
     return concrete_specialization(function, concrete_types);
   }
 
@@ -5515,8 +5527,11 @@ class Generator {
     while (i < ss.size()) {
       const auto& s = ss[i];
       auto concrete_binding = s.semantic_types_by_context.find(functional_context);
-      const string& statement_type = concrete_binding == s.semantic_types_by_context.end()
+      string statement_type = concrete_binding == s.semantic_types_by_context.end()
           ? s.semantic_type : concrete_binding->second;
+      if (const char* dropped = std::getenv("MOSS_TEST_DROP_FACT");
+          dropped && string(dropped) == "g2")
+        statement_type.clear();
       if (s.indent < level) return;
       if (s.indent > level) throw std::runtime_error("internal error: unexpected statement indentation");
       if (s.kind == Stmt::Kind::Else) return; // consumed by the preceding if
@@ -6024,7 +6039,7 @@ class Generator {
               branch_locals.insert(name);
               branch_types[name] = type;
               if (s.b != "consume") {
-                if (type == "int" || type == "bool" || type == "float")
+                if (copy_type_name(type))
                   o << indent(level + 2) << "let " << name << " = *" << name << ";\n";
                 else borrowed_function_parameters_.insert(name);
               }
@@ -6404,6 +6419,10 @@ class Generator {
           bool state_field = d && std::any_of(d->state.begin(), d->state.end(),
                                               [&](const Field& field) { return field.name == s.a; });
           if (tree_plain_identifier(s.a) && !locals.count(s.a) && !state_field) {
+            if (statement_type.empty())
+              throw std::runtime_error(
+                  "MOSS_INTERNAL_INVARIANT missing checked statement type line=" +
+                  std::to_string(s.line) + " context=" + functional_context);
             backend_comment(o, (base + level) * 4,
                             "LOCAL assignment: introduce an inferred Moss binding");
             string annotation;
@@ -6430,8 +6449,7 @@ class Generator {
             if (starts_with(statement_type, "map[") && ends_with(statement_type, "]"))
               annotation = rust_type(statement_type);
             else if (!inferred_map_type.empty()) annotation = rust_type(inferred_map_type);
-            else if (canonical_type_name(statement_type) == "float" ||
-                     canonical_type_name(generated_expr_type(s.b, &types).value_or("")) == "float")
+            else if (canonical_type_name(statement_type) == "float")
               annotation = "f64";
             o << indent(level) << "let mut " << s.a;
             if (!annotation.empty()) o << ": " << annotation;
@@ -6441,16 +6459,8 @@ class Generator {
                           s, functional_context, 0))
               << ";\n";
             locals.insert(s.a);
-            auto generated_type = generated_expr_type(s.b, &types);
             types[s.a] = !inferred_map_type.empty() ? inferred_map_type
-                : (staged_abi_v10() && generated_type && *generated_type == "set" &&
-                   starts_with(statement_type, "set[")) ? statement_type
-                : generated_type ? *generated_type
-                : !statement_type.empty() ? statement_type
-                : tree_empty_constructor_named(s.b, "Map") ? "map"
-                : tree_empty_constructor_named(s.b, "Queue") ? "queue"
-                : staged_abi_v10() && tree_empty_constructor_named(s.b, "Set") ? "set"
-                : (tree_parse_vector_literal(s.b) ? "vector" : "_value");
+                : statement_type;
             const auto source_name = tree_identifier_name(s.b);
             auto source_binding = source_name
                 ? domain_instance_bindings_.find(*source_name)
@@ -6862,6 +6872,10 @@ class Generator {
         }
         case Stmt::Kind::Let:
         case Stmt::Kind::Var: {
+          if (statement_type.empty())
+            throw std::runtime_error(
+                "MOSS_INTERNAL_INVARIANT missing checked statement type line=" +
+                std::to_string(s.line) + " context=" + functional_context);
           bool joined_assignment = join_assignments.erase(s.a) != 0;
           auto sd = domain_construction(s.b);
           if (sd) {
@@ -6915,17 +6929,9 @@ class Generator {
                           s, functional_context, 0));
             if (domain_capability) o << ".clone()";
             o << ";\n";
-            auto generated_type = generated_expr_type(s.b, &types);
-            bool unspecialized_collection = generated_type &&
-                (*generated_type == "vector" || *generated_type == "queue" ||
-                 *generated_type == "map" ||
-                 (staged_abi_v10() && *generated_type == "set"));
             types[s.a] = domain_capability ? source->second
                 : !inferred_map_type.empty() ? inferred_map_type
-                : (unspecialized_collection && !statement_type.empty() && statement_type != *generated_type)
-                    ? statement_type
-                : generated_type ? *generated_type
-                : !statement_type.empty() ? statement_type : "_value";
+                : statement_type;
             if (domain_capability) {
               auto source_binding = source_name
                   ? domain_instance_bindings_.find(*source_name)
