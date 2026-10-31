@@ -1,0 +1,2769 @@
+{
+  "rows": [
+    {
+      "fixture": "unsupported_exponent.moss",
+      "runs": [
+        {
+          "binary": "baseline",
+          "mode": "off",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/unsupported_exponent.moss",
+          "returncode": 1,
+          "json": {
+            "protocol_version": 1,
+            "schema_version": "moss-agent-1",
+            "compiler_version": "0.1.0",
+            "command": "check",
+            "ok": false,
+            "error": {
+              "code": "MOSS_COMPILE_ERROR",
+              "severity": "error",
+              "message": "invalid arithmetic expression",
+              "source_file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/unsupported_exponent.moss",
+              "line": 2,
+              "column": 1,
+              "span": {
+                "start_line": 2,
+                "start_column": 1,
+                "end_line": 2,
+                "end_column": 1
+              },
+              "source": {
+                "file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/unsupported_exponent.moss",
+                "line": 2,
+                "column": 1,
+                "span": {
+                  "start_line": 2,
+                  "start_column": 1,
+                  "end_line": 2,
+                  "end_column": 1
+                }
+              },
+              "semantic_identity": "fn:pow@1",
+              "symbol": null,
+              "rule": null,
+              "cause": null,
+              "related": [],
+              "guidance": null,
+              "details": {
+                "ownership_expected": null,
+                "ownership_actual": null,
+                "consume_line": null,
+                "recursion_witness": null,
+                "resolution": null
+              },
+              "fixes": [],
+              "legal_alternatives": []
+            }
+          }
+        },
+        {
+          "binary": "baseline",
+          "mode": "shadow",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/unsupported_exponent.moss",
+          "returncode": 1,
+          "json": {
+            "protocol_version": 1,
+            "schema_version": "moss-agent-1",
+            "compiler_version": "0.1.0",
+            "command": "check",
+            "ok": false,
+            "error": {
+              "code": "MOSS_COMPILE_ERROR",
+              "severity": "error",
+              "message": "invalid arithmetic expression",
+              "source_file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/unsupported_exponent.moss",
+              "line": 2,
+              "column": 1,
+              "span": {
+                "start_line": 2,
+                "start_column": 1,
+                "end_line": 2,
+                "end_column": 1
+              },
+              "source": {
+                "file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/unsupported_exponent.moss",
+                "line": 2,
+                "column": 1,
+                "span": {
+                  "start_line": 2,
+                  "start_column": 1,
+                  "end_line": 2,
+                  "end_column": 1
+                }
+              },
+              "semantic_identity": "fn:pow@1",
+              "symbol": null,
+              "rule": null,
+              "cause": null,
+              "related": [],
+              "guidance": null,
+              "details": {
+                "ownership_expected": null,
+                "ownership_actual": null,
+                "consume_line": null,
+                "recursion_witness": null,
+                "resolution": null
+              },
+              "fixes": [],
+              "legal_alternatives": []
+            }
+          }
+        },
+        {
+          "binary": "candidate",
+          "mode": "off",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/unsupported_exponent.moss",
+          "returncode": 1,
+          "json": {
+            "protocol_version": 1,
+            "schema_version": "moss-agent-1",
+            "compiler_version": "0.1.0",
+            "command": "check",
+            "ok": false,
+            "error": {
+              "code": "MOSS_COMPILE_ERROR",
+              "severity": "error",
+              "message": "invalid arithmetic expression",
+              "source_file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/unsupported_exponent.moss",
+              "line": 2,
+              "column": 1,
+              "span": {
+                "start_line": 2,
+                "start_column": 1,
+                "end_line": 2,
+                "end_column": 1
+              },
+              "source": {
+                "file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/unsupported_exponent.moss",
+                "line": 2,
+                "column": 1,
+                "span": {
+                  "start_line": 2,
+                  "start_column": 1,
+                  "end_line": 2,
+                  "end_column": 1
+                }
+              },
+              "semantic_identity": "fn:pow@1",
+              "symbol": null,
+              "rule": null,
+              "cause": null,
+              "related": [],
+              "guidance": null,
+              "details": {
+                "ownership_expected": null,
+                "ownership_actual": null,
+                "consume_line": null,
+                "recursion_witness": null,
+                "resolution": null
+              },
+              "fixes": [],
+              "legal_alternatives": []
+            }
+          }
+        },
+        {
+          "binary": "candidate",
+          "mode": "shadow",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/unsupported_exponent.moss",
+          "returncode": 1,
+          "json": {
+            "protocol_version": 1,
+            "schema_version": "moss-agent-1",
+            "compiler_version": "0.1.0",
+            "command": "check",
+            "ok": false,
+            "error": {
+              "code": "MOSS_COMPILE_ERROR",
+              "severity": "error",
+              "message": "invalid arithmetic expression",
+              "source_file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/unsupported_exponent.moss",
+              "line": 2,
+              "column": 1,
+              "span": {
+                "start_line": 2,
+                "start_column": 1,
+                "end_line": 2,
+                "end_column": 1
+              },
+              "source": {
+                "file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/unsupported_exponent.moss",
+                "line": 2,
+                "column": 1,
+                "span": {
+                  "start_line": 2,
+                  "start_column": 1,
+                  "end_line": 2,
+                  "end_column": 1
+                }
+              },
+              "semantic_identity": "fn:pow@1",
+              "symbol": null,
+              "rule": null,
+              "cause": null,
+              "related": [],
+              "guidance": null,
+              "details": {
+                "ownership_expected": null,
+                "ownership_actual": null,
+                "consume_line": null,
+                "recursion_witness": null,
+                "resolution": null
+              },
+              "fixes": [],
+              "legal_alternatives": []
+            }
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "unsupported_operators.moss",
+      "runs": [
+        {
+          "binary": "baseline",
+          "mode": "off",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/unsupported_operators.moss",
+          "returncode": 1,
+          "json": {
+            "protocol_version": 1,
+            "schema_version": "moss-agent-1",
+            "compiler_version": "0.1.0",
+            "command": "check",
+            "ok": false,
+            "error": {
+              "code": "MOSS_COMPILE_ERROR",
+              "severity": "error",
+              "message": "invalid arithmetic expression",
+              "source_file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/unsupported_operators.moss",
+              "line": 2,
+              "column": 1,
+              "span": {
+                "start_line": 2,
+                "start_column": 1,
+                "end_line": 2,
+                "end_column": 1
+              },
+              "source": {
+                "file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/unsupported_operators.moss",
+                "line": 2,
+                "column": 1,
+                "span": {
+                  "start_line": 2,
+                  "start_column": 1,
+                  "end_line": 2,
+                  "end_column": 1
+                }
+              },
+              "semantic_identity": "fn:pow@1",
+              "symbol": null,
+              "rule": null,
+              "cause": null,
+              "related": [],
+              "guidance": null,
+              "details": {
+                "ownership_expected": null,
+                "ownership_actual": null,
+                "consume_line": null,
+                "recursion_witness": null,
+                "resolution": null
+              },
+              "fixes": [],
+              "legal_alternatives": []
+            }
+          }
+        },
+        {
+          "binary": "baseline",
+          "mode": "shadow",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/unsupported_operators.moss",
+          "returncode": 1,
+          "json": {
+            "protocol_version": 1,
+            "schema_version": "moss-agent-1",
+            "compiler_version": "0.1.0",
+            "command": "check",
+            "ok": false,
+            "error": {
+              "code": "MOSS_COMPILE_ERROR",
+              "severity": "error",
+              "message": "invalid arithmetic expression",
+              "source_file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/unsupported_operators.moss",
+              "line": 2,
+              "column": 1,
+              "span": {
+                "start_line": 2,
+                "start_column": 1,
+                "end_line": 2,
+                "end_column": 1
+              },
+              "source": {
+                "file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/unsupported_operators.moss",
+                "line": 2,
+                "column": 1,
+                "span": {
+                  "start_line": 2,
+                  "start_column": 1,
+                  "end_line": 2,
+                  "end_column": 1
+                }
+              },
+              "semantic_identity": "fn:pow@1",
+              "symbol": null,
+              "rule": null,
+              "cause": null,
+              "related": [],
+              "guidance": null,
+              "details": {
+                "ownership_expected": null,
+                "ownership_actual": null,
+                "consume_line": null,
+                "recursion_witness": null,
+                "resolution": null
+              },
+              "fixes": [],
+              "legal_alternatives": []
+            }
+          }
+        },
+        {
+          "binary": "candidate",
+          "mode": "off",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/unsupported_operators.moss",
+          "returncode": 1,
+          "json": {
+            "protocol_version": 1,
+            "schema_version": "moss-agent-1",
+            "compiler_version": "0.1.0",
+            "command": "check",
+            "ok": false,
+            "error": {
+              "code": "MOSS_COMPILE_ERROR",
+              "severity": "error",
+              "message": "invalid arithmetic expression",
+              "source_file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/unsupported_operators.moss",
+              "line": 2,
+              "column": 1,
+              "span": {
+                "start_line": 2,
+                "start_column": 1,
+                "end_line": 2,
+                "end_column": 1
+              },
+              "source": {
+                "file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/unsupported_operators.moss",
+                "line": 2,
+                "column": 1,
+                "span": {
+                  "start_line": 2,
+                  "start_column": 1,
+                  "end_line": 2,
+                  "end_column": 1
+                }
+              },
+              "semantic_identity": "fn:pow@1",
+              "symbol": null,
+              "rule": null,
+              "cause": null,
+              "related": [],
+              "guidance": null,
+              "details": {
+                "ownership_expected": null,
+                "ownership_actual": null,
+                "consume_line": null,
+                "recursion_witness": null,
+                "resolution": null
+              },
+              "fixes": [],
+              "legal_alternatives": []
+            }
+          }
+        },
+        {
+          "binary": "candidate",
+          "mode": "shadow",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/unsupported_operators.moss",
+          "returncode": 1,
+          "json": {
+            "protocol_version": 1,
+            "schema_version": "moss-agent-1",
+            "compiler_version": "0.1.0",
+            "command": "check",
+            "ok": false,
+            "error": {
+              "code": "MOSS_COMPILE_ERROR",
+              "severity": "error",
+              "message": "invalid arithmetic expression",
+              "source_file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/unsupported_operators.moss",
+              "line": 2,
+              "column": 1,
+              "span": {
+                "start_line": 2,
+                "start_column": 1,
+                "end_line": 2,
+                "end_column": 1
+              },
+              "source": {
+                "file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/unsupported_operators.moss",
+                "line": 2,
+                "column": 1,
+                "span": {
+                  "start_line": 2,
+                  "start_column": 1,
+                  "end_line": 2,
+                  "end_column": 1
+                }
+              },
+              "semantic_identity": "fn:pow@1",
+              "symbol": null,
+              "rule": null,
+              "cause": null,
+              "related": [],
+              "guidance": null,
+              "details": {
+                "ownership_expected": null,
+                "ownership_actual": null,
+                "consume_line": null,
+                "recursion_witness": null,
+                "resolution": null
+              },
+              "fixes": [],
+              "legal_alternatives": []
+            }
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "membership_operator.moss",
+      "runs": [
+        {
+          "binary": "baseline",
+          "mode": "off",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/membership_operator.moss",
+          "returncode": 1,
+          "json": {
+            "protocol_version": 1,
+            "schema_version": "moss-agent-1",
+            "compiler_version": "0.1.0",
+            "command": "check",
+            "ok": false,
+            "error": {
+              "code": "UNSUPPORTED_EXPRESSION_OPERATOR",
+              "severity": "error",
+              "message": "binary 'in' expression is not supported; use Map.get, key iteration, or an explicit search",
+              "source_file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/membership_operator.moss",
+              "line": 2,
+              "column": 1,
+              "span": {
+                "start_line": 2,
+                "start_column": 1,
+                "end_line": 2,
+                "end_column": 1
+              },
+              "source": {
+                "file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/membership_operator.moss",
+                "line": 2,
+                "column": 1,
+                "span": {
+                  "start_line": 2,
+                  "start_column": 1,
+                  "end_line": 2,
+                  "end_column": 1
+                }
+              },
+              "semantic_identity": "fn:contains@1",
+              "symbol": null,
+              "rule": null,
+              "cause": null,
+              "related": [],
+              "guidance": null,
+              "details": {
+                "ownership_expected": null,
+                "ownership_actual": null,
+                "consume_line": null,
+                "recursion_witness": null,
+                "resolution": null
+              },
+              "fixes": [],
+              "legal_alternatives": []
+            }
+          }
+        },
+        {
+          "binary": "baseline",
+          "mode": "shadow",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/membership_operator.moss",
+          "returncode": 1,
+          "json": {
+            "protocol_version": 1,
+            "schema_version": "moss-agent-1",
+            "compiler_version": "0.1.0",
+            "command": "check",
+            "ok": false,
+            "error": {
+              "code": "UNSUPPORTED_EXPRESSION_OPERATOR",
+              "severity": "error",
+              "message": "binary 'in' expression is not supported; use Map.get, key iteration, or an explicit search",
+              "source_file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/membership_operator.moss",
+              "line": 2,
+              "column": 1,
+              "span": {
+                "start_line": 2,
+                "start_column": 1,
+                "end_line": 2,
+                "end_column": 1
+              },
+              "source": {
+                "file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/membership_operator.moss",
+                "line": 2,
+                "column": 1,
+                "span": {
+                  "start_line": 2,
+                  "start_column": 1,
+                  "end_line": 2,
+                  "end_column": 1
+                }
+              },
+              "semantic_identity": "fn:contains@1",
+              "symbol": null,
+              "rule": null,
+              "cause": null,
+              "related": [],
+              "guidance": null,
+              "details": {
+                "ownership_expected": null,
+                "ownership_actual": null,
+                "consume_line": null,
+                "recursion_witness": null,
+                "resolution": null
+              },
+              "fixes": [],
+              "legal_alternatives": []
+            }
+          }
+        },
+        {
+          "binary": "candidate",
+          "mode": "off",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/membership_operator.moss",
+          "returncode": 1,
+          "json": {
+            "protocol_version": 1,
+            "schema_version": "moss-agent-1",
+            "compiler_version": "0.1.0",
+            "command": "check",
+            "ok": false,
+            "error": {
+              "code": "UNSUPPORTED_EXPRESSION_OPERATOR",
+              "severity": "error",
+              "message": "binary 'in' expression is not supported; use Map.get, key iteration, or an explicit search",
+              "source_file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/membership_operator.moss",
+              "line": 2,
+              "column": 1,
+              "span": {
+                "start_line": 2,
+                "start_column": 1,
+                "end_line": 2,
+                "end_column": 1
+              },
+              "source": {
+                "file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/membership_operator.moss",
+                "line": 2,
+                "column": 1,
+                "span": {
+                  "start_line": 2,
+                  "start_column": 1,
+                  "end_line": 2,
+                  "end_column": 1
+                }
+              },
+              "semantic_identity": "fn:contains@1",
+              "symbol": null,
+              "rule": null,
+              "cause": null,
+              "related": [],
+              "guidance": null,
+              "details": {
+                "ownership_expected": null,
+                "ownership_actual": null,
+                "consume_line": null,
+                "recursion_witness": null,
+                "resolution": null
+              },
+              "fixes": [],
+              "legal_alternatives": []
+            }
+          }
+        },
+        {
+          "binary": "candidate",
+          "mode": "shadow",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/membership_operator.moss",
+          "returncode": 1,
+          "json": {
+            "protocol_version": 1,
+            "schema_version": "moss-agent-1",
+            "compiler_version": "0.1.0",
+            "command": "check",
+            "ok": false,
+            "error": {
+              "code": "UNSUPPORTED_EXPRESSION_OPERATOR",
+              "severity": "error",
+              "message": "binary 'in' expression is not supported; use Map.get, key iteration, or an explicit search",
+              "source_file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/membership_operator.moss",
+              "line": 2,
+              "column": 1,
+              "span": {
+                "start_line": 2,
+                "start_column": 1,
+                "end_line": 2,
+                "end_column": 1
+              },
+              "source": {
+                "file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/membership_operator.moss",
+                "line": 2,
+                "column": 1,
+                "span": {
+                  "start_line": 2,
+                  "start_column": 1,
+                  "end_line": 2,
+                  "end_column": 1
+                }
+              },
+              "semantic_identity": "fn:contains@1",
+              "symbol": null,
+              "rule": null,
+              "cause": null,
+              "related": [],
+              "guidance": null,
+              "details": {
+                "ownership_expected": null,
+                "ownership_actual": null,
+                "consume_line": null,
+                "recursion_witness": null,
+                "resolution": null
+              },
+              "fixes": [],
+              "legal_alternatives": []
+            }
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "symbolic_boolean.moss",
+      "runs": [
+        {
+          "binary": "baseline",
+          "mode": "off",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/symbolic_boolean.moss",
+          "returncode": 1,
+          "json": {
+            "protocol_version": 1,
+            "schema_version": "moss-agent-1",
+            "compiler_version": "0.1.0",
+            "command": "check",
+            "ok": false,
+            "error": {
+              "code": "UNSUPPORTED_EXPRESSION_OPERATOR",
+              "severity": "error",
+              "message": "binary '&&' expression is not supported",
+              "source_file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/symbolic_boolean.moss",
+              "line": 2,
+              "column": 1,
+              "span": {
+                "start_line": 2,
+                "start_column": 1,
+                "end_line": 2,
+                "end_column": 1
+              },
+              "source": {
+                "file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/symbolic_boolean.moss",
+                "line": 2,
+                "column": 1,
+                "span": {
+                  "start_line": 2,
+                  "start_column": 1,
+                  "end_line": 2,
+                  "end_column": 1
+                }
+              },
+              "semantic_identity": "main@1",
+              "symbol": null,
+              "rule": null,
+              "cause": null,
+              "related": [],
+              "guidance": null,
+              "details": {
+                "ownership_expected": null,
+                "ownership_actual": null,
+                "consume_line": null,
+                "recursion_witness": null,
+                "resolution": null
+              },
+              "fixes": [],
+              "legal_alternatives": []
+            }
+          }
+        },
+        {
+          "binary": "baseline",
+          "mode": "shadow",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/symbolic_boolean.moss",
+          "returncode": 1,
+          "json": {
+            "protocol_version": 1,
+            "schema_version": "moss-agent-1",
+            "compiler_version": "0.1.0",
+            "command": "check",
+            "ok": false,
+            "error": {
+              "code": "UNSUPPORTED_EXPRESSION_OPERATOR",
+              "severity": "error",
+              "message": "binary '&&' expression is not supported",
+              "source_file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/symbolic_boolean.moss",
+              "line": 2,
+              "column": 1,
+              "span": {
+                "start_line": 2,
+                "start_column": 1,
+                "end_line": 2,
+                "end_column": 1
+              },
+              "source": {
+                "file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/symbolic_boolean.moss",
+                "line": 2,
+                "column": 1,
+                "span": {
+                  "start_line": 2,
+                  "start_column": 1,
+                  "end_line": 2,
+                  "end_column": 1
+                }
+              },
+              "semantic_identity": "main@1",
+              "symbol": null,
+              "rule": null,
+              "cause": null,
+              "related": [],
+              "guidance": null,
+              "details": {
+                "ownership_expected": null,
+                "ownership_actual": null,
+                "consume_line": null,
+                "recursion_witness": null,
+                "resolution": null
+              },
+              "fixes": [],
+              "legal_alternatives": []
+            }
+          }
+        },
+        {
+          "binary": "candidate",
+          "mode": "off",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/symbolic_boolean.moss",
+          "returncode": 1,
+          "json": {
+            "protocol_version": 1,
+            "schema_version": "moss-agent-1",
+            "compiler_version": "0.1.0",
+            "command": "check",
+            "ok": false,
+            "error": {
+              "code": "UNSUPPORTED_EXPRESSION_OPERATOR",
+              "severity": "error",
+              "message": "binary '&&' expression is not supported",
+              "source_file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/symbolic_boolean.moss",
+              "line": 2,
+              "column": 1,
+              "span": {
+                "start_line": 2,
+                "start_column": 1,
+                "end_line": 2,
+                "end_column": 1
+              },
+              "source": {
+                "file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/symbolic_boolean.moss",
+                "line": 2,
+                "column": 1,
+                "span": {
+                  "start_line": 2,
+                  "start_column": 1,
+                  "end_line": 2,
+                  "end_column": 1
+                }
+              },
+              "semantic_identity": "main@1",
+              "symbol": null,
+              "rule": null,
+              "cause": null,
+              "related": [],
+              "guidance": null,
+              "details": {
+                "ownership_expected": null,
+                "ownership_actual": null,
+                "consume_line": null,
+                "recursion_witness": null,
+                "resolution": null
+              },
+              "fixes": [],
+              "legal_alternatives": []
+            }
+          }
+        },
+        {
+          "binary": "candidate",
+          "mode": "shadow",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/symbolic_boolean.moss",
+          "returncode": 1,
+          "json": {
+            "protocol_version": 1,
+            "schema_version": "moss-agent-1",
+            "compiler_version": "0.1.0",
+            "command": "check",
+            "ok": false,
+            "error": {
+              "code": "UNSUPPORTED_EXPRESSION_OPERATOR",
+              "severity": "error",
+              "message": "binary '&&' expression is not supported",
+              "source_file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/symbolic_boolean.moss",
+              "line": 2,
+              "column": 1,
+              "span": {
+                "start_line": 2,
+                "start_column": 1,
+                "end_line": 2,
+                "end_column": 1
+              },
+              "source": {
+                "file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/symbolic_boolean.moss",
+                "line": 2,
+                "column": 1,
+                "span": {
+                  "start_line": 2,
+                  "start_column": 1,
+                  "end_line": 2,
+                  "end_column": 1
+                }
+              },
+              "semantic_identity": "main@1",
+              "symbol": null,
+              "rule": null,
+              "cause": null,
+              "related": [],
+              "guidance": null,
+              "details": {
+                "ownership_expected": null,
+                "ownership_actual": null,
+                "consume_line": null,
+                "recursion_witness": null,
+                "resolution": null
+              },
+              "fixes": [],
+              "legal_alternatives": []
+            }
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "incomplete_expression.moss",
+      "runs": [
+        {
+          "binary": "baseline",
+          "mode": "off",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/incomplete_expression.moss",
+          "returncode": 1,
+          "json": {
+            "protocol_version": 1,
+            "schema_version": "moss-agent-1",
+            "compiler_version": "0.1.0",
+            "command": "check",
+            "ok": false,
+            "error": {
+              "code": "MOSS_COMPILE_ERROR",
+              "severity": "error",
+              "message": "invalid arithmetic expression",
+              "source_file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/incomplete_expression.moss",
+              "line": 2,
+              "column": 1,
+              "span": {
+                "start_line": 2,
+                "start_column": 1,
+                "end_line": 2,
+                "end_column": 1
+              },
+              "source": {
+                "file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/incomplete_expression.moss",
+                "line": 2,
+                "column": 1,
+                "span": {
+                  "start_line": 2,
+                  "start_column": 1,
+                  "end_line": 2,
+                  "end_column": 1
+                }
+              },
+              "semantic_identity": "main@1",
+              "symbol": null,
+              "rule": null,
+              "cause": null,
+              "related": [],
+              "guidance": null,
+              "details": {
+                "ownership_expected": null,
+                "ownership_actual": null,
+                "consume_line": null,
+                "recursion_witness": null,
+                "resolution": null
+              },
+              "fixes": [],
+              "legal_alternatives": []
+            }
+          }
+        },
+        {
+          "binary": "baseline",
+          "mode": "shadow",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/incomplete_expression.moss",
+          "returncode": 1,
+          "json": {
+            "protocol_version": 1,
+            "schema_version": "moss-agent-1",
+            "compiler_version": "0.1.0",
+            "command": "check",
+            "ok": false,
+            "error": {
+              "code": "MOSS_COMPILE_ERROR",
+              "severity": "error",
+              "message": "invalid arithmetic expression",
+              "source_file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/incomplete_expression.moss",
+              "line": 2,
+              "column": 1,
+              "span": {
+                "start_line": 2,
+                "start_column": 1,
+                "end_line": 2,
+                "end_column": 1
+              },
+              "source": {
+                "file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/incomplete_expression.moss",
+                "line": 2,
+                "column": 1,
+                "span": {
+                  "start_line": 2,
+                  "start_column": 1,
+                  "end_line": 2,
+                  "end_column": 1
+                }
+              },
+              "semantic_identity": "main@1",
+              "symbol": null,
+              "rule": null,
+              "cause": null,
+              "related": [],
+              "guidance": null,
+              "details": {
+                "ownership_expected": null,
+                "ownership_actual": null,
+                "consume_line": null,
+                "recursion_witness": null,
+                "resolution": null
+              },
+              "fixes": [],
+              "legal_alternatives": []
+            }
+          }
+        },
+        {
+          "binary": "candidate",
+          "mode": "off",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/incomplete_expression.moss",
+          "returncode": 1,
+          "json": {
+            "protocol_version": 1,
+            "schema_version": "moss-agent-1",
+            "compiler_version": "0.1.0",
+            "command": "check",
+            "ok": false,
+            "error": {
+              "code": "MOSS_COMPILE_ERROR",
+              "severity": "error",
+              "message": "invalid arithmetic expression",
+              "source_file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/incomplete_expression.moss",
+              "line": 2,
+              "column": 1,
+              "span": {
+                "start_line": 2,
+                "start_column": 1,
+                "end_line": 2,
+                "end_column": 1
+              },
+              "source": {
+                "file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/incomplete_expression.moss",
+                "line": 2,
+                "column": 1,
+                "span": {
+                  "start_line": 2,
+                  "start_column": 1,
+                  "end_line": 2,
+                  "end_column": 1
+                }
+              },
+              "semantic_identity": "main@1",
+              "symbol": null,
+              "rule": null,
+              "cause": null,
+              "related": [],
+              "guidance": null,
+              "details": {
+                "ownership_expected": null,
+                "ownership_actual": null,
+                "consume_line": null,
+                "recursion_witness": null,
+                "resolution": null
+              },
+              "fixes": [],
+              "legal_alternatives": []
+            }
+          }
+        },
+        {
+          "binary": "candidate",
+          "mode": "shadow",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/incomplete_expression.moss",
+          "returncode": 1,
+          "json": {
+            "protocol_version": 1,
+            "schema_version": "moss-agent-1",
+            "compiler_version": "0.1.0",
+            "command": "check",
+            "ok": false,
+            "error": {
+              "code": "MOSS_COMPILE_ERROR",
+              "severity": "error",
+              "message": "invalid arithmetic expression",
+              "source_file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/incomplete_expression.moss",
+              "line": 2,
+              "column": 1,
+              "span": {
+                "start_line": 2,
+                "start_column": 1,
+                "end_line": 2,
+                "end_column": 1
+              },
+              "source": {
+                "file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/incomplete_expression.moss",
+                "line": 2,
+                "column": 1,
+                "span": {
+                  "start_line": 2,
+                  "start_column": 1,
+                  "end_line": 2,
+                  "end_column": 1
+                }
+              },
+              "semantic_identity": "main@1",
+              "symbol": null,
+              "rule": null,
+              "cause": null,
+              "related": [],
+              "guidance": null,
+              "details": {
+                "ownership_expected": null,
+                "ownership_actual": null,
+                "consume_line": null,
+                "recursion_witness": null,
+                "resolution": null
+              },
+              "fixes": [],
+              "legal_alternatives": []
+            }
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "incomplete_unary_not.moss",
+      "runs": [
+        {
+          "binary": "baseline",
+          "mode": "off",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/incomplete_unary_not.moss",
+          "returncode": 1,
+          "json": {
+            "protocol_version": 1,
+            "schema_version": "moss-agent-1",
+            "compiler_version": "0.1.0",
+            "command": "check",
+            "ok": false,
+            "error": {
+              "code": "UNKNOWN_SYMBOL_OR_TYPE",
+              "severity": "error",
+              "message": "unknown identifier 'not'",
+              "source_file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/incomplete_unary_not.moss",
+              "line": 2,
+              "column": 1,
+              "span": {
+                "start_line": 2,
+                "start_column": 1,
+                "end_line": 2,
+                "end_column": 1
+              },
+              "source": {
+                "file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/incomplete_unary_not.moss",
+                "line": 2,
+                "column": 1,
+                "span": {
+                  "start_line": 2,
+                  "start_column": 1,
+                  "end_line": 2,
+                  "end_column": 1
+                }
+              },
+              "semantic_identity": "main@1",
+              "symbol": null,
+              "rule": null,
+              "cause": null,
+              "related": [],
+              "guidance": null,
+              "details": {
+                "ownership_expected": null,
+                "ownership_actual": null,
+                "consume_line": null,
+                "recursion_witness": null,
+                "resolution": null
+              },
+              "fixes": [],
+              "legal_alternatives": [
+                "rename the reference to an existing static symbol",
+                "declare the missing symbol or concrete type"
+              ]
+            }
+          }
+        },
+        {
+          "binary": "baseline",
+          "mode": "shadow",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/incomplete_unary_not.moss",
+          "returncode": 1,
+          "json": {
+            "protocol_version": 1,
+            "schema_version": "moss-agent-1",
+            "compiler_version": "0.1.0",
+            "command": "check",
+            "ok": false,
+            "error": {
+              "code": "UNKNOWN_SYMBOL_OR_TYPE",
+              "severity": "error",
+              "message": "unknown identifier 'not'",
+              "source_file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/incomplete_unary_not.moss",
+              "line": 2,
+              "column": 1,
+              "span": {
+                "start_line": 2,
+                "start_column": 1,
+                "end_line": 2,
+                "end_column": 1
+              },
+              "source": {
+                "file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/incomplete_unary_not.moss",
+                "line": 2,
+                "column": 1,
+                "span": {
+                  "start_line": 2,
+                  "start_column": 1,
+                  "end_line": 2,
+                  "end_column": 1
+                }
+              },
+              "semantic_identity": "main@1",
+              "symbol": null,
+              "rule": null,
+              "cause": null,
+              "related": [],
+              "guidance": null,
+              "details": {
+                "ownership_expected": null,
+                "ownership_actual": null,
+                "consume_line": null,
+                "recursion_witness": null,
+                "resolution": null
+              },
+              "fixes": [],
+              "legal_alternatives": [
+                "rename the reference to an existing static symbol",
+                "declare the missing symbol or concrete type"
+              ]
+            }
+          }
+        },
+        {
+          "binary": "candidate",
+          "mode": "off",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/incomplete_unary_not.moss",
+          "returncode": 1,
+          "json": {
+            "protocol_version": 1,
+            "schema_version": "moss-agent-1",
+            "compiler_version": "0.1.0",
+            "command": "check",
+            "ok": false,
+            "error": {
+              "code": "UNKNOWN_SYMBOL_OR_TYPE",
+              "severity": "error",
+              "message": "unknown identifier 'not'",
+              "source_file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/incomplete_unary_not.moss",
+              "line": 2,
+              "column": 1,
+              "span": {
+                "start_line": 2,
+                "start_column": 1,
+                "end_line": 2,
+                "end_column": 1
+              },
+              "source": {
+                "file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/incomplete_unary_not.moss",
+                "line": 2,
+                "column": 1,
+                "span": {
+                  "start_line": 2,
+                  "start_column": 1,
+                  "end_line": 2,
+                  "end_column": 1
+                }
+              },
+              "semantic_identity": "main@1",
+              "symbol": null,
+              "rule": null,
+              "cause": null,
+              "related": [],
+              "guidance": null,
+              "details": {
+                "ownership_expected": null,
+                "ownership_actual": null,
+                "consume_line": null,
+                "recursion_witness": null,
+                "resolution": null
+              },
+              "fixes": [],
+              "legal_alternatives": [
+                "rename the reference to an existing static symbol",
+                "declare the missing symbol or concrete type"
+              ]
+            }
+          }
+        },
+        {
+          "binary": "candidate",
+          "mode": "shadow",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/incomplete_unary_not.moss",
+          "returncode": 1,
+          "json": {
+            "protocol_version": 1,
+            "schema_version": "moss-agent-1",
+            "compiler_version": "0.1.0",
+            "command": "check",
+            "ok": false,
+            "error": {
+              "code": "UNKNOWN_SYMBOL_OR_TYPE",
+              "severity": "error",
+              "message": "unknown identifier 'not'",
+              "source_file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/incomplete_unary_not.moss",
+              "line": 2,
+              "column": 1,
+              "span": {
+                "start_line": 2,
+                "start_column": 1,
+                "end_line": 2,
+                "end_column": 1
+              },
+              "source": {
+                "file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/incomplete_unary_not.moss",
+                "line": 2,
+                "column": 1,
+                "span": {
+                  "start_line": 2,
+                  "start_column": 1,
+                  "end_line": 2,
+                  "end_column": 1
+                }
+              },
+              "semantic_identity": "main@1",
+              "symbol": null,
+              "rule": null,
+              "cause": null,
+              "related": [],
+              "guidance": null,
+              "details": {
+                "ownership_expected": null,
+                "ownership_actual": null,
+                "consume_line": null,
+                "recursion_witness": null,
+                "resolution": null
+              },
+              "fixes": [],
+              "legal_alternatives": [
+                "rename the reference to an existing static symbol",
+                "declare the missing symbol or concrete type"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "split_fragment.moss",
+      "runs": [
+        {
+          "binary": "baseline",
+          "mode": "off",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/split_fragment.moss",
+          "returncode": 1,
+          "json": {
+            "protocol_version": 1,
+            "schema_version": "moss-agent-1",
+            "compiler_version": "0.1.0",
+            "command": "check",
+            "ok": false,
+            "error": {
+              "code": "MOSS_COMPILE_ERROR",
+              "severity": "error",
+              "message": "indentation jumps more than one block level",
+              "source_file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/split_fragment.moss",
+              "line": 3,
+              "column": 1,
+              "span": {
+                "start_line": 3,
+                "start_column": 1,
+                "end_line": 3,
+                "end_column": 1
+              },
+              "source": {
+                "file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/split_fragment.moss",
+                "line": 3,
+                "column": 1,
+                "span": {
+                  "start_line": 3,
+                  "start_column": 1,
+                  "end_line": 3,
+                  "end_column": 1
+                }
+              },
+              "semantic_identity": "main@1",
+              "symbol": null,
+              "rule": null,
+              "cause": null,
+              "related": [],
+              "guidance": null,
+              "details": {
+                "ownership_expected": null,
+                "ownership_actual": null,
+                "consume_line": null,
+                "recursion_witness": null,
+                "resolution": null
+              },
+              "fixes": [],
+              "legal_alternatives": []
+            }
+          }
+        },
+        {
+          "binary": "baseline",
+          "mode": "shadow",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/split_fragment.moss",
+          "returncode": 1,
+          "json": {
+            "protocol_version": 1,
+            "schema_version": "moss-agent-1",
+            "compiler_version": "0.1.0",
+            "command": "check",
+            "ok": false,
+            "error": {
+              "code": "MOSS_COMPILE_ERROR",
+              "severity": "error",
+              "message": "indentation jumps more than one block level",
+              "source_file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/split_fragment.moss",
+              "line": 3,
+              "column": 1,
+              "span": {
+                "start_line": 3,
+                "start_column": 1,
+                "end_line": 3,
+                "end_column": 1
+              },
+              "source": {
+                "file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/split_fragment.moss",
+                "line": 3,
+                "column": 1,
+                "span": {
+                  "start_line": 3,
+                  "start_column": 1,
+                  "end_line": 3,
+                  "end_column": 1
+                }
+              },
+              "semantic_identity": "main@1",
+              "symbol": null,
+              "rule": null,
+              "cause": null,
+              "related": [],
+              "guidance": null,
+              "details": {
+                "ownership_expected": null,
+                "ownership_actual": null,
+                "consume_line": null,
+                "recursion_witness": null,
+                "resolution": null
+              },
+              "fixes": [],
+              "legal_alternatives": []
+            }
+          }
+        },
+        {
+          "binary": "candidate",
+          "mode": "off",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/split_fragment.moss",
+          "returncode": 1,
+          "json": {
+            "protocol_version": 1,
+            "schema_version": "moss-agent-1",
+            "compiler_version": "0.1.0",
+            "command": "check",
+            "ok": false,
+            "error": {
+              "code": "MOSS_COMPILE_ERROR",
+              "severity": "error",
+              "message": "indentation jumps more than one block level",
+              "source_file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/split_fragment.moss",
+              "line": 3,
+              "column": 1,
+              "span": {
+                "start_line": 3,
+                "start_column": 1,
+                "end_line": 3,
+                "end_column": 1
+              },
+              "source": {
+                "file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/split_fragment.moss",
+                "line": 3,
+                "column": 1,
+                "span": {
+                  "start_line": 3,
+                  "start_column": 1,
+                  "end_line": 3,
+                  "end_column": 1
+                }
+              },
+              "semantic_identity": "main@1",
+              "symbol": null,
+              "rule": null,
+              "cause": null,
+              "related": [],
+              "guidance": null,
+              "details": {
+                "ownership_expected": null,
+                "ownership_actual": null,
+                "consume_line": null,
+                "recursion_witness": null,
+                "resolution": null
+              },
+              "fixes": [],
+              "legal_alternatives": []
+            }
+          }
+        },
+        {
+          "binary": "candidate",
+          "mode": "shadow",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/split_fragment.moss",
+          "returncode": 1,
+          "json": {
+            "protocol_version": 1,
+            "schema_version": "moss-agent-1",
+            "compiler_version": "0.1.0",
+            "command": "check",
+            "ok": false,
+            "error": {
+              "code": "MOSS_COMPILE_ERROR",
+              "severity": "error",
+              "message": "indentation jumps more than one block level",
+              "source_file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/split_fragment.moss",
+              "line": 3,
+              "column": 1,
+              "span": {
+                "start_line": 3,
+                "start_column": 1,
+                "end_line": 3,
+                "end_column": 1
+              },
+              "source": {
+                "file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/split_fragment.moss",
+                "line": 3,
+                "column": 1,
+                "span": {
+                  "start_line": 3,
+                  "start_column": 1,
+                  "end_line": 3,
+                  "end_column": 1
+                }
+              },
+              "semantic_identity": "main@1",
+              "symbol": null,
+              "rule": null,
+              "cause": null,
+              "related": [],
+              "guidance": null,
+              "details": {
+                "ownership_expected": null,
+                "ownership_actual": null,
+                "consume_line": null,
+                "recursion_witness": null,
+                "resolution": null
+              },
+              "fixes": [],
+              "legal_alternatives": []
+            }
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "juxtaposed_operands.moss",
+      "runs": [
+        {
+          "binary": "baseline",
+          "mode": "off",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/juxtaposed_operands.moss",
+          "returncode": 1,
+          "json": {
+            "protocol_version": 1,
+            "schema_version": "moss-agent-1",
+            "compiler_version": "0.1.0",
+            "command": "check",
+            "ok": false,
+            "error": {
+              "code": "INVALID_EXPRESSION",
+              "severity": "error",
+              "message": "invalid expression '2 3': '2' is followed by '3' with no operator between them (if, while, and for are statements, not expressions)",
+              "source_file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/juxtaposed_operands.moss",
+              "line": 2,
+              "column": 1,
+              "span": {
+                "start_line": 2,
+                "start_column": 1,
+                "end_line": 2,
+                "end_column": 1
+              },
+              "source": {
+                "file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/juxtaposed_operands.moss",
+                "line": 2,
+                "column": 1,
+                "span": {
+                  "start_line": 2,
+                  "start_column": 1,
+                  "end_line": 2,
+                  "end_column": 1
+                }
+              },
+              "semantic_identity": "main@1",
+              "symbol": null,
+              "rule": null,
+              "cause": null,
+              "related": [],
+              "guidance": null,
+              "details": {
+                "ownership_expected": null,
+                "ownership_actual": null,
+                "consume_line": null,
+                "recursion_witness": null,
+                "resolution": null
+              },
+              "fixes": [],
+              "legal_alternatives": []
+            }
+          }
+        },
+        {
+          "binary": "baseline",
+          "mode": "shadow",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/juxtaposed_operands.moss",
+          "returncode": 1,
+          "json": {
+            "protocol_version": 1,
+            "schema_version": "moss-agent-1",
+            "compiler_version": "0.1.0",
+            "command": "check",
+            "ok": false,
+            "error": {
+              "code": "INVALID_EXPRESSION",
+              "severity": "error",
+              "message": "invalid expression '2 3': '2' is followed by '3' with no operator between them (if, while, and for are statements, not expressions)",
+              "source_file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/juxtaposed_operands.moss",
+              "line": 2,
+              "column": 1,
+              "span": {
+                "start_line": 2,
+                "start_column": 1,
+                "end_line": 2,
+                "end_column": 1
+              },
+              "source": {
+                "file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/juxtaposed_operands.moss",
+                "line": 2,
+                "column": 1,
+                "span": {
+                  "start_line": 2,
+                  "start_column": 1,
+                  "end_line": 2,
+                  "end_column": 1
+                }
+              },
+              "semantic_identity": "main@1",
+              "symbol": null,
+              "rule": null,
+              "cause": null,
+              "related": [],
+              "guidance": null,
+              "details": {
+                "ownership_expected": null,
+                "ownership_actual": null,
+                "consume_line": null,
+                "recursion_witness": null,
+                "resolution": null
+              },
+              "fixes": [],
+              "legal_alternatives": []
+            }
+          }
+        },
+        {
+          "binary": "candidate",
+          "mode": "off",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/juxtaposed_operands.moss",
+          "returncode": 1,
+          "json": {
+            "protocol_version": 1,
+            "schema_version": "moss-agent-1",
+            "compiler_version": "0.1.0",
+            "command": "check",
+            "ok": false,
+            "error": {
+              "code": "INVALID_EXPRESSION",
+              "severity": "error",
+              "message": "invalid expression '2 3': '2' is followed by '3' with no operator between them (if, while, and for are statements, not expressions)",
+              "source_file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/juxtaposed_operands.moss",
+              "line": 2,
+              "column": 1,
+              "span": {
+                "start_line": 2,
+                "start_column": 1,
+                "end_line": 2,
+                "end_column": 1
+              },
+              "source": {
+                "file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/juxtaposed_operands.moss",
+                "line": 2,
+                "column": 1,
+                "span": {
+                  "start_line": 2,
+                  "start_column": 1,
+                  "end_line": 2,
+                  "end_column": 1
+                }
+              },
+              "semantic_identity": "main@1",
+              "symbol": null,
+              "rule": null,
+              "cause": null,
+              "related": [],
+              "guidance": null,
+              "details": {
+                "ownership_expected": null,
+                "ownership_actual": null,
+                "consume_line": null,
+                "recursion_witness": null,
+                "resolution": null
+              },
+              "fixes": [],
+              "legal_alternatives": []
+            }
+          }
+        },
+        {
+          "binary": "candidate",
+          "mode": "shadow",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/juxtaposed_operands.moss",
+          "returncode": 1,
+          "json": {
+            "protocol_version": 1,
+            "schema_version": "moss-agent-1",
+            "compiler_version": "0.1.0",
+            "command": "check",
+            "ok": false,
+            "error": {
+              "code": "INVALID_EXPRESSION",
+              "severity": "error",
+              "message": "invalid expression '2 3': '2' is followed by '3' with no operator between them (if, while, and for are statements, not expressions)",
+              "source_file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/juxtaposed_operands.moss",
+              "line": 2,
+              "column": 1,
+              "span": {
+                "start_line": 2,
+                "start_column": 1,
+                "end_line": 2,
+                "end_column": 1
+              },
+              "source": {
+                "file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/juxtaposed_operands.moss",
+                "line": 2,
+                "column": 1,
+                "span": {
+                  "start_line": 2,
+                  "start_column": 1,
+                  "end_line": 2,
+                  "end_column": 1
+                }
+              },
+              "semantic_identity": "main@1",
+              "symbol": null,
+              "rule": null,
+              "cause": null,
+              "related": [],
+              "guidance": null,
+              "details": {
+                "ownership_expected": null,
+                "ownership_actual": null,
+                "consume_line": null,
+                "recursion_witness": null,
+                "resolution": null
+              },
+              "fixes": [],
+              "legal_alternatives": []
+            }
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "invalid_operator_adjacency.moss",
+      "runs": [
+        {
+          "binary": "baseline",
+          "mode": "off",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/invalid_operator_adjacency.moss",
+          "returncode": 1,
+          "json": {
+            "protocol_version": 1,
+            "schema_version": "moss-agent-1",
+            "compiler_version": "0.1.0",
+            "command": "check",
+            "ok": false,
+            "error": {
+              "code": "MOSS_COMPILE_ERROR",
+              "severity": "error",
+              "message": "invalid arithmetic expression",
+              "source_file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/invalid_operator_adjacency.moss",
+              "line": 2,
+              "column": 1,
+              "span": {
+                "start_line": 2,
+                "start_column": 1,
+                "end_line": 2,
+                "end_column": 1
+              },
+              "source": {
+                "file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/invalid_operator_adjacency.moss",
+                "line": 2,
+                "column": 1,
+                "span": {
+                  "start_line": 2,
+                  "start_column": 1,
+                  "end_line": 2,
+                  "end_column": 1
+                }
+              },
+              "semantic_identity": "main@1",
+              "symbol": null,
+              "rule": null,
+              "cause": null,
+              "related": [],
+              "guidance": null,
+              "details": {
+                "ownership_expected": null,
+                "ownership_actual": null,
+                "consume_line": null,
+                "recursion_witness": null,
+                "resolution": null
+              },
+              "fixes": [],
+              "legal_alternatives": []
+            }
+          }
+        },
+        {
+          "binary": "baseline",
+          "mode": "shadow",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/invalid_operator_adjacency.moss",
+          "returncode": 1,
+          "json": {
+            "protocol_version": 1,
+            "schema_version": "moss-agent-1",
+            "compiler_version": "0.1.0",
+            "command": "check",
+            "ok": false,
+            "error": {
+              "code": "MOSS_COMPILE_ERROR",
+              "severity": "error",
+              "message": "invalid arithmetic expression",
+              "source_file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/invalid_operator_adjacency.moss",
+              "line": 2,
+              "column": 1,
+              "span": {
+                "start_line": 2,
+                "start_column": 1,
+                "end_line": 2,
+                "end_column": 1
+              },
+              "source": {
+                "file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/invalid_operator_adjacency.moss",
+                "line": 2,
+                "column": 1,
+                "span": {
+                  "start_line": 2,
+                  "start_column": 1,
+                  "end_line": 2,
+                  "end_column": 1
+                }
+              },
+              "semantic_identity": "main@1",
+              "symbol": null,
+              "rule": null,
+              "cause": null,
+              "related": [],
+              "guidance": null,
+              "details": {
+                "ownership_expected": null,
+                "ownership_actual": null,
+                "consume_line": null,
+                "recursion_witness": null,
+                "resolution": null
+              },
+              "fixes": [],
+              "legal_alternatives": []
+            }
+          }
+        },
+        {
+          "binary": "candidate",
+          "mode": "off",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/invalid_operator_adjacency.moss",
+          "returncode": 1,
+          "json": {
+            "protocol_version": 1,
+            "schema_version": "moss-agent-1",
+            "compiler_version": "0.1.0",
+            "command": "check",
+            "ok": false,
+            "error": {
+              "code": "MOSS_COMPILE_ERROR",
+              "severity": "error",
+              "message": "invalid arithmetic expression",
+              "source_file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/invalid_operator_adjacency.moss",
+              "line": 2,
+              "column": 1,
+              "span": {
+                "start_line": 2,
+                "start_column": 1,
+                "end_line": 2,
+                "end_column": 1
+              },
+              "source": {
+                "file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/invalid_operator_adjacency.moss",
+                "line": 2,
+                "column": 1,
+                "span": {
+                  "start_line": 2,
+                  "start_column": 1,
+                  "end_line": 2,
+                  "end_column": 1
+                }
+              },
+              "semantic_identity": "main@1",
+              "symbol": null,
+              "rule": null,
+              "cause": null,
+              "related": [],
+              "guidance": null,
+              "details": {
+                "ownership_expected": null,
+                "ownership_actual": null,
+                "consume_line": null,
+                "recursion_witness": null,
+                "resolution": null
+              },
+              "fixes": [],
+              "legal_alternatives": []
+            }
+          }
+        },
+        {
+          "binary": "candidate",
+          "mode": "shadow",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/invalid_operator_adjacency.moss",
+          "returncode": 1,
+          "json": {
+            "protocol_version": 1,
+            "schema_version": "moss-agent-1",
+            "compiler_version": "0.1.0",
+            "command": "check",
+            "ok": false,
+            "error": {
+              "code": "MOSS_COMPILE_ERROR",
+              "severity": "error",
+              "message": "invalid arithmetic expression",
+              "source_file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/invalid_operator_adjacency.moss",
+              "line": 2,
+              "column": 1,
+              "span": {
+                "start_line": 2,
+                "start_column": 1,
+                "end_line": 2,
+                "end_column": 1
+              },
+              "source": {
+                "file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/invalid_operator_adjacency.moss",
+                "line": 2,
+                "column": 1,
+                "span": {
+                  "start_line": 2,
+                  "start_column": 1,
+                  "end_line": 2,
+                  "end_column": 1
+                }
+              },
+              "semantic_identity": "main@1",
+              "symbol": null,
+              "rule": null,
+              "cause": null,
+              "related": [],
+              "guidance": null,
+              "details": {
+                "ownership_expected": null,
+                "ownership_actual": null,
+                "consume_line": null,
+                "recursion_witness": null,
+                "resolution": null
+              },
+              "fixes": [],
+              "legal_alternatives": []
+            }
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "unclosed_vector_expression.moss",
+      "runs": [
+        {
+          "binary": "baseline",
+          "mode": "off",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/unclosed_vector_expression.moss",
+          "returncode": 1,
+          "json": {
+            "protocol_version": 1,
+            "schema_version": "moss-agent-1",
+            "compiler_version": "0.1.0",
+            "command": "check",
+            "ok": false,
+            "error": {
+              "code": "MOSS_COMPILE_ERROR",
+              "severity": "error",
+              "message": "heterogeneous or unresolved collection element type",
+              "source_file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/unclosed_vector_expression.moss",
+              "line": 2,
+              "column": 1,
+              "span": {
+                "start_line": 2,
+                "start_column": 1,
+                "end_line": 2,
+                "end_column": 1
+              },
+              "source": {
+                "file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/unclosed_vector_expression.moss",
+                "line": 2,
+                "column": 1,
+                "span": {
+                  "start_line": 2,
+                  "start_column": 1,
+                  "end_line": 2,
+                  "end_column": 1
+                }
+              },
+              "semantic_identity": "main@1",
+              "symbol": null,
+              "rule": null,
+              "cause": null,
+              "related": [],
+              "guidance": null,
+              "details": {
+                "ownership_expected": null,
+                "ownership_actual": null,
+                "consume_line": null,
+                "recursion_witness": null,
+                "resolution": null
+              },
+              "fixes": [],
+              "legal_alternatives": []
+            }
+          }
+        },
+        {
+          "binary": "baseline",
+          "mode": "shadow",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/unclosed_vector_expression.moss",
+          "returncode": 1,
+          "json": {
+            "protocol_version": 1,
+            "schema_version": "moss-agent-1",
+            "compiler_version": "0.1.0",
+            "command": "check",
+            "ok": false,
+            "error": {
+              "code": "MOSS_COMPILE_ERROR",
+              "severity": "error",
+              "message": "heterogeneous or unresolved collection element type",
+              "source_file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/unclosed_vector_expression.moss",
+              "line": 2,
+              "column": 1,
+              "span": {
+                "start_line": 2,
+                "start_column": 1,
+                "end_line": 2,
+                "end_column": 1
+              },
+              "source": {
+                "file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/unclosed_vector_expression.moss",
+                "line": 2,
+                "column": 1,
+                "span": {
+                  "start_line": 2,
+                  "start_column": 1,
+                  "end_line": 2,
+                  "end_column": 1
+                }
+              },
+              "semantic_identity": "main@1",
+              "symbol": null,
+              "rule": null,
+              "cause": null,
+              "related": [],
+              "guidance": null,
+              "details": {
+                "ownership_expected": null,
+                "ownership_actual": null,
+                "consume_line": null,
+                "recursion_witness": null,
+                "resolution": null
+              },
+              "fixes": [],
+              "legal_alternatives": []
+            }
+          }
+        },
+        {
+          "binary": "candidate",
+          "mode": "off",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/unclosed_vector_expression.moss",
+          "returncode": 1,
+          "json": {
+            "protocol_version": 1,
+            "schema_version": "moss-agent-1",
+            "compiler_version": "0.1.0",
+            "command": "check",
+            "ok": false,
+            "error": {
+              "code": "MOSS_COMPILE_ERROR",
+              "severity": "error",
+              "message": "heterogeneous or unresolved collection element type",
+              "source_file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/unclosed_vector_expression.moss",
+              "line": 2,
+              "column": 1,
+              "span": {
+                "start_line": 2,
+                "start_column": 1,
+                "end_line": 2,
+                "end_column": 1
+              },
+              "source": {
+                "file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/unclosed_vector_expression.moss",
+                "line": 2,
+                "column": 1,
+                "span": {
+                  "start_line": 2,
+                  "start_column": 1,
+                  "end_line": 2,
+                  "end_column": 1
+                }
+              },
+              "semantic_identity": "main@1",
+              "symbol": null,
+              "rule": null,
+              "cause": null,
+              "related": [],
+              "guidance": null,
+              "details": {
+                "ownership_expected": null,
+                "ownership_actual": null,
+                "consume_line": null,
+                "recursion_witness": null,
+                "resolution": null
+              },
+              "fixes": [],
+              "legal_alternatives": []
+            }
+          }
+        },
+        {
+          "binary": "candidate",
+          "mode": "shadow",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/unclosed_vector_expression.moss",
+          "returncode": 1,
+          "json": {
+            "protocol_version": 1,
+            "schema_version": "moss-agent-1",
+            "compiler_version": "0.1.0",
+            "command": "check",
+            "ok": false,
+            "error": {
+              "code": "MOSS_COMPILE_ERROR",
+              "severity": "error",
+              "message": "heterogeneous or unresolved collection element type",
+              "source_file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/unclosed_vector_expression.moss",
+              "line": 2,
+              "column": 1,
+              "span": {
+                "start_line": 2,
+                "start_column": 1,
+                "end_line": 2,
+                "end_column": 1
+              },
+              "source": {
+                "file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/unclosed_vector_expression.moss",
+                "line": 2,
+                "column": 1,
+                "span": {
+                  "start_line": 2,
+                  "start_column": 1,
+                  "end_line": 2,
+                  "end_column": 1
+                }
+              },
+              "semantic_identity": "main@1",
+              "symbol": null,
+              "rule": null,
+              "cause": null,
+              "related": [],
+              "guidance": null,
+              "details": {
+                "ownership_expected": null,
+                "ownership_actual": null,
+                "consume_line": null,
+                "recursion_witness": null,
+                "resolution": null
+              },
+              "fixes": [],
+              "legal_alternatives": []
+            }
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "incomplete_vector.moss",
+      "runs": [
+        {
+          "binary": "baseline",
+          "mode": "off",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/incomplete_vector.moss",
+          "returncode": 1,
+          "json": {
+            "protocol_version": 1,
+            "schema_version": "moss-agent-1",
+            "compiler_version": "0.1.0",
+            "command": "check",
+            "ok": false,
+            "error": {
+              "code": "MOSS_COMPILE_ERROR",
+              "severity": "error",
+              "message": "heterogeneous or unresolved collection element type",
+              "source_file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/incomplete_vector.moss",
+              "line": 2,
+              "column": 1,
+              "span": {
+                "start_line": 2,
+                "start_column": 1,
+                "end_line": 2,
+                "end_column": 1
+              },
+              "source": {
+                "file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/incomplete_vector.moss",
+                "line": 2,
+                "column": 1,
+                "span": {
+                  "start_line": 2,
+                  "start_column": 1,
+                  "end_line": 2,
+                  "end_column": 1
+                }
+              },
+              "semantic_identity": "main@1",
+              "symbol": null,
+              "rule": null,
+              "cause": null,
+              "related": [],
+              "guidance": null,
+              "details": {
+                "ownership_expected": null,
+                "ownership_actual": null,
+                "consume_line": null,
+                "recursion_witness": null,
+                "resolution": null
+              },
+              "fixes": [],
+              "legal_alternatives": []
+            }
+          }
+        },
+        {
+          "binary": "baseline",
+          "mode": "shadow",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/incomplete_vector.moss",
+          "returncode": 1,
+          "json": {
+            "protocol_version": 1,
+            "schema_version": "moss-agent-1",
+            "compiler_version": "0.1.0",
+            "command": "check",
+            "ok": false,
+            "error": {
+              "code": "MOSS_COMPILE_ERROR",
+              "severity": "error",
+              "message": "heterogeneous or unresolved collection element type",
+              "source_file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/incomplete_vector.moss",
+              "line": 2,
+              "column": 1,
+              "span": {
+                "start_line": 2,
+                "start_column": 1,
+                "end_line": 2,
+                "end_column": 1
+              },
+              "source": {
+                "file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/incomplete_vector.moss",
+                "line": 2,
+                "column": 1,
+                "span": {
+                  "start_line": 2,
+                  "start_column": 1,
+                  "end_line": 2,
+                  "end_column": 1
+                }
+              },
+              "semantic_identity": "main@1",
+              "symbol": null,
+              "rule": null,
+              "cause": null,
+              "related": [],
+              "guidance": null,
+              "details": {
+                "ownership_expected": null,
+                "ownership_actual": null,
+                "consume_line": null,
+                "recursion_witness": null,
+                "resolution": null
+              },
+              "fixes": [],
+              "legal_alternatives": []
+            }
+          }
+        },
+        {
+          "binary": "candidate",
+          "mode": "off",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/incomplete_vector.moss",
+          "returncode": 1,
+          "json": {
+            "protocol_version": 1,
+            "schema_version": "moss-agent-1",
+            "compiler_version": "0.1.0",
+            "command": "check",
+            "ok": false,
+            "error": {
+              "code": "MOSS_COMPILE_ERROR",
+              "severity": "error",
+              "message": "heterogeneous or unresolved collection element type",
+              "source_file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/incomplete_vector.moss",
+              "line": 2,
+              "column": 1,
+              "span": {
+                "start_line": 2,
+                "start_column": 1,
+                "end_line": 2,
+                "end_column": 1
+              },
+              "source": {
+                "file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/incomplete_vector.moss",
+                "line": 2,
+                "column": 1,
+                "span": {
+                  "start_line": 2,
+                  "start_column": 1,
+                  "end_line": 2,
+                  "end_column": 1
+                }
+              },
+              "semantic_identity": "main@1",
+              "symbol": null,
+              "rule": null,
+              "cause": null,
+              "related": [],
+              "guidance": null,
+              "details": {
+                "ownership_expected": null,
+                "ownership_actual": null,
+                "consume_line": null,
+                "recursion_witness": null,
+                "resolution": null
+              },
+              "fixes": [],
+              "legal_alternatives": []
+            }
+          }
+        },
+        {
+          "binary": "candidate",
+          "mode": "shadow",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/incomplete_vector.moss",
+          "returncode": 1,
+          "json": {
+            "protocol_version": 1,
+            "schema_version": "moss-agent-1",
+            "compiler_version": "0.1.0",
+            "command": "check",
+            "ok": false,
+            "error": {
+              "code": "MOSS_COMPILE_ERROR",
+              "severity": "error",
+              "message": "heterogeneous or unresolved collection element type",
+              "source_file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/incomplete_vector.moss",
+              "line": 2,
+              "column": 1,
+              "span": {
+                "start_line": 2,
+                "start_column": 1,
+                "end_line": 2,
+                "end_column": 1
+              },
+              "source": {
+                "file": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tests/phase27/est/repro/incomplete_vector.moss",
+                "line": 2,
+                "column": 1,
+                "span": {
+                  "start_line": 2,
+                  "start_column": 1,
+                  "end_line": 2,
+                  "end_column": 1
+                }
+              },
+              "semantic_identity": "main@1",
+              "symbol": null,
+              "rule": null,
+              "cause": null,
+              "related": [],
+              "guidance": null,
+              "details": {
+                "ownership_expected": null,
+                "ownership_actual": null,
+                "consume_line": null,
+                "recursion_witness": null,
+                "resolution": null
+              },
+              "fixes": [],
+              "legal_alternatives": []
+            }
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "package_incomplete_expression",
+      "binary": "baseline",
+      "mode": "off",
+      "returncode": 1,
+      "json": {
+        "schema_version": "margo-1",
+        "ok": false,
+        "error": "command failed (/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3-baseline/build/compiler/moss-dev build --check --json): {\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"build\",\n  \"ok\": false,\n  \"error\": {\"code\": \"MOSS_COMPILE_ERROR\", \"severity\": \"error\", \"message\": \"invalid arithmetic expression\", \"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tmp/cp-f-package-incomplete-yph58bwl/src/main.moss\", \"line\": 2, \"column\": 1, \"span\": {\"start_line\": 2, \"start_column\": 1, \"end_line\": 2, \"end_column\": 1}, \"source\": {\"file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tmp/cp-f-package-incomplete-yph58bwl/src/main.moss\", \"line\": 2, \"column\": 1, \"span\": {\"start_line\": 2, \"start_column\": 1, \"end_line\": 2, \"end_column\": 1}}, \"semantic_identity\": \"main@1\", \"symbol\": null, \"rule\": null, \"cause\": null, \"related\": [], \"guidance\": null, \"details\": {\"ownership_expected\": null, \"ownership_actual\": null, \"consume_line\": null, \"recursion_witness\": null, \"resolution\": null}, \"fixes\": [], \"legal_alternatives\": []}\n}"
+      },
+      "diagnostic_signature": {
+        "unparsed": "command failed (/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3-baseline/build/compiler/moss-dev build --check --json): {\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"build\",\n  \"ok\": false,\n  \"error\": {\"code\": \"MOSS_COMPILE_ERROR\", \"severity\": \"error\", \"message\": \"invalid arithmetic expression\", \"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tmp/cp-f-package-incomplete-yph58bwl/src/main.moss\", \"line\": 2, \"column\": 1, \"span\": {\"start_line\": 2, \"start_column\": 1, \"end_line\": 2, \"end_column\": 1}, \"source\": {\"file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tmp/cp-f-package-incomplete-yph58bwl/src/main.moss\", \"line\": 2, \"column\": 1, \"span\": {\"start_line\": 2, \"start_column\": 1, \"end_line\": 2, \"end_column\": 1}}, \"semantic_identity\": \"main@1\", \"symbol\": null, \"rule\": null, \"cause\": null, \"related\": [], \"guidance\": null, \"details\": {\"ownership_expected\": null, \"ownership_actual\": null, \"consume_line\": null, \"recursion_witness\": null, \"resolution\": null}, \"fixes\": [], \"legal_alternatives\": []}\n}"
+      }
+    },
+    {
+      "fixture": "package_incomplete_expression",
+      "binary": "baseline",
+      "mode": "shadow",
+      "returncode": 1,
+      "json": {
+        "schema_version": "margo-1",
+        "ok": false,
+        "error": "command failed (/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3-baseline/build/compiler/moss-dev build --check --json): {\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"build\",\n  \"ok\": false,\n  \"error\": {\"code\": \"MOSS_COMPILE_ERROR\", \"severity\": \"error\", \"message\": \"invalid arithmetic expression\", \"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tmp/cp-f-package-incomplete-yph58bwl/src/main.moss\", \"line\": 2, \"column\": 1, \"span\": {\"start_line\": 2, \"start_column\": 1, \"end_line\": 2, \"end_column\": 1}, \"source\": {\"file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tmp/cp-f-package-incomplete-yph58bwl/src/main.moss\", \"line\": 2, \"column\": 1, \"span\": {\"start_line\": 2, \"start_column\": 1, \"end_line\": 2, \"end_column\": 1}}, \"semantic_identity\": \"main@1\", \"symbol\": null, \"rule\": null, \"cause\": null, \"related\": [], \"guidance\": null, \"details\": {\"ownership_expected\": null, \"ownership_actual\": null, \"consume_line\": null, \"recursion_witness\": null, \"resolution\": null}, \"fixes\": [], \"legal_alternatives\": []}\n}"
+      },
+      "diagnostic_signature": {
+        "unparsed": "command failed (/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3-baseline/build/compiler/moss-dev build --check --json): {\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"build\",\n  \"ok\": false,\n  \"error\": {\"code\": \"MOSS_COMPILE_ERROR\", \"severity\": \"error\", \"message\": \"invalid arithmetic expression\", \"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tmp/cp-f-package-incomplete-yph58bwl/src/main.moss\", \"line\": 2, \"column\": 1, \"span\": {\"start_line\": 2, \"start_column\": 1, \"end_line\": 2, \"end_column\": 1}, \"source\": {\"file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tmp/cp-f-package-incomplete-yph58bwl/src/main.moss\", \"line\": 2, \"column\": 1, \"span\": {\"start_line\": 2, \"start_column\": 1, \"end_line\": 2, \"end_column\": 1}}, \"semantic_identity\": \"main@1\", \"symbol\": null, \"rule\": null, \"cause\": null, \"related\": [], \"guidance\": null, \"details\": {\"ownership_expected\": null, \"ownership_actual\": null, \"consume_line\": null, \"recursion_witness\": null, \"resolution\": null}, \"fixes\": [], \"legal_alternatives\": []}\n}"
+      }
+    },
+    {
+      "fixture": "package_incomplete_expression",
+      "binary": "candidate",
+      "mode": "off",
+      "returncode": 1,
+      "json": {
+        "schema_version": "margo-1",
+        "ok": false,
+        "error": "command failed (/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/moss build --check --json): {\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"build\",\n  \"ok\": false,\n  \"error\": {\"code\": \"MOSS_COMPILE_ERROR\", \"severity\": \"error\", \"message\": \"invalid arithmetic expression\", \"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tmp/cp-f-package-incomplete-yph58bwl/src/main.moss\", \"line\": 2, \"column\": 1, \"span\": {\"start_line\": 2, \"start_column\": 1, \"end_line\": 2, \"end_column\": 1}, \"source\": {\"file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tmp/cp-f-package-incomplete-yph58bwl/src/main.moss\", \"line\": 2, \"column\": 1, \"span\": {\"start_line\": 2, \"start_column\": 1, \"end_line\": 2, \"end_column\": 1}}, \"semantic_identity\": \"main@1\", \"symbol\": null, \"rule\": null, \"cause\": null, \"related\": [], \"guidance\": null, \"details\": {\"ownership_expected\": null, \"ownership_actual\": null, \"consume_line\": null, \"recursion_witness\": null, \"resolution\": null}, \"fixes\": [], \"legal_alternatives\": []}\n}"
+      },
+      "diagnostic_signature": {
+        "unparsed": "command failed (/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/moss build --check --json): {\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"build\",\n  \"ok\": false,\n  \"error\": {\"code\": \"MOSS_COMPILE_ERROR\", \"severity\": \"error\", \"message\": \"invalid arithmetic expression\", \"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tmp/cp-f-package-incomplete-yph58bwl/src/main.moss\", \"line\": 2, \"column\": 1, \"span\": {\"start_line\": 2, \"start_column\": 1, \"end_line\": 2, \"end_column\": 1}, \"source\": {\"file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tmp/cp-f-package-incomplete-yph58bwl/src/main.moss\", \"line\": 2, \"column\": 1, \"span\": {\"start_line\": 2, \"start_column\": 1, \"end_line\": 2, \"end_column\": 1}}, \"semantic_identity\": \"main@1\", \"symbol\": null, \"rule\": null, \"cause\": null, \"related\": [], \"guidance\": null, \"details\": {\"ownership_expected\": null, \"ownership_actual\": null, \"consume_line\": null, \"recursion_witness\": null, \"resolution\": null}, \"fixes\": [], \"legal_alternatives\": []}\n}"
+      }
+    },
+    {
+      "fixture": "package_incomplete_expression",
+      "binary": "candidate",
+      "mode": "shadow",
+      "returncode": 1,
+      "json": {
+        "schema_version": "margo-1",
+        "ok": false,
+        "error": "command failed (/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/moss build --check --json): {\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"build\",\n  \"ok\": false,\n  \"error\": {\"code\": \"MOSS_COMPILE_ERROR\", \"severity\": \"error\", \"message\": \"invalid arithmetic expression\", \"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tmp/cp-f-package-incomplete-yph58bwl/src/main.moss\", \"line\": 2, \"column\": 1, \"span\": {\"start_line\": 2, \"start_column\": 1, \"end_line\": 2, \"end_column\": 1}, \"source\": {\"file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tmp/cp-f-package-incomplete-yph58bwl/src/main.moss\", \"line\": 2, \"column\": 1, \"span\": {\"start_line\": 2, \"start_column\": 1, \"end_line\": 2, \"end_column\": 1}}, \"semantic_identity\": \"main@1\", \"symbol\": null, \"rule\": null, \"cause\": null, \"related\": [], \"guidance\": null, \"details\": {\"ownership_expected\": null, \"ownership_actual\": null, \"consume_line\": null, \"recursion_witness\": null, \"resolution\": null}, \"fixes\": [], \"legal_alternatives\": []}\n}"
+      },
+      "diagnostic_signature": {
+        "unparsed": "command failed (/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/moss build --check --json): {\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"build\",\n  \"ok\": false,\n  \"error\": {\"code\": \"MOSS_COMPILE_ERROR\", \"severity\": \"error\", \"message\": \"invalid arithmetic expression\", \"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tmp/cp-f-package-incomplete-yph58bwl/src/main.moss\", \"line\": 2, \"column\": 1, \"span\": {\"start_line\": 2, \"start_column\": 1, \"end_line\": 2, \"end_column\": 1}, \"source\": {\"file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-final-blind3/tmp/cp-f-package-incomplete-yph58bwl/src/main.moss\", \"line\": 2, \"column\": 1, \"span\": {\"start_line\": 2, \"start_column\": 1, \"end_line\": 2, \"end_column\": 1}}, \"semantic_identity\": \"main@1\", \"symbol\": null, \"rule\": null, \"cause\": null, \"related\": [], \"guidance\": null, \"details\": {\"ownership_expected\": null, \"ownership_actual\": null, \"consume_line\": null, \"recursion_witness\": null, \"resolution\": null}, \"fixes\": [], \"legal_alternatives\": []}\n}"
+      }
+    }
+  ],
+  "comparisons": [
+    {
+      "fixture": "unsupported_exponent.moss",
+      "baseline_off_shadow_equal": true,
+      "candidate_off_shadow_equal": true,
+      "baseline_candidate_off_equal": true,
+      "baseline_candidate_shadow_equal": true,
+      "diagnostic": {
+        "code": "MOSS_COMPILE_ERROR",
+        "message": "invalid arithmetic expression",
+        "line": 2,
+        "column": 1,
+        "span": {
+          "start_line": 2,
+          "start_column": 1,
+          "end_line": 2,
+          "end_column": 1
+        },
+        "rule": null,
+        "cause": null,
+        "details": {
+          "ownership_expected": null,
+          "ownership_actual": null,
+          "consume_line": null,
+          "recursion_witness": null,
+          "resolution": null
+        }
+      }
+    },
+    {
+      "fixture": "unsupported_operators.moss",
+      "baseline_off_shadow_equal": true,
+      "candidate_off_shadow_equal": true,
+      "baseline_candidate_off_equal": true,
+      "baseline_candidate_shadow_equal": true,
+      "diagnostic": {
+        "code": "MOSS_COMPILE_ERROR",
+        "message": "invalid arithmetic expression",
+        "line": 2,
+        "column": 1,
+        "span": {
+          "start_line": 2,
+          "start_column": 1,
+          "end_line": 2,
+          "end_column": 1
+        },
+        "rule": null,
+        "cause": null,
+        "details": {
+          "ownership_expected": null,
+          "ownership_actual": null,
+          "consume_line": null,
+          "recursion_witness": null,
+          "resolution": null
+        }
+      }
+    },
+    {
+      "fixture": "membership_operator.moss",
+      "baseline_off_shadow_equal": true,
+      "candidate_off_shadow_equal": true,
+      "baseline_candidate_off_equal": true,
+      "baseline_candidate_shadow_equal": true,
+      "diagnostic": {
+        "code": "UNSUPPORTED_EXPRESSION_OPERATOR",
+        "message": "binary 'in' expression is not supported; use Map.get, key iteration, or an explicit search",
+        "line": 2,
+        "column": 1,
+        "span": {
+          "start_line": 2,
+          "start_column": 1,
+          "end_line": 2,
+          "end_column": 1
+        },
+        "rule": null,
+        "cause": null,
+        "details": {
+          "ownership_expected": null,
+          "ownership_actual": null,
+          "consume_line": null,
+          "recursion_witness": null,
+          "resolution": null
+        }
+      }
+    },
+    {
+      "fixture": "symbolic_boolean.moss",
+      "baseline_off_shadow_equal": true,
+      "candidate_off_shadow_equal": true,
+      "baseline_candidate_off_equal": true,
+      "baseline_candidate_shadow_equal": true,
+      "diagnostic": {
+        "code": "UNSUPPORTED_EXPRESSION_OPERATOR",
+        "message": "binary '&&' expression is not supported",
+        "line": 2,
+        "column": 1,
+        "span": {
+          "start_line": 2,
+          "start_column": 1,
+          "end_line": 2,
+          "end_column": 1
+        },
+        "rule": null,
+        "cause": null,
+        "details": {
+          "ownership_expected": null,
+          "ownership_actual": null,
+          "consume_line": null,
+          "recursion_witness": null,
+          "resolution": null
+        }
+      }
+    },
+    {
+      "fixture": "incomplete_expression.moss",
+      "baseline_off_shadow_equal": true,
+      "candidate_off_shadow_equal": true,
+      "baseline_candidate_off_equal": true,
+      "baseline_candidate_shadow_equal": true,
+      "diagnostic": {
+        "code": "MOSS_COMPILE_ERROR",
+        "message": "invalid arithmetic expression",
+        "line": 2,
+        "column": 1,
+        "span": {
+          "start_line": 2,
+          "start_column": 1,
+          "end_line": 2,
+          "end_column": 1
+        },
+        "rule": null,
+        "cause": null,
+        "details": {
+          "ownership_expected": null,
+          "ownership_actual": null,
+          "consume_line": null,
+          "recursion_witness": null,
+          "resolution": null
+        }
+      }
+    },
+    {
+      "fixture": "incomplete_unary_not.moss",
+      "baseline_off_shadow_equal": true,
+      "candidate_off_shadow_equal": true,
+      "baseline_candidate_off_equal": true,
+      "baseline_candidate_shadow_equal": true,
+      "diagnostic": {
+        "code": "UNKNOWN_SYMBOL_OR_TYPE",
+        "message": "unknown identifier 'not'",
+        "line": 2,
+        "column": 1,
+        "span": {
+          "start_line": 2,
+          "start_column": 1,
+          "end_line": 2,
+          "end_column": 1
+        },
+        "rule": null,
+        "cause": null,
+        "details": {
+          "ownership_expected": null,
+          "ownership_actual": null,
+          "consume_line": null,
+          "recursion_witness": null,
+          "resolution": null
+        }
+      }
+    },
+    {
+      "fixture": "split_fragment.moss",
+      "baseline_off_shadow_equal": true,
+      "candidate_off_shadow_equal": true,
+      "baseline_candidate_off_equal": true,
+      "baseline_candidate_shadow_equal": true,
+      "diagnostic": {
+        "code": "MOSS_COMPILE_ERROR",
+        "message": "indentation jumps more than one block level",
+        "line": 3,
+        "column": 1,
+        "span": {
+          "start_line": 3,
+          "start_column": 1,
+          "end_line": 3,
+          "end_column": 1
+        },
+        "rule": null,
+        "cause": null,
+        "details": {
+          "ownership_expected": null,
+          "ownership_actual": null,
+          "consume_line": null,
+          "recursion_witness": null,
+          "resolution": null
+        }
+      }
+    },
+    {
+      "fixture": "juxtaposed_operands.moss",
+      "baseline_off_shadow_equal": true,
+      "candidate_off_shadow_equal": true,
+      "baseline_candidate_off_equal": true,
+      "baseline_candidate_shadow_equal": true,
+      "diagnostic": {
+        "code": "INVALID_EXPRESSION",
+        "message": "invalid expression '2 3': '2' is followed by '3' with no operator between them (if, while, and for are statements, not expressions)",
+        "line": 2,
+        "column": 1,
+        "span": {
+          "start_line": 2,
+          "start_column": 1,
+          "end_line": 2,
+          "end_column": 1
+        },
+        "rule": null,
+        "cause": null,
+        "details": {
+          "ownership_expected": null,
+          "ownership_actual": null,
+          "consume_line": null,
+          "recursion_witness": null,
+          "resolution": null
+        }
+      }
+    },
+    {
+      "fixture": "invalid_operator_adjacency.moss",
+      "baseline_off_shadow_equal": true,
+      "candidate_off_shadow_equal": true,
+      "baseline_candidate_off_equal": true,
+      "baseline_candidate_shadow_equal": true,
+      "diagnostic": {
+        "code": "MOSS_COMPILE_ERROR",
+        "message": "invalid arithmetic expression",
+        "line": 2,
+        "column": 1,
+        "span": {
+          "start_line": 2,
+          "start_column": 1,
+          "end_line": 2,
+          "end_column": 1
+        },
+        "rule": null,
+        "cause": null,
+        "details": {
+          "ownership_expected": null,
+          "ownership_actual": null,
+          "consume_line": null,
+          "recursion_witness": null,
+          "resolution": null
+        }
+      }
+    },
+    {
+      "fixture": "unclosed_vector_expression.moss",
+      "baseline_off_shadow_equal": true,
+      "candidate_off_shadow_equal": true,
+      "baseline_candidate_off_equal": true,
+      "baseline_candidate_shadow_equal": true,
+      "diagnostic": {
+        "code": "MOSS_COMPILE_ERROR",
+        "message": "heterogeneous or unresolved collection element type",
+        "line": 2,
+        "column": 1,
+        "span": {
+          "start_line": 2,
+          "start_column": 1,
+          "end_line": 2,
+          "end_column": 1
+        },
+        "rule": null,
+        "cause": null,
+        "details": {
+          "ownership_expected": null,
+          "ownership_actual": null,
+          "consume_line": null,
+          "recursion_witness": null,
+          "resolution": null
+        }
+      }
+    },
+    {
+      "fixture": "incomplete_vector.moss",
+      "baseline_off_shadow_equal": true,
+      "candidate_off_shadow_equal": true,
+      "baseline_candidate_off_equal": true,
+      "baseline_candidate_shadow_equal": true,
+      "diagnostic": {
+        "code": "MOSS_COMPILE_ERROR",
+        "message": "heterogeneous or unresolved collection element type",
+        "line": 2,
+        "column": 1,
+        "span": {
+          "start_line": 2,
+          "start_column": 1,
+          "end_line": 2,
+          "end_column": 1
+        },
+        "rule": null,
+        "cause": null,
+        "details": {
+          "ownership_expected": null,
+          "ownership_actual": null,
+          "consume_line": null,
+          "recursion_witness": null,
+          "resolution": null
+        }
+      }
+    }
+  ]
+}

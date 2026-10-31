@@ -1,0 +1,2858 @@
+[
+  {
+    "case": "numeric_member_field.moss",
+    "expected": [
+      "UNKNOWN_FIELD",
+      "record 'P' has no field '0'",
+      6,
+      1
+    ],
+    "runs": [
+      {
+        "binary": "baseline",
+        "mode": "off",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_FIELD",
+          "message": "record 'P' has no field '0'",
+          "line": 6,
+          "column": 1,
+          "span": {
+            "start_line": 6,
+            "start_column": 1,
+            "end_line": 6,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "baseline",
+        "mode": "shadow",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_FIELD",
+          "message": "record 'P' has no field '0'",
+          "line": 6,
+          "column": 1,
+          "span": {
+            "start_line": 6,
+            "start_column": 1,
+            "end_line": 6,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "candidate",
+        "mode": "off",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_FIELD",
+          "message": "record 'P' has no field '0'",
+          "line": 6,
+          "column": 1,
+          "span": {
+            "start_line": 6,
+            "start_column": 1,
+            "end_line": 6,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "candidate",
+        "mode": "shadow",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_FIELD",
+          "message": "record 'P' has no field '0'",
+          "line": 6,
+          "column": 1,
+          "span": {
+            "start_line": 6,
+            "start_column": 1,
+            "end_line": 6,
+            "end_column": 1
+          }
+        }
+      }
+    ],
+    "pass": true
+  },
+  {
+    "case": "numeric_member_name.moss",
+    "expected": [
+      "UNKNOWN_FIELD",
+      "type 'P' has no field '0x'",
+      6,
+      1
+    ],
+    "runs": [
+      {
+        "binary": "baseline",
+        "mode": "off",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_FIELD",
+          "message": "type 'P' has no field '0x'",
+          "line": 6,
+          "column": 1,
+          "span": {
+            "start_line": 6,
+            "start_column": 1,
+            "end_line": 6,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "baseline",
+        "mode": "shadow",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_FIELD",
+          "message": "type 'P' has no field '0x'",
+          "line": 6,
+          "column": 1,
+          "span": {
+            "start_line": 6,
+            "start_column": 1,
+            "end_line": 6,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "candidate",
+        "mode": "off",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_FIELD",
+          "message": "type 'P' has no field '0x'",
+          "line": 6,
+          "column": 1,
+          "span": {
+            "start_line": 6,
+            "start_column": 1,
+            "end_line": 6,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "candidate",
+        "mode": "shadow",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_FIELD",
+          "message": "type 'P' has no field '0x'",
+          "line": 6,
+          "column": 1,
+          "span": {
+            "start_line": 6,
+            "start_column": 1,
+            "end_line": 6,
+            "end_column": 1
+          }
+        }
+      }
+    ],
+    "pass": true
+  },
+  {
+    "case": "numeric_member_zero_e.moss",
+    "expected": [
+      "UNKNOWN_FIELD",
+      "type 'P' has no field '0e'",
+      6,
+      1
+    ],
+    "runs": [
+      {
+        "binary": "baseline",
+        "mode": "off",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_FIELD",
+          "message": "type 'P' has no field '0e'",
+          "line": 6,
+          "column": 1,
+          "span": {
+            "start_line": 6,
+            "start_column": 1,
+            "end_line": 6,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "baseline",
+        "mode": "shadow",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_FIELD",
+          "message": "type 'P' has no field '0e'",
+          "line": 6,
+          "column": 1,
+          "span": {
+            "start_line": 6,
+            "start_column": 1,
+            "end_line": 6,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "candidate",
+        "mode": "off",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_FIELD",
+          "message": "type 'P' has no field '0e'",
+          "line": 6,
+          "column": 1,
+          "span": {
+            "start_line": 6,
+            "start_column": 1,
+            "end_line": 6,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "candidate",
+        "mode": "shadow",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_FIELD",
+          "message": "type 'P' has no field '0e'",
+          "line": 6,
+          "column": 1,
+          "span": {
+            "start_line": 6,
+            "start_column": 1,
+            "end_line": 6,
+            "end_column": 1
+          }
+        }
+      }
+    ],
+    "pass": true
+  },
+  {
+    "case": "numeric_member_hex.moss",
+    "expected": [
+      "UNKNOWN_FIELD",
+      "type 'P' has no field '0xff'",
+      6,
+      1
+    ],
+    "runs": [
+      {
+        "binary": "baseline",
+        "mode": "off",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_FIELD",
+          "message": "type 'P' has no field '0xff'",
+          "line": 6,
+          "column": 1,
+          "span": {
+            "start_line": 6,
+            "start_column": 1,
+            "end_line": 6,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "baseline",
+        "mode": "shadow",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_FIELD",
+          "message": "type 'P' has no field '0xff'",
+          "line": 6,
+          "column": 1,
+          "span": {
+            "start_line": 6,
+            "start_column": 1,
+            "end_line": 6,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "candidate",
+        "mode": "off",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_FIELD",
+          "message": "type 'P' has no field '0xff'",
+          "line": 6,
+          "column": 1,
+          "span": {
+            "start_line": 6,
+            "start_column": 1,
+            "end_line": 6,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "candidate",
+        "mode": "shadow",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_FIELD",
+          "message": "type 'P' has no field '0xff'",
+          "line": 6,
+          "column": 1,
+          "span": {
+            "start_line": 6,
+            "start_column": 1,
+            "end_line": 6,
+            "end_column": 1
+          }
+        }
+      }
+    ],
+    "pass": true
+  },
+  {
+    "case": "numeric_member_underscored.moss",
+    "expected": [
+      "UNKNOWN_FIELD",
+      "record 'P' has no field '0_1'",
+      6,
+      1
+    ],
+    "runs": [
+      {
+        "binary": "baseline",
+        "mode": "off",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_FIELD",
+          "message": "record 'P' has no field '0_1'",
+          "line": 6,
+          "column": 1,
+          "span": {
+            "start_line": 6,
+            "start_column": 1,
+            "end_line": 6,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "baseline",
+        "mode": "shadow",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_FIELD",
+          "message": "record 'P' has no field '0_1'",
+          "line": 6,
+          "column": 1,
+          "span": {
+            "start_line": 6,
+            "start_column": 1,
+            "end_line": 6,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "candidate",
+        "mode": "off",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_FIELD",
+          "message": "record 'P' has no field '0_1'",
+          "line": 6,
+          "column": 1,
+          "span": {
+            "start_line": 6,
+            "start_column": 1,
+            "end_line": 6,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "candidate",
+        "mode": "shadow",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_FIELD",
+          "message": "record 'P' has no field '0_1'",
+          "line": 6,
+          "column": 1,
+          "span": {
+            "start_line": 6,
+            "start_column": 1,
+            "end_line": 6,
+            "end_column": 1
+          }
+        }
+      }
+    ],
+    "pass": true
+  },
+  {
+    "case": "numeric_member_exponent.moss",
+    "expected": [
+      "UNKNOWN_FIELD",
+      "type 'P' has no field '1e3'",
+      6,
+      1
+    ],
+    "runs": [
+      {
+        "binary": "baseline",
+        "mode": "off",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_FIELD",
+          "message": "type 'P' has no field '1e3'",
+          "line": 6,
+          "column": 1,
+          "span": {
+            "start_line": 6,
+            "start_column": 1,
+            "end_line": 6,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "baseline",
+        "mode": "shadow",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_FIELD",
+          "message": "type 'P' has no field '1e3'",
+          "line": 6,
+          "column": 1,
+          "span": {
+            "start_line": 6,
+            "start_column": 1,
+            "end_line": 6,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "candidate",
+        "mode": "off",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_FIELD",
+          "message": "type 'P' has no field '1e3'",
+          "line": 6,
+          "column": 1,
+          "span": {
+            "start_line": 6,
+            "start_column": 1,
+            "end_line": 6,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "candidate",
+        "mode": "shadow",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_FIELD",
+          "message": "type 'P' has no field '1e3'",
+          "line": 6,
+          "column": 1,
+          "span": {
+            "start_line": 6,
+            "start_column": 1,
+            "end_line": 6,
+            "end_column": 1
+          }
+        }
+      }
+    ],
+    "pass": true
+  },
+  {
+    "case": "numeric_member_word.moss",
+    "expected": [
+      "UNKNOWN_FIELD",
+      "type 'P' has no field '1foo'",
+      6,
+      1
+    ],
+    "runs": [
+      {
+        "binary": "baseline",
+        "mode": "off",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_FIELD",
+          "message": "type 'P' has no field '1foo'",
+          "line": 6,
+          "column": 1,
+          "span": {
+            "start_line": 6,
+            "start_column": 1,
+            "end_line": 6,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "baseline",
+        "mode": "shadow",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_FIELD",
+          "message": "type 'P' has no field '1foo'",
+          "line": 6,
+          "column": 1,
+          "span": {
+            "start_line": 6,
+            "start_column": 1,
+            "end_line": 6,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "candidate",
+        "mode": "off",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_FIELD",
+          "message": "type 'P' has no field '1foo'",
+          "line": 6,
+          "column": 1,
+          "span": {
+            "start_line": 6,
+            "start_column": 1,
+            "end_line": 6,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "candidate",
+        "mode": "shadow",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_FIELD",
+          "message": "type 'P' has no field '1foo'",
+          "line": 6,
+          "column": 1,
+          "span": {
+            "start_line": 6,
+            "start_column": 1,
+            "end_line": 6,
+            "end_column": 1
+          }
+        }
+      }
+    ],
+    "pass": true
+  },
+  {
+    "case": "numeric_member_named.moss",
+    "expected": [
+      "UNKNOWN_FIELD",
+      "type 'P' has no field '1_name'",
+      6,
+      1
+    ],
+    "runs": [
+      {
+        "binary": "baseline",
+        "mode": "off",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_FIELD",
+          "message": "type 'P' has no field '1_name'",
+          "line": 6,
+          "column": 1,
+          "span": {
+            "start_line": 6,
+            "start_column": 1,
+            "end_line": 6,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "baseline",
+        "mode": "shadow",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_FIELD",
+          "message": "type 'P' has no field '1_name'",
+          "line": 6,
+          "column": 1,
+          "span": {
+            "start_line": 6,
+            "start_column": 1,
+            "end_line": 6,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "candidate",
+        "mode": "off",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_FIELD",
+          "message": "type 'P' has no field '1_name'",
+          "line": 6,
+          "column": 1,
+          "span": {
+            "start_line": 6,
+            "start_column": 1,
+            "end_line": 6,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "candidate",
+        "mode": "shadow",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_FIELD",
+          "message": "type 'P' has no field '1_name'",
+          "line": 6,
+          "column": 1,
+          "span": {
+            "start_line": 6,
+            "start_column": 1,
+            "end_line": 6,
+            "end_column": 1
+          }
+        }
+      }
+    ],
+    "pass": true
+  },
+  {
+    "case": "numeric_member_trailing_dot.moss",
+    "expected": [
+      "UNKNOWN_FIELD",
+      "record 'P' has no field '1'",
+      6,
+      1
+    ],
+    "runs": [
+      {
+        "binary": "baseline",
+        "mode": "off",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_FIELD",
+          "message": "record 'P' has no field '1'",
+          "line": 6,
+          "column": 1,
+          "span": {
+            "start_line": 6,
+            "start_column": 1,
+            "end_line": 6,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "baseline",
+        "mode": "shadow",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_FIELD",
+          "message": "record 'P' has no field '1'",
+          "line": 6,
+          "column": 1,
+          "span": {
+            "start_line": 6,
+            "start_column": 1,
+            "end_line": 6,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "candidate",
+        "mode": "off",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_FIELD",
+          "message": "record 'P' has no field '1'",
+          "line": 6,
+          "column": 1,
+          "span": {
+            "start_line": 6,
+            "start_column": 1,
+            "end_line": 6,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "candidate",
+        "mode": "shadow",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_FIELD",
+          "message": "record 'P' has no field '1'",
+          "line": 6,
+          "column": 1,
+          "span": {
+            "start_line": 6,
+            "start_column": 1,
+            "end_line": 6,
+            "end_column": 1
+          }
+        }
+      }
+    ],
+    "pass": true
+  },
+  {
+    "case": "unsupported_exponent.moss",
+    "expected": [
+      "MOSS_COMPILE_ERROR",
+      "invalid arithmetic expression",
+      2,
+      1
+    ],
+    "runs": [
+      {
+        "binary": "baseline",
+        "mode": "off",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "MOSS_COMPILE_ERROR",
+          "message": "invalid arithmetic expression",
+          "line": 2,
+          "column": 1,
+          "span": {
+            "start_line": 2,
+            "start_column": 1,
+            "end_line": 2,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "baseline",
+        "mode": "shadow",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "MOSS_COMPILE_ERROR",
+          "message": "invalid arithmetic expression",
+          "line": 2,
+          "column": 1,
+          "span": {
+            "start_line": 2,
+            "start_column": 1,
+            "end_line": 2,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "candidate",
+        "mode": "off",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "MOSS_COMPILE_ERROR",
+          "message": "invalid arithmetic expression",
+          "line": 2,
+          "column": 1,
+          "span": {
+            "start_line": 2,
+            "start_column": 1,
+            "end_line": 2,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "candidate",
+        "mode": "shadow",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "MOSS_COMPILE_ERROR",
+          "message": "invalid arithmetic expression",
+          "line": 2,
+          "column": 1,
+          "span": {
+            "start_line": 2,
+            "start_column": 1,
+            "end_line": 2,
+            "end_column": 1
+          }
+        }
+      }
+    ],
+    "pass": true
+  },
+  {
+    "case": "unsupported_operators.moss",
+    "expected": [
+      "MOSS_COMPILE_ERROR",
+      "invalid arithmetic expression",
+      2,
+      1
+    ],
+    "runs": [
+      {
+        "binary": "baseline",
+        "mode": "off",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "MOSS_COMPILE_ERROR",
+          "message": "invalid arithmetic expression",
+          "line": 2,
+          "column": 1,
+          "span": {
+            "start_line": 2,
+            "start_column": 1,
+            "end_line": 2,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "baseline",
+        "mode": "shadow",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "MOSS_COMPILE_ERROR",
+          "message": "invalid arithmetic expression",
+          "line": 2,
+          "column": 1,
+          "span": {
+            "start_line": 2,
+            "start_column": 1,
+            "end_line": 2,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "candidate",
+        "mode": "off",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "MOSS_COMPILE_ERROR",
+          "message": "invalid arithmetic expression",
+          "line": 2,
+          "column": 1,
+          "span": {
+            "start_line": 2,
+            "start_column": 1,
+            "end_line": 2,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "candidate",
+        "mode": "shadow",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "MOSS_COMPILE_ERROR",
+          "message": "invalid arithmetic expression",
+          "line": 2,
+          "column": 1,
+          "span": {
+            "start_line": 2,
+            "start_column": 1,
+            "end_line": 2,
+            "end_column": 1
+          }
+        }
+      }
+    ],
+    "pass": true
+  },
+  {
+    "case": "membership_operator.moss",
+    "expected": [
+      "UNSUPPORTED_EXPRESSION_OPERATOR",
+      "binary 'in' expression is not supported; use Map.get, key iteration, or an explicit search",
+      2,
+      1
+    ],
+    "runs": [
+      {
+        "binary": "baseline",
+        "mode": "off",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNSUPPORTED_EXPRESSION_OPERATOR",
+          "message": "binary 'in' expression is not supported; use Map.get, key iteration, or an explicit search",
+          "line": 2,
+          "column": 1,
+          "span": {
+            "start_line": 2,
+            "start_column": 1,
+            "end_line": 2,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "baseline",
+        "mode": "shadow",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNSUPPORTED_EXPRESSION_OPERATOR",
+          "message": "binary 'in' expression is not supported; use Map.get, key iteration, or an explicit search",
+          "line": 2,
+          "column": 1,
+          "span": {
+            "start_line": 2,
+            "start_column": 1,
+            "end_line": 2,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "candidate",
+        "mode": "off",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNSUPPORTED_EXPRESSION_OPERATOR",
+          "message": "binary 'in' expression is not supported; use Map.get, key iteration, or an explicit search",
+          "line": 2,
+          "column": 1,
+          "span": {
+            "start_line": 2,
+            "start_column": 1,
+            "end_line": 2,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "candidate",
+        "mode": "shadow",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNSUPPORTED_EXPRESSION_OPERATOR",
+          "message": "binary 'in' expression is not supported; use Map.get, key iteration, or an explicit search",
+          "line": 2,
+          "column": 1,
+          "span": {
+            "start_line": 2,
+            "start_column": 1,
+            "end_line": 2,
+            "end_column": 1
+          }
+        }
+      }
+    ],
+    "pass": true
+  },
+  {
+    "case": "symbolic_boolean.moss",
+    "expected": [
+      "UNSUPPORTED_EXPRESSION_OPERATOR",
+      "binary '&&' expression is not supported",
+      2,
+      1
+    ],
+    "runs": [
+      {
+        "binary": "baseline",
+        "mode": "off",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNSUPPORTED_EXPRESSION_OPERATOR",
+          "message": "binary '&&' expression is not supported",
+          "line": 2,
+          "column": 1,
+          "span": {
+            "start_line": 2,
+            "start_column": 1,
+            "end_line": 2,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "baseline",
+        "mode": "shadow",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNSUPPORTED_EXPRESSION_OPERATOR",
+          "message": "binary '&&' expression is not supported",
+          "line": 2,
+          "column": 1,
+          "span": {
+            "start_line": 2,
+            "start_column": 1,
+            "end_line": 2,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "candidate",
+        "mode": "off",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNSUPPORTED_EXPRESSION_OPERATOR",
+          "message": "binary '&&' expression is not supported",
+          "line": 2,
+          "column": 1,
+          "span": {
+            "start_line": 2,
+            "start_column": 1,
+            "end_line": 2,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "candidate",
+        "mode": "shadow",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNSUPPORTED_EXPRESSION_OPERATOR",
+          "message": "binary '&&' expression is not supported",
+          "line": 2,
+          "column": 1,
+          "span": {
+            "start_line": 2,
+            "start_column": 1,
+            "end_line": 2,
+            "end_column": 1
+          }
+        }
+      }
+    ],
+    "pass": true
+  },
+  {
+    "case": "split_fragment.moss",
+    "expected": [
+      "MOSS_COMPILE_ERROR",
+      "indentation jumps more than one block level",
+      3,
+      1
+    ],
+    "runs": [
+      {
+        "binary": "baseline",
+        "mode": "off",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "MOSS_COMPILE_ERROR",
+          "message": "indentation jumps more than one block level",
+          "line": 3,
+          "column": 1,
+          "span": {
+            "start_line": 3,
+            "start_column": 1,
+            "end_line": 3,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "baseline",
+        "mode": "shadow",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "MOSS_COMPILE_ERROR",
+          "message": "indentation jumps more than one block level",
+          "line": 3,
+          "column": 1,
+          "span": {
+            "start_line": 3,
+            "start_column": 1,
+            "end_line": 3,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "candidate",
+        "mode": "off",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "MOSS_COMPILE_ERROR",
+          "message": "indentation jumps more than one block level",
+          "line": 3,
+          "column": 1,
+          "span": {
+            "start_line": 3,
+            "start_column": 1,
+            "end_line": 3,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "candidate",
+        "mode": "shadow",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "MOSS_COMPILE_ERROR",
+          "message": "indentation jumps more than one block level",
+          "line": 3,
+          "column": 1,
+          "span": {
+            "start_line": 3,
+            "start_column": 1,
+            "end_line": 3,
+            "end_column": 1
+          }
+        }
+      }
+    ],
+    "pass": true
+  },
+  {
+    "case": "incomplete_expression.moss",
+    "expected": [
+      "MOSS_COMPILE_ERROR",
+      "invalid arithmetic expression",
+      2,
+      1
+    ],
+    "runs": [
+      {
+        "binary": "baseline",
+        "mode": "off",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "MOSS_COMPILE_ERROR",
+          "message": "invalid arithmetic expression",
+          "line": 2,
+          "column": 1,
+          "span": {
+            "start_line": 2,
+            "start_column": 1,
+            "end_line": 2,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "baseline",
+        "mode": "shadow",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "MOSS_COMPILE_ERROR",
+          "message": "invalid arithmetic expression",
+          "line": 2,
+          "column": 1,
+          "span": {
+            "start_line": 2,
+            "start_column": 1,
+            "end_line": 2,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "candidate",
+        "mode": "off",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "MOSS_COMPILE_ERROR",
+          "message": "invalid arithmetic expression",
+          "line": 2,
+          "column": 1,
+          "span": {
+            "start_line": 2,
+            "start_column": 1,
+            "end_line": 2,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "candidate",
+        "mode": "shadow",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "MOSS_COMPILE_ERROR",
+          "message": "invalid arithmetic expression",
+          "line": 2,
+          "column": 1,
+          "span": {
+            "start_line": 2,
+            "start_column": 1,
+            "end_line": 2,
+            "end_column": 1
+          }
+        }
+      }
+    ],
+    "pass": true
+  },
+  {
+    "case": "incomplete_unary_not.moss",
+    "expected": [
+      "UNKNOWN_SYMBOL_OR_TYPE",
+      "unknown identifier 'not'",
+      2,
+      1
+    ],
+    "runs": [
+      {
+        "binary": "baseline",
+        "mode": "off",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_SYMBOL_OR_TYPE",
+          "message": "unknown identifier 'not'",
+          "line": 2,
+          "column": 1,
+          "span": {
+            "start_line": 2,
+            "start_column": 1,
+            "end_line": 2,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "baseline",
+        "mode": "shadow",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_SYMBOL_OR_TYPE",
+          "message": "unknown identifier 'not'",
+          "line": 2,
+          "column": 1,
+          "span": {
+            "start_line": 2,
+            "start_column": 1,
+            "end_line": 2,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "candidate",
+        "mode": "off",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_SYMBOL_OR_TYPE",
+          "message": "unknown identifier 'not'",
+          "line": 2,
+          "column": 1,
+          "span": {
+            "start_line": 2,
+            "start_column": 1,
+            "end_line": 2,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "candidate",
+        "mode": "shadow",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_SYMBOL_OR_TYPE",
+          "message": "unknown identifier 'not'",
+          "line": 2,
+          "column": 1,
+          "span": {
+            "start_line": 2,
+            "start_column": 1,
+            "end_line": 2,
+            "end_column": 1
+          }
+        }
+      }
+    ],
+    "pass": true
+  },
+  {
+    "case": "unclosed_vector_expression.moss",
+    "expected": [
+      "MOSS_COMPILE_ERROR",
+      "heterogeneous or unresolved collection element type",
+      2,
+      1
+    ],
+    "runs": [
+      {
+        "binary": "baseline",
+        "mode": "off",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "MOSS_COMPILE_ERROR",
+          "message": "heterogeneous or unresolved collection element type",
+          "line": 2,
+          "column": 1,
+          "span": {
+            "start_line": 2,
+            "start_column": 1,
+            "end_line": 2,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "baseline",
+        "mode": "shadow",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "MOSS_COMPILE_ERROR",
+          "message": "heterogeneous or unresolved collection element type",
+          "line": 2,
+          "column": 1,
+          "span": {
+            "start_line": 2,
+            "start_column": 1,
+            "end_line": 2,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "candidate",
+        "mode": "off",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "MOSS_COMPILE_ERROR",
+          "message": "heterogeneous or unresolved collection element type",
+          "line": 2,
+          "column": 1,
+          "span": {
+            "start_line": 2,
+            "start_column": 1,
+            "end_line": 2,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "candidate",
+        "mode": "shadow",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "MOSS_COMPILE_ERROR",
+          "message": "heterogeneous or unresolved collection element type",
+          "line": 2,
+          "column": 1,
+          "span": {
+            "start_line": 2,
+            "start_column": 1,
+            "end_line": 2,
+            "end_column": 1
+          }
+        }
+      }
+    ],
+    "pass": true
+  },
+  {
+    "case": "invalid_operator_adjacency.moss",
+    "expected": [
+      "MOSS_COMPILE_ERROR",
+      "invalid arithmetic expression",
+      2,
+      1
+    ],
+    "runs": [
+      {
+        "binary": "baseline",
+        "mode": "off",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "MOSS_COMPILE_ERROR",
+          "message": "invalid arithmetic expression",
+          "line": 2,
+          "column": 1,
+          "span": {
+            "start_line": 2,
+            "start_column": 1,
+            "end_line": 2,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "baseline",
+        "mode": "shadow",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "MOSS_COMPILE_ERROR",
+          "message": "invalid arithmetic expression",
+          "line": 2,
+          "column": 1,
+          "span": {
+            "start_line": 2,
+            "start_column": 1,
+            "end_line": 2,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "candidate",
+        "mode": "off",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "MOSS_COMPILE_ERROR",
+          "message": "invalid arithmetic expression",
+          "line": 2,
+          "column": 1,
+          "span": {
+            "start_line": 2,
+            "start_column": 1,
+            "end_line": 2,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "candidate",
+        "mode": "shadow",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "MOSS_COMPILE_ERROR",
+          "message": "invalid arithmetic expression",
+          "line": 2,
+          "column": 1,
+          "span": {
+            "start_line": 2,
+            "start_column": 1,
+            "end_line": 2,
+            "end_column": 1
+          }
+        }
+      }
+    ],
+    "pass": true
+  },
+  {
+    "case": "trailing_member_expression.moss",
+    "expected": [
+      "UNKNOWN_SYMBOL_OR_TYPE",
+      "unknown identifier 'item'",
+      2,
+      1
+    ],
+    "runs": [
+      {
+        "binary": "baseline",
+        "mode": "off",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_SYMBOL_OR_TYPE",
+          "message": "unknown identifier 'item'",
+          "line": 2,
+          "column": 1,
+          "span": {
+            "start_line": 2,
+            "start_column": 1,
+            "end_line": 2,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "baseline",
+        "mode": "shadow",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_SYMBOL_OR_TYPE",
+          "message": "unknown identifier 'item'",
+          "line": 2,
+          "column": 1,
+          "span": {
+            "start_line": 2,
+            "start_column": 1,
+            "end_line": 2,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "candidate",
+        "mode": "off",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_SYMBOL_OR_TYPE",
+          "message": "unknown identifier 'item'",
+          "line": 2,
+          "column": 1,
+          "span": {
+            "start_line": 2,
+            "start_column": 1,
+            "end_line": 2,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "candidate",
+        "mode": "shadow",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_SYMBOL_OR_TYPE",
+          "message": "unknown identifier 'item'",
+          "line": 2,
+          "column": 1,
+          "span": {
+            "start_line": 2,
+            "start_column": 1,
+            "end_line": 2,
+            "end_column": 1
+          }
+        }
+      }
+    ],
+    "pass": true
+  },
+  {
+    "case": "unresolved_collection_result.moss",
+    "expected": [
+      "MOSS_COMPILE_ERROR",
+      "heterogeneous or unresolved collection element type",
+      2,
+      1
+    ],
+    "runs": [
+      {
+        "binary": "baseline",
+        "mode": "off",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "MOSS_COMPILE_ERROR",
+          "message": "heterogeneous or unresolved collection element type",
+          "line": 2,
+          "column": 1,
+          "span": {
+            "start_line": 2,
+            "start_column": 1,
+            "end_line": 2,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "baseline",
+        "mode": "shadow",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "MOSS_COMPILE_ERROR",
+          "message": "heterogeneous or unresolved collection element type",
+          "line": 2,
+          "column": 1,
+          "span": {
+            "start_line": 2,
+            "start_column": 1,
+            "end_line": 2,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "candidate",
+        "mode": "off",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "MOSS_COMPILE_ERROR",
+          "message": "heterogeneous or unresolved collection element type",
+          "line": 2,
+          "column": 1,
+          "span": {
+            "start_line": 2,
+            "start_column": 1,
+            "end_line": 2,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "candidate",
+        "mode": "shadow",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "MOSS_COMPILE_ERROR",
+          "message": "heterogeneous or unresolved collection element type",
+          "line": 2,
+          "column": 1,
+          "span": {
+            "start_line": 2,
+            "start_column": 1,
+            "end_line": 2,
+            "end_column": 1
+          }
+        }
+      }
+    ],
+    "pass": true
+  },
+  {
+    "case": "incomplete_vector.moss",
+    "expected": [
+      "MOSS_COMPILE_ERROR",
+      "heterogeneous or unresolved collection element type",
+      2,
+      1
+    ],
+    "runs": [
+      {
+        "binary": "baseline",
+        "mode": "off",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "MOSS_COMPILE_ERROR",
+          "message": "heterogeneous or unresolved collection element type",
+          "line": 2,
+          "column": 1,
+          "span": {
+            "start_line": 2,
+            "start_column": 1,
+            "end_line": 2,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "baseline",
+        "mode": "shadow",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "MOSS_COMPILE_ERROR",
+          "message": "heterogeneous or unresolved collection element type",
+          "line": 2,
+          "column": 1,
+          "span": {
+            "start_line": 2,
+            "start_column": 1,
+            "end_line": 2,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "candidate",
+        "mode": "off",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "MOSS_COMPILE_ERROR",
+          "message": "heterogeneous or unresolved collection element type",
+          "line": 2,
+          "column": 1,
+          "span": {
+            "start_line": 2,
+            "start_column": 1,
+            "end_line": 2,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "candidate",
+        "mode": "shadow",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "MOSS_COMPILE_ERROR",
+          "message": "heterogeneous or unresolved collection element type",
+          "line": 2,
+          "column": 1,
+          "span": {
+            "start_line": 2,
+            "start_column": 1,
+            "end_line": 2,
+            "end_column": 1
+          }
+        }
+      }
+    ],
+    "pass": true
+  },
+  {
+    "case": "trailing_member_after_empty_vector.moss",
+    "expected": [
+      "TYPE_AMBIGUOUS_OPEN_RESULT",
+      "unbound open result type for variable 'result'; heterogeneous or unresolved collection element type",
+      3,
+      1
+    ],
+    "runs": [
+      {
+        "binary": "baseline",
+        "mode": "off",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "TYPE_AMBIGUOUS_OPEN_RESULT",
+          "message": "unbound open result type for variable 'result'; heterogeneous or unresolved collection element type",
+          "line": 3,
+          "column": 1,
+          "span": {
+            "start_line": 3,
+            "start_column": 1,
+            "end_line": 3,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "baseline",
+        "mode": "shadow",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "TYPE_AMBIGUOUS_OPEN_RESULT",
+          "message": "unbound open result type for variable 'result'; heterogeneous or unresolved collection element type",
+          "line": 3,
+          "column": 1,
+          "span": {
+            "start_line": 3,
+            "start_column": 1,
+            "end_line": 3,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "candidate",
+        "mode": "off",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "TYPE_AMBIGUOUS_OPEN_RESULT",
+          "message": "unbound open result type for variable 'result'; heterogeneous or unresolved collection element type",
+          "line": 3,
+          "column": 1,
+          "span": {
+            "start_line": 3,
+            "start_column": 1,
+            "end_line": 3,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "candidate",
+        "mode": "shadow",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "TYPE_AMBIGUOUS_OPEN_RESULT",
+          "message": "unbound open result type for variable 'result'; heterogeneous or unresolved collection element type",
+          "line": 3,
+          "column": 1,
+          "span": {
+            "start_line": 3,
+            "start_column": 1,
+            "end_line": 3,
+            "end_column": 1
+          }
+        }
+      }
+    ],
+    "pass": true
+  },
+  {
+    "case": "empty_call_argument.moss",
+    "expected": [
+      "TYPE_MISMATCH",
+      "argument 1 to function 'add' has type '', expected 'int'",
+      5,
+      1
+    ],
+    "runs": [
+      {
+        "binary": "baseline",
+        "mode": "off",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "TYPE_MISMATCH",
+          "message": "argument 1 to function 'add' has type '', expected 'int'",
+          "line": 5,
+          "column": 1,
+          "span": {
+            "start_line": 5,
+            "start_column": 1,
+            "end_line": 5,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "baseline",
+        "mode": "shadow",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "TYPE_MISMATCH",
+          "message": "argument 1 to function 'add' has type '', expected 'int'",
+          "line": 5,
+          "column": 1,
+          "span": {
+            "start_line": 5,
+            "start_column": 1,
+            "end_line": 5,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "candidate",
+        "mode": "off",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "TYPE_MISMATCH",
+          "message": "argument 1 to function 'add' has type '', expected 'int'",
+          "line": 5,
+          "column": 1,
+          "span": {
+            "start_line": 5,
+            "start_column": 1,
+            "end_line": 5,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "candidate",
+        "mode": "shadow",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "TYPE_MISMATCH",
+          "message": "argument 1 to function 'add' has type '', expected 'int'",
+          "line": 5,
+          "column": 1,
+          "span": {
+            "start_line": 5,
+            "start_column": 1,
+            "end_line": 5,
+            "end_column": 1
+          }
+        }
+      }
+    ],
+    "pass": true
+  },
+  {
+    "case": "empty_trailing_call_argument.moss",
+    "expected": [
+      "TYPE_MISMATCH",
+      "argument 2 to function 'add' has type '', expected 'int'",
+      5,
+      1
+    ],
+    "runs": [
+      {
+        "binary": "baseline",
+        "mode": "off",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "TYPE_MISMATCH",
+          "message": "argument 2 to function 'add' has type '', expected 'int'",
+          "line": 5,
+          "column": 1,
+          "span": {
+            "start_line": 5,
+            "start_column": 1,
+            "end_line": 5,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "baseline",
+        "mode": "shadow",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "TYPE_MISMATCH",
+          "message": "argument 2 to function 'add' has type '', expected 'int'",
+          "line": 5,
+          "column": 1,
+          "span": {
+            "start_line": 5,
+            "start_column": 1,
+            "end_line": 5,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "candidate",
+        "mode": "off",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "TYPE_MISMATCH",
+          "message": "argument 2 to function 'add' has type '', expected 'int'",
+          "line": 5,
+          "column": 1,
+          "span": {
+            "start_line": 5,
+            "start_column": 1,
+            "end_line": 5,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "candidate",
+        "mode": "shadow",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "TYPE_MISMATCH",
+          "message": "argument 2 to function 'add' has type '', expected 'int'",
+          "line": 5,
+          "column": 1,
+          "span": {
+            "start_line": 5,
+            "start_column": 1,
+            "end_line": 5,
+            "end_column": 1
+          }
+        }
+      }
+    ],
+    "pass": true
+  },
+  {
+    "case": "empty_vector_element.moss",
+    "expected": [
+      "ECHO_DISPLAY_UNSUPPORTED",
+      "echo cannot display a Vector whose element type is unknown ('vector'); give it elements or use a typed constructor such as Vector[Int]() (echo supports Int, Float, Bool, Char, String, and Vector of those)",
+      2,
+      1
+    ],
+    "runs": [
+      {
+        "binary": "baseline",
+        "mode": "off",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "ECHO_DISPLAY_UNSUPPORTED",
+          "message": "echo cannot display a Vector whose element type is unknown ('vector'); give it elements or use a typed constructor such as Vector[Int]() (echo supports Int, Float, Bool, Char, String, and Vector of those)",
+          "line": 2,
+          "column": 1,
+          "span": {
+            "start_line": 2,
+            "start_column": 1,
+            "end_line": 2,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "baseline",
+        "mode": "shadow",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "ECHO_DISPLAY_UNSUPPORTED",
+          "message": "echo cannot display a Vector whose element type is unknown ('vector'); give it elements or use a typed constructor such as Vector[Int]() (echo supports Int, Float, Bool, Char, String, and Vector of those)",
+          "line": 2,
+          "column": 1,
+          "span": {
+            "start_line": 2,
+            "start_column": 1,
+            "end_line": 2,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "candidate",
+        "mode": "off",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "ECHO_DISPLAY_UNSUPPORTED",
+          "message": "echo cannot display a Vector whose element type is unknown ('vector'); give it elements or use a typed constructor such as Vector[Int]() (echo supports Int, Float, Bool, Char, String, and Vector of those)",
+          "line": 2,
+          "column": 1,
+          "span": {
+            "start_line": 2,
+            "start_column": 1,
+            "end_line": 2,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "candidate",
+        "mode": "shadow",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "ECHO_DISPLAY_UNSUPPORTED",
+          "message": "echo cannot display a Vector whose element type is unknown ('vector'); give it elements or use a typed constructor such as Vector[Int]() (echo supports Int, Float, Bool, Char, String, and Vector of those)",
+          "line": 2,
+          "column": 1,
+          "span": {
+            "start_line": 2,
+            "start_column": 1,
+            "end_line": 2,
+            "end_column": 1
+          }
+        }
+      }
+    ],
+    "pass": true
+  },
+  {
+    "case": "juxtaposed_operands.moss",
+    "expected": [
+      "INVALID_EXPRESSION",
+      "invalid expression '2 3': '2' is followed by '3' with no operator between them (if, while, and for are statements, not expressions)",
+      2,
+      1
+    ],
+    "runs": [
+      {
+        "binary": "baseline",
+        "mode": "off",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "INVALID_EXPRESSION",
+          "message": "invalid expression '2 3': '2' is followed by '3' with no operator between them (if, while, and for are statements, not expressions)",
+          "line": 2,
+          "column": 1,
+          "span": {
+            "start_line": 2,
+            "start_column": 1,
+            "end_line": 2,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "baseline",
+        "mode": "shadow",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "INVALID_EXPRESSION",
+          "message": "invalid expression '2 3': '2' is followed by '3' with no operator between them (if, while, and for are statements, not expressions)",
+          "line": 2,
+          "column": 1,
+          "span": {
+            "start_line": 2,
+            "start_column": 1,
+            "end_line": 2,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "candidate",
+        "mode": "off",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "INVALID_EXPRESSION",
+          "message": "invalid expression '2 3': '2' is followed by '3' with no operator between them (if, while, and for are statements, not expressions)",
+          "line": 2,
+          "column": 1,
+          "span": {
+            "start_line": 2,
+            "start_column": 1,
+            "end_line": 2,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "candidate",
+        "mode": "shadow",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "INVALID_EXPRESSION",
+          "message": "invalid expression '2 3': '2' is followed by '3' with no operator between them (if, while, and for are statements, not expressions)",
+          "line": 2,
+          "column": 1,
+          "span": {
+            "start_line": 2,
+            "start_column": 1,
+            "end_line": 2,
+            "end_column": 1
+          }
+        }
+      }
+    ],
+    "pass": true
+  },
+  {
+    "case": "examples/swarm/control_flow_2026/iterative_planner/failed_attempts/01_multiline_task_literal.moss",
+    "expected": [
+      "MOSS_COMPILE_ERROR",
+      "indentation jumps more than one block level",
+      45,
+      1
+    ],
+    "runs": [
+      {
+        "binary": "baseline",
+        "mode": "off",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "MOSS_COMPILE_ERROR",
+          "message": "indentation jumps more than one block level",
+          "line": 45,
+          "column": 1,
+          "span": {
+            "start_line": 45,
+            "start_column": 1,
+            "end_line": 45,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "baseline",
+        "mode": "shadow",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "MOSS_COMPILE_ERROR",
+          "message": "indentation jumps more than one block level",
+          "line": 45,
+          "column": 1,
+          "span": {
+            "start_line": 45,
+            "start_column": 1,
+            "end_line": 45,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "candidate",
+        "mode": "off",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "MOSS_COMPILE_ERROR",
+          "message": "indentation jumps more than one block level",
+          "line": 45,
+          "column": 1,
+          "span": {
+            "start_line": 45,
+            "start_column": 1,
+            "end_line": 45,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "candidate",
+        "mode": "shadow",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "MOSS_COMPILE_ERROR",
+          "message": "indentation jumps more than one block level",
+          "line": 45,
+          "column": 1,
+          "span": {
+            "start_line": 45,
+            "start_column": 1,
+            "end_line": 45,
+            "end_column": 1
+          }
+        }
+      }
+    ],
+    "pass": true
+  },
+  {
+    "case": "examples/swarm/expression_surface_2026/numerical_tool/failed_attempts/01_len_method.moss",
+    "expected": [
+      "UNTYPED_FIELD_ACCESS",
+      "field access 'sample.observed' requires a concrete receiver type; annotate the parameter or expose the behavior through a method/trait",
+      14,
+      1
+    ],
+    "runs": [
+      {
+        "binary": "baseline",
+        "mode": "off",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNTYPED_FIELD_ACCESS",
+          "message": "field access 'sample.observed' requires a concrete receiver type; annotate the parameter or expose the behavior through a method/trait",
+          "line": 14,
+          "column": 1,
+          "span": {
+            "start_line": 14,
+            "start_column": 1,
+            "end_line": 14,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "baseline",
+        "mode": "shadow",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNTYPED_FIELD_ACCESS",
+          "message": "field access 'sample.observed' requires a concrete receiver type; annotate the parameter or expose the behavior through a method/trait",
+          "line": 14,
+          "column": 1,
+          "span": {
+            "start_line": 14,
+            "start_column": 1,
+            "end_line": 14,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "candidate",
+        "mode": "off",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNTYPED_FIELD_ACCESS",
+          "message": "field access 'sample.observed' requires a concrete receiver type; annotate the parameter or expose the behavior through a method/trait",
+          "line": 14,
+          "column": 1,
+          "span": {
+            "start_line": 14,
+            "start_column": 1,
+            "end_line": 14,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "candidate",
+        "mode": "shadow",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNTYPED_FIELD_ACCESS",
+          "message": "field access 'sample.observed' requires a concrete receiver type; annotate the parameter or expose the behavior through a method/trait",
+          "line": 14,
+          "column": 1,
+          "span": {
+            "start_line": 14,
+            "start_column": 1,
+            "end_line": 14,
+            "end_column": 1
+          }
+        }
+      }
+    ],
+    "pass": true
+  },
+  {
+    "case": "examples/swarm/expression_surface_2026/parser_evaluator/failed_attempts/01_multiline_vector_literal.moss",
+    "expected": [
+      "MOSS_COMPILE_ERROR",
+      "indentation jumps more than one block level",
+      12,
+      1
+    ],
+    "runs": [
+      {
+        "binary": "baseline",
+        "mode": "off",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "MOSS_COMPILE_ERROR",
+          "message": "indentation jumps more than one block level",
+          "line": 12,
+          "column": 1,
+          "span": {
+            "start_line": 12,
+            "start_column": 1,
+            "end_line": 12,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "baseline",
+        "mode": "shadow",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "MOSS_COMPILE_ERROR",
+          "message": "indentation jumps more than one block level",
+          "line": 12,
+          "column": 1,
+          "span": {
+            "start_line": 12,
+            "start_column": 1,
+            "end_line": 12,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "candidate",
+        "mode": "off",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "MOSS_COMPILE_ERROR",
+          "message": "indentation jumps more than one block level",
+          "line": 12,
+          "column": 1,
+          "span": {
+            "start_line": 12,
+            "start_column": 1,
+            "end_line": 12,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "candidate",
+        "mode": "shadow",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "MOSS_COMPILE_ERROR",
+          "message": "indentation jumps more than one block level",
+          "line": 12,
+          "column": 1,
+          "span": {
+            "start_line": 12,
+            "start_column": 1,
+            "end_line": 12,
+            "end_column": 1
+          }
+        }
+      }
+    ],
+    "pass": true
+  },
+  {
+    "case": "examples/swarm/expression_surface_2026/validation_engine/failed_attempts/01_multiline_constructor.moss",
+    "expected": [
+      "UNTYPED_FIELD_ACCESS",
+      "field access 'rule.value' requires a concrete receiver type; annotate the parameter or expose the behavior through a method/trait",
+      27,
+      1
+    ],
+    "runs": [
+      {
+        "binary": "baseline",
+        "mode": "off",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNTYPED_FIELD_ACCESS",
+          "message": "field access 'rule.value' requires a concrete receiver type; annotate the parameter or expose the behavior through a method/trait",
+          "line": 27,
+          "column": 1,
+          "span": {
+            "start_line": 27,
+            "start_column": 1,
+            "end_line": 27,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "baseline",
+        "mode": "shadow",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNTYPED_FIELD_ACCESS",
+          "message": "field access 'rule.value' requires a concrete receiver type; annotate the parameter or expose the behavior through a method/trait",
+          "line": 27,
+          "column": 1,
+          "span": {
+            "start_line": 27,
+            "start_column": 1,
+            "end_line": 27,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "candidate",
+        "mode": "off",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNTYPED_FIELD_ACCESS",
+          "message": "field access 'rule.value' requires a concrete receiver type; annotate the parameter or expose the behavior through a method/trait",
+          "line": 27,
+          "column": 1,
+          "span": {
+            "start_line": 27,
+            "start_column": 1,
+            "end_line": 27,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "candidate",
+        "mode": "shadow",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNTYPED_FIELD_ACCESS",
+          "message": "field access 'rule.value' requires a concrete receiver type; annotate the parameter or expose the behavior through a method/trait",
+          "line": 27,
+          "column": 1,
+          "span": {
+            "start_line": 27,
+            "start_column": 1,
+            "end_line": 27,
+            "end_column": 1
+          }
+        }
+      }
+    ],
+    "pass": true
+  },
+  {
+    "case": "examples/swarm/expression_surface_2026/validation_engine/failed_attempts/02_multiline_vector.moss",
+    "expected": [
+      "MOSS_COMPILE_ERROR",
+      "indentation jumps more than one block level",
+      4,
+      1
+    ],
+    "runs": [
+      {
+        "binary": "baseline",
+        "mode": "off",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "MOSS_COMPILE_ERROR",
+          "message": "indentation jumps more than one block level",
+          "line": 4,
+          "column": 1,
+          "span": {
+            "start_line": 4,
+            "start_column": 1,
+            "end_line": 4,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "baseline",
+        "mode": "shadow",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "MOSS_COMPILE_ERROR",
+          "message": "indentation jumps more than one block level",
+          "line": 4,
+          "column": 1,
+          "span": {
+            "start_line": 4,
+            "start_column": 1,
+            "end_line": 4,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "candidate",
+        "mode": "off",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "MOSS_COMPILE_ERROR",
+          "message": "indentation jumps more than one block level",
+          "line": 4,
+          "column": 1,
+          "span": {
+            "start_line": 4,
+            "start_column": 1,
+            "end_line": 4,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "candidate",
+        "mode": "shadow",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "MOSS_COMPILE_ERROR",
+          "message": "indentation jumps more than one block level",
+          "line": 4,
+          "column": 1,
+          "span": {
+            "start_line": 4,
+            "start_column": 1,
+            "end_line": 4,
+            "end_column": 1
+          }
+        }
+      }
+    ],
+    "pass": true
+  },
+  {
+    "case": "examples/swarm/expression_surface_2026/validation_engine/failed_attempts/15_multiline_test_vector.moss",
+    "expected": [
+      "MOSS_COMPILE_ERROR",
+      "indentation jumps more than one block level",
+      3,
+      1
+    ],
+    "runs": [
+      {
+        "binary": "baseline",
+        "mode": "off",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "MOSS_COMPILE_ERROR",
+          "message": "indentation jumps more than one block level",
+          "line": 3,
+          "column": 1,
+          "span": {
+            "start_line": 3,
+            "start_column": 1,
+            "end_line": 3,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "baseline",
+        "mode": "shadow",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "MOSS_COMPILE_ERROR",
+          "message": "indentation jumps more than one block level",
+          "line": 3,
+          "column": 1,
+          "span": {
+            "start_line": 3,
+            "start_column": 1,
+            "end_line": 3,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "candidate",
+        "mode": "off",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "MOSS_COMPILE_ERROR",
+          "message": "indentation jumps more than one block level",
+          "line": 3,
+          "column": 1,
+          "span": {
+            "start_line": 3,
+            "start_column": 1,
+            "end_line": 3,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "candidate",
+        "mode": "shadow",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "MOSS_COMPILE_ERROR",
+          "message": "indentation jumps more than one block level",
+          "line": 3,
+          "column": 1,
+          "span": {
+            "start_line": 3,
+            "start_column": 1,
+            "end_line": 3,
+            "end_column": 1
+          }
+        }
+      }
+    ],
+    "pass": true
+  },
+  {
+    "case": "symbolic_or",
+    "expected": [
+      "UNSUPPORTED_EXPRESSION_OPERATOR",
+      "binary '||' expression is not supported",
+      2,
+      1
+    ],
+    "runs": [
+      {
+        "binary": "baseline",
+        "mode": "off",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNSUPPORTED_EXPRESSION_OPERATOR",
+          "message": "binary '||' expression is not supported",
+          "line": 2,
+          "column": 1,
+          "span": {
+            "start_line": 2,
+            "start_column": 1,
+            "end_line": 2,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "baseline",
+        "mode": "shadow",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNSUPPORTED_EXPRESSION_OPERATOR",
+          "message": "binary '||' expression is not supported",
+          "line": 2,
+          "column": 1,
+          "span": {
+            "start_line": 2,
+            "start_column": 1,
+            "end_line": 2,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "candidate",
+        "mode": "off",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNSUPPORTED_EXPRESSION_OPERATOR",
+          "message": "binary '||' expression is not supported",
+          "line": 2,
+          "column": 1,
+          "span": {
+            "start_line": 2,
+            "start_column": 1,
+            "end_line": 2,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "candidate",
+        "mode": "shadow",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNSUPPORTED_EXPRESSION_OPERATOR",
+          "message": "binary '||' expression is not supported",
+          "line": 2,
+          "column": 1,
+          "span": {
+            "start_line": 2,
+            "start_column": 1,
+            "end_line": 2,
+            "end_column": 1
+          }
+        }
+      }
+    ],
+    "pass": true
+  },
+  {
+    "case": "incomplete_subtraction",
+    "expected": [
+      "MOSS_COMPILE_ERROR",
+      "invalid arithmetic expression",
+      2,
+      1
+    ],
+    "runs": [
+      {
+        "binary": "baseline",
+        "mode": "off",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "MOSS_COMPILE_ERROR",
+          "message": "invalid arithmetic expression",
+          "line": 2,
+          "column": 1,
+          "span": {
+            "start_line": 2,
+            "start_column": 1,
+            "end_line": 2,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "baseline",
+        "mode": "shadow",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "MOSS_COMPILE_ERROR",
+          "message": "invalid arithmetic expression",
+          "line": 2,
+          "column": 1,
+          "span": {
+            "start_line": 2,
+            "start_column": 1,
+            "end_line": 2,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "candidate",
+        "mode": "off",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "MOSS_COMPILE_ERROR",
+          "message": "invalid arithmetic expression",
+          "line": 2,
+          "column": 1,
+          "span": {
+            "start_line": 2,
+            "start_column": 1,
+            "end_line": 2,
+            "end_column": 1
+          }
+        }
+      },
+      {
+        "binary": "candidate",
+        "mode": "shadow",
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "MOSS_COMPILE_ERROR",
+          "message": "invalid arithmetic expression",
+          "line": 2,
+          "column": 1,
+          "span": {
+            "start_line": 2,
+            "start_column": 1,
+            "end_line": 2,
+            "end_column": 1
+          }
+        }
+      }
+    ],
+    "pass": true
+  }
+]
