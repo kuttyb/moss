@@ -1,0 +1,5 @@
+fn consume(a: Int, b: Int, c: Int):
+  pass
+
+fn probe():
+  value = not

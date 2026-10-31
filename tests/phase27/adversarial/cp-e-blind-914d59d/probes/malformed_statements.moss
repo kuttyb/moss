@@ -1,0 +1,14 @@
+fn malformed_assignment():
+  value =
+
+fn malformed_return():
+  return (1 +)
+
+fn malformed_member():
+  value = item.
+
+fn malformed_index():
+  value = items[
+
+fn repeated_nested_commas():
+  value = [1, [2,,3], 4]

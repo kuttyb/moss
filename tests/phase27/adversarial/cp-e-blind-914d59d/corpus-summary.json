@@ -1,0 +1,56 @@
+{
+  "candidate_sha": "914d59dcb0d4825f1ae652b6a23a7db742a5b3fd",
+  "baseline_sha": "04be1a1bbbc7a4fd8fe2e4090b4b5bad5dd573e4",
+  "files": 909,
+  "runs_per_revision": 1818,
+  "runs_by_mode": {
+    "off": 909,
+    "shadow": 909
+  },
+  "timeouts_by_revision": {
+    "baseline": 0,
+    "candidate": 0
+  },
+  "invalid_json_by_revision": {
+    "baseline": 0,
+    "candidate": 0
+  },
+  "normalized_differences": [
+    {
+      "mode": "off",
+      "path": "sdk/advanced-data-acceptance/fixtures/source_free_consumer.moss",
+      "baseline": [
+        [
+          "RECOVERY_PATTERN_REQUIRES_VARIANT",
+          "error",
+          "recovery patterns must name a qualified enum variant"
+        ]
+      ],
+      "candidate": [
+        [
+          "UNKNOWN_ERROR_TYPE",
+          "error",
+          "unknown error enum 'ndarray.NdArrayError'"
+        ]
+      ]
+    },
+    {
+      "mode": "shadow",
+      "path": "sdk/advanced-data-acceptance/fixtures/source_free_consumer.moss",
+      "baseline": [
+        [
+          "RECOVERY_PATTERN_REQUIRES_VARIANT",
+          "error",
+          "recovery patterns must name a qualified enum variant"
+        ]
+      ],
+      "candidate": [
+        [
+          "UNKNOWN_ERROR_TYPE",
+          "error",
+          "unknown error enum 'ndarray.NdArrayError'"
+        ]
+      ]
+    }
+  ]
+}
