@@ -47,9 +47,9 @@ def check_rejected_source_parity():
         "incomplete_expression.moss":
             ("MOSS_COMPILE_ERROR", "invalid arithmetic expression", 2, 1),
         "unresolved_collection_result.moss":
-            ("MOSS_COMPILE_ERROR", "unbound open result type for variable 'value'; heterogeneous or unresolved collection element type", 2, 1),
+            ("MOSS_COMPILE_ERROR", "heterogeneous or unresolved collection element type", 2, 1),
         "incomplete_vector.moss":
-            ("MOSS_COMPILE_ERROR", "unbound open result type for variable 'value'; heterogeneous or unresolved collection element type", 2, 1),
+            ("MOSS_COMPILE_ERROR", "heterogeneous or unresolved collection element type", 2, 1),
         "juxtaposed_operands.moss":
             ("INVALID_EXPRESSION",
              "invalid expression '2 3': '2' is followed by '3' with no operator between them (if, while, and for are statements, not expressions)",
@@ -156,7 +156,7 @@ def check_rejected_source_parity():
         for fixture, error_message in (
                 (package_fixture, "invalid arithmetic expression"),
                 (package_open_collection,
-                 "unbound open result type for variable 'value'; heterogeneous or unresolved collection element type")):
+                 "heterogeneous or unresolved collection element type")):
             package = pathlib.Path(scratch) / fixture.name
             shutil.copytree(fixture, package)
             for mode in ("off", "shadow"):

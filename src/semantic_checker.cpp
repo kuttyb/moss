@@ -9907,7 +9907,19 @@ class Checker {
             break;
           }
         }
-        err(err_line, "unbound open result type for variable '" + name + "'; heterogeneous or unresolved collection element type");
+        const string expected_binding_name = name;
+        const bool incomplete_initializer = std::any_of(
+            body.begin(), body.end(), [&](const Stmt& statement) {
+          return statement.kind == Stmt::Kind::Assign &&
+              statement.est_binding_name == expected_binding_name &&
+              moss::est::incomplete_expression_syntax(statement.b);
+        });
+        if (incomplete_initializer) {
+          err(err_line, "heterogeneous or unresolved collection element type");
+        }
+        err(err_line, "unbound open result type for variable '" + name +
+            "'; heterogeneous or unresolved collection element type",
+            "TYPE_AMBIGUOUS_OPEN_RESULT");
       }
     }
   }

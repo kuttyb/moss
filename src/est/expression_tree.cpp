@@ -1160,6 +1160,35 @@ bool incomplete_trailing_operator(std::string_view source) {
   return operators.count(tokens.back().text) != 0;
 }
 
+bool incomplete_expression_syntax(std::string_view source) {
+  std::vector<Token> tokens;
+  try {
+    tokens = lex(source);
+  } catch (const std::invalid_argument&) {
+    return false;
+  }
+  if (tokens.empty()) return false;
+  if (incomplete_trailing_operator(source)) return true;
+  std::vector<std::string_view> delimiters;
+  for (const auto& token : tokens) {
+    if (token.text == "(" || token.text == "[" || token.text == "{") {
+      delimiters.push_back(token.text);
+      continue;
+    }
+    if (token.text != ")" && token.text != "]" && token.text != "}")
+      continue;
+    if (delimiters.empty()) return false;
+    const auto open = delimiters.back();
+    if ((open == "(" && token.text != ")") ||
+        (open == "[" && token.text != "]") ||
+        (open == "{" && token.text != "}")) return false;
+    delimiters.pop_back();
+  }
+  if (!delimiters.empty()) return true;
+  return tokens.back().text == "." || tokens.back().text == "," ||
+         tokens.back().text == ":";
+}
+
 std::optional<std::vector<std::string>> parse_vector_literal_children(
     std::string_view source) {
   const auto tokens = lex(source);
@@ -1566,8 +1595,13 @@ static void populate_impl(Program& program, std::vector<Stmt>* additional,
             std::string_view("+-*/%&|^").find(target.back()) !=
                 std::string_view::npos;
         s.est_raw_form = compound ? RawForm::CompoundAssign : RawForm::Assign;
-        bind(s.expression_handles, owner, ExprSlot::LhsPlace, 0,
+        const auto lhs = bind(s.expression_handles, owner, ExprSlot::LhsPlace, 0,
              compound ? target.substr(0, target.size() - 1) : target);
+        if (lhs) {
+          if (const auto* identifier =
+                  std::get_if<Identifier>(&arena.at(*lhs)))
+            s.est_binding_name = identifier->name;
+        }
         bind(s.expression_handles, owner, ExprSlot::RhsValue, 0, s.b);
         if (dump_enabled)
           std::cerr << "MOSS_EST_RAW owner=" << owner << " form="
