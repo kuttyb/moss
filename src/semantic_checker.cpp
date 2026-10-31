@@ -10995,7 +10995,15 @@ class Checker {
     if (!member || member->name != member_name) return false;
     const auto* base = std::get_if<moss::est::Identifier>(
         &syntax->arena->at(member->base));
-    return base && base->name == base_name;
+    if (!base || base->name != base_name) return false;
+    const auto root_span = syntax->arena->span(syntax->root);
+    const auto base_span = syntax->arena->span(member->base);
+    const auto exact_root_size = base_name.size() + 1 + member_name.size();
+    return root_span.source_begin == 0 &&
+        root_span.source_end == text.size() &&
+        base_span.source_begin == 0 &&
+        base_span.source_end == base_name.size() &&
+        root_span.source_end - root_span.source_begin == exact_root_size;
   }
 
   static bool tree_parse_member_access(const string& text, string& base,
