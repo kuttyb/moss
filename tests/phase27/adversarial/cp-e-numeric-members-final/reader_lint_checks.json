@@ -1,0 +1,36 @@
+{
+  "lint_command": "python3 tests/tooling/check_phase27_string_debt.py --require-zero emitter",
+  "lint_result": "PASS, exit 0",
+  "inventory": "tests/tooling/check_phase27_string_debt.py omits src/executor_invoke_codegen.inc from CONSUMER_PATHS.emitter",
+  "independent_false_zero_probe": {
+    "method": "Temporarily add executor_invoke_codegen.inc to the imported linter module's emitter path inventory, then rerun sites() without modifying repository files.",
+    "existing_emitter_reader_sites": 0,
+    "omitted_file_emitter_reader_sites": 1,
+    "source": "src/executor_invoke_codegen.inc:138",
+    "expression": "parse_executor_chain(s.b, calls)"
+  },
+  "exemptions": {
+    "count": 3,
+    "keys": [
+      "src/semantic_checker.cpp | builtin_equality_type | split_top_level",
+      "src/semantic_checker.cpp | contains_float_type | split_top_level",
+      "src/semantic_checker.cpp | phase20_is_nontransferable_capability | split_top_level"
+    ],
+    "function_targets_resolved_uniquely": true,
+    "reader_sites_per_key": [1, 1, 1],
+    "stale_function_key_rejected": true,
+    "stale_api_key_rejected": true,
+    "duplicate_reader_site_rejected": true
+  },
+  "raw_stmt_and_shape_gates": {
+    "raw_stmt_name_comparisons": 40,
+    "raw_stmt_binding_comparisons": 9,
+    "shape_tests_and_tree_expression_text_guard": "PASS"
+  },
+  "zero_reader_commands": {
+    "checker": "PASS",
+    "emitter": "PASS but false green because executor_invoke_codegen.inc is omitted",
+    "reach_walk": "PASS",
+    "fast_debug": "PASS"
+  }
+}

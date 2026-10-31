@@ -1,0 +1,838 @@
+{
+  "baseline_revision": "04be1a1bbbc7a4fd8fe2e4090b4b5bad5dd573e4",
+  "candidate_revision": "f28f5f1713ee5da2e975fdd564c494841e6cbffc",
+  "baseline_binary_sha256": "4a334c71d9b5ea5b2925c311f7a462abd046e479fc4b52df4c0453e612ceb286",
+  "candidate_binary_sha256": "3bd537b53ecff3035dfcbdf305d7806f04330815b3643c516205aa853feffd9d",
+  "tracked_moss_sources": 2212,
+  "candidate_off_vs_shadow_verdict_differences": 0,
+  "baseline_off_vs_candidate_off_shadow_diagnostic_deltas": [
+    {
+      "source": "sdk/advanced-data-acceptance/fixtures/source_free_consumer.moss",
+      "baseline": {
+        "code": "RECOVERY_PATTERN_REQUIRES_VARIANT",
+        "message": "recovery patterns must name a qualified enum variant",
+        "line": 57,
+        "column": 1,
+        "span": {
+          "start_line": 57,
+          "start_column": 1,
+          "end_line": 57,
+          "end_column": 1
+        }
+      },
+      "candidate_off": {
+        "code": "UNKNOWN_ERROR_TYPE",
+        "message": "unknown error enum 'ndarray.NdArrayError'",
+        "line": 57,
+        "column": 1,
+        "span": {
+          "start_line": 57,
+          "start_column": 1,
+          "end_line": 57,
+          "end_column": 1
+        }
+      },
+      "candidate_shadow": {
+        "code": "UNKNOWN_ERROR_TYPE",
+        "message": "unknown error enum 'ndarray.NdArrayError'",
+        "line": 57,
+        "column": 1,
+        "span": {
+          "start_line": 57,
+          "start_column": 1,
+          "end_line": 57,
+          "end_column": 1
+        }
+      }
+    },
+    {
+      "source": "tests/phase27/adversarial/cp-e-phase27-3-22a9709a/source_free_consumer.moss",
+      "baseline": {
+        "code": "RECOVERY_PATTERN_REQUIRES_VARIANT",
+        "message": "recovery patterns must name a qualified enum variant",
+        "line": 57,
+        "column": 1,
+        "span": {
+          "start_line": 57,
+          "start_column": 1,
+          "end_line": 57,
+          "end_column": 1
+        }
+      },
+      "candidate_off": {
+        "code": "UNKNOWN_ERROR_TYPE",
+        "message": "unknown error enum 'ndarray.NdArrayError'",
+        "line": 57,
+        "column": 1,
+        "span": {
+          "start_line": 57,
+          "start_column": 1,
+          "end_line": 57,
+          "end_column": 1
+        }
+      },
+      "candidate_shadow": {
+        "code": "UNKNOWN_ERROR_TYPE",
+        "message": "unknown error enum 'ndarray.NdArrayError'",
+        "line": 57,
+        "column": 1,
+        "span": {
+          "start_line": 57,
+          "start_column": 1,
+          "end_line": 57,
+          "end_column": 1
+        }
+      }
+    }
+  ],
+  "checked_closure_off_shadow_differences": [
+    {
+      "source": "examples/swarm/modules/algo_chain/heapkit/src/order.moss",
+      "candidate_shadow_missing": [
+        [
+          "method",
+          "examples/swarm/modules/algo_chain/heapkit/src/heap.moss",
+          "method:heap__Entry.key_of@9"
+        ]
+      ],
+      "candidate_off_matches_baseline": true
+    },
+    {
+      "source": "examples/swarm/modules/algo_chain/heapkit/tests/order_test.moss",
+      "candidate_shadow_missing": [
+        [
+          "method",
+          "examples/swarm/modules/algo_chain/heapkit/src/heap.moss",
+          "method:heap__Entry.key_of@9"
+        ]
+      ],
+      "candidate_off_matches_baseline": true
+    },
+    {
+      "source": "examples/swarm/modules/algo_chain/repro/natural_chain/heapkit/src/order.moss",
+      "candidate_shadow_missing": [
+        [
+          "method",
+          "examples/swarm/modules/algo_chain/repro/natural_chain/heapkit/src/heap.moss",
+          "method:heap__Entry.key_of@9"
+        ]
+      ],
+      "candidate_off_matches_baseline": true
+    },
+    {
+      "source": "examples/swarm/modules/algo_chain/repro/natural_chain/heapkit/tests/order_test.moss",
+      "candidate_shadow_missing": [
+        [
+          "method",
+          "examples/swarm/modules/algo_chain/repro/natural_chain/heapkit/src/heap.moss",
+          "method:heap__Entry.key_of@9"
+        ]
+      ],
+      "candidate_off_matches_baseline": true
+    }
+  ],
+  "normalized_call_edge_differences": 0,
+  "un-normalized_shadow_edge_delta_pairs": 1546,
+  "incomplete_scope_trace_count": 1550,
+  "numeric_member_cases": [
+    {
+      "source": "tests/phase27/est/repro/numeric_member_exponent.moss",
+      "baseline_off": {
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_FIELD",
+          "message": "type 'P' has no field '1e3'",
+          "line": 6,
+          "column": 1,
+          "span": {
+            "start_line": 6,
+            "start_column": 1,
+            "end_line": 6,
+            "end_column": 1
+          }
+        },
+        "trace_complete": false,
+        "checked": [],
+        "edges": [],
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "candidate_off": {
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_FIELD",
+          "message": "type 'P' has no field '1e3'",
+          "line": 6,
+          "column": 1,
+          "span": {
+            "start_line": 6,
+            "start_column": 1,
+            "end_line": 6,
+            "end_column": 1
+          }
+        },
+        "trace_complete": false,
+        "checked": [],
+        "edges": [],
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "candidate_shadow": {
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_FIELD",
+          "message": "type 'P' has no field '1e3'",
+          "line": 6,
+          "column": 1,
+          "span": {
+            "start_line": 6,
+            "start_column": 1,
+            "end_line": 6,
+            "end_column": 1
+          }
+        },
+        "trace_complete": false,
+        "checked": [],
+        "edges": [],
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "verdicts_equal": true,
+      "checked_missing_candidate_off": [],
+      "checked_added_candidate_off": [],
+      "checked_missing_candidate_shadow": [],
+      "checked_added_candidate_shadow": [],
+      "checked_off_shadow_delta": [],
+      "edge_missing_candidate_off": [],
+      "edge_added_candidate_off": [],
+      "edge_missing_candidate_shadow": [],
+      "edge_added_candidate_shadow": [],
+      "trace_complete_all": false
+    },
+    {
+      "source": "tests/phase27/est/repro/numeric_member_field.moss",
+      "baseline_off": {
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_FIELD",
+          "message": "record 'P' has no field '0'",
+          "line": 6,
+          "column": 1,
+          "span": {
+            "start_line": 6,
+            "start_column": 1,
+            "end_line": 6,
+            "end_column": 1
+          }
+        },
+        "trace_complete": false,
+        "checked": [],
+        "edges": [],
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "candidate_off": {
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_FIELD",
+          "message": "record 'P' has no field '0'",
+          "line": 6,
+          "column": 1,
+          "span": {
+            "start_line": 6,
+            "start_column": 1,
+            "end_line": 6,
+            "end_column": 1
+          }
+        },
+        "trace_complete": false,
+        "checked": [],
+        "edges": [],
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "candidate_shadow": {
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_FIELD",
+          "message": "record 'P' has no field '0'",
+          "line": 6,
+          "column": 1,
+          "span": {
+            "start_line": 6,
+            "start_column": 1,
+            "end_line": 6,
+            "end_column": 1
+          }
+        },
+        "trace_complete": false,
+        "checked": [],
+        "edges": [],
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "verdicts_equal": true,
+      "checked_missing_candidate_off": [],
+      "checked_added_candidate_off": [],
+      "checked_missing_candidate_shadow": [],
+      "checked_added_candidate_shadow": [],
+      "checked_off_shadow_delta": [],
+      "edge_missing_candidate_off": [],
+      "edge_added_candidate_off": [],
+      "edge_missing_candidate_shadow": [],
+      "edge_added_candidate_shadow": [],
+      "trace_complete_all": false
+    },
+    {
+      "source": "tests/phase27/est/repro/numeric_member_hex.moss",
+      "baseline_off": {
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_FIELD",
+          "message": "type 'P' has no field '0xff'",
+          "line": 6,
+          "column": 1,
+          "span": {
+            "start_line": 6,
+            "start_column": 1,
+            "end_line": 6,
+            "end_column": 1
+          }
+        },
+        "trace_complete": false,
+        "checked": [],
+        "edges": [],
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "candidate_off": {
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_FIELD",
+          "message": "type 'P' has no field '0xff'",
+          "line": 6,
+          "column": 1,
+          "span": {
+            "start_line": 6,
+            "start_column": 1,
+            "end_line": 6,
+            "end_column": 1
+          }
+        },
+        "trace_complete": false,
+        "checked": [],
+        "edges": [],
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "candidate_shadow": {
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_FIELD",
+          "message": "type 'P' has no field '0xff'",
+          "line": 6,
+          "column": 1,
+          "span": {
+            "start_line": 6,
+            "start_column": 1,
+            "end_line": 6,
+            "end_column": 1
+          }
+        },
+        "trace_complete": false,
+        "checked": [],
+        "edges": [],
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "verdicts_equal": true,
+      "checked_missing_candidate_off": [],
+      "checked_added_candidate_off": [],
+      "checked_missing_candidate_shadow": [],
+      "checked_added_candidate_shadow": [],
+      "checked_off_shadow_delta": [],
+      "edge_missing_candidate_off": [],
+      "edge_added_candidate_off": [],
+      "edge_missing_candidate_shadow": [],
+      "edge_added_candidate_shadow": [],
+      "trace_complete_all": false
+    },
+    {
+      "source": "tests/phase27/est/repro/numeric_member_name.moss",
+      "baseline_off": {
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_FIELD",
+          "message": "type 'P' has no field '0x'",
+          "line": 6,
+          "column": 1,
+          "span": {
+            "start_line": 6,
+            "start_column": 1,
+            "end_line": 6,
+            "end_column": 1
+          }
+        },
+        "trace_complete": false,
+        "checked": [],
+        "edges": [],
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "candidate_off": {
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_FIELD",
+          "message": "type 'P' has no field '0x'",
+          "line": 6,
+          "column": 1,
+          "span": {
+            "start_line": 6,
+            "start_column": 1,
+            "end_line": 6,
+            "end_column": 1
+          }
+        },
+        "trace_complete": false,
+        "checked": [],
+        "edges": [],
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "candidate_shadow": {
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_FIELD",
+          "message": "type 'P' has no field '0x'",
+          "line": 6,
+          "column": 1,
+          "span": {
+            "start_line": 6,
+            "start_column": 1,
+            "end_line": 6,
+            "end_column": 1
+          }
+        },
+        "trace_complete": false,
+        "checked": [],
+        "edges": [],
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "verdicts_equal": true,
+      "checked_missing_candidate_off": [],
+      "checked_added_candidate_off": [],
+      "checked_missing_candidate_shadow": [],
+      "checked_added_candidate_shadow": [],
+      "checked_off_shadow_delta": [],
+      "edge_missing_candidate_off": [],
+      "edge_added_candidate_off": [],
+      "edge_missing_candidate_shadow": [],
+      "edge_added_candidate_shadow": [],
+      "trace_complete_all": false
+    },
+    {
+      "source": "tests/phase27/est/repro/numeric_member_named.moss",
+      "baseline_off": {
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_FIELD",
+          "message": "type 'P' has no field '1_name'",
+          "line": 6,
+          "column": 1,
+          "span": {
+            "start_line": 6,
+            "start_column": 1,
+            "end_line": 6,
+            "end_column": 1
+          }
+        },
+        "trace_complete": false,
+        "checked": [],
+        "edges": [],
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "candidate_off": {
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_FIELD",
+          "message": "type 'P' has no field '1_name'",
+          "line": 6,
+          "column": 1,
+          "span": {
+            "start_line": 6,
+            "start_column": 1,
+            "end_line": 6,
+            "end_column": 1
+          }
+        },
+        "trace_complete": false,
+        "checked": [],
+        "edges": [],
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "candidate_shadow": {
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_FIELD",
+          "message": "type 'P' has no field '1_name'",
+          "line": 6,
+          "column": 1,
+          "span": {
+            "start_line": 6,
+            "start_column": 1,
+            "end_line": 6,
+            "end_column": 1
+          }
+        },
+        "trace_complete": false,
+        "checked": [],
+        "edges": [],
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "verdicts_equal": true,
+      "checked_missing_candidate_off": [],
+      "checked_added_candidate_off": [],
+      "checked_missing_candidate_shadow": [],
+      "checked_added_candidate_shadow": [],
+      "checked_off_shadow_delta": [],
+      "edge_missing_candidate_off": [],
+      "edge_added_candidate_off": [],
+      "edge_missing_candidate_shadow": [],
+      "edge_added_candidate_shadow": [],
+      "trace_complete_all": false
+    },
+    {
+      "source": "tests/phase27/est/repro/numeric_member_trailing_dot.moss",
+      "baseline_off": {
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_FIELD",
+          "message": "record 'P' has no field '1'",
+          "line": 6,
+          "column": 1,
+          "span": {
+            "start_line": 6,
+            "start_column": 1,
+            "end_line": 6,
+            "end_column": 1
+          }
+        },
+        "trace_complete": false,
+        "checked": [],
+        "edges": [],
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "candidate_off": {
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_FIELD",
+          "message": "record 'P' has no field '1'",
+          "line": 6,
+          "column": 1,
+          "span": {
+            "start_line": 6,
+            "start_column": 1,
+            "end_line": 6,
+            "end_column": 1
+          }
+        },
+        "trace_complete": false,
+        "checked": [],
+        "edges": [],
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "candidate_shadow": {
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_FIELD",
+          "message": "record 'P' has no field '1'",
+          "line": 6,
+          "column": 1,
+          "span": {
+            "start_line": 6,
+            "start_column": 1,
+            "end_line": 6,
+            "end_column": 1
+          }
+        },
+        "trace_complete": false,
+        "checked": [],
+        "edges": [],
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "verdicts_equal": true,
+      "checked_missing_candidate_off": [],
+      "checked_added_candidate_off": [],
+      "checked_missing_candidate_shadow": [],
+      "checked_added_candidate_shadow": [],
+      "checked_off_shadow_delta": [],
+      "edge_missing_candidate_off": [],
+      "edge_added_candidate_off": [],
+      "edge_missing_candidate_shadow": [],
+      "edge_added_candidate_shadow": [],
+      "trace_complete_all": false
+    },
+    {
+      "source": "tests/phase27/est/repro/numeric_member_underscored.moss",
+      "baseline_off": {
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_FIELD",
+          "message": "record 'P' has no field '0_1'",
+          "line": 6,
+          "column": 1,
+          "span": {
+            "start_line": 6,
+            "start_column": 1,
+            "end_line": 6,
+            "end_column": 1
+          }
+        },
+        "trace_complete": false,
+        "checked": [],
+        "edges": [],
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "candidate_off": {
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_FIELD",
+          "message": "record 'P' has no field '0_1'",
+          "line": 6,
+          "column": 1,
+          "span": {
+            "start_line": 6,
+            "start_column": 1,
+            "end_line": 6,
+            "end_column": 1
+          }
+        },
+        "trace_complete": false,
+        "checked": [],
+        "edges": [],
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "candidate_shadow": {
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_FIELD",
+          "message": "record 'P' has no field '0_1'",
+          "line": 6,
+          "column": 1,
+          "span": {
+            "start_line": 6,
+            "start_column": 1,
+            "end_line": 6,
+            "end_column": 1
+          }
+        },
+        "trace_complete": false,
+        "checked": [],
+        "edges": [],
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "verdicts_equal": true,
+      "checked_missing_candidate_off": [],
+      "checked_added_candidate_off": [],
+      "checked_missing_candidate_shadow": [],
+      "checked_added_candidate_shadow": [],
+      "checked_off_shadow_delta": [],
+      "edge_missing_candidate_off": [],
+      "edge_added_candidate_off": [],
+      "edge_missing_candidate_shadow": [],
+      "edge_added_candidate_shadow": [],
+      "trace_complete_all": false
+    },
+    {
+      "source": "tests/phase27/est/repro/numeric_member_word.moss",
+      "baseline_off": {
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_FIELD",
+          "message": "type 'P' has no field '1foo'",
+          "line": 6,
+          "column": 1,
+          "span": {
+            "start_line": 6,
+            "start_column": 1,
+            "end_line": 6,
+            "end_column": 1
+          }
+        },
+        "trace_complete": false,
+        "checked": [],
+        "edges": [],
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "candidate_off": {
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_FIELD",
+          "message": "type 'P' has no field '1foo'",
+          "line": 6,
+          "column": 1,
+          "span": {
+            "start_line": 6,
+            "start_column": 1,
+            "end_line": 6,
+            "end_column": 1
+          }
+        },
+        "trace_complete": false,
+        "checked": [],
+        "edges": [],
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "candidate_shadow": {
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_FIELD",
+          "message": "type 'P' has no field '1foo'",
+          "line": 6,
+          "column": 1,
+          "span": {
+            "start_line": 6,
+            "start_column": 1,
+            "end_line": 6,
+            "end_column": 1
+          }
+        },
+        "trace_complete": false,
+        "checked": [],
+        "edges": [],
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "verdicts_equal": true,
+      "checked_missing_candidate_off": [],
+      "checked_added_candidate_off": [],
+      "checked_missing_candidate_shadow": [],
+      "checked_added_candidate_shadow": [],
+      "checked_off_shadow_delta": [],
+      "edge_missing_candidate_off": [],
+      "edge_added_candidate_off": [],
+      "edge_missing_candidate_shadow": [],
+      "edge_added_candidate_shadow": [],
+      "trace_complete_all": false
+    },
+    {
+      "source": "tests/phase27/est/repro/numeric_member_zero_e.moss",
+      "baseline_off": {
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_FIELD",
+          "message": "type 'P' has no field '0e'",
+          "line": 6,
+          "column": 1,
+          "span": {
+            "start_line": 6,
+            "start_column": 1,
+            "end_line": 6,
+            "end_column": 1
+          }
+        },
+        "trace_complete": false,
+        "checked": [],
+        "edges": [],
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "candidate_off": {
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_FIELD",
+          "message": "type 'P' has no field '0e'",
+          "line": 6,
+          "column": 1,
+          "span": {
+            "start_line": 6,
+            "start_column": 1,
+            "end_line": 6,
+            "end_column": 1
+          }
+        },
+        "trace_complete": false,
+        "checked": [],
+        "edges": [],
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "candidate_shadow": {
+        "returncode": 1,
+        "ok": false,
+        "diagnostic": {
+          "code": "UNKNOWN_FIELD",
+          "message": "type 'P' has no field '0e'",
+          "line": 6,
+          "column": 1,
+          "span": {
+            "start_line": 6,
+            "start_column": 1,
+            "end_line": 6,
+            "end_column": 1
+          }
+        },
+        "trace_complete": false,
+        "checked": [],
+        "edges": [],
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "verdicts_equal": true,
+      "checked_missing_candidate_off": [],
+      "checked_added_candidate_off": [],
+      "checked_missing_candidate_shadow": [],
+      "checked_added_candidate_shadow": [],
+      "checked_off_shadow_delta": [],
+      "edge_missing_candidate_off": [],
+      "edge_added_candidate_off": [],
+      "edge_missing_candidate_shadow": [],
+      "edge_added_candidate_shadow": [],
+      "trace_complete_all": false
+    }
+  ],
+  "package_oracle": {
+    "command": "MOSS=<compiler> python3 sdk/advanced-data-acceptance/check_source_free.py --abi v9 --profile debug",
+    "baseline_result": "PASS",
+    "candidate_result": "PASS",
+    "classification": "BENIGN contextual standalone delta; imported provider interfaces are supplied in the package oracle"
+  },
+  "closure_oracle": {
+    "classification": "LEGACY MISPARSE",
+    "reason": "Candidate off exactly matches baseline closure; shadow drops only heap.Entry.key_of@9 from four source roots. The same source declares order.key_of(item: Keyed), and the actual heap wrapper heap.key_of(e) has no caller in the reached call graph except its own body calling Entry.key_of. Textual same-leaf lookup over-selects that qualified target. All 1,546 edge name changes normalize to identical owner/kind/leaf target sets.",
+    "sources": [
+      "examples/swarm/modules/algo_chain/heapkit/src/order.moss",
+      "examples/swarm/modules/algo_chain/heapkit/tests/order_test.moss",
+      "examples/swarm/modules/algo_chain/repro/natural_chain/heapkit/src/order.moss",
+      "examples/swarm/modules/algo_chain/repro/natural_chain/heapkit/tests/order_test.moss"
+    ],
+    "two_path": {
+      "legacy": "MOSS_EST=off ./moss check examples/swarm/modules/algo_chain/heapkit/src/order.moss --json",
+      "candidate": "MOSS_EST=shadow ./moss check examples/swarm/modules/algo_chain/heapkit/src/order.moss --json"
+    }
+  },
+  "lint_gate_defect": {
+    "classification": "MIGRATION BUG \u2014 gate coverage false green",
+    "omitted_file": "src/executor_invoke_codegen.inc",
+    "line": 138,
+    "reader": "parse_executor_chain(s.b, calls)",
+    "existing_lint": "python3 tests/tooling/check_phase27_string_debt.py --require-zero emitter -> exit 0",
+    "corrected_inventory_probe": "Adding executor_invoke_codegen.inc to CONSUMER_PATHS[\"emitter\"] finds one emitter reader at src/executor_invoke_codegen.inc:138.",
+    "two_path_reproducer": [
+      "existing lint path reports zero",
+      "same lint inventory plus executor_invoke_codegen.inc reports one active parse_executor_chain reader"
+    ]
+  },
+  "required_verdict": "GO-with-defects"
+}
