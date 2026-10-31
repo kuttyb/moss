@@ -10827,6 +10827,13 @@ class Checker {
     auto syntax = checker_est_view(expression);
     bool tree = syntax && moss::est::contains_identifier(*syntax, name);
     if (!syntax) {
+      // Callable-parameter invocations with named arguments are rejected by
+      // the checker, but their individual argument fragments still flow
+      // through effect analysis before that diagnostic is produced. Preserve
+      // the old identifier-use parity for those fragments structurally.
+      auto named_argument = moss::est::parse_named_argument_view(expression);
+      if (named_argument)
+        tree |= moss::est::expression_mentions(*named_argument, name);
       // A few checker helpers pass a comma-delimited operand list rather than
       // one expression (for example FileIO range tuples). Parse those children
       // as independent EST expressions instead of scanning their spelling.
