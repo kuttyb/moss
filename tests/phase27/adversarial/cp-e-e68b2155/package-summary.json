@@ -1,0 +1,33 @@
+{
+  "cells": {
+    "baseline/off": {
+      "failed": 77,
+      "succeeded": 351
+    },
+    "baseline/shadow": {
+      "failed": 77,
+      "succeeded": 351
+    },
+    "candidate/off": {
+      "failed": 77,
+      "succeeded": 351
+    },
+    "candidate/shadow": {
+      "failed": 77,
+      "succeeded": 351
+    }
+  },
+  "command": "./margo build --check --json",
+  "matrix_rows": 1712,
+  "note": "All 77 failed roots failed on both revisions with the same normalized error; parallel scheduling event order can vary.",
+  "per_group_workers": 1,
+  "semantic_result_differences_after_path_and_schedule_normalization": {
+    "off": 0,
+    "shadow": 0
+  },
+  "tracked_manifest_count": 428,
+  "verdict_deltas": {
+    "off": [],
+    "shadow": []
+  }
+}

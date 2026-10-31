@@ -1,0 +1,10 @@
+0d849996f995daf75eb9664a095891605dad0533f747e07aed1d64248e895879  docs/phase27/adversarial/cp-e-e68b2155/REPORT.md
+2e2237b92fef3d38204673b824159cb98471bb8624ced73e7af2b52aec151522  tests/phase27/adversarial/cp-e-e68b2155/corpus-manifest.sha256
+de77d303e77fb8821ae9ba5b9b00e35f2397b8a9354208dc0b912a64106e708d  tests/phase27/adversarial/cp-e-e68b2155/corpus-results.jsonl
+8afcf8c129952cf88058ccd2116f8b859132bc5748914d144547a6e10cd4b799  tests/phase27/adversarial/cp-e-e68b2155/corpus-summary.json
+cb92ff0e951417dc2089ec536abe3fcefdb9c70496435cca5826c1f079c3f49d  tests/phase27/adversarial/cp-e-e68b2155/exemption-probes.json
+b59fae45008fae91850893ab9b0ac36005f96f7907618a2746dd894956970dfa  tests/phase27/adversarial/cp-e-e68b2155/package-manifest.sha256
+eeb22078cab37e8a090890032c8070c64fd952ba48340629b1959412165972a4  tests/phase27/adversarial/cp-e-e68b2155/package-results.jsonl
+adf9bc939954c91aec9f2d9fc362c5c73b365e0d8c9a69043f86beb2cf272e90  tests/phase27/adversarial/cp-e-e68b2155/package-sourcefree-oracle.json
+2131398c0b79ecea1af3ac1d17d7a4e0e6ccc156925b8ef812e4c6ac15789d81  tests/phase27/adversarial/cp-e-e68b2155/package-summary.json
+b2ff3d582057ee2bb8297ad921deb965ddb385174fb8c6419fe26332a9cd1e66  tests/phase27/adversarial/cp-e-e68b2155/reader-audit.json
