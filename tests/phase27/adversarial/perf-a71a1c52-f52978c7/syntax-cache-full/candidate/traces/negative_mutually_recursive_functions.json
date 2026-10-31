@@ -1,0 +1,130 @@
+{
+  "traceEvents": [
+    {"name": "process_name", "ph": "M", "pid": 732394, "args": {"name": "moss"}},
+    {"name": "thread_name", "ph": "M", "pid": 732394, "tid": 1, "args": {"name": "main"}},
+    {"name": "parsing", "cat": "compiler", "ph": "X", "ts": 96, "dur": 62, "pid": 732394, "tid": 1, "args": {}},
+    {"name": "project_discovery", "cat": "compiler", "ph": "X", "ts": 42, "dur": 152, "pid": 732394, "tid": 1, "args": {}},
+    {"name": "parsing", "cat": "compiler", "ph": "X", "ts": 216, "dur": 24, "pid": 732394, "tid": 1, "args": {}},
+    {"name": "declaration_and_symbol_analysis", "cat": "compiler", "ph": "X", "ts": 259, "dur": 48, "pid": 732394, "tid": 1, "args": {}},
+    {"name": "inference_round_0", "cat": "type_inference", "ph": "X", "ts": 562, "dur": 66, "pid": 732394, "tid": 1, "args": {}},
+    {"name": "open_callable_summaries", "cat": "compiler", "ph": "X", "ts": 713, "dur": 7, "pid": 732394, "tid": 1, "args": {}},
+    {"name": "type_inference", "cat": "compiler", "ph": "X", "ts": 326, "dur": 509, "pid": 732394, "tid": 1, "args": {}},
+    {"name": "semantic_analysis", "cat": "compiler", "ph": "X", "ts": 319, "dur": 529, "pid": 732394, "tid": 1, "args": {}},
+    {"name": "process_main", "cat": "compiler", "ph": "X", "ts": 2, "dur": 888, "pid": 732394, "tid": 1, "args": {}},
+    {"name": "compiler_counters", "cat": "counters", "ph": "C", "ts": 933, "pid": 732394, "tid": 1, "args": {"functions_analyzed": 2, "inference_rounds": 3, "inference_work_units": 6, "sig_infer_outer_rounds": 4, "types_analyzed": 0, "typesolver_resolve": 42, "typesolver_unify": 21}}
+  ],
+  "displayTimeUnit": "ms",
+  "metadata": {
+    "format": "Chrome Trace Event JSON",
+    "compiler": "moss-opt",
+    "counters": {
+      "functions_analyzed": 2,
+      "inference_rounds": 3,
+      "inference_work_units": 6,
+      "sig_infer_outer_rounds": 4,
+      "types_analyzed": 0,
+      "typesolver_resolve": 42,
+      "typesolver_unify": 21
+    },
+    "operations": {
+      "build_open_callable_summaries": {
+        "calls": 1,
+        "total_ms": 0.00724,
+        "distinct_inputs": 0,
+        "repeated_calls": 1,
+        "avg_us": 7.24
+      },
+      "infer_domain_state_fields": {
+        "calls": 2,
+        "total_ms": 0.015394,
+        "distinct_inputs": 0,
+        "repeated_calls": 2,
+        "avg_us": 7.697
+      },
+      "infer_handler_reply_types": {
+        "calls": 2,
+        "total_ms": 0.011922,
+        "distinct_inputs": 0,
+        "repeated_calls": 2,
+        "avg_us": 5.961
+      },
+      "infer_statement_expressions": {
+        "calls": 8,
+        "total_ms": 0.009886,
+        "distinct_inputs": 2,
+        "repeated_calls": 6,
+        "avg_us": 1.23575
+      },
+      "sig_infer_prelude_constraints": {
+        "calls": 3,
+        "total_ms": 0.084945,
+        "distinct_inputs": 0,
+        "repeated_calls": 3,
+        "avg_us": 28.315
+      },
+      "sig_infer_result_reconciliation": {
+        "calls": 8,
+        "total_ms": 0.054096,
+        "distinct_inputs": 2,
+        "repeated_calls": 6,
+        "avg_us": 6.762
+      },
+      "sig_infer_round_body": {
+        "calls": 4,
+        "total_ms": 0.201762,
+        "distinct_inputs": 0,
+        "repeated_calls": 4,
+        "avg_us": 50.4405
+      },
+      "solve_local_collection_types": {
+        "calls": 8,
+        "total_ms": 0.006673,
+        "distinct_inputs": 2,
+        "repeated_calls": 6,
+        "avg_us": 0.834125
+      }
+    },
+    "stage_totals": {
+      "declaration_and_symbol_analysis": {
+        "calls": 1,
+        "total_ms": 0.048231,
+        "total_ns": 48231
+      },
+      "inference_round_0": {
+        "calls": 1,
+        "total_ms": 0.066131,
+        "total_ns": 66131
+      },
+      "open_callable_summaries": {
+        "calls": 1,
+        "total_ms": 0.00765,
+        "total_ns": 7650
+      },
+      "parsing": {
+        "calls": 2,
+        "total_ms": 0.087255,
+        "total_ns": 87255
+      },
+      "process_main": {
+        "calls": 1,
+        "total_ms": 0.888293,
+        "total_ns": 888293
+      },
+      "project_discovery": {
+        "calls": 1,
+        "total_ms": 0.152667,
+        "total_ns": 152667
+      },
+      "semantic_analysis": {
+        "calls": 1,
+        "total_ms": 0.529946,
+        "total_ns": 529946
+      },
+      "type_inference": {
+        "calls": 1,
+        "total_ms": 0.509982,
+        "total_ns": 509982
+      }
+    }
+  }
+}
