@@ -1,4 +1,57 @@
-# Phase 27.3 report (in progress)
+# Phase 27.3 report — delivered
+
+## Final frozen checkpoint disposition — 2026-10-31
+
+**Source freeze:** `55994899539532c763d6489b16b859f419b12205` (reviewed source; subsequent commits contain only review/evidence and status). No source edits were made after this freeze.
+
+PASS checker reader sites = 0
+PASS emitter reader sites = 0
+PASS reach walk and Fast Debug still = 0
+PASS qualified-call blind spot = 0
+PASS exemptions: 3, each audited by Agent 2
+PASS zero unadjudicated differences vs phase27-2-m1
+
+L7 accepted the measured first-parent performance result for Phase 27.3. The local merge commit is `ce5f836e06ce93909c358e6e6455402417d14991`, with first parent `a71a1c52fd7f6e99ba33d9dde70e3531a033def6` and second parent `7c26504f60d18981951d0e081945b29d977d31f4`. The aggregate was +5.4% initially and +5.3% on repeat; the four `rw_*` deltas listed below are also accepted by L7. No further performance work is in 27.3.
+
+### Independent review results
+
+- CP-E exact verdict: **GO** at frozen source `55994899539532c763d6489b16b859f419b12205`; unchanged review evidence commit `bf2416b0e88a829ec9eefd53684941e400dd4d3d`. Report: `docs/phase27/adversarial/cp-e-55994899/REPORT.md`.
+- CP-F exact verdict: **CP-F verdict: GO** at the same frozen source; unchanged review evidence commit `6003efb0959e749a0e955e40aa32a4c338f5973b`. Report: `docs/phase27/adversarial/cp-f-55994899/REPORT.md`.
+- CP-E checked 2,225 source files with no verdict changes and no checked-declaration closure differences over 661 complete traces. Candidate off/shadow had no verdict or diagnostic deltas. The two duplicate source-free standalone diagnostic refinements are BENIGN: the provider-aware ABI-v9 package oracle passes on baseline and candidate.
+- CP-F checked 2,225 inputs; default and Moss `-O` emitted 2,824 matching Rust hashes out of 2,824 successful comparisons, with 11 paired identical standalone emitter failures per profile. The 31 example parity set, `.mossi`/source-free package gates, three-engine and accepts-rustc conformance, overflow probe, and ASan/UBSan scan passed. Reach replay preserved all 158 inherited rows; its two additional rows are the same duplicate standalone diagnostic delta, with no reach-edge or checked-declaration changes. `functional_pipeline.moss` and `frontend_syntax.moss` both timed out on both revisions at 600 seconds with empty output; recorded BOTH-TIMEOUT and excluded under L7's ruling.
+
+### Corrections and reproductions
+
+| Classification | Correction | Independent oracle | Reproducer |
+| --- | --- | --- | --- |
+| MIGRATION BUG | EST builder hook was receiving a truncated FileIO path/member expression; corrected producer-side continuation/statement handoff. | Phase 27.2-m1 `04be1a1`; baseline/off/shadow agree on the accepted FileIO fixture. | `tests/tooling/fixtures/phase20_fileio_runtime_integration.moss:29` |
+| MIGRATION BUG | Checker member inference split a path string at its last dot; member projection now comes from EST. | Phase 27.2-m1 and candidate off/shadow agree. | `tests/tooling/fixtures/phase21c_concurrent_roots.moss:57` |
+| MIGRATION BUG | Malformed expression tails accepted by EST now preserve the baseline rejected-source diagnostic. | Phase 27.2-m1 `MOSS_COMPILE_ERROR`; candidate off and shadow match in standalone and package mode. | `tests/phase27/est/repro/incomplete_expression.moss` and regression controls in `tests/tooling/check_phase27_est.py` |
+| MIGRATION BUG | Numeric-leading member suffixes preserve baseline unknown-field diagnostics. | Phase 27.2-m1, candidate off, and candidate shadow match. | `tests/phase27/est/repro/numeric_member_*.moss` |
+| MIGRATION BUG | Emitter executor-chain parsing migrated to EST and included in the reader lint. | Phase 27.2-m1 and candidate execution/runtime checks agree. | Phase 20 executor and FileIO runtime fixtures; CP-E evidence at `docs/phase27/adversarial/cp-e-55994899/REPORT.md` |
+| BENIGN | Standalone source-free checking refines a diagnostic without changing package behavior. | Provider-aware ABI-v9 package build/run passes on both revisions. | `sdk/advanced-data-acceptance/fixtures/source_free_consumer.moss` (and its byte-identical CP-F copy) |
+
+### Semantic-fact audit (record only; no moves in 27.3)
+
+- Parameter ABI mode selection: `src/native_generator.cpp:1288-1303`; consumption for Rust signature emission: `src/native_generator.cpp:4920-4936`.
+- Path-fragment synchronization lock-set assembly: `src/handler_lowering.inc:144-160`.
+- Domain constructor recognition and construction ordering: `src/native_generator.cpp:7063-7067` and `src/native_generator.cpp:5459-5477`.
+- Fused/eager functional-pipeline lowering: `src/native_generator.cpp:3182-3186`.
+
+### Final gate table
+
+| Gate | Result | Evidence |
+| --- | --- | --- |
+| Merge commit `make --jobs="$(nproc)" check`, `MOSS_EST=off` | PASS, 159/159 | `tests/phase27/adversarial/compiler-perf-final-ce5f836e/check-off.log` |
+| Merge commit `make --jobs="$(nproc)" check`, `MOSS_EST=shadow` | PASS, 159/159 | `tests/phase27/adversarial/compiler-perf-final-ce5f836e/check-shadow.log` |
+| Phase 27 three-engine and accepts-rustc conformance; Phase 27 EST and `.mossi` checks | PASS, included in both make-check runs; CP-F baseline/candidate gates also pass | CP-F report and `tests/phase27/adversarial/cp-f-55994899/raw/gate_results.json` |
+| Full corpus, declaration closure, Rust default/`-O`, Fast Debug, package `.mossi`, sanitizer | PASS, with the explicitly paired BOTH-TIMEOUT exclusions above | CP-E/CP-F reports and raw evidence under `tests/phase27/adversarial/cp-{e,f}-55994899/` |
+| Compiler performance vs merge first parent | **PASS — ACCEPTED BY L7** | Three-run report set below; repeat log `tests/phase27/adversarial/compiler-perf-final-ce5f836e/first-parent-repeat/console.log` |
+| Historical compiler performance vs `phase27-1-m1` | Record only: +6.8%, not a gate | `tests/phase27/adversarial/compiler-perf-final-ce5f836e/phase27-1/LOCAL_REPORT.md` |
+
+The first-parent 77-fixture aggregate was `5.163 s → 5.441 s` (+5.4%); the idle repeat was `5.163 s → 5.435 s` (+5.3%). The repeat retains beyond-noise `rw_*` deltas: `rw_phase4_functional` +21.2% (+2.51 ms), `rw_projects_cache` +21.0% (+5.32 ms), `rw_projects_rolling_window` +18.9% (+8.09 ms), and `rw_sdk_datastructures` +8.9% (+21.06 ms). **L7 ruling: the aggregate and all four `rw_*` results are ACCEPTED for Phase 27.3.** Per L7, standalone torture fixtures w2–w8 (including W5's +14.5% `w5_infer_wide_w050`) are recorded but do not independently block. The historical phase27-1 comparison is `5.099 s → 5.445 s` (+6.8%), for the record only.
+
+Raw benchmark reports, metadata, counters, and console logs are retained under `tests/phase27/adversarial/compiler-perf-final-ce5f836e/`. The full merge off/shadow logs are retained beside them. The source remains frozen; no further performance work is in Phase 27.3.
 
 ## Performance acceptance rule
 
@@ -279,3 +332,10 @@ The profile delta from the earlier `88f17817` tree checkpoint to the later candi
 Full `MOSS_EST=off` compiler-perf at `e35b193c4f8ffca14fd820f6c938f53e1c1a0744` against merge parent `a71a1c52fd7f6e99ba33d9dde70e3531a033def6` completed over all 77 fixtures: aggregate medians 5.151 s vs 5.204 s (+1.0%). Six fixtures initially crossed the individual noise alert and were repeated on the idle host. In the repeated samples, `rw_phase46_semantic_barriers`, `w5_infer_wide_w025`, and `w2_spec_distinct_n008` improved; `rw_sdk_datastructures` fell from +26.13 ms to +6.35 ms (+2.6%). `w6_types_count_t050` and `_t100` received further three-pair follow-ups; combined baseline/candidate sample ranges overlap, and their medians are below the runner's +5% plus absolute/non-overlap rule. No workload remains beyond the noise floor after repeat adjudication. This pre-merge parent perf gate is PASS. Full report, all raw trials/profiles and repeat samples: `tests/phase27/adversarial/perf-a71a1c52-f52978c7/syntax-cache-full/`. The historical `phase27-1-m1` perf record and merge-commit gate remain pending.
 
 Historical record-only comparison at the same candidate freeze against `phase27-1-m1` (`5627727657ad7d26d860d4824b4ba03764252b0e`) measured aggregate medians 5.130 s baseline vs 5.251 s candidate (+2.4%). This is not an acceptance gate per the L7 ruling. Full report and raw data are at `tests/phase27/adversarial/perf-phase27-1-e35b193c/`.
+
+
+## Merge delivery
+
+Merged as `ce5f836e06ce93909c358e6e6455402417d14991`; first parent `a71a1c52fd7f6e99ba33d9dde70e3531a033def6`, second parent `7c26504f60d18981951d0e081945b29d977d31f4`. The merge commit was pushed to `origin/main`; annotated tag `phase27-3-m1` points to the merge commit. L7 accepted the recorded +5.4% initial / +5.3% repeat aggregate and four `rw_*` deltas. No further performance work is in 27.3.
+
+Merge-commit gates: off and shadow `make --jobs="$(nproc)" check` each passed 159/159, with conformance checks included. Durable logs and benchmark reports are under `tests/phase27/adversarial/compiler-perf-final-ce5f836e/`. Fresh CP-E and CP-F both returned GO at the frozen source; review reports and complete evidence are indexed above.
