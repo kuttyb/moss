@@ -153,3 +153,9 @@ The Rust emitter still performs these semantic or lowering decisions locally; th
 - Failure-path synchronization sets: [`handler_lowering.inc:144-160`](../../src/handler_lowering.inc#L144) assembles exclusive, protected-read, and lock sets from effect leaves and the synchronization plan, then derives class modes.
 - Composition construction order: [`native_generator.cpp:5405-5428`](../../src/native_generator.cpp#L5405) partitions domain constructions from executable statements and sorts constructions by concrete-domain rank.
 - Fused/eager pipeline lowering: [`native_generator.cpp:3133-3137`](../../src/native_generator.cpp#L3133) selects fused versus eager code generation from the stored pipeline plan.
+
+### Latest idle W2/W3 profile (diagnostic comparison)
+
+At candidate `9fa051f5`, five alternating optimized off runs against phase27-2-m1 (`04be1a1`) measured W2 baseline median 1.840s (1.807–1.844), candidate 1.877s (1.858–1.916), +2.0%; W3 baseline 0.862s (0.859–0.873), candidate 0.874s (0.833–0.893), +1.4%. This W2 sample is beyond noise and remains an open regression; W3 ranges overlap. Isolated W2 Callgrind counted 26.057B candidate instructions vs 26.033B baseline (+0.09%), with allocator and string/hash routines prominent. Guarded source-pointer and pointer-index lookup experiments did not resolve W2 and were discarded. See `.codex/CURRENT_STATUS.md` and the artifacts under `tmp/phase27-3/current-perf-rerun/` for run details. These measurements diagnose the branch against phase27-2-m1; per L7, the acceptance gate uses the merge's first parent, repeats any tripping workload idle, and reports phase27-1-m1 only as historical context.
+
+The isolated W2 shadow profile completed in 2.273s against 1.869s off (1.22x), so the earlier 120s timeout is not reproduced at the profiled source state. Keep shadow parity coverage in the final full corpus gate.
