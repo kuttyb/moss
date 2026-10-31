@@ -1,0 +1,139 @@
+clang++ --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13  -std=c++17 -Wall -Wextra -pedantic -O2  -x c++-header -MMD -MP -MF build/compiler/obj/opt-3851646706/compiler_pch.d -MT build/compiler/obj/opt-3851646706/compiler_pch.pch src/compiler_pch.hpp -o build/compiler/obj/opt-3851646706/compiler_pch.pch.tmp
+clang++ --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13  -std=c++17 -Wall -Wextra -pedantic -O2  -include-pch build/compiler/obj/opt-3851646706/compiler_pch.pch -MMD -MP -MF build/compiler/obj/opt-3851646706/src/char_string_ordering_runtime.d -MT build/compiler/obj/opt-3851646706/src/char_string_ordering_runtime.o -c src/char_string_ordering_runtime.cpp -o build/compiler/obj/opt-3851646706/src/char_string_ordering_runtime.o
+clang++ --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13  -std=c++17 -Wall -Wextra -pedantic -O2  -include-pch build/compiler/obj/opt-3851646706/compiler_pch.pch -MMD -MP -MF build/compiler/obj/opt-3851646706/src/checked_body_ir.d -MT build/compiler/obj/opt-3851646706/src/checked_body_ir.o -c src/checked_body_ir.cpp -o build/compiler/obj/opt-3851646706/src/checked_body_ir.o
+clang++ --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13  -std=c++17 -Wall -Wextra -pedantic -O2  -include-pch build/compiler/obj/opt-3851646706/compiler_pch.pch -MMD -MP -MF build/compiler/obj/opt-3851646706/src/diagnostic_identity.d -MT build/compiler/obj/opt-3851646706/src/diagnostic_identity.o -c src/diagnostic_identity.cpp -o build/compiler/obj/opt-3851646706/src/diagnostic_identity.o
+clang++ --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13  -std=c++17 -Wall -Wextra -pedantic -O2  -include-pch build/compiler/obj/opt-3851646706/compiler_pch.pch -MMD -MP -MF build/compiler/obj/opt-3851646706/src/display_runtime.d -MT build/compiler/obj/opt-3851646706/src/display_runtime.o -c src/display_runtime.cpp -o build/compiler/obj/opt-3851646706/src/display_runtime.o
+clang++ --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13  -std=c++17 -Wall -Wextra -pedantic -O2  -include-pch build/compiler/obj/opt-3851646706/compiler_pch.pch -MMD -MP -MF build/compiler/obj/opt-3851646706/src/est/expression_tree.d -MT build/compiler/obj/opt-3851646706/src/est/expression_tree.o -c src/est/expression_tree.cpp -o build/compiler/obj/opt-3851646706/src/est/expression_tree.o
+clang++ --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13  -std=c++17 -Wall -Wextra -pedantic -O2  -include-pch build/compiler/obj/opt-3851646706/compiler_pch.pch -MMD -MP -MF build/compiler/obj/opt-3851646706/src/executor_runtime.d -MT build/compiler/obj/opt-3851646706/src/executor_runtime.o -c src/executor_runtime.cpp -o build/compiler/obj/opt-3851646706/src/executor_runtime.o
+clang++ --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13  -std=c++17 -Wall -Wextra -pedantic -O2  -include-pch build/compiler/obj/opt-3851646706/compiler_pch.pch -MMD -MP -MF build/compiler/obj/opt-3851646706/src/fileio_runtime.d -MT build/compiler/obj/opt-3851646706/src/fileio_runtime.o -c src/fileio_runtime.cpp -o build/compiler/obj/opt-3851646706/src/fileio_runtime.o
+clang++ --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13  -std=c++17 -Wall -Wextra -pedantic -O2  -include-pch build/compiler/obj/opt-3851646706/compiler_pch.pch -MMD -MP -MF build/compiler/obj/opt-3851646706/src/float_format_runtime.d -MT build/compiler/obj/opt-3851646706/src/float_format_runtime.o -c src/float_format_runtime.cpp -o build/compiler/obj/opt-3851646706/src/float_format_runtime.o
+clang++ --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13  -std=c++17 -Wall -Wextra -pedantic -O2  -include-pch build/compiler/obj/opt-3851646706/compiler_pch.pch -MMD -MP -MF build/compiler/obj/opt-3851646706/src/functional_optimizer.d -MT build/compiler/obj/opt-3851646706/src/functional_optimizer.o -c src/functional_optimizer.cpp -o build/compiler/obj/opt-3851646706/src/functional_optimizer.o
+clang++ --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13  -std=c++17 -Wall -Wextra -pedantic -O2  -include-pch build/compiler/obj/opt-3851646706/compiler_pch.pch -MMD -MP -MF build/compiler/obj/opt-3851646706/src/handler_runtime.d -MT build/compiler/obj/opt-3851646706/src/handler_runtime.o -c src/handler_runtime.cpp -o build/compiler/obj/opt-3851646706/src/handler_runtime.o
+clang++ --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13  -std=c++17 -Wall -Wextra -pedantic -O2  -include-pch build/compiler/obj/opt-3851646706/compiler_pch.pch -MMD -MP -MF build/compiler/obj/opt-3851646706/src/native_generator.d -MT build/compiler/obj/opt-3851646706/src/native_generator.o -c src/native_generator.cpp -o build/compiler/obj/opt-3851646706/src/native_generator.o
+clang++ --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13  -std=c++17 -Wall -Wextra -pedantic -O2  -include-pch build/compiler/obj/opt-3851646706/compiler_pch.pch -MMD -MP -MF build/compiler/obj/opt-3851646706/src/numeric_literal.d -MT build/compiler/obj/opt-3851646706/src/numeric_literal.o -c src/numeric_literal.cpp -o build/compiler/obj/opt-3851646706/src/numeric_literal.o
+clang++ --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13  -std=c++17 -Wall -Wextra -pedantic -O2  -include-pch build/compiler/obj/opt-3851646706/compiler_pch.pch -MMD -MP -MF build/compiler/obj/opt-3851646706/src/numeric_runtime.d -MT build/compiler/obj/opt-3851646706/src/numeric_runtime.o -c src/numeric_runtime.cpp -o build/compiler/obj/opt-3851646706/src/numeric_runtime.o
+clang++ --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13  -std=c++17 -Wall -Wextra -pedantic -O2  -include-pch build/compiler/obj/opt-3851646706/compiler_pch.pch -MMD -MP -MF build/compiler/obj/opt-3851646706/src/parser.d -MT build/compiler/obj/opt-3851646706/src/parser.o -c src/parser.cpp -o build/compiler/obj/opt-3851646706/src/parser.o
+clang++ --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13  -std=c++17 -Wall -Wextra -pedantic -O2  -include-pch build/compiler/obj/opt-3851646706/compiler_pch.pch -MMD -MP -MF build/compiler/obj/opt-3851646706/src/program_identity.d -MT build/compiler/obj/opt-3851646706/src/program_identity.o -c src/program_identity.cpp -o build/compiler/obj/opt-3851646706/src/program_identity.o
+In file included from src/checked_body_ir.cpp:1:
+In file included from src/checked_body_ir.hpp:19:
+In file included from src/ast.hpp:16:
+src/type_ir.hpp:911:71: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  911 |         trail->push_back({Undo::Kind::Parent, id, found->second.parent});
+      |                                                                       ^
+src/type_ir.hpp:957:67: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  957 |       trail.push_back({Undo::Kind::Parent, other, secondary.parent});
+      |                                                                   ^
+In file included from src/diagnostic_identity.cpp:3:
+In file included from src/ast.hpp:16:
+src/type_ir.hpp:911:71: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  911 |         trail->push_back({Undo::Kind::Parent, id, found->second.parent});
+      |                                                                       ^
+src/type_ir.hpp:957:67: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  957 |       trail.push_back({Undo::Kind::Parent, other, secondary.parent});
+      |                                                                   ^
+clang++ --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13  -std=c++17 -Wall -Wextra -pedantic -O2  -include-pch build/compiler/obj/opt-3851646706/compiler_pch.pch -MMD -MP -MF build/compiler/obj/opt-3851646706/src/semantic_checker.d -MT build/compiler/obj/opt-3851646706/src/semantic_checker.o -c src/semantic_checker.cpp -o build/compiler/obj/opt-3851646706/src/semantic_checker.o
+clang++ --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13  -std=c++17 -Wall -Wextra -pedantic -O2  -include-pch build/compiler/obj/opt-3851646706/compiler_pch.pch -MMD -MP -MF build/compiler/obj/opt-3851646706/src/typed_semantic_api.d -MT build/compiler/obj/opt-3851646706/src/typed_semantic_api.o -c src/typed_semantic_api.cpp -o build/compiler/obj/opt-3851646706/src/typed_semantic_api.o
+clang++ --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13  -std=c++17 -Wall -Wextra -pedantic -O2  -include-pch build/compiler/obj/opt-3851646706/compiler_pch.pch -MMD -MP -MF build/compiler/obj/opt-3851646706/src/type_ir.d -MT build/compiler/obj/opt-3851646706/src/type_ir.o -c src/type_ir.cpp -o build/compiler/obj/opt-3851646706/src/type_ir.o
+clang++ --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13  -std=c++17 -Wall -Wextra -pedantic -O2  -include-pch build/compiler/obj/opt-3851646706/compiler_pch.pch -MMD -MP -MF build/compiler/obj/opt-3851646706/src/moss.d -MT build/compiler/obj/opt-3851646706/src/moss.o -c src/moss.cpp -o build/compiler/obj/opt-3851646706/src/moss.o
+In file included from src/est/expression_tree.cpp:2:
+In file included from src/est/../ast.hpp:16:
+src/est/../type_ir.hpp:911:71: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  911 |         trail->push_back({Undo::Kind::Parent, id, found->second.parent});
+      |                                                                       ^
+src/est/../type_ir.hpp:957:67: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  957 |       trail.push_back({Undo::Kind::Parent, other, secondary.parent});
+      |                                                                   ^
+In file included from src/functional_optimizer.cpp:11:
+In file included from src/ast.hpp:16:
+src/type_ir.hpp:911:71: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  911 |         trail->push_back({Undo::Kind::Parent, id, found->second.parent});
+      |                                                                       ^
+src/type_ir.hpp:957:67: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  957 |       trail.push_back({Undo::Kind::Parent, other, secondary.parent});
+      |                                                                   ^
+In file included from src/native_generator.cpp:23:
+In file included from src/ast.hpp:16:
+src/type_ir.hpp:911:71: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  911 |         trail->push_back({Undo::Kind::Parent, id, found->second.parent});
+      |                                                                       ^
+src/type_ir.hpp:957:67: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  957 |       trail.push_back({Undo::Kind::Parent, other, secondary.parent});
+      |                                                                   ^
+In file included from src/type_ir.cpp:1:
+src/type_ir.hpp:911:71: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  911 |         trail->push_back({Undo::Kind::Parent, id, found->second.parent});
+      |                                                                       ^
+src/type_ir.hpp:957:67: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  957 |       trail.push_back({Undo::Kind::Parent, other, secondary.parent});
+      |                                                                   ^
+In file included from src/parser.cpp:10:
+In file included from src/ast.hpp:16:
+src/type_ir.hpp:911:71: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  911 |         trail->push_back({Undo::Kind::Parent, id, found->second.parent});
+      |                                                                       ^
+In file included from src/program_identity.cpp:3:
+In file included from src/ast.hpp:16:
+src/type_ir.hpp:911:71: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  911 |         trail->push_back({Undo::Kind::Parent, id, found->second.parent});
+      |                                                                       ^
+src/type_ir.hpp:957:67: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  957 |       trail.push_back({Undo::Kind::Parent, other, secondary.parent});
+      |                                                                   ^
+src/type_ir.hpp:957:67: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  957 |       trail.push_back({Undo::Kind::Parent, other, secondary.parent});
+      |                                                                   ^
+In file included from src/semantic_checker.cpp:34:
+In file included from src/ast.hpp:16:
+src/type_ir.hpp:911:71: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  911 |         trail->push_back({Undo::Kind::Parent, id, found->second.parent});
+      |                                                                       ^
+src/type_ir.hpp:957:67: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  957 |       trail.push_back({Undo::Kind::Parent, other, secondary.parent});
+      |                                                                   ^
+In file included from src/typed_semantic_api.cpp:1:
+In file included from src/typed_semantic_api.hpp:9:
+In file included from src/ast.hpp:16:
+src/type_ir.hpp:911:71: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  911 |         trail->push_back({Undo::Kind::Parent, id, found->second.parent});
+      |                                                                       ^
+src/type_ir.hpp:957:67: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  957 |       trail.push_back({Undo::Kind::Parent, other, secondary.parent});
+      |                                                                   ^
+In file included from src/moss.cpp:33:
+In file included from src/ast.hpp:16:
+src/type_ir.hpp:911:71: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  911 |         trail->push_back({Undo::Kind::Parent, id, found->second.parent});
+      |                                                                       ^
+src/type_ir.hpp:957:67: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  957 |       trail.push_back({Undo::Kind::Parent, other, secondary.parent});
+      |                                                                   ^
+2 warnings generated.
+2 warnings generated.
+2 warnings generated.
+src/semantic_checker.cpp:3743:32: warning: captured structured bindings are a C++20 extension [-Wc++20-extensions]
+ 3743 |         return candidate.id == root_id && candidate.statement_id == slot.first;
+      |                                ^
+src/semantic_checker.cpp:3738:29: note: 'root_id' declared here
+ 3738 |     for (const auto& [slot, root_id] : state.expression_root_slots) {
+      |                             ^
+src/semantic_checker.cpp:3743:69: warning: captured structured bindings are a C++20 extension [-Wc++20-extensions]
+ 3743 |         return candidate.id == root_id && candidate.statement_id == slot.first;
+      |                                                                     ^
+src/semantic_checker.cpp:3738:23: note: 'slot' declared here
+ 3738 |     for (const auto& [slot, root_id] : state.expression_root_slots) {
+      |                       ^
+2 warnings generated.
+src/semantic_checker.cpp:12333:69: warning: captured structured bindings are a C++20 extension [-Wc++20-extensions]
+ 12333 |                 if (candidate.indent != level + 1 || candidate.a != name ||
+       |                                                                     ^
+src/semantic_checker.cpp:12326:29: note: 'name' declared here
+ 12326 |           for (const auto& [name, joined_type] : env) {
+       |                             ^
+2 warnings generated.
+2 warnings generated.
+2 warnings generated.
+2 warnings generated.
+2 warnings generated.
+5 warnings generated.
+2 warnings generated.
+clang++ --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13 -std=c++17 -Wall -Wextra -pedantic -O2  -fuse-ld=mold build/compiler/obj/opt-3851646706/src/char_string_ordering_runtime.o build/compiler/obj/opt-3851646706/src/checked_body_ir.o build/compiler/obj/opt-3851646706/src/diagnostic_identity.o build/compiler/obj/opt-3851646706/src/display_runtime.o build/compiler/obj/opt-3851646706/src/est/expression_tree.o build/compiler/obj/opt-3851646706/src/executor_runtime.o build/compiler/obj/opt-3851646706/src/fileio_runtime.o build/compiler/obj/opt-3851646706/src/float_format_runtime.o build/compiler/obj/opt-3851646706/src/functional_optimizer.o build/compiler/obj/opt-3851646706/src/handler_runtime.o build/compiler/obj/opt-3851646706/src/native_generator.o build/compiler/obj/opt-3851646706/src/numeric_literal.o build/compiler/obj/opt-3851646706/src/numeric_runtime.o build/compiler/obj/opt-3851646706/src/parser.o build/compiler/obj/opt-3851646706/src/program_identity.o build/compiler/obj/opt-3851646706/src/semantic_checker.o build/compiler/obj/opt-3851646706/src/typed_semantic_api.o build/compiler/obj/opt-3851646706/src/type_ir.o build/compiler/obj/opt-3851646706/src/moss.o  -o build/compiler/moss-opt.tmp
