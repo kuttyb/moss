@@ -1,0 +1,4 @@
+fn main():
+  values = []
+  values.push(1)
+  echo values

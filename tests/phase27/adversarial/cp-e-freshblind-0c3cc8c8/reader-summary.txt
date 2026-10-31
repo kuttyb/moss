@@ -1,0 +1,3 @@
+MOSS_EST=off/shadow candidate full corpus: see corpus.jsonl and corpus-normalized-summary.json
+checker/emitter reader lints: see reader-checker.log and reader-emitter.log
+tree_expression_text matches in checker/emitter: 0

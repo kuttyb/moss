@@ -1,0 +1,58 @@
+[
+  {
+    "tree": "baseline",
+    "oracle": "tables_build",
+    "exit_code": 0,
+    "ok": true,
+    "error": null
+  },
+  {
+    "tree": "baseline",
+    "oracle": "tables_test",
+    "exit_code": 1,
+    "ok": false,
+    "error": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"test\",\n  \"ok\": false,\n  \"error\": {\"code\": \"TYPE_MISMATCH\", \"severity\": \"error\", \"message\": \"assignment type mismatch for binding 'ignored'\", \"source_file\": \"/home/owner/daji/code/moss/tmp/cp-e-baseline-04be1a1/sdk/tables/tests/tables_test.moss\", \"line\": 151, \"column\": 1, \"span\": {\"start_line\": 151, \"start_column\": 1, \"end_line\": 151, \"end_column\": 1}, \"source\": {\"file\": \"/home/owner/daji/c"
+  },
+  {
+    "tree": "baseline",
+    "oracle": "advanced_build",
+    "exit_code": 0,
+    "ok": true,
+    "error": null
+  },
+  {
+    "tree": "baseline",
+    "oracle": "source_free_abi9_debug",
+    "exit_code": 0,
+    "ok": true,
+    "error": null
+  },
+  {
+    "tree": "candidate",
+    "oracle": "tables_build",
+    "exit_code": 0,
+    "ok": true,
+    "error": null
+  },
+  {
+    "tree": "candidate",
+    "oracle": "tables_test",
+    "exit_code": 1,
+    "ok": false,
+    "error": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"test\",\n  \"ok\": false,\n  \"error\": {\"code\": \"TYPE_MISMATCH\", \"severity\": \"error\", \"message\": \"assignment type mismatch for binding 'ignored'\", \"source_file\": \"/home/owner/daji/code/moss/tmp/cp-e-blind-0c3cc8c8/sdk/tables/tests/tables_test.moss\", \"line\": 151, \"column\": 1, \"span\": {\"start_line\": 151, \"start_column\": 1, \"end_line\": 151, \"end_column\": 1}, \"source\": {\"file\": \"/home/owner/daji/cod"
+  },
+  {
+    "tree": "candidate",
+    "oracle": "advanced_build",
+    "exit_code": 0,
+    "ok": true,
+    "error": null
+  },
+  {
+    "tree": "candidate",
+    "oracle": "source_free_abi9_debug",
+    "exit_code": 0,
+    "ok": true,
+    "error": null
+  }
+]
