@@ -1060,29 +1060,34 @@ bool project_binary(const ExpressionView& e, const std::vector<std::string>& ope
   const auto* tuple_root = std::get_if<Tuple>(&e.arena->at(root));
   const Binary* selected = nullptr;
   std::uint32_t selected_position = 0;
-  std::function<void(ExprId)> visit = [&](ExprId id) {
+  const auto visit = [&](auto&& self, ExprId id) -> void {
     const auto* binary = std::get_if<Binary>(&e.arena->at(id));
     if (!binary) return;  // Grouping and all non-binary nodes stop top-level search.
-    const bool selected_operator = std::any_of(
-        operators.begin(), operators.end(), [&](const std::string& candidate) {
-          const auto first = candidate.find_first_not_of(" \t\r\n");
-          if (first == std::string::npos) return false;
-          const auto last = candidate.find_last_not_of(" \t\r\n");
-          return binary->op == candidate.substr(first, last - first + 1);
-        });
+    bool selected_operator = false;
+    for (const auto& candidate : operators) {
+      const auto first = candidate.find_first_not_of(" \t\r\n");
+      if (first == std::string::npos) continue;
+      const auto last = candidate.find_last_not_of(" \t\r\n");
+      const std::string_view candidate_view(candidate.data() + first,
+                                            last - first + 1);
+      if (std::string_view(binary->op) == candidate_view) {
+        selected_operator = true;
+        break;
+      }
+    }
     if (selected_operator) {
       const auto position = e.arena->span(binary->left).source_end;
       if (!selected || position > selected_position) {
         selected = binary; selected_position = position;
       }
     }
-    visit(binary->left);
-    visit(binary->right);
+    self(self, binary->left);
+    self(self, binary->right);
   };
   if (tuple_root) {
-    for (const auto child : tuple_root->elements) visit(child);
+    for (const auto child : tuple_root->elements) visit(visit, child);
   } else {
-    visit(root);
+    visit(visit, root);
   }
   if (!selected) return false;
   const auto root_span = e.arena->span(root);
