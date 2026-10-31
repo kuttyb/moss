@@ -1,0 +1,72 @@
+{
+  "checker_expression_reader_sites": 0,
+  "compiled_local_include_closure": {
+    "checker": {
+      "additional_expression_reader_calls": [],
+      "keyed_type_syntax_exemptions": [
+        {
+          "api": "split_top_level",
+          "function": "phase20_is_nontransferable_capability",
+          "path": "src/semantic_checker.cpp",
+          "reason": "canonical type argument splitting"
+        },
+        {
+          "api": "split_top_level",
+          "function": "builtin_equality_type",
+          "path": "src/semantic_checker.cpp",
+          "reason": "canonical type argument splitting"
+        },
+        {
+          "api": "split_top_level",
+          "function": "contains_float_type",
+          "path": "src/semantic_checker.cpp",
+          "reason": "canonical type argument splitting"
+        }
+      ],
+      "local_include_file_count": 47
+    },
+    "emitter": {
+      "additional_expression_reader_calls": [],
+      "keyed_type_syntax_exemptions": [],
+      "local_include_file_count": 39
+    }
+  },
+  "emitter_expression_reader_sites": 0,
+  "keyed_exemptions": {
+    "src/semantic_checker.cpp | builtin_equality_type | split_top_level": "Splits canonical type argument spellings; this is type syntax, not expression or pattern text.",
+    "src/semantic_checker.cpp | contains_float_type | split_top_level": "Splits canonical type argument spellings; this is type syntax, not expression or pattern text.",
+    "src/semantic_checker.cpp | phase20_is_nontransferable_capability | split_top_level": "Splits canonical type argument spellings; this is type syntax, not expression or pattern text."
+  },
+  "lint_result": "PASS; widened string-reader lint run against baseline counts recomputed from the frozen baseline source commit; compiled `.inc` consumers and recursive local include closure audited; only the three keyed type-syntax exemptions remain.",
+  "raw_binding_comparison_counts": {
+    "checker:a": 9
+  },
+  "raw_expression_shape_hits": [],
+  "raw_name_comparison_counts": {
+    "checker:FileIO": 1,
+    "checker:assert": 2,
+    "checker:consume": 2,
+    "checker:insert": 2,
+    "checker:invoke": 4,
+    "checker:join": 3,
+    "checker:pass": 1,
+    "checker:pop": 3,
+    "checker:pop_front": 3,
+    "checker:push": 5,
+    "checker:sort": 1,
+    "emitter:_": 1,
+    "emitter:assert": 1,
+    "emitter:assertEqual": 1,
+    "emitter:close": 1,
+    "emitter:consume": 3,
+    "emitter:delete": 1,
+    "emitter:invoke": 1,
+    "emitter:join": 1,
+    "emitter:open": 1,
+    "emitter:pop": 1,
+    "emitter:sort": 1,
+    "emitter:sync": 1,
+    "emitter:write": 1
+  },
+  "tree_expression_text_reads": []
+}

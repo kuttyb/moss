@@ -1,0 +1,13 @@
+type Entry:
+  value: Int
+  fn key_of() -> Int:
+    return value
+
+fn key_of(value: Int) -> Int:
+  return value
+
+fn lookup(value: Int) -> Int:
+  return key_of(value)
+
+fn main():
+  echo lookup(5)
