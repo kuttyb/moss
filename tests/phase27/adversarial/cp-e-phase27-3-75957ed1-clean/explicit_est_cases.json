@@ -1,0 +1,346 @@
+[
+  {
+    "file": "tests/phase27/est/message_expression.moss",
+    "compiler": "baseline",
+    "mode": "off",
+    "rc": 0,
+    "json_ok": true,
+    "dump_tokens": {
+      "message#": true,
+      "\"Run\"": true,
+      "literal#": true
+    },
+    "compare_stats": false,
+    "facts": false,
+    "tuple": false
+  },
+  {
+    "file": "tests/phase27/est/message_expression.moss",
+    "compiler": "baseline",
+    "mode": "shadow",
+    "rc": 0,
+    "json_ok": true,
+    "dump_tokens": {
+      "message#": true,
+      "\"Run\"": true,
+      "literal#": true
+    },
+    "compare_stats": true,
+    "facts": true,
+    "tuple": false
+  },
+  {
+    "file": "tests/phase27/est/message_expression.moss",
+    "compiler": "candidate",
+    "mode": "off",
+    "rc": 0,
+    "json_ok": true,
+    "dump_tokens": {
+      "message#": true,
+      "\"Run\"": true,
+      "literal#": true
+    },
+    "compare_stats": false,
+    "facts": false,
+    "tuple": false
+  },
+  {
+    "file": "tests/phase27/est/message_expression.moss",
+    "compiler": "candidate",
+    "mode": "shadow",
+    "rc": 0,
+    "json_ok": true,
+    "dump_tokens": {
+      "message#": true,
+      "\"Run\"": true,
+      "literal#": true
+    },
+    "compare_stats": true,
+    "facts": true,
+    "tuple": false
+  },
+  {
+    "file": "tests/phase27/est/bitwise_shift.moss",
+    "compiler": "baseline",
+    "mode": "off",
+    "rc": 0,
+    "json_ok": true,
+    "dump_tokens": {
+      "binary#": true,
+      "\"<<\"": true,
+      "\"&\"": true
+    },
+    "compare_stats": false,
+    "facts": false,
+    "tuple": false
+  },
+  {
+    "file": "tests/phase27/est/bitwise_shift.moss",
+    "compiler": "baseline",
+    "mode": "shadow",
+    "rc": 0,
+    "json_ok": true,
+    "dump_tokens": {
+      "binary#": true,
+      "\"<<\"": true,
+      "\"&\"": true
+    },
+    "compare_stats": true,
+    "facts": true,
+    "tuple": false
+  },
+  {
+    "file": "tests/phase27/est/bitwise_shift.moss",
+    "compiler": "candidate",
+    "mode": "off",
+    "rc": 0,
+    "json_ok": true,
+    "dump_tokens": {
+      "binary#": true,
+      "\"<<\"": true,
+      "\"&\"": true
+    },
+    "compare_stats": false,
+    "facts": false,
+    "tuple": false
+  },
+  {
+    "file": "tests/phase27/est/bitwise_shift.moss",
+    "compiler": "candidate",
+    "mode": "shadow",
+    "rc": 0,
+    "json_ok": true,
+    "dump_tokens": {
+      "binary#": true,
+      "\"<<\"": true,
+      "\"&\"": true
+    },
+    "compare_stats": true,
+    "facts": true,
+    "tuple": false
+  },
+  {
+    "file": "tests/phase27/est/numeric_member.moss",
+    "compiler": "baseline",
+    "mode": "off",
+    "rc": 0,
+    "json_ok": true,
+    "dump_tokens": {
+      "member#": true,
+      "\"to_string\"": true,
+      "literal#": true
+    },
+    "compare_stats": false,
+    "facts": false,
+    "tuple": false
+  },
+  {
+    "file": "tests/phase27/est/numeric_member.moss",
+    "compiler": "baseline",
+    "mode": "shadow",
+    "rc": 0,
+    "json_ok": true,
+    "dump_tokens": {
+      "member#": true,
+      "\"to_string\"": true,
+      "literal#": true
+    },
+    "compare_stats": true,
+    "facts": true,
+    "tuple": false
+  },
+  {
+    "file": "tests/phase27/est/numeric_member.moss",
+    "compiler": "candidate",
+    "mode": "off",
+    "rc": 0,
+    "json_ok": true,
+    "dump_tokens": {
+      "member#": true,
+      "\"to_string\"": true,
+      "literal#": true
+    },
+    "compare_stats": false,
+    "facts": false,
+    "tuple": false
+  },
+  {
+    "file": "tests/phase27/est/numeric_member.moss",
+    "compiler": "candidate",
+    "mode": "shadow",
+    "rc": 0,
+    "json_ok": true,
+    "dump_tokens": {
+      "member#": true,
+      "\"to_string\"": true,
+      "literal#": true
+    },
+    "compare_stats": true,
+    "facts": true,
+    "tuple": false
+  },
+  {
+    "file": "tests/phase27/est/syntax_27_1b.moss",
+    "compiler": "baseline",
+    "mode": "off",
+    "rc": 0,
+    "json_ok": true,
+    "dump_tokens": {
+      "pipeline#": true,
+      "placeholder#": true,
+      "collection#": true,
+      "constructor#": true,
+      "named-argument#": true
+    },
+    "compare_stats": false,
+    "facts": false,
+    "tuple": false
+  },
+  {
+    "file": "tests/phase27/est/syntax_27_1b.moss",
+    "compiler": "baseline",
+    "mode": "shadow",
+    "rc": 0,
+    "json_ok": true,
+    "dump_tokens": {
+      "pipeline#": true,
+      "placeholder#": true,
+      "collection#": true,
+      "constructor#": true,
+      "named-argument#": true
+    },
+    "compare_stats": true,
+    "facts": true,
+    "tuple": false
+  },
+  {
+    "file": "tests/phase27/est/syntax_27_1b.moss",
+    "compiler": "candidate",
+    "mode": "off",
+    "rc": 0,
+    "json_ok": true,
+    "dump_tokens": {
+      "pipeline#": true,
+      "placeholder#": true,
+      "collection#": true,
+      "constructor#": true,
+      "named-argument#": true
+    },
+    "compare_stats": false,
+    "facts": false,
+    "tuple": false
+  },
+  {
+    "file": "tests/phase27/est/syntax_27_1b.moss",
+    "compiler": "candidate",
+    "mode": "shadow",
+    "rc": 0,
+    "json_ok": true,
+    "dump_tokens": {
+      "pipeline#": true,
+      "placeholder#": true,
+      "collection#": true,
+      "constructor#": true,
+      "named-argument#": true
+    },
+    "compare_stats": true,
+    "facts": true,
+    "tuple": false
+  },
+  {
+    "file": "tests/phase27/est/side_facts.moss",
+    "compiler": "baseline",
+    "mode": "off",
+    "rc": 0,
+    "json_ok": true,
+    "dump_tokens": {},
+    "compare_stats": false,
+    "facts": false,
+    "tuple": false
+  },
+  {
+    "file": "tests/phase27/est/side_facts.moss",
+    "compiler": "baseline",
+    "mode": "shadow",
+    "rc": 0,
+    "json_ok": true,
+    "dump_tokens": {},
+    "compare_stats": true,
+    "facts": true,
+    "tuple": false
+  },
+  {
+    "file": "tests/phase27/est/side_facts.moss",
+    "compiler": "candidate",
+    "mode": "off",
+    "rc": 0,
+    "json_ok": true,
+    "dump_tokens": {},
+    "compare_stats": false,
+    "facts": false,
+    "tuple": false
+  },
+  {
+    "file": "tests/phase27/est/side_facts.moss",
+    "compiler": "candidate",
+    "mode": "shadow",
+    "rc": 0,
+    "json_ok": true,
+    "dump_tokens": {},
+    "compare_stats": true,
+    "facts": true,
+    "tuple": false
+  },
+  {
+    "file": "tests/tooling/fixtures/phase20_fileio_runtime_integration.moss",
+    "compiler": "baseline",
+    "mode": "off",
+    "rc": 0,
+    "json_ok": true,
+    "dump_tokens": {
+      "tuple#": true
+    },
+    "compare_stats": false,
+    "facts": false,
+    "tuple": true
+  },
+  {
+    "file": "tests/tooling/fixtures/phase20_fileio_runtime_integration.moss",
+    "compiler": "baseline",
+    "mode": "shadow",
+    "rc": 0,
+    "json_ok": true,
+    "dump_tokens": {
+      "tuple#": true
+    },
+    "compare_stats": true,
+    "facts": true,
+    "tuple": true
+  },
+  {
+    "file": "tests/tooling/fixtures/phase20_fileio_runtime_integration.moss",
+    "compiler": "candidate",
+    "mode": "off",
+    "rc": 0,
+    "json_ok": true,
+    "dump_tokens": {
+      "tuple#": true
+    },
+    "compare_stats": false,
+    "facts": false,
+    "tuple": true
+  },
+  {
+    "file": "tests/tooling/fixtures/phase20_fileio_runtime_integration.moss",
+    "compiler": "candidate",
+    "mode": "shadow",
+    "rc": 0,
+    "json_ok": true,
+    "dump_tokens": {
+      "tuple#": true
+    },
+    "compare_stats": true,
+    "facts": true,
+    "tuple": true
+  }
+]
