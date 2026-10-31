@@ -10,6 +10,7 @@
 #include <fstream>
 #include <iostream>
 #include <map>
+#include <mutex>
 #include <sstream>
 #include <stdexcept>
 #include <type_traits>
@@ -272,6 +273,64 @@ Mode mode() {
   if (std::string_view(raw) == "shadow") return Mode::Shadow;
   throw std::invalid_argument("MOSS_EST must be on or shadow");
 }
+
+#ifdef MOSS_TEST_BUILD
+namespace {
+std::mutex test_coverage_mutex;
+std::array<std::uint64_t, 4> consumer_reparse_counts{};
+std::map<std::string, std::array<std::uint64_t, 2>> generated_type_fact_counts;
+
+struct TestCoverageReporter {
+  ~TestCoverageReporter() noexcept {
+    try {
+      if (test_coverage_counters_enabled()) report_test_coverage_counters();
+    } catch (...) {
+    }
+  }
+} test_coverage_reporter;
+}
+
+bool test_coverage_counters_enabled() noexcept {
+  static const bool enabled = [] {
+    const char* raw = std::getenv("MOSS_EST_COVERAGE_STATS");
+    return raw && std::string_view(raw) == "1";
+  }();
+  return enabled;
+}
+
+void record_consumer_reparse(ConsumerReparseSite site) noexcept {
+  if (!test_coverage_counters_enabled()) return;
+  try {
+    std::lock_guard<std::mutex> lock(test_coverage_mutex);
+    ++consumer_reparse_counts[static_cast<std::size_t>(site)];
+  } catch (...) {
+  }
+}
+
+void record_generated_type_fact_coverage(std::string_view node_kind,
+                                         bool present) noexcept {
+  if (!test_coverage_counters_enabled()) return;
+  try {
+    std::lock_guard<std::mutex> lock(test_coverage_mutex);
+    ++generated_type_fact_counts[std::string(node_kind)][present ? 0 : 1];
+  } catch (...) {
+  }
+}
+
+void report_test_coverage_counters() {
+  std::lock_guard<std::mutex> lock(test_coverage_mutex);
+  std::cerr << "MOSS_EST_REPARSES native_expression_view="
+            << consumer_reparse_counts[0]
+            << " native_functional_pipeline=" << consumer_reparse_counts[1]
+            << " fastdebug_expression_tree=" << consumer_reparse_counts[2]
+            << " fastdebug_functional_pipeline=" << consumer_reparse_counts[3]
+            << '\n';
+  for (const auto& [kind, counts] : generated_type_fact_counts)
+    std::cerr << "MOSS_EST_GENERATED_TYPE_FACT kind=" << kind
+              << " PRESENT=" << counts[0] << " ABSENT=" << counts[1]
+              << '\n';
+}
+#endif
 
 namespace {
 struct Token { std::string text; bool word = false; bool literal = false;

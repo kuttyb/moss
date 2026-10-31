@@ -280,6 +280,19 @@ void rebuild_slot(Arena& arena, std::vector<Handle>& handles,
 
 enum class Mode { On, Shadow };
 Mode mode();  // Defaults to On; Shadow enables test-only parser cross-checks.
+
+#ifdef MOSS_TEST_BUILD
+enum class ConsumerReparseSite : std::uint8_t {
+  NativeExpressionView, NativeFunctionalPipeline,
+  FastDebugExpressionTree, FastDebugFunctionalPipeline
+};
+bool test_coverage_counters_enabled() noexcept;
+void record_consumer_reparse(ConsumerReparseSite site) noexcept;
+void record_generated_type_fact_coverage(std::string_view node_kind,
+                                         bool present) noexcept;
+void report_test_coverage_counters();
+#endif
+
 bool begins_with_keyword(std::string_view source, std::string_view keyword);
 bool leading_dot_member_call_fragment(std::string_view source);
 std::optional<std::pair<std::string, std::string>> juxtaposed_operands(

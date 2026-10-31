@@ -15,7 +15,7 @@ else
 CXX_TOOLCHAIN_FLAGS ?=
 endif
 CXXFLAGS_BASE ?= -std=c++17 -Wall -Wextra -pedantic
-CXXFLAGS_DEV ?= $(CXXFLAGS_BASE) -O0
+CXXFLAGS_DEV ?= $(CXXFLAGS_BASE) -O0 -DMOSS_TEST_BUILD=1
 CXXFLAGS_OPT ?= $(CXXFLAGS_BASE) -O2
 CPPFLAGS ?=
 
@@ -150,6 +150,8 @@ check: check-parallel
 check-parallel: moss-dev moss-opt
 	python3 tests/tooling/check_phase27_string_debt.py
 	python3 tests/tooling/check_phase27_est.py $(MOSS_DEV)
+	python3 tests/tooling/check_phase27_est_specialized_facts.py $(MOSS_DEV)
+	python3 tests/tooling/check_phase27_est_coverage.py $(MOSS_DEV) $(MOSS_OPT)
 	env -u MOSS_EST python3 tests/run_parallel.py --jobs $(TEST_JOBS) --compiler-dev $(MOSS_DEV) --compiler-opt $(MOSS_OPT)
 	MOSS_EST=shadow python3 tests/run_parallel.py --jobs $(TEST_JOBS) --compiler-dev $(MOSS_DEV) --compiler-opt $(MOSS_OPT)
 
