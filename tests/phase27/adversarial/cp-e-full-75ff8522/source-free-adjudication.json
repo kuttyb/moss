@@ -1,0 +1,246 @@
+{
+  "classification": "BENIGN_STANDALONE_ONLY_DIAGNOSTIC_DELTA",
+  "package_context_matrix": {
+    "all_accepted": true,
+    "all_runs": [
+      {
+        "checked": [
+          "moss.cbor",
+          "moss.datastructures",
+          "moss.tables",
+          "cp-e-source-free-consumer"
+        ],
+        "diagnostics": [],
+        "exit": 0,
+        "mode": "off",
+        "revision": "baseline",
+        "skipped": [
+          "moss.bytes",
+          "moss.binary",
+          "moss.encoding",
+          "moss.core",
+          "moss.text",
+          "moss.fmt",
+          "moss.parse",
+          "moss.csv",
+          "moss.math",
+          "moss.linalg",
+          "moss.ndarray"
+        ],
+        "source": "sdk/advanced-data-acceptance/fixtures/source_free_consumer.moss",
+        "verdict": true
+      },
+      {
+        "checked": [
+          "moss.cbor",
+          "moss.datastructures",
+          "moss.tables",
+          "cp-e-source-free-consumer"
+        ],
+        "diagnostics": [],
+        "exit": 0,
+        "mode": "shadow",
+        "revision": "baseline",
+        "skipped": [
+          "moss.bytes",
+          "moss.binary",
+          "moss.encoding",
+          "moss.core",
+          "moss.text",
+          "moss.fmt",
+          "moss.parse",
+          "moss.csv",
+          "moss.math",
+          "moss.linalg",
+          "moss.ndarray"
+        ],
+        "source": "sdk/advanced-data-acceptance/fixtures/source_free_consumer.moss",
+        "verdict": true
+      },
+      {
+        "checked": [
+          "moss.cbor",
+          "moss.datastructures",
+          "moss.tables",
+          "cp-e-source-free-consumer"
+        ],
+        "diagnostics": [],
+        "exit": 0,
+        "mode": "off",
+        "revision": "candidate",
+        "skipped": [
+          "moss.bytes",
+          "moss.binary",
+          "moss.encoding",
+          "moss.core",
+          "moss.text",
+          "moss.fmt",
+          "moss.parse",
+          "moss.csv",
+          "moss.math",
+          "moss.linalg",
+          "moss.ndarray"
+        ],
+        "source": "sdk/advanced-data-acceptance/fixtures/source_free_consumer.moss",
+        "verdict": true
+      },
+      {
+        "checked": [
+          "moss.cbor",
+          "moss.datastructures",
+          "moss.tables",
+          "cp-e-source-free-consumer"
+        ],
+        "diagnostics": [],
+        "exit": 0,
+        "mode": "shadow",
+        "revision": "candidate",
+        "skipped": [
+          "moss.bytes",
+          "moss.binary",
+          "moss.encoding",
+          "moss.core",
+          "moss.text",
+          "moss.fmt",
+          "moss.parse",
+          "moss.csv",
+          "moss.math",
+          "moss.linalg",
+          "moss.ndarray"
+        ],
+        "source": "sdk/advanced-data-acceptance/fixtures/source_free_consumer.moss",
+        "verdict": true
+      },
+      {
+        "checked": [
+          "cp-e-source-free-consumer"
+        ],
+        "diagnostics": [],
+        "exit": 0,
+        "mode": "off",
+        "revision": "baseline",
+        "skipped": [
+          "moss.bytes",
+          "moss.binary",
+          "moss.encoding",
+          "moss.cbor",
+          "moss.core",
+          "moss.text",
+          "moss.fmt",
+          "moss.parse",
+          "moss.csv",
+          "moss.datastructures",
+          "moss.math",
+          "moss.linalg",
+          "moss.ndarray",
+          "moss.tables"
+        ],
+        "source": "tests/phase27/adversarial/cp-e-phase27-3-22a9709a/source_free_consumer.moss",
+        "verdict": true
+      },
+      {
+        "checked": [
+          "cp-e-source-free-consumer"
+        ],
+        "diagnostics": [],
+        "exit": 0,
+        "mode": "shadow",
+        "revision": "baseline",
+        "skipped": [
+          "moss.bytes",
+          "moss.binary",
+          "moss.encoding",
+          "moss.cbor",
+          "moss.core",
+          "moss.text",
+          "moss.fmt",
+          "moss.parse",
+          "moss.csv",
+          "moss.datastructures",
+          "moss.math",
+          "moss.linalg",
+          "moss.ndarray",
+          "moss.tables"
+        ],
+        "source": "tests/phase27/adversarial/cp-e-phase27-3-22a9709a/source_free_consumer.moss",
+        "verdict": true
+      },
+      {
+        "checked": [
+          "cp-e-source-free-consumer"
+        ],
+        "diagnostics": [],
+        "exit": 0,
+        "mode": "off",
+        "revision": "candidate",
+        "skipped": [
+          "moss.bytes",
+          "moss.binary",
+          "moss.encoding",
+          "moss.cbor",
+          "moss.core",
+          "moss.text",
+          "moss.fmt",
+          "moss.parse",
+          "moss.csv",
+          "moss.datastructures",
+          "moss.math",
+          "moss.linalg",
+          "moss.ndarray",
+          "moss.tables"
+        ],
+        "source": "tests/phase27/adversarial/cp-e-phase27-3-22a9709a/source_free_consumer.moss",
+        "verdict": true
+      },
+      {
+        "checked": [
+          "cp-e-source-free-consumer"
+        ],
+        "diagnostics": [],
+        "exit": 0,
+        "mode": "shadow",
+        "revision": "candidate",
+        "skipped": [
+          "moss.bytes",
+          "moss.binary",
+          "moss.encoding",
+          "moss.cbor",
+          "moss.core",
+          "moss.text",
+          "moss.fmt",
+          "moss.parse",
+          "moss.csv",
+          "moss.datastructures",
+          "moss.math",
+          "moss.linalg",
+          "moss.ndarray",
+          "moss.tables"
+        ],
+        "source": "tests/phase27/adversarial/cp-e-phase27-3-22a9709a/source_free_consumer.moss",
+        "verdict": true
+      }
+    ],
+    "checked_roots": [
+      "cp-e-source-free-consumer",
+      "moss.cbor",
+      "moss.datastructures",
+      "moss.tables"
+    ],
+    "runs": 8,
+    "verdicts_and_diagnostics_match_across_all_four_cells": true
+  },
+  "reason": "Actual Margo package-consumer checks use matching baseline/candidate off/shadow .mossi closures; all eight source-file runs pass with no diagnostics. The standalone errors do not survive package context.",
+  "source_files": [
+    "sdk/advanced-data-acceptance/fixtures/source_free_consumer.moss",
+    "tests/phase27/adversarial/cp-e-phase27-3-22a9709a/source_free_consumer.moss"
+  ],
+  "standalone_matrix": {
+    "baseline_code": "RECOVERY_PATTERN_REQUIRES_VARIANT",
+    "candidate_code": "UNKNOWN_ERROR_TYPE",
+    "modes": [
+      "off",
+      "shadow"
+    ],
+    "runs": 8
+  }
+}

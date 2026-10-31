@@ -1,0 +1,170 @@
+[
+  {
+    "exit": 1,
+    "mode": "off",
+    "results": [
+      {
+        "diagnostic": null,
+        "id": null,
+        "status": "FAIL"
+      }
+    ],
+    "revision": "baseline",
+    "scenario": 8,
+    "stderr": "",
+    "stdout_sha256": "f54ec0b39561a8eac166fe8ef69577ff1103cbdd068c776ce96a8164cce059b9",
+    "summary": {
+      "blocked": 0,
+      "failed": 1,
+      "passed": 0,
+      "total": 1
+    }
+  },
+  {
+    "exit": 1,
+    "mode": "shadow",
+    "results": [
+      {
+        "diagnostic": null,
+        "id": null,
+        "status": "FAIL"
+      }
+    ],
+    "revision": "baseline",
+    "scenario": 8,
+    "stderr": "",
+    "stdout_sha256": "498df84b19daf73b3c290d5de0b6e73d863d58b6983eb4ceada2fc66db936424",
+    "summary": {
+      "blocked": 0,
+      "failed": 1,
+      "passed": 0,
+      "total": 1
+    }
+  },
+  {
+    "exit": 1,
+    "mode": "off",
+    "results": [
+      {
+        "diagnostic": null,
+        "id": null,
+        "status": "BLOCKED"
+      }
+    ],
+    "revision": "baseline",
+    "scenario": 9,
+    "stderr": "",
+    "stdout_sha256": "631b6e8a3cfe8f273369b04983bcd0f08cfa2df3992356a5596d22484422d16a",
+    "summary": {
+      "blocked": 1,
+      "failed": 0,
+      "passed": 0,
+      "total": 1
+    }
+  },
+  {
+    "exit": 1,
+    "mode": "shadow",
+    "results": [
+      {
+        "diagnostic": null,
+        "id": null,
+        "status": "BLOCKED"
+      }
+    ],
+    "revision": "baseline",
+    "scenario": 9,
+    "stderr": "",
+    "stdout_sha256": "50e24935471910672cbbd6a31f96ad56795430e508c2d7fb5d97ebe30ff36e56",
+    "summary": {
+      "blocked": 1,
+      "failed": 0,
+      "passed": 0,
+      "total": 1
+    }
+  },
+  {
+    "exit": 1,
+    "mode": "off",
+    "results": [
+      {
+        "diagnostic": null,
+        "id": null,
+        "status": "FAIL"
+      }
+    ],
+    "revision": "candidate",
+    "scenario": 8,
+    "stderr": "",
+    "stdout_sha256": "21602d1ccdb6ca3fe8bf85222ef18c5e97e8c8535c12f23db51d359011f2743a",
+    "summary": {
+      "blocked": 0,
+      "failed": 1,
+      "passed": 0,
+      "total": 1
+    }
+  },
+  {
+    "exit": 1,
+    "mode": "shadow",
+    "results": [
+      {
+        "diagnostic": null,
+        "id": null,
+        "status": "FAIL"
+      }
+    ],
+    "revision": "candidate",
+    "scenario": 8,
+    "stderr": "",
+    "stdout_sha256": "e0102e64513cfa15550afd139af79b2978ba538cd22eea8544b23c3f9089691b",
+    "summary": {
+      "blocked": 0,
+      "failed": 1,
+      "passed": 0,
+      "total": 1
+    }
+  },
+  {
+    "exit": 1,
+    "mode": "off",
+    "results": [
+      {
+        "diagnostic": null,
+        "id": null,
+        "status": "BLOCKED"
+      }
+    ],
+    "revision": "candidate",
+    "scenario": 9,
+    "stderr": "",
+    "stdout_sha256": "9cb0da4b87248c3b325519822a9d0599bf37e6ccbca2a2a7a1006877e4bf2608",
+    "summary": {
+      "blocked": 1,
+      "failed": 0,
+      "passed": 0,
+      "total": 1
+    }
+  },
+  {
+    "exit": 1,
+    "mode": "shadow",
+    "results": [
+      {
+        "diagnostic": null,
+        "id": null,
+        "status": "BLOCKED"
+      }
+    ],
+    "revision": "candidate",
+    "scenario": 9,
+    "stderr": "",
+    "stdout_sha256": "d0f02d4f4b4e06912476b044d4f3299cd87bf82ca0400abea9b7a61f0b842da8",
+    "summary": {
+      "blocked": 1,
+      "failed": 0,
+      "passed": 0,
+      "total": 1
+    }
+  }
+]

@@ -1,0 +1,1082 @@
+[
+  {
+    "checked": [
+      "moss.cbor",
+      "moss.datastructures",
+      "moss.tables",
+      "cp-e-source-free-consumer"
+    ],
+    "diagnostics": [],
+    "exit": 0,
+    "mode": "off",
+    "packages": [
+      {
+        "name": "moss.bytes",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/baseline-off/sdk/foundations/bytes"
+        }
+      },
+      {
+        "name": "moss.binary",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/baseline-off/sdk/binary"
+        }
+      },
+      {
+        "name": "moss.encoding",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/baseline-off/sdk/encoding"
+        }
+      },
+      {
+        "name": "moss.cbor",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/baseline-off/sdk/cbor"
+        }
+      },
+      {
+        "name": "moss.core",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/baseline-off/sdk/foundations/core"
+        }
+      },
+      {
+        "name": "moss.text",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/baseline-off/sdk/text"
+        }
+      },
+      {
+        "name": "moss.fmt",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/baseline-off/sdk/fmt"
+        }
+      },
+      {
+        "name": "moss.parse",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/baseline-off/sdk/parse"
+        }
+      },
+      {
+        "name": "moss.csv",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/baseline-off/sdk/csv"
+        }
+      },
+      {
+        "name": "moss.datastructures",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/baseline-off/sdk/datastructures"
+        }
+      },
+      {
+        "name": "moss.math",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/baseline-off/packages/math"
+        }
+      },
+      {
+        "name": "moss.linalg",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/baseline-off/packages/linalg"
+        }
+      },
+      {
+        "name": "moss.ndarray",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/baseline-off/sdk/ndarray"
+        }
+      },
+      {
+        "name": "moss.tables",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/baseline-off/sdk/tables"
+        }
+      },
+      {
+        "name": "cp-e-source-free-consumer",
+        "source": {
+          "kind": "root"
+        }
+      }
+    ],
+    "revision": "baseline",
+    "skipped": [
+      "moss.bytes",
+      "moss.binary",
+      "moss.encoding",
+      "moss.core",
+      "moss.text",
+      "moss.fmt",
+      "moss.parse",
+      "moss.csv",
+      "moss.math",
+      "moss.linalg",
+      "moss.ndarray"
+    ],
+    "source": "sdk/advanced-data-acceptance/fixtures/source_free_consumer.moss",
+    "stderr": "",
+    "stdout_sha256": "f50b77570fa30c7c4b3e33557c8a7d5c6a23f1a5fb0c1f2432060d0623247244",
+    "verdict": true
+  },
+  {
+    "checked": [
+      "moss.cbor",
+      "moss.datastructures",
+      "moss.tables",
+      "cp-e-source-free-consumer"
+    ],
+    "diagnostics": [],
+    "exit": 0,
+    "mode": "shadow",
+    "packages": [
+      {
+        "name": "moss.bytes",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/baseline-shadow/sdk/foundations/bytes"
+        }
+      },
+      {
+        "name": "moss.binary",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/baseline-shadow/sdk/binary"
+        }
+      },
+      {
+        "name": "moss.encoding",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/baseline-shadow/sdk/encoding"
+        }
+      },
+      {
+        "name": "moss.cbor",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/baseline-shadow/sdk/cbor"
+        }
+      },
+      {
+        "name": "moss.core",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/baseline-shadow/sdk/foundations/core"
+        }
+      },
+      {
+        "name": "moss.text",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/baseline-shadow/sdk/text"
+        }
+      },
+      {
+        "name": "moss.fmt",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/baseline-shadow/sdk/fmt"
+        }
+      },
+      {
+        "name": "moss.parse",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/baseline-shadow/sdk/parse"
+        }
+      },
+      {
+        "name": "moss.csv",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/baseline-shadow/sdk/csv"
+        }
+      },
+      {
+        "name": "moss.datastructures",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/baseline-shadow/sdk/datastructures"
+        }
+      },
+      {
+        "name": "moss.math",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/baseline-shadow/packages/math"
+        }
+      },
+      {
+        "name": "moss.linalg",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/baseline-shadow/packages/linalg"
+        }
+      },
+      {
+        "name": "moss.ndarray",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/baseline-shadow/sdk/ndarray"
+        }
+      },
+      {
+        "name": "moss.tables",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/baseline-shadow/sdk/tables"
+        }
+      },
+      {
+        "name": "cp-e-source-free-consumer",
+        "source": {
+          "kind": "root"
+        }
+      }
+    ],
+    "revision": "baseline",
+    "skipped": [
+      "moss.bytes",
+      "moss.binary",
+      "moss.encoding",
+      "moss.core",
+      "moss.text",
+      "moss.fmt",
+      "moss.parse",
+      "moss.csv",
+      "moss.math",
+      "moss.linalg",
+      "moss.ndarray"
+    ],
+    "source": "sdk/advanced-data-acceptance/fixtures/source_free_consumer.moss",
+    "stderr": "",
+    "stdout_sha256": "1e9198ba8372ffb60fb73f7ff557e2d3d299e5ef0559bcbf7b005be8462bb8cf",
+    "verdict": true
+  },
+  {
+    "checked": [
+      "moss.cbor",
+      "moss.datastructures",
+      "moss.tables",
+      "cp-e-source-free-consumer"
+    ],
+    "diagnostics": [],
+    "exit": 0,
+    "mode": "off",
+    "packages": [
+      {
+        "name": "moss.bytes",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-off/sdk/foundations/bytes"
+        }
+      },
+      {
+        "name": "moss.binary",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-off/sdk/binary"
+        }
+      },
+      {
+        "name": "moss.encoding",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-off/sdk/encoding"
+        }
+      },
+      {
+        "name": "moss.cbor",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-off/sdk/cbor"
+        }
+      },
+      {
+        "name": "moss.core",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-off/sdk/foundations/core"
+        }
+      },
+      {
+        "name": "moss.text",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-off/sdk/text"
+        }
+      },
+      {
+        "name": "moss.fmt",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-off/sdk/fmt"
+        }
+      },
+      {
+        "name": "moss.parse",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-off/sdk/parse"
+        }
+      },
+      {
+        "name": "moss.csv",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-off/sdk/csv"
+        }
+      },
+      {
+        "name": "moss.datastructures",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-off/sdk/datastructures"
+        }
+      },
+      {
+        "name": "moss.math",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-off/packages/math"
+        }
+      },
+      {
+        "name": "moss.linalg",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-off/packages/linalg"
+        }
+      },
+      {
+        "name": "moss.ndarray",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-off/sdk/ndarray"
+        }
+      },
+      {
+        "name": "moss.tables",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-off/sdk/tables"
+        }
+      },
+      {
+        "name": "cp-e-source-free-consumer",
+        "source": {
+          "kind": "root"
+        }
+      }
+    ],
+    "revision": "candidate",
+    "skipped": [
+      "moss.bytes",
+      "moss.binary",
+      "moss.encoding",
+      "moss.core",
+      "moss.text",
+      "moss.fmt",
+      "moss.parse",
+      "moss.csv",
+      "moss.math",
+      "moss.linalg",
+      "moss.ndarray"
+    ],
+    "source": "sdk/advanced-data-acceptance/fixtures/source_free_consumer.moss",
+    "stderr": "",
+    "stdout_sha256": "86e225edc669ba16cbfb38a646b86b29afbb2fb106e1c86c80b45c30d2a89e48",
+    "verdict": true
+  },
+  {
+    "checked": [
+      "moss.cbor",
+      "moss.datastructures",
+      "moss.tables",
+      "cp-e-source-free-consumer"
+    ],
+    "diagnostics": [],
+    "exit": 0,
+    "mode": "shadow",
+    "packages": [
+      {
+        "name": "moss.bytes",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-shadow/sdk/foundations/bytes"
+        }
+      },
+      {
+        "name": "moss.binary",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-shadow/sdk/binary"
+        }
+      },
+      {
+        "name": "moss.encoding",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-shadow/sdk/encoding"
+        }
+      },
+      {
+        "name": "moss.cbor",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-shadow/sdk/cbor"
+        }
+      },
+      {
+        "name": "moss.core",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-shadow/sdk/foundations/core"
+        }
+      },
+      {
+        "name": "moss.text",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-shadow/sdk/text"
+        }
+      },
+      {
+        "name": "moss.fmt",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-shadow/sdk/fmt"
+        }
+      },
+      {
+        "name": "moss.parse",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-shadow/sdk/parse"
+        }
+      },
+      {
+        "name": "moss.csv",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-shadow/sdk/csv"
+        }
+      },
+      {
+        "name": "moss.datastructures",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-shadow/sdk/datastructures"
+        }
+      },
+      {
+        "name": "moss.math",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-shadow/packages/math"
+        }
+      },
+      {
+        "name": "moss.linalg",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-shadow/packages/linalg"
+        }
+      },
+      {
+        "name": "moss.ndarray",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-shadow/sdk/ndarray"
+        }
+      },
+      {
+        "name": "moss.tables",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-shadow/sdk/tables"
+        }
+      },
+      {
+        "name": "cp-e-source-free-consumer",
+        "source": {
+          "kind": "root"
+        }
+      }
+    ],
+    "revision": "candidate",
+    "skipped": [
+      "moss.bytes",
+      "moss.binary",
+      "moss.encoding",
+      "moss.core",
+      "moss.text",
+      "moss.fmt",
+      "moss.parse",
+      "moss.csv",
+      "moss.math",
+      "moss.linalg",
+      "moss.ndarray"
+    ],
+    "source": "sdk/advanced-data-acceptance/fixtures/source_free_consumer.moss",
+    "stderr": "",
+    "stdout_sha256": "e7fe2e1b4b1a5928c5dfd9ba4024be4a8cfca6892fc8ecaec623604cfa75740b",
+    "verdict": true
+  },
+  {
+    "checked": [
+      "cp-e-source-free-consumer"
+    ],
+    "diagnostics": [],
+    "exit": 0,
+    "mode": "off",
+    "packages": [
+      {
+        "name": "moss.bytes",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/baseline-off/sdk/foundations/bytes"
+        }
+      },
+      {
+        "name": "moss.binary",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/baseline-off/sdk/binary"
+        }
+      },
+      {
+        "name": "moss.encoding",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/baseline-off/sdk/encoding"
+        }
+      },
+      {
+        "name": "moss.cbor",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/baseline-off/sdk/cbor"
+        }
+      },
+      {
+        "name": "moss.core",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/baseline-off/sdk/foundations/core"
+        }
+      },
+      {
+        "name": "moss.text",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/baseline-off/sdk/text"
+        }
+      },
+      {
+        "name": "moss.fmt",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/baseline-off/sdk/fmt"
+        }
+      },
+      {
+        "name": "moss.parse",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/baseline-off/sdk/parse"
+        }
+      },
+      {
+        "name": "moss.csv",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/baseline-off/sdk/csv"
+        }
+      },
+      {
+        "name": "moss.datastructures",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/baseline-off/sdk/datastructures"
+        }
+      },
+      {
+        "name": "moss.math",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/baseline-off/packages/math"
+        }
+      },
+      {
+        "name": "moss.linalg",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/baseline-off/packages/linalg"
+        }
+      },
+      {
+        "name": "moss.ndarray",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/baseline-off/sdk/ndarray"
+        }
+      },
+      {
+        "name": "moss.tables",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/baseline-off/sdk/tables"
+        }
+      },
+      {
+        "name": "cp-e-source-free-consumer",
+        "source": {
+          "kind": "root"
+        }
+      }
+    ],
+    "revision": "baseline",
+    "skipped": [
+      "moss.bytes",
+      "moss.binary",
+      "moss.encoding",
+      "moss.cbor",
+      "moss.core",
+      "moss.text",
+      "moss.fmt",
+      "moss.parse",
+      "moss.csv",
+      "moss.datastructures",
+      "moss.math",
+      "moss.linalg",
+      "moss.ndarray",
+      "moss.tables"
+    ],
+    "source": "tests/phase27/adversarial/cp-e-phase27-3-22a9709a/source_free_consumer.moss",
+    "stderr": "",
+    "stdout_sha256": "f866ba953afcadc871d0e86e617c2508f24d58836a06911c0872041a1467b589",
+    "verdict": true
+  },
+  {
+    "checked": [
+      "cp-e-source-free-consumer"
+    ],
+    "diagnostics": [],
+    "exit": 0,
+    "mode": "shadow",
+    "packages": [
+      {
+        "name": "moss.bytes",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/baseline-shadow/sdk/foundations/bytes"
+        }
+      },
+      {
+        "name": "moss.binary",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/baseline-shadow/sdk/binary"
+        }
+      },
+      {
+        "name": "moss.encoding",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/baseline-shadow/sdk/encoding"
+        }
+      },
+      {
+        "name": "moss.cbor",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/baseline-shadow/sdk/cbor"
+        }
+      },
+      {
+        "name": "moss.core",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/baseline-shadow/sdk/foundations/core"
+        }
+      },
+      {
+        "name": "moss.text",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/baseline-shadow/sdk/text"
+        }
+      },
+      {
+        "name": "moss.fmt",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/baseline-shadow/sdk/fmt"
+        }
+      },
+      {
+        "name": "moss.parse",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/baseline-shadow/sdk/parse"
+        }
+      },
+      {
+        "name": "moss.csv",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/baseline-shadow/sdk/csv"
+        }
+      },
+      {
+        "name": "moss.datastructures",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/baseline-shadow/sdk/datastructures"
+        }
+      },
+      {
+        "name": "moss.math",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/baseline-shadow/packages/math"
+        }
+      },
+      {
+        "name": "moss.linalg",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/baseline-shadow/packages/linalg"
+        }
+      },
+      {
+        "name": "moss.ndarray",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/baseline-shadow/sdk/ndarray"
+        }
+      },
+      {
+        "name": "moss.tables",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/baseline-shadow/sdk/tables"
+        }
+      },
+      {
+        "name": "cp-e-source-free-consumer",
+        "source": {
+          "kind": "root"
+        }
+      }
+    ],
+    "revision": "baseline",
+    "skipped": [
+      "moss.bytes",
+      "moss.binary",
+      "moss.encoding",
+      "moss.cbor",
+      "moss.core",
+      "moss.text",
+      "moss.fmt",
+      "moss.parse",
+      "moss.csv",
+      "moss.datastructures",
+      "moss.math",
+      "moss.linalg",
+      "moss.ndarray",
+      "moss.tables"
+    ],
+    "source": "tests/phase27/adversarial/cp-e-phase27-3-22a9709a/source_free_consumer.moss",
+    "stderr": "",
+    "stdout_sha256": "bdefbc13638840d03efc7b6b80e90aa8e469bb2d4c106ea02cd7c4870bd94d37",
+    "verdict": true
+  },
+  {
+    "checked": [
+      "cp-e-source-free-consumer"
+    ],
+    "diagnostics": [],
+    "exit": 0,
+    "mode": "off",
+    "packages": [
+      {
+        "name": "moss.bytes",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-off/sdk/foundations/bytes"
+        }
+      },
+      {
+        "name": "moss.binary",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-off/sdk/binary"
+        }
+      },
+      {
+        "name": "moss.encoding",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-off/sdk/encoding"
+        }
+      },
+      {
+        "name": "moss.cbor",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-off/sdk/cbor"
+        }
+      },
+      {
+        "name": "moss.core",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-off/sdk/foundations/core"
+        }
+      },
+      {
+        "name": "moss.text",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-off/sdk/text"
+        }
+      },
+      {
+        "name": "moss.fmt",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-off/sdk/fmt"
+        }
+      },
+      {
+        "name": "moss.parse",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-off/sdk/parse"
+        }
+      },
+      {
+        "name": "moss.csv",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-off/sdk/csv"
+        }
+      },
+      {
+        "name": "moss.datastructures",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-off/sdk/datastructures"
+        }
+      },
+      {
+        "name": "moss.math",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-off/packages/math"
+        }
+      },
+      {
+        "name": "moss.linalg",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-off/packages/linalg"
+        }
+      },
+      {
+        "name": "moss.ndarray",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-off/sdk/ndarray"
+        }
+      },
+      {
+        "name": "moss.tables",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-off/sdk/tables"
+        }
+      },
+      {
+        "name": "cp-e-source-free-consumer",
+        "source": {
+          "kind": "root"
+        }
+      }
+    ],
+    "revision": "candidate",
+    "skipped": [
+      "moss.bytes",
+      "moss.binary",
+      "moss.encoding",
+      "moss.cbor",
+      "moss.core",
+      "moss.text",
+      "moss.fmt",
+      "moss.parse",
+      "moss.csv",
+      "moss.datastructures",
+      "moss.math",
+      "moss.linalg",
+      "moss.ndarray",
+      "moss.tables"
+    ],
+    "source": "tests/phase27/adversarial/cp-e-phase27-3-22a9709a/source_free_consumer.moss",
+    "stderr": "",
+    "stdout_sha256": "b85f668da424dd9bacc56c203b1cc5df0827b282ad78f423dc6475536128603d",
+    "verdict": true
+  },
+  {
+    "checked": [
+      "cp-e-source-free-consumer"
+    ],
+    "diagnostics": [],
+    "exit": 0,
+    "mode": "shadow",
+    "packages": [
+      {
+        "name": "moss.bytes",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-shadow/sdk/foundations/bytes"
+        }
+      },
+      {
+        "name": "moss.binary",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-shadow/sdk/binary"
+        }
+      },
+      {
+        "name": "moss.encoding",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-shadow/sdk/encoding"
+        }
+      },
+      {
+        "name": "moss.cbor",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-shadow/sdk/cbor"
+        }
+      },
+      {
+        "name": "moss.core",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-shadow/sdk/foundations/core"
+        }
+      },
+      {
+        "name": "moss.text",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-shadow/sdk/text"
+        }
+      },
+      {
+        "name": "moss.fmt",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-shadow/sdk/fmt"
+        }
+      },
+      {
+        "name": "moss.parse",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-shadow/sdk/parse"
+        }
+      },
+      {
+        "name": "moss.csv",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-shadow/sdk/csv"
+        }
+      },
+      {
+        "name": "moss.datastructures",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-shadow/sdk/datastructures"
+        }
+      },
+      {
+        "name": "moss.math",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-shadow/packages/math"
+        }
+      },
+      {
+        "name": "moss.linalg",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-shadow/packages/linalg"
+        }
+      },
+      {
+        "name": "moss.ndarray",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-shadow/sdk/ndarray"
+        }
+      },
+      {
+        "name": "moss.tables",
+        "source": {
+          "kind": "path",
+          "path": "/home/owner/daji/code/moss/tmp/phase27-3/review-cp-e-full-75ff8522/tmp/cp-e-full-75ff8522/package-stages/candidate-shadow/sdk/tables"
+        }
+      },
+      {
+        "name": "cp-e-source-free-consumer",
+        "source": {
+          "kind": "root"
+        }
+      }
+    ],
+    "revision": "candidate",
+    "skipped": [
+      "moss.bytes",
+      "moss.binary",
+      "moss.encoding",
+      "moss.cbor",
+      "moss.core",
+      "moss.text",
+      "moss.fmt",
+      "moss.parse",
+      "moss.csv",
+      "moss.datastructures",
+      "moss.math",
+      "moss.linalg",
+      "moss.ndarray",
+      "moss.tables"
+    ],
+    "source": "tests/phase27/adversarial/cp-e-phase27-3-22a9709a/source_free_consumer.moss",
+    "stderr": "",
+    "stdout_sha256": "9e96e8487099270e4b80733c4f00da3b7ba3a39dcb27b0620b1a6b3911b61c7d",
+    "verdict": true
+  }
+]

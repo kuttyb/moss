@@ -1,0 +1,1499 @@
+{
+  "all_raw_stmt_field_equality_lines": [
+    {
+      "consumer": "emitter",
+      "line": 150,
+      "path": "src/executor_invoke_codegen.inc",
+      "source": "if (s.kind != Stmt::Kind::Call || !executor_typed(types, s.a)) return false;"
+    },
+    {
+      "consumer": "emitter",
+      "line": 151,
+      "path": "src/executor_invoke_codegen.inc",
+      "source": "if (s.b == \"join\") {"
+    },
+    {
+      "consumer": "emitter",
+      "line": 155,
+      "path": "src/executor_invoke_codegen.inc",
+      "source": "if (s.b != \"invoke\")"
+    },
+    {
+      "consumer": "checker",
+      "line": 9299,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (s.kind == Stmt::Kind::Return && !s.a.empty()) {"
+    },
+    {
+      "consumer": "checker",
+      "line": 9325,
+      "path": "src/semantic_checker.cpp",
+      "source": "return statement.kind == Stmt::Kind::Return && !statement.a.empty();"
+    },
+    {
+      "consumer": "checker",
+      "line": 9905,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (stmt.a == name) {"
+    },
+    {
+      "consumer": "checker",
+      "line": 9992,
+      "path": "src/semantic_checker.cpp",
+      "source": "specialization.instance == statement.a) {"
+    },
+    {
+      "consumer": "checker",
+      "line": 10033,
+      "path": "src/semantic_checker.cpp",
+      "source": "statement.kind == Stmt::Kind::Assign) || !tree_plain_identifier(statement.a))"
+    },
+    {
+      "consumer": "checker",
+      "line": 12325,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (statement.kind == Stmt::Kind::Return && !statement.a.empty() &&"
+    },
+    {
+      "consumer": "checker",
+      "line": 12657,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (statement.kind != Stmt::Kind::Assign || tree_simple_identifier(statement.a)) {"
+    },
+    {
+      "consumer": "checker",
+      "line": 12710,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (prior.a == base && tree_empty_constructor_named(prior.b, \"Map\")) {"
+    },
+    {
+      "consumer": "checker",
+      "line": 12731,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (prior.a == base && tree_empty_constructor_named(prior.b, \"Map\")) {"
+    },
+    {
+      "consumer": "checker",
+      "line": 12767,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (statement.kind == Stmt::Kind::Call && !statement.b.empty() &&"
+    },
+    {
+      "consumer": "checker",
+      "line": 12768,
+      "path": "src/semantic_checker.cpp",
+      "source": "(statement.b == \"push\" ||"
+    },
+    {
+      "consumer": "checker",
+      "line": 12769,
+      "path": "src/semantic_checker.cpp",
+      "source": "(staged_abi_v10() && statement.b == \"insert\")) &&"
+    },
+    {
+      "consumer": "checker",
+      "line": 12779,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (prior.a == statement.a &&"
+    },
+    {
+      "consumer": "checker",
+      "line": 13053,
+      "path": "src/semantic_checker.cpp",
+      "source": "candidate.a != name ||"
+    },
+    {
+      "consumer": "checker",
+      "line": 13759,
+      "path": "src/semantic_checker.cpp",
+      "source": "[&](const EnumCase& c) { return c.name == statement.a; });"
+    },
+    {
+      "consumer": "checker",
+      "line": 13856,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (statement.kind == Stmt::Kind::Call && statement.b.empty()) {"
+    },
+    {
+      "consumer": "checker",
+      "line": 13966,
+      "path": "src/semantic_checker.cpp",
+      "source": "(statement.b == \"push\" ||"
+    },
+    {
+      "consumer": "checker",
+      "line": 13967,
+      "path": "src/semantic_checker.cpp",
+      "source": "(staged_abi_v10() && statement.b == \"insert\")) &&"
+    },
+    {
+      "consumer": "checker",
+      "line": 14105,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (closed.size() == 1 && !checked_statement.b.empty()) {"
+    },
+    {
+      "consumer": "checker",
+      "line": 14246,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (statement.kind == Stmt::Kind::Call && statement.b == \"invoke\" &&"
+    },
+    {
+      "consumer": "checker",
+      "line": 14270,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (statement.kind == Stmt::Kind::Call && statement.b.empty()) {"
+    },
+    {
+      "consumer": "checker",
+      "line": 14523,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (statement.kind == Stmt::Kind::Call && statement.b == \"invoke\" &&"
+    },
+    {
+      "consumer": "checker",
+      "line": 14524,
+      "path": "src/semantic_checker.cpp",
+      "source": "statement.args.size() == 1 && executor_typed(main_env, statement.a) &&"
+    },
+    {
+      "consumer": "checker",
+      "line": 15296,
+      "path": "src/semantic_checker.cpp",
+      "source": "for (const auto& s : function.body) if (s.kind == Stmt::Kind::Return && !s.a.empty()) mark(s.a);"
+    },
+    {
+      "consumer": "checker",
+      "line": 15326,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (s.kind == Stmt::Kind::Return && !s.a.empty())"
+    },
+    {
+      "consumer": "checker",
+      "line": 15500,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (statement.kind == Stmt::Kind::Return && !statement.a.empty()) {"
+    },
+    {
+      "consumer": "checker",
+      "line": 15551,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (statement.kind != Stmt::Kind::Return || statement.a.empty()) continue;"
+    },
+    {
+      "consumer": "checker",
+      "line": 15706,
+      "path": "src/semantic_checker.cpp",
+      "source": "return statement.kind == Stmt::Kind::Return && !statement.a.empty();"
+    },
+    {
+      "consumer": "checker",
+      "line": 16321,
+      "path": "src/semantic_checker.cpp",
+      "source": "else if (statement.kind == Stmt::Kind::Assign && !outer.count(statement.a))"
+    },
+    {
+      "consumer": "checker",
+      "line": 18381,
+      "path": "src/semantic_checker.cpp",
+      "source": "statement.b == \"consume\" ? Effect::Consume : Effect::Read);"
+    },
+    {
+      "consumer": "checker",
+      "line": 19851,
+      "path": "src/semantic_checker.cpp",
+      "source": "statement.a == selected_binding) {"
+    },
+    {
+      "consumer": "checker",
+      "line": 19938,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (statement.a == selected_binding) selected_binding.clear();"
+    },
+    {
+      "consumer": "checker",
+      "line": 20056,
+      "path": "src/semantic_checker.cpp",
+      "source": "tree_plain_identifier(expression) && expression == statement.a)"
+    },
+    {
+      "consumer": "checker",
+      "line": 20899,
+      "path": "src/semantic_checker.cpp",
+      "source": "} else if (s.kind == Stmt::Kind::Call && !s.b.empty()) {"
+    },
+    {
+      "consumer": "checker",
+      "line": 20901,
+      "path": "src/semantic_checker.cpp",
+      "source": "bool mutating = s.b == \"push\" || s.b == \"pop\" || s.b == \"pop_front\";"
+    },
+    {
+      "consumer": "checker",
+      "line": 21067,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (statement.kind == Stmt::Kind::Call && !statement.b.empty()) {"
+    },
+    {
+      "consumer": "checker",
+      "line": 21069,
+      "path": "src/semantic_checker.cpp",
+      "source": "bool mutating = statement.b == \"push\" || statement.b == \"pop\" || statement.b == \"pop_front\";"
+    },
+    {
+      "consumer": "checker",
+      "line": 21070,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (statement.b == \"pop\" || statement.b == \"pop_front\") {"
+    },
+    {
+      "consumer": "checker",
+      "line": 22679,
+      "path": "src/semantic_checker.cpp",
+      "source": "bool consuming = s.b == \"consume\";"
+    },
+    {
+      "consumer": "checker",
+      "line": 23015,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (s.kind == Stmt::Kind::Let) env.immutable_locals.insert(s.a);"
+    },
+    {
+      "consumer": "checker",
+      "line": 23158,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (s.b == \"push\" && s.args.size() == 1) {"
+    },
+    {
+      "consumer": "checker",
+      "line": 24669,
+      "path": "src/semantic_checker.cpp",
+      "source": "statement.b.empty() && statement.a == name &&"
+    },
+    {
+      "consumer": "checker",
+      "line": 24712,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (requirements.size() == 1 && !statement.b.empty()) {"
+    },
+    {
+      "consumer": "checker",
+      "line": 28327,
+      "path": "src/semantic_checker.cpp",
+      "source": "return route.name == statement.a;"
+    },
+    {
+      "consumer": "checker",
+      "line": 28690,
+      "path": "src/semantic_checker.cpp",
+      "source": "constraint.subject == statement.a &&"
+    },
+    {
+      "consumer": "checker",
+      "line": 28691,
+      "path": "src/semantic_checker.cpp",
+      "source": "constraint.detail == statement.b &&"
+    },
+    {
+      "consumer": "checker",
+      "line": 28703,
+      "path": "src/semantic_checker.cpp",
+      "source": "const bool delayed_assert_check = statement.a == \"assert\" &&"
+    },
+    {
+      "consumer": "checker",
+      "line": 28748,
+      "path": "src/semantic_checker.cpp",
+      "source": "const bool sort_builtin = statement.b.empty() && statement.a == \"sort\" &&"
+    },
+    {
+      "consumer": "checker",
+      "line": 28785,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (statement.b.empty() && statement.a == \"assert\" &&"
+    },
+    {
+      "consumer": "checker",
+      "line": 28870,
+      "path": "src/semantic_checker.cpp",
+      "source": "tree_plain_identifier(statement.text) && statement.text != \"pass\")"
+    },
+    {
+      "consumer": "checker",
+      "line": 29469,
+      "path": "src/semantic_checker.cpp",
+      "source": "prior.a == name) {"
+    },
+    {
+      "consumer": "checker",
+      "line": 644,
+      "path": "src/fileio_semantics.inc",
+      "source": "s.kind == Stmt::Kind::For ? s.b : s.a, flow);"
+    },
+    {
+      "consumer": "checker",
+      "line": 669,
+      "path": "src/fileio_semantics.inc",
+      "source": "if (s.kind == Stmt::Kind::For) flow.range_origin.erase(s.a);"
+    },
+    {
+      "consumer": "checker",
+      "line": 709,
+      "path": "src/fileio_semantics.inc",
+      "source": "if (flow.mode[s.a] == \"ro\") flow.may_be_read_only.insert(s.a);"
+    },
+    {
+      "consumer": "checker",
+      "line": 721,
+      "path": "src/fileio_semantics.inc",
+      "source": "if (s.kind == Stmt::Kind::Call && s.b.empty() && call_name) {"
+    },
+    {
+      "consumer": "checker",
+      "line": 859,
+      "path": "src/fileio_semantics.inc",
+      "source": "(statement.a == \"FileIO\" ||"
+    },
+    {
+      "consumer": "checker",
+      "line": 324,
+      "path": "src/executor_invoke_lowering.inc",
+      "source": "if (statement.b == \"invoke\") {"
+    },
+    {
+      "consumer": "checker",
+      "line": 328,
+      "path": "src/executor_invoke_lowering.inc",
+      "source": "if (statement.b == \"join\") {"
+    },
+    {
+      "consumer": "checker",
+      "line": 521,
+      "path": "src/executor_invoke_lowering.inc",
+      "source": "(statement.b == \"invoke\" || statement.b == \"join\")) {"
+    },
+    {
+      "consumer": "checker",
+      "line": 534,
+      "path": "src/executor_invoke_lowering.inc",
+      "source": "if (statement.b == \"join\")"
+    },
+    {
+      "consumer": "checker",
+      "line": 311,
+      "path": "src/static_bounds.inc",
+      "source": "if (old != incoming.end()) body[statement.a] = old->second;"
+    },
+    {
+      "consumer": "emitter",
+      "line": 415,
+      "path": "src/native_generator.cpp",
+      "source": "if (statement.kind == Stmt::Kind::Call && statement.text.empty()) {"
+    },
+    {
+      "consumer": "emitter",
+      "line": 5980,
+      "path": "src/native_generator.cpp",
+      "source": "if (s.b != \"consume\" && !recovery_slot) o << \"&\";"
+    },
+    {
+      "consumer": "emitter",
+      "line": 5982,
+      "path": "src/native_generator.cpp",
+      "source": "if (recovery_slot && s.b == \"consume\")"
+    },
+    {
+      "consumer": "emitter",
+      "line": 6026,
+      "path": "src/native_generator.cpp",
+      "source": "if (s.b != \"consume\") {"
+    },
+    {
+      "consumer": "emitter",
+      "line": 6335,
+      "path": "src/native_generator.cpp",
+      "source": "if (s.a == \"_\") {"
+    },
+    {
+      "consumer": "emitter",
+      "line": 6405,
+      "path": "src/native_generator.cpp",
+      "source": "[&](const Field& field) { return field.name == s.a; });"
+    },
+    {
+      "consumer": "emitter",
+      "line": 6420,
+      "path": "src/native_generator.cpp",
+      "source": "map_base != s.a) continue;"
+    },
+    {
+      "consumer": "emitter",
+      "line": 6587,
+      "path": "src/native_generator.cpp",
+      "source": "if (checked_receiver != s.receiver_types_by_context.end() && types.count(s.a))"
+    },
+    {
+      "consumer": "emitter",
+      "line": 6600,
+      "path": "src/native_generator.cpp",
+      "source": "(s.b == \"delete\" && (statement_receiver_type == \"map\" ||"
+    },
+    {
+      "consumer": "emitter",
+      "line": 6612,
+      "path": "src/native_generator.cpp",
+      "source": "if (s.b.empty() && s.a == \"assert\") {"
+    },
+    {
+      "consumer": "emitter",
+      "line": 6625,
+      "path": "src/native_generator.cpp",
+      "source": "if (s.b.empty() && s.a == \"assertEqual\") {"
+    },
+    {
+      "consumer": "emitter",
+      "line": 6655,
+      "path": "src/native_generator.cpp",
+      "source": "if (s.b.empty() && s.a == \"sort\" && !functions_.count(s.a) &&"
+    },
+    {
+      "consumer": "emitter",
+      "line": 6854,
+      "path": "src/native_generator.cpp",
+      "source": "if (!s.b.empty() && s.b == \"pop\" && receiver_type &&"
+    },
+    {
+      "consumer": "emitter",
+      "line": 6890,
+      "path": "src/native_generator.cpp",
+      "source": "map_base != s.a) continue;"
+    },
+    {
+      "consumer": "emitter",
+      "line": 67,
+      "path": "src/file_chunk_codegen.inc",
+      "source": "if (s.kind != Stmt::Kind::Call || !fileio_typed(types, s.a)) return false;"
+    },
+    {
+      "consumer": "emitter",
+      "line": 70,
+      "path": "src/file_chunk_codegen.inc",
+      "source": "if (s.b == \"write\" && s.args.size() == 2) {"
+    },
+    {
+      "consumer": "emitter",
+      "line": 80,
+      "path": "src/file_chunk_codegen.inc",
+      "source": "if (s.b == \"open\" && s.args.size() == 2) {"
+    },
+    {
+      "consumer": "emitter",
+      "line": 90,
+      "path": "src/file_chunk_codegen.inc",
+      "source": "if (s.b == \"sync\" && s.args.size() <= 1) {"
+    },
+    {
+      "consumer": "emitter",
+      "line": 101,
+      "path": "src/file_chunk_codegen.inc",
+      "source": "if (s.b == \"close\" && s.args.empty()) {"
+    }
+  ],
+  "exemptions": [
+    {
+      "api": "split_top_level",
+      "function": "builtin_equality_type",
+      "path": "src/semantic_checker.cpp",
+      "reason": "Splits canonical type argument spellings; this is type syntax, not expression or pattern text."
+    },
+    {
+      "api": "split_top_level",
+      "function": "contains_float_type",
+      "path": "src/semantic_checker.cpp",
+      "reason": "Splits canonical type argument spellings; this is type syntax, not expression or pattern text."
+    },
+    {
+      "api": "split_top_level",
+      "function": "phase20_is_nontransferable_capability",
+      "path": "src/semantic_checker.cpp",
+      "reason": "Splits canonical type argument spellings; this is type syntax, not expression or pattern text."
+    }
+  ],
+  "legacy_reader_call_sites": {
+    "checker": 0,
+    "emitter": 0
+  },
+  "raw_binding_name_counts": {
+    "checker/a": 9
+  },
+  "raw_expression_comparison_findings": [
+    {
+      "classification": "MIGRATION BUG; direct expression-bearing slot equality remains",
+      "expression": "stmt.a == name",
+      "function": "check_closed_body_types",
+      "line": 9905,
+      "path": "src/semantic_checker.cpp",
+      "role": "diagnostic line selection can inspect mixed expression/name slot"
+    },
+    {
+      "classification": "MIGRATION BUG; semantic raise-set decision uses raw expression equality",
+      "expression": "statement.a == selected_binding",
+      "function": "phase21_raise_set_block",
+      "line": 19851,
+      "path": "src/semantic_checker.cpp",
+      "role": "Raise value spelling selects the caught RaiseSet"
+    },
+    {
+      "classification": "MIGRATION BUG; EST identifier projection is followed by raw spelling equality",
+      "expression": "tree_plain_identifier(expression) && expression == statement.a",
+      "function": "phase21_failure_capture_reads",
+      "line": 20056,
+      "path": "src/semantic_checker.cpp",
+      "role": "filters self-assignment from failure captures after EST shape guard"
+    }
+  ],
+  "raw_expression_shape_hits": [],
+  "raw_field_records": [
+    {
+      "consumer": "emitter",
+      "kind": "raw-name",
+      "line": 151,
+      "name": "join",
+      "path": "src/executor_invoke_codegen.inc",
+      "source": "if (s.b == \"join\") {"
+    },
+    {
+      "consumer": "emitter",
+      "kind": "raw-name",
+      "line": 155,
+      "name": "invoke",
+      "path": "src/executor_invoke_codegen.inc",
+      "source": "if (s.b != \"invoke\")"
+    },
+    {
+      "consumer": "checker",
+      "kind": "raw-binding-name",
+      "line": 9905,
+      "path": "src/semantic_checker.cpp",
+      "slot": "a",
+      "source": "if (stmt.a == name) {"
+    },
+    {
+      "consumer": "checker",
+      "kind": "raw-binding-name",
+      "line": 12710,
+      "path": "src/semantic_checker.cpp",
+      "slot": "a",
+      "source": "if (prior.a == base && tree_empty_constructor_named(prior.b, \"Map\")) {"
+    },
+    {
+      "consumer": "checker",
+      "kind": "raw-binding-name",
+      "line": 12731,
+      "path": "src/semantic_checker.cpp",
+      "slot": "a",
+      "source": "if (prior.a == base && tree_empty_constructor_named(prior.b, \"Map\")) {"
+    },
+    {
+      "consumer": "checker",
+      "kind": "raw-name",
+      "line": 12768,
+      "name": "push",
+      "path": "src/semantic_checker.cpp",
+      "source": "(statement.b == \"push\" ||"
+    },
+    {
+      "consumer": "checker",
+      "kind": "raw-name",
+      "line": 12769,
+      "name": "insert",
+      "path": "src/semantic_checker.cpp",
+      "source": "(staged_abi_v10() && statement.b == \"insert\")) &&"
+    },
+    {
+      "consumer": "checker",
+      "kind": "raw-binding-name",
+      "line": 12779,
+      "path": "src/semantic_checker.cpp",
+      "slot": "a",
+      "source": "if (prior.a == statement.a &&"
+    },
+    {
+      "consumer": "checker",
+      "kind": "raw-binding-name",
+      "line": 13053,
+      "path": "src/semantic_checker.cpp",
+      "slot": "a",
+      "source": "candidate.a != name ||"
+    },
+    {
+      "consumer": "checker",
+      "kind": "raw-name",
+      "line": 13966,
+      "name": "push",
+      "path": "src/semantic_checker.cpp",
+      "source": "(statement.b == \"push\" ||"
+    },
+    {
+      "consumer": "checker",
+      "kind": "raw-name",
+      "line": 13967,
+      "name": "insert",
+      "path": "src/semantic_checker.cpp",
+      "source": "(staged_abi_v10() && statement.b == \"insert\")) &&"
+    },
+    {
+      "consumer": "checker",
+      "kind": "raw-name",
+      "line": 14246,
+      "name": "invoke",
+      "path": "src/semantic_checker.cpp",
+      "source": "if (statement.kind == Stmt::Kind::Call && statement.b == \"invoke\" &&"
+    },
+    {
+      "consumer": "checker",
+      "kind": "raw-name",
+      "line": 14523,
+      "name": "invoke",
+      "path": "src/semantic_checker.cpp",
+      "source": "if (statement.kind == Stmt::Kind::Call && statement.b == \"invoke\" &&"
+    },
+    {
+      "consumer": "checker",
+      "kind": "raw-name",
+      "line": 18381,
+      "name": "consume",
+      "path": "src/semantic_checker.cpp",
+      "source": "statement.b == \"consume\" ? Effect::Consume : Effect::Read);"
+    },
+    {
+      "consumer": "checker",
+      "kind": "raw-binding-name",
+      "line": 19851,
+      "path": "src/semantic_checker.cpp",
+      "slot": "a",
+      "source": "statement.a == selected_binding) {"
+    },
+    {
+      "consumer": "checker",
+      "kind": "raw-binding-name",
+      "line": 19938,
+      "path": "src/semantic_checker.cpp",
+      "slot": "a",
+      "source": "if (statement.a == selected_binding) selected_binding.clear();"
+    },
+    {
+      "consumer": "checker",
+      "kind": "raw-name",
+      "line": 20901,
+      "name": "push",
+      "path": "src/semantic_checker.cpp",
+      "source": "bool mutating = s.b == \"push\" || s.b == \"pop\" || s.b == \"pop_front\";"
+    },
+    {
+      "consumer": "checker",
+      "kind": "raw-name",
+      "line": 20901,
+      "name": "pop",
+      "path": "src/semantic_checker.cpp",
+      "source": "bool mutating = s.b == \"push\" || s.b == \"pop\" || s.b == \"pop_front\";"
+    },
+    {
+      "consumer": "checker",
+      "kind": "raw-name",
+      "line": 20901,
+      "name": "pop_front",
+      "path": "src/semantic_checker.cpp",
+      "source": "bool mutating = s.b == \"push\" || s.b == \"pop\" || s.b == \"pop_front\";"
+    },
+    {
+      "consumer": "checker",
+      "kind": "raw-name",
+      "line": 21069,
+      "name": "push",
+      "path": "src/semantic_checker.cpp",
+      "source": "bool mutating = statement.b == \"push\" || statement.b == \"pop\" || statement.b == \"pop_front\";"
+    },
+    {
+      "consumer": "checker",
+      "kind": "raw-name",
+      "line": 21069,
+      "name": "pop",
+      "path": "src/semantic_checker.cpp",
+      "source": "bool mutating = statement.b == \"push\" || statement.b == \"pop\" || statement.b == \"pop_front\";"
+    },
+    {
+      "consumer": "checker",
+      "kind": "raw-name",
+      "line": 21069,
+      "name": "pop_front",
+      "path": "src/semantic_checker.cpp",
+      "source": "bool mutating = statement.b == \"push\" || statement.b == \"pop\" || statement.b == \"pop_front\";"
+    },
+    {
+      "consumer": "checker",
+      "kind": "raw-name",
+      "line": 21070,
+      "name": "pop",
+      "path": "src/semantic_checker.cpp",
+      "source": "if (statement.b == \"pop\" || statement.b == \"pop_front\") {"
+    },
+    {
+      "consumer": "checker",
+      "kind": "raw-name",
+      "line": 21070,
+      "name": "pop_front",
+      "path": "src/semantic_checker.cpp",
+      "source": "if (statement.b == \"pop\" || statement.b == \"pop_front\") {"
+    },
+    {
+      "consumer": "checker",
+      "kind": "raw-name",
+      "line": 22679,
+      "name": "consume",
+      "path": "src/semantic_checker.cpp",
+      "source": "bool consuming = s.b == \"consume\";"
+    },
+    {
+      "consumer": "checker",
+      "kind": "raw-name",
+      "line": 23158,
+      "name": "push",
+      "path": "src/semantic_checker.cpp",
+      "source": "if (s.b == \"push\" && s.args.size() == 1) {"
+    },
+    {
+      "consumer": "checker",
+      "kind": "raw-binding-name",
+      "line": 24669,
+      "path": "src/semantic_checker.cpp",
+      "slot": "a",
+      "source": "statement.b.empty() && statement.a == name &&"
+    },
+    {
+      "consumer": "checker",
+      "kind": "raw-name",
+      "line": 28703,
+      "name": "assert",
+      "path": "src/semantic_checker.cpp",
+      "source": "const bool delayed_assert_check = statement.a == \"assert\" &&"
+    },
+    {
+      "consumer": "checker",
+      "kind": "raw-name",
+      "line": 28748,
+      "name": "sort",
+      "path": "src/semantic_checker.cpp",
+      "source": "const bool sort_builtin = statement.b.empty() && statement.a == \"sort\" &&"
+    },
+    {
+      "consumer": "checker",
+      "kind": "raw-name",
+      "line": 28785,
+      "name": "assert",
+      "path": "src/semantic_checker.cpp",
+      "source": "if (statement.b.empty() && statement.a == \"assert\" &&"
+    },
+    {
+      "consumer": "checker",
+      "kind": "raw-name",
+      "line": 28870,
+      "name": "pass",
+      "path": "src/semantic_checker.cpp",
+      "source": "tree_plain_identifier(statement.text) && statement.text != \"pass\")"
+    },
+    {
+      "consumer": "checker",
+      "kind": "raw-binding-name",
+      "line": 29469,
+      "path": "src/semantic_checker.cpp",
+      "slot": "a",
+      "source": "prior.a == name) {"
+    },
+    {
+      "consumer": "checker",
+      "kind": "raw-name",
+      "line": 859,
+      "name": "FileIO",
+      "path": "src/fileio_semantics.inc",
+      "source": "(statement.a == \"FileIO\" ||"
+    },
+    {
+      "consumer": "checker",
+      "kind": "raw-name",
+      "line": 324,
+      "name": "invoke",
+      "path": "src/executor_invoke_lowering.inc",
+      "source": "if (statement.b == \"invoke\") {"
+    },
+    {
+      "consumer": "checker",
+      "kind": "raw-name",
+      "line": 328,
+      "name": "join",
+      "path": "src/executor_invoke_lowering.inc",
+      "source": "if (statement.b == \"join\") {"
+    },
+    {
+      "consumer": "checker",
+      "kind": "raw-name",
+      "line": 521,
+      "name": "invoke",
+      "path": "src/executor_invoke_lowering.inc",
+      "source": "(statement.b == \"invoke\" || statement.b == \"join\")) {"
+    },
+    {
+      "consumer": "checker",
+      "kind": "raw-name",
+      "line": 521,
+      "name": "join",
+      "path": "src/executor_invoke_lowering.inc",
+      "source": "(statement.b == \"invoke\" || statement.b == \"join\")) {"
+    },
+    {
+      "consumer": "checker",
+      "kind": "raw-name",
+      "line": 534,
+      "name": "join",
+      "path": "src/executor_invoke_lowering.inc",
+      "source": "if (statement.b == \"join\")"
+    },
+    {
+      "consumer": "emitter",
+      "kind": "raw-name",
+      "line": 5980,
+      "name": "consume",
+      "path": "src/native_generator.cpp",
+      "source": "if (s.b != \"consume\" && !recovery_slot) o << \"&\";"
+    },
+    {
+      "consumer": "emitter",
+      "kind": "raw-name",
+      "line": 5982,
+      "name": "consume",
+      "path": "src/native_generator.cpp",
+      "source": "if (recovery_slot && s.b == \"consume\")"
+    },
+    {
+      "consumer": "emitter",
+      "kind": "raw-name",
+      "line": 6026,
+      "name": "consume",
+      "path": "src/native_generator.cpp",
+      "source": "if (s.b != \"consume\") {"
+    },
+    {
+      "consumer": "emitter",
+      "kind": "raw-name",
+      "line": 6335,
+      "name": "_",
+      "path": "src/native_generator.cpp",
+      "source": "if (s.a == \"_\") {"
+    },
+    {
+      "consumer": "emitter",
+      "kind": "raw-name",
+      "line": 6600,
+      "name": "delete",
+      "path": "src/native_generator.cpp",
+      "source": "(s.b == \"delete\" && (statement_receiver_type == \"map\" ||"
+    },
+    {
+      "consumer": "emitter",
+      "kind": "raw-name",
+      "line": 6612,
+      "name": "assert",
+      "path": "src/native_generator.cpp",
+      "source": "if (s.b.empty() && s.a == \"assert\") {"
+    },
+    {
+      "consumer": "emitter",
+      "kind": "raw-name",
+      "line": 6625,
+      "name": "assertEqual",
+      "path": "src/native_generator.cpp",
+      "source": "if (s.b.empty() && s.a == \"assertEqual\") {"
+    },
+    {
+      "consumer": "emitter",
+      "kind": "raw-name",
+      "line": 6655,
+      "name": "sort",
+      "path": "src/native_generator.cpp",
+      "source": "if (s.b.empty() && s.a == \"sort\" && !functions_.count(s.a) &&"
+    },
+    {
+      "consumer": "emitter",
+      "kind": "raw-name",
+      "line": 6854,
+      "name": "pop",
+      "path": "src/native_generator.cpp",
+      "source": "if (!s.b.empty() && s.b == \"pop\" && receiver_type &&"
+    },
+    {
+      "consumer": "emitter",
+      "kind": "raw-name",
+      "line": 70,
+      "name": "write",
+      "path": "src/file_chunk_codegen.inc",
+      "source": "if (s.b == \"write\" && s.args.size() == 2) {"
+    },
+    {
+      "consumer": "emitter",
+      "kind": "raw-name",
+      "line": 80,
+      "name": "open",
+      "path": "src/file_chunk_codegen.inc",
+      "source": "if (s.b == \"open\" && s.args.size() == 2) {"
+    },
+    {
+      "consumer": "emitter",
+      "kind": "raw-name",
+      "line": 90,
+      "name": "sync",
+      "path": "src/file_chunk_codegen.inc",
+      "source": "if (s.b == \"sync\" && s.args.size() <= 1) {"
+    },
+    {
+      "consumer": "emitter",
+      "kind": "raw-name",
+      "line": 101,
+      "name": "close",
+      "path": "src/file_chunk_codegen.inc",
+      "source": "if (s.b == \"close\" && s.args.empty()) {"
+    }
+  ],
+  "raw_name_counts": {
+    "checker/FileIO": 1,
+    "checker/assert": 2,
+    "checker/consume": 2,
+    "checker/insert": 2,
+    "checker/invoke": 4,
+    "checker/join": 3,
+    "checker/pass": 1,
+    "checker/pop": 3,
+    "checker/pop_front": 3,
+    "checker/push": 5,
+    "checker/sort": 1,
+    "emitter/_": 1,
+    "emitter/assert": 1,
+    "emitter/assertEqual": 1,
+    "emitter/close": 1,
+    "emitter/consume": 3,
+    "emitter/delete": 1,
+    "emitter/invoke": 1,
+    "emitter/join": 1,
+    "emitter/open": 1,
+    "emitter/pop": 1,
+    "emitter/sort": 1,
+    "emitter/sync": 1,
+    "emitter/write": 1
+  },
+  "scope_files": [
+    "src/executor_invoke_codegen.inc",
+    "src/semantic_checker.cpp",
+    "src/fileio_semantics.inc",
+    "src/file_chunk_lowering.inc",
+    "src/executor_invoke_lowering.inc",
+    "src/static_bounds.inc",
+    "src/borrowed_views.inc",
+    "src/native_generator.cpp",
+    "src/file_chunk_codegen.inc",
+    "src/handler_lowering.inc"
+  ],
+  "source_sha256": {
+    "src/borrowed_views.inc": "339b73042cb5a841f06565cbde771635e98339f53dcbf9450af878d7e5fe8480",
+    "src/executor_invoke_codegen.inc": "a8481db6bc339bf429421fabe491cf45be3dd271d91a19db8bdb8f11dc526f97",
+    "src/executor_invoke_lowering.inc": "9410adbafb110bb8cacdd508ecf6dba1e5241ab0149485f3238061e46f9d2607",
+    "src/file_chunk_codegen.inc": "30b29209b4f2974cc147647d0edfb5fd056145d7aa93305252761e2b40fed92a",
+    "src/file_chunk_lowering.inc": "8156bc261eff8a06c78c6d38bb9016a5ed7db0fe504b657e41cb6686475d7838",
+    "src/fileio_semantics.inc": "e05d06027b237ecfa52e47501823b4070484651429187fba8a119338cbf0da7a",
+    "src/handler_lowering.inc": "0d1f8a57cb6331effbfe28bfb324a297b6d952d08b571fa96a0a39e65517583e",
+    "src/native_generator.cpp": "59456aa40d1fd4c286139db68d64435c07f8a849240f8cc50a3e19ad06b841b7",
+    "src/semantic_checker.cpp": "228807e9c83ba8d969eb5881e3995e9483454bcad01e20530baaa5f226c2f213",
+    "src/static_bounds.inc": "0415de4e829cec0c32b3526168910adfbfeec6fd1cb259a51c0b84619e0b83e1"
+  },
+  "stmt_field_empty_presence_tests": [
+    {
+      "consumer": "checker",
+      "line": 5415,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (source.a.empty()) return std::nullopt;"
+    },
+    {
+      "consumer": "checker",
+      "line": 9299,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (s.kind == Stmt::Kind::Return && !s.a.empty()) {"
+    },
+    {
+      "consumer": "checker",
+      "line": 9325,
+      "path": "src/semantic_checker.cpp",
+      "source": "return statement.kind == Stmt::Kind::Return && !statement.a.empty();"
+    },
+    {
+      "consumer": "checker",
+      "line": 12325,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (statement.kind == Stmt::Kind::Return && !statement.a.empty() &&"
+    },
+    {
+      "consumer": "checker",
+      "line": 12767,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (statement.kind == Stmt::Kind::Call && !statement.b.empty() &&"
+    },
+    {
+      "consumer": "checker",
+      "line": 13226,
+      "path": "src/semantic_checker.cpp",
+      "source": "!statement.b.empty()) {"
+    },
+    {
+      "consumer": "checker",
+      "line": 13856,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (statement.kind == Stmt::Kind::Call && statement.b.empty()) {"
+    },
+    {
+      "consumer": "checker",
+      "line": 14105,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (closed.size() == 1 && !checked_statement.b.empty()) {"
+    },
+    {
+      "consumer": "checker",
+      "line": 14270,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (statement.kind == Stmt::Kind::Call && statement.b.empty()) {"
+    },
+    {
+      "consumer": "checker",
+      "line": 14299,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (!statement.a.empty())"
+    },
+    {
+      "consumer": "checker",
+      "line": 15296,
+      "path": "src/semantic_checker.cpp",
+      "source": "for (const auto& s : function.body) if (s.kind == Stmt::Kind::Return && !s.a.empty()) mark(s.a);"
+    },
+    {
+      "consumer": "checker",
+      "line": 15326,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (s.kind == Stmt::Kind::Return && !s.a.empty())"
+    },
+    {
+      "consumer": "checker",
+      "line": 15500,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (statement.kind == Stmt::Kind::Return && !statement.a.empty()) {"
+    },
+    {
+      "consumer": "checker",
+      "line": 15551,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (statement.kind != Stmt::Kind::Return || statement.a.empty()) continue;"
+    },
+    {
+      "consumer": "checker",
+      "line": 15706,
+      "path": "src/semantic_checker.cpp",
+      "source": "return statement.kind == Stmt::Kind::Return && !statement.a.empty();"
+    },
+    {
+      "consumer": "checker",
+      "line": 18556,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (!statement.b.empty())"
+    },
+    {
+      "consumer": "checker",
+      "line": 18600,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (!statement.a.empty())"
+    },
+    {
+      "consumer": "checker",
+      "line": 18606,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (!statement.a.empty())"
+    },
+    {
+      "consumer": "checker",
+      "line": 19020,
+      "path": "src/semantic_checker.cpp",
+      "source": "expressions.push_back(!statement.text.empty()"
+    },
+    {
+      "consumer": "checker",
+      "line": 19022,
+      "path": "src/semantic_checker.cpp",
+      "source": ": !statement.b.empty()"
+    },
+    {
+      "consumer": "checker",
+      "line": 19045,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (!statement.a.empty()) expressions.push_back(statement.a);"
+    },
+    {
+      "consumer": "checker",
+      "line": 19089,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (!statement.a.empty()) expressions.push_back(statement.a);"
+    },
+    {
+      "consumer": "checker",
+      "line": 19842,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (statement.a.empty()) {"
+    },
+    {
+      "consumer": "checker",
+      "line": 20899,
+      "path": "src/semantic_checker.cpp",
+      "source": "} else if (s.kind == Stmt::Kind::Call && !s.b.empty()) {"
+    },
+    {
+      "consumer": "checker",
+      "line": 21067,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (statement.kind == Stmt::Kind::Call && !statement.b.empty()) {"
+    },
+    {
+      "consumer": "checker",
+      "line": 22598,
+      "path": "src/semantic_checker.cpp",
+      "source": "alternatives = statement.a.empty()"
+    },
+    {
+      "consumer": "checker",
+      "line": 23149,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (!s.b.empty())"
+    },
+    {
+      "consumer": "checker",
+      "line": 23200,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (!s.a.empty()) check_ownership_expression(s.line, s.a, env, Effect::Consume);"
+    },
+    {
+      "consumer": "checker",
+      "line": 23206,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (!s.a.empty())"
+    },
+    {
+      "consumer": "checker",
+      "line": 24669,
+      "path": "src/semantic_checker.cpp",
+      "source": "statement.b.empty() && statement.a == name &&"
+    },
+    {
+      "consumer": "checker",
+      "line": 24712,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (requirements.size() == 1 && !statement.b.empty()) {"
+    },
+    {
+      "consumer": "checker",
+      "line": 28519,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (!statement.a.empty())"
+    },
+    {
+      "consumer": "checker",
+      "line": 28611,
+      "path": "src/semantic_checker.cpp",
+      "source": "statement.b.empty()) {"
+    },
+    {
+      "consumer": "checker",
+      "line": 28614,
+      "path": "src/semantic_checker.cpp",
+      "source": "statement.b.empty()"
+    },
+    {
+      "consumer": "checker",
+      "line": 28617,
+      "path": "src/semantic_checker.cpp",
+      "source": "statement.text.empty() ? statement.a : statement.text);"
+    },
+    {
+      "consumer": "checker",
+      "line": 28634,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (!statement.b.empty()) {"
+    },
+    {
+      "consumer": "checker",
+      "line": 28729,
+      "path": "src/semantic_checker.cpp",
+      "source": "statement.text.empty() ? statement.a : statement.text,"
+    },
+    {
+      "consumer": "checker",
+      "line": 28734,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (!statement.b.empty()) {"
+    },
+    {
+      "consumer": "checker",
+      "line": 28748,
+      "path": "src/semantic_checker.cpp",
+      "source": "const bool sort_builtin = statement.b.empty() && statement.a == \"sort\" &&"
+    },
+    {
+      "consumer": "checker",
+      "line": 28769,
+      "path": "src/semantic_checker.cpp",
+      "source": "const auto occurrence_slot = statement.b.empty()"
+    },
+    {
+      "consumer": "checker",
+      "line": 28779,
+      "path": "src/semantic_checker.cpp",
+      "source": "statement.b.empty()) {"
+    },
+    {
+      "consumer": "checker",
+      "line": 28785,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (statement.b.empty() && statement.a == \"assert\" &&"
+    },
+    {
+      "consumer": "checker",
+      "line": 28919,
+      "path": "src/semantic_checker.cpp",
+      "source": "!statement.a.empty())"
+    },
+    {
+      "consumer": "checker",
+      "line": 28922,
+      "path": "src/semantic_checker.cpp",
+      "source": "!current_function && !statement.a.empty())"
+    },
+    {
+      "consumer": "checker",
+      "line": 28925,
+      "path": "src/semantic_checker.cpp",
+      "source": "!statement.a.empty()) {"
+    },
+    {
+      "consumer": "checker",
+      "line": 30990,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (!statement.b.empty()) {"
+    },
+    {
+      "consumer": "checker",
+      "line": 31000,
+      "path": "src/semantic_checker.cpp",
+      "source": "const string role = statement.b.empty()"
+    },
+    {
+      "consumer": "checker",
+      "line": 31019,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (statement.a.empty()) {"
+    },
+    {
+      "consumer": "checker",
+      "line": 31038,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (!statement.a.empty()) require_root(statement, \"reply-value\");"
+    },
+    {
+      "consumer": "checker",
+      "line": 31041,
+      "path": "src/semantic_checker.cpp",
+      "source": "if (!statement.a.empty()) require_root(statement, \"return-value\");"
+    },
+    {
+      "consumer": "checker",
+      "line": 721,
+      "path": "src/fileio_semantics.inc",
+      "source": "if (s.kind == Stmt::Kind::Call && s.b.empty() && call_name) {"
+    },
+    {
+      "consumer": "checker",
+      "line": 848,
+      "path": "src/fileio_semantics.inc",
+      "source": "if (statement.b.empty()) {"
+    },
+    {
+      "consumer": "emitter",
+      "line": 415,
+      "path": "src/native_generator.cpp",
+      "source": "if (statement.kind == Stmt::Kind::Call && statement.text.empty()) {"
+    },
+    {
+      "consumer": "emitter",
+      "line": 417,
+      "path": "src/native_generator.cpp",
+      "source": "if (!statement.b.empty()) call += \".\" + statement.b;"
+    },
+    {
+      "consumer": "emitter",
+      "line": 5872,
+      "path": "src/native_generator.cpp",
+      "source": "if (s.a.empty()) {"
+    },
+    {
+      "consumer": "emitter",
+      "line": 6589,
+      "path": "src/native_generator.cpp",
+      "source": "string statement_receiver_type = !s.b.empty()"
+    },
+    {
+      "consumer": "emitter",
+      "line": 6591,
+      "path": "src/native_generator.cpp",
+      "source": "if (!s.b.empty() &&"
+    },
+    {
+      "consumer": "emitter",
+      "line": 6612,
+      "path": "src/native_generator.cpp",
+      "source": "if (s.b.empty() && s.a == \"assert\") {"
+    },
+    {
+      "consumer": "emitter",
+      "line": 6625,
+      "path": "src/native_generator.cpp",
+      "source": "if (s.b.empty() && s.a == \"assertEqual\") {"
+    },
+    {
+      "consumer": "emitter",
+      "line": 6655,
+      "path": "src/native_generator.cpp",
+      "source": "if (s.b.empty() && s.a == \"sort\" && !functions_.count(s.a) &&"
+    },
+    {
+      "consumer": "emitter",
+      "line": 6670,
+      "path": "src/native_generator.cpp",
+      "source": "if (s.b.empty() && known_function && !benchmark_body_) {"
+    },
+    {
+      "consumer": "emitter",
+      "line": 6679,
+      "path": "src/native_generator.cpp",
+      "source": "s.b.empty() && !known_function;"
+    },
+    {
+      "consumer": "emitter",
+      "line": 6682,
+      "path": "src/native_generator.cpp",
+      "source": ": !s.b.empty() ? generated_expr_type(s.a, &types)"
+    },
+    {
+      "consumer": "emitter",
+      "line": 6685,
+      "path": "src/native_generator.cpp",
+      "source": "if (call_receiver_type && (!s.b.empty() || implicit_method))"
+    },
+    {
+      "consumer": "emitter",
+      "line": 6712,
+      "path": "src/native_generator.cpp",
+      "source": "if (!s.b.empty()) {"
+    },
+    {
+      "consumer": "emitter",
+      "line": 6747,
+      "path": "src/native_generator.cpp",
+      "source": "(s.b.empty() && known_function"
+    },
+    {
+      "consumer": "emitter",
+      "line": 6749,
+      "path": "src/native_generator.cpp",
+      "source": ": !s.b.empty() ? method_receiver_place(s.a, s.b, s.args, d, locals, &types)"
+    },
+    {
+      "consumer": "emitter",
+      "line": 6754,
+      "path": "src/native_generator.cpp",
+      "source": "if (!s.b.empty()) {"
+    },
+    {
+      "consumer": "emitter",
+      "line": 6778,
+      "path": "src/native_generator.cpp",
+      "source": "} else if (!s.b.empty() || implicit_method) {"
+    },
+    {
+      "consumer": "emitter",
+      "line": 6852,
+      "path": "src/native_generator.cpp",
+      "source": "auto receiver_type = !s.b.empty()"
+    },
+    {
+      "consumer": "emitter",
+      "line": 6854,
+      "path": "src/native_generator.cpp",
+      "source": "if (!s.b.empty() && s.b == \"pop\" && receiver_type &&"
+    },
+    {
+      "consumer": "emitter",
+      "line": 7002,
+      "path": "src/native_generator.cpp",
+      "source": "if (in_function && !s.a.empty()) {"
+    }
+  ],
+  "tree_expression_text_hits": [],
+  "tree_helper_callsite_lexical_counts": {
+    "tree_decimal_integer_literal": 5,
+    "tree_empty_constructor_named": 18,
+    "tree_empty_string_literal": 3,
+    "tree_empty_typed_vector_constructor": 10,
+    "tree_empty_vector_literal": 6,
+    "tree_expression_mentions_identifier": 13,
+    "tree_expressions_equal": 5,
+    "tree_expressions_structurally_equal": 11,
+    "tree_generated_binary": 16,
+    "tree_identifier_name": 47,
+    "tree_identifier_named": 50,
+    "tree_index_expression": 2,
+    "tree_is_fileio_open": 2,
+    "tree_literal_class": 19,
+    "tree_member_access": 5,
+    "tree_member_path": 3,
+    "tree_named_argument_separator": 3,
+    "tree_normalize_pipeline": 14,
+    "tree_numeric_literal_value": 7,
+    "tree_outer_grouping": 4,
+    "tree_parse_bound_method_callable": 12,
+    "tree_parse_enum_case_expression": 11,
+    "tree_parse_executor_chain": 5,
+    "tree_parse_fileio_chunks_source": 4,
+    "tree_parse_fileio_open": 7,
+    "tree_parse_index": 37,
+    "tree_parse_member_access": 17,
+    "tree_parse_member_call": 40,
+    "tree_parse_message": 12,
+    "tree_parse_named_argument": 45,
+    "tree_parse_simple_call": 75,
+    "tree_parse_tuple_elements": 2,
+    "tree_parse_unary": 31,
+    "tree_parse_vector_literal": 25,
+    "tree_placeholder_expression": 7,
+    "tree_plain_identifier": 44,
+    "tree_positive_decimal_integer_literal": 2,
+    "tree_root_identifier": 8,
+    "tree_root_member_access_named": 2,
+    "tree_simple_identifier": 36,
+    "tree_split_binary": 61,
+    "tree_split_top_level": 7,
+    "tree_strip_expression_grouping": 10,
+    "tree_strip_expression_parens": 6,
+    "tree_strip_redundant_outer_parentheses": 17,
+    "tree_tuple_elements": 2
+  }
+}
