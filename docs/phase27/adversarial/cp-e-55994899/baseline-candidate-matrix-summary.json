@@ -1,0 +1,23 @@
+{
+  "baseline_sha256": "4a334c71d9b5ea5b2925c311f7a462abd046e479fc4b52df4c0453e612ceb286",
+  "baseline_commit": "04be1a1bbbc7a4fd8fe2e4090b4b5bad5dd573e4",
+  "candidate_commit": "55994899539532c763d6489b16b859f419b12205",
+  "listed_sources": 2225,
+  "available_sources": 2225,
+  "missing_sources": 0,
+  "verdict_differences": 0,
+  "diagnostic_differences": 2,
+  "checked_id_closure_differences": 0,
+  "trace_completion_differences": 0,
+  "baseline_complete_traces": 661,
+  "candidate_complete_traces": 661,
+  "available_sources_sha256": "d559a2e82dcf3c98d5563601aa6a7a101fde340d6132a3839a3ab8e219a07c7b",
+  "matrix_sha256": "81f942f1ce4d9d0c9a7d1d9e3119fa68e645722dd94cb284ff34cda86b8c1ded",
+  "verdict_difference_sources": [],
+  "diagnostic_difference_sources": [
+    "sdk/advanced-data-acceptance/fixtures/source_free_consumer.moss",
+    "tests/phase27/adversarial/cp-e-phase27-3-22a9709a/source_free_consumer.moss"
+  ],
+  "closure_difference_sources": [],
+  "trace_completion_difference_sources": []
+}
