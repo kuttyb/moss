@@ -1,0 +1,35 @@
+{
+  "classification": "BENIGN",
+  "basis": "The only added row failure is a contextless standalone source-free diagnostic-code difference already independently adjudicated by CP-E; package-context checks pass on both revisions. No reach edge, checked declaration, or trace completeness changed.",
+  "fixture": "sdk/advanced-data-acceptance/fixtures/source_free_consumer.moss",
+  "comparison": "Phase 27.2 own off-vs-shadow compared with Phase 27.2-off vs Phase 27.3-shadow on the same 2,198-entry corpus",
+  "phase27_2_failure_rows": 160,
+  "phase27_3_failure_rows": 161,
+  "phase27_2_json_sha256": "b5b3bfe698c26dd64e3d3c89939186902a38cf1f9dcbf25f85b86db94db57385",
+  "phase27_3_json_sha256": "4a4d93ac6fc4fd60838076d658a4e83b3d32405b2371cd3961f4d22b1634b3c2",
+  "preexisting_rows_match_after_dropping_single_new_verdict_delta": true,
+  "tree_edges_checked_trace_differences": [],
+  "new_diagnostic_delta": [
+    {
+      "entry": "sdk/advanced-data-acceptance/fixtures/source_free_consumer.moss",
+      "field": "tree_verdict",
+      "phase27_2": [
+        false,
+        "RECOVERY_PATTERN_REQUIRES_VARIANT",
+        57
+      ],
+      "phase27_3": [
+        false,
+        "UNKNOWN_ERROR_TYPE",
+        57
+      ]
+    }
+  ],
+  "exact_pinned_phase27_1_run": {
+    "baseline_binary_sha256": "4a9d7d7509f9883194f2d3f147c4ff66c39e9c832e758ddffdd7572d57667ffd",
+    "entries": 2198,
+    "failure_rows": 391,
+    "sha256": "6d66827f79ce4476bfcee482236711751a3f23fb25242bf6bb48dbd0ce321d50",
+    "role": "historical diagnostic only; L7 directs acceptance comparison against Phase 27.2 own off-vs-shadow result"
+  }
+}
