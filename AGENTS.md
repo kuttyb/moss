@@ -185,7 +185,7 @@ When working with Moss:
   For Phase 27 work on `phase27-work` and `phase27-*` slice branches, the user
   authorized scoped local commits and normal pushes to the configured remote;
   no PR is in scope. This authorization includes the Phase 27.3 expression-tree
-  migration on `phase27-3-work`. No repository-level no-push restriction applies
+  migration on `phase27-3-work`.
   to these branches.
   Keep each task on its scoped branch; do not merge directly to `main` unless
   the user explicitly directs that merge. Do not force-push or rewrite
