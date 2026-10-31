@@ -1,0 +1,4 @@
+baseline-off: Compiled-only advanced-data gate passed: ABI-9 debug: 5 Team A modules, 14 current source-backed provider interfaces
+baseline-shadow: Compiled-only advanced-data gate passed: ABI-9 debug: 5 Team A modules, 14 current source-backed provider interfaces
+candidate-off: Compiled-only advanced-data gate passed: ABI-9 debug: 5 Team A modules, 14 current source-backed provider interfaces
+candidate-shadow: Compiled-only advanced-data gate passed: ABI-9 debug: 5 Team A modules, 14 current source-backed provider interfaces

@@ -1,0 +1,7 @@
+incomplete_binary.moss
+incomplete_call.moss
+incomplete_member.moss
+incomplete_vector.moss
+invalid_statement_expression.moss
+unsupported_operator.moss
+valid_grouped_index.moss

@@ -1,0 +1,7 @@
+fn identity(value):
+  return value
+
+fn main():
+  values = [1, 2, 3]
+  selected = identity((values[1]))
+  echo selected
