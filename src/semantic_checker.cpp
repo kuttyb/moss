@@ -347,6 +347,7 @@ struct CheckerEstViewCache {
     std::optional<std::pair<string, string>> member_projection;
     bool identifier_projection_attempted = false;
     std::unique_ptr<string> identifier_projection;
+    std::unordered_map<string, bool> identifier_use_projections;
     bool unary_projection_attempted = false;
     std::unique_ptr<std::pair<string, string>> unary_projection;
     bool enum_case_projection_attempted = false;
@@ -361,6 +362,7 @@ struct CheckerEstViewCache {
   uint64_t hits = 0, misses = 0, after_cap = 0;
   uint64_t projection_hits = 0, projection_misses = 0;
   uint64_t identifier_hits = 0, identifier_misses = 0;
+  uint64_t identifier_use_hits = 0, identifier_use_misses = 0;
   uint64_t pipeline_normalization_hits = 0, pipeline_normalization_misses = 0;
 };
 thread_local CheckerEstViewCache checker_est_view_cache;
@@ -382,6 +384,8 @@ void reset_checker_est_view_cache() {
   checker_est_view_cache.projection_misses = 0;
   checker_est_view_cache.identifier_hits = 0;
   checker_est_view_cache.identifier_misses = 0;
+  checker_est_view_cache.identifier_use_hits = 0;
+  checker_est_view_cache.identifier_use_misses = 0;
   checker_est_view_cache.pipeline_normalization_hits = 0;
   checker_est_view_cache.pipeline_normalization_misses = 0;
 }
@@ -1963,6 +1967,10 @@ class Checker {
                   << checker_est_view_cache.identifier_hits << '\n';
         std::cerr << "MOSS_PROFILE|est_identifier_cache_misses|"
                   << checker_est_view_cache.identifier_misses << '\n';
+        std::cerr << "MOSS_PROFILE|est_identifier_use_cache_hits|"
+                  << checker_est_view_cache.identifier_use_hits << '\n';
+        std::cerr << "MOSS_PROFILE|est_identifier_use_cache_misses|"
+                  << checker_est_view_cache.identifier_use_misses << '\n';
         std::cerr << "MOSS_PROFILE|est_pipeline_normalization_hits|"
                   << checker_est_view_cache.pipeline_normalization_hits << '\n';
         std::cerr << "MOSS_PROFILE|est_pipeline_normalization_misses|"
@@ -10826,7 +10834,28 @@ class Checker {
 
   static bool expression_uses(const string& expression, const string& name) {
     auto syntax = checker_est_view(expression);
-    bool tree = syntax && moss::est::contains_identifier(*syntax, name);
+    auto* cached = checker_est_view_entry(expression);
+    bool tree = false;
+    if (cached) {
+      auto found = cached->identifier_use_projections.find(name);
+      if (found != cached->identifier_use_projections.end()) {
+        ++checker_est_view_cache.identifier_use_hits;
+        tree = found->second;
+      } else {
+        ++checker_est_view_cache.identifier_use_misses;
+        tree = syntax && moss::est::contains_identifier(*syntax, name);
+        // Expression syntax is immutable. Repeated specialization checks ask
+        // the same occurrence whether it uses the same lexical names; retain
+        // a small bounded projection cache beside the parsed view.
+        constexpr size_t kMaxIdentifierUseProjections = 64;
+        if (cached->identifier_use_projections.size() <
+            kMaxIdentifierUseProjections)
+          cached->identifier_use_projections.emplace(name, tree);
+      }
+    } else {
+      ++checker_est_view_cache.identifier_use_misses;
+      tree = syntax && moss::est::contains_identifier(*syntax, name);
+    }
     if (!syntax) {
       // Callable-parameter invocations with named arguments are rejected by
       // the checker, but their individual argument fragments still flow
@@ -10842,7 +10871,29 @@ class Checker {
       if (children && children->size() > 1)
         for (const auto& child : *children) {
           auto child_tree = checker_est_view(child);
-          tree |= child_tree && moss::est::contains_identifier(*child_tree, name);
+          auto* child_cached = checker_est_view_entry(child);
+          bool child_uses = false;
+          if (child_cached) {
+            auto found = child_cached->identifier_use_projections.find(name);
+            if (found != child_cached->identifier_use_projections.end()) {
+              ++checker_est_view_cache.identifier_use_hits;
+              child_uses = found->second;
+            } else {
+              ++checker_est_view_cache.identifier_use_misses;
+              child_uses = child_tree &&
+                  moss::est::contains_identifier(*child_tree, name);
+              constexpr size_t kMaxIdentifierUseProjections = 64;
+              if (child_cached->identifier_use_projections.size() <
+                  kMaxIdentifierUseProjections)
+                child_cached->identifier_use_projections.emplace(name,
+                                                                  child_uses);
+            }
+          } else {
+            ++checker_est_view_cache.identifier_use_misses;
+            child_uses = child_tree &&
+                moss::est::contains_identifier(*child_tree, name);
+          }
+          tree |= child_uses;
         }
     }
     if (moss::est::mode() == moss::est::Mode::Shadow) {
