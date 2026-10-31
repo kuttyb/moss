@@ -10,6 +10,16 @@ For all new multi-agent engineering Teams, follow [docs/AGENT_TEAM_OPERATING_MOD
 - Agent instructions specify acceptance invariants and PR scope, NOT mundane step-by-step test commands; repository CI/script automation owns the test commands and logs. Every failed/blocked gate must be shown accurately.
 - Maintain exclusive writer ownership of `src/moss.cpp` during integrations; no direct merge to `main`. Preserve `docs/AGENT_TEAM_EFFICIENCY.md` reporting without inventing usage or defects.
 
+## Semantic authority invariant
+
+One authority per static semantic decision; any number of executors.
+
+- Every statically determined Moss semantic decision (types, resolved targets, specialization, effects/ownership, optimizer proofs, lock requirements) has exactly one authoritative producer.
+- Optimizers, code generators, interpreters and other consumers may execute or mechanically lower a checked decision, but must never silently reconstruct a missing or contradictory one. Executing an operation (e.g. Fast Debug computing `a + b`) is allowed; re-deciding a static fact (e.g. choosing which `+` from runtime values) is not.
+- An optimizer may decline a transformation when a required proof is unavailable, but must not invent the proof.
+- New semantic features must name their authoritative facts and add CI coverage for each consumer boundary: a removal test (fail closed or decline) and a contradiction test (reject, or respond as specified for that decision class).
+- Fact access goes through typed accessors; fact reads are traceable in test builds. Read logs are coverage and diagnostics, not proof; removal and contradiction tests are the proof.
+
 ## Mandatory Session Startup
 
 Every agent session must execute the following startup sequence before inspecting or editing Moss code:
