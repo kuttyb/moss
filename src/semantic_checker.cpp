@@ -25660,65 +25660,6 @@ class Checker {
     return true;
   }
 
-  // Finds two operands separated only by whitespace at the top level of an
-  // expression (`foo bar`, `1 2`, `if c`), which no Moss expression form
-  // allows. Word operators and the `message` prefix are not operands.
-  static std::optional<std::pair<string, string>> juxtaposed_operands(const string& expression) {
-    // `in` keeps its dedicated UNSUPPORTED_EXPRESSION_OPERATOR diagnostic.
-    static const std::set<string> word_operators{"and", "or", "xor", "not", "message", "in"};
-    auto is_word = [](char c) { return moss::ascii_is_alnum(static_cast<unsigned char>(c)) || c == '_'; };
-    string previous;          // last top-level token when it ends an operand
-    bool previous_operand = false;
-    bool space = false;
-    int depth = 0;
-    for (size_t i = 0; i < expression.size();) {
-      char c = expression[i];
-      if (c == '"' || (c == '\'' && depth == 0)) {
-        size_t start = i;
-        char quote = c;
-        for (++i; i < expression.size() && expression[i] != quote; ++i)
-          if (expression[i] == '\\') ++i;
-        ++i;
-        if (depth == 0) {
-          if (previous_operand && space) return std::make_pair(previous, expression.substr(start, i - start));
-          previous = expression.substr(start, std::min(i, expression.size()) - start);
-          previous_operand = true;
-          space = false;
-        }
-        continue;
-      }
-      if (c == '(' || c == '[' || c == '{') {
-        // `data [0]` and `f (x)` are postfix index/call forms.
-        ++depth; ++i; continue;
-      }
-      if (c == ')' || c == ']' || c == '}') {
-        if (depth > 0) --depth;
-        ++i;
-        if (depth == 0) { previous = string(1, c); previous_operand = true; space = false; }
-        continue;
-      }
-      if (depth > 0) { ++i; continue; }
-      if (moss::ascii_is_space(static_cast<unsigned char>(c))) { space = true; ++i; continue; }
-      if (is_word(c)) {
-        size_t start = i;
-        while (i < expression.size() && (is_word(expression[i]) || expression[i] == '.' ||
-               ((expression[i] == '+' || expression[i] == '-') &&
-                moss::ascii_is_digit(static_cast<unsigned char>(expression[start])) &&
-                (expression[i - 1] == 'e' || expression[i - 1] == 'E'))))
-          ++i;
-        string word = expression.substr(start, i - start);
-        if (word_operators.count(word)) { previous_operand = false; space = false; continue; }
-        if (previous_operand && space) return std::make_pair(previous, word);
-        previous = word; previous_operand = true; space = false;
-        continue;
-      }
-      previous_operand = c == '.' && previous_operand;
-      space = false;
-      ++i;
-    }
-    return std::nullopt;
-  }
-
   void retain_open_operator_operation(
       int line, const string& operation_id, const string& left_expression,
       const string& right_expression,
@@ -26446,7 +26387,7 @@ class Checker {
     if (starts_with(original, "match "))
       err(line, "match is a statement, not an expression",
           "MATCH_EXPRESSION_UNSUPPORTED");
-    if (auto juxtaposed = juxtaposed_operands(original))
+    if (auto juxtaposed = est::juxtaposed_operands(original))
       err(line, "invalid expression '" + original + "': '" + juxtaposed->first +
           "' is followed by '" + juxtaposed->second +
           "' with no operator between them (if, while, and for are statements, not expressions)",

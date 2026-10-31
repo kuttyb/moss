@@ -46,6 +46,10 @@ def check_rejected_source_parity():
             ("MOSS_COMPILE_ERROR", "indentation jumps more than one block level", 3, 1),
         "incomplete_expression.moss":
             ("MOSS_COMPILE_ERROR", "invalid arithmetic expression", 2, 1),
+        "juxtaposed_operands.moss":
+            ("INVALID_EXPRESSION",
+             "invalid expression '2 3': '2' is followed by '3' with no operator between them (if, while, and for are statements, not expressions)",
+             2, 1),
     }
     for name, signature in expected.items():
         path = ROOT / "tests/phase27/est/repro" / name

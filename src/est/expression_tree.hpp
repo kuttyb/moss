@@ -278,6 +278,8 @@ enum class Mode { Off, Shadow };
 Mode mode();  // Rejects the reserved MOSS_EST=on setting.
 bool begins_with_keyword(std::string_view source, std::string_view keyword);
 bool leading_dot_member_call_fragment(std::string_view source);
+std::optional<std::pair<std::string, std::string>> juxtaposed_operands(
+    std::string_view source);
 bool has_rejected_if_else_fragment_shape(std::string_view source);
 ExprId parse_expression(Arena& arena, std::string_view source,
                         std::uint64_t origin_id = 0,

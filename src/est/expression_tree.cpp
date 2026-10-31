@@ -1037,6 +1037,75 @@ void compare_string_shape(const Arena& arena, ExprId id, std::string_view source
 }
 }  // namespace
 
+std::optional<std::pair<std::string, std::string>> juxtaposed_operands(
+    std::string_view source) {
+  static const std::set<std::string> word_operators{
+      "and", "or", "xor", "not", "message", "in"};
+  std::vector<Token> tokens;
+  try {
+    tokens = lex(source);
+  } catch (const std::invalid_argument&) {
+    return std::nullopt;
+  }
+  std::string previous;
+  bool previous_operand = false;
+  bool separated_by_space = false;
+  std::size_t previous_end = 0;
+  int depth = 0;
+  for (const auto& token : tokens) {
+    if (token.source_begin > previous_end) {
+      const auto gap = source.substr(previous_end,
+                                     token.source_begin - previous_end);
+      separated_by_space = std::any_of(gap.begin(), gap.end(), [](unsigned char c) {
+        return moss::ascii_is_space(c);
+      });
+    }
+    const auto& spelling = token.text;
+    if (spelling == "(" || spelling == "[" || spelling == "{") {
+      ++depth;
+      previous_end = token.source_end;
+      continue;
+    }
+    if (spelling == ")" || spelling == "]" || spelling == "}") {
+      if (depth > 0) --depth;
+      previous_end = token.source_end;
+      if (depth == 0) {
+        previous = spelling;
+        previous_operand = true;
+        separated_by_space = false;
+      }
+      continue;
+    }
+    if (depth > 0) {
+      previous_end = token.source_end;
+      continue;
+    }
+    if (token.word) {
+      if (word_operators.count(spelling)) {
+        previous_operand = false;
+        separated_by_space = false;
+      } else {
+        if (previous_operand && separated_by_space)
+          return std::make_pair(previous, spelling);
+        previous = spelling;
+        previous_operand = true;
+        separated_by_space = false;
+      }
+    } else if (token.literal) {
+      if (previous_operand && separated_by_space)
+        return std::make_pair(previous, spelling);
+      previous = spelling;
+      previous_operand = true;
+      separated_by_space = false;
+    } else {
+      previous_operand = spelling == "." && previous_operand;
+      separated_by_space = false;
+    }
+    previous_end = token.source_end;
+  }
+  return std::nullopt;
+}
+
 bool begins_with_keyword(std::string_view source, std::string_view keyword) {
   try {
     const auto prefix_length = std::min(source.size(), keyword.size() + 1);
