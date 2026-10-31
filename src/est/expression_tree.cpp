@@ -117,6 +117,13 @@ std::optional<ParsedFunctionalPipeline> functional_pipeline(
   return result;
 }
 
+bool leading_dot_member_call_fragment(std::string_view source) {
+  while (!source.empty() &&
+         std::isspace(static_cast<unsigned char>(source.front())))
+    source.remove_prefix(1);
+  return !source.empty() && source.front() == '.';
+}
+
 void Arena::note(std::uint64_t owner, ExprSlot slot,
                  std::uint32_t argument_index, Outcome outcome) {
   auto& count = coverage_.at(static_cast<std::size_t>(slot));

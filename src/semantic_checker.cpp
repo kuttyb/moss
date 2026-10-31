@@ -11127,24 +11127,20 @@ class Checker {
     auto syntax = checker_est_view(text);
     const bool tree_ok = syntax && moss::est::project_member_call(
         *syntax, receiver, member, args, &outputs_written);
-    // The legacy reader assigns receiver/member before rejecting a leading-dot
-    // call such as `.foo()`. Preserve that failure output contract by parsing
-    // the same shape with a synthetic receiver, then dropping its value.
-    // Arguments remain untouched, as they do on the legacy early return.
-    if (!syntax) {
-      const string value = trim(text);
-      if (!value.empty() && value.front() == '.') {
-        auto partial = checker_est_view("_" + value);
-        string synthetic_receiver, partial_member;
-        vector<string> partial_args;
-        bool partial_outputs = false;
-        if (partial && moss::est::project_member_call(
-                *partial, synthetic_receiver, partial_member, partial_args,
-                &partial_outputs) && partial_outputs) {
-          receiver.clear();
-          member = std::move(partial_member);
-          outputs_written = true;
-        }
+    // Preserve the legacy failure output contract for a leading-dot call by
+    // trying the same parse with a synthetic receiver, then dropping it.
+    // The EST node query owns the shape check; arguments remain untouched.
+    if (!syntax && moss::est::leading_dot_member_call_fragment(text)) {
+      auto partial = checker_est_view("_" + text);
+      string synthetic_receiver, partial_member;
+      vector<string> partial_args;
+      bool partial_outputs = false;
+      if (partial && moss::est::project_member_call(
+              *partial, synthetic_receiver, partial_member, partial_args,
+              &partial_outputs) && partial_outputs) {
+        receiver.clear();
+        member = std::move(partial_member);
+        outputs_written = true;
       }
     }
     if (!tree_ok) {
@@ -25817,10 +25813,7 @@ class Checker {
   std::optional<ParsedFunctionalPipeline> functional_pipeline_from_est(
       std::string_view source,
       const std::vector<est::Handle>* handles = nullptr) const {
-    // Avoid constructing an EST for expressions that cannot be functional
-    // pipelines. Besides reducing checker work, this keeps unrelated source
-    // spellings outside the functional parser's migration surface.
-    if (source.find("|>") == std::string_view::npos) return std::nullopt;
+    if (!est::functional_pipeline_candidate(source)) return std::nullopt;
     const auto resolve_stage = [](std::string_view name)
         -> std::optional<FunctionalNodeKind> {
       for (const auto& operation : functional_operations())
@@ -25851,8 +25844,8 @@ class Checker {
         return parsed;
 
     // MOSS_EST=off intentionally omits persistent arenas. Build a temporary
-    // syntax tree for this expression so the checker plan has one parser in
-    // both modes; this path still consumes the EST representation.
+    // syntax tree for this expression; the Pipeline node is the only positive
+    // syntax oracle.
     est::Arena temporary;
     try {
       const auto expression = est::parse_expression(temporary, source);

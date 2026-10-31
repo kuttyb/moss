@@ -1707,7 +1707,7 @@ class Generator {
   std::optional<ParsedFunctionalPipeline> functional_pipeline_from_est(
       std::string_view expression,
       const vector<est::Handle>* handles = nullptr) const {
-    if (expression.find("|>") == std::string_view::npos)
+    if (!est::functional_pipeline_candidate(expression))
       return std::nullopt;
     const auto resolve_stage = [](std::string_view name)
         -> std::optional<FunctionalNodeKind> {
@@ -1733,8 +1733,7 @@ class Generator {
     }
 
     // Optimizer-created and nested expression occurrences may not retain a
-    // root handle. Parse those expressions into EST and consume the Pipeline
-    // node, keeping the emitter off the legacy pipeline splitter.
+    // root handle. Parse into EST and consume the Pipeline node.
     est::Arena temporary;
     try {
       const auto root = est::parse_expression(temporary, expression);
