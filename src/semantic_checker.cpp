@@ -356,6 +356,10 @@ struct CheckerEstViewCache {
     std::unique_ptr<string> pipeline_normalization;
     bool expression_parens_attempted = false;
     std::unique_ptr<string> expression_parens;
+    bool source_syntax_facts_attempted = false;
+    moss::est::SourceSyntaxIssue source_syntax_issue =
+        moss::est::SourceSyntaxIssue::None;
+    bool incomplete_trailing_operator = false;
   };
   std::unordered_map<size_t, vector<std::shared_ptr<Entry>>> views;
   size_t entries = 0;
@@ -366,6 +370,9 @@ struct CheckerEstViewCache {
   uint64_t pipeline_normalization_hits = 0, pipeline_normalization_misses = 0;
 };
 thread_local CheckerEstViewCache checker_est_view_cache;
+
+std::shared_ptr<const moss::est::ExpressionView> checker_est_view(
+    std::string_view source);
 
 std::string_view checker_est_view_key(
     const CheckerEstViewCache::Entry& entry) {
@@ -399,8 +406,25 @@ CheckerEstViewCache::Entry* checker_est_view_entry(std::string_view source) {
   return nullptr;
 }
 
-std::shared_ptr<const moss::est::ExpressionView> checker_est_view(
-    std::string_view source);
+std::pair<moss::est::SourceSyntaxIssue, bool> checker_source_syntax_facts(
+    std::string_view source) {
+  auto* cached = checker_est_view_entry(source);
+  if (cached && cached->source_syntax_facts_attempted)
+    return {cached->source_syntax_issue,
+            cached->incomplete_trailing_operator};
+  if (!cached) {
+    (void)checker_est_view(source);
+    cached = checker_est_view_entry(source);
+  }
+  const auto issue = moss::est::source_syntax_issue(source);
+  const bool incomplete = moss::est::incomplete_trailing_operator(source);
+  if (cached) {
+    cached->source_syntax_facts_attempted = true;
+    cached->source_syntax_issue = issue;
+    cached->incomplete_trailing_operator = incomplete;
+  }
+  return {issue, incomplete};
+}
 
 std::optional<std::string_view> checker_identifier_name(
     std::string_view source) {
@@ -11425,10 +11449,10 @@ class Checker {
     auto syntax = checker_est_view(expression);
     if (!named_argument && !syntax)
       syntax = checker_est_view("(" + expression + ")");
-    const bool incomplete_trailing_operator = !syntax &&
-        moss::est::incomplete_trailing_operator(expression);
-    const bool invalid_operator_adjacency =
-        moss::est::source_syntax_issue(expression) ==
+    const auto [source_issue, trailing_operator] =
+        checker_source_syntax_facts(expression);
+    const bool incomplete_trailing_operator = !syntax && trailing_operator;
+    const bool invalid_operator_adjacency = source_issue ==
         moss::est::SourceSyntaxIssue::InvalidOperatorAdjacency;
     if (!named_argument && syntax) {
       std::pair<string,string> operands;
@@ -26333,7 +26357,9 @@ class Checker {
                         std::string_view child_role = {}) {
     using OccurrenceKind = BodyTypeState::ExpressionOccurrence::Kind;
     string original = trim(expression);
-    switch (moss::est::source_syntax_issue(original)) {
+    const auto [source_issue, trailing_operator] =
+        checker_source_syntax_facts(original);
+    switch (source_issue) {
       case moss::est::SourceSyntaxIssue::BareNot:
         err(line, "unknown identifier 'not'");
         return;
@@ -26357,7 +26383,7 @@ class Checker {
       case moss::est::SourceSyntaxIssue::None:
         break;
     }
-    if (moss::est::incomplete_trailing_operator(original))
+    if (trailing_operator)
       err(line, "invalid arithmetic expression", "MOSS_COMPILE_ERROR");
     const string occurrence_source = original;
     std::uint32_t cursor_child_ordinal = 0;
