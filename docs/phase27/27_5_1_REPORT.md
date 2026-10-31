@@ -29,4 +29,5 @@
 
 - `MOSS_EST=off make --jobs="$(nproc)" check` passed all regression jobs. `MOSS_EST=shadow make --jobs="$(nproc)" check` passed all regression jobs. Both include the Phase 27.5.1 fixture driver and three-engine check.
 - The driver passed against both `moss-dev` and `moss-opt`. After the full suites, a test-only follow-up made `MOSS_TEST_DISABLE_GUARD_HOOKS=1` prevent fact injection; the normal driver passed and the hook-off removal check failed as expected. Compiler source was unchanged after the full suites.
-- Performance comparison against the final merge first parent, Agent 2 review, merge, and tag are pending.
+- Performance against first parent `1c9489aaac40a4dc9386c4e1257fc02474fbf433` (candidate `047d1dc04f99036cc2c07e6fe3bad4287ac71937`), 77 fixtures, 3 interleaved repetitions: aggregate median 5.572 s → 5.650 s (+1.4%). No fixture crossed the report's beyond-noise threshold. Full report: `tmp/compiler-perf/20261031-141231/LOCAL_REPORT.md`.
+- Agent 2 review, merge, and tag remain pending.
