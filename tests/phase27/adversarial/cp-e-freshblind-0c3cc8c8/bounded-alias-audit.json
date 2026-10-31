@@ -1,0 +1,17 @@
+{
+  "candidate": "0c3cc8c89f5e5f704813bda22486089c7b0a6f30",
+  "aliases": [
+    {"source": "semantic_checker.cpp:4178-4249", "slot": "source_statement.a", "uses": "tree_simple_identifier", "classification": "EST identifier projection"},
+    {"source": "semantic_checker.cpp:5130-5156", "slot": "source.a", "uses": "tree_simple_identifier", "classification": "EST identifier projection"},
+    {"source": "semantic_checker.cpp:20793", "slot": "while_stmt.a", "alias": "condition", "uses": "tree_split_binary, tree_identifier_name, tree_expression_mentions_identifier", "classification": "EST expression projection"},
+    {"source": "semantic_checker.cpp:20918", "slot": "loop.a", "alias": "induction", "uses": "binding comparisons in bounded-range invalidation", "classification": "binding identity"},
+    {"source": "semantic_checker.cpp:20993", "slot": "statement.b", "alias": "iter_expr", "uses": "tree_parse_member_call/tree_parse_simple_call", "classification": "EST expression projection"},
+    {"source": "semantic_checker.cpp:22944,23018", "slot": "s.b", "alias": "source", "uses": "inferred_expr_type, storage_location, tree_simple_identifier", "classification": "EST/type fact and ownership query"},
+    {"source": "native_generator.cpp:352", "slot": "statement.a/b/args", "alias": "call", "uses": "expression_uses -> est::parse_view", "classification": "EST numeric-helper scan"},
+    {"source": "fileio_semantics.inc:719", "slot": "s.text", "alias": "call_text", "uses": "fileio_lifecycle_expression", "classification": "EST call projection"},
+    {"source": "native_generator.cpp:6133", "slot": "s.b", "alias": "source", "uses": "generated_expr_type", "classification": "EST/type fact"},
+    {"source": "native_generator.cpp:6770", "slot": "s.b", "alias": "method", "uses": "collection method name lowering", "classification": "Stmt NAME slot"}
+  ],
+  "bounded_aliases_followed": 10,
+  "tree_expression_text_reader_calls": 0
+}

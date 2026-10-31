@@ -1,0 +1,191 @@
+[
+  {
+    "probe": "incomplete_binary.moss",
+    "baseline_off": {
+      "ok": false,
+      "code": "MOSS_COMPILE_ERROR",
+      "message": "invalid arithmetic expression",
+      "line": 2,
+      "column": 1,
+      "returncode": 1
+    },
+    "candidate_off": {
+      "ok": false,
+      "code": "MOSS_COMPILE_ERROR",
+      "message": "invalid arithmetic expression",
+      "line": 2,
+      "column": 1,
+      "returncode": 1
+    },
+    "candidate_shadow": {
+      "ok": false,
+      "code": "MOSS_COMPILE_ERROR",
+      "message": "invalid arithmetic expression",
+      "line": 2,
+      "column": 1,
+      "returncode": 1
+    }
+  },
+  {
+    "probe": "incomplete_call.moss",
+    "baseline_off": {
+      "ok": false,
+      "code": "TYPE_MISMATCH",
+      "message": "argument 2 to function 'add' has type '', expected 'int'",
+      "line": 4,
+      "column": 1,
+      "returncode": 1
+    },
+    "candidate_off": {
+      "ok": true,
+      "code": null,
+      "message": null,
+      "line": null,
+      "column": null,
+      "returncode": 0
+    },
+    "candidate_shadow": {
+      "ok": true,
+      "code": null,
+      "message": null,
+      "line": null,
+      "column": null,
+      "returncode": 0
+    }
+  },
+  {
+    "probe": "malformed_double_comma.moss",
+    "baseline_off": {
+      "ok": false,
+      "code": "ECHO_DISPLAY_UNSUPPORTED",
+      "message": "echo cannot display a Vector whose element type is unknown ('vector'); give it elements or use a typed constructor such as Vector[Int]() (echo supports Int, Float, Bool, Char, String, and Vector of those)",
+      "line": 2,
+      "column": 1,
+      "returncode": 1
+    },
+    "candidate_off": {
+      "ok": true,
+      "code": null,
+      "message": null,
+      "line": null,
+      "column": null,
+      "returncode": 0
+    },
+    "candidate_shadow": {
+      "ok": false,
+      "code": "NON_JSON",
+      "message": "moss: src/semantic_checker.cpp:11089: static std::optional<vector<string>> moss::Checker::tree_parse_vector_literal(const string &): Assertion `moss::parse_vector_literal(text) == recovered' failed.\n",
+      "line": null,
+      "column": null,
+      "returncode": -6
+    }
+  },
+  {
+    "probe": "malformed_leading_arg.moss",
+    "baseline_off": {
+      "ok": false,
+      "code": "TYPE_MISMATCH",
+      "message": "argument 1 to function 'add' has type '', expected 'int'",
+      "line": 4,
+      "column": 1,
+      "returncode": 1
+    },
+    "candidate_off": {
+      "ok": true,
+      "code": null,
+      "message": null,
+      "line": null,
+      "column": null,
+      "returncode": 0
+    },
+    "candidate_shadow": {
+      "ok": true,
+      "code": null,
+      "message": null,
+      "line": null,
+      "column": null,
+      "returncode": 0
+    }
+  },
+  {
+    "probe": "unresolved_call.moss",
+    "baseline_off": {
+      "ok": false,
+      "code": "UNKNOWN_SYMBOL_OR_TYPE",
+      "message": "unknown local function 'unknown_function'",
+      "line": 2,
+      "column": 1,
+      "returncode": 1
+    },
+    "candidate_off": {
+      "ok": false,
+      "code": "UNKNOWN_SYMBOL_OR_TYPE",
+      "message": "unknown local function 'unknown_function'",
+      "line": 2,
+      "column": 1,
+      "returncode": 1
+    },
+    "candidate_shadow": {
+      "ok": false,
+      "code": "UNKNOWN_SYMBOL_OR_TYPE",
+      "message": "unknown local function 'unknown_function'",
+      "line": 2,
+      "column": 1,
+      "returncode": 1
+    }
+  },
+  {
+    "probe": "unresolved_collection.moss",
+    "baseline_off": {
+      "ok": true,
+      "code": null,
+      "message": null,
+      "line": null,
+      "column": null,
+      "returncode": 0
+    },
+    "candidate_off": {
+      "ok": true,
+      "code": null,
+      "message": null,
+      "line": null,
+      "column": null,
+      "returncode": 0
+    },
+    "candidate_shadow": {
+      "ok": true,
+      "code": null,
+      "message": null,
+      "line": null,
+      "column": null,
+      "returncode": 0
+    }
+  },
+  {
+    "probe": "unresolved_index.moss",
+    "baseline_off": {
+      "ok": false,
+      "code": "TYPE_AMBIGUOUS_OPEN_RESULT",
+      "message": "unbound open result type for variable 'values'; heterogeneous or unresolved collection element type",
+      "line": 2,
+      "column": 1,
+      "returncode": 1
+    },
+    "candidate_off": {
+      "ok": false,
+      "code": "TYPE_AMBIGUOUS_OPEN_RESULT",
+      "message": "unbound open result type for variable 'values'; heterogeneous or unresolved collection element type",
+      "line": 2,
+      "column": 1,
+      "returncode": 1
+    },
+    "candidate_shadow": {
+      "ok": false,
+      "code": "TYPE_AMBIGUOUS_OPEN_RESULT",
+      "message": "unbound open result type for variable 'values'; heterogeneous or unresolved collection element type",
+      "line": 2,
+      "column": 1,
+      "returncode": 1
+    }
+  }
+]
