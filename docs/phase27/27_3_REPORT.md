@@ -1,5 +1,9 @@
 # Phase 27.3 report (in progress)
 
+## Performance acceptance rule
+
+Per L7 clarification, the Phase 27.3 (and later) performance gate is candidate-off versus the merge commit's first parent. Any workload beyond the noise floor must be repeated once on an idle machine. The former `phase27-1-m1` acceptance gate recorded in `27_2_REPORT.md` is withdrawn because it assumed string machinery would be deleted. Report `phase27-1-m1` deltas for historical context only; they do not gate this round.
+
 ## Corrections and independent reproductions
 
 | Classification | Finding and correction | Oracle | Reproducer |
