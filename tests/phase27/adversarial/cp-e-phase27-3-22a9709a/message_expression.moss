@@ -1,0 +1,7 @@
+domain Worker:
+  fn Run(x: Int) -> Int:
+    reply x
+
+fn main():
+  worker = Worker()
+  echo message worker.Run(7)
