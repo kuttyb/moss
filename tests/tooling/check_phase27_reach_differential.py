@@ -60,7 +60,8 @@ LEGACY_PIPELINE_CRASHES_FIXED = {
 
 def trace(binary: Path, mode: str, corpus: Path, source: str, timeout: int):
     env = os.environ.copy()
-    env["MOSS_EST"] = mode
+    if mode == "default": env.pop("MOSS_EST", None)
+    else: env["MOSS_EST"] = mode
     env["MOSS_PHASE26_C1_SCOPE_TRACE"] = "1"
     result = subprocess.run([str(binary), "check", source, "--json"],
                             cwd=corpus, env=env, capture_output=True,
@@ -133,7 +134,7 @@ def main() -> int:
             tar.extractall(destination, filter="data")
 
     def compare(source: str):
-        before = trace(legacy, "off", base_root, source, args.timeout)
+        before = trace(legacy, "default", base_root, source, args.timeout)
         after = trace(candidate, "shadow", tree_root, source, args.timeout)
         return source, before, after
 
@@ -187,7 +188,7 @@ def main() -> int:
                 "oracle": "LANGUAGE_SYNTAX §Modules resolves the imported qualifier to the named module",
                 "two_path_reproducer": {
                     "entrypoint": "moss check <same tracked source> --json",
-                    "legacy_mode": "MOSS_EST=off",
+                    "legacy_mode": "default (MOSS_EST unset)",
                     "tree_mode": "MOSS_EST=shadow",
                     "legacy_checks_identity": identity in {
                         value[2] for value in row["legacy_checked"]
@@ -227,7 +228,7 @@ def main() -> int:
                                     "comparison": {
                                         "entrypoint": "moss check <tracked .moss source> --json",
                                         "cwd": "same archived repository root for each path",
-                                        "legacy_mode": "MOSS_EST=off",
+                                        "legacy_mode": "default (MOSS_EST unset)",
                                         "candidate_mode": "MOSS_EST=shadow",
                                         "checked_key": ["kind", "relative source path", "declaration identity"],
                                         "closure_invariant": "tree checked declarations must be a superset of legacy"},

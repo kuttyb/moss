@@ -23,7 +23,10 @@ CASES = {
 def run(path, mode, **extra):
     env = os.environ.copy()
     env.update(extra)
-    env["MOSS_EST"] = mode
+    if mode == "default":
+        env.pop("MOSS_EST", None)
+    else:
+        env["MOSS_EST"] = mode
     return subprocess.run([str(COMPILER), "check", str(path), "--json"], cwd=ROOT,
                           env=env, text=True, stdout=subprocess.PIPE,
                           stderr=subprocess.PIPE, check=False)
@@ -101,7 +104,7 @@ def check_rejected_source_parity():
     }
     for name, signature in expected.items():
         path = ROOT / "tests/phase27/est/repro" / name
-        for mode in ("off", "shadow"):
+        for mode in ("default", "shadow"):
             result = run(path, mode)
             try:
                 payload = json.loads(result.stdout)
@@ -133,7 +136,7 @@ def check_rejected_source_parity():
     for relative, message in pipeline_precedence.items():
         path = ROOT / relative
         payloads = []
-        for mode in ("off", "shadow"):
+        for mode in ("default", "shadow"):
             result = run(path, mode)
             try:
                 payload = json.loads(result.stdout)
@@ -146,7 +149,7 @@ def check_rejected_source_parity():
                 raise SystemExit(f"{mode} pipeline precedence diagnostic changed for {relative}: {error}")
             payloads.append(payload)
         if payloads[0] != payloads[1]:
-            raise SystemExit(f"off/shadow pipeline diagnostic payload differs for {relative}")
+            raise SystemExit(f"default/shadow pipeline diagnostic payload differs for {relative}")
 
     rejected_fragments = {
         "examples/swarm/control_flow_2026/iterative_planner/failed_attempts/01_multiline_task_literal.moss":
@@ -164,7 +167,7 @@ def check_rejected_source_parity():
     }
     for relative, signature in rejected_fragments.items():
         path = ROOT / relative
-        for mode in ("off", "shadow"):
+        for mode in ("default", "shadow"):
             result = run(path, mode)
             payload = json.loads(result.stdout)
             diagnostic = payload.get("error", {})
@@ -185,7 +188,7 @@ def check_rejected_source_parity():
         for name, (source, signature) in cases.items():
             path = pathlib.Path(scratch) / name
             path.write_text(source, encoding="utf-8")
-            for mode in ("off", "shadow"):
+            for mode in ("default", "shadow"):
                 result = run(path, mode)
                 payload = json.loads(result.stdout)
                 diagnostic = payload.get("error", {})
@@ -203,10 +206,12 @@ def check_rejected_source_parity():
                  "heterogeneous or unresolved collection element type")):
             package = pathlib.Path(scratch) / fixture.name
             shutil.copytree(fixture, package)
-            for mode in ("off", "shadow"):
+            for mode in ("default", "shadow"):
                 env = os.environ.copy()
-                env.update({"MOSS": str(COMPILER), "MOSS_EST": mode,
+                env.update({"MOSS": str(COMPILER),
                             "MARGO_HOME": str(pathlib.Path(scratch) / f"margo-{fixture.name}-{mode}")})
+                if mode == "default": env.pop("MOSS_EST", None)
+                else: env["MOSS_EST"] = mode
                 result = subprocess.run(
                     [str(ROOT / "margo"), "build", "--check", "--json"],
                     cwd=package, env=env, text=True, stdout=subprocess.PIPE,
@@ -228,7 +233,7 @@ def main():
                  "failure_capture_grouped_self_assignment.moss"):
         path = ROOT / "tests/phase27/est/repro" / name
         payloads = []
-        for mode in ("off", "shadow"):
+        for mode in ("default", "shadow"):
             result = run(path, mode)
             try:
                 payload = json.loads(result.stdout)
@@ -238,7 +243,7 @@ def main():
                 raise SystemExit(f"{mode} rejected {name}: {payload}")
             payloads.append(payload)
         if payloads[0] != payloads[1]:
-            raise SystemExit(f"off/shadow diagnostic payload differs for {name}")
+            raise SystemExit(f"default/shadow diagnostic payload differs for {name}")
     for name, pieces in CASES.items():
         path = ROOT / "tests/phase27/est" / name
         result = run(path, "shadow", MOSS_EST_DUMP="1",
@@ -294,11 +299,11 @@ def main():
     if pipeline_shapes.returncode != 0:
         raise SystemExit(f"pipeline structural-shape cases failed: {pipeline_shapes.stdout}{pipeline_shapes.stderr}")
     probe = ROOT / "tests/phase27/est/bitwise_shift.moss"
-    result = run(probe, "off", MOSS_EST_STATS="1")
+    result = run(probe, "default", MOSS_EST_STATS="1")
     if result.returncode != 0 or not re.search(
             r"MOSS_EST_STATS arena_size=[1-9]\d* handle_count=[1-9]\d*",
             result.stderr):
-        raise SystemExit(f"off did not build the compiler expression tree: {result.stdout}{result.stderr}")
+        raise SystemExit(f"default did not retain the compiler expression tree: {result.stdout}{result.stderr}")
     raw = ROOT / "tests/phase27/est/raw_places.moss"
     result = run(raw, "shadow", MOSS_EST_DUMP="1", MOSS_EST_CONTRACT_TEST="1")
     if "MOSS_EST_RAW" not in result.stderr:
@@ -334,7 +339,7 @@ def main():
                                resource.RLIMIT_CORE, (0, 0)))
     if stale.returncode == 0 or "source_fingerprint" not in stale.stderr:
         raise SystemExit("mutating source did not trip the shadow staleness assertion")
-    print("phase27 EST focused checks passed (4 syntax dumps; raw places; copy/rebuild; off builds expression arena; stale guard)")
+    print("phase27 EST focused checks passed (4 syntax dumps; raw places; copy/rebuild; default retains expression arena; stale guard)")
 
 if __name__ == "__main__":
     main()

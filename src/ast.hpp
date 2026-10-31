@@ -853,7 +853,7 @@ struct ExecutorStartPlan {
 };
 
 struct Program {
-  // Null in MOSS_EST=off: no arena is allocated by the legacy path.
+  // The program-owned arena retains source expression syntax in every mode.
   std::shared_ptr<est::Arena> expression_arena;
   // Explicit-module projects may merge independently parsed source units.
   // Handles carry an index into this shared immutable arena list.

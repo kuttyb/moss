@@ -45,6 +45,13 @@ def package_check(binary: Path, package: Path, env: dict[str, str]):
             error.get("line"))
 
 
+def select_est_mode(env: dict[str, str], mode: str) -> None:
+    if mode in ("default", "legacy"):
+        env.pop("MOSS_EST", None)
+    else:
+        env["MOSS_EST"] = "shadow"
+
+
 def main() -> int:
     shutil.rmtree(SCRATCH, ignore_errors=True)
     source_root = SCRATCH / "src"
@@ -68,8 +75,8 @@ def main() -> int:
     env.pop("MOSS_SOURCE_ROOTS", None)
     env.pop("MOSS_FAST_DEBUG_SOURCE_ROOTS", None)
     checked_by_mode = {}
-    for mode in ("off", "shadow"):
-        env["MOSS_EST"] = mode
+    for mode in ("default", "shadow"):
+        select_est_mode(env, mode)
         result = run(COMPILER, entry, env, ok=True)
         identities = {
             row.split("|", 3)[3]
@@ -85,7 +92,7 @@ def main() -> int:
                     if row.startswith("MOSS_C1_SCOPE_ID|main|")]
         assert len(main_ids) == 1, (mode, main_ids)
         checked_by_mode[mode] = identities
-    assert checked_by_mode["off"] == checked_by_mode["shadow"]
+    assert checked_by_mode["default"] == checked_by_mode["shadow"]
 
     rejected = SCRATCH / "rejected.moss"
     rejected.write_text(
@@ -93,14 +100,14 @@ def main() -> int:
         "fn f(value: Int) -> Int:\n  return value\n"
         "fn main():\n  echo f(x = g(1))\n")
     diagnostics = {}
-    for mode in ("off", "shadow"):
-        env["MOSS_EST"] = mode
+    for mode in ("default", "shadow"):
+        select_est_mode(env, mode)
         result = run(COMPILER, rejected, env, ok=False)
         response = json.loads(result.stdout)
         error = response.get("error") or {}
         diagnostics[mode] = (error.get("code"), error.get("line"))
         assert diagnostics[mode][0] == "CALL_NAMED_ARGUMENT_UNSUPPORTED", response
-    assert diagnostics["off"] == diagnostics["shadow"], diagnostics
+    assert diagnostics["default"] == diagnostics["shadow"], diagnostics
 
     # A same-named export in another imported module is not a target of the
     # qualified call. The Modules section defines this name binding; the
@@ -123,7 +130,7 @@ def main() -> int:
     qualified_sets = {}
     for mode, binary, ok in (
         ("legacy", LEGACY, False), ("tree", COMPILER, False)):
-        env["MOSS_EST"] = "off" if mode == "legacy" else "shadow"
+        select_est_mode(env, mode)
         result = run(binary, qualified_entry, env, ok=ok)
         response = json.loads(result.stdout)
         error = response.get("error") or {}
@@ -162,7 +169,7 @@ def main() -> int:
     inner_package_diagnostics = {}
     for mode, binary, ok in (
         ("legacy", LEGACY, False), ("tree", COMPILER, False)):
-        env["MOSS_EST"] = "off" if mode == "legacy" else "shadow"
+        select_est_mode(env, mode)
         result = run(binary, inner_entry, env, ok=ok)
         response = json.loads(result.stdout)
         error = response.get("error") or {}
@@ -187,7 +194,7 @@ def main() -> int:
     assert inner_package_diagnostics["tree"] == inner_package_diagnostics["legacy"], inner_package_diagnostics
     package_diagnostics = {}
     for mode, binary in (("legacy", LEGACY), ("tree", COMPILER)):
-        env["MOSS_EST"] = "off" if mode == "legacy" else "shadow"
+        select_est_mode(env, mode)
         package_diagnostics[mode] = package_check(binary, qualified_root, env)
         assert package_diagnostics[mode] == (
             "UNKNOWN_SYMBOL_OR_TYPE", "token.moss", 3), package_diagnostics
@@ -206,7 +213,7 @@ def main() -> int:
         "fn main():\n  left = Left(value: 1)\n  echo left.key()\n")
     ambiguous_methods = {}
     for mode, binary in (("legacy", LEGACY), ("tree", COMPILER)):
-        env["MOSS_EST"] = "off" if mode == "legacy" else "shadow"
+        select_est_mode(env, mode)
         result = run(binary, ambiguous_entry, env, ok=True)
         ambiguous_methods[mode] = {
             row.split("|", 3)[3]

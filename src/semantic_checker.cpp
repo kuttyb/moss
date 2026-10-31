@@ -26075,9 +26075,8 @@ class Checker {
       if (auto parsed = convert(cursor->arena_index, cursor->expr))
         return parsed;
 
-    // MOSS_EST=off intentionally omits persistent arenas. Build a temporary
-    // syntax tree for this expression; the Pipeline node is the only positive
-    // syntax oracle.
+    // Expressions without a retained source handle use a temporary syntax
+    // tree; the Pipeline node is the only positive syntax oracle.
     est::Arena temporary;
     try {
       const auto expression = est::parse_expression(temporary, source);
@@ -26141,7 +26140,7 @@ class Checker {
                   << handle.argument_index << ':' << handle.source_fingerprint << ',';
       std::cerr << '\n';
     }
-    if (est::mode() == est::Mode::Shadow && require_match) assert(recorded);
+    if (require_match) assert(recorded);
   }
 
   void record_statement_type_fact(const Stmt& statement, est::ExprSlot slot,
@@ -26336,8 +26335,7 @@ class Checker {
 
   std::optional<EstExpressionCursor> root_expression_cursor(
       std::string_view source, std::string_view root_slot) const {
-    if (est::mode() != est::Mode::Shadow || !current_check_statement_)
-      return std::nullopt;
+    if (!current_check_statement_) return std::nullopt;
     std::optional<est::ExprSlot> expected;
     const auto& statement = *current_check_statement_;
     if (root_slot == "condition") expected = est::ExprSlot::Condition;
@@ -27972,21 +27970,21 @@ class Checker {
         Function* resolved_target = nullptr;
         check_function_call(line, callee, args, env, nullptr, std::nullopt,
                             &resolved_target);
-        if (current_body_types_ && !checking_specialization_ &&
-            !current_body_types_->active_expression_occurrences.empty()) {
-          const auto occurrence =
-              current_body_types_->active_expression_occurrences.back();
-          if (resolved_target) {
-            retain_active_expression_target(
-                resolved_target->semantic_callable_id);
-          } else if (auto binding = env.find(callee);
-                     binding != env.end() && open_generic(binding->second)) {
-            retain_active_expression_target("binding:pending:" + callee);
+        if (resolved_target) {
+          retain_active_expression_target(
+              resolved_target->semantic_callable_id);
+        } else if (auto binding = env.find(callee);
+                   binding != env.end() && open_generic(binding->second)) {
+          retain_active_expression_target("binding:pending:" + callee);
+          if (current_body_types_ && !checking_specialization_ &&
+              !current_body_types_->active_expression_occurrences.empty()) {
+            const auto occurrence =
+                current_body_types_->active_expression_occurrences.back();
             current_body_types_->retain_expression_type(
                 occurrence, current_body_types_->solver.fresh(0));
-          } else {
-            retain_active_expression_target("builtin:" + callee);
           }
+        } else {
+          retain_active_expression_target("builtin:" + callee);
         }
         for (size_t index = 0; index < args.size(); ++index) {
           const auto& arg = args[index];
@@ -28004,7 +28002,6 @@ class Checker {
         // sufficient to connect the caller's body solver to the callee's
         // summary namespace.
         if (resolved_target && current_body_types_ &&
-            !checking_specialization_ &&
             !current_body_types_->active_expression_occurrences.empty() &&
             resolved_target->open_summary &&
             resolved_target->open_summary->scheme_complete &&

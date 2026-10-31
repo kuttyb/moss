@@ -13704,8 +13704,7 @@ static void rewrite_module_program(
                                      est::ExprSlot slot, uint32_t argument,
                                      const string& old_text,
                                      const string& new_text) {
-    if (old_text == new_text || !program.expression_arena ||
-        est::mode() != est::Mode::Shadow) return;
+    if (old_text == new_text || !program.expression_arena) return;
     const auto prior = handles;
     for (const auto& handle : prior) {
       if (handle.slot != slot || handle.argument_index != argument) continue;
@@ -13722,7 +13721,7 @@ static void rewrite_module_program(
     }
   };
   auto rebuild_changed_slots = [&](const Stmt& before, Stmt& after) {
-    if (!program.expression_arena || est::mode() != est::Mode::Shadow) return;
+    if (!program.expression_arena) return;
     const auto old_handles = before.expression_handles;
     for (const auto& handle : old_handles) {
       const string old_text = expression_text(before, handle);

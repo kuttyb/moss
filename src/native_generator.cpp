@@ -17,6 +17,7 @@
 #include <stdexcept>
 #include <string>
 #include <tuple>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -397,10 +398,8 @@ class Generator {
     if (p_.expression_arena && arena_uses(*p_.expression_arena)) return true;
     for (const auto& arena : p_.expression_arenas)
       if (arena && arena_uses(*arena)) return true;
-    // MOSS_EST=off deliberately leaves Program's persistent expression arenas
-    // null. The Rust emitter still needs to know whether its on-demand EST
-    // lowering will emit numeric helper calls. Rebuild node views for the
-    // parsed source bodies in that mode instead of searching their spellings.
+    // Some synthesized source bodies have no retained source handles. Rebuild
+    // node views for those bodies instead of searching their spellings.
     const auto expression_uses = [&](std::string_view source) {
       if (source.empty()) return false;
       const auto view = est::parse_view(source);
@@ -1122,6 +1121,9 @@ class Generator {
         return est::view(arena, handle.expr, expression);
       }
     }
+#ifdef MOSS_TEST_BUILD
+    est::record_consumer_reparse(est::ConsumerReparseSite::NativeExpressionView);
+#endif
     return est::parse_view(expression);
   }
 
@@ -1959,6 +1961,10 @@ class Generator {
 
     // Optimizer-created and nested expression occurrences may not retain a
     // root handle. Parse into EST and consume the Pipeline node.
+#ifdef MOSS_TEST_BUILD
+    est::record_consumer_reparse(
+        est::ConsumerReparseSite::NativeFunctionalPipeline);
+#endif
     est::Arena temporary;
     try {
       const auto root = est::parse_expression(temporary, expression);
@@ -2018,6 +2024,74 @@ class Generator {
   std::optional<string> generated_expr_type(
       const string& expression,
       const std::unordered_map<string,string>* types) const {
+#ifdef MOSS_TEST_BUILD
+    if (est::test_coverage_counters_enabled()) {
+      auto record_type_fact_coverage = [&] {
+        const auto fingerprint = est::fingerprint(expression);
+        const vector<est::Handle>* handles =
+            active_functional_expression_handles_;
+        const est::Arena* arena = nullptr;
+        est::ExprId root = 0;
+        if (handles) {
+          for (const auto& handle : *handles) {
+            if (handle.source_fingerprint != fingerprint ||
+                handle.arena_index >= p_.expression_arenas.size() ||
+                !p_.expression_arenas[handle.arena_index]) continue;
+            const auto* candidate = p_.expression_arenas[handle.arena_index].get();
+            const auto span = candidate->span(handle.expr);
+            if (span.source_begin != 0 || span.source_end != expression.size())
+              continue;
+            arena = candidate;
+            root = handle.expr;
+            break;
+          }
+        }
+        est::Arena temporary;
+        if (!arena) {
+          try {
+            root = est::parse_expression(temporary, expression);
+            arena = &temporary;
+          } catch (const std::invalid_argument&) {
+            est::record_generated_type_fact_coverage("unparsed", false);
+            return;
+          }
+        }
+        std::string checker_context;
+        if (!codegen_active_specialization_key_.empty())
+          checker_context = "specialization:" + codegen_active_specialization_key_;
+        else
+          checker_context = codegen_body_context_;
+        const auto* facts = arena->facts(root, checker_context);
+        const bool present = facts && facts->type;
+        const auto& node = arena->at(root);
+        const char* kind = std::visit([](const auto& value) -> const char* {
+          using T = std::decay_t<decltype(value)>;
+          if constexpr (std::is_same_v<T, est::Literal>) return "literal";
+          else if constexpr (std::is_same_v<T, est::Identifier>) return "identifier";
+          else if constexpr (std::is_same_v<T, est::Unary>) return "unary";
+          else if constexpr (std::is_same_v<T, est::Binary>) return "binary";
+          else if constexpr (std::is_same_v<T, est::Call>) return "call";
+          else if constexpr (std::is_same_v<T, est::Member>) return "member";
+          else if constexpr (std::is_same_v<T, est::Index>) return "index";
+          else if constexpr (std::is_same_v<T, est::Parenthesized>) return "parenthesized";
+          else if constexpr (std::is_same_v<T, est::Message>) return "message";
+          else if constexpr (std::is_same_v<T, est::NamedArgument>) return "named_argument";
+          else if constexpr (std::is_same_v<T, est::Placeholder>) return "placeholder";
+          else if constexpr (std::is_same_v<T, est::Collection>) return "collection";
+          else if constexpr (std::is_same_v<T, est::Tuple>) return "tuple";
+          else if constexpr (std::is_same_v<T, est::Constructor>) return "constructor";
+          else if constexpr (std::is_same_v<T, est::Pipeline>) return "pipeline";
+          else return "missing";
+        }, node);
+        est::record_generated_type_fact_coverage(kind, present);
+      };
+      try {
+        record_type_fact_coverage();
+      } catch (...) {
+        // Test-only coverage accounting must not change emission behavior.
+      }
+    }
+#endif
     string original = tree_strip_expression_grouping(expression);
     {
       string callee;

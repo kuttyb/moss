@@ -650,6 +650,9 @@ class FastInterpreter {
         if (span.source_end <= view.source.size()) return view;
       }
     }
+#ifdef MOSS_TEST_BUILD
+    est::record_consumer_reparse(est::ConsumerReparseSite::FastDebugExpressionTree);
+#endif
     view.owned = std::make_unique<est::Arena>();
     try {
       view.root = est::parse_expression(*view.owned, view.source);
@@ -1163,6 +1166,10 @@ class FastInterpreter {
 
     // Some nested or transformed expressions have no retained source handle.
     // Parse those into EST and dispatch through the Pipeline node.
+#ifdef MOSS_TEST_BUILD
+    est::record_consumer_reparse(
+        est::ConsumerReparseSite::FastDebugFunctionalPipeline);
+#endif
     est::Arena temporary;
     try {
       const auto root = est::parse_expression(temporary, expression);

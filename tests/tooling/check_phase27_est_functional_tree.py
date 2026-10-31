@@ -16,7 +16,8 @@ PIPELINE_SOURCE = ROOT / "benchmarks/agent/baselines/post-22.1/AB016/final/main.
 
 def check(compiler: Path, mode: str, source: Path) -> None:
     env = dict(os.environ)
-    env["MOSS_EST"] = mode
+    if mode == "default": env.pop("MOSS_EST", None)
+    else: env["MOSS_EST"] = mode
     result = subprocess.run(
         [str(compiler), "check", str(source), "--json"], cwd=ROOT, env=env,
         text=True, capture_output=True, timeout=60)
@@ -27,7 +28,8 @@ def check(compiler: Path, mode: str, source: Path) -> None:
 
 def run_pipeline(compiler: Path, mode: str) -> None:
     env = dict(os.environ)
-    env["MOSS_EST"] = mode
+    if mode == "default": env.pop("MOSS_EST", None)
+    else: env["MOSS_EST"] = mode
     result = subprocess.run(
         [str(compiler), "run", "--interp", str(PIPELINE_SOURCE)], cwd=ROOT,
         env=env, text=True, capture_output=True, timeout=60)
@@ -35,8 +37,8 @@ def run_pipeline(compiler: Path, mode: str) -> None:
         compiler, mode, result.returncode, result.stdout, result.stderr)
 
 
-for mode in ("off", "shadow"):
+for mode in ("default", "shadow"):
     check(COMPILER, mode, NON_PIPELINE_SOURCE)
     check(COMPILER, mode, PIPELINE_SOURCE)
     run_pipeline(COMPILER, mode)
-print("PASS pipeline Fast Debug output and regex apostrophe checks in EST off/shadow")
+print("PASS pipeline Fast Debug output and regex apostrophe checks in EST default/shadow")
