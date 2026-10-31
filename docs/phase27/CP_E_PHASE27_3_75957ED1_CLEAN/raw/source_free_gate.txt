@@ -1,0 +1,6 @@
+Frozen candidate and baseline each passed, with exit status 0:
+
+MOSS="$PWD/moss" MOSS_EST=off python3 sdk/advanced-data-acceptance/check_source_free.py --abi v9 --profile debug
+MOSS="$PWD/moss" MOSS_EST=shadow python3 sdk/advanced-data-acceptance/check_source_free.py --abi v9 --profile debug
+
+Observed for each invocation: Compiled-only advanced-data gate passed, ABI-9 debug, 5 Team A modules, 14 current source-backed provider interfaces. The gate checks and runs the consumer against provider interfaces and confirms expected stdout.
