@@ -4,13 +4,13 @@
 #include <array>
 #include <cstdint>
 #include <functional>
-#include <map>
 #include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <set>
 #include <tuple>
+#include <unordered_map>
 #include <variant>
 #include <vector>
 
@@ -53,10 +53,18 @@ struct Handle {
 struct FactKey {
   ExprId expression = 0;
   std::string specialization_context;
-  bool operator<(const FactKey& other) const {
-    return expression < other.expression ||
-        (expression == other.expression &&
-         specialization_context < other.specialization_context);
+  bool operator==(const FactKey& other) const {
+    return expression == other.expression &&
+        specialization_context == other.specialization_context;
+  }
+};
+struct FactKeyHash {
+  std::size_t operator()(const FactKey& key) const noexcept {
+    const auto expression_hash = std::hash<ExprId>{}(key.expression);
+    const auto context_hash =
+        std::hash<std::string>{}(key.specialization_context);
+    return expression_hash ^ (context_hash + 0x9e3779b9U +
+        (expression_hash << 6) + (expression_hash >> 2));
   }
 };
 struct SemanticFacts {
@@ -146,7 +154,8 @@ class Arena {
  private:
   std::vector<Node> nodes_;
   std::vector<SourceSpan> spans_;
-  std::map<FactKey, SemanticFacts> semantic_facts_;
+  // Facts are lookup-only; their iteration order is not observable.
+  std::unordered_map<FactKey, SemanticFacts, FactKeyHash> semantic_facts_;
   std::array<Count, slot_count> coverage_{};
   std::set<std::tuple<std::uint64_t, std::uint8_t, std::uint32_t>> seen_;
 };
