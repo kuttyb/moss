@@ -40,6 +40,8 @@ lint until reviewed and recorded here.
 | emitter | `open` | 1 | FileIO method name |
 | emitter | `sync` | 1 | FileIO method name |
 | emitter | `close` | 1 | FileIO method name |
+| emitter | `join` | 1 | Executor method name |
+| emitter | `invoke` | 1 | Executor method name |
 
 All checker/emitter `tree_expression_text(...)` comparisons were removed. The
 remaining expression-to-expression equivalence checks call

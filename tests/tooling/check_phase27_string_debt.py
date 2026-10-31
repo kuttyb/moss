@@ -44,7 +44,8 @@ RAW_NAME_COUNTS = {
     ("emitter", "assertEqual"): 1, ("emitter", "sort"): 1,
     ("emitter", "pop"): 1, ("emitter", "write"): 1,
     ("emitter", "open"): 1, ("emitter", "sync"): 1,
-    ("emitter", "close"): 1,
+    ("emitter", "close"): 1, ("emitter", "join"): 1,
+    ("emitter", "invoke"): 1,
 }
 RAW_NAME_COMPARE = re.compile(
     r"\b(?:s|prior|statement|stmt)\.(?:a|b|text)\s*(?:==|!=)\s*\"([^\"\n]*)\"")
@@ -73,7 +74,8 @@ CONSUMER_PATHS = {
                 "file_chunk_lowering.inc", "executor_invoke_lowering.inc",
                 "static_bounds.inc"),
     "emitter": ("native_generator.cpp", "file_chunk_codegen.inc",
-                "borrowed_views.inc", "handler_lowering.inc"),
+                "borrowed_views.inc", "handler_lowering.inc",
+                "executor_invoke_codegen.inc"),
     "reach_walk": (),
     "fast_debug": ("interpreter.hpp", "interpreter_domains.inc",
                    "interpreter_phase20.inc"),

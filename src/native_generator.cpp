@@ -1252,6 +1252,13 @@ class Generator {
     return syntax && est::project_bound_method(*syntax, receiver, method);
   }
 
+  bool tree_parse_executor_chain(
+      const string& expression,
+      vector<std::pair<string, vector<string>>>& calls) const {
+    auto syntax = expression_view_from_est(expression);
+    return syntax && est::project_executor_chain(*syntax, calls);
+  }
+
   string tree_strip_expression_grouping(const string& expression) const {
     auto syntax = expression_view_from_est(expression);
     return syntax ? est::strip_grouping(*syntax) : expression;
