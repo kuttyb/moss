@@ -1,0 +1,5 @@
+06d39859df053beea03b427a058e8cf9522a5da2d598ee264eff12cb1003035e  tests/phase27/adversarial/cp-e-numeric-member-04f61b52/common_corpus_summary.json
+f4deefc820d1f9b189f87414e79d1b0a94f741c0e3cb34a4bd4c73dc8dd901b0  tests/phase27/adversarial/cp-e-numeric-member-04f61b52/numeric_suffix_four_mode.json
+753e30ca1f59319f96adb346cc8cffd75b5d79e2fb1f9b98bf5f33e45761c485  tests/phase27/adversarial/cp-e-numeric-member-04f61b52/rejected_27_1_sweep.json
+4343cd037e70bf16c071281c5b4bfcede30871d7825077366f3e6a2c5db2f076  tests/phase27/adversarial/cp-e-numeric-member-04f61b52/reader_lint.txt
+94f6cc75f0861978f851ffe98e1b8a5f40f5428540151e004360187c5f235fea  tests/phase27/adversarial/cp-e-numeric-member-04f61b52/tree_expression_text_scan.txt

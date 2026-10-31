@@ -1,0 +1,435 @@
+{
+  "checked": 52,
+  "controls": 13,
+  "rows": [
+    {
+      "baseline_off": {
+        "code": "UNKNOWN_SYMBOL_OR_TYPE",
+        "column": 1,
+        "line": 3,
+        "message": "unknown identifier 'count'",
+        "ok": false
+      },
+      "baseline_shadow": {
+        "code": "UNKNOWN_SYMBOL_OR_TYPE",
+        "column": 1,
+        "line": 3,
+        "message": "unknown identifier 'count'",
+        "ok": false
+      },
+      "candidate_off": {
+        "code": "UNKNOWN_SYMBOL_OR_TYPE",
+        "column": 1,
+        "line": 3,
+        "message": "unknown identifier 'count'",
+        "ok": false
+      },
+      "candidate_shadow": {
+        "code": "UNKNOWN_SYMBOL_OR_TYPE",
+        "column": 1,
+        "line": 3,
+        "message": "unknown identifier 'count'",
+        "ok": false
+      },
+      "file": "examples/swarm/Surface/repros/swarm_067_pipe_comparison_diagnostic.moss"
+    },
+    {
+      "baseline_off": {
+        "code": "UNKNOWN_SYMBOL_OR_TYPE",
+        "column": 1,
+        "line": 20,
+        "message": "unknown local function 'count'",
+        "ok": false
+      },
+      "baseline_shadow": {
+        "code": "UNKNOWN_SYMBOL_OR_TYPE",
+        "column": 1,
+        "line": 20,
+        "message": "unknown local function 'count'",
+        "ok": false
+      },
+      "candidate_off": {
+        "code": "UNKNOWN_SYMBOL_OR_TYPE",
+        "column": 1,
+        "line": 20,
+        "message": "unknown local function 'count'",
+        "ok": false
+      },
+      "candidate_shadow": {
+        "code": "UNKNOWN_SYMBOL_OR_TYPE",
+        "column": 1,
+        "line": 20,
+        "message": "unknown local function 'count'",
+        "ok": false
+      },
+      "file": "examples/swarm/control_flow_2026/iterative_planner/failed_attempts/02_untyped_vector_parameters.moss"
+    },
+    {
+      "baseline_off": {
+        "code": "UNKNOWN_SYMBOL_OR_TYPE",
+        "column": 1,
+        "line": 20,
+        "message": "unknown local function 'count'",
+        "ok": false
+      },
+      "baseline_shadow": {
+        "code": "UNKNOWN_SYMBOL_OR_TYPE",
+        "column": 1,
+        "line": 20,
+        "message": "unknown local function 'count'",
+        "ok": false
+      },
+      "candidate_off": {
+        "code": "UNKNOWN_SYMBOL_OR_TYPE",
+        "column": 1,
+        "line": 20,
+        "message": "unknown local function 'count'",
+        "ok": false
+      },
+      "candidate_shadow": {
+        "code": "UNKNOWN_SYMBOL_OR_TYPE",
+        "column": 1,
+        "line": 20,
+        "message": "unknown local function 'count'",
+        "ok": false
+      },
+      "file": "examples/swarm/control_flow_2026/iterative_planner/failed_attempts/03_pipeline_count_in_condition.moss"
+    },
+    {
+      "baseline_off": {
+        "code": "UNKNOWN_SYMBOL_OR_TYPE",
+        "column": 1,
+        "line": 4,
+        "message": "unknown local function 'count'",
+        "ok": false
+      },
+      "baseline_shadow": {
+        "code": "UNKNOWN_SYMBOL_OR_TYPE",
+        "column": 1,
+        "line": 4,
+        "message": "unknown local function 'count'",
+        "ok": false
+      },
+      "candidate_off": {
+        "code": "UNKNOWN_SYMBOL_OR_TYPE",
+        "column": 1,
+        "line": 4,
+        "message": "unknown local function 'count'",
+        "ok": false
+      },
+      "candidate_shadow": {
+        "code": "UNKNOWN_SYMBOL_OR_TYPE",
+        "column": 1,
+        "line": 4,
+        "message": "unknown local function 'count'",
+        "ok": false
+      },
+      "file": "examples/swarm/control_flow_2026/simulation_engine/failed_attempts/02_while_pipeline_condition.moss"
+    },
+    {
+      "baseline_off": {
+        "code": "UNKNOWN_SYMBOL_OR_TYPE",
+        "column": 1,
+        "line": 4,
+        "message": "unknown identifier 'sum'",
+        "ok": false
+      },
+      "baseline_shadow": {
+        "code": "UNKNOWN_SYMBOL_OR_TYPE",
+        "column": 1,
+        "line": 4,
+        "message": "unknown identifier 'sum'",
+        "ok": false
+      },
+      "candidate_off": {
+        "code": "UNKNOWN_SYMBOL_OR_TYPE",
+        "column": 1,
+        "line": 4,
+        "message": "unknown identifier 'sum'",
+        "ok": false
+      },
+      "candidate_shadow": {
+        "code": "UNKNOWN_SYMBOL_OR_TYPE",
+        "column": 1,
+        "line": 4,
+        "message": "unknown identifier 'sum'",
+        "ok": false
+      },
+      "file": "examples/swarm/expression_surface_2026/numerical_tool/failed_attempts/08_pipeline_comparison_precedence.moss"
+    },
+    {
+      "baseline_off": {
+        "code": "MOSS_COMPILE_ERROR",
+        "column": 1,
+        "line": 45,
+        "message": "indentation jumps more than one block level",
+        "ok": false
+      },
+      "baseline_shadow": {
+        "code": "MOSS_COMPILE_ERROR",
+        "column": 1,
+        "line": 45,
+        "message": "indentation jumps more than one block level",
+        "ok": false
+      },
+      "candidate_off": {
+        "code": "MOSS_COMPILE_ERROR",
+        "column": 1,
+        "line": 45,
+        "message": "indentation jumps more than one block level",
+        "ok": false
+      },
+      "candidate_shadow": {
+        "code": "MOSS_COMPILE_ERROR",
+        "column": 1,
+        "line": 45,
+        "message": "indentation jumps more than one block level",
+        "ok": false
+      },
+      "file": "examples/swarm/control_flow_2026/iterative_planner/failed_attempts/01_multiline_task_literal.moss"
+    },
+    {
+      "baseline_off": {
+        "code": "UNTYPED_FIELD_ACCESS",
+        "column": 1,
+        "line": 14,
+        "message": "field access 'sample.observed' requires a concrete receiver type; annotate the parameter or expose the behavior through a method/trait",
+        "ok": false
+      },
+      "baseline_shadow": {
+        "code": "UNTYPED_FIELD_ACCESS",
+        "column": 1,
+        "line": 14,
+        "message": "field access 'sample.observed' requires a concrete receiver type; annotate the parameter or expose the behavior through a method/trait",
+        "ok": false
+      },
+      "candidate_off": {
+        "code": "UNTYPED_FIELD_ACCESS",
+        "column": 1,
+        "line": 14,
+        "message": "field access 'sample.observed' requires a concrete receiver type; annotate the parameter or expose the behavior through a method/trait",
+        "ok": false
+      },
+      "candidate_shadow": {
+        "code": "UNTYPED_FIELD_ACCESS",
+        "column": 1,
+        "line": 14,
+        "message": "field access 'sample.observed' requires a concrete receiver type; annotate the parameter or expose the behavior through a method/trait",
+        "ok": false
+      },
+      "file": "examples/swarm/expression_surface_2026/numerical_tool/failed_attempts/01_len_method.moss"
+    },
+    {
+      "baseline_off": {
+        "code": "MOSS_COMPILE_ERROR",
+        "column": 1,
+        "line": 12,
+        "message": "indentation jumps more than one block level",
+        "ok": false
+      },
+      "baseline_shadow": {
+        "code": "MOSS_COMPILE_ERROR",
+        "column": 1,
+        "line": 12,
+        "message": "indentation jumps more than one block level",
+        "ok": false
+      },
+      "candidate_off": {
+        "code": "MOSS_COMPILE_ERROR",
+        "column": 1,
+        "line": 12,
+        "message": "indentation jumps more than one block level",
+        "ok": false
+      },
+      "candidate_shadow": {
+        "code": "MOSS_COMPILE_ERROR",
+        "column": 1,
+        "line": 12,
+        "message": "indentation jumps more than one block level",
+        "ok": false
+      },
+      "file": "examples/swarm/expression_surface_2026/parser_evaluator/failed_attempts/01_multiline_vector_literal.moss"
+    },
+    {
+      "baseline_off": {
+        "code": "UNTYPED_FIELD_ACCESS",
+        "column": 1,
+        "line": 27,
+        "message": "field access 'rule.value' requires a concrete receiver type; annotate the parameter or expose the behavior through a method/trait",
+        "ok": false
+      },
+      "baseline_shadow": {
+        "code": "UNTYPED_FIELD_ACCESS",
+        "column": 1,
+        "line": 27,
+        "message": "field access 'rule.value' requires a concrete receiver type; annotate the parameter or expose the behavior through a method/trait",
+        "ok": false
+      },
+      "candidate_off": {
+        "code": "UNTYPED_FIELD_ACCESS",
+        "column": 1,
+        "line": 27,
+        "message": "field access 'rule.value' requires a concrete receiver type; annotate the parameter or expose the behavior through a method/trait",
+        "ok": false
+      },
+      "candidate_shadow": {
+        "code": "UNTYPED_FIELD_ACCESS",
+        "column": 1,
+        "line": 27,
+        "message": "field access 'rule.value' requires a concrete receiver type; annotate the parameter or expose the behavior through a method/trait",
+        "ok": false
+      },
+      "file": "examples/swarm/expression_surface_2026/validation_engine/failed_attempts/01_multiline_constructor.moss"
+    },
+    {
+      "baseline_off": {
+        "code": "MOSS_COMPILE_ERROR",
+        "column": 1,
+        "line": 4,
+        "message": "indentation jumps more than one block level",
+        "ok": false
+      },
+      "baseline_shadow": {
+        "code": "MOSS_COMPILE_ERROR",
+        "column": 1,
+        "line": 4,
+        "message": "indentation jumps more than one block level",
+        "ok": false
+      },
+      "candidate_off": {
+        "code": "MOSS_COMPILE_ERROR",
+        "column": 1,
+        "line": 4,
+        "message": "indentation jumps more than one block level",
+        "ok": false
+      },
+      "candidate_shadow": {
+        "code": "MOSS_COMPILE_ERROR",
+        "column": 1,
+        "line": 4,
+        "message": "indentation jumps more than one block level",
+        "ok": false
+      },
+      "file": "examples/swarm/expression_surface_2026/validation_engine/failed_attempts/02_multiline_vector.moss"
+    },
+    {
+      "baseline_off": {
+        "code": "MOSS_COMPILE_ERROR",
+        "column": 1,
+        "line": 3,
+        "message": "indentation jumps more than one block level",
+        "ok": false
+      },
+      "baseline_shadow": {
+        "code": "MOSS_COMPILE_ERROR",
+        "column": 1,
+        "line": 3,
+        "message": "indentation jumps more than one block level",
+        "ok": false
+      },
+      "candidate_off": {
+        "code": "MOSS_COMPILE_ERROR",
+        "column": 1,
+        "line": 3,
+        "message": "indentation jumps more than one block level",
+        "ok": false
+      },
+      "candidate_shadow": {
+        "code": "MOSS_COMPILE_ERROR",
+        "column": 1,
+        "line": 3,
+        "message": "indentation jumps more than one block level",
+        "ok": false
+      },
+      "file": "examples/swarm/expression_surface_2026/validation_engine/failed_attempts/15_multiline_test_vector.moss"
+    },
+    {
+      "code": "UNSUPPORTED_EXPRESSION_OPERATOR",
+      "column": 1,
+      "engine": "cp-e-numeric-base",
+      "file": "symbolic_or.moss",
+      "line": 2,
+      "message": "binary '||' expression is not supported",
+      "mode": "off",
+      "ok": false,
+      "side": "generated"
+    },
+    {
+      "code": "UNSUPPORTED_EXPRESSION_OPERATOR",
+      "column": 1,
+      "engine": "cp-e-numeric-base",
+      "file": "symbolic_or.moss",
+      "line": 2,
+      "message": "binary '||' expression is not supported",
+      "mode": "shadow",
+      "ok": false,
+      "side": "generated"
+    },
+    {
+      "code": "UNSUPPORTED_EXPRESSION_OPERATOR",
+      "column": 1,
+      "engine": "cp-e-numeric-source",
+      "file": "symbolic_or.moss",
+      "line": 2,
+      "message": "binary '||' expression is not supported",
+      "mode": "off",
+      "ok": false,
+      "side": "generated"
+    },
+    {
+      "code": "UNSUPPORTED_EXPRESSION_OPERATOR",
+      "column": 1,
+      "engine": "cp-e-numeric-source",
+      "file": "symbolic_or.moss",
+      "line": 2,
+      "message": "binary '||' expression is not supported",
+      "mode": "shadow",
+      "ok": false,
+      "side": "generated"
+    },
+    {
+      "code": "MOSS_COMPILE_ERROR",
+      "column": 1,
+      "engine": "cp-e-numeric-base",
+      "file": "incomplete_subtraction.moss",
+      "line": 2,
+      "message": "invalid arithmetic expression",
+      "mode": "off",
+      "ok": false,
+      "side": "generated"
+    },
+    {
+      "code": "MOSS_COMPILE_ERROR",
+      "column": 1,
+      "engine": "cp-e-numeric-base",
+      "file": "incomplete_subtraction.moss",
+      "line": 2,
+      "message": "invalid arithmetic expression",
+      "mode": "shadow",
+      "ok": false,
+      "side": "generated"
+    },
+    {
+      "code": "MOSS_COMPILE_ERROR",
+      "column": 1,
+      "engine": "cp-e-numeric-source",
+      "file": "incomplete_subtraction.moss",
+      "line": 2,
+      "message": "invalid arithmetic expression",
+      "mode": "off",
+      "ok": false,
+      "side": "generated"
+    },
+    {
+      "code": "MOSS_COMPILE_ERROR",
+      "column": 1,
+      "engine": "cp-e-numeric-source",
+      "file": "incomplete_subtraction.moss",
+      "line": 2,
+      "message": "invalid arithmetic expression",
+      "mode": "shadow",
+      "ok": false,
+      "side": "generated"
+    }
+  ]
+}
