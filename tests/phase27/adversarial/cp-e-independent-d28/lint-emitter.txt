@@ -1,0 +1,3 @@
+audited raw Stmt NAME comparisons: 40
+audited raw Stmt binding comparisons: 9
+emitter_rc=0
