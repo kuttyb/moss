@@ -1,0 +1,9 @@
+{
+  "candidate_commit": "3aa929be9f6413bb2864049d864ce4890a4f1bdf",
+  "baseline_commit": "04be1a1bbbc7a4fd8fe2e4090b4b5bad5dd573e4",
+  "candidate_compiler_sha256": "c6d4b26f05459cfd0b4b44f8134367c2aefb7374d374dca1d9ab52736eb6b031",
+  "baseline_compiler_sha256": "4a334c71d9b5ea5b2925c311f7a462abd046e479fc4b52df4c0453e612ceb286",
+  "bootstrap_returncode": 0,
+  "bootstrap_language_version": "moss-0.1",
+  "rejected_sweep_returncode": 0
+}
