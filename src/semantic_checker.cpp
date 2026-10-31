@@ -26141,7 +26141,7 @@ class Checker {
                   << handle.argument_index << ':' << handle.source_fingerprint << ',';
       std::cerr << '\n';
     }
-    if (est::mode() == est::Mode::Shadow && require_match) assert(recorded);
+    if (require_match) assert(recorded);
   }
 
   void record_statement_type_fact(const Stmt& statement, est::ExprSlot slot,
@@ -26336,8 +26336,7 @@ class Checker {
 
   std::optional<EstExpressionCursor> root_expression_cursor(
       std::string_view source, std::string_view root_slot) const {
-    if (est::mode() != est::Mode::Shadow || !current_check_statement_)
-      return std::nullopt;
+    if (!current_check_statement_) return std::nullopt;
     std::optional<est::ExprSlot> expected;
     const auto& statement = *current_check_statement_;
     if (root_slot == "condition") expected = est::ExprSlot::Condition;
