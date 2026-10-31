@@ -15,6 +15,13 @@
   `MOSS_EST_COVERAGE_STATS=1` reports all four Fast Debug reparse sites at
   zero for the first two; the specialized-call fixture also reports zero after
   subtree lookup was corrected.
+- Added and registered `tests/tooling/check_phase27_5_3_fastdebug_checked_tree.py`.
+  It checks all three fixtures under native, Fast Debug, and optimized Rust
+  execution and asserts zero Fast Debug reparse counters. The script and
+  `python3 tests/tooling/check_agent_feedback.py` pass. `AGENTS.md` now states
+  the Phase 27.5.3 semantic-authority rule; the class inventory and empty
+  conflict registry are in `docs/COMPILER_STATE.md` and
+  `docs/phase27/27_5_3_CONFLICTS.md`.
 - Validation has been targeted only; no full suites or performance runs have
   been started. No Phase 27.5.3 merge/tag has been made. Remaining work:
   implement and register K2/K3 perturbation/removal tests, migrate all Fast

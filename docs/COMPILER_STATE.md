@@ -79,6 +79,27 @@ Phase 27.5.1 left the `MOSS_TEST_*` fact-drop, fact-counter, and missing-express
 | `tests/tooling/check_phase27_est_mossi.py` | Compares `.mossi` output under default and shadow on the same compiler. |
 | `tests/tooling/check_phase27_mossi_baseline.py` | Recomputes package fingerprints and execution-body hashes under the baseline toolchain identity, then compares the remaining `.mossi` bytes. |
 | `tests/tooling/check_phase27_three_engine.py` | Checks the native, Fast Debug, and optimized execution outputs for its conformance fixture. |
+| `tests/tooling/check_phase27_5_3_fastdebug_checked_tree.py` | Checks three targeted accepted fixtures for zero Fast Debug EST reparses, no direct EST parser API calls in `interpreter.hpp`, and native/Fast Debug/`-O` output parity. |
 | `make check` | Runs string-debt, EST facts/coverage, and the registered repository tests with `MOSS_EST` unset and with `MOSS_EST=shadow` (`Makefile:150–158`). |
 
 The Phase 27.5.2 source parity measurement compared all 1,822 source verdicts, 1,130 successful default Rust emissions, 1,130 successful `-O` Rust emissions, and 763 Fast Debug runs against the baseline. No differences were found. Fast Debug timed out identically on `examples/frontend_syntax.moss` and `examples/functional_pipeline.moss` on both revisions. The `.mossi` identity recomputation passed for its library/app fixture pair. Package-context parity is recorded in the Phase 27.5.2 delivery report.
+
+## Phase 27.5.3 authority inventory
+
+The declared producers for semantic classes are:
+
+| Class | Decision | Checker definition and retained fact |
+| --- | --- | --- |
+| 1 | Expression type | The semantic checker writes `est::SemanticFacts::type` from its expression cursor at `src/semantic_checker.cpp:26116, 26399, 26508, 26677`; facts are keyed by expression and specialization context in `src/est/expression_tree.hpp:53–75`. |
+| 2 | Call target | The checker records `SemanticFacts::resolved_target` and `Program::semantic_call_edges` during checked call resolution at `src/semantic_checker.cpp:14196–14226, 26420`; the fact fields are declared in `src/est/expression_tree.hpp:70–75` and `src/ast.hpp:739–755`. |
+| 3 | Specialization | Checker specialization registration writes `Function::specializations` and call-edge argument types; consumers map those types through `checked_call_edge_specialization` at `src/ast.hpp:945–1002`. |
+| 4 | Pipeline stage and output type | `SemanticChecker::add_functional_pipeline_ir` records `FunctionalPipeline::nodes` and each node's `kind`, `callable_identity`, and `output_type` at `src/semantic_checker.cpp:21548–21730`; the record is `src/functional_ir.hpp:128–145`. |
+| 5 | Parameter effects and passing | Effect inference writes function and specialization parameter effects in `src/semantic_checker.cpp:839–871`; declarations are in `src/ast.hpp:435–438, 568–590`. These remain known downstream-consumer debt for this phase. |
+| 6 | Clone, move, and borrow choices | The checker ownership pass runs at `src/semantic_checker.cpp:871, 10333–10344`; checked ownership records include `Function::parameter_effects` and `Stmt::ownership_consumed_bindings` at `src/ast.hpp:345, 435–438`. Emitter-local lowering choices remain known debt. |
+| 7 | Control-flow joins | The checker stores the merged environment in `Stmt::joined_types` and `joined_types_by_context` at `src/semantic_checker.cpp:13037–13038`; the fields are declared at `src/ast.hpp:297–303`. |
+| 8 | Pattern meaning | The checker resolves enum identity, variant, and bindings from `est::PatternNode` in `phase21_pattern_identity` and `phase21_pattern_bindings` at `src/semantic_checker.cpp:19675–19730`; the retained pattern structure is declared at `src/est/expression_tree.hpp:180–194` and attached at `src/ast.hpp:265–267, 356–357`. |
+| 9 | Lock requirements | `SemanticChecker::build_synchronization_plan` constructs `Program::synchronization_plan` at `src/semantic_checker.cpp:17555–17630`; the program field is `src/ast.hpp:923`. |
+
+The conflict registry for this round is [27.5.3 conflicts](phase27/27_5_3_CONFLICTS.md). It contains no entries at the current C1 implementation checkpoint. This is not evidence that all consumers have been migrated: classes 1–4 still have unmeasured consumers, and perturbation/removal tests have not yet established end-to-end authority.
+
+The Fast Debug pipeline/handle slice is checkpointed in commit `88f611ce`. Its targeted tests cover `examples/functional_basics.moss`, `tests/phase27/est/specialized_call_facts.moss`, and `tests/swarm_001_parenthesized_pipeline.moss`; all three report zero Fast Debug expression-tree and pipeline reparses and match native plus optimized generated execution. This targeted result does not replace the C1 full gates.
