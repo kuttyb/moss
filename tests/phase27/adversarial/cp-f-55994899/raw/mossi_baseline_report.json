@@ -1,0 +1,34 @@
+{
+  "baseline_toolchain_identity": {
+    "moss_path": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/tmp/phase27-mossi-baseline/1793460872080197435/active-moss",
+    "moss_sha256": "4a334c71d9b5ea5b2925c311f7a462abd046e479fc4b52df4c0453e612ceb286",
+    "rustc_path": "/home/owner/.cargo/bin/rustup",
+    "rustc_sha256": "dda7234360b7f578ca8b0ddcb80145646fa61a67c1720a5abc7051b35c9fcb71",
+    "rustc_version": "rustup 1.29.1 (d95a37b6a 2026-08-13)"
+  },
+  "candidate_toolchain_identity": {
+    "moss_path": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/tmp/phase27-mossi-baseline/1793460872080197435/active-moss",
+    "moss_sha256": "e9ffab899862087e007730320c409e2fa31ab6a8b1b871fe03ab962567cb62f9",
+    "rustc_path": "/home/owner/.cargo/bin/rustup",
+    "rustc_sha256": "dda7234360b7f578ca8b0ddcb80145646fa61a67c1720a5abc7051b35c9fcb71",
+    "rustc_version": "rustup 1.29.1 (d95a37b6a 2026-08-13)"
+  },
+  "results": {
+    "app": {
+      "baseline_execution_body_hash": "016ce6a0ba8d8fc312eee99b0e85a3fe5fbaba0e87bb9ad7a5fa5b00c62f30f1",
+      "baseline_raw_sha256": "b89454be4a76c9bb25eb3080a5d68d568db79122b2cd7fcc1ca320b8700c3d34",
+      "candidate_raw_sha256": "80fe1d764b786218bfb222c50e3844a3b3a2d71a59fbcd626ffed0a5d3f4d9e2",
+      "normalized_bytes_equal": true,
+      "recomputed_baseline_package_fingerprint": "d3d46fb6e9c9b154c0a012ff9f6705e9f77267476aa477f3f5674144fb19998e",
+      "recomputed_execution_body_hash": "016ce6a0ba8d8fc312eee99b0e85a3fe5fbaba0e87bb9ad7a5fa5b00c62f30f1"
+    },
+    "library": {
+      "baseline_execution_body_hash": "0039f5c0ed09fc0a8ed5898b9422fbd506646a28c910abbb87918cfa2f5b5f79",
+      "baseline_raw_sha256": "f4c5b20ef8833ab4c6c10dd5e6bf4d0151361e8f001665445c30ab889b546119",
+      "candidate_raw_sha256": "5afe6947bbfff54c0a720357cdf8d503f2a51e52518049dc3c53ec581bdffabe",
+      "normalized_bytes_equal": true,
+      "recomputed_baseline_package_fingerprint": "2070996a1ee64ad1ce4e6abe2db3c9d0a1112b5e647b6b0dfc5d96c0f933de26",
+      "recomputed_execution_body_hash": "0039f5c0ed09fc0a8ed5898b9422fbd506646a28c910abbb87918cfa2f5b5f79"
+    }
+  }
+}

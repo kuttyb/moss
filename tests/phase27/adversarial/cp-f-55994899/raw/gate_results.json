@@ -1,0 +1,64 @@
+{
+  "candidate_revision": "55994899539532c763d6489b16b859f419b12205",
+  "baseline_revision": "04be1a1bbbc7a4fd8fe2e4090b4b5bad5dd573e4",
+  "language_version": "moss-0.1",
+  "compiler_sha256": {
+    "baseline_dev": "4a334c71d9b5ea5b2925c311f7a462abd046e479fc4b52df4c0453e612ceb286",
+    "baseline_opt": "a7014f21f024ffba26801d377474d346eeecfc4c536e604d7e0816d4c7b211f0",
+    "candidate_dev": "e9ffab899862087e007730320c409e2fa31ab6a8b1b871fe03ab962567cb62f9",
+    "candidate_opt": "36588000224913f59fc9ef5559a9039717841311f7ca9a1750b97fa3aa1b5dc9",
+    "candidate_asan_ubsan": "0362c778054c917ed7eabf8220e643996e948ba559b3d964e763e13a926833e0"
+  },
+  "commands": [
+    {
+      "command": "python3 tests/phase27/adversarial/cp-f-55994899/corpus_differential.py 55994899539532c763d6489b16b859f419b12205 . <baseline-dev> <candidate-dev> --jobs 8 --timeout 120",
+      "result": "2225 sources; 2 baseline/candidate-off diagnostic rows; 0 candidate-off/shadow rows; 0 incomplete"
+    },
+    {
+      "command": "python3 tests/phase27/adversarial/cp-f-55994899/rust_emission_differential.py . <baseline-dev> <candidate-dev> raw/corpus_differential.json --jobs 8 --timeout 120",
+      "result": "1423 accepted sources; 2846 profile comparisons; 2824 Rust hash matches; 22 identical shared emitter failures; 0 unpaired failures"
+    },
+    {
+      "command": "python3 tests/phase27/adversarial/cp-f-55994899/examples_engine_parity.py 55994899539532c763d6489b16b859f419b12205 . <baseline-dev> <candidate-dev> --jobs 4 --timeout 120",
+      "result": "31 examples; 0 output mismatches; 0 incomplete native cases; 1 same rejected fixture; 3 same Fast Debug nonzero diagnostics"
+    },
+    {
+      "command": "python3 tests/tooling/check_phase27_mossi_baseline.py <candidate-dev> <baseline-dev>",
+      "result": "PASS; normalized .mossi library and app bytes equal"
+    },
+    {
+      "command": "python3 tests/tooling/check_phase27_est_mossi.py <compiler>",
+      "result": "PASS on baseline and candidate; off/shadow raw .mossi parity and imported generic/Section 2 EST dumps"
+    },
+    {
+      "command": "MOSS=<compiler> python3 sdk/advanced-data-acceptance/check_source_free.py --abi v9 --profile debug",
+      "result": "PASS on baseline and candidate; 14 providers including 5 Team A modules; source-free consumer built and ran"
+    },
+    {
+      "command": "python3 tests/tooling/check_phase27_three_engine.py <compiler>",
+      "result": "PASS on baseline and candidate; stdout identical; callback invocations=3"
+    },
+    {
+      "command": "python3 tests/tooling/check_phase27_accepts_rustc.py <compiler>",
+      "result": "PASS on baseline and candidate; 236 accepted roots; native Margo smoke passes; 6 active allowlist seeds"
+    },
+    {
+      "command": "python3 tests/phase27/adversarial/cp-f-55994899/reach_differential.py 55994899539532c763d6489b16b859f419b12205 . <baseline-dev> <candidate-dev> --jobs 8 --timeout 120",
+      "result": "2225 tracked sources; 158 Phase 27.2 self rows; 160 candidate rows; 158 current inherited rows exact; 2 duplicate source-free diagnostic rows; 0 incomplete"
+    },
+    {
+      "command": "make --jobs=<nproc> COMPILER_DIR=build/compiler-asan CXXFLAGS_DEV='-std=c++17 -Wall -Wextra -pedantic -O1 -fsanitize=address,undefined -fno-omit-frame-pointer' LDFLAGS='-fsanitize=address,undefined' moss-dev; python3 tests/phase27/adversarial/cp-f-55994899/sanitized_candidate_scan.py 55994899539532c763d6489b16b859f419b12205 . build/compiler-asan/moss-dev --jobs 8 --timeout 180",
+      "result": "PASS; 2225 candidate sources; 0 ASan/UBSan, signal, no-JSON, or timeout findings"
+    },
+    {
+      "command": "python3 tests/phase27/adversarial/cp-f-55994899/paired_fast_debug_timeouts.py . <baseline-dev> <candidate-dev> --timeout 600",
+      "result": "Both functional_pipeline.moss and frontend_syntax.moss are BOTH-TIMEOUT at 600s on baseline and candidate; all four stdout/stderr streams empty"
+    },
+    {
+      "command": "python3 tests/phase27/adversarial/cp-f-55994899/overflow_probe.py . tests/phase27/adversarial/cp-f-phase27-3/wrapping-message-argument.moss <baseline-dev> <candidate-dev>",
+      "result": "PASS; checks accept baseline/off, candidate/off, candidate/shadow; 10 Fast Debug/native outputs equal Int64 min"
+    }
+  ],
+  "compiler_perf": "not run during CP-F",
+  "source_edits": 0
+}
