@@ -38,4 +38,4 @@
 - Full off and shadow checks passed; three-engine and all accepted Fast Debug/native parity fixtures passed.
 - Agent 2: GO. Review confirms no checked specialization mismatch in the audited calls and no remaining join derivation references.
 - First-parent performance: +1.4% aggregate over 77 fixtures, no beyond-noise fixture regression.
-- Delivery merge and tag SHAs are recorded in the merge commit and annotated tag `phase27-5-1-m1`.
+- Delivery merge: `e7a9f7076d2c0d70603ad0ffb823aea8c44a030b`, with first parent `1c9489aaac40a4dc9386c4e1257fc02474fbf433` and second parent `15c21ae6b23388af3eca8496f1d150a7bcbb82e1`. Annotated tag `phase27-5-1-m1` targets the merge.

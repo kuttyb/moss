@@ -13574,4 +13574,5 @@ check` passed 154/154, zero failures or skips. Branch remains unmerged.
 - Frozen implementation `15c21ae6b23388af3eca8496f1d150a7bcbb82e1` passed full `make check` in off and shadow. The only later change before merge is delivery documentation and the test-driver hook-off check; compiler source is unchanged.
 - Agent 2 reviewed the exact frozen SHA and returned GO. It found no mismatched checked specialization in audited emitter calls, confirmed no `block_binders`/`joined_binders` references remain, and confirmed both G1/G2 hook-off removal drivers fail as expected.
 - First-parent perf against `1c9489aaac40a4dc9386c4e1257fc02474fbf433`: 77 fixtures, three interleaved repetitions, aggregate median +1.4%, no fixture beyond the noise threshold. Report: `tmp/compiler-perf/20261031-141231/LOCAL_REPORT.md`.
-- Phase report and team closeout: `docs/phase27/27_5_1_REPORT.md` and `docs/phase27/agent-patterns/phase27-5-1.md`. Record merge SHA and tag after delivery.
+- Phase report and team closeout: `docs/phase27/27_5_1_REPORT.md` and `docs/phase27/agent-patterns/phase27-5-1.md`.
+- Merge: `e7a9f7076d2c0d70603ad0ffb823aea8c44a030b`, first parent `1c9489aaac40a4dc9386c4e1257fc02474fbf433`, second parent `15c21ae6b23388af3eca8496f1d150a7bcbb82e`. Annotated tag `phase27-5-1-m1` targets the merge.
