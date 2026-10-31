@@ -1396,6 +1396,14 @@ LiteralClass root_literal_class(const ExpressionView& e) {
   return literal->literal_class;
 }
 
+std::optional<std::string> root_literal_spelling(const ExpressionView& e) {
+  if (!e.arena || e.root >= e.arena->size()) return std::nullopt;
+  const auto root = unparenthesized(*e.arena, e.root);
+  const auto* literal = std::get_if<Literal>(&e.arena->at(root));
+  return literal ? std::optional<std::string>(literal->spelling)
+                 : std::nullopt;
+}
+
 bool decimal_integer_literal(const ExpressionView& e, bool allow_sign,
                              bool allow_underscores) {
   if (!e.arena || e.root >= e.arena->size()) return false;

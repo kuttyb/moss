@@ -253,6 +253,7 @@ bool empty_constructor_named(const ExpressionView& view, std::string_view name);
 std::optional<std::string> project_empty_constructor_type(
     const ExpressionView& view);
 LiteralClass root_literal_class(const ExpressionView& view);
+std::optional<std::string> root_literal_spelling(const ExpressionView& view);
 bool decimal_integer_literal(const ExpressionView& view, bool allow_sign,
                              bool allow_underscores);
 bool positive_decimal_integer_literal(const ExpressionView& view);

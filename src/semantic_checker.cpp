@@ -4426,37 +4426,61 @@ class Checker {
         case BodyTypeState::ExpressionOccurrence::Kind::Literal: {
           const string source = trim(occurrence.source_expression);
           if (type->kind != TypeKind::Primitive) return std::nullopt;
+          const auto* literal_arena = expression_arena(
+              occurrence.est_arena_index);
+          std::optional<est::ExpressionView> parsed_syntax;
+          est::ExpressionView syntax;
+          est::ExprId literal_expression = occurrence.est_expr_id;
+          if (!literal_arena || literal_expression >= literal_arena->size()) {
+            parsed_syntax = est::parse_view(occurrence.source_expression);
+            if (!parsed_syntax) return std::nullopt;
+            syntax = *parsed_syntax;
+            literal_arena = syntax.arena;
+            literal_expression = syntax.root;
+          } else {
+            syntax = est::view(*literal_arena, literal_expression,
+                               occurrence.source_expression);
+          }
+          const auto literal_class = est::root_literal_class(syntax);
+          const auto spelling = est::root_literal_spelling(syntax);
+          const auto* direct_literal = std::get_if<est::Literal>(
+              &literal_arena->at(literal_expression));
           if (type->name == "bool" &&
-              (source == "true" || source == "false")) {
+              direct_literal &&
+              direct_literal->literal_class == est::LiteralClass::Boolean &&
+              spelling) {
             result.kind = checked_ir::ExprKind::BoolLiteral;
-            result.literal_value = source;
-          } else if (type->name == "int") {
-            std::size_t first_digit = !source.empty() && source.front() == '-'
-                ? 1 : 0;
-            if (first_digit == source.size() ||
-                !std::all_of(source.begin() +
-                        static_cast<std::ptrdiff_t>(first_digit), source.end(),
-                    [](unsigned char character) {
-                      return moss::ascii_is_digit(character);
-                    }))
-              return std::nullopt;
-            try {
-              std::size_t consumed = 0;
-              const auto number = std::stoll(source, &consumed, 10);
-              if (consumed != source.size()) return std::nullopt;
-              result.kind = checked_ir::ExprKind::IntegerLiteral;
-              result.literal_value = std::to_string(number);
-            } catch (const std::exception&) {
-              return std::nullopt;
+            result.literal_value = *spelling;
+          } else if (type->name == "int" &&
+                     est::decimal_integer_literal(syntax, true, false)) {
+            const auto* root = &literal_arena->at(literal_expression);
+            const est::Literal* integer_literal =
+                std::get_if<est::Literal>(root);
+            if (const auto* unary = std::get_if<est::Unary>(root)) {
+              if (unary->op != "-") return std::nullopt;
+              integer_literal = std::get_if<est::Literal>(
+                  &literal_arena->at(unary->operand));
             }
+            if (!integer_literal ||
+                integer_literal->literal_class != est::LiteralClass::Integer ||
+                !integer_literal->decimal_integer_digits)
+              return std::nullopt;
+            const auto number = est::numeric_literal_value(syntax);
+            if (!number || number->kind != NumericLiteral::Kind::Int)
+              return std::nullopt;
+            result.kind = checked_ir::ExprKind::IntegerLiteral;
+            result.literal_value = std::to_string(number->integer);
           } else if (type->name == "float" &&
-                     tree_literal_class(source) == moss::est::LiteralClass::Float) {
+                     literal_class == est::LiteralClass::Float) {
             result.kind = checked_ir::ExprKind::FloatLiteral;
             result.literal_value = source;
           } else if (type->name == "string" &&
-                     valid_checked_string_literal_spelling(source)) {
+                     direct_literal &&
+                     direct_literal->literal_class == est::LiteralClass::String &&
+                     spelling &&
+                     valid_checked_string_literal_spelling(*spelling)) {
             result.kind = checked_ir::ExprKind::StringLiteral;
-            result.literal_value = source;
+            result.literal_value = *spelling;
           } else {
             return std::nullopt;
           }
