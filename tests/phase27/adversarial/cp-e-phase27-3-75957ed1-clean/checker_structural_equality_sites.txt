@@ -1,0 +1,11 @@
+src/semantic_checker.cpp:2679:!tree_expressions_structurally_equal(stage.source_operands.front(), callback_source) ||
+src/semantic_checker.cpp:2792:!tree_expressions_structurally_equal(statement->args.front(),
+src/semantic_checker.cpp:2861:if (!tree_expressions_structurally_equal(source_arguments[index],
+src/semantic_checker.cpp:3075:if (!tree_expressions_structurally_equal(constraint.arguments[index],
+src/semantic_checker.cpp:3275:if (!tree_expressions_structurally_equal(constraint.arguments[index],
+src/semantic_checker.cpp:6137:tree_expressions_structurally_equal(function.body.front().a, function.body.back().a) &&
+src/semantic_checker.cpp:10900:static bool tree_expressions_structurally_equal(const string& left,
+src/semantic_checker.cpp:12773:if (tree_expressions_structurally_equal(prior.a, statement.a) &&
+src/semantic_checker.cpp:24368:if (tree_expressions_structurally_equal(args[prior], argument))
+src/semantic_checker.cpp:25745:tree_expressions_structurally_equal(child.source_expression, left_expression))
+src/semantic_checker.cpp:25748:tree_expressions_structurally_equal(child.source_expression, right_expression))

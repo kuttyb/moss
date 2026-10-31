@@ -1,0 +1,28 @@
+{
+  "audited_raw_stmt_binding_comparisons": 9,
+  "audited_raw_stmt_name_comparisons": 40,
+  "baseline_counts": {
+    "checker": 441,
+    "compiler_frontend": 48,
+    "emitter": 112,
+    "optimizer": 10,
+    "parser": 23
+  },
+  "candidate_counts": {
+    "compiler_frontend": 48,
+    "optimizer": 10,
+    "parser": 23
+  },
+  "candidate_remaining_by_consumer": {
+    "compiler_frontend": 48,
+    "optimizer": 10,
+    "parser": 23
+  },
+  "candidate_zero_call_count_by_required_consumer": {
+    "checker": 0,
+    "emitter": 0,
+    "fast_debug": 0,
+    "reach_walk": 0
+  },
+  "direct_tree_expression_text_reads_checker_emitter": 0
+}

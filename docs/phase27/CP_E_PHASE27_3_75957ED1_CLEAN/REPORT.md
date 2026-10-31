@@ -4,11 +4,11 @@ Candidate: `75957ed1ff052c3bfd88d021b4d229f0592783e3`
 Baseline: `04be1a1bbbc7a4fd8fe2e4090b4b5bad5dd573e4`
 Review branch: `review/CP_E_PHASE27_3_75957ED1_CLEAN`
 
-GO-with-defects
+CP-E verdict: GO-with-defects
 
 ## Finding
 
-The frozen candidate over-rejects an expression that the baseline accepts. In `tests/phase27/est/repro/unclosed_vector_expression.moss`, the source is `echo [1, 2`:
+MIGRATION BUG: the frozen candidate over-rejects an expression that the baseline accepts. In `tests/phase27/est/repro/unclosed_vector_expression.moss`, the source is `echo [1, 2`:
 
 - Baseline, off and shadow: accepted, no diagnostic.
 - Candidate, off and shadow: rejected with `MOSS_COMPILE_ERROR`, “heterogeneous or unresolved collection element type” at line 2, column 1.
@@ -23,8 +23,8 @@ I explicitly enumerated 934 `.moss` files under `tests/` and `sdk/`, pruning adv
 
 | Path | Baseline off/shadow | Candidate off/shadow | Classification |
 | --- | --- | --- | --- |
-| `tests/phase27/est/repro/unclosed_vector_expression.moss` | accepted | `MOSS_COMPILE_ERROR` at 2:1: heterogeneous or unresolved collection element type | Defect: the echo expression is rejected while baseline accepts it. |
-| `sdk/advanced-data-acceptance/fixtures/source_free_consumer.moss` when checked standalone without module paths | `RECOVERY_PATTERN_REQUIRES_VARIANT` at 57:1: recovery patterns must name a qualified enum variant | `UNKNOWN_ERROR_TYPE` at 57:1: unknown error enum `ndarray.NdArrayError` | Context-only diagnostic difference: the standalone file has no imported package interfaces. The package-backed source-free gate passes on both compilers. |
+| `tests/phase27/est/repro/unclosed_vector_expression.moss` | accepted | `MOSS_COMPILE_ERROR` at 2:1: heterogeneous or unresolved collection element type | MIGRATION BUG: the echo expression is rejected while baseline accepts it. |
+| `sdk/advanced-data-acceptance/fixtures/source_free_consumer.moss` when checked standalone without module paths | `RECOVERY_PATTERN_REQUIRES_VARIANT` at 57:1: recovery patterns must name a qualified enum variant | `UNKNOWN_ERROR_TYPE` at 57:1: unknown error enum `ndarray.NdArrayError` | BENIGN: this standalone invocation has no imported package interfaces. The package-backed source-free gate is the oracle and passes on baseline/candidate in off/shadow. |
 
 The focused aggregate harness was skipped because its implementation copies a restricted adversarial fixture. This is a review-method limitation, not a verdict input. Its non-adversarial EST cases were run directly against baseline and candidate in off/shadow: message, binary, numeric member, Phase 27.1b syntax, side facts, and tuple fixture. All checked successfully; shadow emitted comparisons and fact dumps, and expected tree node kinds were present. The explicitly named `package_open_collection` Margo check rejected with the same expected diagnostic in all four compiler/mode combinations.
 
