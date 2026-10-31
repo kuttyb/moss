@@ -1,0 +1,15 @@
+rw_swarm_047_reduce_map	baseline=7.828ms	candidate=8.483ms	delta=8.4%	+0.655ms
+w8_traits_dispatch_c050	baseline=36.259ms	candidate=43.873ms	delta=21.0%	+7.614ms
+w5_infer_wide_w025	baseline=35.464ms	candidate=50.697ms	delta=43.0%	+15.233ms
+w8_traits_dispatch_c100	baseline=71.397ms	candidate=81.255ms	delta=13.8%	+9.858ms
+rw_phase106d1_read_projection	baseline=8.882ms	candidate=9.960ms	delta=12.1%	+1.078ms
+w5_infer_wide_w050	baseline=57.294ms	candidate=62.523ms	delta=9.1%	+5.229ms
+w6_types_count_t100	baseline=87.617ms	candidate=94.160ms	delta=7.5%	+6.543ms
+rw_phase4_functional	baseline=14.884ms	candidate=16.829ms	delta=13.1%	+1.945ms
+w5_infer_wide_w100	baseline=109.042ms	candidate=123.404ms	delta=13.2%	+14.362ms
+rw_sdk_datastructures	baseline=235.541ms	candidate=258.709ms	delta=9.8%	+23.168ms
+rw_projects_rolling_window	baseline=41.366ms	candidate=53.821ms	delta=30.1%	+12.455ms
+rw_projects_cache	baseline=29.476ms	candidate=34.535ms	delta=17.2%	+5.059ms
+w2_spec_distinct_n008	baseline=86.966ms	candidate=102.039ms	delta=17.3%	+15.073ms
+w2_spec_distinct_n032	baseline=1826.987ms	candidate=1952.389ms	delta=6.9%	+125.402ms
+rw_packages_regex	baseline=649.108ms	candidate=648.140ms	delta=-0.1%	+-0.968ms

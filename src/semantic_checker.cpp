@@ -402,12 +402,13 @@ CheckerEstViewCache::Entry* checker_est_view_entry(std::string_view source) {
 std::shared_ptr<const moss::est::ExpressionView> checker_est_view(
     std::string_view source);
 
-std::optional<string> checker_identifier_name(std::string_view source) {
+std::optional<std::string_view> checker_identifier_name(
+    std::string_view source) {
   auto* cached = checker_est_view_entry(source);
   if (cached && cached->identifier_projection_attempted) {
     ++checker_est_view_cache.identifier_hits;
     return cached->identifier_projection
-        ? std::optional<string>(*cached->identifier_projection)
+        ? std::optional<std::string_view>(*cached->identifier_projection)
         : std::nullopt;
   }
   ++checker_est_view_cache.identifier_misses;
@@ -425,7 +426,15 @@ std::optional<string> checker_identifier_name(std::string_view source) {
     if (is_identifier)
       cached->identifier_projection = std::make_unique<string>(name);
   }
-  return is_identifier ? std::optional<string>(std::move(name)) : std::nullopt;
+  if (!is_identifier) return std::nullopt;
+  if (cached && cached->identifier_projection)
+    return std::string_view(*cached->identifier_projection);
+  if (syntax && syntax->arena && syntax->root < syntax->arena->size()) {
+    if (const auto* identifier = std::get_if<moss::est::Identifier>(
+            &syntax->arena->at(syntax->root)))
+      return std::string_view(identifier->name);
+  }
+  return std::nullopt;
 }
 
 std::shared_ptr<const moss::est::ExpressionView> checker_est_view_impl(
@@ -10786,7 +10795,8 @@ class Checker {
   }
 
   static std::optional<string> tree_identifier_name(const string& value) {
-    return checker_identifier_name(value);
+    auto name = checker_identifier_name(value);
+    return name ? std::optional<string>(string(*name)) : std::nullopt;
   }
 
   static bool tree_is_fileio_open(const string& value) {
@@ -26706,8 +26716,9 @@ class Checker {
           if (!value_text) continue;
           auto value_type = inferred_expr_type(*value_text, env);
           if (value_type && contains_domain_handle(*value_type)) {
-            const string binding = checker_identifier_name(*value_text)
-                .value_or(*value_text);
+            const auto identifier = checker_identifier_name(*value_text);
+            const string binding = identifier ? string(*identifier)
+                                              : *value_text;
             err(line, "domain handle '" + binding +
                 "' is not an ordinary value; use domainroutes and message targets only",
                 "MOSS_COMPILE_ERROR");

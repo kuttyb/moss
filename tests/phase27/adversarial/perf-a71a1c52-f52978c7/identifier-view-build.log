@@ -1,0 +1,58 @@
+clang++ --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13  -std=c++17 -Wall -Wextra -pedantic -O0  -include-pch build/compiler/obj/dev-3716945734/compiler_pch.pch -MMD -MP -MF build/compiler/obj/dev-3716945734/src/semantic_checker.d -MT build/compiler/obj/dev-3716945734/src/semantic_checker.o -c src/semantic_checker.cpp -o build/compiler/obj/dev-3716945734/src/semantic_checker.o
+clang++ --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13  -std=c++17 -Wall -Wextra -pedantic -O2  -include-pch build/compiler/obj/opt-3851646706/compiler_pch.pch -MMD -MP -MF build/compiler/obj/opt-3851646706/src/semantic_checker.d -MT build/compiler/obj/opt-3851646706/src/semantic_checker.o -c src/semantic_checker.cpp -o build/compiler/obj/opt-3851646706/src/semantic_checker.o
+In file included from src/semantic_checker.cpp:35:
+In file included from src/ast.hpp:16:
+src/type_ir.hpp:911:71: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  911 |         trail->push_back({Undo::Kind::Parent, id, found->second.parent});
+      |                                                                       ^
+src/type_ir.hpp:957:67: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  957 |       trail.push_back({Undo::Kind::Parent, other, secondary.parent});
+      |                                                                   ^
+In file included from src/semantic_checker.cpp:35:
+In file included from src/ast.hpp:16:
+src/type_ir.hpp:911:71: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  911 |         trail->push_back({Undo::Kind::Parent, id, found->second.parent});
+      |                                                                       ^
+src/type_ir.hpp:957:67: warning: missing field 'binding' initializer [-Wmissing-field-initializers]
+  957 |       trail.push_back({Undo::Kind::Parent, other, secondary.parent});
+      |                                                                   ^
+src/semantic_checker.cpp:3981:32: warning: captured structured bindings are a C++20 extension [-Wc++20-extensions]
+ 3981 |         return candidate.id == root_id && candidate.statement_id == slot.first;
+      |                                ^
+src/semantic_checker.cpp:3976:29: note: 'root_id' declared here
+ 3976 |     for (const auto& [slot, root_id] : state.expression_root_slots) {
+      |                             ^
+src/semantic_checker.cpp:3981:69: warning: captured structured bindings are a C++20 extension [-Wc++20-extensions]
+ 3981 |         return candidate.id == root_id && candidate.statement_id == slot.first;
+      |                                                                     ^
+src/semantic_checker.cpp:3976:23: note: 'slot' declared here
+ 3976 |     for (const auto& [slot, root_id] : state.expression_root_slots) {
+      |                       ^
+src/semantic_checker.cpp:3981:32: warning: captured structured bindings are a C++20 extension [-Wc++20-extensions]
+ 3981 |         return candidate.id == root_id && candidate.statement_id == slot.first;
+      |                                ^
+src/semantic_checker.cpp:3976:29: note: 'root_id' declared here
+ 3976 |     for (const auto& [slot, root_id] : state.expression_root_slots) {
+      |                             ^
+src/semantic_checker.cpp:3981:69: warning: captured structured bindings are a C++20 extension [-Wc++20-extensions]
+ 3981 |         return candidate.id == root_id && candidate.statement_id == slot.first;
+      |                                                                     ^
+src/semantic_checker.cpp:3976:23: note: 'slot' declared here
+ 3976 |     for (const auto& [slot, root_id] : state.expression_root_slots) {
+      |                       ^
+src/semantic_checker.cpp:13115:36: warning: captured structured bindings are a C++20 extension [-Wc++20-extensions]
+ 13115 |                     candidate.a != name ||
+       |                                    ^
+src/semantic_checker.cpp:13107:29: note: 'name' declared here
+ 13107 |           for (const auto& [name, joined_type] : env) {
+       |                             ^
+src/semantic_checker.cpp:13115:36: warning: captured structured bindings are a C++20 extension [-Wc++20-extensions]
+ 13115 |                     candidate.a != name ||
+       |                                    ^
+src/semantic_checker.cpp:13107:29: note: 'name' declared here
+ 13107 |           for (const auto& [name, joined_type] : env) {
+       |                             ^
+5 warnings generated.
+clang++ --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13 -std=c++17 -Wall -Wextra -pedantic -O0  -fuse-ld=mold build/compiler/obj/dev-3716945734/src/char_string_ordering_runtime.o build/compiler/obj/dev-3716945734/src/checked_body_ir.o build/compiler/obj/dev-3716945734/src/diagnostic_identity.o build/compiler/obj/dev-3716945734/src/display_runtime.o build/compiler/obj/dev-3716945734/src/est/expression_tree.o build/compiler/obj/dev-3716945734/src/est/expression_query.o build/compiler/obj/dev-3716945734/src/executor_runtime.o build/compiler/obj/dev-3716945734/src/fileio_runtime.o build/compiler/obj/dev-3716945734/src/float_format_runtime.o build/compiler/obj/dev-3716945734/src/functional_optimizer.o build/compiler/obj/dev-3716945734/src/handler_runtime.o build/compiler/obj/dev-3716945734/src/native_generator.o build/compiler/obj/dev-3716945734/src/numeric_literal.o build/compiler/obj/dev-3716945734/src/numeric_runtime.o build/compiler/obj/dev-3716945734/src/parser.o build/compiler/obj/dev-3716945734/src/program_identity.o build/compiler/obj/dev-3716945734/src/semantic_checker.o build/compiler/obj/dev-3716945734/src/typed_semantic_api.o build/compiler/obj/dev-3716945734/src/type_ir.o build/compiler/obj/dev-3716945734/src/moss.o  -o build/compiler/moss-dev.tmp
+5 warnings generated.
+clang++ --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13 -std=c++17 -Wall -Wextra -pedantic -O2  -fuse-ld=mold build/compiler/obj/opt-3851646706/src/char_string_ordering_runtime.o build/compiler/obj/opt-3851646706/src/checked_body_ir.o build/compiler/obj/opt-3851646706/src/diagnostic_identity.o build/compiler/obj/opt-3851646706/src/display_runtime.o build/compiler/obj/opt-3851646706/src/est/expression_tree.o build/compiler/obj/opt-3851646706/src/est/expression_query.o build/compiler/obj/opt-3851646706/src/executor_runtime.o build/compiler/obj/opt-3851646706/src/fileio_runtime.o build/compiler/obj/opt-3851646706/src/float_format_runtime.o build/compiler/obj/opt-3851646706/src/functional_optimizer.o build/compiler/obj/opt-3851646706/src/handler_runtime.o build/compiler/obj/opt-3851646706/src/native_generator.o build/compiler/obj/opt-3851646706/src/numeric_literal.o build/compiler/obj/opt-3851646706/src/numeric_runtime.o build/compiler/obj/opt-3851646706/src/parser.o build/compiler/obj/opt-3851646706/src/program_identity.o build/compiler/obj/opt-3851646706/src/semantic_checker.o build/compiler/obj/opt-3851646706/src/typed_semantic_api.o build/compiler/obj/opt-3851646706/src/type_ir.o build/compiler/obj/opt-3851646706/src/moss.o  -o build/compiler/moss-opt.tmp
