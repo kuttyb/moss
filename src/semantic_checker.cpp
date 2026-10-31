@@ -11311,6 +11311,22 @@ class Checker {
     return result;
   }
 
+  static bool tree_outer_grouping(const string& text) {
+    auto syntax = checker_est_view(text);
+    if (!syntax || !syntax->arena || syntax->root >= syntax->arena->size())
+      return false;
+    const auto& node = syntax->arena->at(syntax->root);
+    const bool result = std::holds_alternative<moss::est::Parenthesized>(node) ||
+        std::holds_alternative<moss::est::Tuple>(node);
+    if (moss::est::mode() == moss::est::Mode::Shadow) {
+      const string source = trim(text);
+      const bool legacy = source.size() >= 2 && source.front() == '(' &&
+          source.back() == ')' && matching_paren(source, 0) == source.size() - 1;
+      assert(result == legacy);
+    }
+    return result;
+  }
+
   std::optional<std::pair<string,string>> tree_split_binary(const string& expression,
                                                        const vector<string>& operators) const {
     auto found = binary_parse_cache_.find(expression);
@@ -18715,9 +18731,8 @@ class Checker {
     }
     string value = tree_normalize_pipeline(std::move(original));
     if (value.empty()) return;
-    while (value.size() >= 2 && value.front() == '(' && value.back() == ')' &&
-           matching_paren(value, 0) == value.size() - 1)
-      value = trim(value.substr(1, value.size() - 2));
+    while (tree_outer_grouping(value))
+      value = tree_strip_redundant_outer_parentheses(value);
 
     // Every call evaluated by a value wrapper still needs a semantic call
     // edge.  Module projection uses these edges to emit imported generic
@@ -18896,9 +18911,8 @@ class Checker {
                                           const TypeEnv& env) const {
     string value = trim(expression);
     if (value.empty()) return false;
-    while (value.size() >= 2 && value.front() == '(' && value.back() == ')' &&
-           matching_paren(value, 0) == value.size() - 1)
-      value = trim(value.substr(1, value.size() - 2));
+    while (tree_outer_grouping(value))
+      value = tree_strip_redundant_outer_parentheses(value);
     if (functional_pipeline_from_est(value)) return true;
     if (auto elements = tree_parse_vector_literal(value))
       return std::any_of(elements->begin(), elements->end(),
@@ -21277,34 +21291,18 @@ class Checker {
   static vector<string> functional_captures(const string& expression,
                                             const TypeEnv& env) {
     std::set<string> captures;
-    bool in_string = false, escaped = false;
-    for (size_t index = 0; index < expression.size();) {
-      char ch = expression[index];
-      if (in_string) {
-        if (escaped) escaped = false;
-        else if (ch == '\\') escaped = true;
-        else if (ch == '"') in_string = false;
-        ++index;
-        continue;
-      }
-      if (ch == '"') { in_string = true; ++index; continue; }
-      if (!(moss::ascii_is_alpha(static_cast<unsigned char>(ch)) || ch == '_')) {
-        ++index;
-        continue;
-      }
-      size_t end = index + 1;
-      while (end < expression.size() &&
-             (moss::ascii_is_alnum(static_cast<unsigned char>(expression[end])) ||
-              expression[end] == '_'))
-        ++end;
-      string name = expression.substr(index, end - index);
-      size_t before = index;
-      while (before > 0 &&
-             moss::ascii_is_space(static_cast<unsigned char>(expression[before - 1])))
-        --before;
-      bool member_name = before > 0 && expression[before - 1] == '.';
-      if (name != "_" && !member_name && env.count(name)) captures.insert(name);
-      index = end;
+    auto syntax = checker_est_view(expression);
+    if (syntax) {
+      for (const auto& [name, _] : env)
+        if (name != "_" && moss::est::contains_identifier(*syntax, name))
+          captures.insert(name);
+    }
+    if (moss::est::mode() == moss::est::Mode::Shadow) {
+      std::set<string> legacy_captures;
+      for (const auto& [name, _] : env)
+        if (name != "_" && legacy_expression_uses(expression, name))
+          legacy_captures.insert(name);
+      assert(captures == legacy_captures);
     }
     return vector<string>(captures.begin(), captures.end());
   }
@@ -22131,6 +22129,7 @@ class Checker {
       return;
     }
     auto requested_type = inferred_expr_type(value, env.types);
+    string unary_operation, unary_operand;
     if (requested == Effect::Consume && requested_type &&
         fileio_scoped_type(*requested_type))
       err(line, "FileIO and borrowed ranges cannot be moved or returned",
@@ -22151,7 +22150,6 @@ class Checker {
         return;
       }
     }
-    string unary_operation, unary_operand;
     if (tree_parse_unary(value, unary_operation, unary_operand) &&
         unary_operation == "not") {
       check_ownership_expression(line, unary_operand, env, Effect::Read);
@@ -26619,10 +26617,9 @@ class Checker {
             "use only static domainroutes bindings and message targets");
     // Parentheses, literals and unary forms must not hide a routing capability
     // from the ordinary-expression checker.
-    if (original.size() >= 2 && original.front() == '(' && original.back() == ')' &&
-        matching_paren(original, 0) == original.size() - 1) {
+    if (tree_outer_grouping(original)) {
       mark_active_expression(OccurrenceKind::Group);
-      check_expression(line, original.substr(1, original.size() - 2), env,
+      check_expression(line, tree_strip_redundant_outer_parentheses(original), env,
                        {}, "grouped-expression");
       return;
     }
@@ -26718,8 +26715,8 @@ class Checker {
       return;
     }
     string value = tree_normalize_pipeline(std::move(original));
-    if (!value.empty() && value.front() == '!' &&
-        (value.size() == 1 || value[1] != '='))
+    if (tree_parse_unary(value, unary_operation, unary_operand) &&
+        unary_operation == "!")
       err(line, "unary '!' is not supported; use 'not' for Boolean negation",
           "UNSUPPORTED_EXPRESSION_OPERATOR");
     auto membership = tree_split_binary(value, {" not in "});
@@ -26754,7 +26751,6 @@ class Checker {
         return;
       }
     }
-    string unary_operation, unary_operand;
     if (tree_parse_unary(value, unary_operation, unary_operand) &&
         unary_operation == "not") {
       mark_active_expression(OccurrenceKind::Unary, "not");
