@@ -1,0 +1,6 @@
+fn main():
+  try:
+    file = (((FileIO.open("input", ro))))
+    file.close()
+  recover:
+    pass

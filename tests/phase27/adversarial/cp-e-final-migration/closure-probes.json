@@ -1,0 +1,1079 @@
+[
+  {
+    "command": "check",
+    "compiler": "baseline",
+    "exit": 0,
+    "file": "closure_valid.moss",
+    "json": {
+      "command": "check",
+      "compiler_version": "0.1.0",
+      "ok": true,
+      "protocol_version": 1,
+      "result": {
+        "diagnostics": [],
+        "source_file": "/home/owner/daji/code/moss/tmp/cp-e-final-migration/tests/phase27/adversarial/cp-e-final-migration/closure_valid.moss"
+      },
+      "schema_version": "moss-agent-1"
+    },
+    "stderr": ""
+  },
+  {
+    "command": "symbols",
+    "compiler": "baseline",
+    "exit": 0,
+    "file": "closure_valid.moss",
+    "json": {
+      "command": "symbols",
+      "compiler_version": "0.1.0",
+      "ok": true,
+      "protocol_version": 1,
+      "result": {
+        "query": "",
+        "symbols": [
+          {
+            "display_name": "main",
+            "enclosing_entity": null,
+            "entity_id": "entity-v1:main",
+            "kind": "main",
+            "qualified_name": "main",
+            "source": {
+              "column": 1,
+              "file": "/home/owner/daji/code/moss/tmp/cp-e-final-migration/tests/phase27/adversarial/cp-e-final-migration/closure_valid.moss",
+              "line": 4,
+              "range_precision": "line"
+            }
+          },
+          {
+            "display_name": "std",
+            "enclosing_entity": null,
+            "entity_id": "entity-v1:module:std",
+            "kind": "module",
+            "qualified_name": "std",
+            "source": {
+              "column": 1,
+              "file": "<moss-std>",
+              "line": 0,
+              "range_precision": "line"
+            }
+          },
+          {
+            "display_name": "ConversionError",
+            "enclosing_entity": null,
+            "entity_id": "entity-v1:enum:std__ConversionError",
+            "kind": "enum",
+            "qualified_name": "std.ConversionError",
+            "source": {
+              "column": 1,
+              "file": "<moss-std>",
+              "line": 0,
+              "range_precision": "line"
+            }
+          },
+          {
+            "display_name": "NonFinite",
+            "enclosing_entity": "entity-v1:enum:std__ConversionError",
+            "entity_id": "entity-v1:enum-case:std__ConversionError.NonFinite",
+            "kind": "enum_case",
+            "qualified_name": "std.ConversionError.NonFinite",
+            "source": {
+              "column": 1,
+              "file": "<moss-std>",
+              "line": 0,
+              "range_precision": "line"
+            }
+          },
+          {
+            "display_name": "Overflow",
+            "enclosing_entity": "entity-v1:enum:std__ConversionError",
+            "entity_id": "entity-v1:enum-case:std__ConversionError.Overflow",
+            "kind": "enum_case",
+            "qualified_name": "std.ConversionError.Overflow",
+            "source": {
+              "column": 1,
+              "file": "<moss-std>",
+              "line": 0,
+              "range_precision": "line"
+            }
+          },
+          {
+            "display_name": "FileError",
+            "enclosing_entity": null,
+            "entity_id": "entity-v1:enum:std__FileError",
+            "kind": "enum",
+            "qualified_name": "std.FileError",
+            "source": {
+              "column": 1,
+              "file": "<moss-std>",
+              "line": 0,
+              "range_precision": "line"
+            }
+          },
+          {
+            "display_name": "Full",
+            "enclosing_entity": "entity-v1:enum:std__FileError",
+            "entity_id": "entity-v1:enum-case:std__FileError.Full",
+            "kind": "enum_case",
+            "qualified_name": "std.FileError.Full",
+            "source": {
+              "column": 1,
+              "file": "<moss-std>",
+              "line": 0,
+              "range_precision": "line"
+            }
+          },
+          {
+            "display_name": "IO",
+            "enclosing_entity": "entity-v1:enum:std__FileError",
+            "entity_id": "entity-v1:enum-case:std__FileError.IO",
+            "kind": "enum_case",
+            "qualified_name": "std.FileError.IO",
+            "source": {
+              "column": 1,
+              "file": "<moss-std>",
+              "line": 0,
+              "range_precision": "line"
+            }
+          },
+          {
+            "display_name": "InUse",
+            "enclosing_entity": "entity-v1:enum:std__FileError",
+            "entity_id": "entity-v1:enum-case:std__FileError.InUse",
+            "kind": "enum_case",
+            "qualified_name": "std.FileError.InUse",
+            "source": {
+              "column": 1,
+              "file": "<moss-std>",
+              "line": 0,
+              "range_precision": "line"
+            }
+          },
+          {
+            "display_name": "NotFound",
+            "enclosing_entity": "entity-v1:enum:std__FileError",
+            "entity_id": "entity-v1:enum-case:std__FileError.NotFound",
+            "kind": "enum_case",
+            "qualified_name": "std.FileError.NotFound",
+            "source": {
+              "column": 1,
+              "file": "<moss-std>",
+              "line": 0,
+              "range_precision": "line"
+            }
+          },
+          {
+            "display_name": "NotRegularFile",
+            "enclosing_entity": "entity-v1:enum:std__FileError",
+            "entity_id": "entity-v1:enum-case:std__FileError.NotRegularFile",
+            "kind": "enum_case",
+            "qualified_name": "std.FileError.NotRegularFile",
+            "source": {
+              "column": 1,
+              "file": "<moss-std>",
+              "line": 0,
+              "range_precision": "line"
+            }
+          },
+          {
+            "display_name": "PermissionDenied",
+            "enclosing_entity": "entity-v1:enum:std__FileError",
+            "entity_id": "entity-v1:enum-case:std__FileError.PermissionDenied",
+            "kind": "enum_case",
+            "qualified_name": "std.FileError.PermissionDenied",
+            "source": {
+              "column": 1,
+              "file": "<moss-std>",
+              "line": 0,
+              "range_precision": "line"
+            }
+          },
+          {
+            "display_name": "ParseError",
+            "enclosing_entity": null,
+            "entity_id": "entity-v1:enum:std__ParseError",
+            "kind": "enum",
+            "qualified_name": "std.ParseError",
+            "source": {
+              "column": 1,
+              "file": "<moss-std>",
+              "line": 0,
+              "range_precision": "line"
+            }
+          },
+          {
+            "display_name": "Invalid",
+            "enclosing_entity": "entity-v1:enum:std__ParseError",
+            "entity_id": "entity-v1:enum-case:std__ParseError.Invalid",
+            "kind": "enum_case",
+            "qualified_name": "std.ParseError.Invalid",
+            "source": {
+              "column": 1,
+              "file": "<moss-std>",
+              "line": 0,
+              "range_precision": "line"
+            }
+          },
+          {
+            "display_name": "Overflow",
+            "enclosing_entity": "entity-v1:enum:std__ParseError",
+            "entity_id": "entity-v1:enum-case:std__ParseError.Overflow",
+            "kind": "enum_case",
+            "qualified_name": "std.ParseError.Overflow",
+            "source": {
+              "column": 1,
+              "file": "<moss-std>",
+              "line": 0,
+              "range_precision": "line"
+            }
+          },
+          {
+            "display_name": "unreachable_but_checked",
+            "enclosing_entity": null,
+            "entity_id": "entity-v1:function:unreachable_but_checked",
+            "kind": "function",
+            "qualified_name": "unreachable_but_checked",
+            "source": {
+              "column": 1,
+              "file": "/home/owner/daji/code/moss/tmp/cp-e-final-migration/tests/phase27/adversarial/cp-e-final-migration/closure_valid.moss",
+              "line": 1,
+              "range_precision": "line"
+            }
+          }
+        ]
+      },
+      "schema_version": "moss-agent-1"
+    },
+    "stderr": ""
+  },
+  {
+    "command": "check",
+    "compiler": "candidate_off",
+    "exit": 0,
+    "file": "closure_valid.moss",
+    "json": {
+      "command": "check",
+      "compiler_version": "0.1.0",
+      "ok": true,
+      "protocol_version": 1,
+      "result": {
+        "diagnostics": [],
+        "source_file": "/home/owner/daji/code/moss/tmp/cp-e-final-migration/tests/phase27/adversarial/cp-e-final-migration/closure_valid.moss"
+      },
+      "schema_version": "moss-agent-1"
+    },
+    "stderr": ""
+  },
+  {
+    "command": "symbols",
+    "compiler": "candidate_off",
+    "exit": 0,
+    "file": "closure_valid.moss",
+    "json": {
+      "command": "symbols",
+      "compiler_version": "0.1.0",
+      "ok": true,
+      "protocol_version": 1,
+      "result": {
+        "query": "",
+        "symbols": [
+          {
+            "display_name": "main",
+            "enclosing_entity": null,
+            "entity_id": "entity-v1:main",
+            "kind": "main",
+            "qualified_name": "main",
+            "source": {
+              "column": 1,
+              "file": "/home/owner/daji/code/moss/tmp/cp-e-final-migration/tests/phase27/adversarial/cp-e-final-migration/closure_valid.moss",
+              "line": 4,
+              "range_precision": "line"
+            }
+          },
+          {
+            "display_name": "std",
+            "enclosing_entity": null,
+            "entity_id": "entity-v1:module:std",
+            "kind": "module",
+            "qualified_name": "std",
+            "source": {
+              "column": 1,
+              "file": "<moss-std>",
+              "line": 0,
+              "range_precision": "line"
+            }
+          },
+          {
+            "display_name": "ConversionError",
+            "enclosing_entity": null,
+            "entity_id": "entity-v1:enum:std__ConversionError",
+            "kind": "enum",
+            "qualified_name": "std.ConversionError",
+            "source": {
+              "column": 1,
+              "file": "<moss-std>",
+              "line": 0,
+              "range_precision": "line"
+            }
+          },
+          {
+            "display_name": "NonFinite",
+            "enclosing_entity": "entity-v1:enum:std__ConversionError",
+            "entity_id": "entity-v1:enum-case:std__ConversionError.NonFinite",
+            "kind": "enum_case",
+            "qualified_name": "std.ConversionError.NonFinite",
+            "source": {
+              "column": 1,
+              "file": "<moss-std>",
+              "line": 0,
+              "range_precision": "line"
+            }
+          },
+          {
+            "display_name": "Overflow",
+            "enclosing_entity": "entity-v1:enum:std__ConversionError",
+            "entity_id": "entity-v1:enum-case:std__ConversionError.Overflow",
+            "kind": "enum_case",
+            "qualified_name": "std.ConversionError.Overflow",
+            "source": {
+              "column": 1,
+              "file": "<moss-std>",
+              "line": 0,
+              "range_precision": "line"
+            }
+          },
+          {
+            "display_name": "FileError",
+            "enclosing_entity": null,
+            "entity_id": "entity-v1:enum:std__FileError",
+            "kind": "enum",
+            "qualified_name": "std.FileError",
+            "source": {
+              "column": 1,
+              "file": "<moss-std>",
+              "line": 0,
+              "range_precision": "line"
+            }
+          },
+          {
+            "display_name": "Full",
+            "enclosing_entity": "entity-v1:enum:std__FileError",
+            "entity_id": "entity-v1:enum-case:std__FileError.Full",
+            "kind": "enum_case",
+            "qualified_name": "std.FileError.Full",
+            "source": {
+              "column": 1,
+              "file": "<moss-std>",
+              "line": 0,
+              "range_precision": "line"
+            }
+          },
+          {
+            "display_name": "IO",
+            "enclosing_entity": "entity-v1:enum:std__FileError",
+            "entity_id": "entity-v1:enum-case:std__FileError.IO",
+            "kind": "enum_case",
+            "qualified_name": "std.FileError.IO",
+            "source": {
+              "column": 1,
+              "file": "<moss-std>",
+              "line": 0,
+              "range_precision": "line"
+            }
+          },
+          {
+            "display_name": "InUse",
+            "enclosing_entity": "entity-v1:enum:std__FileError",
+            "entity_id": "entity-v1:enum-case:std__FileError.InUse",
+            "kind": "enum_case",
+            "qualified_name": "std.FileError.InUse",
+            "source": {
+              "column": 1,
+              "file": "<moss-std>",
+              "line": 0,
+              "range_precision": "line"
+            }
+          },
+          {
+            "display_name": "NotFound",
+            "enclosing_entity": "entity-v1:enum:std__FileError",
+            "entity_id": "entity-v1:enum-case:std__FileError.NotFound",
+            "kind": "enum_case",
+            "qualified_name": "std.FileError.NotFound",
+            "source": {
+              "column": 1,
+              "file": "<moss-std>",
+              "line": 0,
+              "range_precision": "line"
+            }
+          },
+          {
+            "display_name": "NotRegularFile",
+            "enclosing_entity": "entity-v1:enum:std__FileError",
+            "entity_id": "entity-v1:enum-case:std__FileError.NotRegularFile",
+            "kind": "enum_case",
+            "qualified_name": "std.FileError.NotRegularFile",
+            "source": {
+              "column": 1,
+              "file": "<moss-std>",
+              "line": 0,
+              "range_precision": "line"
+            }
+          },
+          {
+            "display_name": "PermissionDenied",
+            "enclosing_entity": "entity-v1:enum:std__FileError",
+            "entity_id": "entity-v1:enum-case:std__FileError.PermissionDenied",
+            "kind": "enum_case",
+            "qualified_name": "std.FileError.PermissionDenied",
+            "source": {
+              "column": 1,
+              "file": "<moss-std>",
+              "line": 0,
+              "range_precision": "line"
+            }
+          },
+          {
+            "display_name": "ParseError",
+            "enclosing_entity": null,
+            "entity_id": "entity-v1:enum:std__ParseError",
+            "kind": "enum",
+            "qualified_name": "std.ParseError",
+            "source": {
+              "column": 1,
+              "file": "<moss-std>",
+              "line": 0,
+              "range_precision": "line"
+            }
+          },
+          {
+            "display_name": "Invalid",
+            "enclosing_entity": "entity-v1:enum:std__ParseError",
+            "entity_id": "entity-v1:enum-case:std__ParseError.Invalid",
+            "kind": "enum_case",
+            "qualified_name": "std.ParseError.Invalid",
+            "source": {
+              "column": 1,
+              "file": "<moss-std>",
+              "line": 0,
+              "range_precision": "line"
+            }
+          },
+          {
+            "display_name": "Overflow",
+            "enclosing_entity": "entity-v1:enum:std__ParseError",
+            "entity_id": "entity-v1:enum-case:std__ParseError.Overflow",
+            "kind": "enum_case",
+            "qualified_name": "std.ParseError.Overflow",
+            "source": {
+              "column": 1,
+              "file": "<moss-std>",
+              "line": 0,
+              "range_precision": "line"
+            }
+          },
+          {
+            "display_name": "unreachable_but_checked",
+            "enclosing_entity": null,
+            "entity_id": "entity-v1:function:unreachable_but_checked",
+            "kind": "function",
+            "qualified_name": "unreachable_but_checked",
+            "source": {
+              "column": 1,
+              "file": "/home/owner/daji/code/moss/tmp/cp-e-final-migration/tests/phase27/adversarial/cp-e-final-migration/closure_valid.moss",
+              "line": 1,
+              "range_precision": "line"
+            }
+          }
+        ]
+      },
+      "schema_version": "moss-agent-1"
+    },
+    "stderr": ""
+  },
+  {
+    "command": "check",
+    "compiler": "candidate_shadow",
+    "exit": 0,
+    "file": "closure_valid.moss",
+    "json": {
+      "command": "check",
+      "compiler_version": "0.1.0",
+      "ok": true,
+      "protocol_version": 1,
+      "result": {
+        "diagnostics": [],
+        "source_file": "/home/owner/daji/code/moss/tmp/cp-e-final-migration/tests/phase27/adversarial/cp-e-final-migration/closure_valid.moss"
+      },
+      "schema_version": "moss-agent-1"
+    },
+    "stderr": ""
+  },
+  {
+    "command": "symbols",
+    "compiler": "candidate_shadow",
+    "exit": 0,
+    "file": "closure_valid.moss",
+    "json": {
+      "command": "symbols",
+      "compiler_version": "0.1.0",
+      "ok": true,
+      "protocol_version": 1,
+      "result": {
+        "query": "",
+        "symbols": [
+          {
+            "display_name": "main",
+            "enclosing_entity": null,
+            "entity_id": "entity-v1:main",
+            "kind": "main",
+            "qualified_name": "main",
+            "source": {
+              "column": 1,
+              "file": "/home/owner/daji/code/moss/tmp/cp-e-final-migration/tests/phase27/adversarial/cp-e-final-migration/closure_valid.moss",
+              "line": 4,
+              "range_precision": "line"
+            }
+          },
+          {
+            "display_name": "std",
+            "enclosing_entity": null,
+            "entity_id": "entity-v1:module:std",
+            "kind": "module",
+            "qualified_name": "std",
+            "source": {
+              "column": 1,
+              "file": "<moss-std>",
+              "line": 0,
+              "range_precision": "line"
+            }
+          },
+          {
+            "display_name": "ConversionError",
+            "enclosing_entity": null,
+            "entity_id": "entity-v1:enum:std__ConversionError",
+            "kind": "enum",
+            "qualified_name": "std.ConversionError",
+            "source": {
+              "column": 1,
+              "file": "<moss-std>",
+              "line": 0,
+              "range_precision": "line"
+            }
+          },
+          {
+            "display_name": "NonFinite",
+            "enclosing_entity": "entity-v1:enum:std__ConversionError",
+            "entity_id": "entity-v1:enum-case:std__ConversionError.NonFinite",
+            "kind": "enum_case",
+            "qualified_name": "std.ConversionError.NonFinite",
+            "source": {
+              "column": 1,
+              "file": "<moss-std>",
+              "line": 0,
+              "range_precision": "line"
+            }
+          },
+          {
+            "display_name": "Overflow",
+            "enclosing_entity": "entity-v1:enum:std__ConversionError",
+            "entity_id": "entity-v1:enum-case:std__ConversionError.Overflow",
+            "kind": "enum_case",
+            "qualified_name": "std.ConversionError.Overflow",
+            "source": {
+              "column": 1,
+              "file": "<moss-std>",
+              "line": 0,
+              "range_precision": "line"
+            }
+          },
+          {
+            "display_name": "FileError",
+            "enclosing_entity": null,
+            "entity_id": "entity-v1:enum:std__FileError",
+            "kind": "enum",
+            "qualified_name": "std.FileError",
+            "source": {
+              "column": 1,
+              "file": "<moss-std>",
+              "line": 0,
+              "range_precision": "line"
+            }
+          },
+          {
+            "display_name": "Full",
+            "enclosing_entity": "entity-v1:enum:std__FileError",
+            "entity_id": "entity-v1:enum-case:std__FileError.Full",
+            "kind": "enum_case",
+            "qualified_name": "std.FileError.Full",
+            "source": {
+              "column": 1,
+              "file": "<moss-std>",
+              "line": 0,
+              "range_precision": "line"
+            }
+          },
+          {
+            "display_name": "IO",
+            "enclosing_entity": "entity-v1:enum:std__FileError",
+            "entity_id": "entity-v1:enum-case:std__FileError.IO",
+            "kind": "enum_case",
+            "qualified_name": "std.FileError.IO",
+            "source": {
+              "column": 1,
+              "file": "<moss-std>",
+              "line": 0,
+              "range_precision": "line"
+            }
+          },
+          {
+            "display_name": "InUse",
+            "enclosing_entity": "entity-v1:enum:std__FileError",
+            "entity_id": "entity-v1:enum-case:std__FileError.InUse",
+            "kind": "enum_case",
+            "qualified_name": "std.FileError.InUse",
+            "source": {
+              "column": 1,
+              "file": "<moss-std>",
+              "line": 0,
+              "range_precision": "line"
+            }
+          },
+          {
+            "display_name": "NotFound",
+            "enclosing_entity": "entity-v1:enum:std__FileError",
+            "entity_id": "entity-v1:enum-case:std__FileError.NotFound",
+            "kind": "enum_case",
+            "qualified_name": "std.FileError.NotFound",
+            "source": {
+              "column": 1,
+              "file": "<moss-std>",
+              "line": 0,
+              "range_precision": "line"
+            }
+          },
+          {
+            "display_name": "NotRegularFile",
+            "enclosing_entity": "entity-v1:enum:std__FileError",
+            "entity_id": "entity-v1:enum-case:std__FileError.NotRegularFile",
+            "kind": "enum_case",
+            "qualified_name": "std.FileError.NotRegularFile",
+            "source": {
+              "column": 1,
+              "file": "<moss-std>",
+              "line": 0,
+              "range_precision": "line"
+            }
+          },
+          {
+            "display_name": "PermissionDenied",
+            "enclosing_entity": "entity-v1:enum:std__FileError",
+            "entity_id": "entity-v1:enum-case:std__FileError.PermissionDenied",
+            "kind": "enum_case",
+            "qualified_name": "std.FileError.PermissionDenied",
+            "source": {
+              "column": 1,
+              "file": "<moss-std>",
+              "line": 0,
+              "range_precision": "line"
+            }
+          },
+          {
+            "display_name": "ParseError",
+            "enclosing_entity": null,
+            "entity_id": "entity-v1:enum:std__ParseError",
+            "kind": "enum",
+            "qualified_name": "std.ParseError",
+            "source": {
+              "column": 1,
+              "file": "<moss-std>",
+              "line": 0,
+              "range_precision": "line"
+            }
+          },
+          {
+            "display_name": "Invalid",
+            "enclosing_entity": "entity-v1:enum:std__ParseError",
+            "entity_id": "entity-v1:enum-case:std__ParseError.Invalid",
+            "kind": "enum_case",
+            "qualified_name": "std.ParseError.Invalid",
+            "source": {
+              "column": 1,
+              "file": "<moss-std>",
+              "line": 0,
+              "range_precision": "line"
+            }
+          },
+          {
+            "display_name": "Overflow",
+            "enclosing_entity": "entity-v1:enum:std__ParseError",
+            "entity_id": "entity-v1:enum-case:std__ParseError.Overflow",
+            "kind": "enum_case",
+            "qualified_name": "std.ParseError.Overflow",
+            "source": {
+              "column": 1,
+              "file": "<moss-std>",
+              "line": 0,
+              "range_precision": "line"
+            }
+          },
+          {
+            "display_name": "unreachable_but_checked",
+            "enclosing_entity": null,
+            "entity_id": "entity-v1:function:unreachable_but_checked",
+            "kind": "function",
+            "qualified_name": "unreachable_but_checked",
+            "source": {
+              "column": 1,
+              "file": "/home/owner/daji/code/moss/tmp/cp-e-final-migration/tests/phase27/adversarial/cp-e-final-migration/closure_valid.moss",
+              "line": 1,
+              "range_precision": "line"
+            }
+          }
+        ]
+      },
+      "schema_version": "moss-agent-1"
+    },
+    "stderr": ""
+  },
+  {
+    "command": "check",
+    "compiler": "baseline",
+    "exit": 1,
+    "file": "closure_invalid_unreachable.moss",
+    "json": {
+      "command": "check",
+      "compiler_version": "0.1.0",
+      "error": {
+        "cause": null,
+        "code": "UNKNOWN_SYMBOL_OR_TYPE",
+        "column": 1,
+        "details": {
+          "consume_line": null,
+          "ownership_actual": null,
+          "ownership_expected": null,
+          "recursion_witness": null,
+          "resolution": null
+        },
+        "fixes": [],
+        "guidance": null,
+        "legal_alternatives": [
+          "rename the reference to an existing static symbol",
+          "declare the missing symbol or concrete type"
+        ],
+        "line": 2,
+        "message": "unknown identifier 'missing_name'",
+        "related": [],
+        "rule": null,
+        "semantic_identity": "fn:unreachable_bad@1",
+        "severity": "error",
+        "source": {
+          "column": 1,
+          "file": "/home/owner/daji/code/moss/tmp/cp-e-final-migration/tests/phase27/adversarial/cp-e-final-migration/closure_invalid_unreachable.moss",
+          "line": 2,
+          "span": {
+            "end_column": 1,
+            "end_line": 2,
+            "start_column": 1,
+            "start_line": 2
+          }
+        },
+        "source_file": "/home/owner/daji/code/moss/tmp/cp-e-final-migration/tests/phase27/adversarial/cp-e-final-migration/closure_invalid_unreachable.moss",
+        "span": {
+          "end_column": 1,
+          "end_line": 2,
+          "start_column": 1,
+          "start_line": 2
+        },
+        "symbol": null
+      },
+      "ok": false,
+      "protocol_version": 1,
+      "schema_version": "moss-agent-1"
+    },
+    "stderr": ""
+  },
+  {
+    "command": "symbols",
+    "compiler": "baseline",
+    "exit": 1,
+    "file": "closure_invalid_unreachable.moss",
+    "json": {
+      "command": "symbols",
+      "compiler_version": "0.1.0",
+      "error": {
+        "cause": null,
+        "code": "UNKNOWN_SYMBOL_OR_TYPE",
+        "column": 1,
+        "details": {
+          "consume_line": null,
+          "ownership_actual": null,
+          "ownership_expected": null,
+          "recursion_witness": null,
+          "resolution": null
+        },
+        "fixes": [],
+        "guidance": null,
+        "legal_alternatives": [
+          "rename the reference to an existing static symbol",
+          "declare the missing symbol or concrete type"
+        ],
+        "line": 2,
+        "message": "unknown identifier 'missing_name'",
+        "related": [],
+        "rule": null,
+        "semantic_identity": "fn:unreachable_bad@1",
+        "severity": "error",
+        "source": {
+          "column": 1,
+          "file": "/home/owner/daji/code/moss/tmp/cp-e-final-migration/tests/phase27/adversarial/cp-e-final-migration/closure_invalid_unreachable.moss",
+          "line": 2,
+          "span": {
+            "end_column": 1,
+            "end_line": 2,
+            "start_column": 1,
+            "start_line": 2
+          }
+        },
+        "source_file": "/home/owner/daji/code/moss/tmp/cp-e-final-migration/tests/phase27/adversarial/cp-e-final-migration/closure_invalid_unreachable.moss",
+        "span": {
+          "end_column": 1,
+          "end_line": 2,
+          "start_column": 1,
+          "start_line": 2
+        },
+        "symbol": null
+      },
+      "ok": false,
+      "protocol_version": 1,
+      "schema_version": "moss-agent-1"
+    },
+    "stderr": ""
+  },
+  {
+    "command": "check",
+    "compiler": "candidate_off",
+    "exit": 1,
+    "file": "closure_invalid_unreachable.moss",
+    "json": {
+      "command": "check",
+      "compiler_version": "0.1.0",
+      "error": {
+        "cause": null,
+        "code": "UNKNOWN_SYMBOL_OR_TYPE",
+        "column": 1,
+        "details": {
+          "consume_line": null,
+          "ownership_actual": null,
+          "ownership_expected": null,
+          "recursion_witness": null,
+          "resolution": null
+        },
+        "fixes": [],
+        "guidance": null,
+        "legal_alternatives": [
+          "rename the reference to an existing static symbol",
+          "declare the missing symbol or concrete type"
+        ],
+        "line": 2,
+        "message": "unknown identifier 'missing_name'",
+        "related": [],
+        "rule": null,
+        "semantic_identity": "fn:unreachable_bad@1",
+        "severity": "error",
+        "source": {
+          "column": 1,
+          "file": "/home/owner/daji/code/moss/tmp/cp-e-final-migration/tests/phase27/adversarial/cp-e-final-migration/closure_invalid_unreachable.moss",
+          "line": 2,
+          "span": {
+            "end_column": 1,
+            "end_line": 2,
+            "start_column": 1,
+            "start_line": 2
+          }
+        },
+        "source_file": "/home/owner/daji/code/moss/tmp/cp-e-final-migration/tests/phase27/adversarial/cp-e-final-migration/closure_invalid_unreachable.moss",
+        "span": {
+          "end_column": 1,
+          "end_line": 2,
+          "start_column": 1,
+          "start_line": 2
+        },
+        "symbol": null
+      },
+      "ok": false,
+      "protocol_version": 1,
+      "schema_version": "moss-agent-1"
+    },
+    "stderr": ""
+  },
+  {
+    "command": "symbols",
+    "compiler": "candidate_off",
+    "exit": 1,
+    "file": "closure_invalid_unreachable.moss",
+    "json": {
+      "command": "symbols",
+      "compiler_version": "0.1.0",
+      "error": {
+        "cause": null,
+        "code": "UNKNOWN_SYMBOL_OR_TYPE",
+        "column": 1,
+        "details": {
+          "consume_line": null,
+          "ownership_actual": null,
+          "ownership_expected": null,
+          "recursion_witness": null,
+          "resolution": null
+        },
+        "fixes": [],
+        "guidance": null,
+        "legal_alternatives": [
+          "rename the reference to an existing static symbol",
+          "declare the missing symbol or concrete type"
+        ],
+        "line": 2,
+        "message": "unknown identifier 'missing_name'",
+        "related": [],
+        "rule": null,
+        "semantic_identity": "fn:unreachable_bad@1",
+        "severity": "error",
+        "source": {
+          "column": 1,
+          "file": "/home/owner/daji/code/moss/tmp/cp-e-final-migration/tests/phase27/adversarial/cp-e-final-migration/closure_invalid_unreachable.moss",
+          "line": 2,
+          "span": {
+            "end_column": 1,
+            "end_line": 2,
+            "start_column": 1,
+            "start_line": 2
+          }
+        },
+        "source_file": "/home/owner/daji/code/moss/tmp/cp-e-final-migration/tests/phase27/adversarial/cp-e-final-migration/closure_invalid_unreachable.moss",
+        "span": {
+          "end_column": 1,
+          "end_line": 2,
+          "start_column": 1,
+          "start_line": 2
+        },
+        "symbol": null
+      },
+      "ok": false,
+      "protocol_version": 1,
+      "schema_version": "moss-agent-1"
+    },
+    "stderr": ""
+  },
+  {
+    "command": "check",
+    "compiler": "candidate_shadow",
+    "exit": 1,
+    "file": "closure_invalid_unreachable.moss",
+    "json": {
+      "command": "check",
+      "compiler_version": "0.1.0",
+      "error": {
+        "cause": null,
+        "code": "UNKNOWN_SYMBOL_OR_TYPE",
+        "column": 1,
+        "details": {
+          "consume_line": null,
+          "ownership_actual": null,
+          "ownership_expected": null,
+          "recursion_witness": null,
+          "resolution": null
+        },
+        "fixes": [],
+        "guidance": null,
+        "legal_alternatives": [
+          "rename the reference to an existing static symbol",
+          "declare the missing symbol or concrete type"
+        ],
+        "line": 2,
+        "message": "unknown identifier 'missing_name'",
+        "related": [],
+        "rule": null,
+        "semantic_identity": "fn:unreachable_bad@1",
+        "severity": "error",
+        "source": {
+          "column": 1,
+          "file": "/home/owner/daji/code/moss/tmp/cp-e-final-migration/tests/phase27/adversarial/cp-e-final-migration/closure_invalid_unreachable.moss",
+          "line": 2,
+          "span": {
+            "end_column": 1,
+            "end_line": 2,
+            "start_column": 1,
+            "start_line": 2
+          }
+        },
+        "source_file": "/home/owner/daji/code/moss/tmp/cp-e-final-migration/tests/phase27/adversarial/cp-e-final-migration/closure_invalid_unreachable.moss",
+        "span": {
+          "end_column": 1,
+          "end_line": 2,
+          "start_column": 1,
+          "start_line": 2
+        },
+        "symbol": null
+      },
+      "ok": false,
+      "protocol_version": 1,
+      "schema_version": "moss-agent-1"
+    },
+    "stderr": ""
+  },
+  {
+    "command": "symbols",
+    "compiler": "candidate_shadow",
+    "exit": 1,
+    "file": "closure_invalid_unreachable.moss",
+    "json": {
+      "command": "symbols",
+      "compiler_version": "0.1.0",
+      "error": {
+        "cause": null,
+        "code": "UNKNOWN_SYMBOL_OR_TYPE",
+        "column": 1,
+        "details": {
+          "consume_line": null,
+          "ownership_actual": null,
+          "ownership_expected": null,
+          "recursion_witness": null,
+          "resolution": null
+        },
+        "fixes": [],
+        "guidance": null,
+        "legal_alternatives": [
+          "rename the reference to an existing static symbol",
+          "declare the missing symbol or concrete type"
+        ],
+        "line": 2,
+        "message": "unknown identifier 'missing_name'",
+        "related": [],
+        "rule": null,
+        "semantic_identity": "fn:unreachable_bad@1",
+        "severity": "error",
+        "source": {
+          "column": 1,
+          "file": "/home/owner/daji/code/moss/tmp/cp-e-final-migration/tests/phase27/adversarial/cp-e-final-migration/closure_invalid_unreachable.moss",
+          "line": 2,
+          "span": {
+            "end_column": 1,
+            "end_line": 2,
+            "start_column": 1,
+            "start_line": 2
+          }
+        },
+        "source_file": "/home/owner/daji/code/moss/tmp/cp-e-final-migration/tests/phase27/adversarial/cp-e-final-migration/closure_invalid_unreachable.moss",
+        "span": {
+          "end_column": 1,
+          "end_line": 2,
+          "start_column": 1,
+          "start_line": 2
+        },
+        "symbol": null
+      },
+      "ok": false,
+      "protocol_version": 1,
+      "schema_version": "moss-agent-1"
+    },
+    "stderr": ""
+  }
+]

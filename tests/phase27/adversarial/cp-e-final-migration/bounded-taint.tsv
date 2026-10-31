@@ -1,0 +1,11 @@
+source_path	line	Stmt_origin	local_or_helper_flow	terminal_use	classification
+src/semantic_checker.cpp	13789	Stmt.a=name; Stmt.args=expressions	invocation = statement.a + "(" + join_arguments(statement.args) + ")" -> constrain_call, instantiate_summary	semantic call resolution uses expression/EST query paths	EST-backed expression flow; no textual shape test in this flow
+src/semantic_checker.cpp	13919	Stmt.b	message = statement.b + diagnostic text -> CompileError/err	message rendering only	diagnostic construction; not a syntax reader
+src/semantic_checker.cpp	20959	Stmt.b	iter_expr = trim(statement.b)	tree_parse_simple_call, tree_parse_vector_literal, inferred_expr_type, implicit_iterator_methods	EST query/projection path; trim only removes boundary whitespace
+src/semantic_checker.cpp	22910	Stmt.b	source = trim(s.b)	source != "FileIO.open"; then tree_simple_identifier, require_available, consume_binding	raw exact expression-string comparison on a tainted local; bounded-taint reader escape from the direct-field lint
+src/semantic_checker.cpp	22984	Stmt.b	source = trim(s.b)	tree_simple_identifier, require_available, consume_binding	EST identifier query and binding-flow operations; no expression-shape comparison
+src/native_generator.cpp	6084	Stmt.b	source = trim(s.b)	tree_parse_simple_call, generated_expr_type, expr	EST query/projection and lowering path
+src/native_generator.cpp	6568	Stmt.a=name; Stmt.b=method-name; Stmt.args=expressions	call string assembled -> expr	EST parse/lowering path; name and method fields remain keyword slots
+src/native_generator.cpp	6721	Stmt.b=method-name	method copied to local and compared to fixed supported operation names	allowed NAME/operation dispatch slot
+src/fileio_semantics.inc	719	Stmt.text; Stmt.a=name; Stmt.args=expressions	call_text assembled -> fileio_lifecycle_expression	recursive tree_parse_simple_call/tree_parse_member_call/tree_split_binary/tree_parse_vector_literal walk
+src/static_bounds.inc	325	Stmt.b	value = tree_strip_redundant_outer_parentheses(trim(statement.b))	tree_simple_identifier and storage/location projection	EST grouping/identifier query; trim only removes boundary whitespace

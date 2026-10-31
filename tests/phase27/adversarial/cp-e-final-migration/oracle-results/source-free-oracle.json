@@ -1,0 +1,156 @@
+{
+  "baseline": {
+    "mode_equal": true,
+    "package": {
+      "exit": 1,
+      "json": {
+        "error": "command failed (/home/owner/daji/code/moss/tmp/cp-e-final-migration/tmp/cp-e-baseline/build/compiler/moss-dev build --check --json): {\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"build\",\n  \"ok\": false,\n  \"error\": {\"code\": \"SOURCE_FREE_PROVIDER_SOURCE_MISSING\", \"severity\": \"error\", \"message\": \"provider source is missing for 'Service'; source-free artifact freshness cannot be verified\", \"source_file\": \"/home/owner/daji/code/moss/tmp/cp-e-final-migration/tmp/cp-e-final-migration-source-free-oracle/baseline/app/src/main.moss\", \"line\": 0, \"column\": 1, \"span\": null, \"source\": {\"file\": \"/home/owner/daji/code/moss/tmp/cp-e-final-migration/tmp/cp-e-final-migration-source-free-oracle/baseline/app/src/main.moss\", \"line\": 0, \"column\": 1, \"span\": null}, \"semantic_identity\": null, \"symbol\": null, \"rule\": null, \"cause\": null, \"related\": [], \"guidance\": null, \"details\": {\"ownership_expected\": null, \"ownership_actual\": null, \"consume_line\": null, \"recursion_witness\": null, \"resolution\": null}, \"fixes\": [], \"legal_alternatives\": []}\n}",
+        "ok": false,
+        "schema_version": "margo-1"
+      },
+      "stderr": "",
+      "stdout": "{\"schema_version\": \"margo-1\", \"ok\": false, \"error\": \"command failed (/home/owner/daji/code/moss/tmp/cp-e-final-migration/tmp/cp-e-baseline/build/compiler/moss-dev build --check --json): {\\n  \\\"protocol_version\\\": 1,\\n  \\\"schema_version\\\": \\\"moss-agent-1\\\",\\n  \\\"compiler_version\\\": \\\"0.1.0\\\",\\n  \\\"command\\\": \\\"build\\\",\\n  \\\"ok\\\": false,\\n  \\\"error\\\": {\\\"code\\\": \\\"SOURCE_FREE_PROVIDER_SOURCE_MISSING\\\", \\\"severity\\\": \\\"error\\\", \\\"message\\\": \\\"provider source is missing for 'Service'; source-free artifact freshness cannot be verified\\\", \\\"source_file\\\": \\\"/home/owner/daji/code/moss/tmp/cp-e-final-migration/tmp/cp-e-final-migration-source-free-oracle/baseline/app/src/main.moss\\\", \\\"line\\\": 0, \\\"column\\\": 1, \\\"span\\\": null, \\\"source\\\": {\\\"file\\\": \\\"/home/owner/daji/code/moss/tmp/cp-e-final-migration/tmp/cp-e-final-migration-source-free-oracle/baseline/app/src/main.moss\\\", \\\"line\\\": 0, \\\"column\\\": 1, \\\"span\\\": null}, \\\"semantic_identity\\\": null, \\\"symbol\\\": null, \\\"rule\\\": null, \\\"cause\\\": null, \\\"related\\\": [], \\\"guidance\\\": null, \\\"details\\\": {\\\"ownership_expected\\\": null, \\\"ownership_actual\\\": null, \\\"consume_line\\\": null, \\\"recursion_witness\\\": null, \\\"resolution\\\": null}, \\\"fixes\\\": [], \\\"legal_alternatives\\\": []}\\n}\"}\n"
+    },
+    "package_diagnostic": [
+      "SOURCE_FREE_PROVIDER_SOURCE_MISSING",
+      0,
+      "provider source is missing for 'Service'; source-free artifact freshness cannot be verified"
+    ],
+    "provider_build": {
+      "exit": 0,
+      "json": {
+        "decode_error": true,
+        "stdout": ""
+      },
+      "stderr": "",
+      "stdout": ""
+    },
+    "provider_source_removed": true,
+    "standalone": {
+      "exit": 1,
+      "json": {
+        "command": "check",
+        "compiler_version": "0.1.0",
+        "error": {
+          "cause": null,
+          "code": "SOURCE_FREE_PROVIDER_SOURCE_MISSING",
+          "column": 1,
+          "details": {
+            "consume_line": null,
+            "ownership_actual": null,
+            "ownership_expected": null,
+            "recursion_witness": null,
+            "resolution": null
+          },
+          "fixes": [],
+          "guidance": null,
+          "legal_alternatives": [],
+          "line": 0,
+          "message": "provider source is missing for 'Service'; source-free artifact freshness cannot be verified",
+          "related": [],
+          "rule": null,
+          "semantic_identity": null,
+          "severity": "error",
+          "source": {
+            "column": 1,
+            "file": "/home/owner/daji/code/moss/tmp/cp-e-final-migration/tmp/cp-e-final-migration-source-free-oracle/baseline/app/src/main.moss",
+            "line": 0,
+            "span": null
+          },
+          "source_file": "/home/owner/daji/code/moss/tmp/cp-e-final-migration/tmp/cp-e-final-migration-source-free-oracle/baseline/app/src/main.moss",
+          "span": null,
+          "symbol": null
+        },
+        "ok": false,
+        "protocol_version": 1,
+        "schema_version": "moss-agent-1"
+      },
+      "stderr": "",
+      "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": false,\n  \"error\": {\"code\": \"SOURCE_FREE_PROVIDER_SOURCE_MISSING\", \"severity\": \"error\", \"message\": \"provider source is missing for 'Service'; source-free artifact freshness cannot be verified\", \"source_file\": \"/home/owner/daji/code/moss/tmp/cp-e-final-migration/tmp/cp-e-final-migration-source-free-oracle/baseline/app/src/main.moss\", \"line\": 0, \"column\": 1, \"span\": null, \"source\": {\"file\": \"/home/owner/daji/code/moss/tmp/cp-e-final-migration/tmp/cp-e-final-migration-source-free-oracle/baseline/app/src/main.moss\", \"line\": 0, \"column\": 1, \"span\": null}, \"semantic_identity\": null, \"symbol\": null, \"rule\": null, \"cause\": null, \"related\": [], \"guidance\": null, \"details\": {\"ownership_expected\": null, \"ownership_actual\": null, \"consume_line\": null, \"recursion_witness\": null, \"resolution\": null}, \"fixes\": [], \"legal_alternatives\": []}\n}\n"
+    },
+    "standalone_diagnostic": [
+      "SOURCE_FREE_PROVIDER_SOURCE_MISSING",
+      0,
+      "provider source is missing for 'Service'; source-free artifact freshness cannot be verified"
+    ]
+  },
+  "baseline_candidate_package_equal": true,
+  "baseline_candidate_standalone_equal": true,
+  "baseline_mode_equal": true,
+  "candidate": {
+    "mode_equal": true,
+    "package": {
+      "exit": 1,
+      "json": {
+        "error": "command failed (/home/owner/daji/code/moss/tmp/cp-e-final-migration/build/compiler/moss-dev build --check --json): {\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"build\",\n  \"ok\": false,\n  \"error\": {\"code\": \"SOURCE_FREE_PROVIDER_SOURCE_MISSING\", \"severity\": \"error\", \"message\": \"provider source is missing for 'Service'; source-free artifact freshness cannot be verified\", \"source_file\": \"/home/owner/daji/code/moss/tmp/cp-e-final-migration/tmp/cp-e-final-migration-source-free-oracle/candidate/app/src/main.moss\", \"line\": 0, \"column\": 1, \"span\": null, \"source\": {\"file\": \"/home/owner/daji/code/moss/tmp/cp-e-final-migration/tmp/cp-e-final-migration-source-free-oracle/candidate/app/src/main.moss\", \"line\": 0, \"column\": 1, \"span\": null}, \"semantic_identity\": null, \"symbol\": null, \"rule\": null, \"cause\": null, \"related\": [], \"guidance\": null, \"details\": {\"ownership_expected\": null, \"ownership_actual\": null, \"consume_line\": null, \"recursion_witness\": null, \"resolution\": null}, \"fixes\": [], \"legal_alternatives\": []}\n}",
+        "ok": false,
+        "schema_version": "margo-1"
+      },
+      "stderr": "",
+      "stdout": "{\"schema_version\": \"margo-1\", \"ok\": false, \"error\": \"command failed (/home/owner/daji/code/moss/tmp/cp-e-final-migration/build/compiler/moss-dev build --check --json): {\\n  \\\"protocol_version\\\": 1,\\n  \\\"schema_version\\\": \\\"moss-agent-1\\\",\\n  \\\"compiler_version\\\": \\\"0.1.0\\\",\\n  \\\"command\\\": \\\"build\\\",\\n  \\\"ok\\\": false,\\n  \\\"error\\\": {\\\"code\\\": \\\"SOURCE_FREE_PROVIDER_SOURCE_MISSING\\\", \\\"severity\\\": \\\"error\\\", \\\"message\\\": \\\"provider source is missing for 'Service'; source-free artifact freshness cannot be verified\\\", \\\"source_file\\\": \\\"/home/owner/daji/code/moss/tmp/cp-e-final-migration/tmp/cp-e-final-migration-source-free-oracle/candidate/app/src/main.moss\\\", \\\"line\\\": 0, \\\"column\\\": 1, \\\"span\\\": null, \\\"source\\\": {\\\"file\\\": \\\"/home/owner/daji/code/moss/tmp/cp-e-final-migration/tmp/cp-e-final-migration-source-free-oracle/candidate/app/src/main.moss\\\", \\\"line\\\": 0, \\\"column\\\": 1, \\\"span\\\": null}, \\\"semantic_identity\\\": null, \\\"symbol\\\": null, \\\"rule\\\": null, \\\"cause\\\": null, \\\"related\\\": [], \\\"guidance\\\": null, \\\"details\\\": {\\\"ownership_expected\\\": null, \\\"ownership_actual\\\": null, \\\"consume_line\\\": null, \\\"recursion_witness\\\": null, \\\"resolution\\\": null}, \\\"fixes\\\": [], \\\"legal_alternatives\\\": []}\\n}\"}\n"
+    },
+    "package_diagnostic": [
+      "SOURCE_FREE_PROVIDER_SOURCE_MISSING",
+      0,
+      "provider source is missing for 'Service'; source-free artifact freshness cannot be verified"
+    ],
+    "provider_build": {
+      "exit": 0,
+      "json": {
+        "decode_error": true,
+        "stdout": ""
+      },
+      "stderr": "",
+      "stdout": ""
+    },
+    "provider_source_removed": true,
+    "standalone": {
+      "exit": 1,
+      "json": {
+        "command": "check",
+        "compiler_version": "0.1.0",
+        "error": {
+          "cause": null,
+          "code": "SOURCE_FREE_PROVIDER_SOURCE_MISSING",
+          "column": 1,
+          "details": {
+            "consume_line": null,
+            "ownership_actual": null,
+            "ownership_expected": null,
+            "recursion_witness": null,
+            "resolution": null
+          },
+          "fixes": [],
+          "guidance": null,
+          "legal_alternatives": [],
+          "line": 0,
+          "message": "provider source is missing for 'Service'; source-free artifact freshness cannot be verified",
+          "related": [],
+          "rule": null,
+          "semantic_identity": null,
+          "severity": "error",
+          "source": {
+            "column": 1,
+            "file": "/home/owner/daji/code/moss/tmp/cp-e-final-migration/tmp/cp-e-final-migration-source-free-oracle/candidate/app/src/main.moss",
+            "line": 0,
+            "span": null
+          },
+          "source_file": "/home/owner/daji/code/moss/tmp/cp-e-final-migration/tmp/cp-e-final-migration-source-free-oracle/candidate/app/src/main.moss",
+          "span": null,
+          "symbol": null
+        },
+        "ok": false,
+        "protocol_version": 1,
+        "schema_version": "moss-agent-1"
+      },
+      "stderr": "",
+      "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": false,\n  \"error\": {\"code\": \"SOURCE_FREE_PROVIDER_SOURCE_MISSING\", \"severity\": \"error\", \"message\": \"provider source is missing for 'Service'; source-free artifact freshness cannot be verified\", \"source_file\": \"/home/owner/daji/code/moss/tmp/cp-e-final-migration/tmp/cp-e-final-migration-source-free-oracle/candidate/app/src/main.moss\", \"line\": 0, \"column\": 1, \"span\": null, \"source\": {\"file\": \"/home/owner/daji/code/moss/tmp/cp-e-final-migration/tmp/cp-e-final-migration-source-free-oracle/candidate/app/src/main.moss\", \"line\": 0, \"column\": 1, \"span\": null}, \"semantic_identity\": null, \"symbol\": null, \"rule\": null, \"cause\": null, \"related\": [], \"guidance\": null, \"details\": {\"ownership_expected\": null, \"ownership_actual\": null, \"consume_line\": null, \"recursion_witness\": null, \"resolution\": null}, \"fixes\": [], \"legal_alternatives\": []}\n}\n"
+    },
+    "standalone_diagnostic": [
+      "SOURCE_FREE_PROVIDER_SOURCE_MISSING",
+      0,
+      "provider source is missing for 'Service'; source-free artifact freshness cannot be verified"
+    ]
+  },
+  "candidate_mode_equal": true
+}

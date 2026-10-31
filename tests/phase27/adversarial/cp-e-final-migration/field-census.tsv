@@ -1,0 +1,1111 @@
+path	line	receiver	field	classification	source
+src/semantic_checker.cpp	4178	source_statement	a	EST projection/query or tree structure	tree_simple_identifier(source_statement.a) &&
+src/semantic_checker.cpp	4249	source_statement	a	EST projection/query or tree structure	!tree_simple_identifier(source_statement.a)) continue;
+src/semantic_checker.cpp	5130	source	a	EST projection/query or tree structure	if (tree_simple_identifier(source.a) &&
+src/semantic_checker.cpp	5156	source	a	EST projection/query or tree structure	if (!tree_simple_identifier(source.a)) {
+src/semantic_checker.cpp	5415	source	a	propagation, diagnostics, metadata, or other field use; bounded taint review	if (source.a.empty()) return std::nullopt;
+src/semantic_checker.cpp	9299	s	a	raw binding/name comparison; audit by statement kind	if (s.kind == Stmt::Kind::Return && !s.a.empty()) {
+src/semantic_checker.cpp	9300	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	auto result = inferred_expr_type(s.a, inferred_env);
+src/semantic_checker.cpp	9325	statement	a	raw binding/name comparison; audit by statement kind	return statement.kind == Stmt::Kind::Return && !statement.a.empty();
+src/semantic_checker.cpp	9527	source	text	propagation, diagnostics, metadata, or other field use; bounded taint review	const string code = source_code_only(source.text);
+src/semantic_checker.cpp	9905	stmt	a	raw binding/name comparison; audit by statement kind	if (stmt.a == name) {
+src/semantic_checker.cpp	9965	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	auto constructed = domain_constructor(statement.b);
+src/semantic_checker.cpp	9967	statement	a	EST projection/query or tree structure	if (!tree_plain_identifier(statement.a)) continue;
+src/semantic_checker.cpp	9968	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	if (by_binding.count(statement.a))
+src/semantic_checker.cpp	9969	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	fail_at(statement, "duplicate domain instance binding '" + statement.a + "'");
+src/semantic_checker.cpp	9972	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	instance.binding = statement.a;
+src/semantic_checker.cpp	9973	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	instance.identity = "main::" + statement.a;
+src/semantic_checker.cpp	9980	statement	a	raw binding/name comparison; audit by statement kind	specialization.instance == statement.a) {
+src/semantic_checker.cpp	9989	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	concrete.instance = statement.a;
+src/semantic_checker.cpp	10008	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	by_binding[statement.a] = p_.concrete_domain_graph.instances.size();
+src/semantic_checker.cpp	10009	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	binding_types[statement.a] = domain.name;
+src/semantic_checker.cpp	10014	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	auto constructed = domain_constructor(statement.b);
+src/semantic_checker.cpp	10015	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	if (legacy_spawn_expression(statement.b))
+src/semantic_checker.cpp	10021	statement	a	EST projection/query or tree structure	statement.kind == Stmt::Kind::Assign) || !tree_plain_identifier(statement.a))
+src/semantic_checker.cpp	10028	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	if (!by_binding.count(statement.a))
+src/semantic_checker.cpp	10033	statement	b	EST projection/query or tree structure	if (!tree_parse_simple_call(statement.b, constructor_name, constructor_arguments))
+src/semantic_checker.cpp	10041	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	auto supplied = parse_bindings(statement.b);
+src/semantic_checker.cpp	10062	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	edge.source_instance = p_.concrete_domain_graph.instances[by_binding.at(statement.a)].identity;
+src/semantic_checker.cpp	10110	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	if (statement.indent > 0 && domain_constructor(statement.b))
+src/semantic_checker.cpp	10276	statement	a	EST projection/query or tree structure	return parameter.type.empty() && tree_identifier_named(statement.a, parameter.name);
+src/semantic_checker.cpp	10741	statement	b	EST projection/query or tree structure	if (!tree_parse_simple_call(statement.b, constructor, arguments)) continue;
+src/semantic_checker.cpp	12257	statement	a	raw binding/name comparison; audit by statement kind	if (statement.kind == Stmt::Kind::Return && !statement.a.empty() &&
+src/semantic_checker.cpp	12258	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	!include_result(statement.a))
+src/semantic_checker.cpp	12589	statement	a	EST projection/query or tree structure	if (statement.kind != Stmt::Kind::Assign || tree_simple_identifier(statement.a)) {
+src/semantic_checker.cpp	12590	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	auto existing = env.find(statement.a);
+src/semantic_checker.cpp	12594	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	} else if (auto constructed = domain_constructor(statement.b)) {
+src/semantic_checker.cpp	12595	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	env[statement.a] = *constructed;
+src/semantic_checker.cpp	12596	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	} else if (auto inferred = inferred_expr_type(statement.b, env)) {
+src/semantic_checker.cpp	12601	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	? current_body_types_->resolved_local(statement.a) : nullptr;
+src/semantic_checker.cpp	12606	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	env[statement.a] = binding;
+src/semantic_checker.cpp	12613	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	auto solved = solved_collections.find(statement.a);
+src/semantic_checker.cpp	12623	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	env[statement.a] = cinf;
+src/semantic_checker.cpp	12627	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	env[statement.a] = "_value";
+src/semantic_checker.cpp	12630	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	const_cast<Stmt&>(statement).semantic_type = canonical_type_name(env[statement.a]);
+src/semantic_checker.cpp	12633	statement	a	EST projection/query or tree structure	if (tree_parse_index(statement.a, base, index_expression)) {
+src/semantic_checker.cpp	12642	prior	a	EST projection/query or tree structure	if (prior.a == base && tree_empty_constructor_named(prior.b, "Map")) {
+src/semantic_checker.cpp	12642	prior	b	EST projection/query or tree structure	if (prior.a == base && tree_empty_constructor_named(prior.b, "Map")) {
+src/semantic_checker.cpp	12647	prior	b	propagation, diagnostics, metadata, or other field use; bounded taint review	0, prior.b, join_context,
+src/semantic_checker.cpp	12653	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	auto value_type = inferred_expr_type(statement.b, env);
+src/semantic_checker.cpp	12663	prior	a	EST projection/query or tree structure	if (prior.a == base && tree_empty_constructor_named(prior.b, "Map")) {
+src/semantic_checker.cpp	12663	prior	b	EST projection/query or tree structure	if (prior.a == base && tree_empty_constructor_named(prior.b, "Map")) {
+src/semantic_checker.cpp	12668	prior	b	propagation, diagnostics, metadata, or other field use; bounded taint review	0, prior.b, join_context, *refined);
+src/semantic_checker.cpp	12683	statement	message_result	EST handle/pattern or binding metadata	if (statement.kind == Stmt::Kind::Message && !statement.message_result.empty()) {
+src/semantic_checker.cpp	12684	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	auto receiver = env.find(statement.a);
+src/semantic_checker.cpp	12688	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	if (const Handler* handler = find_handler(*domain->second, statement.b))
+src/semantic_checker.cpp	12690	statement	message_result	EST handle/pattern or binding metadata	env[statement.message_result] = *handler->reply_type;
+src/semantic_checker.cpp	12699	statement	b	raw binding/name comparison; audit by statement kind	if (statement.kind == Stmt::Kind::Call && !statement.b.empty() &&
+src/semantic_checker.cpp	12700	statement	b	raw literal/name/keyword comparison; audit by statement kind	(statement.b == "push" ||
+src/semantic_checker.cpp	12701	statement	b	raw literal/name/keyword comparison; audit by statement kind	(staged_abi_v10() && statement.b == "insert")) &&
+src/semantic_checker.cpp	12702	statement	args	propagation, diagnostics, metadata, or other field use; bounded taint review	statement.args.size() == 1) {
+src/semantic_checker.cpp	12703	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	auto container = env.find(statement.a);
+src/semantic_checker.cpp	12705	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	? current_body_types_->resolved_local(statement.a) : nullptr;
+src/semantic_checker.cpp	12711	prior	a	raw binding/name comparison; audit by statement kind	if (prior.a == statement.a &&
+src/semantic_checker.cpp	12711	statement	a	raw binding/name comparison; audit by statement kind	if (prior.a == statement.a &&
+src/semantic_checker.cpp	12712	prior	b	EST projection/query or tree structure	(tree_empty_vector_literal(prior.b) ||
+src/semantic_checker.cpp	12713	prior	b	EST projection/query or tree structure	tree_empty_constructor_named(prior.b, "Queue") ||
+src/semantic_checker.cpp	12714	prior	b	EST projection/query or tree structure	(staged_abi_v10() && tree_empty_constructor_named(prior.b, "Set")) ||
+src/semantic_checker.cpp	12715	prior	b	EST projection/query or tree structure	tree_parse_vector_literal(prior.b).has_value() ||
+src/semantic_checker.cpp	12723	prior	b	propagation, diagnostics, metadata, or other field use; bounded taint review	prior.b, join_context, canonical_type_name(retained));
+src/semantic_checker.cpp	12728	statement	args	propagation, diagnostics, metadata, or other field use; bounded taint review	auto argument = inferred_expr_type(statement.args.front(), env);
+src/semantic_checker.cpp	12735	prior	a	EST projection/query or tree structure	if (tree_expressions_structurally_equal(prior.a, statement.a) &&
+src/semantic_checker.cpp	12735	statement	a	EST projection/query or tree structure	if (tree_expressions_structurally_equal(prior.a, statement.a) &&
+src/semantic_checker.cpp	12736	prior	b	EST projection/query or tree structure	(tree_empty_vector_literal(prior.b) ||
+src/semantic_checker.cpp	12737	prior	b	EST projection/query or tree structure	tree_empty_constructor_named(prior.b, "Queue") ||
+src/semantic_checker.cpp	12738	prior	b	EST projection/query or tree structure	(staged_abi_v10() && tree_empty_constructor_named(prior.b, "Set")) ||
+src/semantic_checker.cpp	12739	prior	b	EST projection/query or tree structure	tree_parse_vector_literal(prior.b).has_value() ||
+src/semantic_checker.cpp	12747	prior	b	propagation, diagnostics, metadata, or other field use; bounded taint review	prior.b, join_context, *refined);
+src/semantic_checker.cpp	12783	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	auto scrutinee_type = inferred_expr_type(statement.a, env);
+src/semantic_checker.cpp	12787	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	(!scrutinee_type && env.count(statement.a) && !env.at(statement.a));
+src/semantic_checker.cpp	12787	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	(!scrutinee_type && env.count(statement.a) && !env.at(statement.a));
+src/semantic_checker.cpp	12796	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	deferred ? (scrutinee_type ? *scrutinee_type : "_generic:" + statement.a)
+src/semantic_checker.cpp	12807	arm	est_pattern	EST handle/pattern or binding metadata	if (!arm.est_pattern ||
+src/semantic_checker.cpp	12808	arm	est_pattern	EST handle/pattern or binding metadata	(arm.est_pattern->kind != moss::est::PatternNode::Kind::EnumTag &&
+src/semantic_checker.cpp	12809	arm	est_pattern	EST handle/pattern or binding metadata	arm.est_pattern->kind != moss::est::PatternNode::Kind::EnumCase))
+src/semantic_checker.cpp	12811	arm	est_pattern	EST handle/pattern or binding metadata	const auto& pattern = *arm.est_pattern;
+src/semantic_checker.cpp	12918	arm	est_pattern	EST handle/pattern or binding metadata	recovered[arm.est_pattern->binding] = selected_types.size() == 1
+src/semantic_checker.cpp	12985	candidate	a	raw binding/name comparison; audit by statement kind	candidate.a != name ||
+src/semantic_checker.cpp	13095	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	statement.line, statement.b, incoming).value_or("_value");
+src/semantic_checker.cpp	13096	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	body_env[statement.a] = element_type;
+src/semantic_checker.cpp	13101	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	body_env.terms[statement.a] = binding->second;
+src/semantic_checker.cpp	13111	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	auto previous = scoped_types->scoped_locals.find(statement.a);
+src/semantic_checker.cpp	13114	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	scoped_types->scoped_locals[statement.a] = binding->second;
+src/semantic_checker.cpp	13121	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	if (previous_term) scoped_types->scoped_locals[statement.a] = *previous_term;
+src/semantic_checker.cpp	13122	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	else scoped_types->scoped_locals.erase(statement.a);
+src/semantic_checker.cpp	13127	statement	a	raw binding/name comparison; audit by statement kind	if (auto shadowed = incoming.find(statement.a); shadowed != incoming.end())
+src/semantic_checker.cpp	13128	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	body_env[statement.a] = shadowed->second;
+src/semantic_checker.cpp	13130	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	body_env.erase(statement.a);
+src/semantic_checker.cpp	13131	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	if (auto shadowed = incoming.terms.find(statement.a);
+src/semantic_checker.cpp	13133	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	body_env.terms[statement.a] = shadowed->second;
+src/semantic_checker.cpp	13135	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	body_env.terms.erase(statement.a);
+src/semantic_checker.cpp	13153	statement	a	EST projection/query or tree structure	tree_simple_identifier(statement.a)) {
+src/semantic_checker.cpp	13155	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	env.terms[statement.a] = term;
+src/semantic_checker.cpp	13158	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	!statement.b.empty()) {
+src/semantic_checker.cpp	13159	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	if (auto receiver = inferred_expr_type(statement.a, env)) {
+src/semantic_checker.cpp	13162	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	statement.a, join_context, canonical_type_name(*receiver));
+src/semantic_checker.cpp	13170	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	? statement.b : statement.text;
+src/semantic_checker.cpp	13170	statement	text	propagation, diagnostics, metadata, or other field use; bounded taint review	? statement.b : statement.text;
+src/semantic_checker.cpp	13672	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	auto scrutinee_type = inferred_expr_type(statement.a, scan);
+src/semantic_checker.cpp	13691	statement	a	raw binding/name comparison; audit by statement kind	[&](const EnumCase& c) { return c.name == statement.a; });
+src/semantic_checker.cpp	13703	statement	args	propagation, diagnostics, metadata, or other field use; bounded taint review	for (size_t i = 0; i < statement.args.size() && i < case_it->fields.size(); ++i) {
+src/semantic_checker.cpp	13704	statement	args	propagation, diagnostics, metadata, or other field use; bounded taint review	const string& field_name = statement.args[i];
+src/semantic_checker.cpp	13720	statement	args	raw binding/name comparison; audit by statement kind	if (statement.args.size() == case_it->fields.size())
+src/semantic_checker.cpp	13727	statement	args	propagation, diagnostics, metadata, or other field use; bounded taint review	for (const auto& argument : statement.args)
+src/semantic_checker.cpp	13732	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	constrain_map_lookup(statement.line, statement.b);
+src/semantic_checker.cpp	13735	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	constrain_map_lookup(statement.line, statement.a);
+src/semantic_checker.cpp	13741	statement	b	EST projection/query or tree structure	if (tree_parse_simple_call(trim(statement.b), callee, arguments) &&
+src/semantic_checker.cpp	13744	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	} else if (auto source = term_for(statement.b)) {
+src/semantic_checker.cpp	13759	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	statement.line, statement.b, scan).value_or("_value");
+src/semantic_checker.cpp	13772	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	current_semantic_context_, statement.line) + ":" + statement.a;
+src/semantic_checker.cpp	13777	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	locals[statement.a] = loop_term;
+src/semantic_checker.cpp	13779	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	scan[statement.a] = resolved->is_closed()
+src/semantic_checker.cpp	13781	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	: "_iterator_element:" + statement.a;
+src/semantic_checker.cpp	13783	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	locals.erase(statement.a);
+src/semantic_checker.cpp	13784	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	scan[statement.a] = "_value";
+src/semantic_checker.cpp	13788	statement	b	raw binding/name comparison; audit by statement kind	if (statement.kind == Stmt::Kind::Call && statement.b.empty()) {
+src/semantic_checker.cpp	13789	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	string invocation = statement.a + "(" + join_arguments(statement.args) + ")";
+src/semantic_checker.cpp	13789	statement	args	propagation, diagnostics, metadata, or other field use; bounded taint review	string invocation = statement.a + "(" + join_arguments(statement.args) + ")";
+src/semantic_checker.cpp	13794	statement	message_result	EST handle/pattern or binding metadata	!statement.message_result.empty()) {
+src/semantic_checker.cpp	13795	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	auto receiver = scan.find(statement.a);
+src/semantic_checker.cpp	13799	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	: find_handler(*domain->second, statement.b);
+src/semantic_checker.cpp	13804	statement	message_result	EST handle/pattern or binding metadata	auto prior = locals.find(statement.message_result);
+src/semantic_checker.cpp	13808	statement	message_result	EST handle/pattern or binding metadata	auto projected = scan.find(statement.message_result);
+src/semantic_checker.cpp	13821	statement	message_result	EST handle/pattern or binding metadata	statement.message_result + "' conflicts with its binding type",
+src/semantic_checker.cpp	13824	statement	message_result	EST handle/pattern or binding metadata	locals.emplace(statement.message_result,
+src/semantic_checker.cpp	13826	statement	message_result	EST handle/pattern or binding metadata	scan[statement.message_result] =
+src/semantic_checker.cpp	13827	statement	message_result	EST handle/pattern or binding metadata	solver.resolve(locals.at(statement.message_result))
+src/semantic_checker.cpp	13835	statement	a	EST projection/query or tree structure	tree_simple_identifier(statement.a)) {
+src/semantic_checker.cpp	13836	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	if (auto constructed = domain_constructor(statement.b)) {
+src/semantic_checker.cpp	13837	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	scan[statement.a] = *constructed;
+src/semantic_checker.cpp	13840	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	auto inferred = inferred_expr_type(statement.b, scan);
+src/semantic_checker.cpp	13841	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	constrain_call(statement.line, statement.b);
+src/semantic_checker.cpp	13842	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	auto instantiated = instantiate_summary(statement.line, statement.b,
+src/semantic_checker.cpp	13844	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	body_types.provider_origins.erase(statement.a);
+src/semantic_checker.cpp	13847	statement	b	EST projection/query or tree structure	if (tree_parse_simple_call(trim(statement.b), assigned_callee,
+src/semantic_checker.cpp	13854	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	body_types.provider_origins.emplace(statement.a,
+src/semantic_checker.cpp	13864	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	auto retained_source = body_types.known_expression(statement.b);
+src/semantic_checker.cpp	13869	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	scan[statement.a] = *inferred;
+src/semantic_checker.cpp	13872	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	auto prior = locals.find(statement.a);
+src/semantic_checker.cpp	13877	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	scan[statement.a] = *inferred;
+src/semantic_checker.cpp	13889	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	statement.a + "'", "TYPE_MISMATCH");
+src/semantic_checker.cpp	13891	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	locals.emplace(statement.a, term);
+src/semantic_checker.cpp	13894	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	scan[statement.a] = prior_open || !term->is_closed()
+src/semantic_checker.cpp	13895	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	? solver.resolve(locals.at(statement.a))->to_canonical_string()
+src/semantic_checker.cpp	13898	statement	b	raw literal/name/keyword comparison; audit by statement kind	(statement.b == "push" ||
+src/semantic_checker.cpp	13899	statement	b	raw literal/name/keyword comparison; audit by statement kind	(staged_abi_v10() && statement.b == "insert")) &&
+src/semantic_checker.cpp	13900	statement	args	propagation, diagnostics, metadata, or other field use; bounded taint review	statement.args.size() == 1) {
+src/semantic_checker.cpp	13901	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	auto local = locals.find(statement.a);
+src/semantic_checker.cpp	13903	statement	args	propagation, diagnostics, metadata, or other field use; bounded taint review	auto argument = term_for(statement.args.front());
+src/semantic_checker.cpp	13919	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	const string message = statement.b +
+src/semantic_checker.cpp	13921	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	statement.a + "'";
+src/semantic_checker.cpp	13922	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	auto origin = body_types.provider_origins.find(statement.a);
+src/semantic_checker.cpp	13937	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	scan[statement.a] = solver.resolve(local->second)->to_canonical_string();
+src/semantic_checker.cpp	13939	statement	a	EST projection/query or tree structure	tree_index_expression(statement.a)) {
+src/semantic_checker.cpp	13941	statement	a	EST projection/query or tree structure	if (!tree_parse_index(statement.a, base, index)) continue;
+src/semantic_checker.cpp	13944	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	auto value = term_for(statement.b);
+src/semantic_checker.cpp	13984	statement	a	EST projection/query or tree structure	tree_member_access(statement.a)) {
+src/semantic_checker.cpp	13985	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	auto field = body_types.known_expression(statement.a);
+src/semantic_checker.cpp	13986	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	auto rhs = term_for(statement.b);
+src/semantic_checker.cpp	13991	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	statement.a + "'", "TYPE_MISMATCH");
+src/semantic_checker.cpp	14037	checked_statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	if (closed.size() == 1 && !checked_statement.b.empty()) {
+src/semantic_checker.cpp	14045	checked_statement	b	EST projection/query or tree structure	est::ExprSlot::RhsValue, 0, checked_statement.b,
+src/semantic_checker.cpp	14078	checked_statement	b	EST projection/query or tree structure	est::ExprSlot::RhsValue, 0, checked_statement.b, semantic_context,
+src/semantic_checker.cpp	14122	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	constrain_constructor_fields(statement.line, statement.a, current_env);
+src/semantic_checker.cpp	14127	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	constrain_constructor_fields(statement.line, statement.b, current_env);
+src/semantic_checker.cpp	14132	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	constrain_constructor_fields(statement.line, statement.b, current_env);
+src/semantic_checker.cpp	14136	statement	args	propagation, diagnostics, metadata, or other field use; bounded taint review	for (const auto& arg : statement.args)
+src/semantic_checker.cpp	14139	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	const string& receiver_name = statement.a;
+src/semantic_checker.cpp	14140	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	const string& handler_name = statement.b;
+src/semantic_checker.cpp	14146	statement	args	propagation, diagnostics, metadata, or other field use; bounded taint review	index < statement.args.size() && index < handler->params.size(); ++index) {
+src/semantic_checker.cpp	14148	statement	args	propagation, diagnostics, metadata, or other field use; bounded taint review	functional_pipeline_from_est(statement.args[index]);
+src/semantic_checker.cpp	14154	statement	args	propagation, diagnostics, metadata, or other field use; bounded taint review	auto inferred = inferred_expr(statement.args[index], current_env);
+src/semantic_checker.cpp	14170	statement	message_result	EST handle/pattern or binding metadata	!statement.message_result.empty() && handler && handler->reply_type)
+src/semantic_checker.cpp	14171	statement	message_result	EST handle/pattern or binding metadata	env[statement.message_result] = *handler->reply_type;
+src/semantic_checker.cpp	14178	statement	b	raw literal/name/keyword comparison; audit by statement kind	if (statement.kind == Stmt::Kind::Call && statement.b == "invoke" &&
+src/semantic_checker.cpp	14179	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	executor_typed(current_env, statement.a) && statement.args.size() == 1) {
+src/semantic_checker.cpp	14179	statement	args	propagation, diagnostics, metadata, or other field use; bounded taint review	executor_typed(current_env, statement.a) && statement.args.size() == 1) {
+src/semantic_checker.cpp	14182	statement	args	EST projection/query or tree structure	auto receiver = tree_parse_member_call(statement.args.front(), target, handler_name, handler_args)
+src/semantic_checker.cpp	14202	statement	b	raw binding/name comparison; audit by statement kind	if (statement.kind == Stmt::Kind::Call && statement.b.empty()) {
+src/semantic_checker.cpp	14203	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	auto function = functions_.find(statement.a);
+src/semantic_checker.cpp	14205	statement	args	propagation, diagnostics, metadata, or other field use; bounded taint review	for (size_t i = 0; i < statement.args.size() && i < function->second->params.size(); ++i) {
+src/semantic_checker.cpp	14206	statement	args	propagation, diagnostics, metadata, or other field use; bounded taint review	auto actual = inferred_expr_type(statement.args[i], current_env);
+src/semantic_checker.cpp	14225	statement	args	propagation, diagnostics, metadata, or other field use; bounded taint review	for (const auto& arg : statement.args)
+src/semantic_checker.cpp	14231	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	if (!statement.a.empty())
+src/semantic_checker.cpp	14232	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	constrain_constructor_fields(statement.line, statement.a, current_env);
+src/semantic_checker.cpp	14235	statement	text	propagation, diagnostics, metadata, or other field use; bounded taint review	constrain_constructor_fields(statement.line, statement.text, current_env);
+src/semantic_checker.cpp	14429	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	if (auto constructed = domain_constructor(statement.b)) {
+src/semantic_checker.cpp	14432	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	bindings[statement.a] = domain->second;
+src/semantic_checker.cpp	14433	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	main_env[statement.a] = domain->second->name;
+src/semantic_checker.cpp	14446	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	find_specialization(statement.a, domain->second->name);
+src/semantic_checker.cpp	14455	statement	b	raw literal/name/keyword comparison; audit by statement kind	if (statement.kind == Stmt::Kind::Call && statement.b == "invoke" &&
+src/semantic_checker.cpp	14456	statement	args	propagation, diagnostics, metadata, or other field use; bounded taint review	statement.args.size() == 1 && executor_typed(main_env, statement.a) &&
+src/semantic_checker.cpp	14456	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	statement.args.size() == 1 && executor_typed(main_env, statement.a) &&
+src/semantic_checker.cpp	14457	statement	args	EST projection/query or tree structure	tree_parse_member_call(statement.args.front(), invoke_view.a, invoke_view.b,
+src/semantic_checker.cpp	14457	invoke_view	a	EST projection/query or tree structure	tree_parse_member_call(statement.args.front(), invoke_view.a, invoke_view.b,
+src/semantic_checker.cpp	14457	invoke_view	b	EST projection/query or tree structure	tree_parse_member_call(statement.args.front(), invoke_view.a, invoke_view.b,
+src/semantic_checker.cpp	14458	invoke_view	args	propagation, diagnostics, metadata, or other field use; bounded taint review	invoke_view.args)) {
+src/semantic_checker.cpp	14467	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	const string& receiver = statement.a;
+src/semantic_checker.cpp	14471	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	const string& handler_name = statement.b;
+src/semantic_checker.cpp	14491	statement	args	propagation, diagnostics, metadata, or other field use; bounded taint review	for (const auto& argument : statement.args)
+src/semantic_checker.cpp	14588	body_statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	if (auto reply = inferred_expr_type(body_statement.a, handler_env)) {
+src/semantic_checker.cpp	14773	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	auto actual = inferred_expr_type(statement.a, env);
+src/semantic_checker.cpp	14776	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	if (auto retained = body_types.known_expression(statement.a)) {
+src/semantic_checker.cpp	15113	statement	a	EST projection/query or tree structure	if (parameter.type.empty() && tree_identifier_named(statement.a, parameter.name)) {
+src/semantic_checker.cpp	15138	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	reject_untyped_fields(statement.line, statement.a, env);
+src/semantic_checker.cpp	15139	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	reject_untyped_fields(statement.line, statement.b, env);
+src/semantic_checker.cpp	15140	statement	args	propagation, diagnostics, metadata, or other field use; bounded taint review	for (const auto& argument : statement.args)
+src/semantic_checker.cpp	15143	statement	text	propagation, diagnostics, metadata, or other field use; bounded taint review	reject_untyped_fields(statement.line, statement.text, env);
+src/semantic_checker.cpp	15161	statement	a	EST projection/query or tree structure	tree_identifier_named(statement.a, parameter.name);
+src/semantic_checker.cpp	15228	s	a	raw binding/name comparison; audit by statement kind	for (const auto& s : function.body) if (s.kind == Stmt::Kind::Return && !s.a.empty()) mark(s.a);
+src/semantic_checker.cpp	15228	s	a	raw binding/name comparison; audit by statement kind	for (const auto& s : function.body) if (s.kind == Stmt::Kind::Return && !s.a.empty()) mark(s.a);
+src/semantic_checker.cpp	15241	s	b	EST projection/query or tree structure	if (parameter.type.empty() && tree_identifier_named(s.b, parameter.name)) {
+src/semantic_checker.cpp	15253	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	derive_expression_constraints(function, s.a);
+src/semantic_checker.cpp	15254	s	b	propagation, diagnostics, metadata, or other field use; bounded taint review	derive_expression_constraints(function, s.b);
+src/semantic_checker.cpp	15255	s	args	propagation, diagnostics, metadata, or other field use; bounded taint review	for (const auto& arg : s.args) derive_expression_constraints(function, arg);
+src/semantic_checker.cpp	15257	s	b	propagation, diagnostics, metadata, or other field use; bounded taint review	derive_expression_constraints(function, s.b);
+src/semantic_checker.cpp	15258	s	a	raw binding/name comparison; audit by statement kind	if (s.kind == Stmt::Kind::Return && !s.a.empty())
+src/semantic_checker.cpp	15259	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	derive_expression_constraints(function, s.a, result_expectation());
+src/semantic_checker.cpp	15266	statement	a	EST projection/query or tree structure	tree_plain_identifier(statement.a))
+src/semantic_checker.cpp	15267	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	local_sources[statement.a] = statement.b;
+src/semantic_checker.cpp	15267	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	local_sources[statement.a] = statement.b;
+src/semantic_checker.cpp	15269	statement	a	EST projection/query or tree structure	const auto returned_binding = tree_identifier_name(statement.a);
+src/semantic_checker.cpp	15432	statement	a	raw binding/name comparison; audit by statement kind	if (statement.kind == Stmt::Kind::Return && !statement.a.empty()) {
+src/semantic_checker.cpp	15443	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	include_typed_result(statement.line, statement.a, eval_env);
+src/semantic_checker.cpp	15483	statement	a	raw binding/name comparison; audit by statement kind	if (statement.kind != Stmt::Kind::Return || statement.a.empty()) continue;
+src/semantic_checker.cpp	15484	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	auto result = inferred_expr_type(statement.a, env);
+src/semantic_checker.cpp	15610	statement	a	EST projection/query or tree structure	tree_identifier_named(statement.a, parameter.name);
+src/semantic_checker.cpp	15638	statement	a	raw binding/name comparison; audit by statement kind	return statement.kind == Stmt::Kind::Return && !statement.a.empty();
+src/semantic_checker.cpp	16211	branch	a	propagation, diagnostics, metadata, or other field use; bounded taint review	observable_expression_effects(branch.a, condition_env, domain_fields);
+src/semantic_checker.cpp	16252	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	names.insert(statement.a);
+src/semantic_checker.cpp	16253	statement	a	raw binding/name comparison; audit by statement kind	else if (statement.kind == Stmt::Kind::Assign && !outer.count(statement.a))
+src/semantic_checker.cpp	16254	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	names.insert(statement.a);
+src/semantic_checker.cpp	16267	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	if (expression_uses(statement.a, name) ||
+src/semantic_checker.cpp	16268	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	expression_uses(statement.b, name) ||
+src/semantic_checker.cpp	16269	statement	message_result	EST handle/pattern or binding metadata	expression_uses(statement.message_result, name))
+src/semantic_checker.cpp	16271	statement	args	propagation, diagnostics, metadata, or other field use; bounded taint review	for (const auto& argument : statement.args)
+src/semantic_checker.cpp	16297	branch	a	propagation, diagnostics, metadata, or other field use; bounded taint review	domain, source, branch.a, &specialization);
+src/semantic_checker.cpp	16387	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	if (auto type = inferred_expr_type(statement.b, env))
+src/semantic_checker.cpp	16388	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	env[statement.a] = *type;
+src/semantic_checker.cpp	16446	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	? statement.b : statement.a;
+src/semantic_checker.cpp	16446	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	? statement.b : statement.a;
+src/semantic_checker.cpp	16521	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	domain, source, statement.b, &specialization, &locals));
+src/semantic_checker.cpp	16539	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	if (auto type = inferred_expr_type(statement.b, env))
+src/semantic_checker.cpp	16540	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	locals[statement.a] = *type;
+src/semantic_checker.cpp	16625	result	text	propagation, diagnostics, metadata, or other field use; bounded taint review	result.text = *result_expression;
+src/semantic_checker.cpp	17160	result	a	propagation, diagnostics, metadata, or other field use; bounded taint review	result.a = *function.result_expression;
+src/semantic_checker.cpp	17234	forwarded	a	propagation, diagnostics, metadata, or other field use; bounded taint review	forwarded.a = nested_name;
+src/semantic_checker.cpp	17235	forwarded	args	propagation, diagnostics, metadata, or other field use; bounded taint review	forwarded.args = mapped;
+src/semantic_checker.cpp	17321	arm	est_pattern	EST handle/pattern or binding metadata	local_types[arm.est_pattern->binding] = *selected_types.begin();
+src/semantic_checker.cpp	17322	arm	est_pattern	EST handle/pattern or binding metadata	} else if (arm.est_pattern &&
+src/semantic_checker.cpp	17323	arm	est_pattern	EST handle/pattern or binding metadata	(arm.est_pattern->kind == moss::est::PatternNode::Kind::QualifiedRecoveryCase ||
+src/semantic_checker.cpp	17324	arm	est_pattern	EST handle/pattern or binding metadata	arm.est_pattern->kind == moss::est::PatternNode::Kind::GroupedAlternatives)) {
+src/semantic_checker.cpp	18311	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	analyze_effect_expression(statement.a, env, params, parameter_effects,
+src/semantic_checker.cpp	18313	statement	b	raw literal/name/keyword comparison; audit by statement kind	statement.b == "consume" ? Effect::Consume : Effect::Read);
+src/semantic_checker.cpp	18314	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	auto type = inferred_expr_type(statement.a, env);
+src/semantic_checker.cpp	18323	arm	est_pattern	EST handle/pattern or binding metadata	const auto& pattern = *arm.est_pattern;
+src/semantic_checker.cpp	18335	arm	est_pattern	EST handle/pattern or binding metadata	for (const auto& binding : arm.est_pattern->payload_bindings) branch.erase(binding);
+src/semantic_checker.cpp	18362	arm	est_pattern	EST handle/pattern or binding metadata	recovered[arm.est_pattern->binding] = selected_types.size() == 1
+src/semantic_checker.cpp	18393	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	auto source_type = inferred_expr_type(statement.b, env);
+src/semantic_checker.cpp	18401	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	? statement.b : statement.a,
+src/semantic_checker.cpp	18401	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	? statement.b : statement.a,
+src/semantic_checker.cpp	18413	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	if (inferred_expr_type(statement.b, env))
+src/semantic_checker.cpp	18414	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	child_env[statement.a] =
+src/semantic_checker.cpp	18415	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	iterator_element_type(statement.line, statement.b, env)
+src/semantic_checker.cpp	18418	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	child_env[statement.a] = "_value";
+src/semantic_checker.cpp	18422	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	!copy_type(child_env.at(statement.a))) {
+src/semantic_checker.cpp	18423	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	if (auto location = storage_location(statement.b, env)) {
+src/semantic_checker.cpp	18426	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	leaf_effect_capture_->aliases[statement.a] = *location;
+src/semantic_checker.cpp	18446	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	auto source_type = inferred_expr_type(statement.b, env);
+src/semantic_checker.cpp	18447	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	if (storage_location(statement.b, env) && source_type &&
+src/semantic_checker.cpp	18449	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	analyze_effect_expression(statement.b, env, params, parameter_effects,
+src/semantic_checker.cpp	18452	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	analyze_effect_expression(statement.b, env, params, parameter_effects,
+src/semantic_checker.cpp	18454	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	if (auto type = inferred_expr_type(statement.b, env)) env[statement.a] = *type;
+src/semantic_checker.cpp	18454	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	if (auto type = inferred_expr_type(statement.b, env)) env[statement.a] = *type;
+src/semantic_checker.cpp	18455	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	else if (auto constructed = domain_constructor(statement.b)) env[statement.a] = *constructed;
+src/semantic_checker.cpp	18455	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	else if (auto constructed = domain_constructor(statement.b)) env[statement.a] = *constructed;
+src/semantic_checker.cpp	18456	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	else env[statement.a] = "_value";
+src/semantic_checker.cpp	18462	statement	a	EST projection/query or tree structure	if (tree_parse_index(statement.a, base, ignored))
+src/semantic_checker.cpp	18463	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	analyze_effect_expression(statement.a, env, params, parameter_effects,
+src/semantic_checker.cpp	18466	statement	a	EST projection/query or tree structure	if (tree_member_access(statement.a))
+src/semantic_checker.cpp	18467	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	analyze_effect_expression(statement.a, env, params,
+src/semantic_checker.cpp	18470	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	else if (simple_effect_identifier(statement.a) && env.count(statement.a))
+src/semantic_checker.cpp	18470	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	else if (simple_effect_identifier(statement.a) && env.count(statement.a))
+src/semantic_checker.cpp	18471	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	mark_effect_name(statement.a, Effect::Write, params, env,
+src/semantic_checker.cpp	18474	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	auto source_type = inferred_expr_type(statement.b, env);
+src/semantic_checker.cpp	18475	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	if (storage_location(statement.b, env) && source_type &&
+src/semantic_checker.cpp	18477	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	analyze_effect_expression(statement.b, env, params, parameter_effects,
+src/semantic_checker.cpp	18480	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	analyze_effect_expression(statement.b, env, params, parameter_effects,
+src/semantic_checker.cpp	18482	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	if (auto type = inferred_expr_type(statement.b, env)) env[statement.a] = *type;
+src/semantic_checker.cpp	18482	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	if (auto type = inferred_expr_type(statement.b, env)) env[statement.a] = *type;
+src/semantic_checker.cpp	18483	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	refine_map_index_assignment_type(statement.a, statement.b, env);
+src/semantic_checker.cpp	18483	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	refine_map_index_assignment_type(statement.a, statement.b, env);
+src/semantic_checker.cpp	18488	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	if (!statement.b.empty())
+src/semantic_checker.cpp	18489	statement	text	propagation, diagnostics, metadata, or other field use; bounded taint review	analyze_effect_expression(statement.text, env, params, parameter_effects,
+src/semantic_checker.cpp	18492	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	analyze_effect_expression(statement.a + "(" + join_arguments(statement.args) + ")",
+src/semantic_checker.cpp	18492	statement	args	propagation, diagnostics, metadata, or other field use; bounded taint review	analyze_effect_expression(statement.a + "(" + join_arguments(statement.args) + ")",
+src/semantic_checker.cpp	18498	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	analyze_effect_expression(statement.a, env, params, parameter_effects,
+src/semantic_checker.cpp	18500	statement	args	propagation, diagnostics, metadata, or other field use; bounded taint review	for (const auto& argument : statement.args)
+src/semantic_checker.cpp	18505	statement	message_result	EST handle/pattern or binding metadata	if (simple_effect_identifier(statement.message_result) &&
+src/semantic_checker.cpp	18506	statement	message_result	EST handle/pattern or binding metadata	env.count(statement.message_result))
+src/semantic_checker.cpp	18507	statement	message_result	EST handle/pattern or binding metadata	mark_effect_name(statement.message_result, Effect::Write, params, env,
+src/semantic_checker.cpp	18509	statement	message_result	EST handle/pattern or binding metadata	if (leaf_effect_capture_ && !statement.message_result.empty()) {
+src/semantic_checker.cpp	18510	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	auto receiver = env.find(statement.a);
+src/semantic_checker.cpp	18512	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	auto target = find_handler(*domains_.at(canonical_type_name(receiver->second)), statement.b);
+src/semantic_checker.cpp	18514	statement	message_result	EST handle/pattern or binding metadata	env[statement.message_result] = *target->reply_type;
+src/semantic_checker.cpp	18521	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	analyze_effect_expression(statement.a, env, params, parameter_effects,
+src/semantic_checker.cpp	18526	statement	args	propagation, diagnostics, metadata, or other field use; bounded taint review	for (const auto& argument : statement.args)
+src/semantic_checker.cpp	18532	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	if (!statement.a.empty())
+src/semantic_checker.cpp	18533	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	analyze_effect_expression(statement.a, env, params, parameter_effects,
+src/semantic_checker.cpp	18538	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	if (!statement.a.empty())
+src/semantic_checker.cpp	18539	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	analyze_effect_expression(statement.a, env, params,
+src/semantic_checker.cpp	18545	statement	text	propagation, diagnostics, metadata, or other field use; bounded taint review	analyze_effect_expression(statement.text, env, params, parameter_effects,
+src/semantic_checker.cpp	18947	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	expressions.push_back(statement.b);
+src/semantic_checker.cpp	18950	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	expressions.push_back(statement.a);
+src/semantic_checker.cpp	18951	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	expressions.push_back(statement.b);
+src/semantic_checker.cpp	18954	statement	text	propagation, diagnostics, metadata, or other field use; bounded taint review	expressions.push_back(!statement.text.empty()
+src/semantic_checker.cpp	18955	statement	text	propagation, diagnostics, metadata, or other field use; bounded taint review	? statement.text
+src/semantic_checker.cpp	18956	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	: !statement.b.empty()
+src/semantic_checker.cpp	18957	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	? statement.a + "." + statement.b + "(" + join_arguments(statement.args) + ")"
+src/semantic_checker.cpp	18957	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	? statement.a + "." + statement.b + "(" + join_arguments(statement.args) + ")"
+src/semantic_checker.cpp	18957	statement	args	propagation, diagnostics, metadata, or other field use; bounded taint review	? statement.a + "." + statement.b + "(" + join_arguments(statement.args) + ")"
+src/semantic_checker.cpp	18958	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	: statement.a + "(" + join_arguments(statement.args) + ")");
+src/semantic_checker.cpp	18958	statement	args	propagation, diagnostics, metadata, or other field use; bounded taint review	: statement.a + "(" + join_arguments(statement.args) + ")");
+src/semantic_checker.cpp	18961	statement	args	propagation, diagnostics, metadata, or other field use; bounded taint review	expressions.insert(expressions.end(), statement.args.begin(), statement.args.end());
+src/semantic_checker.cpp	18961	statement	args	propagation, diagnostics, metadata, or other field use; bounded taint review	expressions.insert(expressions.end(), statement.args.begin(), statement.args.end());
+src/semantic_checker.cpp	18964	statement	args	propagation, diagnostics, metadata, or other field use; bounded taint review	expressions.insert(expressions.end(), statement.args.begin(), statement.args.end());
+src/semantic_checker.cpp	18964	statement	args	propagation, diagnostics, metadata, or other field use; bounded taint review	expressions.insert(expressions.end(), statement.args.begin(), statement.args.end());
+src/semantic_checker.cpp	18969	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	expressions.push_back(statement.a);
+src/semantic_checker.cpp	18974	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	expressions.push_back(statement.b);
+src/semantic_checker.cpp	18979	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	if (!statement.a.empty()) expressions.push_back(statement.a);
+src/semantic_checker.cpp	18979	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	if (!statement.a.empty()) expressions.push_back(statement.a);
+src/semantic_checker.cpp	18982	statement	text	propagation, diagnostics, metadata, or other field use; bounded taint review	expressions.push_back(statement.text);
+src/semantic_checker.cpp	19002	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	expressions.push_back(statement.b);
+src/semantic_checker.cpp	19007	statement	args	propagation, diagnostics, metadata, or other field use; bounded taint review	expressions.insert(expressions.end(), statement.args.begin(),
+src/semantic_checker.cpp	19008	statement	args	propagation, diagnostics, metadata, or other field use; bounded taint review	statement.args.end());
+src/semantic_checker.cpp	19013	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	expressions.push_back(statement.a);
+src/semantic_checker.cpp	19018	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	expressions.push_back(statement.b);
+src/semantic_checker.cpp	19023	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	if (!statement.a.empty()) expressions.push_back(statement.a);
+src/semantic_checker.cpp	19023	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	if (!statement.a.empty()) expressions.push_back(statement.a);
+src/semantic_checker.cpp	19026	statement	text	propagation, diagnostics, metadata, or other field use; bounded taint review	expressions.push_back(statement.text);
+src/semantic_checker.cpp	19104	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	auto receiver = current_env.find(statement.a);
+src/semantic_checker.cpp	19109	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	? nullptr : find_handler(*declared->second, statement.b);
+src/semantic_checker.cpp	19112	statement	args	propagation, diagnostics, metadata, or other field use; bounded taint review	for (const auto& argument : statement.args)
+src/semantic_checker.cpp	19116	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	source, "handler:" + domain + "." + statement.b,
+src/semantic_checker.cpp	19120	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	"synchronous_message", statement.a, {}, {}};
+src/semantic_checker.cpp	19475	statement	est_pattern	EST handle/pattern or binding metadata	if (!statement.est_pattern) return {};
+src/semantic_checker.cpp	19476	statement	est_pattern	EST handle/pattern or binding metadata	if (statement.est_pattern->kind ==
+src/semantic_checker.cpp	19478	statement	est_pattern	EST handle/pattern or binding metadata	return statement.est_pattern->alternatives;
+src/semantic_checker.cpp	19479	statement	est_pattern	EST handle/pattern or binding metadata	if (statement.est_pattern->kind ==
+src/semantic_checker.cpp	19481	statement	est_pattern	EST handle/pattern or binding metadata	return {*statement.est_pattern};
+src/semantic_checker.cpp	19486	statement	est_pattern	EST handle/pattern or binding metadata	return statement.est_pattern && statement.est_pattern->kind ==
+src/semantic_checker.cpp	19486	statement	est_pattern	EST handle/pattern or binding metadata	return statement.est_pattern && statement.est_pattern->kind ==
+src/semantic_checker.cpp	19491	statement	est_pattern	EST handle/pattern or binding metadata	return statement.est_pattern &&
+src/semantic_checker.cpp	19492	statement	est_pattern	EST handle/pattern or binding metadata	(statement.est_pattern->kind ==
+src/semantic_checker.cpp	19494	statement	est_pattern	EST handle/pattern or binding metadata	statement.est_pattern->kind ==
+src/semantic_checker.cpp	19699	arm	est_pattern	EST handle/pattern or binding metadata	const auto pattern = arm.est_pattern.value_or(
+src/semantic_checker.cpp	19750	arm	est_pattern	EST handle/pattern or binding metadata	if (arm.est_pattern &&
+src/semantic_checker.cpp	19751	arm	est_pattern	EST handle/pattern or binding metadata	(arm.est_pattern->kind == moss::est::PatternNode::Kind::QualifiedRecoveryCase ||
+src/semantic_checker.cpp	19752	arm	est_pattern	EST handle/pattern or binding metadata	arm.est_pattern->kind == moss::est::PatternNode::Kind::GroupedAlternatives)) {
+src/semantic_checker.cpp	19776	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	if (statement.a.empty()) {
+src/semantic_checker.cpp	19783	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	statement.line, statement.a, env);
+src/semantic_checker.cpp	19785	statement	a	raw binding/name comparison; audit by statement kind	statement.a == selected_binding) {
+src/semantic_checker.cpp	19795	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	statement.a, env, {}, nullptr, {}, nullptr,
+src/semantic_checker.cpp	19810	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	? statement.b : statement.a;
+src/semantic_checker.cpp	19810	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	? statement.b : statement.a;
+src/semantic_checker.cpp	19847	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	auto receiver = env.find(statement.a);
+src/semantic_checker.cpp	19851	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	find_handler(*domains_.at(receiver_type), statement.b)) {
+src/semantic_checker.cpp	19872	statement	a	raw binding/name comparison; audit by statement kind	if (statement.a == selected_binding) selected_binding.clear();
+src/semantic_checker.cpp	19873	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	if (auto type = inferred_expr_type(statement.b, env))
+src/semantic_checker.cpp	19874	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	env[statement.a] = *type;
+src/semantic_checker.cpp	19926	statement	message_result	EST handle/pattern or binding metadata	!statement.message_result.empty() &&
+src/semantic_checker.cpp	19927	statement	message_result	EST handle/pattern or binding metadata	!entry.count(statement.message_result)) {
+src/semantic_checker.cpp	19928	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	const auto receiver = current.find(statement.a);
+src/semantic_checker.cpp	19933	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	find_handler(*domain->second, statement.b))
+src/semantic_checker.cpp	19935	statement	message_result	EST handle/pattern or binding metadata	candidates.emplace(statement.message_result,
+src/semantic_checker.cpp	19939	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	const auto type = inferred_expr_type(statement.a, current);
+src/semantic_checker.cpp	19949	arm	est_pattern	EST handle/pattern or binding metadata	const auto& pattern = *arm.est_pattern;
+src/semantic_checker.cpp	19971	statement	a	EST projection/query or tree structure	if (!tree_plain_identifier(statement.a) || entry.count(statement.a)) return;
+src/semantic_checker.cpp	19971	statement	a	EST projection/query or tree structure	if (!tree_plain_identifier(statement.a) || entry.count(statement.a)) return;
+src/semantic_checker.cpp	19972	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	auto type = inferred_expr_type(statement.b, current);
+src/semantic_checker.cpp	19974	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	auto [item, inserted] = candidates.emplace(statement.a, *type);
+src/semantic_checker.cpp	19990	statement	a	EST projection/query or tree structure	tree_plain_identifier(expression) && expression == statement.a)
+src/semantic_checker.cpp	20233	arm	est_pattern	EST handle/pattern or binding metadata	const auto pattern = arm.est_pattern ? *arm.est_pattern :
+src/semantic_checker.cpp	20233	arm	est_pattern	EST handle/pattern or binding metadata	const auto pattern = arm.est_pattern ? *arm.est_pattern :
+src/semantic_checker.cpp	20759	while_stmt	a	propagation, diagnostics, metadata, or other field use; bounded taint review	string condition = trim(while_stmt.a);
+src/semantic_checker.cpp	20801	s	a	EST projection/query or tree structure	auto root = tree_root_identifier(s.a);
+src/semantic_checker.cpp	20805	s	a	EST projection/query or tree structure	if (!tree_identifier_named(s.a, var_name) || s.indent != loop_body_indent)
+src/semantic_checker.cpp	20808	s	b	EST projection/query or tree structure	auto add = tree_split_binary(trim(s.b), {"+"});
+src/semantic_checker.cpp	20819	s	b	EST projection/query or tree structure	auto sub = tree_split_binary(trim(s.b), {"-"});
+src/semantic_checker.cpp	20829	s	a	EST projection/query or tree structure	const auto target = tree_identifier_name(s.a);
+src/semantic_checker.cpp	20833	s	b	raw binding/name comparison; audit by statement kind	} else if (s.kind == Stmt::Kind::Call && !s.b.empty()) {
+src/semantic_checker.cpp	20834	s	a	EST projection/query or tree structure	const auto root = tree_identifier_name(s.a);
+src/semantic_checker.cpp	20835	s	b	raw literal/name/keyword comparison; audit by statement kind	bool mutating = s.b == "push" || s.b == "pop" || s.b == "pop_front";
+src/semantic_checker.cpp	20835	s	b	raw literal/name/keyword comparison; audit by statement kind	bool mutating = s.b == "push" || s.b == "pop" || s.b == "pop_front";
+src/semantic_checker.cpp	20835	s	b	raw literal/name/keyword comparison; audit by statement kind	bool mutating = s.b == "push" || s.b == "pop" || s.b == "pop_front";
+src/semantic_checker.cpp	20865	loop	b	EST projection/query or tree structure	if (!tree_parse_simple_call(trim(loop.b), callee, arguments) ||
+src/semantic_checker.cpp	20884	loop	a	propagation, diagnostics, metadata, or other field use; bounded taint review	const string induction = trim(loop.a);
+src/semantic_checker.cpp	20891	statement	a	EST projection/query or tree structure	const auto root = tree_root_identifier(statement.a);
+src/semantic_checker.cpp	20896	statement	a	EST projection/query or tree structure	(tree_identifier_named(statement.a, range_binding) ||
+src/semantic_checker.cpp	20897	statement	a	EST projection/query or tree structure	tree_identifier_named(statement.a, induction)))
+src/semantic_checker.cpp	20900	statement	args	propagation, diagnostics, metadata, or other field use; bounded taint review	(std::find(statement.args.begin(), statement.args.end(),
+src/semantic_checker.cpp	20900	statement	args	propagation, diagnostics, metadata, or other field use; bounded taint review	(std::find(statement.args.begin(), statement.args.end(),
+src/semantic_checker.cpp	20901	statement	args	raw binding/name comparison; audit by statement kind	range_binding) != statement.args.end() ||
+src/semantic_checker.cpp	20902	statement	args	propagation, diagnostics, metadata, or other field use; bounded taint review	std::find(statement.args.begin(), statement.args.end(),
+src/semantic_checker.cpp	20902	statement	args	propagation, diagnostics, metadata, or other field use; bounded taint review	std::find(statement.args.begin(), statement.args.end(),
+src/semantic_checker.cpp	20903	statement	args	raw binding/name comparison; audit by statement kind	induction) != statement.args.end()))
+src/semantic_checker.cpp	20959	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	string iter_expr = trim(statement.b);
+src/semantic_checker.cpp	20990	statement	a	EST projection/query or tree structure	const auto root = tree_root_identifier(statement.a);
+src/semantic_checker.cpp	21001	statement	b	raw binding/name comparison; audit by statement kind	if (statement.kind == Stmt::Kind::Call && !statement.b.empty()) {
+src/semantic_checker.cpp	21002	statement	a	EST projection/query or tree structure	const auto root = tree_root_identifier(statement.a);
+src/semantic_checker.cpp	21003	statement	b	raw literal/name/keyword comparison; audit by statement kind	bool mutating = statement.b == "push" || statement.b == "pop" || statement.b == "pop_front";
+src/semantic_checker.cpp	21003	statement	b	raw literal/name/keyword comparison; audit by statement kind	bool mutating = statement.b == "push" || statement.b == "pop" || statement.b == "pop_front";
+src/semantic_checker.cpp	21003	statement	b	raw literal/name/keyword comparison; audit by statement kind	bool mutating = statement.b == "push" || statement.b == "pop" || statement.b == "pop_front";
+src/semantic_checker.cpp	21004	statement	b	raw literal/name/keyword comparison; audit by statement kind	if (statement.b == "pop" || statement.b == "pop_front") {
+src/semantic_checker.cpp	21004	statement	b	raw literal/name/keyword comparison; audit by statement kind	if (statement.b == "pop" || statement.b == "pop_front") {
+src/semantic_checker.cpp	21026	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	if (auto type = inferred_expr_type(statement.b, env))
+src/semantic_checker.cpp	21027	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	env[statement.a] = *type;
+src/semantic_checker.cpp	21222	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	if (auto domain = domain_constructor(statement.b))
+src/semantic_checker.cpp	21223	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	env[statement.a] = *domain;
+src/semantic_checker.cpp	21583	statement	expression_handles	EST handle/pattern or binding metadata	statement.source_file, &statement.expression_handles);
+src/semantic_checker.cpp	21623	function	expression_handles	EST handle/pattern or binding metadata	function.result_continuation_lines, &function.expression_handles,
+src/semantic_checker.cpp	21634	function	expression_handles	EST handle/pattern or binding metadata	function.result_continuation_lines, &function.expression_handles,
+src/semantic_checker.cpp	21650	method	expression_handles	EST handle/pattern or binding metadata	method.result_continuation_lines, &method.expression_handles,
+src/semantic_checker.cpp	22530	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	alternatives = statement.a.empty()
+src/semantic_checker.cpp	22532	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	: phase21_raised_identities(statement.line, statement.a, types);
+src/semantic_checker.cpp	22534	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	auto receiver = types.find(statement.a);
+src/semantic_checker.cpp	22539	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	find_handler(*domain->second, statement.b))
+src/semantic_checker.cpp	22608	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	auto type = inferred_expr_type(s.a, env.types);
+src/semantic_checker.cpp	22611	s	b	raw literal/name/keyword comparison; audit by statement kind	bool consuming = s.b == "consume";
+src/semantic_checker.cpp	22613	s	a	EST projection/query or tree structure	if (storage_location(s.a, env.types) && !tree_simple_identifier(s.a))
+src/semantic_checker.cpp	22613	s	a	EST projection/query or tree structure	if (storage_location(s.a, env.types) && !tree_simple_identifier(s.a))
+src/semantic_checker.cpp	22617	s	a	EST projection/query or tree structure	if (tree_simple_identifier(s.a)) {
+src/semantic_checker.cpp	22618	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	require_available(s.line, s.a, env);
+src/semantic_checker.cpp	22619	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	consume_binding(s.line, s.a, env, "consuming match");
+src/semantic_checker.cpp	22621	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	check_ownership_expression(s.line, s.a, env, Effect::Consume);
+src/semantic_checker.cpp	22624	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	check_ownership_expression(s.line, s.a, env, Effect::Read);
+src/semantic_checker.cpp	22627	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	bool read_place = !consuming && storage_location(s.a, env.types).has_value();
+src/semantic_checker.cpp	22628	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	bool prior_read = env.active_read_traversals.count(s.a);
+src/semantic_checker.cpp	22637	arm	est_pattern	EST handle/pattern or binding metadata	const auto& pattern = *arm.est_pattern;
+src/semantic_checker.cpp	22643	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	if (read_place) branch.active_read_traversals.insert(s.a);
+src/semantic_checker.cpp	22656	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	branch.borrowed_enum_payloads[name] = s.a;
+src/semantic_checker.cpp	22675	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	if (read_place && !prior_read) branch.active_read_traversals.erase(s.a);
+src/semantic_checker.cpp	22753	arm	est_pattern	EST handle/pattern or binding metadata	recovered.types[arm.est_pattern->binding] = selected_types.size() == 1
+src/semantic_checker.cpp	22755	arm	est_pattern	EST handle/pattern or binding metadata	recovered.immutable_locals.insert(arm.est_pattern->binding);
+src/semantic_checker.cpp	22756	arm	est_pattern	EST handle/pattern or binding metadata	recovered.moved.erase(arm.est_pattern->binding);
+src/semantic_checker.cpp	22812	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	check_ownership_expression(s.line, s.a, env, Effect::Read);
+src/semantic_checker.cpp	22859	s	b	propagation, diagnostics, metadata, or other field use; bounded taint review	auto element = iterator_element_type(s.line, s.b, env.types);
+src/semantic_checker.cpp	22861	s	b	propagation, diagnostics, metadata, or other field use; bounded taint review	if (auto location = storage_location(s.b, env.types))
+src/semantic_checker.cpp	22864	s	b	propagation, diagnostics, metadata, or other field use; bounded taint review	auto source_type = inferred_expr_type(s.b, env.types);
+src/semantic_checker.cpp	22870	s	b	propagation, diagnostics, metadata, or other field use; bounded taint review	check_ownership_expression(s.line, s.b, env, source_effect);
+src/semantic_checker.cpp	22873	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	body.types[s.a] = element.value_or("_value");
+src/semantic_checker.cpp	22874	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	body.binding_identities[s.a] = statement_binding_identity(
+src/semantic_checker.cpp	22881	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	body.types.erase(s.a);
+src/semantic_checker.cpp	22882	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	if (auto prior = env.binding_identities.find(s.a);
+src/semantic_checker.cpp	22884	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	body.binding_identities[s.a] = prior->second;
+src/semantic_checker.cpp	22886	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	body.binding_identities.erase(s.a);
+src/semantic_checker.cpp	22887	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	body.moved.erase(s.a);
+src/semantic_checker.cpp	22910	s	b	propagation, diagnostics, metadata, or other field use; bounded taint review	string source = trim(s.b);
+src/semantic_checker.cpp	22911	s	b	propagation, diagnostics, metadata, or other field use; bounded taint review	auto source_type = inferred_expr_type(s.b, env.types);
+src/semantic_checker.cpp	22914	s	b	propagation, diagnostics, metadata, or other field use; bounded taint review	storage_location(s.b, env.types))
+src/semantic_checker.cpp	22917	s	b	propagation, diagnostics, metadata, or other field use; bounded taint review	bool transfers = storage_location(s.b, env.types) && source_type &&
+src/semantic_checker.cpp	22923	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	consume_binding(s.line, source, env, s.a);
+src/semantic_checker.cpp	22925	s	b	propagation, diagnostics, metadata, or other field use; bounded taint review	check_ownership_expression(s.line, s.b, env, Effect::Consume);
+src/semantic_checker.cpp	22928	s	b	propagation, diagnostics, metadata, or other field use; bounded taint review	check_ownership_expression(s.line, s.b, env, Effect::Read);
+src/semantic_checker.cpp	22932	s	b	propagation, diagnostics, metadata, or other field use; bounded taint review	if (auto constructed = domain_constructor(s.b)) type = *constructed;
+src/semantic_checker.cpp	22933	s	b	propagation, diagnostics, metadata, or other field use; bounded taint review	else type = inferred_expr_type(s.b, env.types);
+src/semantic_checker.cpp	22944	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	env.types[s.a] = type.value_or("_value");
+src/semantic_checker.cpp	22945	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	env.binding_identities[s.a] = statement_binding_identity(
+src/semantic_checker.cpp	22947	s	a	raw binding/name comparison; audit by statement kind	if (s.kind == Stmt::Kind::Let) env.immutable_locals.insert(s.a);
+src/semantic_checker.cpp	22948	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	else env.immutable_locals.erase(s.a);
+src/semantic_checker.cpp	22949	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	env.moved.erase(s.a); // A declaration may intentionally shadow an older moved binding.
+src/semantic_checker.cpp	22953	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	fact.mutable_binding = !env.immutable_locals.count(s.a);
+src/semantic_checker.cpp	22954	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	fact.identity = env.binding_identities[s.a];
+src/semantic_checker.cpp	22962	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	const bool had_lexical_binding = env.binding_identities.count(s.a) != 0;
+src/semantic_checker.cpp	22963	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	const bool targets_state_field = env.state_fields.count(s.a) != 0;
+src/semantic_checker.cpp	22964	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	auto prior_type = inferred_expr_type(s.a, env.types);
+src/semantic_checker.cpp	22965	s	b	propagation, diagnostics, metadata, or other field use; bounded taint review	auto new_type = inferred_expr_type(s.b, env.types);
+src/semantic_checker.cpp	22966	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	bool existing_owner = env.binding_identities.count(s.a) ||
+src/semantic_checker.cpp	22967	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	env.state_fields.count(s.a);
+src/semantic_checker.cpp	22971	s	b	EST projection/query or tree structure	!tree_is_fileio_open(s.b) &&
+src/semantic_checker.cpp	22972	s	b	propagation, diagnostics, metadata, or other field use; bounded taint review	storage_location(s.b, env.types)))
+src/semantic_checker.cpp	22976	s	a	EST projection/query or tree structure	if (tree_parse_index(s.a, lhs_base, lhs_index))
+src/semantic_checker.cpp	22977	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	check_ownership_expression(s.line, s.a, env, Effect::Write);
+src/semantic_checker.cpp	22979	s	a	EST projection/query or tree structure	if (tree_member_access(s.a))
+src/semantic_checker.cpp	22980	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	check_ownership_expression(s.line, s.a, env, Effect::Write);
+src/semantic_checker.cpp	22981	s	a	EST projection/query or tree structure	else if (tree_simple_identifier(s.a))
+src/semantic_checker.cpp	22982	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	check_ownership_expression(s.line, s.a, env, Effect::Write);
+src/semantic_checker.cpp	22984	s	b	propagation, diagnostics, metadata, or other field use; bounded taint review	string source = trim(s.b);
+src/semantic_checker.cpp	22985	s	b	propagation, diagnostics, metadata, or other field use; bounded taint review	auto source_type = inferred_expr_type(s.b, env.types);
+src/semantic_checker.cpp	22986	s	b	propagation, diagnostics, metadata, or other field use; bounded taint review	bool transfers = storage_location(s.b, env.types) && source_type &&
+src/semantic_checker.cpp	22992	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	consume_binding(s.line, source, env, s.a);
+src/semantic_checker.cpp	22994	s	b	propagation, diagnostics, metadata, or other field use; bounded taint review	check_ownership_expression(s.line, s.b, env, Effect::Consume);
+src/semantic_checker.cpp	22997	s	b	propagation, diagnostics, metadata, or other field use; bounded taint review	check_ownership_expression(s.line, s.b, env, Effect::Read);
+src/semantic_checker.cpp	23000	s	b	propagation, diagnostics, metadata, or other field use; bounded taint review	if (auto constructed = domain_constructor(s.b)) {
+src/semantic_checker.cpp	23001	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	env.types[s.a] = *constructed;
+src/semantic_checker.cpp	23002	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	env.moved.erase(s.a);
+src/semantic_checker.cpp	23006	s	a	EST projection/query or tree structure	if (tree_simple_identifier(s.a)) {
+src/semantic_checker.cpp	23011	s	a	raw literal/name/keyword comparison; audit by statement kind	env.types[s.a] = (*source_type == "vector" || *source_type == "queue" ||
+src/semantic_checker.cpp	23015	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	else if (!env.types.count(s.a)) env.types[s.a] = "_value";
+src/semantic_checker.cpp	23015	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	else if (!env.types.count(s.a)) env.types[s.a] = "_value";
+src/semantic_checker.cpp	23018	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	if (!env.binding_identities.count(s.a) && !env.state_fields.count(s.a))
+src/semantic_checker.cpp	23018	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	if (!env.binding_identities.count(s.a) && !env.state_fields.count(s.a))
+src/semantic_checker.cpp	23019	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	env.binding_identities[s.a] = statement_binding_identity(
+src/semantic_checker.cpp	23023	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	env.moved.erase(s.a);
+src/semantic_checker.cpp	23027	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	fact.mutable_binding = !env.immutable_locals.count(s.a);
+src/semantic_checker.cpp	23028	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	auto identity = env.binding_identities.find(s.a);
+src/semantic_checker.cpp	23032	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	current_semantic_context_, s.line) + ":" + s.a;
+src/semantic_checker.cpp	23037	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	refine_map_index_assignment_type(s.a, s.b, env.types);
+src/semantic_checker.cpp	23037	s	b	propagation, diagnostics, metadata, or other field use; bounded taint review	refine_map_index_assignment_type(s.a, s.b, env.types);
+src/semantic_checker.cpp	23043	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	check_ownership_expression(s.line, s.a, env, Effect::Read);
+src/semantic_checker.cpp	23044	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	const Handler* handler = check_call(s.line, s.a, s.b, s.args, env.types);
+src/semantic_checker.cpp	23044	s	b	propagation, diagnostics, metadata, or other field use; bounded taint review	const Handler* handler = check_call(s.line, s.a, s.b, s.args, env.types);
+src/semantic_checker.cpp	23044	s	args	propagation, diagnostics, metadata, or other field use; bounded taint review	const Handler* handler = check_call(s.line, s.a, s.b, s.args, env.types);
+src/semantic_checker.cpp	23045	s	args	propagation, diagnostics, metadata, or other field use; bounded taint review	for (size_t arg_index = 0; arg_index < s.args.size(); ++arg_index) {
+src/semantic_checker.cpp	23046	s	args	propagation, diagnostics, metadata, or other field use; bounded taint review	const auto& arg = s.args[arg_index];
+src/semantic_checker.cpp	23056	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	message_payload_materializes(s.a, env));
+src/semantic_checker.cpp	23060	s	message_result	EST handle/pattern or binding metadata	if (!s.message_result.empty() && env.types.count(s.message_result) &&
+src/semantic_checker.cpp	23060	s	message_result	EST handle/pattern or binding metadata	if (!s.message_result.empty() && env.types.count(s.message_result) &&
+src/semantic_checker.cpp	23061	s	message_result	EST handle/pattern or binding metadata	tree_simple_identifier(s.message_result))
+src/semantic_checker.cpp	23063	s	message_result	EST handle/pattern or binding metadata	check_ownership_expression(s.line, s.message_result, env, Effect::Write);
+src/semantic_checker.cpp	23064	s	message_result	EST handle/pattern or binding metadata	if (!s.message_result.empty()) {
+src/semantic_checker.cpp	23065	s	message_result	EST handle/pattern or binding metadata	if (handler->reply_type) env.types[s.message_result] = *handler->reply_type;
+src/semantic_checker.cpp	23066	s	message_result	EST handle/pattern or binding metadata	if (!env.binding_identities.count(s.message_result) &&
+src/semantic_checker.cpp	23067	s	message_result	EST handle/pattern or binding metadata	!env.state_fields.count(s.message_result))
+src/semantic_checker.cpp	23068	s	message_result	EST handle/pattern or binding metadata	env.binding_identities[s.message_result] = statement_binding_identity(
+src/semantic_checker.cpp	23070	s	message_result	EST handle/pattern or binding metadata	env.moved.erase(s.message_result);
+src/semantic_checker.cpp	23076	s	args	propagation, diagnostics, metadata, or other field use; bounded taint review	for (const auto& arg : s.args) check_ownership_expression(s.line, arg, env, Effect::Read);
+src/semantic_checker.cpp	23081	s	b	propagation, diagnostics, metadata, or other field use; bounded taint review	if (!s.b.empty())
+src/semantic_checker.cpp	23082	s	text	propagation, diagnostics, metadata, or other field use; bounded taint review	check_ownership_expression(s.line, s.text, env, Effect::Read);
+src/semantic_checker.cpp	23084	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	check_ownership_expression(s.line, s.a + "(" + join_arguments(s.args) + ")",
+src/semantic_checker.cpp	23084	s	args	propagation, diagnostics, metadata, or other field use; bounded taint review	check_ownership_expression(s.line, s.a + "(" + join_arguments(s.args) + ")",
+src/semantic_checker.cpp	23090	s	b	raw literal/name/keyword comparison; audit by statement kind	if (s.b == "push" && s.args.size() == 1) {
+src/semantic_checker.cpp	23090	s	args	raw literal/name/keyword comparison; audit by statement kind	if (s.b == "push" && s.args.size() == 1) {
+src/semantic_checker.cpp	23091	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	auto container = env.types.find(s.a);
+src/semantic_checker.cpp	23093	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	? current_body_types_->resolved_local(s.a) : nullptr;
+src/semantic_checker.cpp	23099	s	args	propagation, diagnostics, metadata, or other field use; bounded taint review	auto element = inferred_expr_type(s.args.front(), env.types);
+src/semantic_checker.cpp	23108	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	auto type = inferred_expr_type(s.a, env.types);
+src/semantic_checker.cpp	23112	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	check_ownership_expression(s.line, s.a, env, Effect::Read);
+src/semantic_checker.cpp	23115	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	require_cross_domain_value(s.line, s.a, *current_handler->reply_type,
+src/semantic_checker.cpp	23124	s	text	propagation, diagnostics, metadata, or other field use; bounded taint review	check_ownership_expression(s.line, s.text, env, Effect::Read);
+src/semantic_checker.cpp	23132	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	if (!s.a.empty()) check_ownership_expression(s.line, s.a, env, Effect::Consume);
+src/semantic_checker.cpp	23132	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	if (!s.a.empty()) check_ownership_expression(s.line, s.a, env, Effect::Consume);
+src/semantic_checker.cpp	23138	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	if (!s.a.empty())
+src/semantic_checker.cpp	23139	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	check_ownership_expression(s.line, s.a, env, Effect::Consume);
+src/semantic_checker.cpp	23229	statement	text	propagation, diagnostics, metadata, or other field use; bounded taint review	if (auto expression = checker_est_view(statement.text);
+src/semantic_checker.cpp	24601	statement	b	raw binding/name comparison; audit by statement kind	statement.b.empty() && statement.a == name &&
+src/semantic_checker.cpp	24601	statement	a	raw binding/name comparison; audit by statement kind	statement.b.empty() && statement.a == name &&
+src/semantic_checker.cpp	24602	statement	args	raw binding/name comparison; audit by statement kind	statement.args == args;
+src/semantic_checker.cpp	24608	statement	b	EST projection/query or tree structure	direct_call = tree_parse_simple_call(trim(statement.b), direct_callee,
+src/semantic_checker.cpp	24644	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	if (requirements.size() == 1 && !statement.b.empty()) {
+src/semantic_checker.cpp	24652	statement	b	EST projection/query or tree structure	est::ExprSlot::RhsValue, 0, statement.b,
+src/semantic_checker.cpp	24655	statement	b	EST projection/query or tree structure	est::ExprSlot::RhsValue, 0, statement.b,
+src/semantic_checker.cpp	24695	statement	b	EST projection/query or tree structure	tree_parse_simple_call(trim(statement.b), direct_callee,
+src/semantic_checker.cpp	24702	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	0, statement.b, current_check_body_context_,
+src/semantic_checker.cpp	25861	statement	expression_handles	EST handle/pattern or binding metadata	for (const auto& handle : statement.expression_handles) {
+src/semantic_checker.cpp	25890	statement	expression_handles	EST handle/pattern or binding metadata	for (const auto& handle : statement.expression_handles)
+src/semantic_checker.cpp	25919	statement	expression_handles	EST handle/pattern or binding metadata	for (const auto& handle : statement.expression_handles) {
+src/semantic_checker.cpp	26119	statement	expression_handles	EST handle/pattern or binding metadata	if (auto found = select(statement.expression_handles)) return found;
+src/semantic_checker.cpp	26121	statement	expression_handles	EST handle/pattern or binding metadata	if (auto found = select(statement.expression_handles)) return found;
+src/semantic_checker.cpp	27941	synthetic_return	a	propagation, diagnostics, metadata, or other field use; bounded taint review	synthetic_return.a = expression;
+src/semantic_checker.cpp	27942	synthetic_return	text	propagation, diagnostics, metadata, or other field use; bounded taint review	synthetic_return.text = "return " + expression;
+src/semantic_checker.cpp	28199	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	if (legacy_spawn_expression(statement.b))
+src/semantic_checker.cpp	28205	statement	a	raw binding/name comparison; audit by statement kind	return route.name == statement.a;
+src/semantic_checker.cpp	28207	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	err(statement.line, "domain route '" + statement.a +
+src/semantic_checker.cpp	28209	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	if (auto constructed = domain_constructor(statement.b)) {
+src/semantic_checker.cpp	28217	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	auto existing = current_env.find(statement.a);
+src/semantic_checker.cpp	28219	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	err(statement.line, "domain handle binding '" + statement.a + "' is immutable");
+src/semantic_checker.cpp	28220	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	for (const auto& binding : functional_captures(statement.a, current_env))
+src/semantic_checker.cpp	28224	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	FileIOOwnerScope fileio_owner(fileio_owner_initializer_, statement.b);
+src/semantic_checker.cpp	28225	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	check_expression(statement.line, statement.b, current_env,
+src/semantic_checker.cpp	28228	statement	a	EST projection/query or tree structure	tree_simple_identifier(statement.a) && !current_env.count(statement.a)) {
+src/semantic_checker.cpp	28228	statement	a	EST projection/query or tree structure	tree_simple_identifier(statement.a) && !current_env.count(statement.a)) {
+src/semantic_checker.cpp	28229	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	auto inferred = inferred_expr_type(statement.b, current_env);
+src/semantic_checker.cpp	28230	statement	b	EST projection/query or tree structure	if (!inferred && tree_parse_vector_literal(statement.b))
+src/semantic_checker.cpp	28234	statement	a	EST projection/query or tree structure	tree_simple_identifier(statement.a) && current_env.count(statement.a)) {
+src/semantic_checker.cpp	28234	statement	a	EST projection/query or tree structure	tree_simple_identifier(statement.a) && current_env.count(statement.a)) {
+src/semantic_checker.cpp	28235	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	const auto prior_type = current_env.at(statement.a);
+src/semantic_checker.cpp	28236	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	auto new_type = inferred_expr_type(statement.b, current_env);
+src/semantic_checker.cpp	28243	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	"assignment to binding '" + statement.a + "' of type '" +
+src/semantic_checker.cpp	28249	statement	a	EST projection/query or tree structure	if (tree_simple_identifier(statement.a)) {
+src/semantic_checker.cpp	28250	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	if (!current_env.count(statement.a)) {
+src/semantic_checker.cpp	28251	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	auto inferred = inferred_expr_type(statement.b, current_env);
+src/semantic_checker.cpp	28252	statement	b	EST projection/query or tree structure	if (!inferred && tree_parse_vector_literal(statement.b))
+src/semantic_checker.cpp	28255	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	auto bound_type = current_env.at(statement.a);
+src/semantic_checker.cpp	28256	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	auto rhs_type = inferred_expr_type(statement.b, current_env);
+src/semantic_checker.cpp	28257	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	auto bound_term = checked_types.resolved_local(statement.a);
+src/semantic_checker.cpp	28260	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	rhs_term = checked_types.known_expression(statement.b);
+src/semantic_checker.cpp	28271	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	canonical_type_name(rhs_type.value_or("_value")) + "' to binding '" + statement.a +
+src/semantic_checker.cpp	28277	statement	a	EST projection/query or tree structure	if (tree_parse_index(statement.a, base, index_expression)) {
+src/semantic_checker.cpp	28286	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	auto value_type = inferred_expr_type(statement.b, current_env);
+src/semantic_checker.cpp	28292	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	value_term = checked_types.known_expression(statement.b);
+src/semantic_checker.cpp	28327	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	check_expression(statement.line, statement.a, current_env,
+src/semantic_checker.cpp	28337	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	auto element_type = inferred_expr_type(statement.a, current_env);
+src/semantic_checker.cpp	28338	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	auto element_term = checked_term(statement.a, element_type);
+src/semantic_checker.cpp	28339	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	auto value_term = checked_term(statement.b, value_type);
+src/semantic_checker.cpp	28366	statement	a	EST projection/query or tree structure	if (tree_member_access(statement.a)) {
+src/semantic_checker.cpp	28367	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	auto field_type = inferred_expr_type(statement.a, current_env);
+src/semantic_checker.cpp	28368	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	auto rhs_type = inferred_expr_type(statement.b, current_env);
+src/semantic_checker.cpp	28369	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	auto field_term = checked_term(statement.a, field_type);
+src/semantic_checker.cpp	28371	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	if (!rhs_term) rhs_term = checked_term(statement.b, rhs_type);
+src/semantic_checker.cpp	28379	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	statement.a + "' of type '" +
+src/semantic_checker.cpp	28391	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	check_expression(statement.line, statement.a, current_env,
+src/semantic_checker.cpp	28397	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	if (!statement.a.empty())
+src/semantic_checker.cpp	28398	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	check_expression(statement.line, statement.a, current_env,
+src/semantic_checker.cpp	28404	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	auto prior = current_env.find(statement.a);
+src/semantic_checker.cpp	28406	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	err(statement.line, "domain handle binding '" + statement.a + "' is immutable");
+src/semantic_checker.cpp	28407	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	check_for_source(statement.line, statement.b, current_env,
+src/semantic_checker.cpp	28416	statement	args	propagation, diagnostics, metadata, or other field use; bounded taint review	for (const auto& argument : statement.args) {
+src/semantic_checker.cpp	28427	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	statement.line, statement.a, current_env);
+src/semantic_checker.cpp	28429	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	statement.line, statement.a, statement.b, statement.args,
+src/semantic_checker.cpp	28429	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	statement.line, statement.a, statement.b, statement.args,
+src/semantic_checker.cpp	28429	statement	args	propagation, diagnostics, metadata, or other field use; bounded taint review	statement.line, statement.a, statement.b, statement.args,
+src/semantic_checker.cpp	28432	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	statement.line, statement.a, *target, current_env);
+src/semantic_checker.cpp	28433	statement	message_result	EST handle/pattern or binding metadata	auto destination = current_env.find(statement.message_result);
+src/semantic_checker.cpp	28434	statement	message_result	EST handle/pattern or binding metadata	if (!statement.message_result.empty() && destination != current_env.end() &&
+src/semantic_checker.cpp	28437	statement	message_result	EST handle/pattern or binding metadata	"domain handle binding '" + statement.message_result + "' is immutable");
+src/semantic_checker.cpp	28439	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	auto receiver = current_env.find(statement.a);
+src/semantic_checker.cpp	28444	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	"handler '" + current->name + "." + statement.b +
+src/semantic_checker.cpp	28451	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	{"domain-instance", statement.a,
+src/semantic_checker.cpp	28452	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	domain_instance_semantic_identity(statement.a, current->name),
+src/semantic_checker.cpp	28453	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	statement.a, {}, 0},
+src/semantic_checker.cpp	28454	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	{"handler", current->name + "." + statement.b,
+src/semantic_checker.cpp	28460	statement	args	propagation, diagnostics, metadata, or other field use; bounded taint review	for (const auto& argument : statement.args) {
+src/semantic_checker.cpp	28471	statement	args	propagation, diagnostics, metadata, or other field use; bounded taint review	for (size_t index = 0; index < statement.args.size(); ++index) {
+src/semantic_checker.cpp	28473	statement	args	propagation, diagnostics, metadata, or other field use; bounded taint review	check_expression(statement.line, statement.args[index], current_env,
+src/semantic_checker.cpp	28486	statement	text	propagation, diagnostics, metadata, or other field use; bounded taint review	// Member calls are captured by check_expression(statement.text) below;
+src/semantic_checker.cpp	28489	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	statement.b.empty()) {
+src/semantic_checker.cpp	28492	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	statement.b.empty()
+src/semantic_checker.cpp	28495	statement	text	propagation, diagnostics, metadata, or other field use; bounded taint review	statement.text.empty() ? statement.a : statement.text);
+src/semantic_checker.cpp	28495	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	statement.text.empty() ? statement.a : statement.text);
+src/semantic_checker.cpp	28495	statement	text	propagation, diagnostics, metadata, or other field use; bounded taint review	statement.text.empty() ? statement.a : statement.text);
+src/semantic_checker.cpp	28497	statement	args	propagation, diagnostics, metadata, or other field use; bounded taint review	call_occurrence_id).source_operands = statement.args;
+src/semantic_checker.cpp	28512	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	if (!statement.b.empty()) {
+src/semantic_checker.cpp	28513	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	auto receiver = current_env.find(statement.a);
+src/semantic_checker.cpp	28516	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	: inferred_expr_type(statement.a, current_env);
+src/semantic_checker.cpp	28521	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	statement.line, statement.a, statement.b, statement.args,
+src/semantic_checker.cpp	28521	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	statement.line, statement.a, statement.b, statement.args,
+src/semantic_checker.cpp	28521	statement	args	propagation, diagnostics, metadata, or other field use; bounded taint review	statement.line, statement.a, statement.b, statement.args,
+src/semantic_checker.cpp	28525	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	"domain handler '" + domain + "." + statement.b +
+src/semantic_checker.cpp	28530	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	{{"domain-instance", statement.a,
+src/semantic_checker.cpp	28531	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	domain_instance_semantic_identity(statement.a, domain),
+src/semantic_checker.cpp	28532	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	statement.a, {}, 0},
+src/semantic_checker.cpp	28533	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	{"handler", domain + "." + statement.b,
+src/semantic_checker.cpp	28537	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	"write 'message " + statement.a + "." + statement.b +
+src/semantic_checker.cpp	28537	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	"write 'message " + statement.a + "." + statement.b +
+src/semantic_checker.cpp	28550	statement	args	propagation, diagnostics, metadata, or other field use; bounded taint review	for (const auto& argument : statement.args)
+src/semantic_checker.cpp	28555	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	canonical_type_name(*receiver_type), statement.b,
+src/semantic_checker.cpp	28560	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	statement.b + "' for supplied arguments");
+src/semantic_checker.cpp	28568	statement	a	raw binding/name comparison; audit by statement kind	constraint.subject == statement.a &&
+src/semantic_checker.cpp	28569	statement	b	raw binding/name comparison; audit by statement kind	constraint.detail == statement.b &&
+src/semantic_checker.cpp	28570	statement	args	raw binding/name comparison; audit by statement kind	constraint.arity == statement.args.size();
+src/semantic_checker.cpp	28574	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	statement.a + "." + statement.b + "'");
+src/semantic_checker.cpp	28574	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	statement.a + "." + statement.b + "'");
+src/semantic_checker.cpp	28581	statement	a	raw literal/name/keyword comparison; audit by statement kind	const bool delayed_assert_check = statement.a == "assert" &&
+src/semantic_checker.cpp	28582	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	!functions_.count(statement.a);
+src/semantic_checker.cpp	28584	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	check_function_call(statement.line, statement.a, statement.args,
+src/semantic_checker.cpp	28584	statement	args	propagation, diagnostics, metadata, or other field use; bounded taint review	check_function_call(statement.line, statement.a, statement.args,
+src/semantic_checker.cpp	28597	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	auto binding = current_env.find(statement.a);
+src/semantic_checker.cpp	28601	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	"binding:pending:" + statement.a);
+src/semantic_checker.cpp	28604	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	call_occurrence_id, "builtin:" + statement.a);
+src/semantic_checker.cpp	28607	statement	text	propagation, diagnostics, metadata, or other field use; bounded taint review	statement.text.empty() ? statement.a : statement.text,
+src/semantic_checker.cpp	28607	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	statement.text.empty() ? statement.a : statement.text,
+src/semantic_checker.cpp	28607	statement	text	propagation, diagnostics, metadata, or other field use; bounded taint review	statement.text.empty() ? statement.a : statement.text,
+src/semantic_checker.cpp	28612	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	if (!statement.b.empty()) {
+src/semantic_checker.cpp	28613	statement	text	propagation, diagnostics, metadata, or other field use; bounded taint review	check_expression(statement.line, statement.text, current_env,
+src/semantic_checker.cpp	28626	statement	b	raw literal/name/keyword comparison; audit by statement kind	const bool sort_builtin = statement.b.empty() && statement.a == "sort" &&
+src/semantic_checker.cpp	28626	statement	a	raw literal/name/keyword comparison; audit by statement kind	const bool sort_builtin = statement.b.empty() && statement.a == "sort" &&
+src/semantic_checker.cpp	28627	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	!functions_.count(statement.a);
+src/semantic_checker.cpp	28631	statement	args	propagation, diagnostics, metadata, or other field use; bounded taint review	for (size_t index = 0; index < statement.args.size(); ++index) {
+src/semantic_checker.cpp	28632	statement	args	propagation, diagnostics, metadata, or other field use; bounded taint review	const auto& argument = statement.args[index];
+src/semantic_checker.cpp	28647	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	const auto occurrence_slot = statement.b.empty()
+src/semantic_checker.cpp	28657	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	statement.b.empty()) {
+src/semantic_checker.cpp	28663	statement	b	raw literal/name/keyword comparison; audit by statement kind	if (statement.b.empty() && statement.a == "assert" &&
+src/semantic_checker.cpp	28663	statement	a	raw literal/name/keyword comparison; audit by statement kind	if (statement.b.empty() && statement.a == "assert" &&
+src/semantic_checker.cpp	28664	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	!functions_.count(statement.a))
+src/semantic_checker.cpp	28665	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	check_function_call(statement.line, statement.a, statement.args,
+src/semantic_checker.cpp	28665	statement	args	propagation, diagnostics, metadata, or other field use; bounded taint review	check_function_call(statement.line, statement.a, statement.args,
+src/semantic_checker.cpp	28667	statement	message_result	EST handle/pattern or binding metadata	if (!statement.message_result.empty()) {
+src/semantic_checker.cpp	28669	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	auto receiver = current_env.find(statement.a);
+src/semantic_checker.cpp	28674	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	const Handler* handler = target ? find_handler(*target, statement.b) : nullptr;
+src/semantic_checker.cpp	28677	statement	message_result	EST handle/pattern or binding metadata	if (current_env.count(statement.message_result)) {
+src/semantic_checker.cpp	28678	statement	message_result	EST handle/pattern or binding metadata	auto destination = checked_types.resolved_local(statement.message_result);
+src/semantic_checker.cpp	28683	statement	message_result	EST handle/pattern or binding metadata	canonical_type_name(current_env.at(statement.message_result)));
+src/semantic_checker.cpp	28689	statement	message_result	EST handle/pattern or binding metadata	err(statement.line, "message assignment to '" + statement.message_result +
+src/semantic_checker.cpp	28690	statement	message_result	EST handle/pattern or binding metadata	"' has type '" + canonical_type_name(current_env.at(statement.message_result)) +
+src/semantic_checker.cpp	28700	statement	args	propagation, diagnostics, metadata, or other field use; bounded taint review	for (size_t index = 0; index < statement.args.size(); ++index) {
+src/semantic_checker.cpp	28702	statement	args	propagation, diagnostics, metadata, or other field use; bounded taint review	const auto& argument = statement.args[index];
+src/semantic_checker.cpp	28738	statement	args	propagation, diagnostics, metadata, or other field use; bounded taint review	static_cast<std::uint32_t>(index), statement.args[index],
+src/semantic_checker.cpp	28748	statement	text	EST projection/query or tree structure	tree_plain_identifier(statement.text) && statement.text != "pass")
+src/semantic_checker.cpp	28748	statement	text	EST projection/query or tree structure	tree_plain_identifier(statement.text) && statement.text != "pass")
+src/semantic_checker.cpp	28759	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	check_expression(statement.line, statement.a, current_env,
+src/semantic_checker.cpp	28761	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	auto actual = inferred_expr_type(statement.a, current_env);
+src/semantic_checker.cpp	28762	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	if (auto pipeline = functional_pipeline_from_est(statement.a)) {
+src/semantic_checker.cpp	28775	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	"cannot infer the type of reply expression '" + statement.a + "'",
+src/semantic_checker.cpp	28779	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	{{"expression", statement.a, {}, statement.a, {}, 0},
+src/semantic_checker.cpp	28779	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	{{"expression", statement.a, {}, statement.a, {}, 0},
+src/semantic_checker.cpp	28788	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	statement.a, *actual, *current_handler->reply_type);
+src/semantic_checker.cpp	28797	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	!statement.a.empty())
+src/semantic_checker.cpp	28800	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	!current_function && !statement.a.empty())
+src/semantic_checker.cpp	28803	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	!statement.a.empty()) {
+src/semantic_checker.cpp	28813	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	check_expression(statement.line, statement.a, current_env,
+src/semantic_checker.cpp	28815	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	auto actual = inferred_expr_type(statement.a, current_env);
+src/semantic_checker.cpp	28821	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	{"expression", statement.a, {}, statement.a, {}, 0},
+src/semantic_checker.cpp	28821	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	{"expression", statement.a, {}, statement.a, {}, 0},
+src/semantic_checker.cpp	28829	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	"cannot infer the type of return expression '" + statement.a +
+src/semantic_checker.cpp	28853	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	!checked_types.known_expression(statement.a) &&
+src/semantic_checker.cpp	28855	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	!checked_result_matches(statement.a, *actual,
+src/semantic_checker.cpp	29347	prior	a	raw binding/name comparison; audit by statement kind	prior.a == name) {
+src/semantic_checker.cpp	30826	statement	a	EST projection/query or tree structure	if (!tree_simple_identifier(statement.a))
+src/semantic_checker.cpp	30840	statement	b	EST projection/query or tree structure	if (tree_parse_simple_call(trim(statement.b), callee, arguments) &&
+src/semantic_checker.cpp	30851	statement	args	propagation, diagnostics, metadata, or other field use; bounded taint review	for (size_t index = 0; index < statement.args.size(); ++index)
+src/semantic_checker.cpp	30868	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	if (!statement.b.empty()) {
+src/semantic_checker.cpp	30877	statement	args	propagation, diagnostics, metadata, or other field use; bounded taint review	for (size_t index = 0; index < statement.args.size(); ++index) {
+src/semantic_checker.cpp	30878	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	const string role = statement.b.empty()
+src/semantic_checker.cpp	30897	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	if (statement.a.empty()) {
+src/semantic_checker.cpp	30911	statement	args	propagation, diagnostics, metadata, or other field use; bounded taint review	for (size_t index = 0; index < statement.args.size(); ++index)
+src/semantic_checker.cpp	30916	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	if (!statement.a.empty()) require_root(statement, "reply-value");
+src/semantic_checker.cpp	30919	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	if (!statement.a.empty()) require_root(statement, "return-value");
+src/fileio_semantics.inc	575	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	fileio_lifecycle_expression(s.line, s.a, flow);
+src/fileio_semantics.inc	644	s	b	raw binding/name comparison; audit by statement kind	s.kind == Stmt::Kind::For ? s.b : s.a, flow);
+src/fileio_semantics.inc	644	s	a	raw binding/name comparison; audit by statement kind	s.kind == Stmt::Kind::For ? s.b : s.a, flow);
+src/fileio_semantics.inc	649	s	b	propagation, diagnostics, metadata, or other field use; bounded taint review	canonical_type_name(inferred_expr_type(s.b, flow.types).value_or("")) ==
+src/fileio_semantics.inc	652	s	b	EST projection/query or tree structure	const auto batch_binding = tree_identifier_name(s.b);
+src/fileio_semantics.inc	654	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	branch.range_origin[s.a] = {
+src/fileio_semantics.inc	669	s	a	raw binding/name comparison; audit by statement kind	if (s.kind == Stmt::Kind::For) flow.range_origin.erase(s.a);
+src/fileio_semantics.inc	675	s	b	propagation, diagnostics, metadata, or other field use; bounded taint review	fileio_lifecycle_expression(s.line, s.b, flow);
+src/fileio_semantics.inc	676	s	b	propagation, diagnostics, metadata, or other field use; bounded taint review	auto type = inferred_expr_type(s.b, flow.types);
+src/fileio_semantics.inc	678	s	b	propagation, diagnostics, metadata, or other field use; bounded taint review	storage_location(s.b, flow.types))
+src/fileio_semantics.inc	682	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	++flow.batch_generation[s.a];
+src/fileio_semantics.inc	684	s	b	EST projection/query or tree structure	const auto source_binding = tree_identifier_name(s.b);
+src/fileio_semantics.inc	686	s	b	EST projection/query or tree structure	tree_parse_index(trim(s.b), source, offset) &&
+src/fileio_semantics.inc	691	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	flow.range_origin[s.a] = {
+src/fileio_semantics.inc	694	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	flow.range_origin.erase(s.a);
+src/fileio_semantics.inc	697	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	flow.range_origin[s.a] = flow.range_origin[*source_binding];
+src/fileio_semantics.inc	698	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	else flow.range_origin.erase(s.a);
+src/fileio_semantics.inc	701	s	b	propagation, diagnostics, metadata, or other field use; bounded taint review	is_direct_fileio_open_initializer(s.b, &open_args)) {
+src/fileio_semantics.inc	702	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	flow.types[s.a] = "FileIO";
+src/fileio_semantics.inc	703	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	flow.local_owners.insert(s.a);
+src/fileio_semantics.inc	704	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	flow.state[s.a] = 1;
+src/fileio_semantics.inc	708	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	flow.mode[s.a] = trim(open_args[1]);
+src/fileio_semantics.inc	709	s	a	raw literal/name/keyword comparison; audit by statement kind	if (flow.mode[s.a] == "ro") flow.may_be_read_only.insert(s.a);
+src/fileio_semantics.inc	709	s	a	raw literal/name/keyword comparison; audit by statement kind	if (flow.mode[s.a] == "ro") flow.may_be_read_only.insert(s.a);
+src/fileio_semantics.inc	710	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	else flow.may_be_read_only.erase(s.a);
+src/fileio_semantics.inc	712	s	a	EST projection/query or tree structure	} else if (type && tree_simple_identifier(s.a)) {
+src/fileio_semantics.inc	713	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	flow.types[s.a] = *type;
+src/fileio_semantics.inc	716	s	args	propagation, diagnostics, metadata, or other field use; bounded taint review	for (const auto& argument : s.args)
+src/fileio_semantics.inc	719	s	text	propagation, diagnostics, metadata, or other field use; bounded taint review	string call_text = s.text;
+src/fileio_semantics.inc	720	s	a	EST projection/query or tree structure	auto call_name = tree_identifier_name(s.a);
+src/fileio_semantics.inc	721	s	b	raw binding/name comparison; audit by statement kind	if (s.kind == Stmt::Kind::Call && s.b.empty() && call_name) {
+src/fileio_semantics.inc	723	s	args	propagation, diagnostics, metadata, or other field use; bounded taint review	for (size_t i = 0; i < s.args.size(); ++i) {
+src/fileio_semantics.inc	725	s	args	propagation, diagnostics, metadata, or other field use; bounded taint review	call_text += s.args[i];
+src/fileio_semantics.inc	731	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	fileio_lifecycle_expression(s.line, s.a, flow);
+src/fileio_semantics.inc	765	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	source << "message " << statement.a << "." << statement.b << "(";
+src/fileio_semantics.inc	765	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	source << "message " << statement.a << "." << statement.b << "(";
+src/fileio_semantics.inc	766	statement	args	propagation, diagnostics, metadata, or other field use; bounded taint review	for (size_t index = 0; index < statement.args.size(); ++index) {
+src/fileio_semantics.inc	768	statement	args	propagation, diagnostics, metadata, or other field use; bounded taint review	source << statement.args[index];
+src/fileio_semantics.inc	836	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	return fileio_blocking_message(statement.a, statement.b, env,
+src/fileio_semantics.inc	836	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	return fileio_blocking_message(statement.a, statement.b, env,
+src/fileio_semantics.inc	837	statement	args	propagation, diagnostics, metadata, or other field use; bounded taint review	statement.args, visited);
+src/fileio_semantics.inc	846	statement	args	propagation, diagnostics, metadata, or other field use; bounded taint review	return inspect_arguments(statement.args);
+src/fileio_semantics.inc	848	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	if (statement.b.empty()) {
+src/fileio_semantics.inc	849	statement	args	propagation, diagnostics, metadata, or other field use; bounded taint review	if (auto nested = inspect_arguments(statement.args)) return nested;
+src/fileio_semantics.inc	851	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	statement.a, visited, env, statement.args))
+src/fileio_semantics.inc	851	statement	args	propagation, diagnostics, metadata, or other field use; bounded taint review	statement.a, visited, env, statement.args))
+src/fileio_semantics.inc	852	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	return *nested + " via " + statement.a;
+src/fileio_semantics.inc	855	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	if (auto nested = fileio_blocking_expression(statement.a, env, visited))
+src/fileio_semantics.inc	857	statement	args	propagation, diagnostics, metadata, or other field use; bounded taint review	if (auto nested = inspect_arguments(statement.args)) return nested;
+src/fileio_semantics.inc	858	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	if (fileio_operation_effect(statement.b) &&
+src/fileio_semantics.inc	859	statement	a	raw literal/name/keyword comparison; audit by statement kind	(statement.a == "FileIO" ||
+src/fileio_semantics.inc	860	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	canonical_type_name(inferred_expr_type(statement.a, env).value_or("")) ==
+src/fileio_semantics.inc	862	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	return statement.b;
+src/fileio_semantics.inc	866	statement	text	propagation, diagnostics, metadata, or other field use; bounded taint review	return fileio_blocking_expression(statement.text, env, visited);
+src/fileio_semantics.inc	873	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	? statement.a : statement.b;
+src/fileio_semantics.inc	873	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	? statement.a : statement.b;
+src/fileio_semantics.inc	902	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	auto type = inferred_expr_type(statement.b, env);
+src/fileio_semantics.inc	903	statement	a	EST projection/query or tree structure	if (type && tree_simple_identifier(statement.a)) env[statement.a] = *type;
+src/fileio_semantics.inc	903	statement	a	EST projection/query or tree structure	if (type && tree_simple_identifier(statement.a)) env[statement.a] = *type;
+src/fileio_semantics.inc	963	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	auto type = inferred_expr_type(statement.b, env);
+src/fileio_semantics.inc	964	statement	a	EST projection/query or tree structure	if (type && tree_simple_identifier(statement.a)) env[statement.a] = *type;
+src/fileio_semantics.inc	964	statement	a	EST projection/query or tree structure	if (type && tree_simple_identifier(statement.a)) env[statement.a] = *type;
+src/fileio_semantics.inc	1006	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	auto type = inferred_expr_type(statement.b, env);
+src/fileio_semantics.inc	1007	statement	a	EST projection/query or tree structure	if (type && tree_simple_identifier(statement.a)) env[statement.a] = *type;
+src/fileio_semantics.inc	1007	statement	a	EST projection/query or tree structure	if (type && tree_simple_identifier(statement.a)) env[statement.a] = *type;
+src/file_chunk_lowering.inc	102	statement	a	EST projection/query or tree structure	if (tree_root_identifier(statement.a) == parameter)
+src/file_chunk_lowering.inc	110	statement	a	EST projection/query or tree structure	tree_identifier_named(statement.a, parameter)) ||
+src/file_chunk_lowering.inc	112	statement	args	propagation, diagnostics, metadata, or other field use; bounded taint review	std::find(statement.args.begin(), statement.args.end(), parameter) !=
+src/file_chunk_lowering.inc	112	statement	args	propagation, diagnostics, metadata, or other field use; bounded taint review	std::find(statement.args.begin(), statement.args.end(), parameter) !=
+src/file_chunk_lowering.inc	113	statement	args	propagation, diagnostics, metadata, or other field use; bounded taint review	statement.args.end()))
+src/executor_invoke_lowering.inc	53	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	plan.binding = statement.a;
+src/executor_invoke_lowering.inc	109	statement	args	propagation, diagnostics, metadata, or other field use; bounded taint review	if (statement.args.size() != 1)
+src/executor_invoke_lowering.inc	116	statement	args	EST projection/query or tree structure	if (!tree_parse_member_call(statement.args.front(), domain_binding, handler_name,
+src/executor_invoke_lowering.inc	149	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	plan.executor_binding = statement.a;
+src/executor_invoke_lowering.inc	245	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	target_for(statement.a, statement.b, statement.line,
+src/executor_invoke_lowering.inc	245	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	target_for(statement.a, statement.b, statement.line,
+src/executor_invoke_lowering.inc	280	statement	b	EST projection/query or tree structure	if (tree_parse_executor_chain(statement.b, calls)) {
+src/executor_invoke_lowering.inc	307	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	if (!functional_pipeline_from_est(statement.b) &&
+src/executor_invoke_lowering.inc	308	statement	b	EST projection/query or tree structure	tree_parse_member_call(statement.b, receiver, method, arguments) &&
+src/executor_invoke_lowering.inc	311	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	check_expression(statement.line, statement.b, env);
+src/executor_invoke_lowering.inc	323	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	if (executor_typed(env, statement.a)) {
+src/executor_invoke_lowering.inc	324	statement	b	raw literal/name/keyword comparison; audit by statement kind	if (statement.b == "invoke") {
+src/executor_invoke_lowering.inc	328	statement	b	raw literal/name/keyword comparison; audit by statement kind	if (statement.b == "join") {
+src/executor_invoke_lowering.inc	329	statement	args	propagation, diagnostics, metadata, or other field use; bounded taint review	if (!statement.args.empty())
+src/executor_invoke_lowering.inc	335	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	"unknown Executor operation '" + statement.b + "'",
+src/executor_invoke_lowering.inc	509	statement	b	EST projection/query or tree structure	tree_parse_executor_chain(statement.b, calls) && !calls.empty() &&
+src/executor_invoke_lowering.inc	519	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	state[statement.a] = {ExecutorLifecycleState::Active, statement.line};
+src/executor_invoke_lowering.inc	521	statement	b	raw literal/name/keyword comparison; audit by statement kind	(statement.b == "invoke" || statement.b == "join")) {
+src/executor_invoke_lowering.inc	521	statement	b	raw literal/name/keyword comparison; audit by statement kind	(statement.b == "invoke" || statement.b == "join")) {
+src/executor_invoke_lowering.inc	522	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	auto found = state.find(statement.a);
+src/executor_invoke_lowering.inc	527	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	"Executor '" + statement.a +
+src/executor_invoke_lowering.inc	531	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	"Executor '" + statement.a + "' is not active here",
+src/executor_invoke_lowering.inc	534	statement	b	raw literal/name/keyword comparison; audit by statement kind	if (statement.b == "join")
+src/executor_invoke_lowering.inc	584	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	s.a = "executor";
+src/executor_invoke_lowering.inc	585	s	b	propagation, diagnostics, metadata, or other field use; bounded taint review	s.b = "invoke";
+src/static_bounds.inc	142	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	if (auto target = storage_location(statement.a, {}, false))
+src/static_bounds.inc	145	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	static_mark_possible_mutation(statement.a, fileio_owners, mutated);
+src/static_bounds.inc	146	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	expression = statement.b;
+src/static_bounds.inc	150	statement	text	propagation, diagnostics, metadata, or other field use; bounded taint review	expression = statement.text;
+src/static_bounds.inc	151	statement	message_result	EST handle/pattern or binding metadata	if (!statement.message_result.empty())
+src/static_bounds.inc	152	statement	message_result	EST handle/pattern or binding metadata	mutated.insert(statement.message_result);
+src/static_bounds.inc	155	statement	args	propagation, diagnostics, metadata, or other field use; bounded taint review	for (const auto& argument : statement.args)
+src/static_bounds.inc	159	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	static_mark_possible_mutation(statement.a, fileio_owners, mutated);
+src/static_bounds.inc	160	statement	args	propagation, diagnostics, metadata, or other field use; bounded taint review	for (const auto& argument : statement.args)
+src/static_bounds.inc	162	statement	message_result	EST handle/pattern or binding metadata	if (!statement.message_result.empty())
+src/static_bounds.inc	163	statement	message_result	EST handle/pattern or binding metadata	mutated.insert(statement.message_result);
+src/static_bounds.inc	170	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	expression = statement.a;
+src/static_bounds.inc	173	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	expression = statement.b;
+src/static_bounds.inc	259	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	element.bytes = static_payload_byte_bound(statement.b);
+src/static_bounds.inc	261	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	auto batch = static_batch_entry_bounds(statement.b);
+src/static_bounds.inc	265	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	body.erase(statement.a);
+src/static_bounds.inc	266	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	body_owners.erase(statement.a);
+src/static_bounds.inc	267	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	if (element.bytes) body[statement.a] = element;
+src/static_bounds.inc	282	arm	args	propagation, diagnostics, metadata, or other field use; bounded taint review	for (const auto& name : arm.args) branch.erase(name);
+src/static_bounds.inc	283	arm	args	propagation, diagnostics, metadata, or other field use; bounded taint review	for (const auto& name : arm.args) branch_owners.erase(name);
+src/static_bounds.inc	286	arm	args	propagation, diagnostics, metadata, or other field use; bounded taint review	for (const auto& name : arm.args) {
+src/static_bounds.inc	309	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	body.erase(statement.a);
+src/static_bounds.inc	310	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	auto old = incoming.find(statement.a);
+src/static_bounds.inc	311	statement	a	raw binding/name comparison; audit by statement kind	if (old != incoming.end()) body[statement.a] = old->second;
+src/static_bounds.inc	323	statement	a	EST projection/query or tree structure	tree_simple_identifier(statement.a)) {
+src/static_bounds.inc	325	statement	b	EST projection/query or tree structure	string value = tree_strip_redundant_outer_parentheses(trim(statement.b));
+src/static_bounds.inc	363	statement	a	EST projection/query or tree structure	tree_simple_identifier(statement.a);
+src/static_bounds.inc	364	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	if (binding) mutated.erase(statement.a);
+src/static_bounds.inc	374	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	if (new_fact) facts[statement.a] = std::move(*new_fact);
+src/static_bounds.inc	378	statement	a	EST projection/query or tree structure	tree_simple_identifier(statement.a)) {
+src/static_bounds.inc	379	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	fileio_owners.erase(statement.a);
+src/static_bounds.inc	380	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	if (is_direct_fileio_open_initializer(statement.b))
+src/static_bounds.inc	381	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	fileio_owners.insert(statement.a);
+src/native_generator.cpp	1333	statement	a	propagation, diagnostics, metadata, or other field use; bounded taint review	? statement.a : statement.b;
+src/native_generator.cpp	1333	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	? statement.a : statement.b;
+src/native_generator.cpp	2558	statement	a	EST projection/query or tree structure	const auto result_binding = tree_identifier_name(statement.a);
+src/native_generator.cpp	2565	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	statement.b, &statement.expression_handles);
+src/native_generator.cpp	2565	statement	expression_handles	EST handle/pattern or binding metadata	statement.b, &statement.expression_handles);
+src/native_generator.cpp	4750	method	expression_handles	EST handle/pattern or binding metadata	&method.expression_handles);
+src/native_generator.cpp	4964	f	expression_handles	EST handle/pattern or binding metadata	active_functional_expression_handles_, &f.expression_handles);
+src/native_generator.cpp	5033	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	used.insert(s.a);
+src/native_generator.cpp	5413	statement	b	propagation, diagnostics, metadata, or other field use; bounded taint review	if (domain_construction(statement.b)) constructions.push_back(statement);
+src/native_generator.cpp	5427	left	a	propagation, diagnostics, metadata, or other field use; bounded taint review	return domain_ranks[left.a] > domain_ranks[right.a];
+src/native_generator.cpp	5427	right	a	propagation, diagnostics, metadata, or other field use; bounded taint review	return domain_ranks[left.a] > domain_ranks[right.a];
+src/native_generator.cpp	5499	s	expression_handles	EST handle/pattern or binding metadata	active_functional_expression_handles_, &s.expression_handles);
+src/native_generator.cpp	5508	s	text	propagation, diagnostics, metadata, or other field use; bounded taint review	source_comment(o, (base + level) * 4, s.line, s.text);
+src/native_generator.cpp	5545	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	locals.insert(s.a);
+src/native_generator.cpp	5546	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	types[s.a] = direct_functional->output_type;
+src/native_generator.cpp	5603	recovered	b	propagation, diagnostics, metadata, or other field use; bounded taint review	recovered.b, binding);
+src/native_generator.cpp	5606	recovered	a	propagation, diagnostics, metadata, or other field use; bounded taint review	recovered.a, binding);
+src/native_generator.cpp	5607	recovered	args	propagation, diagnostics, metadata, or other field use; bounded taint review	for (const auto& argument : recovered.args)
+src/native_generator.cpp	5767	arm	est_pattern	EST handle/pattern or binding metadata	if (arm.est_pattern && arm.est_pattern->kind ==
+src/native_generator.cpp	5767	arm	est_pattern	EST handle/pattern or binding metadata	if (arm.est_pattern && arm.est_pattern->kind ==
+src/native_generator.cpp	5769	arm	est_pattern	EST handle/pattern or binding metadata	const auto& binding = arm.est_pattern->binding;
+src/native_generator.cpp	5774	arm	est_pattern	EST handle/pattern or binding metadata	} else if (arm.est_pattern &&
+src/native_generator.cpp	5775	arm	est_pattern	EST handle/pattern or binding metadata	(arm.est_pattern->kind == est::PatternNode::Kind::QualifiedRecoveryCase ||
+src/native_generator.cpp	5776	arm	est_pattern	EST handle/pattern or binding metadata	arm.est_pattern->kind == est::PatternNode::Kind::GroupedAlternatives)) {
+src/native_generator.cpp	5777	arm	est_pattern	EST handle/pattern or binding metadata	const auto alternatives = arm.est_pattern->kind ==
+src/native_generator.cpp	5779	arm	est_pattern	EST handle/pattern or binding metadata	? arm.est_pattern->alternatives
+src/native_generator.cpp	5780	arm	est_pattern	EST handle/pattern or binding metadata	: std::vector<est::PatternNode>{*arm.est_pattern};
+src/native_generator.cpp	5839	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	if (s.a.empty()) {
+src/native_generator.cpp	5854	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	auto type = generated_expr_type(s.a, &types);
+src/native_generator.cpp	5859	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	const string value = expr(s.a, d, locals, &types,
+src/native_generator.cpp	5910	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	auto scrutinee_type = generated_expr_type(s.a, &types);
+src/native_generator.cpp	5932	s	a	EST projection/query or tree structure	if (tree_parse_simple_call(s.a, match_callee, match_arguments)) {
+src/native_generator.cpp	5946	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	const bool recovery_slot = phase21_option_slots_.count(s.a) != 0;
+src/native_generator.cpp	5947	s	b	raw literal/name/keyword comparison; audit by statement kind	if (s.b != "consume" && !recovery_slot) o << "&";
+src/native_generator.cpp	5949	s	b	raw literal/name/keyword comparison; audit by statement kind	if (recovery_slot && s.b == "consume")
+src/native_generator.cpp	5950	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	o << "__moss_recovery_slot_" << s.a
+src/native_generator.cpp	5953	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	o << expr(s.a, d, locals, &types);
+src/native_generator.cpp	5959	arm	est_pattern	EST handle/pattern or binding metadata	if (!arm.est_pattern ||
+src/native_generator.cpp	5960	arm	est_pattern	EST handle/pattern or binding metadata	(arm.est_pattern->kind != est::PatternNode::Kind::EnumTag &&
+src/native_generator.cpp	5961	arm	est_pattern	EST handle/pattern or binding metadata	arm.est_pattern->kind != est::PatternNode::Kind::EnumCase))
+src/native_generator.cpp	5963	arm	est_pattern	EST handle/pattern or binding metadata	const auto& pattern = *arm.est_pattern;
+src/native_generator.cpp	5993	s	b	raw literal/name/keyword comparison; audit by statement kind	if (s.b != "consume") {
+src/native_generator.cpp	6038	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	<< expr(s.a, d, locals, &types,
+src/native_generator.cpp	6070	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	<< expr(s.a, d, locals, &types,
+src/native_generator.cpp	6084	s	b	propagation, diagnostics, metadata, or other field use; bounded taint review	string source = trim(s.b);
+src/native_generator.cpp	6109	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	o << indent(level) << "for " << s.a << " in ("
+src/native_generator.cpp	6113	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	o << indent(level) << "for " << s.a << " in "
+src/native_generator.cpp	6118	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	child_locals.insert(s.a);
+src/native_generator.cpp	6119	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	child_types[s.a] = "int";
+src/native_generator.cpp	6134	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	o << indent(level) << "for " << s.a << " in ("
+src/native_generator.cpp	6138	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	child_locals.insert(s.a);
+src/native_generator.cpp	6139	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	child_types[s.a] = "Range";
+src/native_generator.cpp	6149	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	o << indent(level) << "for " << s.a << " in ("
+src/native_generator.cpp	6153	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	child_locals.insert(s.a);
+src/native_generator.cpp	6154	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	child_types[s.a] = "int";
+src/native_generator.cpp	6173	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	o << indent(level) << "for " << s.a << " in " << traversal
+src/native_generator.cpp	6177	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	child_locals.insert(s.a);
+src/native_generator.cpp	6178	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	child_types[s.a] = element;
+src/native_generator.cpp	6211	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	o << indent(level + 2) << "Some(" << s.a << ") => {\n";
+src/native_generator.cpp	6214	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	child_locals.insert(s.a);
+src/native_generator.cpp	6219	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	child_types[s.a] = element;
+src/native_generator.cpp	6232	s	args	propagation, diagnostics, metadata, or other field use; bounded taint review	if (s.args.empty()) o << "println!();\n";
+src/native_generator.cpp	6235	s	args	propagation, diagnostics, metadata, or other field use; bounded taint review	for (size_t k = 0; k < s.args.size(); ++k) { if (k) o << " "; o << "{}"; }
+src/native_generator.cpp	6237	s	args	propagation, diagnostics, metadata, or other field use; bounded taint review	for (size_t argument = 0; argument < s.args.size(); ++argument) {
+src/native_generator.cpp	6239	s	args	propagation, diagnostics, metadata, or other field use; bounded taint review	s.args[argument], d, locals, &types,
+src/native_generator.cpp	6242	s	args	propagation, diagnostics, metadata, or other field use; bounded taint review	auto type = generated_expr_type(s.args[argument], &types);
+src/native_generator.cpp	6302	s	a	raw literal/name/keyword comparison; audit by statement kind	if (s.a == "_") {
+src/native_generator.cpp	6304	s	b	propagation, diagnostics, metadata, or other field use; bounded taint review	<< expr(s.b, d, locals, &types,
+src/native_generator.cpp	6311	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	if (phase21_option_slots_.count(s.a)) {
+src/native_generator.cpp	6312	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	o << indent(level) << "__moss_recovery_slot_" << s.a
+src/native_generator.cpp	6313	s	b	propagation, diagnostics, metadata, or other field use; bounded taint review	<< " = Some(" << expr(s.b, d, locals, &types,
+src/native_generator.cpp	6319	s	b	propagation, diagnostics, metadata, or other field use; bounded taint review	if (auto sd = domain_construction(s.b)) {
+src/native_generator.cpp	6321	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	construction_binding_ = s.a;
+src/native_generator.cpp	6322	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	remember_domain_instance_binding(s.a, source_domain, s.a);
+src/native_generator.cpp	6322	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	remember_domain_instance_binding(s.a, source_domain, s.a);
+src/native_generator.cpp	6323	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	auto specialized = specialization_names_.find(*sd + "\n" + s.a);
+src/native_generator.cpp	6325	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	bool existing_binding = locals.count(s.a);
+src/native_generator.cpp	6326	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	o << indent(level) << (existing_binding ? "" : "let ") << s.a << " = ";
+src/native_generator.cpp	6327	s	b	propagation, diagnostics, metadata, or other field use; bounded taint review	emit_domain_construction(o, *sd, s.b, d, locals, &types);
+src/native_generator.cpp	6328	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	locals.insert(s.a);
+src/native_generator.cpp	6329	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	types[s.a] = *sd;
+src/native_generator.cpp	6336	s	a	EST projection/query or tree structure	if (tree_parse_index(s.a, lhs_base, lhs_index)) {
+src/native_generator.cpp	6358	s	a	EST projection/query or tree structure	if (tree_parse_index(s.a, lhs_base, lhs_index)) {
+src/native_generator.cpp	6370	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	else lhs = write_call_place(s.a, d, locals, &types);
+src/native_generator.cpp	6372	s	a	raw binding/name comparison; audit by statement kind	[&](const Field& field) { return field.name == s.a; });
+src/native_generator.cpp	6373	s	a	EST projection/query or tree structure	if (tree_plain_identifier(s.a) && !locals.count(s.a) && !state_field) {
+src/native_generator.cpp	6373	s	a	EST projection/query or tree structure	if (tree_plain_identifier(s.a) && !locals.count(s.a) && !state_field) {
+src/native_generator.cpp	6378	s	b	EST projection/query or tree structure	if (staged_abi_v10() && tree_empty_constructor_named(s.b, "Map") &&
+src/native_generator.cpp	6387	s	a	raw binding/name comparison; audit by statement kind	map_base != s.a) continue;
+src/native_generator.cpp	6401	s	b	raw literal/name/keyword comparison; audit by statement kind	canonical_type_name(generated_expr_type(s.b, &types).value_or("")) == "float")
+src/native_generator.cpp	6403	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	o << indent(level) << "let mut " << s.a;
+src/native_generator.cpp	6406	s	b	propagation, diagnostics, metadata, or other field use; bounded taint review	<< expr(s.b, d, locals, &types,
+src/native_generator.cpp	6410	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	locals.insert(s.a);
+src/native_generator.cpp	6411	s	b	propagation, diagnostics, metadata, or other field use; bounded taint review	auto generated_type = generated_expr_type(s.b, &types);
+src/native_generator.cpp	6412	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	types[s.a] = !inferred_map_type.empty() ? inferred_map_type
+src/native_generator.cpp	6417	s	b	EST projection/query or tree structure	: tree_empty_constructor_named(s.b, "Map") ? "map"
+src/native_generator.cpp	6418	s	b	EST projection/query or tree structure	: tree_empty_constructor_named(s.b, "Queue") ? "queue"
+src/native_generator.cpp	6419	s	b	EST projection/query or tree structure	: staged_abi_v10() && tree_empty_constructor_named(s.b, "Set") ? "set"
+src/native_generator.cpp	6420	s	b	EST projection/query or tree structure	: (tree_parse_vector_literal(s.b) ? "vector" : "_value");
+src/native_generator.cpp	6421	s	b	EST projection/query or tree structure	const auto source_name = tree_identifier_name(s.b);
+src/native_generator.cpp	6427	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	s.a, source_binding->second.source_domain,
+src/native_generator.cpp	6430	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	forget_domain_instance_binding(s.a);
+src/native_generator.cpp	6433	s	a	EST projection/query or tree structure	bool map_assignment = tree_parse_index(s.a, mb, mi);
+src/native_generator.cpp	6448	s	b	propagation, diagnostics, metadata, or other field use; bounded taint review	string inserted = expr(s.b, d, locals, &types,
+src/native_generator.cpp	6450	s	b	EST projection/query or tree structure	const auto source_binding = tree_identifier_name(s.b);
+src/native_generator.cpp	6468	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	else if (is_object_view(s.a, d, locals, &types))
+src/native_generator.cpp	6469	s	b	propagation, diagnostics, metadata, or other field use; bounded taint review	o << indent(level) << "(" << lhs << ").__moss_replace(" << expr(s.b, d, locals, &types, statement_functional_pipeline_id(s, functional_context, 0)) << ");\n";
+src/native_generator.cpp	6489	s	b	propagation, diagnostics, metadata, or other field use; bounded taint review	collect_concat(s.b);
+src/native_generator.cpp	6490	s	a	EST projection/query or tree structure	bool reuse_string_buffer = tree_plain_identifier(s.a) &&
+src/native_generator.cpp	6491	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	locals.count(s.a) && concat_operands.size() > 1 &&
+src/native_generator.cpp	6492	s	a	EST projection/query or tree structure	tree_expressions_equal(concat_operands.front(), s.a) &&
+src/native_generator.cpp	6493	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	canonical_type_name(types.count(s.a) ? types.at(s.a) : "") ==
+src/native_generator.cpp	6493	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	canonical_type_name(types.count(s.a) ? types.at(s.a) : "") ==
+src/native_generator.cpp	6498	s	a	EST projection/query or tree structure	if (tree_expression_mentions_identifier(concat_operands[operand], s.a))
+src/native_generator.cpp	6513	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	string place = write_call_place(s.a, d, locals, &types);
+src/native_generator.cpp	6532	s	b	propagation, diagnostics, metadata, or other field use; bounded taint review	assigned = expr(s.b, d, locals, &types,
+src/native_generator.cpp	6535	s	b	EST projection/query or tree structure	const auto source_binding = tree_identifier_name(s.b);
+src/native_generator.cpp	6544	s	a	EST projection/query or tree structure	if (tree_plain_identifier(s.a)) forget_domain_instance_binding(s.a);
+src/native_generator.cpp	6544	s	a	EST projection/query or tree structure	if (tree_plain_identifier(s.a)) forget_domain_instance_binding(s.a);
+src/native_generator.cpp	6553	s	a	raw binding/name comparison; audit by statement kind	if (checked_receiver != s.receiver_types_by_context.end() && types.count(s.a))
+src/native_generator.cpp	6554	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	types[s.a] = checked_receiver->second;
+src/native_generator.cpp	6555	s	b	propagation, diagnostics, metadata, or other field use; bounded taint review	string statement_receiver_type = !s.b.empty()
+src/native_generator.cpp	6556	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	? canonical_type_name(generated_expr_type(s.a, &types).value_or("")) : "";
+src/native_generator.cpp	6557	s	b	propagation, diagnostics, metadata, or other field use; bounded taint review	if (!s.b.empty() &&
+src/native_generator.cpp	6566	s	b	raw literal/name/keyword comparison; audit by statement kind	(s.b == "delete" && (statement_receiver_type == "map" ||
+src/native_generator.cpp	6568	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	string call = s.a + "." + s.b + "(";
+src/native_generator.cpp	6568	s	b	propagation, diagnostics, metadata, or other field use; bounded taint review	string call = s.a + "." + s.b + "(";
+src/native_generator.cpp	6569	s	args	propagation, diagnostics, metadata, or other field use; bounded taint review	for (size_t argument = 0; argument < s.args.size(); ++argument) {
+src/native_generator.cpp	6571	s	args	propagation, diagnostics, metadata, or other field use; bounded taint review	call += s.args[argument];
+src/native_generator.cpp	6578	s	b	raw literal/name/keyword comparison; audit by statement kind	if (s.b.empty() && s.a == "assert") {
+src/native_generator.cpp	6578	s	a	raw literal/name/keyword comparison; audit by statement kind	if (s.b.empty() && s.a == "assert") {
+src/native_generator.cpp	6580	s	args	propagation, diagnostics, metadata, or other field use; bounded taint review	<< expr(s.args.front(), d, locals, &types,
+src/native_generator.cpp	6586	s	text	propagation, diagnostics, metadata, or other field use; bounded taint review	std::to_string(s.line) + ": " + s.text)
+src/native_generator.cpp	6591	s	b	raw literal/name/keyword comparison; audit by statement kind	if (s.b.empty() && s.a == "assertEqual") {
+src/native_generator.cpp	6591	s	a	raw literal/name/keyword comparison; audit by statement kind	if (s.b.empty() && s.a == "assertEqual") {
+src/native_generator.cpp	6596	s	args	propagation, diagnostics, metadata, or other field use; bounded taint review	<< expr(s.args[0], d, locals, &types,
+src/native_generator.cpp	6601	s	args	propagation, diagnostics, metadata, or other field use; bounded taint review	<< expr(s.args[1], d, locals, &types,
+src/native_generator.cpp	6606	s	text	propagation, diagnostics, metadata, or other field use; bounded taint review	for (char ch : s.text) {
+src/native_generator.cpp	6621	s	b	raw literal/name/keyword comparison; audit by statement kind	if (s.b.empty() && s.a == "sort" && !functions_.count(s.a) &&
+src/native_generator.cpp	6621	s	a	raw literal/name/keyword comparison; audit by statement kind	if (s.b.empty() && s.a == "sort" && !functions_.count(s.a) &&
+src/native_generator.cpp	6621	s	a	raw literal/name/keyword comparison; audit by statement kind	if (s.b.empty() && s.a == "sort" && !functions_.count(s.a) &&
+src/native_generator.cpp	6622	s	args	propagation, diagnostics, metadata, or other field use; bounded taint review	(s.args.size() == 1 || s.args.size() == 2)) {
+src/native_generator.cpp	6622	s	args	propagation, diagnostics, metadata, or other field use; bounded taint review	(s.args.size() == 1 || s.args.size() == 2)) {
+src/native_generator.cpp	6623	s	args	propagation, diagnostics, metadata, or other field use; bounded taint review	o << indent(level) << sort_call_rust(s.args, d, locals, &types) << ";\n";
+src/native_generator.cpp	6627	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	string function_name = resolved_callable_identity(s.a, &types);
+src/native_generator.cpp	6636	s	b	propagation, diagnostics, metadata, or other field use; bounded taint review	if (s.b.empty() && known_function && !benchmark_body_) {
+src/native_generator.cpp	6638	s	args	propagation, diagnostics, metadata, or other field use; bounded taint review	<< render_known_function_call(*function_target, function_target->name, s.args,
+src/native_generator.cpp	6645	s	b	propagation, diagnostics, metadata, or other field use; bounded taint review	s.b.empty() && !known_function;
+src/native_generator.cpp	6648	s	b	propagation, diagnostics, metadata, or other field use; bounded taint review	: !s.b.empty() ? generated_expr_type(s.a, &types)
+src/native_generator.cpp	6648	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	: !s.b.empty() ? generated_expr_type(s.a, &types)
+src/native_generator.cpp	6651	s	b	propagation, diagnostics, metadata, or other field use; bounded taint review	if (call_receiver_type && (!s.b.empty() || implicit_method))
+src/native_generator.cpp	6654	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	implicit_method ? s.a : s.b, [&]() {
+src/native_generator.cpp	6654	s	b	propagation, diagnostics, metadata, or other field use; bounded taint review	implicit_method ? s.a : s.b, [&]() {
+src/native_generator.cpp	6656	s	args	propagation, diagnostics, metadata, or other field use; bounded taint review	for (const auto& argument : s.args)
+src/native_generator.cpp	6674	s	args	propagation, diagnostics, metadata, or other field use; bounded taint review	vector<string> argument_temporaries(s.args.size());
+src/native_generator.cpp	6676	s	args	propagation, diagnostics, metadata, or other field use; bounded taint review	for (size_t k = 0; k < s.args.size(); ++k) {
+src/native_generator.cpp	6678	s	b	propagation, diagnostics, metadata, or other field use; bounded taint review	if (!s.b.empty()) {
+src/native_generator.cpp	6682	s	args	EST projection/query or tree structure	tree_parse_member_call(s.args[k], nested_receiver, nested_method,
+src/native_generator.cpp	6684	s	a	EST projection/query or tree structure	tree_expressions_equal(nested_receiver, s.a);
+src/native_generator.cpp	6688	s	args	EST projection/query or tree structure	if (tree_parse_simple_call(s.args[k], nested_name, nested_args)) {
+src/native_generator.cpp	6702	s	args	propagation, diagnostics, metadata, or other field use; bounded taint review	generated_expr_type(s.args[k], &types).value_or("_value");
+src/native_generator.cpp	6704	s	args	propagation, diagnostics, metadata, or other field use; bounded taint review	<< expr(s.args[k], d, locals, &types,
+src/native_generator.cpp	6713	s	b	propagation, diagnostics, metadata, or other field use; bounded taint review	(s.b.empty() && known_function
+src/native_generator.cpp	6714	s	args	propagation, diagnostics, metadata, or other field use; bounded taint review	? viewed_function_name(function_target->name, s.args, d, locals, &types)
+src/native_generator.cpp	6715	s	b	propagation, diagnostics, metadata, or other field use; bounded taint review	: !s.b.empty() ? method_receiver_place(s.a, s.b, s.args, d, locals, &types)
+src/native_generator.cpp	6715	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	: !s.b.empty() ? method_receiver_place(s.a, s.b, s.args, d, locals, &types)
+src/native_generator.cpp	6715	s	b	propagation, diagnostics, metadata, or other field use; bounded taint review	: !s.b.empty() ? method_receiver_place(s.a, s.b, s.args, d, locals, &types)
+src/native_generator.cpp	6715	s	args	propagation, diagnostics, metadata, or other field use; bounded taint review	: !s.b.empty() ? method_receiver_place(s.a, s.b, s.args, d, locals, &types)
+src/native_generator.cpp	6716	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	: expr(s.a, d, locals, &types));
+src/native_generator.cpp	6720	s	b	propagation, diagnostics, metadata, or other field use; bounded taint review	if (!s.b.empty()) {
+src/native_generator.cpp	6721	s	b	propagation, diagnostics, metadata, or other field use; bounded taint review	string method = s.b;
+src/native_generator.cpp	6722	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	auto it = types.find(s.a);
+src/native_generator.cpp	6725	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	call_output << "." << viewed_method_name(s.a, method, s.args, d, locals, &types);
+src/native_generator.cpp	6725	s	args	propagation, diagnostics, metadata, or other field use; bounded taint review	call_output << "." << viewed_method_name(s.a, method, s.args, d, locals, &types);
+src/native_generator.cpp	6729	s	args	propagation, diagnostics, metadata, or other field use; bounded taint review	for (size_t k = 0; k < s.args.size(); ++k) {
+src/native_generator.cpp	6731	s	args	propagation, diagnostics, metadata, or other field use; bounded taint review	is_compile_time_callable(generated_expr_type(s.args[k], &types).value_or(""));
+src/native_generator.cpp	6736	s	args	propagation, diagnostics, metadata, or other field use; bounded taint review	? s.args[k] : argument_temporaries[k];
+src/native_generator.cpp	6743	s	args	propagation, diagnostics, metadata, or other field use; bounded taint review	s.args, &types));
+src/native_generator.cpp	6744	s	b	propagation, diagnostics, metadata, or other field use; bounded taint review	} else if (!s.b.empty() || implicit_method) {
+src/native_generator.cpp	6791	s	args	propagation, diagnostics, metadata, or other field use; bounded taint review	call_output << expr(s.args[k], d, locals, &types,
+src/native_generator.cpp	6818	s	b	propagation, diagnostics, metadata, or other field use; bounded taint review	auto receiver_type = !s.b.empty()
+src/native_generator.cpp	6819	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	? generated_expr_type(s.a, &types) : std::optional<string>{};
+src/native_generator.cpp	6820	s	b	raw literal/name/keyword comparison; audit by statement kind	if (!s.b.empty() && s.b == "pop" && receiver_type &&
+src/native_generator.cpp	6820	s	b	raw literal/name/keyword comparison; audit by statement kind	if (!s.b.empty() && s.b == "pop" && receiver_type &&
+src/native_generator.cpp	6831	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	bool joined_assignment = join_assignments.erase(s.a) != 0;
+src/native_generator.cpp	6832	s	b	propagation, diagnostics, metadata, or other field use; bounded taint review	auto sd = domain_construction(s.b);
+src/native_generator.cpp	6835	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	construction_binding_ = s.a;
+src/native_generator.cpp	6836	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	remember_domain_instance_binding(s.a, source_domain, s.a);
+src/native_generator.cpp	6836	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	remember_domain_instance_binding(s.a, source_domain, s.a);
+src/native_generator.cpp	6837	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	auto specialized = specialization_names_.find(*sd + "\n" + s.a);
+src/native_generator.cpp	6842	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	o << s.a << " = ";
+src/native_generator.cpp	6843	s	b	propagation, diagnostics, metadata, or other field use; bounded taint review	emit_domain_construction(o, *sd, s.b, d, locals, &types);
+src/native_generator.cpp	6844	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	types[s.a] = *sd;
+src/native_generator.cpp	6846	s	b	EST projection/query or tree structure	const auto source_name = tree_identifier_name(s.b);
+src/native_generator.cpp	6850	s	b	EST projection/query or tree structure	if (staged_abi_v10() && tree_empty_constructor_named(s.b, "Map") &&
+src/native_generator.cpp	6856	s	a	raw binding/name comparison; audit by statement kind	map_base != s.a) continue;
+src/native_generator.cpp	6869	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	o << s.a;
+src/native_generator.cpp	6872	s	b	raw literal/name/keyword comparison; audit by statement kind	canonical_type_name(generated_expr_type(s.b, &types).value_or("")) == "float"))
+src/native_generator.cpp	6879	s	b	propagation, diagnostics, metadata, or other field use; bounded taint review	<< expr(s.b, d, locals, &types,
+src/native_generator.cpp	6884	s	b	propagation, diagnostics, metadata, or other field use; bounded taint review	auto generated_type = generated_expr_type(s.b, &types);
+src/native_generator.cpp	6889	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	types[s.a] = domain_capability ? source->second
+src/native_generator.cpp	6901	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	s.a, source_binding->second.source_domain,
+src/native_generator.cpp	6904	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	forget_domain_instance_binding(s.a);
+src/native_generator.cpp	6906	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	forget_domain_instance_binding(s.a);
+src/native_generator.cpp	6909	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	locals.insert(s.a);
+src/native_generator.cpp	6914	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	string call = "message " + s.a + "." + s.b + "(";
+src/native_generator.cpp	6914	s	b	propagation, diagnostics, metadata, or other field use; bounded taint review	string call = "message " + s.a + "." + s.b + "(";
+src/native_generator.cpp	6915	s	args	propagation, diagnostics, metadata, or other field use; bounded taint review	for (size_t argument = 0; argument < s.args.size(); ++argument) {
+src/native_generator.cpp	6917	s	args	propagation, diagnostics, metadata, or other field use; bounded taint review	call += s.args[argument];
+src/native_generator.cpp	6923	s	message_result	EST handle/pattern or binding metadata	const bool state_result = d && !s.message_result.empty() &&
+src/native_generator.cpp	6924	s	message_result	EST handle/pattern or binding metadata	!locals.count(s.message_result) &&
+src/native_generator.cpp	6926	s	message_result	EST handle/pattern or binding metadata	return field.name == s.message_result;
+src/native_generator.cpp	6929	s	message_result	EST handle/pattern or binding metadata	is_object_view(s.message_result, d, locals, &types);
+src/native_generator.cpp	6931	s	message_result	EST handle/pattern or binding metadata	o << "(" << write_call_place(s.message_result, d, locals, &types)
+src/native_generator.cpp	6934	s	message_result	EST handle/pattern or binding metadata	o << write_call_place(s.message_result, d, locals, &types) << " = ";
+src/native_generator.cpp	6935	s	message_result	EST handle/pattern or binding metadata	} else if (!s.message_result.empty()) {
+src/native_generator.cpp	6936	s	message_result	EST handle/pattern or binding metadata	if (!locals.count(s.message_result)) o << "let mut ";
+src/native_generator.cpp	6937	s	message_result	EST handle/pattern or binding metadata	o << s.message_result << " = ";
+src/native_generator.cpp	6940	s	args	propagation, diagnostics, metadata, or other field use; bounded taint review	for (size_t argument = 0; argument < s.args.size(); ++argument)
+src/native_generator.cpp	6944	s	message_result	EST handle/pattern or binding metadata	if (!s.message_result.empty() && !state_result) {
+src/native_generator.cpp	6945	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	const Domain& target = *domains_.at(canonical_type_name(types.at(s.a)));
+src/native_generator.cpp	6946	s	message_result	EST handle/pattern or binding metadata	locals.insert(s.message_result);
+src/native_generator.cpp	6947	s	message_result	EST handle/pattern or binding metadata	types[s.message_result] = find_handler(target, s.b)->reply_type.value_or("unit");
+src/native_generator.cpp	6947	s	b	propagation, diagnostics, metadata, or other field use; bounded taint review	types[s.message_result] = find_handler(target, s.b)->reply_type.value_or("unit");
+src/native_generator.cpp	6956	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	<< message_arg(s.a, *current_handler->reply_type, d, locals, &types,
+src/native_generator.cpp	6968	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	if (in_function && !s.a.empty()) {
+src/native_generator.cpp	6969	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	string rendered = expr(s.a, d, locals, &types,
+src/native_generator.cpp	6972	s	a	EST projection/query or tree structure	const auto returned_binding = tree_identifier_name(s.a);
+src/native_generator.cpp	7001	s	text	propagation, diagnostics, metadata, or other field use; bounded taint review	o << expr(s.text, d, locals, &types,
+src/file_chunk_codegen.inc	36	s	b	EST projection/query or tree structure	if (tree_parse_fileio_open(s.b, open_arguments)) {
+src/file_chunk_codegen.inc	43	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	o << pad << "let mut " << s.a << " = " << opened << ";\n";
+src/file_chunk_codegen.inc	44	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	locals.insert(s.a);
+src/file_chunk_codegen.inc	45	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	types[s.a] = "FileIO";
+src/file_chunk_codegen.inc	50	s	b	EST projection/query or tree structure	if (tree_parse_member_call(s.b, receiver, method, arguments) &&
+src/file_chunk_codegen.inc	60	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	o << pad << "let " << s.a << " = " << read << ";\n";
+src/file_chunk_codegen.inc	61	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	locals.insert(s.a);
+src/file_chunk_codegen.inc	62	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	types[s.a] = "Range";
+src/file_chunk_codegen.inc	67	s	a	raw binding/name comparison; audit by statement kind	if (s.kind != Stmt::Kind::Call || !fileio_typed(types, s.a)) return false;
+src/file_chunk_codegen.inc	69	s	a	propagation, diagnostics, metadata, or other field use; bounded taint review	s.a, s.b, s.args, d, locals, &types);
+src/file_chunk_codegen.inc	69	s	b	propagation, diagnostics, metadata, or other field use; bounded taint review	s.a, s.b, s.args, d, locals, &types);
+src/file_chunk_codegen.inc	69	s	args	propagation, diagnostics, metadata, or other field use; bounded taint review	s.a, s.b, s.args, d, locals, &types);
+src/file_chunk_codegen.inc	70	s	b	raw literal/name/keyword comparison; audit by statement kind	if (s.b == "write" && s.args.size() == 2) {
+src/file_chunk_codegen.inc	70	s	args	raw literal/name/keyword comparison; audit by statement kind	if (s.b == "write" && s.args.size() == 2) {
+src/file_chunk_codegen.inc	73	s	args	propagation, diagnostics, metadata, or other field use; bounded taint review	expr(s.args[0], d, locals, &types) + ", &( " +
+src/file_chunk_codegen.inc	74	s	args	propagation, diagnostics, metadata, or other field use; bounded taint review	expr(s.args[1], d, locals, &types) + " ))";
+src/file_chunk_codegen.inc	80	s	b	raw literal/name/keyword comparison; audit by statement kind	if (s.b == "open" && s.args.size() == 2) {
+src/file_chunk_codegen.inc	80	s	args	raw literal/name/keyword comparison; audit by statement kind	if (s.b == "open" && s.args.size() == 2) {
+src/file_chunk_codegen.inc	83	s	args	propagation, diagnostics, metadata, or other field use; bounded taint review	expr(s.args[0], d, locals, &types) + " ), " +
+src/file_chunk_codegen.inc	84	s	args	propagation, diagnostics, metadata, or other field use; bounded taint review	rust_string_literal(trim(s.args[1])) + ")";
+src/file_chunk_codegen.inc	90	s	b	raw literal/name/keyword comparison; audit by statement kind	if (s.b == "sync" && s.args.size() <= 1) {
+src/file_chunk_codegen.inc	90	s	args	raw literal/name/keyword comparison; audit by statement kind	if (s.b == "sync" && s.args.size() <= 1) {
+src/file_chunk_codegen.inc	91	s	args	propagation, diagnostics, metadata, or other field use; bounded taint review	bool dataonly = !s.args.empty() &&
+src/file_chunk_codegen.inc	92	s	args	EST projection/query or tree structure	tree_identifier_name(s.args[0]) == std::optional<string>("dataonly");
+src/file_chunk_codegen.inc	101	s	b	raw literal/name/keyword comparison; audit by statement kind	if (s.b == "close" && s.args.empty()) {
+src/file_chunk_codegen.inc	101	s	args	raw literal/name/keyword comparison; audit by statement kind	if (s.b == "close" && s.args.empty()) {
+src/file_chunk_codegen.inc	109	s	b	propagation, diagnostics, metadata, or other field use; bounded taint review	throw std::runtime_error("internal error: unchecked FileIO operation '" + s.b + "'");

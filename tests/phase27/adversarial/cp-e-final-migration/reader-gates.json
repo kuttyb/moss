@@ -1,0 +1,36 @@
+{
+  "checker_and_emitter_lint": {
+    "checker": {
+      "exit": 0,
+      "stderr": "",
+      "stdout": "audited raw Stmt NAME comparisons: 40\naudited raw Stmt binding comparisons: 9\n"
+    },
+    "emitter": {
+      "exit": 0,
+      "stderr": "",
+      "stdout": "audited raw Stmt NAME comparisons: 40\naudited raw Stmt binding comparisons: 9\n"
+    }
+  },
+  "exemption_count": 3,
+  "function_api_exemptions": [
+    {
+      "api": "split_top_level",
+      "function": "phase20_is_nontransferable_capability",
+      "path": "src/semantic_checker.cpp"
+    },
+    {
+      "api": "split_top_level",
+      "function": "builtin_equality_type",
+      "path": "src/semantic_checker.cpp"
+    },
+    {
+      "api": "split_top_level",
+      "function": "contains_float_type",
+      "path": "src/semantic_checker.cpp"
+    }
+  ],
+  "raw_NAME_comparison_sites": 40,
+  "raw_binding_comparison_sites": 9,
+  "tree_expression_text_source_hit_count": 0,
+  "tree_expression_text_source_hits": []
+}

@@ -1,0 +1,11 @@
+{
+  "baseline_accepted": 543,
+  "candidate_off_accepted": 543,
+  "candidate_shadow_accepted": 543,
+  "off_difference_count": 0,
+  "off_differences": [],
+  "shadow_difference_count": 0,
+  "shadow_differences": [],
+  "source_count": 944,
+  "timeouts": []
+}

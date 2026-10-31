@@ -1,0 +1,19 @@
+line/field reads 1110
+a	EST projection/query or tree structure	80
+a	propagation, diagnostics, metadata, or other field use; bounded taint review	408
+a	raw binding/name comparison; audit by statement kind	32
+a	raw literal/name/keyword comparison; audit by statement kind	12
+args	EST projection/query or tree structure	6
+args	propagation, diagnostics, metadata, or other field use; bounded taint review	120
+args	raw binding/name comparison; audit by statement kind	5
+args	raw literal/name/keyword comparison; audit by statement kind	5
+b	EST projection/query or tree structure	48
+b	propagation, diagnostics, metadata, or other field use; bounded taint review	202
+b	raw binding/name comparison; audit by statement kind	9
+b	raw literal/name/keyword comparison; audit by statement kind	39
+est_pattern	EST handle/pattern or binding metadata	46
+expression_handles	EST handle/pattern or binding metadata	13
+message_result	EST handle/pattern or binding metadata	55
+text	EST projection/query or tree structure	2
+text	propagation, diagnostics, metadata, or other field use; bounded taint review	28
+output /home/owner/daji/code/moss/tmp/cp-e-final-migration/tests/phase27/adversarial/cp-e-final-migration/field-census.tsv

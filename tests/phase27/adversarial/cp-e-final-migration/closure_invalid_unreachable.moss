@@ -1,0 +1,5 @@
+fn unreachable_bad(value: Int) -> Int:
+  return value + missing_name
+
+fn main():
+  echo "closure-ok"

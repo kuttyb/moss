@@ -1,0 +1,122 @@
+[
+  {
+    "code": null,
+    "exit": 0,
+    "line": null,
+    "message": null,
+    "mode": "baseline_off",
+    "ok": true,
+    "raw": {
+      "command": "check",
+      "compiler_version": "0.1.0",
+      "ok": true,
+      "protocol_version": 1,
+      "result": {
+        "diagnostics": [],
+        "source_file": "/home/owner/daji/code/moss/tmp/cp-e-final-migration/tests/phase27/adversarial/cp-e-final-migration/fileio_open_direct.moss"
+      },
+      "schema_version": "moss-agent-1"
+    },
+    "source": "fileio_open_direct.moss"
+  },
+  {
+    "code": null,
+    "exit": 0,
+    "line": null,
+    "message": null,
+    "mode": "candidate_off",
+    "ok": true,
+    "raw": {
+      "command": "check",
+      "compiler_version": "0.1.0",
+      "ok": true,
+      "protocol_version": 1,
+      "result": {
+        "diagnostics": [],
+        "source_file": "/home/owner/daji/code/moss/tmp/cp-e-final-migration/tests/phase27/adversarial/cp-e-final-migration/fileio_open_direct.moss"
+      },
+      "schema_version": "moss-agent-1"
+    },
+    "source": "fileio_open_direct.moss"
+  },
+  {
+    "code": null,
+    "exit": 0,
+    "line": null,
+    "message": null,
+    "mode": "candidate_shadow",
+    "ok": true,
+    "raw": {
+      "command": "check",
+      "compiler_version": "0.1.0",
+      "ok": true,
+      "protocol_version": 1,
+      "result": {
+        "diagnostics": [],
+        "source_file": "/home/owner/daji/code/moss/tmp/cp-e-final-migration/tests/phase27/adversarial/cp-e-final-migration/fileio_open_direct.moss"
+      },
+      "schema_version": "moss-agent-1"
+    },
+    "source": "fileio_open_direct.moss"
+  },
+  {
+    "code": null,
+    "exit": 0,
+    "line": null,
+    "message": null,
+    "mode": "baseline_off",
+    "ok": true,
+    "raw": {
+      "command": "check",
+      "compiler_version": "0.1.0",
+      "ok": true,
+      "protocol_version": 1,
+      "result": {
+        "diagnostics": [],
+        "source_file": "/home/owner/daji/code/moss/tmp/cp-e-final-migration/tests/phase27/adversarial/cp-e-final-migration/fileio_open_grouped.moss"
+      },
+      "schema_version": "moss-agent-1"
+    },
+    "source": "fileio_open_grouped.moss"
+  },
+  {
+    "code": null,
+    "exit": 0,
+    "line": null,
+    "message": null,
+    "mode": "candidate_off",
+    "ok": true,
+    "raw": {
+      "command": "check",
+      "compiler_version": "0.1.0",
+      "ok": true,
+      "protocol_version": 1,
+      "result": {
+        "diagnostics": [],
+        "source_file": "/home/owner/daji/code/moss/tmp/cp-e-final-migration/tests/phase27/adversarial/cp-e-final-migration/fileio_open_grouped.moss"
+      },
+      "schema_version": "moss-agent-1"
+    },
+    "source": "fileio_open_grouped.moss"
+  },
+  {
+    "code": null,
+    "exit": 0,
+    "line": null,
+    "message": null,
+    "mode": "candidate_shadow",
+    "ok": true,
+    "raw": {
+      "command": "check",
+      "compiler_version": "0.1.0",
+      "ok": true,
+      "protocol_version": 1,
+      "result": {
+        "diagnostics": [],
+        "source_file": "/home/owner/daji/code/moss/tmp/cp-e-final-migration/tests/phase27/adversarial/cp-e-final-migration/fileio_open_grouped.moss"
+      },
+      "schema_version": "moss-agent-1"
+    },
+    "source": "fileio_open_grouped.moss"
+  }
+]

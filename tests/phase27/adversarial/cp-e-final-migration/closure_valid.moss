@@ -1,0 +1,5 @@
+fn unreachable_but_checked(value: Int) -> Int:
+  return value + 1
+
+fn main():
+  echo "closure-ok"
