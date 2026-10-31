@@ -3156,11 +3156,12 @@ class Checker {
               BodyTypeState::ExpressionOccurrence::Kind::Call ||
           !starts_with(expression.semantic_target_id, "binding:pending:"))
         continue;
-      const auto open_paren = expression.source_expression.find('(');
-      const string callee = trim(expression.source_expression.substr(
-          0, open_paren == string::npos ? string::npos : open_paren));
+      string callee;
+      std::vector<string> call_arguments;
+      const bool projected_call = tree_parse_simple_call(
+          expression.source_expression, callee, call_arguments);
       if (callee.empty() || expression.statement_id >=
-              state.statement_occurrences.size()) {
+              state.statement_occurrences.size() || !projected_call) {
         expression.semantic_target_id = "binding:unresolved:" + callee;
         state.expression_occurrence_ledger_complete = false;
         continue;
