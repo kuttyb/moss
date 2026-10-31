@@ -1,0 +1,5 @@
+module app
+import tables
+
+fn main():
+  echo tables.kind_int()

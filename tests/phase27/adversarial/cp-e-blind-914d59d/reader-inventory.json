@@ -1,0 +1,20 @@
+{
+  "stmt_expression_fields": [
+    "text",
+    "a",
+    "b",
+    "args"
+  ],
+  "raw_name_comparisons": 40,
+  "raw_binding_comparisons": 9,
+  "unknown_raw_shape_or_comparison": 0,
+  "tree_expression_text_reads": 0,
+  "keyed_exemptions": 3,
+  "legacy_reader_sites_by_consumer": {
+    "optimizer": 10,
+    "parser": 23,
+    "compiler_frontend": 48
+  },
+  "moss_est_contract_audit": "passed",
+  "string_debt_lint": "passed"
+}

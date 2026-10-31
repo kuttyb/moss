@@ -1,0 +1,630 @@
+[
+  {
+    "case": "empty_call_args",
+    "expression": "consume(1,,2)",
+    "revision": "baseline",
+    "mode": "off",
+    "returncode": 1,
+    "ok": false,
+    "codes": [
+      "TYPE_MISMATCH"
+    ],
+    "messages": [
+      "argument 2 to function 'consume' has type '', expected 'int'"
+    ]
+  },
+  {
+    "case": "empty_call_args",
+    "expression": "consume(1,,2)",
+    "revision": "baseline",
+    "mode": "shadow",
+    "returncode": 1,
+    "ok": false,
+    "codes": [
+      "TYPE_MISMATCH"
+    ],
+    "messages": [
+      "argument 2 to function 'consume' has type '', expected 'int'"
+    ]
+  },
+  {
+    "case": "empty_call_args",
+    "expression": "consume(1,,2)",
+    "revision": "candidate",
+    "mode": "off",
+    "returncode": 1,
+    "ok": false,
+    "codes": [
+      "TYPE_MISMATCH"
+    ],
+    "messages": [
+      "argument 2 to function 'consume' has type '', expected 'int'"
+    ]
+  },
+  {
+    "case": "empty_call_args",
+    "expression": "consume(1,,2)",
+    "revision": "candidate",
+    "mode": "shadow",
+    "returncode": 1,
+    "ok": false,
+    "codes": [
+      "TYPE_MISMATCH"
+    ],
+    "messages": [
+      "argument 2 to function 'consume' has type '', expected 'int'"
+    ]
+  },
+  {
+    "case": "empty_first_arg",
+    "expression": "consume(,2)",
+    "revision": "baseline",
+    "mode": "off",
+    "returncode": 1,
+    "ok": false,
+    "codes": [
+      "TYPE_MISMATCH"
+    ],
+    "messages": [
+      "function consume expects 3 arguments, got 2"
+    ]
+  },
+  {
+    "case": "empty_first_arg",
+    "expression": "consume(,2)",
+    "revision": "baseline",
+    "mode": "shadow",
+    "returncode": 1,
+    "ok": false,
+    "codes": [
+      "TYPE_MISMATCH"
+    ],
+    "messages": [
+      "function consume expects 3 arguments, got 2"
+    ]
+  },
+  {
+    "case": "empty_first_arg",
+    "expression": "consume(,2)",
+    "revision": "candidate",
+    "mode": "off",
+    "returncode": 1,
+    "ok": false,
+    "codes": [
+      "TYPE_MISMATCH"
+    ],
+    "messages": [
+      "function consume expects 3 arguments, got 2"
+    ]
+  },
+  {
+    "case": "empty_first_arg",
+    "expression": "consume(,2)",
+    "revision": "candidate",
+    "mode": "shadow",
+    "returncode": 1,
+    "ok": false,
+    "codes": [
+      "TYPE_MISMATCH"
+    ],
+    "messages": [
+      "function consume expects 3 arguments, got 2"
+    ]
+  },
+  {
+    "case": "trailing_call_arg",
+    "expression": "consume(1,)",
+    "revision": "baseline",
+    "mode": "off",
+    "returncode": 1,
+    "ok": false,
+    "codes": [
+      "TYPE_MISMATCH"
+    ],
+    "messages": [
+      "function consume expects 3 arguments, got 2"
+    ]
+  },
+  {
+    "case": "trailing_call_arg",
+    "expression": "consume(1,)",
+    "revision": "baseline",
+    "mode": "shadow",
+    "returncode": 1,
+    "ok": false,
+    "codes": [
+      "TYPE_MISMATCH"
+    ],
+    "messages": [
+      "function consume expects 3 arguments, got 2"
+    ]
+  },
+  {
+    "case": "trailing_call_arg",
+    "expression": "consume(1,)",
+    "revision": "candidate",
+    "mode": "off",
+    "returncode": 1,
+    "ok": false,
+    "codes": [
+      "TYPE_MISMATCH"
+    ],
+    "messages": [
+      "function consume expects 3 arguments, got 2"
+    ]
+  },
+  {
+    "case": "trailing_call_arg",
+    "expression": "consume(1,)",
+    "revision": "candidate",
+    "mode": "shadow",
+    "returncode": 1,
+    "ok": false,
+    "codes": [
+      "TYPE_MISMATCH"
+    ],
+    "messages": [
+      "function consume expects 3 arguments, got 2"
+    ]
+  },
+  {
+    "case": "repeated_collection_commas",
+    "expression": "[1,,2]",
+    "revision": "baseline",
+    "mode": "off",
+    "returncode": 1,
+    "ok": false,
+    "codes": [
+      "MOSS_COMPILE_ERROR"
+    ],
+    "messages": [
+      "heterogeneous or unresolved collection element type"
+    ]
+  },
+  {
+    "case": "repeated_collection_commas",
+    "expression": "[1,,2]",
+    "revision": "baseline",
+    "mode": "shadow",
+    "returncode": 1,
+    "ok": false,
+    "codes": [
+      "MOSS_COMPILE_ERROR"
+    ],
+    "messages": [
+      "heterogeneous or unresolved collection element type"
+    ]
+  },
+  {
+    "case": "repeated_collection_commas",
+    "expression": "[1,,2]",
+    "revision": "candidate",
+    "mode": "off",
+    "returncode": 1,
+    "ok": false,
+    "codes": [
+      "MOSS_COMPILE_ERROR"
+    ],
+    "messages": [
+      "heterogeneous or unresolved collection element type"
+    ]
+  },
+  {
+    "case": "repeated_collection_commas",
+    "expression": "[1,,2]",
+    "revision": "candidate",
+    "mode": "shadow",
+    "returncode": 1,
+    "ok": false,
+    "codes": [
+      "MOSS_COMPILE_ERROR"
+    ],
+    "messages": [
+      "heterogeneous or unresolved collection element type"
+    ]
+  },
+  {
+    "case": "repeated_nested_collection_commas",
+    "expression": "[1, [2,,3], 4]",
+    "revision": "baseline",
+    "mode": "off",
+    "returncode": 1,
+    "ok": false,
+    "codes": [
+      "MOSS_COMPILE_ERROR"
+    ],
+    "messages": [
+      "heterogeneous or unresolved collection element type"
+    ]
+  },
+  {
+    "case": "repeated_nested_collection_commas",
+    "expression": "[1, [2,,3], 4]",
+    "revision": "baseline",
+    "mode": "shadow",
+    "returncode": 1,
+    "ok": false,
+    "codes": [
+      "MOSS_COMPILE_ERROR"
+    ],
+    "messages": [
+      "heterogeneous or unresolved collection element type"
+    ]
+  },
+  {
+    "case": "repeated_nested_collection_commas",
+    "expression": "[1, [2,,3], 4]",
+    "revision": "candidate",
+    "mode": "off",
+    "returncode": 1,
+    "ok": false,
+    "codes": [
+      "MOSS_COMPILE_ERROR"
+    ],
+    "messages": [
+      "heterogeneous or unresolved collection element type"
+    ]
+  },
+  {
+    "case": "repeated_nested_collection_commas",
+    "expression": "[1, [2,,3], 4]",
+    "revision": "candidate",
+    "mode": "shadow",
+    "returncode": 1,
+    "ok": false,
+    "codes": [
+      "MOSS_COMPILE_ERROR"
+    ],
+    "messages": [
+      "heterogeneous or unresolved collection element type"
+    ]
+  },
+  {
+    "case": "incomplete_binary",
+    "expression": "1 +",
+    "revision": "baseline",
+    "mode": "off",
+    "returncode": 1,
+    "ok": false,
+    "codes": [
+      "MOSS_COMPILE_ERROR"
+    ],
+    "messages": [
+      "invalid arithmetic expression"
+    ]
+  },
+  {
+    "case": "incomplete_binary",
+    "expression": "1 +",
+    "revision": "baseline",
+    "mode": "shadow",
+    "returncode": 1,
+    "ok": false,
+    "codes": [
+      "MOSS_COMPILE_ERROR"
+    ],
+    "messages": [
+      "invalid arithmetic expression"
+    ]
+  },
+  {
+    "case": "incomplete_binary",
+    "expression": "1 +",
+    "revision": "candidate",
+    "mode": "off",
+    "returncode": 1,
+    "ok": false,
+    "codes": [
+      "MOSS_COMPILE_ERROR"
+    ],
+    "messages": [
+      "invalid arithmetic expression"
+    ]
+  },
+  {
+    "case": "incomplete_binary",
+    "expression": "1 +",
+    "revision": "candidate",
+    "mode": "shadow",
+    "returncode": 1,
+    "ok": false,
+    "codes": [
+      "MOSS_COMPILE_ERROR"
+    ],
+    "messages": [
+      "invalid arithmetic expression"
+    ]
+  },
+  {
+    "case": "incomplete_unary",
+    "expression": "not",
+    "revision": "baseline",
+    "mode": "off",
+    "returncode": 1,
+    "ok": false,
+    "codes": [
+      "UNKNOWN_SYMBOL_OR_TYPE"
+    ],
+    "messages": [
+      "unknown identifier 'not'"
+    ]
+  },
+  {
+    "case": "incomplete_unary",
+    "expression": "not",
+    "revision": "baseline",
+    "mode": "shadow",
+    "returncode": 1,
+    "ok": false,
+    "codes": [
+      "UNKNOWN_SYMBOL_OR_TYPE"
+    ],
+    "messages": [
+      "unknown identifier 'not'"
+    ]
+  },
+  {
+    "case": "incomplete_unary",
+    "expression": "not",
+    "revision": "candidate",
+    "mode": "off",
+    "returncode": 0,
+    "ok": true,
+    "codes": [],
+    "messages": []
+  },
+  {
+    "case": "incomplete_unary",
+    "expression": "not",
+    "revision": "candidate",
+    "mode": "shadow",
+    "returncode": 0,
+    "ok": true,
+    "codes": [],
+    "messages": []
+  },
+  {
+    "case": "unclosed_collection",
+    "expression": "[1, 2",
+    "revision": "baseline",
+    "mode": "off",
+    "returncode": 1,
+    "ok": false,
+    "codes": [
+      "MOSS_COMPILE_ERROR"
+    ],
+    "messages": [
+      "heterogeneous or unresolved collection element type"
+    ]
+  },
+  {
+    "case": "unclosed_collection",
+    "expression": "[1, 2",
+    "revision": "baseline",
+    "mode": "shadow",
+    "returncode": 1,
+    "ok": false,
+    "codes": [
+      "MOSS_COMPILE_ERROR"
+    ],
+    "messages": [
+      "heterogeneous or unresolved collection element type"
+    ]
+  },
+  {
+    "case": "unclosed_collection",
+    "expression": "[1, 2",
+    "revision": "candidate",
+    "mode": "off",
+    "returncode": 0,
+    "ok": true,
+    "codes": [],
+    "messages": []
+  },
+  {
+    "case": "unclosed_collection",
+    "expression": "[1, 2",
+    "revision": "candidate",
+    "mode": "shadow",
+    "returncode": 0,
+    "ok": true,
+    "codes": [],
+    "messages": []
+  },
+  {
+    "case": "invalid_operator_adjacency",
+    "expression": "1 + * 2",
+    "revision": "baseline",
+    "mode": "off",
+    "returncode": 1,
+    "ok": false,
+    "codes": [
+      "MOSS_COMPILE_ERROR"
+    ],
+    "messages": [
+      "invalid arithmetic expression"
+    ]
+  },
+  {
+    "case": "invalid_operator_adjacency",
+    "expression": "1 + * 2",
+    "revision": "baseline",
+    "mode": "shadow",
+    "returncode": 1,
+    "ok": false,
+    "codes": [
+      "MOSS_COMPILE_ERROR"
+    ],
+    "messages": [
+      "invalid arithmetic expression"
+    ]
+  },
+  {
+    "case": "invalid_operator_adjacency",
+    "expression": "1 + * 2",
+    "revision": "candidate",
+    "mode": "off",
+    "returncode": 0,
+    "ok": true,
+    "codes": [],
+    "messages": []
+  },
+  {
+    "case": "invalid_operator_adjacency",
+    "expression": "1 + * 2",
+    "revision": "candidate",
+    "mode": "shadow",
+    "returncode": -6,
+    "ok": false,
+    "codes": [
+      "PROCESS_ABORT"
+    ],
+    "messages": [
+      "moss: src/semantic_checker.cpp:11383: std::optional<std::pair<string, string>> moss::Checker::tree_split_binary(const string &, const vector<string> &) const: Assertion `result == legacy' failed."
+    ]
+  },
+  {
+    "case": "incomplete_parenthesized",
+    "expression": "(1 +)",
+    "revision": "baseline",
+    "mode": "off",
+    "returncode": 1,
+    "ok": false,
+    "codes": [
+      "MOSS_COMPILE_ERROR"
+    ],
+    "messages": [
+      "invalid arithmetic expression"
+    ]
+  },
+  {
+    "case": "incomplete_parenthesized",
+    "expression": "(1 +)",
+    "revision": "baseline",
+    "mode": "shadow",
+    "returncode": 1,
+    "ok": false,
+    "codes": [
+      "MOSS_COMPILE_ERROR"
+    ],
+    "messages": [
+      "invalid arithmetic expression"
+    ]
+  },
+  {
+    "case": "incomplete_parenthesized",
+    "expression": "(1 +)",
+    "revision": "candidate",
+    "mode": "off",
+    "returncode": 1,
+    "ok": false,
+    "codes": [
+      "MOSS_COMPILE_ERROR"
+    ],
+    "messages": [
+      "invalid arithmetic expression"
+    ]
+  },
+  {
+    "case": "incomplete_parenthesized",
+    "expression": "(1 +)",
+    "revision": "candidate",
+    "mode": "shadow",
+    "returncode": 1,
+    "ok": false,
+    "codes": [
+      "MOSS_COMPILE_ERROR"
+    ],
+    "messages": [
+      "invalid arithmetic expression"
+    ]
+  },
+  {
+    "case": "trailing_member",
+    "expression": "item.",
+    "revision": "baseline",
+    "mode": "off",
+    "returncode": 1,
+    "ok": false,
+    "codes": [
+      "UNKNOWN_SYMBOL_OR_TYPE"
+    ],
+    "messages": [
+      "unknown identifier 'item'"
+    ]
+  },
+  {
+    "case": "trailing_member",
+    "expression": "item.",
+    "revision": "baseline",
+    "mode": "shadow",
+    "returncode": 1,
+    "ok": false,
+    "codes": [
+      "UNKNOWN_SYMBOL_OR_TYPE"
+    ],
+    "messages": [
+      "unknown identifier 'item'"
+    ]
+  },
+  {
+    "case": "trailing_member",
+    "expression": "item.",
+    "revision": "candidate",
+    "mode": "off",
+    "returncode": 0,
+    "ok": true,
+    "codes": [],
+    "messages": []
+  },
+  {
+    "case": "trailing_member",
+    "expression": "item.",
+    "revision": "candidate",
+    "mode": "shadow",
+    "returncode": 0,
+    "ok": true,
+    "codes": [],
+    "messages": []
+  },
+  {
+    "case": "incomplete_index",
+    "expression": "items[",
+    "revision": "baseline",
+    "mode": "off",
+    "returncode": 0,
+    "ok": true,
+    "codes": [],
+    "messages": []
+  },
+  {
+    "case": "incomplete_index",
+    "expression": "items[",
+    "revision": "baseline",
+    "mode": "shadow",
+    "returncode": 0,
+    "ok": true,
+    "codes": [],
+    "messages": []
+  },
+  {
+    "case": "incomplete_index",
+    "expression": "items[",
+    "revision": "candidate",
+    "mode": "off",
+    "returncode": 0,
+    "ok": true,
+    "codes": [],
+    "messages": []
+  },
+  {
+    "case": "incomplete_index",
+    "expression": "items[",
+    "revision": "candidate",
+    "mode": "shadow",
+    "returncode": 0,
+    "ok": true,
+    "codes": [],
+    "messages": []
+  }
+]

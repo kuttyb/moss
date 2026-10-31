@@ -1,0 +1,20 @@
+[
+  {
+    "step": "check",
+    "exit": 0,
+    "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/cp-e-blind-914d59d/tmp/cpe-sourcefree-app/src/main.moss\", \"diagnostics\": []}\n}\n",
+    "stderr": ""
+  },
+  {
+    "step": "build",
+    "exit": 0,
+    "stdout": "{\"command\": \"build\", \"ok\": true, \"protocol_version\": 1, \"result\": {\"artifacts\": {\"cache_metadata\": \"/home/owner/daji/code/moss/tmp/cp-e-blind-914d59d/tmp/cpe-sourcefree-app/build/debug/cpe_sourcefree.mossbuild\", \"debug_map\": \"/home/owner/daji/code/moss/tmp/cp-e-blind-914d59d/tmp/cpe-sourcefree-app/build/debug/cpe_sourcefree.mossmap\", \"executable\": \"/home/owner/daji/code/moss/tmp/cp-e-blind-914d59d/tmp/cpe-sourcefree-app/build/debug/cpe_sourcefree\", \"generated_rust\": \"/home/owner/daji/code/moss/tmp/cp-e-blind-914d59d/tmp/cpe-sourcefree-app/build/debug/app.rs\", \"module_interfaces\": [\"/home/owner/daji/code/moss/tmp/cp-e-blind-914d59d/tmp/cpe-sourcefree-app/build/debug/app.mossi\"], \"module_rlibs\": [\"/home/owner/daji/code/moss/tmp/cp-e-blind-914d59d/tmp/cpe-sourcefree-app/build/debug/libapp.rlib\"], \"specialization_rlib\": null}, \"backend_toolchain\": {\"compile_flags\": [\"--edition=2021\", \"-D\", \"warnings\", \"-g\", \"-C\", \"opt-level=0\"], \"fingerprint\": \"2f48c0ef4ea1736c\", \"profile\": \"debug\", \"resolved_rustc\": \"/home/owner/.cargo/bin/rustc\", \"version_verbose\": \"rustc 1.98.1 (48a229cea 2026-09-01)\\nbinary: rustc\\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\\ncommit-date: 2026-09-01\\nhost: x86_64-unknown-linux-gnu\\nrelease: 1.98.1\\nLLVM version: 22.1.8\"}, \"incremental\": {\"generated_rust_units_rewritten\": 1, \"native_artifact_reused\": false, \"units_analyzed\": 179, \"units_reused\": 0}, \"profile\": \"debug\", \"project\": \"cpe_sourcefree\", \"reused\": false, \"source\": \"/home/owner/daji/code/moss/tmp/cp-e-blind-914d59d/tmp/cpe-sourcefree-app/src/main.moss\", \"sources\": [\"/home/owner/daji/code/moss/tmp/cp-e-blind-914d59d/tmp/cpe-sourcefree-app/src/main.moss\"]}, \"schema_version\": \"moss-agent-1\"}\n",
+    "stderr": ""
+  },
+  {
+    "step": "run",
+    "exit": 0,
+    "stdout": "0\n",
+    "stderr": ""
+  }
+]
