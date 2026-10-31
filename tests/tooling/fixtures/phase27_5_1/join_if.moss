@@ -1,0 +1,11 @@
+domain Worker:
+  fn H() -> Int:
+    reply 5
+
+fn main():
+  worker = Worker()
+  if true:
+    x = message worker.H()
+  else:
+    x = message worker.H()
+  echo x

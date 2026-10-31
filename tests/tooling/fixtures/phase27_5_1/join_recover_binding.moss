@@ -1,0 +1,9 @@
+fn fail() -> Int:
+  raise 7
+
+fn main():
+  try:
+    err = fail()
+  recover err:
+    pass
+  echo err

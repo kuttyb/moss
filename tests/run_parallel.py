@@ -143,6 +143,7 @@ TOOLING_TESTS: list[tuple] = [
     ("check_phase27_5_for_match", [sys.executable, "tests/tooling/check_phase27_5_for_match.py", "{compiler}"]),
     ("check_phase27_5_match_copy", [sys.executable, "tests/tooling/check_phase27_5_match_copy.py", "{compiler}"]),
     ("check_phase27_5_guard_removals", [sys.executable, "tests/tooling/check_phase27_5_guard_removals.py", "{compiler}"]),
+    ("check_phase27_5_1_facts_fast_debug", [sys.executable, "tests/tooling/check_phase27_5_1_facts_and_fast_debug.py", "{compiler}"]),
     ("check_phase26_1_1_x1_v10", [sys.executable, "tests/tooling/check_phase26_1_1_x1_v10.py", "{compiler}"]),
     ("check_phase26_1_1_x2", [sys.executable, "tests/tooling/check_phase26_1_1_x2.py", "{compiler}"]),
     ("check_phase26_1_1_x4", [sys.executable, "tests/tooling/check_phase26_1_1_x4.py", "{compiler}"]),

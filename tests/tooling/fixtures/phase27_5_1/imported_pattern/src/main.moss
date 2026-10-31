@@ -1,0 +1,14 @@
+module app
+import pkg
+
+domain Worker:
+  fn H() -> Int:
+    try:
+      raise pkg.Err.Case(code: 9)
+    recover Err.Case(code):
+      echo code
+    reply 1
+
+fn main():
+  worker = Worker()
+  echo message worker.H()

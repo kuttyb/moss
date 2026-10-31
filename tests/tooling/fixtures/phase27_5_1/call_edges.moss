@@ -1,0 +1,7 @@
+fn identity(value):
+  return value
+
+proc main():
+  first = identity(7)
+  echo identity(8), identity("text")
+  echo first

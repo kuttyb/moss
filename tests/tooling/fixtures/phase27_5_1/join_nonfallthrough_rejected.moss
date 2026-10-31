@@ -1,0 +1,11 @@
+fn choose(flag: Bool) -> Int:
+  if flag:
+    return 0
+  else:
+    x = 5
+  echo x
+  return x
+
+fn main():
+  echo choose(true)
+  echo choose(false)

@@ -1,0 +1,14 @@
+enum Failure:
+  Bad
+
+domain Worker:
+  fn H() -> Int:
+    reply 5
+
+fn main():
+  worker = Worker()
+  try:
+    x = message worker.H()
+  recover Failure.Bad:
+    x = message worker.H()
+  echo x

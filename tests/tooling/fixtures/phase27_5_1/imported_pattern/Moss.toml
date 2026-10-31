@@ -1,0 +1,6 @@
+[project]
+name = "phase27-5-1-imported-pattern"
+version = "0.1.0"
+
+[build]
+source = "src"

@@ -1080,6 +1080,7 @@ class Generator {
     if (t == "int") return "0";
     if (t == "float") return "0.0";
     if (t == "bool") return "false";
+    if (t == "char") return "'\\0'";
     if (t == "string") return "MossStr::new()";
     if (starts_with(t, "seq[")) return "std::vec::Vec::new()";
     if (starts_with(t, "table[")) return "std::collections::HashMap::new()";
@@ -1528,22 +1529,70 @@ class Generator {
         return &*exact;
       }
     }
+    if (function.static_dispatch) {
+      auto checked = checked_call_edge_specialization(
+          p_, codegen_body_context_, function.name,
+          phase21_codegen_statement_ ? phase21_codegen_statement_->line : 0);
+      bool dropped_checked_call_edge = false;
+      if (const char* dropped = std::getenv("MOSS_TEST_DROP_FACT");
+          dropped && string(dropped) == "g1") {
+        checked = {};
+        dropped_checked_call_edge = true;
+      }
+      if (checked.kind == CheckedCallEdgeSelectionKind::Unique) {
+        if (const char* count = std::getenv("MOSS_TEST_COUNT_FACT");
+            count && string(count) == "g1")
+          std::cerr << "MOSS_TEST_FACT_COUNTER|g1|selection=unique|line="
+                    << (phase21_codegen_statement_
+                            ? phase21_codegen_statement_->line : 0)
+                    << "|context=" << codegen_body_context_
+                    << "|callee=" << function.name << "\n";
+        return checked.unique;
+      }
+      if (checked.kind == CheckedCallEdgeSelectionKind::None &&
+          dropped_checked_call_edge)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT missing checked call edge callee=" +
+            function.name + " line=" +
+            std::to_string(phase21_codegen_statement_
+                               ? phase21_codegen_statement_->line : 0) +
+            " context=" + codegen_body_context_);
+    }
     vector<string> concrete_types;
     for (const auto& argument : arguments)
       concrete_types.push_back(generated_expr_type(argument, types).value_or(""));
-#ifndef NDEBUG
     if (function.static_dispatch) {
-      if (const char* count = std::getenv("MOSS_TEST_COUNT_FACT");
-          count && string(count) == "g1") {
-        const int line = phase21_codegen_statement_
-            ? phase21_codegen_statement_->line : 0;
-        std::cerr << "MOSS_TEST_FACT_COUNTER|g1|line=" << line
-                  << "|context=" << codegen_body_context_
-                  << "|callee=" << function.name << "\n";
+      auto checked = checked_call_edge_specialization(
+          p_, codegen_body_context_, function.name,
+          phase21_codegen_statement_ ? phase21_codegen_statement_->line : 0);
+      if (checked.kind == CheckedCallEdgeSelectionKind::Ambiguous) {
+        if (const char* count = std::getenv("MOSS_TEST_COUNT_FACT");
+            count && string(count) == "g1") {
+          const int line = phase21_codegen_statement_
+              ? phase21_codegen_statement_->line : 0;
+          std::cerr << "MOSS_TEST_FACT_COUNTER|g1|selection=ambiguous|line="
+                    << line << "|context="
+                    << codegen_body_context_ << "|callee=" << function.name
+                    << "\n";
+        }
       }
     }
-#endif
-    return concrete_specialization(function, concrete_types);
+    const auto* selected = concrete_specialization(function, concrete_types);
+    if (function.static_dispatch) {
+      auto checked = checked_call_edge_specialization(
+          p_, codegen_body_context_, function.name,
+          phase21_codegen_statement_ ? phase21_codegen_statement_->line : 0);
+      if (checked.kind == CheckedCallEdgeSelectionKind::Ambiguous &&
+          std::find(checked.candidates.begin(), checked.candidates.end(),
+                    selected) == checked.candidates.end())
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT emitter specialization is outside "
+            "checked call edge candidates callee=" + function.name +
+            " line=" + std::to_string(phase21_codegen_statement_
+                                           ? phase21_codegen_statement_->line : 0) +
+            " context=" + codegen_body_context_);
+    }
+    return selected;
   }
 
   string nominal_domain_handle_argument(
@@ -5815,10 +5864,16 @@ class Generator {
               if (arm.est_pattern && arm.est_pattern->kind ==
                   est::PatternNode::Kind::RecoveryBinding) {
                 const auto& binding = arm.est_pattern->binding;
-                o << indent(level + 2) << "let " << binding << " = " << inner
-                  << ";\n";
-                arm_locals.insert(binding);
-                arm_types[binding] = identity.type;
+                if (std::find(joined_bindings.begin(), joined_bindings.end(),
+                              binding) != joined_bindings.end()) {
+                  o << indent(level + 2) << binding << " = " << inner
+                    << ";\n";
+                } else {
+                  o << indent(level + 2) << "let " << binding << " = " << inner
+                    << ";\n";
+                  arm_locals.insert(binding);
+                  arm_types[binding] = identity.type;
+                }
               } else if (arm.est_pattern &&
                   (arm.est_pattern->kind == est::PatternNode::Kind::QualifiedRecoveryCase ||
                    arm.est_pattern->kind == est::PatternNode::Kind::GroupedAlternatives)) {
