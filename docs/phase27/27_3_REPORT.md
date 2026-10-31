@@ -4,6 +4,12 @@
 
 Per L7 clarification, the Phase 27.3 (and later) performance gate is candidate-off versus the merge commit's first parent. Any workload beyond the noise floor must be repeated once on an idle machine. The former `phase27-1-m1` acceptance gate recorded in `27_2_REPORT.md` is withdrawn because it assumed string machinery would be deleted. Report `phase27-1-m1` deltas for historical context only; they do not gate this round.
 
+## Fresh CP-E malformed-expression migration (in progress)
+
+At frozen candidate `914d59dcb0d4825f1ae652b6a23a7db742a5b3fd`, fresh blind CP-E returned **CP-E verdict: NO-GO** against `04be1a1bbbc7a4fd8fe2e4090b4b5bad5dd573e4`. Its unchanged evidence is committed as `34795e3b32a7462e637f034bd9f5838b4376c24a` and imported as `2d4265d4`; report and probes are under `docs/phase27/adversarial/cp-e-blind-914d59d.md` and `tests/phase27/adversarial/cp-e-blind-914d59d/`. The exhaustive inventory confirms zero checker/emitter/reach/Fast Debug expression-reader API sites, 40 classified NAME comparisons, 9 binding comparisons, zero unclassified raw-shape checks, zero `tree_expression_text` reads, and 3 function/API-keyed exemptions. Its 909-file off/shadow corpus had no comparable differences; checked package/source-free gates passed on both revisions.
+
+CP-E found four malformed-source MIGRATION BUGs: bare `not`, `[1, 2`, `item.`, and `1 + * 2` are rejected by baseline but accepted by candidate, with the last also asserting in shadow. The shared `items[` acceptance is recorded as LEGACY MISPARSE. The correction adds EST-owned lexical/syntax issue classification and preserves baseline diagnostics for the four candidate-only cases. Regressions are `tests/phase27/est/repro/{incomplete_unary_not,unclosed_vector_expression,trailing_member_expression,invalid_operator_adjacency}.moss`; the trailing-member path retains the existing open-result diagnostic for bound collection bases. `check_phase27_est.py`, widened string-debt lint, and `git diff --check` pass after this change. The correction is not yet committed or reviewed; fresh CP-E, full gates, CP-F, merge, and tag remain outstanding.
+
 ## Corrections and independent reproductions
 
 | Classification | Finding and correction | Oracle | Reproducer |

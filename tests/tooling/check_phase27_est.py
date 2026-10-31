@@ -46,6 +46,14 @@ def check_rejected_source_parity():
             ("MOSS_COMPILE_ERROR", "indentation jumps more than one block level", 3, 1),
         "incomplete_expression.moss":
             ("MOSS_COMPILE_ERROR", "invalid arithmetic expression", 2, 1),
+        "incomplete_unary_not.moss":
+            ("UNKNOWN_SYMBOL_OR_TYPE", "unknown identifier 'not'", 2, 1),
+        "unclosed_vector_expression.moss":
+            ("MOSS_COMPILE_ERROR", "heterogeneous or unresolved collection element type", 2, 1),
+        "invalid_operator_adjacency.moss":
+            ("MOSS_COMPILE_ERROR", "invalid arithmetic expression", 2, 1),
+        "trailing_member_expression.moss":
+            ("UNKNOWN_SYMBOL_OR_TYPE", "unknown identifier 'item'", 2, 1),
         "unresolved_collection_result.moss":
             ("MOSS_COMPILE_ERROR", "heterogeneous or unresolved collection element type", 2, 1),
         "incomplete_vector.moss":

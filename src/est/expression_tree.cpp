@@ -1199,6 +1199,65 @@ bool incomplete_trailing_operator(std::string_view source) {
   return operators.count(tokens.back().text) != 0;
 }
 
+bool incomplete_collection_initializer_syntax(std::string_view source);
+
+SourceSyntaxIssue source_syntax_issue(std::string_view source) {
+  std::vector<Token> tokens;
+  try {
+    tokens = lex(source);
+  } catch (const std::invalid_argument&) {
+    return SourceSyntaxIssue::None;
+  }
+  if (tokens.size() == 1 && tokens.front().text == "not")
+    return SourceSyntaxIssue::BareNot;
+  if (tokens.size() >= 2 && tokens.front().text == "[") {
+    std::vector<std::string_view> delimiters;
+    for (const auto& token : tokens) {
+      if (token.text == "(" || token.text == "[" || token.text == "{")
+        delimiters.push_back(token.text);
+      else if (token.text == ")" || token.text == "]" || token.text == "}") {
+        if (delimiters.empty()) break;
+        const auto open = delimiters.back();
+        if ((open == "(" && token.text != ")") ||
+            (open == "[" && token.text != "]") ||
+            (open == "{" && token.text != "}")) break;
+        delimiters.pop_back();
+      }
+    }
+    if (!delimiters.empty())
+      return SourceSyntaxIssue::UnclosedCollection;
+  }
+  if (!tokens.empty() && tokens.back().text == "." &&
+      incomplete_collection_initializer_syntax(source))
+    return SourceSyntaxIssue::UnclosedCollection;
+  if (!tokens.empty() && tokens.back().text == ".")
+    return SourceSyntaxIssue::TrailingMember;
+
+  static const std::set<std::string_view> binary_operators = {
+      "+", "-", "*", "/", "%", "**", "==", "!=", "<", "<=",
+      ">", ">=", "&", "|", "^", "<<", ">>", "&&", "||"};
+  for (std::size_t i = 1; i < tokens.size(); ++i) {
+    if (binary_operators.count(tokens[i - 1].text) &&
+        binary_operators.count(tokens[i].text) &&
+        tokens[i].text != "+" && tokens[i].text != "-")
+      return SourceSyntaxIssue::InvalidOperatorAdjacency;
+  }
+  return SourceSyntaxIssue::None;
+}
+
+std::optional<std::string> trailing_member_base(std::string_view source) {
+  std::vector<Token> tokens;
+  try {
+    tokens = lex(source);
+  } catch (const std::invalid_argument&) {
+    return std::nullopt;
+  }
+  if (tokens.size() != 2 || !tokens.front().word ||
+      tokens.back().text != ".")
+    return std::nullopt;
+  return tokens.front().text;
+}
+
 bool incomplete_collection_initializer_syntax(std::string_view source) {
   std::vector<Token> tokens;
   try {

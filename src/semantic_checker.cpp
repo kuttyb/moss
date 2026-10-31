@@ -11335,6 +11335,9 @@ class Checker {
       syntax = checker_est_view("(" + expression + ")");
     const bool incomplete_trailing_operator = !syntax &&
         moss::est::incomplete_trailing_operator(expression);
+    const bool invalid_operator_adjacency =
+        moss::est::source_syntax_issue(expression) ==
+        moss::est::SourceSyntaxIssue::InvalidOperatorAdjacency;
     if (!named_argument && syntax) {
       std::pair<string,string> operands;
       string operation;
@@ -11379,7 +11382,8 @@ class Checker {
       // before any semantic interpretation.
       if (result != legacy && !(named_argument && legacy && !result) &&
           !exponent_star_substring && !legacy_invalid_if_comparison &&
-          !legacy_pipeline_comparison && !incomplete_trailing_operator) {
+          !legacy_pipeline_comparison && !incomplete_trailing_operator &&
+          !invalid_operator_adjacency) {
         assert(result == legacy);
       }
     }
@@ -26233,6 +26237,29 @@ class Checker {
                         std::string_view child_role = {}) {
     using OccurrenceKind = BodyTypeState::ExpressionOccurrence::Kind;
     string original = trim(expression);
+    switch (moss::est::source_syntax_issue(original)) {
+      case moss::est::SourceSyntaxIssue::BareNot:
+        err(line, "unknown identifier 'not'");
+        return;
+      case moss::est::SourceSyntaxIssue::UnclosedCollection:
+        err(line, "heterogeneous or unresolved collection element type",
+            "MOSS_COMPILE_ERROR");
+        return;
+      case moss::est::SourceSyntaxIssue::InvalidOperatorAdjacency:
+        err(line, "invalid arithmetic expression", "MOSS_COMPILE_ERROR");
+        return;
+      case moss::est::SourceSyntaxIssue::TrailingMember: {
+        const auto base = moss::est::trailing_member_base(original);
+        if (base && !env.count(*base))
+          err(line, "unknown identifier '" + *base + "'");
+        else if (!base)
+          err(line, "invalid arithmetic expression", "MOSS_COMPILE_ERROR");
+        if (!base || !env.count(*base)) return;
+        break;
+      }
+      case moss::est::SourceSyntaxIssue::None:
+        break;
+    }
     if (moss::est::incomplete_trailing_operator(original))
       err(line, "invalid arithmetic expression", "MOSS_COMPILE_ERROR");
     const string occurrence_source = original;
