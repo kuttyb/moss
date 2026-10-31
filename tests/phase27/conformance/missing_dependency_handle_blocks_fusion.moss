@@ -1,0 +1,13 @@
+fn plus(value: Int) -> Int:
+  return value + 1
+
+fn tracked(value: Int) -> Int:
+  echo 777777
+  return value
+
+proc main():
+  values = [1, 2, 3]
+  total = values |> map(plus)
+  result = total |> map(plus) |> sum
+  observed = values |> map(tracked) |> sum
+  echo result, observed

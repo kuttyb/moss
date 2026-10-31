@@ -1,0 +1,25 @@
+{
+  "review": "Phase 27.4 Agent 2",
+  "frozen_sha": "7dd0468540359447c5c1fff55e5eadaa2f66f174",
+  "baseline_ref": "phase27-3-m1",
+  "baseline_sha": "ce5f836e06ce93909c358e6e6455402417d14991",
+  "verdict": "GO",
+  "source_edits": 0,
+  "optimizer_expression_text_reader_sites": 0,
+  "optimizer_lint_require_zero": "PASS",
+  "three_engine": {
+    "candidate": "PASS",
+    "baseline": "PASS",
+    "stdout_equal": true,
+    "callback_marker_count": 3
+  },
+  "rust_o_differential": {
+    "tracked_moss_sources": 2226,
+    "common_success_hash_mismatches": 0,
+    "paired_noncomparisons": 12,
+    "paired_timeout": ["benchmarks/compiler_torture/fixtures/specialization/w2_spec_distinct_n032.moss"],
+    "paired_same_emission_failure_count": 11,
+    "one_sided_failures": 0
+  },
+  "findings": []
+}
