@@ -1,5 +1,26 @@
 # Phase 26.2 — Cargo package graph checkpoint
 
+## Phase 27.5.3 active checkpoint (2026-10-31)
+
+- Working branch `phase27-5-3-work`, based on `phase27-5-2-m1`
+  (`a2b308fd804d0d3b9970a292b2f4de076bf20f2d`). Baseline binaries and the
+  kickoff checkpoint are recorded in commit `76c8fe0a`.
+- Fast Debug slice in progress: pipeline execution now takes the checked EST
+  pipeline node, uses the checker-owned functional stage identity/output type,
+  and evaluates callback/index children by ExprId. The consumer-side EST
+  reparsing fallback has been removed from `interpreter.hpp`.
+- Targeted results on current worktree: `examples/functional_basics.moss`,
+  `tests/swarm_001_parenthesized_pipeline.moss`, and
+  `tests/phase27/est/specialized_call_facts.moss` pass under Fast Debug.
+  `MOSS_EST_COVERAGE_STATS=1` reports all four Fast Debug reparse sites at
+  zero for the first two; the specialized-call fixture also reports zero after
+  subtree lookup was corrected.
+- Validation has been targeted only; no full suites or performance runs have
+  been started. No Phase 27.5.3 merge/tag has been made. Remaining work:
+  implement and register K2/K3 perturbation/removal tests, migrate all Fast
+  Debug static decisions, update AGENTS.md and COMPILER_STATE.md, then run the
+  C1 checkpoint suite and Agent 2 audit.
+
 ## Phase 26.2 stabilization progress
 
 - Item 1 fixed on `phase26-2-stab`. Before the fix, `moss debug` with a valid

@@ -108,8 +108,9 @@
         } else {
           auto values = place.value->vector ? place.value->vector : place.value->queue;
           if (!values || index.kind != Value::Kind::Int || index.integer < 0 ||
-              static_cast<size_t>(index.integer) >= values->size())
+              static_cast<size_t>(index.integer) >= values->size()) {
             throw RuntimeError(line, "vector index out of bounds");
+          }
           place.value = &values->at(static_cast<size_t>(index.integer));
           if (place.domain) place.path += "[" + std::to_string(index.integer) + "]";
         }
