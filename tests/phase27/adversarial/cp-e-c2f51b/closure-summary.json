@@ -1,0 +1,9 @@
+{
+  "accepted_inputs": 1409,
+  "query_failures": 33,
+  "symbol_closure_differences": 0,
+  "declaration_rows_baseline": 12250,
+  "declaration_rows_candidate_off": 12250,
+  "declaration_rows_candidate_shadow": 12250,
+  "mismatches": []
+}

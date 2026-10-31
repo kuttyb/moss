@@ -1,0 +1,5 @@
+module cp_e_source_free_bad
+import ndarray
+fn main():
+  value = ndarray.no_such_function()
+  echo value

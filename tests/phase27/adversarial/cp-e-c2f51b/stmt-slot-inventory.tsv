@@ -1,0 +1,997 @@
+path	line	slot	classification	source
+src/semantic_checker.cpp	4178	source_statement.a	expression-bearing slot consumed via EST/tree/checker/emitter path	tree_simple_identifier(source_statement.a) &&
+src/semantic_checker.cpp	4249	source_statement.a	expression-bearing slot consumed via EST/tree/checker/emitter path	!tree_simple_identifier(source_statement.a)) continue;
+src/semantic_checker.cpp	5130	source.a	expression-bearing slot consumed via EST/tree/checker/emitter path	if (tree_simple_identifier(source.a) &&
+src/semantic_checker.cpp	5156	source.a	expression-bearing slot consumed via EST/tree/checker/emitter path	if (!tree_simple_identifier(source.a)) {
+src/semantic_checker.cpp	5415	source.a	direct slot read; inspect statement kind for name vs expression	if (source.a.empty()) return std::nullopt;
+src/semantic_checker.cpp	9299	s.a	binding comparison: allowed only when slot denotes binding/root name	if (s.kind == Stmt::Kind::Return && !s.a.empty()) {
+src/semantic_checker.cpp	9300	s.a	direct slot read; inspect statement kind for name vs expression	auto result = inferred_expr_type(s.a, inferred_env);
+src/semantic_checker.cpp	9325	statement.a	binding comparison: allowed only when slot denotes binding/root name	return statement.kind == Stmt::Kind::Return && !statement.a.empty();
+src/semantic_checker.cpp	9527	source.text	direct slot read; inspect statement kind for name vs expression	const string code = source_code_only(source.text);
+src/semantic_checker.cpp	9905	stmt.a	binding comparison: allowed only when slot denotes binding/root name	if (stmt.a == name) {
+src/semantic_checker.cpp	9965	statement.b	direct slot read; inspect statement kind for name vs expression	auto constructed = domain_constructor(statement.b);
+src/semantic_checker.cpp	9967	statement.a	expression-bearing slot consumed via EST/tree/checker/emitter path	if (!tree_plain_identifier(statement.a)) continue;
+src/semantic_checker.cpp	9968	statement.a	direct slot read; inspect statement kind for name vs expression	if (by_binding.count(statement.a))
+src/semantic_checker.cpp	9969	statement.a	direct slot read; inspect statement kind for name vs expression	fail_at(statement, "duplicate domain instance binding '" + statement.a + "'");
+src/semantic_checker.cpp	9972	statement.a	direct slot read; inspect statement kind for name vs expression	instance.binding = statement.a;
+src/semantic_checker.cpp	9973	statement.a	direct slot read; inspect statement kind for name vs expression	instance.identity = "main::" + statement.a;
+src/semantic_checker.cpp	9980	statement.a	binding comparison: allowed only when slot denotes binding/root name	specialization.instance == statement.a) {
+src/semantic_checker.cpp	9989	statement.a	direct slot read; inspect statement kind for name vs expression	concrete.instance = statement.a;
+src/semantic_checker.cpp	10008	statement.a	text/shape helper use; bounded taint review required	by_binding[statement.a] = p_.concrete_domain_graph.instances.size();
+src/semantic_checker.cpp	10009	statement.a	direct slot read; inspect statement kind for name vs expression	binding_types[statement.a] = domain.name;
+src/semantic_checker.cpp	10014	statement.b	direct slot read; inspect statement kind for name vs expression	auto constructed = domain_constructor(statement.b);
+src/semantic_checker.cpp	10015	statement.b	direct slot read; inspect statement kind for name vs expression	if (legacy_spawn_expression(statement.b))
+src/semantic_checker.cpp	10021	statement.a	binding comparison: allowed only when slot denotes binding/root name	statement.kind == Stmt::Kind::Assign) || !tree_plain_identifier(statement.a))
+src/semantic_checker.cpp	10028	statement.a	direct slot read; inspect statement kind for name vs expression	if (!by_binding.count(statement.a))
+src/semantic_checker.cpp	10033	statement.b	expression-bearing slot consumed via EST/tree/checker/emitter path	if (!tree_parse_simple_call(statement.b, constructor_name, constructor_arguments))
+src/semantic_checker.cpp	10041	statement.b	direct slot read; inspect statement kind for name vs expression	auto supplied = parse_bindings(statement.b);
+src/semantic_checker.cpp	10062	statement.a	direct slot read; inspect statement kind for name vs expression	edge.source_instance = p_.concrete_domain_graph.instances[by_binding.at(statement.a)].identity;
+src/semantic_checker.cpp	10110	statement.b	direct slot read; inspect statement kind for name vs expression	if (statement.indent > 0 && domain_constructor(statement.b))
+src/semantic_checker.cpp	10276	statement.a	expression-bearing slot consumed via EST/tree/checker/emitter path	return parameter.type.empty() && tree_identifier_named(statement.a, parameter.name);
+src/semantic_checker.cpp	10741	statement.b	expression-bearing slot consumed via EST/tree/checker/emitter path	if (!tree_parse_simple_call(statement.b, constructor, arguments)) continue;
+src/semantic_checker.cpp	12271	statement.a	binding comparison: allowed only when slot denotes binding/root name	if (statement.kind == Stmt::Kind::Return && !statement.a.empty() &&
+src/semantic_checker.cpp	12272	statement.a	direct slot read; inspect statement kind for name vs expression	!include_result(statement.a))
+src/semantic_checker.cpp	12603	statement.a	binding comparison: allowed only when slot denotes binding/root name	if (statement.kind != Stmt::Kind::Assign || tree_simple_identifier(statement.a)) {
+src/semantic_checker.cpp	12604	statement.a	text/shape helper use; bounded taint review required	auto existing = env.find(statement.a);
+src/semantic_checker.cpp	12608	statement.b	direct slot read; inspect statement kind for name vs expression	} else if (auto constructed = domain_constructor(statement.b)) {
+src/semantic_checker.cpp	12609	statement.a	direct slot read; inspect statement kind for name vs expression	env[statement.a] = *constructed;
+src/semantic_checker.cpp	12610	statement.b	direct slot read; inspect statement kind for name vs expression	} else if (auto inferred = inferred_expr_type(statement.b, env)) {
+src/semantic_checker.cpp	12615	statement.a	direct slot read; inspect statement kind for name vs expression	? current_body_types_->resolved_local(statement.a) : nullptr;
+src/semantic_checker.cpp	12620	statement.a	direct slot read; inspect statement kind for name vs expression	env[statement.a] = binding;
+src/semantic_checker.cpp	12627	statement.a	text/shape helper use; bounded taint review required	auto solved = solved_collections.find(statement.a);
+src/semantic_checker.cpp	12637	statement.a	direct slot read; inspect statement kind for name vs expression	env[statement.a] = cinf;
+src/semantic_checker.cpp	12641	statement.a	direct slot read; inspect statement kind for name vs expression	env[statement.a] = "_value";
+src/semantic_checker.cpp	12644	statement.a	direct slot read; inspect statement kind for name vs expression	const_cast<Stmt&>(statement).semantic_type = canonical_type_name(env[statement.a]);
+src/semantic_checker.cpp	12647	statement.a	expression-bearing slot consumed via EST/tree/checker/emitter path	if (tree_parse_index(statement.a, base, index_expression)) {
+src/semantic_checker.cpp	12656	prior.a	binding comparison: allowed only when slot denotes binding/root name	if (prior.a == base && tree_empty_constructor_named(prior.b, "Map")) {
+src/semantic_checker.cpp	12656	prior.b	binding comparison: allowed only when slot denotes binding/root name	if (prior.a == base && tree_empty_constructor_named(prior.b, "Map")) {
+src/semantic_checker.cpp	12661	prior.b	direct slot read; inspect statement kind for name vs expression	0, prior.b, join_context,
+src/semantic_checker.cpp	12667	statement.b	direct slot read; inspect statement kind for name vs expression	auto value_type = inferred_expr_type(statement.b, env);
+src/semantic_checker.cpp	12677	prior.a	binding comparison: allowed only when slot denotes binding/root name	if (prior.a == base && tree_empty_constructor_named(prior.b, "Map")) {
+src/semantic_checker.cpp	12677	prior.b	binding comparison: allowed only when slot denotes binding/root name	if (prior.a == base && tree_empty_constructor_named(prior.b, "Map")) {
+src/semantic_checker.cpp	12682	prior.b	direct slot read; inspect statement kind for name vs expression	0, prior.b, join_context, *refined);
+src/semantic_checker.cpp	12698	statement.a	text/shape helper use; bounded taint review required	auto receiver = env.find(statement.a);
+src/semantic_checker.cpp	12702	statement.b	direct slot read; inspect statement kind for name vs expression	if (const Handler* handler = find_handler(*domain->second, statement.b))
+src/semantic_checker.cpp	12713	statement.b	binding comparison: allowed only when slot denotes binding/root name	if (statement.kind == Stmt::Kind::Call && !statement.b.empty() &&
+src/semantic_checker.cpp	12714	statement.b	literal comparison: NAME/keyword only if statement-kind selected; inventory separately audited	(statement.b == "push" ||
+src/semantic_checker.cpp	12715	statement.b	literal comparison: NAME/keyword only if statement-kind selected; inventory separately audited	(staged_abi_v10() && statement.b == "insert")) &&
+src/semantic_checker.cpp	12716	statement.args	call argument values; verify call/message AST projection	statement.args.size() == 1) {
+src/semantic_checker.cpp	12717	statement.a	text/shape helper use; bounded taint review required	auto container = env.find(statement.a);
+src/semantic_checker.cpp	12719	statement.a	direct slot read; inspect statement kind for name vs expression	? current_body_types_->resolved_local(statement.a) : nullptr;
+src/semantic_checker.cpp	12725	prior.a	binding comparison: allowed only when slot denotes binding/root name	if (prior.a == statement.a &&
+src/semantic_checker.cpp	12725	statement.a	binding comparison: allowed only when slot denotes binding/root name	if (prior.a == statement.a &&
+src/semantic_checker.cpp	12726	prior.b	expression-bearing slot consumed via EST/tree/checker/emitter path	(tree_empty_vector_literal(prior.b) ||
+src/semantic_checker.cpp	12727	prior.b	expression-bearing slot consumed via EST/tree/checker/emitter path	tree_empty_constructor_named(prior.b, "Queue") ||
+src/semantic_checker.cpp	12728	prior.b	expression-bearing slot consumed via EST/tree/checker/emitter path	(staged_abi_v10() && tree_empty_constructor_named(prior.b, "Set")) ||
+src/semantic_checker.cpp	12729	prior.b	expression-bearing slot consumed via EST/tree/checker/emitter path	tree_parse_vector_literal(prior.b).has_value() ||
+src/semantic_checker.cpp	12737	prior.b	direct slot read; inspect statement kind for name vs expression	prior.b, join_context, canonical_type_name(retained));
+src/semantic_checker.cpp	12742	statement.args	call argument values; verify call/message AST projection	auto argument = inferred_expr_type(statement.args.front(), env);
+src/semantic_checker.cpp	12749	prior.a	expression-bearing slot consumed via EST/tree/checker/emitter path	if (tree_expressions_structurally_equal(prior.a, statement.a) &&
+src/semantic_checker.cpp	12749	statement.a	expression-bearing slot consumed via EST/tree/checker/emitter path	if (tree_expressions_structurally_equal(prior.a, statement.a) &&
+src/semantic_checker.cpp	12750	prior.b	expression-bearing slot consumed via EST/tree/checker/emitter path	(tree_empty_vector_literal(prior.b) ||
+src/semantic_checker.cpp	12751	prior.b	expression-bearing slot consumed via EST/tree/checker/emitter path	tree_empty_constructor_named(prior.b, "Queue") ||
+src/semantic_checker.cpp	12752	prior.b	expression-bearing slot consumed via EST/tree/checker/emitter path	(staged_abi_v10() && tree_empty_constructor_named(prior.b, "Set")) ||
+src/semantic_checker.cpp	12753	prior.b	expression-bearing slot consumed via EST/tree/checker/emitter path	tree_parse_vector_literal(prior.b).has_value() ||
+src/semantic_checker.cpp	12761	prior.b	direct slot read; inspect statement kind for name vs expression	prior.b, join_context, *refined);
+src/semantic_checker.cpp	12797	statement.a	direct slot read; inspect statement kind for name vs expression	auto scrutinee_type = inferred_expr_type(statement.a, env);
+src/semantic_checker.cpp	12801	statement.a	direct slot read; inspect statement kind for name vs expression	(!scrutinee_type && env.count(statement.a) && !env.at(statement.a));
+src/semantic_checker.cpp	12801	statement.a	direct slot read; inspect statement kind for name vs expression	(!scrutinee_type && env.count(statement.a) && !env.at(statement.a));
+src/semantic_checker.cpp	12810	statement.a	direct slot read; inspect statement kind for name vs expression	deferred ? (scrutinee_type ? *scrutinee_type : "_generic:" + statement.a)
+src/semantic_checker.cpp	12999	candidate.a	binding comparison: allowed only when slot denotes binding/root name	candidate.a != name ||
+src/semantic_checker.cpp	13109	statement.b	direct slot read; inspect statement kind for name vs expression	statement.line, statement.b, incoming).value_or("_value");
+src/semantic_checker.cpp	13110	statement.a	direct slot read; inspect statement kind for name vs expression	body_env[statement.a] = element_type;
+src/semantic_checker.cpp	13115	statement.a	direct slot read; inspect statement kind for name vs expression	body_env.terms[statement.a] = binding->second;
+src/semantic_checker.cpp	13125	statement.a	text/shape helper use; bounded taint review required	auto previous = scoped_types->scoped_locals.find(statement.a);
+src/semantic_checker.cpp	13128	statement.a	direct slot read; inspect statement kind for name vs expression	scoped_types->scoped_locals[statement.a] = binding->second;
+src/semantic_checker.cpp	13135	statement.a	direct slot read; inspect statement kind for name vs expression	if (previous_term) scoped_types->scoped_locals[statement.a] = *previous_term;
+src/semantic_checker.cpp	13136	statement.a	direct slot read; inspect statement kind for name vs expression	else scoped_types->scoped_locals.erase(statement.a);
+src/semantic_checker.cpp	13141	statement.a	binding comparison: allowed only when slot denotes binding/root name	if (auto shadowed = incoming.find(statement.a); shadowed != incoming.end())
+src/semantic_checker.cpp	13142	statement.a	direct slot read; inspect statement kind for name vs expression	body_env[statement.a] = shadowed->second;
+src/semantic_checker.cpp	13144	statement.a	direct slot read; inspect statement kind for name vs expression	body_env.erase(statement.a);
+src/semantic_checker.cpp	13145	statement.a	text/shape helper use; bounded taint review required	if (auto shadowed = incoming.terms.find(statement.a);
+src/semantic_checker.cpp	13147	statement.a	direct slot read; inspect statement kind for name vs expression	body_env.terms[statement.a] = shadowed->second;
+src/semantic_checker.cpp	13149	statement.a	direct slot read; inspect statement kind for name vs expression	body_env.terms.erase(statement.a);
+src/semantic_checker.cpp	13167	statement.a	expression-bearing slot consumed via EST/tree/checker/emitter path	tree_simple_identifier(statement.a)) {
+src/semantic_checker.cpp	13169	statement.a	direct slot read; inspect statement kind for name vs expression	env.terms[statement.a] = term;
+src/semantic_checker.cpp	13172	statement.b	direct slot read; inspect statement kind for name vs expression	!statement.b.empty()) {
+src/semantic_checker.cpp	13173	statement.a	direct slot read; inspect statement kind for name vs expression	if (auto receiver = inferred_expr_type(statement.a, env)) {
+src/semantic_checker.cpp	13176	statement.a	direct slot read; inspect statement kind for name vs expression	statement.a, join_context, canonical_type_name(*receiver));
+src/semantic_checker.cpp	13184	statement.b	direct slot read; inspect statement kind for name vs expression	? statement.b : statement.text;
+src/semantic_checker.cpp	13184	statement.text	direct slot read; inspect statement kind for name vs expression	? statement.b : statement.text;
+src/semantic_checker.cpp	13686	statement.a	direct slot read; inspect statement kind for name vs expression	auto scrutinee_type = inferred_expr_type(statement.a, scan);
+src/semantic_checker.cpp	13705	statement.a	binding comparison: allowed only when slot denotes binding/root name	[&](const EnumCase& c) { return c.name == statement.a; });
+src/semantic_checker.cpp	13717	statement.args	call argument values; verify call/message AST projection	for (size_t i = 0; i < statement.args.size() && i < case_it->fields.size(); ++i) {
+src/semantic_checker.cpp	13718	statement.args	call argument values; verify call/message AST projection	const string& field_name = statement.args[i];
+src/semantic_checker.cpp	13734	statement.args	call argument values; verify call/message AST projection	if (statement.args.size() == case_it->fields.size())
+src/semantic_checker.cpp	13741	statement.args	call argument values; verify call/message AST projection	for (const auto& argument : statement.args)
+src/semantic_checker.cpp	13746	statement.b	direct slot read; inspect statement kind for name vs expression	constrain_map_lookup(statement.line, statement.b);
+src/semantic_checker.cpp	13749	statement.a	direct slot read; inspect statement kind for name vs expression	constrain_map_lookup(statement.line, statement.a);
+src/semantic_checker.cpp	13755	statement.b	expression-bearing slot consumed via EST/tree/checker/emitter path	if (tree_parse_simple_call(trim(statement.b), callee, arguments) &&
+src/semantic_checker.cpp	13758	statement.b	direct slot read; inspect statement kind for name vs expression	} else if (auto source = term_for(statement.b)) {
+src/semantic_checker.cpp	13773	statement.b	direct slot read; inspect statement kind for name vs expression	statement.line, statement.b, scan).value_or("_value");
+src/semantic_checker.cpp	13786	statement.a	direct slot read; inspect statement kind for name vs expression	current_semantic_context_, statement.line) + ":" + statement.a;
+src/semantic_checker.cpp	13791	statement.a	direct slot read; inspect statement kind for name vs expression	locals[statement.a] = loop_term;
+src/semantic_checker.cpp	13793	statement.a	direct slot read; inspect statement kind for name vs expression	scan[statement.a] = resolved->is_closed()
+src/semantic_checker.cpp	13795	statement.a	direct slot read; inspect statement kind for name vs expression	: "_iterator_element:" + statement.a;
+src/semantic_checker.cpp	13797	statement.a	direct slot read; inspect statement kind for name vs expression	locals.erase(statement.a);
+src/semantic_checker.cpp	13798	statement.a	direct slot read; inspect statement kind for name vs expression	scan[statement.a] = "_value";
+src/semantic_checker.cpp	13802	statement.b	binding comparison: allowed only when slot denotes binding/root name	if (statement.kind == Stmt::Kind::Call && statement.b.empty()) {
+src/semantic_checker.cpp	13803	statement.a	direct slot read; inspect statement kind for name vs expression	string invocation = statement.a + "(" + join_arguments(statement.args) + ")";
+src/semantic_checker.cpp	13803	statement.args	call argument values; verify call/message AST projection	string invocation = statement.a + "(" + join_arguments(statement.args) + ")";
+src/semantic_checker.cpp	13809	statement.a	text/shape helper use; bounded taint review required	auto receiver = scan.find(statement.a);
+src/semantic_checker.cpp	13813	statement.b	direct slot read; inspect statement kind for name vs expression	: find_handler(*domain->second, statement.b);
+src/semantic_checker.cpp	13849	statement.a	expression-bearing slot consumed via EST/tree/checker/emitter path	tree_simple_identifier(statement.a)) {
+src/semantic_checker.cpp	13850	statement.b	direct slot read; inspect statement kind for name vs expression	if (auto constructed = domain_constructor(statement.b)) {
+src/semantic_checker.cpp	13851	statement.a	direct slot read; inspect statement kind for name vs expression	scan[statement.a] = *constructed;
+src/semantic_checker.cpp	13854	statement.b	direct slot read; inspect statement kind for name vs expression	auto inferred = inferred_expr_type(statement.b, scan);
+src/semantic_checker.cpp	13855	statement.b	direct slot read; inspect statement kind for name vs expression	constrain_call(statement.line, statement.b);
+src/semantic_checker.cpp	13856	statement.b	direct slot read; inspect statement kind for name vs expression	auto instantiated = instantiate_summary(statement.line, statement.b,
+src/semantic_checker.cpp	13858	statement.a	direct slot read; inspect statement kind for name vs expression	body_types.provider_origins.erase(statement.a);
+src/semantic_checker.cpp	13861	statement.b	expression-bearing slot consumed via EST/tree/checker/emitter path	if (tree_parse_simple_call(trim(statement.b), assigned_callee,
+src/semantic_checker.cpp	13868	statement.a	direct slot read; inspect statement kind for name vs expression	body_types.provider_origins.emplace(statement.a,
+src/semantic_checker.cpp	13878	statement.b	direct slot read; inspect statement kind for name vs expression	auto retained_source = body_types.known_expression(statement.b);
+src/semantic_checker.cpp	13883	statement.a	direct slot read; inspect statement kind for name vs expression	scan[statement.a] = *inferred;
+src/semantic_checker.cpp	13886	statement.a	text/shape helper use; bounded taint review required	auto prior = locals.find(statement.a);
+src/semantic_checker.cpp	13891	statement.a	direct slot read; inspect statement kind for name vs expression	scan[statement.a] = *inferred;
+src/semantic_checker.cpp	13903	statement.a	direct slot read; inspect statement kind for name vs expression	statement.a + "'", "TYPE_MISMATCH");
+src/semantic_checker.cpp	13905	statement.a	direct slot read; inspect statement kind for name vs expression	locals.emplace(statement.a, term);
+src/semantic_checker.cpp	13908	statement.a	direct slot read; inspect statement kind for name vs expression	scan[statement.a] = prior_open || !term->is_closed()
+src/semantic_checker.cpp	13909	statement.a	direct slot read; inspect statement kind for name vs expression	? solver.resolve(locals.at(statement.a))->to_canonical_string()
+src/semantic_checker.cpp	13912	statement.b	literal comparison: NAME/keyword only if statement-kind selected; inventory separately audited	(statement.b == "push" ||
+src/semantic_checker.cpp	13913	statement.b	literal comparison: NAME/keyword only if statement-kind selected; inventory separately audited	(staged_abi_v10() && statement.b == "insert")) &&
+src/semantic_checker.cpp	13914	statement.args	call argument values; verify call/message AST projection	statement.args.size() == 1) {
+src/semantic_checker.cpp	13915	statement.a	text/shape helper use; bounded taint review required	auto local = locals.find(statement.a);
+src/semantic_checker.cpp	13917	statement.args	call argument values; verify call/message AST projection	auto argument = term_for(statement.args.front());
+src/semantic_checker.cpp	13933	statement.b	direct slot read; inspect statement kind for name vs expression	const string message = statement.b +
+src/semantic_checker.cpp	13935	statement.a	direct slot read; inspect statement kind for name vs expression	statement.a + "'";
+src/semantic_checker.cpp	13936	statement.a	text/shape helper use; bounded taint review required	auto origin = body_types.provider_origins.find(statement.a);
+src/semantic_checker.cpp	13951	statement.a	direct slot read; inspect statement kind for name vs expression	scan[statement.a] = solver.resolve(local->second)->to_canonical_string();
+src/semantic_checker.cpp	13953	statement.a	expression-bearing slot consumed via EST/tree/checker/emitter path	tree_index_expression(statement.a)) {
+src/semantic_checker.cpp	13955	statement.a	expression-bearing slot consumed via EST/tree/checker/emitter path	if (!tree_parse_index(statement.a, base, index)) continue;
+src/semantic_checker.cpp	13958	statement.b	direct slot read; inspect statement kind for name vs expression	auto value = term_for(statement.b);
+src/semantic_checker.cpp	13998	statement.a	expression-bearing slot consumed via EST/tree/checker/emitter path	tree_member_access(statement.a)) {
+src/semantic_checker.cpp	13999	statement.a	direct slot read; inspect statement kind for name vs expression	auto field = body_types.known_expression(statement.a);
+src/semantic_checker.cpp	14000	statement.b	direct slot read; inspect statement kind for name vs expression	auto rhs = term_for(statement.b);
+src/semantic_checker.cpp	14005	statement.a	direct slot read; inspect statement kind for name vs expression	statement.a + "'", "TYPE_MISMATCH");
+src/semantic_checker.cpp	14051	checked_statement.b	text/shape helper use; bounded taint review required	if (closed.size() == 1 && !checked_statement.b.empty()) {
+src/semantic_checker.cpp	14059	checked_statement.b	expression-bearing slot consumed via EST/tree/checker/emitter path	est::ExprSlot::RhsValue, 0, checked_statement.b,
+src/semantic_checker.cpp	14092	checked_statement.b	expression-bearing slot consumed via EST/tree/checker/emitter path	est::ExprSlot::RhsValue, 0, checked_statement.b, semantic_context,
+src/semantic_checker.cpp	14136	statement.a	direct slot read; inspect statement kind for name vs expression	constrain_constructor_fields(statement.line, statement.a, current_env);
+src/semantic_checker.cpp	14141	statement.b	direct slot read; inspect statement kind for name vs expression	constrain_constructor_fields(statement.line, statement.b, current_env);
+src/semantic_checker.cpp	14146	statement.b	direct slot read; inspect statement kind for name vs expression	constrain_constructor_fields(statement.line, statement.b, current_env);
+src/semantic_checker.cpp	14150	statement.args	call argument values; verify call/message AST projection	for (const auto& arg : statement.args)
+src/semantic_checker.cpp	14153	statement.a	direct slot read; inspect statement kind for name vs expression	const string& receiver_name = statement.a;
+src/semantic_checker.cpp	14154	statement.b	direct slot read; inspect statement kind for name vs expression	const string& handler_name = statement.b;
+src/semantic_checker.cpp	14160	statement.args	call argument values; verify call/message AST projection	index < statement.args.size() && index < handler->params.size(); ++index) {
+src/semantic_checker.cpp	14162	statement.args	call argument values; verify call/message AST projection	functional_pipeline_from_est(statement.args[index]);
+src/semantic_checker.cpp	14168	statement.args	call argument values; verify call/message AST projection	auto inferred = inferred_expr(statement.args[index], current_env);
+src/semantic_checker.cpp	14192	statement.b	literal comparison: NAME/keyword only if statement-kind selected; inventory separately audited	if (statement.kind == Stmt::Kind::Call && statement.b == "invoke" &&
+src/semantic_checker.cpp	14193	statement.a	text/shape helper use; bounded taint review required	executor_typed(current_env, statement.a) && statement.args.size() == 1) {
+src/semantic_checker.cpp	14193	statement.args	call argument values; verify call/message AST projection	executor_typed(current_env, statement.a) && statement.args.size() == 1) {
+src/semantic_checker.cpp	14196	statement.args	call argument values; verify call/message AST projection	auto receiver = tree_parse_member_call(statement.args.front(), target, handler_name, handler_args)
+src/semantic_checker.cpp	14216	statement.b	binding comparison: allowed only when slot denotes binding/root name	if (statement.kind == Stmt::Kind::Call && statement.b.empty()) {
+src/semantic_checker.cpp	14217	statement.a	text/shape helper use; bounded taint review required	auto function = functions_.find(statement.a);
+src/semantic_checker.cpp	14219	statement.args	call argument values; verify call/message AST projection	for (size_t i = 0; i < statement.args.size() && i < function->second->params.size(); ++i) {
+src/semantic_checker.cpp	14220	statement.args	call argument values; verify call/message AST projection	auto actual = inferred_expr_type(statement.args[i], current_env);
+src/semantic_checker.cpp	14239	statement.args	call argument values; verify call/message AST projection	for (const auto& arg : statement.args)
+src/semantic_checker.cpp	14245	statement.a	direct slot read; inspect statement kind for name vs expression	if (!statement.a.empty())
+src/semantic_checker.cpp	14246	statement.a	direct slot read; inspect statement kind for name vs expression	constrain_constructor_fields(statement.line, statement.a, current_env);
+src/semantic_checker.cpp	14249	statement.text	direct slot read; inspect statement kind for name vs expression	constrain_constructor_fields(statement.line, statement.text, current_env);
+src/semantic_checker.cpp	14443	statement.b	direct slot read; inspect statement kind for name vs expression	if (auto constructed = domain_constructor(statement.b)) {
+src/semantic_checker.cpp	14446	statement.a	direct slot read; inspect statement kind for name vs expression	bindings[statement.a] = domain->second;
+src/semantic_checker.cpp	14447	statement.a	direct slot read; inspect statement kind for name vs expression	main_env[statement.a] = domain->second->name;
+src/semantic_checker.cpp	14460	statement.a	direct slot read; inspect statement kind for name vs expression	find_specialization(statement.a, domain->second->name);
+src/semantic_checker.cpp	14469	statement.b	literal comparison: NAME/keyword only if statement-kind selected; inventory separately audited	if (statement.kind == Stmt::Kind::Call && statement.b == "invoke" &&
+src/semantic_checker.cpp	14470	statement.args	call argument values; verify call/message AST projection	statement.args.size() == 1 && executor_typed(main_env, statement.a) &&
+src/semantic_checker.cpp	14470	statement.a	text/shape helper use; bounded taint review required	statement.args.size() == 1 && executor_typed(main_env, statement.a) &&
+src/semantic_checker.cpp	14471	statement.args	call argument values; verify call/message AST projection	tree_parse_member_call(statement.args.front(), invoke_view.a, invoke_view.b,
+src/semantic_checker.cpp	14471	invoke_view.a	expression-bearing slot consumed via EST/tree/checker/emitter path	tree_parse_member_call(statement.args.front(), invoke_view.a, invoke_view.b,
+src/semantic_checker.cpp	14471	invoke_view.b	expression-bearing slot consumed via EST/tree/checker/emitter path	tree_parse_member_call(statement.args.front(), invoke_view.a, invoke_view.b,
+src/semantic_checker.cpp	14472	invoke_view.args	call argument values; verify call/message AST projection	invoke_view.args)) {
+src/semantic_checker.cpp	14481	statement.a	direct slot read; inspect statement kind for name vs expression	const string& receiver = statement.a;
+src/semantic_checker.cpp	14485	statement.b	direct slot read; inspect statement kind for name vs expression	const string& handler_name = statement.b;
+src/semantic_checker.cpp	14505	statement.args	call argument values; verify call/message AST projection	for (const auto& argument : statement.args)
+src/semantic_checker.cpp	14602	body_statement.a	direct slot read; inspect statement kind for name vs expression	if (auto reply = inferred_expr_type(body_statement.a, handler_env)) {
+src/semantic_checker.cpp	14787	statement.a	direct slot read; inspect statement kind for name vs expression	auto actual = inferred_expr_type(statement.a, env);
+src/semantic_checker.cpp	14790	statement.a	direct slot read; inspect statement kind for name vs expression	if (auto retained = body_types.known_expression(statement.a)) {
+src/semantic_checker.cpp	15127	statement.a	expression-bearing slot consumed via EST/tree/checker/emitter path	if (parameter.type.empty() && tree_identifier_named(statement.a, parameter.name)) {
+src/semantic_checker.cpp	15152	statement.a	direct slot read; inspect statement kind for name vs expression	reject_untyped_fields(statement.line, statement.a, env);
+src/semantic_checker.cpp	15153	statement.b	direct slot read; inspect statement kind for name vs expression	reject_untyped_fields(statement.line, statement.b, env);
+src/semantic_checker.cpp	15154	statement.args	call argument values; verify call/message AST projection	for (const auto& argument : statement.args)
+src/semantic_checker.cpp	15157	statement.text	direct slot read; inspect statement kind for name vs expression	reject_untyped_fields(statement.line, statement.text, env);
+src/semantic_checker.cpp	15175	statement.a	expression-bearing slot consumed via EST/tree/checker/emitter path	tree_identifier_named(statement.a, parameter.name);
+src/semantic_checker.cpp	15242	s.a	binding comparison: allowed only when slot denotes binding/root name	for (const auto& s : function.body) if (s.kind == Stmt::Kind::Return && !s.a.empty()) mark(s.a);
+src/semantic_checker.cpp	15242	s.a	binding comparison: allowed only when slot denotes binding/root name	for (const auto& s : function.body) if (s.kind == Stmt::Kind::Return && !s.a.empty()) mark(s.a);
+src/semantic_checker.cpp	15255	s.b	expression-bearing slot consumed via EST/tree/checker/emitter path	if (parameter.type.empty() && tree_identifier_named(s.b, parameter.name)) {
+src/semantic_checker.cpp	15267	s.a	direct slot read; inspect statement kind for name vs expression	derive_expression_constraints(function, s.a);
+src/semantic_checker.cpp	15268	s.b	direct slot read; inspect statement kind for name vs expression	derive_expression_constraints(function, s.b);
+src/semantic_checker.cpp	15269	s.args	call argument values; verify call/message AST projection	for (const auto& arg : s.args) derive_expression_constraints(function, arg);
+src/semantic_checker.cpp	15271	s.b	direct slot read; inspect statement kind for name vs expression	derive_expression_constraints(function, s.b);
+src/semantic_checker.cpp	15272	s.a	binding comparison: allowed only when slot denotes binding/root name	if (s.kind == Stmt::Kind::Return && !s.a.empty())
+src/semantic_checker.cpp	15273	s.a	direct slot read; inspect statement kind for name vs expression	derive_expression_constraints(function, s.a, result_expectation());
+src/semantic_checker.cpp	15280	statement.a	expression-bearing slot consumed via EST/tree/checker/emitter path	tree_plain_identifier(statement.a))
+src/semantic_checker.cpp	15281	statement.a	direct slot read; inspect statement kind for name vs expression	local_sources[statement.a] = statement.b;
+src/semantic_checker.cpp	15281	statement.b	direct slot read; inspect statement kind for name vs expression	local_sources[statement.a] = statement.b;
+src/semantic_checker.cpp	15283	statement.a	expression-bearing slot consumed via EST/tree/checker/emitter path	const auto returned_binding = tree_identifier_name(statement.a);
+src/semantic_checker.cpp	15446	statement.a	binding comparison: allowed only when slot denotes binding/root name	if (statement.kind == Stmt::Kind::Return && !statement.a.empty()) {
+src/semantic_checker.cpp	15457	statement.a	direct slot read; inspect statement kind for name vs expression	include_typed_result(statement.line, statement.a, eval_env);
+src/semantic_checker.cpp	15497	statement.a	binding comparison: allowed only when slot denotes binding/root name	if (statement.kind != Stmt::Kind::Return || statement.a.empty()) continue;
+src/semantic_checker.cpp	15498	statement.a	direct slot read; inspect statement kind for name vs expression	auto result = inferred_expr_type(statement.a, env);
+src/semantic_checker.cpp	15624	statement.a	expression-bearing slot consumed via EST/tree/checker/emitter path	tree_identifier_named(statement.a, parameter.name);
+src/semantic_checker.cpp	15652	statement.a	binding comparison: allowed only when slot denotes binding/root name	return statement.kind == Stmt::Kind::Return && !statement.a.empty();
+src/semantic_checker.cpp	16225	branch.a	direct slot read; inspect statement kind for name vs expression	observable_expression_effects(branch.a, condition_env, domain_fields);
+src/semantic_checker.cpp	16266	statement.a	direct slot read; inspect statement kind for name vs expression	names.insert(statement.a);
+src/semantic_checker.cpp	16267	statement.a	binding comparison: allowed only when slot denotes binding/root name	else if (statement.kind == Stmt::Kind::Assign && !outer.count(statement.a))
+src/semantic_checker.cpp	16268	statement.a	direct slot read; inspect statement kind for name vs expression	names.insert(statement.a);
+src/semantic_checker.cpp	16281	statement.a	direct slot read; inspect statement kind for name vs expression	if (expression_uses(statement.a, name) ||
+src/semantic_checker.cpp	16282	statement.b	direct slot read; inspect statement kind for name vs expression	expression_uses(statement.b, name) ||
+src/semantic_checker.cpp	16285	statement.args	call argument values; verify call/message AST projection	for (const auto& argument : statement.args)
+src/semantic_checker.cpp	16311	branch.a	direct slot read; inspect statement kind for name vs expression	domain, source, branch.a, &specialization);
+src/semantic_checker.cpp	16401	statement.b	direct slot read; inspect statement kind for name vs expression	if (auto type = inferred_expr_type(statement.b, env))
+src/semantic_checker.cpp	16402	statement.a	direct slot read; inspect statement kind for name vs expression	env[statement.a] = *type;
+src/semantic_checker.cpp	16460	statement.b	direct slot read; inspect statement kind for name vs expression	? statement.b : statement.a;
+src/semantic_checker.cpp	16460	statement.a	direct slot read; inspect statement kind for name vs expression	? statement.b : statement.a;
+src/semantic_checker.cpp	16535	statement.b	direct slot read; inspect statement kind for name vs expression	domain, source, statement.b, &specialization, &locals));
+src/semantic_checker.cpp	16553	statement.b	direct slot read; inspect statement kind for name vs expression	if (auto type = inferred_expr_type(statement.b, env))
+src/semantic_checker.cpp	16554	statement.a	direct slot read; inspect statement kind for name vs expression	locals[statement.a] = *type;
+src/semantic_checker.cpp	16639	result.text	direct slot read; inspect statement kind for name vs expression	result.text = *result_expression;
+src/semantic_checker.cpp	17174	result.a	direct slot read; inspect statement kind for name vs expression	result.a = *function.result_expression;
+src/semantic_checker.cpp	17248	forwarded.a	direct slot read; inspect statement kind for name vs expression	forwarded.a = nested_name;
+src/semantic_checker.cpp	17249	forwarded.args	call argument values; verify call/message AST projection	forwarded.args = mapped;
+src/semantic_checker.cpp	18325	statement.a	direct slot read; inspect statement kind for name vs expression	analyze_effect_expression(statement.a, env, params, parameter_effects,
+src/semantic_checker.cpp	18327	statement.b	literal comparison: NAME/keyword only if statement-kind selected; inventory separately audited	statement.b == "consume" ? Effect::Consume : Effect::Read);
+src/semantic_checker.cpp	18328	statement.a	direct slot read; inspect statement kind for name vs expression	auto type = inferred_expr_type(statement.a, env);
+src/semantic_checker.cpp	18407	statement.b	direct slot read; inspect statement kind for name vs expression	auto source_type = inferred_expr_type(statement.b, env);
+src/semantic_checker.cpp	18415	statement.b	direct slot read; inspect statement kind for name vs expression	? statement.b : statement.a,
+src/semantic_checker.cpp	18415	statement.a	direct slot read; inspect statement kind for name vs expression	? statement.b : statement.a,
+src/semantic_checker.cpp	18427	statement.b	direct slot read; inspect statement kind for name vs expression	if (inferred_expr_type(statement.b, env))
+src/semantic_checker.cpp	18428	statement.a	direct slot read; inspect statement kind for name vs expression	child_env[statement.a] =
+src/semantic_checker.cpp	18429	statement.b	direct slot read; inspect statement kind for name vs expression	iterator_element_type(statement.line, statement.b, env)
+src/semantic_checker.cpp	18432	statement.a	direct slot read; inspect statement kind for name vs expression	child_env[statement.a] = "_value";
+src/semantic_checker.cpp	18436	statement.a	direct slot read; inspect statement kind for name vs expression	!copy_type(child_env.at(statement.a))) {
+src/semantic_checker.cpp	18437	statement.b	direct slot read; inspect statement kind for name vs expression	if (auto location = storage_location(statement.b, env)) {
+src/semantic_checker.cpp	18440	statement.a	direct slot read; inspect statement kind for name vs expression	leaf_effect_capture_->aliases[statement.a] = *location;
+src/semantic_checker.cpp	18460	statement.b	direct slot read; inspect statement kind for name vs expression	auto source_type = inferred_expr_type(statement.b, env);
+src/semantic_checker.cpp	18461	statement.b	direct slot read; inspect statement kind for name vs expression	if (storage_location(statement.b, env) && source_type &&
+src/semantic_checker.cpp	18463	statement.b	direct slot read; inspect statement kind for name vs expression	analyze_effect_expression(statement.b, env, params, parameter_effects,
+src/semantic_checker.cpp	18466	statement.b	direct slot read; inspect statement kind for name vs expression	analyze_effect_expression(statement.b, env, params, parameter_effects,
+src/semantic_checker.cpp	18468	statement.b	direct slot read; inspect statement kind for name vs expression	if (auto type = inferred_expr_type(statement.b, env)) env[statement.a] = *type;
+src/semantic_checker.cpp	18468	statement.a	direct slot read; inspect statement kind for name vs expression	if (auto type = inferred_expr_type(statement.b, env)) env[statement.a] = *type;
+src/semantic_checker.cpp	18469	statement.b	direct slot read; inspect statement kind for name vs expression	else if (auto constructed = domain_constructor(statement.b)) env[statement.a] = *constructed;
+src/semantic_checker.cpp	18469	statement.a	direct slot read; inspect statement kind for name vs expression	else if (auto constructed = domain_constructor(statement.b)) env[statement.a] = *constructed;
+src/semantic_checker.cpp	18470	statement.a	direct slot read; inspect statement kind for name vs expression	else env[statement.a] = "_value";
+src/semantic_checker.cpp	18476	statement.a	expression-bearing slot consumed via EST/tree/checker/emitter path	if (tree_parse_index(statement.a, base, ignored))
+src/semantic_checker.cpp	18477	statement.a	direct slot read; inspect statement kind for name vs expression	analyze_effect_expression(statement.a, env, params, parameter_effects,
+src/semantic_checker.cpp	18480	statement.a	expression-bearing slot consumed via EST/tree/checker/emitter path	if (tree_member_access(statement.a))
+src/semantic_checker.cpp	18481	statement.a	direct slot read; inspect statement kind for name vs expression	analyze_effect_expression(statement.a, env, params,
+src/semantic_checker.cpp	18484	statement.a	direct slot read; inspect statement kind for name vs expression	else if (simple_effect_identifier(statement.a) && env.count(statement.a))
+src/semantic_checker.cpp	18484	statement.a	direct slot read; inspect statement kind for name vs expression	else if (simple_effect_identifier(statement.a) && env.count(statement.a))
+src/semantic_checker.cpp	18485	statement.a	direct slot read; inspect statement kind for name vs expression	mark_effect_name(statement.a, Effect::Write, params, env,
+src/semantic_checker.cpp	18488	statement.b	direct slot read; inspect statement kind for name vs expression	auto source_type = inferred_expr_type(statement.b, env);
+src/semantic_checker.cpp	18489	statement.b	direct slot read; inspect statement kind for name vs expression	if (storage_location(statement.b, env) && source_type &&
+src/semantic_checker.cpp	18491	statement.b	direct slot read; inspect statement kind for name vs expression	analyze_effect_expression(statement.b, env, params, parameter_effects,
+src/semantic_checker.cpp	18494	statement.b	direct slot read; inspect statement kind for name vs expression	analyze_effect_expression(statement.b, env, params, parameter_effects,
+src/semantic_checker.cpp	18496	statement.b	direct slot read; inspect statement kind for name vs expression	if (auto type = inferred_expr_type(statement.b, env)) env[statement.a] = *type;
+src/semantic_checker.cpp	18496	statement.a	direct slot read; inspect statement kind for name vs expression	if (auto type = inferred_expr_type(statement.b, env)) env[statement.a] = *type;
+src/semantic_checker.cpp	18497	statement.a	direct slot read; inspect statement kind for name vs expression	refine_map_index_assignment_type(statement.a, statement.b, env);
+src/semantic_checker.cpp	18497	statement.b	direct slot read; inspect statement kind for name vs expression	refine_map_index_assignment_type(statement.a, statement.b, env);
+src/semantic_checker.cpp	18502	statement.b	direct slot read; inspect statement kind for name vs expression	if (!statement.b.empty())
+src/semantic_checker.cpp	18503	statement.text	direct slot read; inspect statement kind for name vs expression	analyze_effect_expression(statement.text, env, params, parameter_effects,
+src/semantic_checker.cpp	18506	statement.a	direct slot read; inspect statement kind for name vs expression	analyze_effect_expression(statement.a + "(" + join_arguments(statement.args) + ")",
+src/semantic_checker.cpp	18506	statement.args	call argument values; verify call/message AST projection	analyze_effect_expression(statement.a + "(" + join_arguments(statement.args) + ")",
+src/semantic_checker.cpp	18512	statement.a	direct slot read; inspect statement kind for name vs expression	analyze_effect_expression(statement.a, env, params, parameter_effects,
+src/semantic_checker.cpp	18514	statement.args	call argument values; verify call/message AST projection	for (const auto& argument : statement.args)
+src/semantic_checker.cpp	18524	statement.a	text/shape helper use; bounded taint review required	auto receiver = env.find(statement.a);
+src/semantic_checker.cpp	18526	statement.b	direct slot read; inspect statement kind for name vs expression	auto target = find_handler(*domains_.at(canonical_type_name(receiver->second)), statement.b);
+src/semantic_checker.cpp	18535	statement.a	direct slot read; inspect statement kind for name vs expression	analyze_effect_expression(statement.a, env, params, parameter_effects,
+src/semantic_checker.cpp	18540	statement.args	call argument values; verify call/message AST projection	for (const auto& argument : statement.args)
+src/semantic_checker.cpp	18546	statement.a	direct slot read; inspect statement kind for name vs expression	if (!statement.a.empty())
+src/semantic_checker.cpp	18547	statement.a	direct slot read; inspect statement kind for name vs expression	analyze_effect_expression(statement.a, env, params, parameter_effects,
+src/semantic_checker.cpp	18552	statement.a	direct slot read; inspect statement kind for name vs expression	if (!statement.a.empty())
+src/semantic_checker.cpp	18553	statement.a	direct slot read; inspect statement kind for name vs expression	analyze_effect_expression(statement.a, env, params,
+src/semantic_checker.cpp	18559	statement.text	direct slot read; inspect statement kind for name vs expression	analyze_effect_expression(statement.text, env, params, parameter_effects,
+src/semantic_checker.cpp	18961	statement.b	direct slot read; inspect statement kind for name vs expression	expressions.push_back(statement.b);
+src/semantic_checker.cpp	18964	statement.a	direct slot read; inspect statement kind for name vs expression	expressions.push_back(statement.a);
+src/semantic_checker.cpp	18965	statement.b	direct slot read; inspect statement kind for name vs expression	expressions.push_back(statement.b);
+src/semantic_checker.cpp	18968	statement.text	direct slot read; inspect statement kind for name vs expression	expressions.push_back(!statement.text.empty()
+src/semantic_checker.cpp	18969	statement.text	direct slot read; inspect statement kind for name vs expression	? statement.text
+src/semantic_checker.cpp	18970	statement.b	direct slot read; inspect statement kind for name vs expression	: !statement.b.empty()
+src/semantic_checker.cpp	18971	statement.a	direct slot read; inspect statement kind for name vs expression	? statement.a + "." + statement.b + "(" + join_arguments(statement.args) + ")"
+src/semantic_checker.cpp	18971	statement.b	direct slot read; inspect statement kind for name vs expression	? statement.a + "." + statement.b + "(" + join_arguments(statement.args) + ")"
+src/semantic_checker.cpp	18971	statement.args	call argument values; verify call/message AST projection	? statement.a + "." + statement.b + "(" + join_arguments(statement.args) + ")"
+src/semantic_checker.cpp	18972	statement.a	direct slot read; inspect statement kind for name vs expression	: statement.a + "(" + join_arguments(statement.args) + ")");
+src/semantic_checker.cpp	18972	statement.args	call argument values; verify call/message AST projection	: statement.a + "(" + join_arguments(statement.args) + ")");
+src/semantic_checker.cpp	18975	statement.args	call argument values; verify call/message AST projection	expressions.insert(expressions.end(), statement.args.begin(), statement.args.end());
+src/semantic_checker.cpp	18975	statement.args	call argument values; verify call/message AST projection	expressions.insert(expressions.end(), statement.args.begin(), statement.args.end());
+src/semantic_checker.cpp	18978	statement.args	call argument values; verify call/message AST projection	expressions.insert(expressions.end(), statement.args.begin(), statement.args.end());
+src/semantic_checker.cpp	18978	statement.args	call argument values; verify call/message AST projection	expressions.insert(expressions.end(), statement.args.begin(), statement.args.end());
+src/semantic_checker.cpp	18983	statement.a	direct slot read; inspect statement kind for name vs expression	expressions.push_back(statement.a);
+src/semantic_checker.cpp	18988	statement.b	direct slot read; inspect statement kind for name vs expression	expressions.push_back(statement.b);
+src/semantic_checker.cpp	18993	statement.a	direct slot read; inspect statement kind for name vs expression	if (!statement.a.empty()) expressions.push_back(statement.a);
+src/semantic_checker.cpp	18993	statement.a	direct slot read; inspect statement kind for name vs expression	if (!statement.a.empty()) expressions.push_back(statement.a);
+src/semantic_checker.cpp	18996	statement.text	direct slot read; inspect statement kind for name vs expression	expressions.push_back(statement.text);
+src/semantic_checker.cpp	19016	statement.b	direct slot read; inspect statement kind for name vs expression	expressions.push_back(statement.b);
+src/semantic_checker.cpp	19021	statement.args	call argument values; verify call/message AST projection	expressions.insert(expressions.end(), statement.args.begin(),
+src/semantic_checker.cpp	19022	statement.args	call argument values; verify call/message AST projection	statement.args.end());
+src/semantic_checker.cpp	19027	statement.a	direct slot read; inspect statement kind for name vs expression	expressions.push_back(statement.a);
+src/semantic_checker.cpp	19032	statement.b	direct slot read; inspect statement kind for name vs expression	expressions.push_back(statement.b);
+src/semantic_checker.cpp	19037	statement.a	direct slot read; inspect statement kind for name vs expression	if (!statement.a.empty()) expressions.push_back(statement.a);
+src/semantic_checker.cpp	19037	statement.a	direct slot read; inspect statement kind for name vs expression	if (!statement.a.empty()) expressions.push_back(statement.a);
+src/semantic_checker.cpp	19040	statement.text	direct slot read; inspect statement kind for name vs expression	expressions.push_back(statement.text);
+src/semantic_checker.cpp	19118	statement.a	text/shape helper use; bounded taint review required	auto receiver = current_env.find(statement.a);
+src/semantic_checker.cpp	19123	statement.b	direct slot read; inspect statement kind for name vs expression	? nullptr : find_handler(*declared->second, statement.b);
+src/semantic_checker.cpp	19126	statement.args	call argument values; verify call/message AST projection	for (const auto& argument : statement.args)
+src/semantic_checker.cpp	19130	statement.b	direct slot read; inspect statement kind for name vs expression	source, "handler:" + domain + "." + statement.b,
+src/semantic_checker.cpp	19134	statement.a	direct slot read; inspect statement kind for name vs expression	"synchronous_message", statement.a, {}, {}};
+src/semantic_checker.cpp	19790	statement.a	direct slot read; inspect statement kind for name vs expression	if (statement.a.empty()) {
+src/semantic_checker.cpp	19797	statement.a	direct slot read; inspect statement kind for name vs expression	statement.line, statement.a, env);
+src/semantic_checker.cpp	19799	statement.a	binding comparison: allowed only when slot denotes binding/root name	statement.a == selected_binding) {
+src/semantic_checker.cpp	19809	statement.a	direct slot read; inspect statement kind for name vs expression	statement.a, env, {}, nullptr, {}, nullptr,
+src/semantic_checker.cpp	19824	statement.b	direct slot read; inspect statement kind for name vs expression	? statement.b : statement.a;
+src/semantic_checker.cpp	19824	statement.a	direct slot read; inspect statement kind for name vs expression	? statement.b : statement.a;
+src/semantic_checker.cpp	19861	statement.a	text/shape helper use; bounded taint review required	auto receiver = env.find(statement.a);
+src/semantic_checker.cpp	19865	statement.b	direct slot read; inspect statement kind for name vs expression	find_handler(*domains_.at(receiver_type), statement.b)) {
+src/semantic_checker.cpp	19886	statement.a	binding comparison: allowed only when slot denotes binding/root name	if (statement.a == selected_binding) selected_binding.clear();
+src/semantic_checker.cpp	19887	statement.b	direct slot read; inspect statement kind for name vs expression	if (auto type = inferred_expr_type(statement.b, env))
+src/semantic_checker.cpp	19888	statement.a	direct slot read; inspect statement kind for name vs expression	env[statement.a] = *type;
+src/semantic_checker.cpp	19942	statement.a	text/shape helper use; bounded taint review required	const auto receiver = current.find(statement.a);
+src/semantic_checker.cpp	19947	statement.b	direct slot read; inspect statement kind for name vs expression	find_handler(*domain->second, statement.b))
+src/semantic_checker.cpp	19953	statement.a	direct slot read; inspect statement kind for name vs expression	const auto type = inferred_expr_type(statement.a, current);
+src/semantic_checker.cpp	19985	statement.a	expression-bearing slot consumed via EST/tree/checker/emitter path	if (!tree_plain_identifier(statement.a) || entry.count(statement.a)) return;
+src/semantic_checker.cpp	19985	statement.a	expression-bearing slot consumed via EST/tree/checker/emitter path	if (!tree_plain_identifier(statement.a) || entry.count(statement.a)) return;
+src/semantic_checker.cpp	19986	statement.b	direct slot read; inspect statement kind for name vs expression	auto type = inferred_expr_type(statement.b, current);
+src/semantic_checker.cpp	19988	statement.a	direct slot read; inspect statement kind for name vs expression	auto [item, inserted] = candidates.emplace(statement.a, *type);
+src/semantic_checker.cpp	20004	statement.a	binding comparison: allowed only when slot denotes binding/root name	tree_plain_identifier(expression) && expression == statement.a)
+src/semantic_checker.cpp	20773	while_stmt.a	text/shape helper use; bounded taint review required	string condition = trim(while_stmt.a);
+src/semantic_checker.cpp	20815	s.a	expression-bearing slot consumed via EST/tree/checker/emitter path	auto root = tree_root_identifier(s.a);
+src/semantic_checker.cpp	20819	s.a	binding comparison: allowed only when slot denotes binding/root name	if (!tree_identifier_named(s.a, var_name) || s.indent != loop_body_indent)
+src/semantic_checker.cpp	20822	s.b	expression-bearing slot consumed via EST/tree/checker/emitter path	auto add = tree_split_binary(trim(s.b), {"+"});
+src/semantic_checker.cpp	20833	s.b	expression-bearing slot consumed via EST/tree/checker/emitter path	auto sub = tree_split_binary(trim(s.b), {"-"});
+src/semantic_checker.cpp	20843	s.a	expression-bearing slot consumed via EST/tree/checker/emitter path	const auto target = tree_identifier_name(s.a);
+src/semantic_checker.cpp	20847	s.b	binding comparison: allowed only when slot denotes binding/root name	} else if (s.kind == Stmt::Kind::Call && !s.b.empty()) {
+src/semantic_checker.cpp	20848	s.a	expression-bearing slot consumed via EST/tree/checker/emitter path	const auto root = tree_identifier_name(s.a);
+src/semantic_checker.cpp	20849	s.b	literal comparison: NAME/keyword only if statement-kind selected; inventory separately audited	bool mutating = s.b == "push" || s.b == "pop" || s.b == "pop_front";
+src/semantic_checker.cpp	20849	s.b	literal comparison: NAME/keyword only if statement-kind selected; inventory separately audited	bool mutating = s.b == "push" || s.b == "pop" || s.b == "pop_front";
+src/semantic_checker.cpp	20849	s.b	literal comparison: NAME/keyword only if statement-kind selected; inventory separately audited	bool mutating = s.b == "push" || s.b == "pop" || s.b == "pop_front";
+src/semantic_checker.cpp	20879	loop.b	expression-bearing slot consumed via EST/tree/checker/emitter path	if (!tree_parse_simple_call(trim(loop.b), callee, arguments) ||
+src/semantic_checker.cpp	20898	loop.a	text/shape helper use; bounded taint review required	const string induction = trim(loop.a);
+src/semantic_checker.cpp	20905	statement.a	expression-bearing slot consumed via EST/tree/checker/emitter path	const auto root = tree_root_identifier(statement.a);
+src/semantic_checker.cpp	20910	statement.a	expression-bearing slot consumed via EST/tree/checker/emitter path	(tree_identifier_named(statement.a, range_binding) ||
+src/semantic_checker.cpp	20911	statement.a	expression-bearing slot consumed via EST/tree/checker/emitter path	tree_identifier_named(statement.a, induction)))
+src/semantic_checker.cpp	20914	statement.args	call argument values; verify call/message AST projection	(std::find(statement.args.begin(), statement.args.end(),
+src/semantic_checker.cpp	20914	statement.args	call argument values; verify call/message AST projection	(std::find(statement.args.begin(), statement.args.end(),
+src/semantic_checker.cpp	20915	statement.args	call argument values; verify call/message AST projection	range_binding) != statement.args.end() ||
+src/semantic_checker.cpp	20916	statement.args	call argument values; verify call/message AST projection	std::find(statement.args.begin(), statement.args.end(),
+src/semantic_checker.cpp	20916	statement.args	call argument values; verify call/message AST projection	std::find(statement.args.begin(), statement.args.end(),
+src/semantic_checker.cpp	20917	statement.args	call argument values; verify call/message AST projection	induction) != statement.args.end()))
+src/semantic_checker.cpp	20973	statement.b	text/shape helper use; bounded taint review required	string iter_expr = trim(statement.b);
+src/semantic_checker.cpp	21004	statement.a	expression-bearing slot consumed via EST/tree/checker/emitter path	const auto root = tree_root_identifier(statement.a);
+src/semantic_checker.cpp	21015	statement.b	binding comparison: allowed only when slot denotes binding/root name	if (statement.kind == Stmt::Kind::Call && !statement.b.empty()) {
+src/semantic_checker.cpp	21016	statement.a	expression-bearing slot consumed via EST/tree/checker/emitter path	const auto root = tree_root_identifier(statement.a);
+src/semantic_checker.cpp	21017	statement.b	literal comparison: NAME/keyword only if statement-kind selected; inventory separately audited	bool mutating = statement.b == "push" || statement.b == "pop" || statement.b == "pop_front";
+src/semantic_checker.cpp	21017	statement.b	literal comparison: NAME/keyword only if statement-kind selected; inventory separately audited	bool mutating = statement.b == "push" || statement.b == "pop" || statement.b == "pop_front";
+src/semantic_checker.cpp	21017	statement.b	literal comparison: NAME/keyword only if statement-kind selected; inventory separately audited	bool mutating = statement.b == "push" || statement.b == "pop" || statement.b == "pop_front";
+src/semantic_checker.cpp	21018	statement.b	literal comparison: NAME/keyword only if statement-kind selected; inventory separately audited	if (statement.b == "pop" || statement.b == "pop_front") {
+src/semantic_checker.cpp	21018	statement.b	literal comparison: NAME/keyword only if statement-kind selected; inventory separately audited	if (statement.b == "pop" || statement.b == "pop_front") {
+src/semantic_checker.cpp	21040	statement.b	direct slot read; inspect statement kind for name vs expression	if (auto type = inferred_expr_type(statement.b, env))
+src/semantic_checker.cpp	21041	statement.a	direct slot read; inspect statement kind for name vs expression	env[statement.a] = *type;
+src/semantic_checker.cpp	21236	statement.b	direct slot read; inspect statement kind for name vs expression	if (auto domain = domain_constructor(statement.b))
+src/semantic_checker.cpp	21237	statement.a	direct slot read; inspect statement kind for name vs expression	env[statement.a] = *domain;
+src/semantic_checker.cpp	22544	statement.a	direct slot read; inspect statement kind for name vs expression	alternatives = statement.a.empty()
+src/semantic_checker.cpp	22546	statement.a	direct slot read; inspect statement kind for name vs expression	: phase21_raised_identities(statement.line, statement.a, types);
+src/semantic_checker.cpp	22548	statement.a	text/shape helper use; bounded taint review required	auto receiver = types.find(statement.a);
+src/semantic_checker.cpp	22553	statement.b	direct slot read; inspect statement kind for name vs expression	find_handler(*domain->second, statement.b))
+src/semantic_checker.cpp	22622	s.a	direct slot read; inspect statement kind for name vs expression	auto type = inferred_expr_type(s.a, env.types);
+src/semantic_checker.cpp	22625	s.b	literal comparison: NAME/keyword only if statement-kind selected; inventory separately audited	bool consuming = s.b == "consume";
+src/semantic_checker.cpp	22627	s.a	expression-bearing slot consumed via EST/tree/checker/emitter path	if (storage_location(s.a, env.types) && !tree_simple_identifier(s.a))
+src/semantic_checker.cpp	22627	s.a	expression-bearing slot consumed via EST/tree/checker/emitter path	if (storage_location(s.a, env.types) && !tree_simple_identifier(s.a))
+src/semantic_checker.cpp	22631	s.a	expression-bearing slot consumed via EST/tree/checker/emitter path	if (tree_simple_identifier(s.a)) {
+src/semantic_checker.cpp	22632	s.a	direct slot read; inspect statement kind for name vs expression	require_available(s.line, s.a, env);
+src/semantic_checker.cpp	22633	s.a	direct slot read; inspect statement kind for name vs expression	consume_binding(s.line, s.a, env, "consuming match");
+src/semantic_checker.cpp	22635	s.a	direct slot read; inspect statement kind for name vs expression	check_ownership_expression(s.line, s.a, env, Effect::Consume);
+src/semantic_checker.cpp	22638	s.a	direct slot read; inspect statement kind for name vs expression	check_ownership_expression(s.line, s.a, env, Effect::Read);
+src/semantic_checker.cpp	22641	s.a	direct slot read; inspect statement kind for name vs expression	bool read_place = !consuming && storage_location(s.a, env.types).has_value();
+src/semantic_checker.cpp	22642	s.a	direct slot read; inspect statement kind for name vs expression	bool prior_read = env.active_read_traversals.count(s.a);
+src/semantic_checker.cpp	22657	s.a	direct slot read; inspect statement kind for name vs expression	if (read_place) branch.active_read_traversals.insert(s.a);
+src/semantic_checker.cpp	22670	s.a	direct slot read; inspect statement kind for name vs expression	branch.borrowed_enum_payloads[name] = s.a;
+src/semantic_checker.cpp	22689	s.a	direct slot read; inspect statement kind for name vs expression	if (read_place && !prior_read) branch.active_read_traversals.erase(s.a);
+src/semantic_checker.cpp	22826	s.a	direct slot read; inspect statement kind for name vs expression	check_ownership_expression(s.line, s.a, env, Effect::Read);
+src/semantic_checker.cpp	22873	s.b	direct slot read; inspect statement kind for name vs expression	auto element = iterator_element_type(s.line, s.b, env.types);
+src/semantic_checker.cpp	22875	s.b	direct slot read; inspect statement kind for name vs expression	if (auto location = storage_location(s.b, env.types))
+src/semantic_checker.cpp	22878	s.b	direct slot read; inspect statement kind for name vs expression	auto source_type = inferred_expr_type(s.b, env.types);
+src/semantic_checker.cpp	22884	s.b	direct slot read; inspect statement kind for name vs expression	check_ownership_expression(s.line, s.b, env, source_effect);
+src/semantic_checker.cpp	22887	s.a	direct slot read; inspect statement kind for name vs expression	body.types[s.a] = element.value_or("_value");
+src/semantic_checker.cpp	22888	s.a	direct slot read; inspect statement kind for name vs expression	body.binding_identities[s.a] = statement_binding_identity(
+src/semantic_checker.cpp	22895	s.a	direct slot read; inspect statement kind for name vs expression	body.types.erase(s.a);
+src/semantic_checker.cpp	22896	s.a	text/shape helper use; bounded taint review required	if (auto prior = env.binding_identities.find(s.a);
+src/semantic_checker.cpp	22898	s.a	direct slot read; inspect statement kind for name vs expression	body.binding_identities[s.a] = prior->second;
+src/semantic_checker.cpp	22900	s.a	direct slot read; inspect statement kind for name vs expression	body.binding_identities.erase(s.a);
+src/semantic_checker.cpp	22901	s.a	direct slot read; inspect statement kind for name vs expression	body.moved.erase(s.a);
+src/semantic_checker.cpp	22924	s.b	text/shape helper use; bounded taint review required	string source = trim(s.b);
+src/semantic_checker.cpp	22925	s.b	direct slot read; inspect statement kind for name vs expression	auto source_type = inferred_expr_type(s.b, env.types);
+src/semantic_checker.cpp	22928	s.b	direct slot read; inspect statement kind for name vs expression	storage_location(s.b, env.types))
+src/semantic_checker.cpp	22931	s.b	direct slot read; inspect statement kind for name vs expression	bool transfers = storage_location(s.b, env.types) && source_type &&
+src/semantic_checker.cpp	22937	s.a	direct slot read; inspect statement kind for name vs expression	consume_binding(s.line, source, env, s.a);
+src/semantic_checker.cpp	22939	s.b	direct slot read; inspect statement kind for name vs expression	check_ownership_expression(s.line, s.b, env, Effect::Consume);
+src/semantic_checker.cpp	22942	s.b	direct slot read; inspect statement kind for name vs expression	check_ownership_expression(s.line, s.b, env, Effect::Read);
+src/semantic_checker.cpp	22946	s.b	direct slot read; inspect statement kind for name vs expression	if (auto constructed = domain_constructor(s.b)) type = *constructed;
+src/semantic_checker.cpp	22947	s.b	direct slot read; inspect statement kind for name vs expression	else type = inferred_expr_type(s.b, env.types);
+src/semantic_checker.cpp	22958	s.a	direct slot read; inspect statement kind for name vs expression	env.types[s.a] = type.value_or("_value");
+src/semantic_checker.cpp	22959	s.a	direct slot read; inspect statement kind for name vs expression	env.binding_identities[s.a] = statement_binding_identity(
+src/semantic_checker.cpp	22961	s.a	binding comparison: allowed only when slot denotes binding/root name	if (s.kind == Stmt::Kind::Let) env.immutable_locals.insert(s.a);
+src/semantic_checker.cpp	22962	s.a	direct slot read; inspect statement kind for name vs expression	else env.immutable_locals.erase(s.a);
+src/semantic_checker.cpp	22963	s.a	direct slot read; inspect statement kind for name vs expression	env.moved.erase(s.a); // A declaration may intentionally shadow an older moved binding.
+src/semantic_checker.cpp	22967	s.a	direct slot read; inspect statement kind for name vs expression	fact.mutable_binding = !env.immutable_locals.count(s.a);
+src/semantic_checker.cpp	22968	s.a	direct slot read; inspect statement kind for name vs expression	fact.identity = env.binding_identities[s.a];
+src/semantic_checker.cpp	22976	s.a	direct slot read; inspect statement kind for name vs expression	const bool had_lexical_binding = env.binding_identities.count(s.a) != 0;
+src/semantic_checker.cpp	22977	s.a	direct slot read; inspect statement kind for name vs expression	const bool targets_state_field = env.state_fields.count(s.a) != 0;
+src/semantic_checker.cpp	22978	s.a	direct slot read; inspect statement kind for name vs expression	auto prior_type = inferred_expr_type(s.a, env.types);
+src/semantic_checker.cpp	22979	s.b	direct slot read; inspect statement kind for name vs expression	auto new_type = inferred_expr_type(s.b, env.types);
+src/semantic_checker.cpp	22980	s.a	direct slot read; inspect statement kind for name vs expression	bool existing_owner = env.binding_identities.count(s.a) ||
+src/semantic_checker.cpp	22981	s.a	direct slot read; inspect statement kind for name vs expression	env.state_fields.count(s.a);
+src/semantic_checker.cpp	22985	s.b	expression-bearing slot consumed via EST/tree/checker/emitter path	!tree_is_fileio_open(s.b) &&
+src/semantic_checker.cpp	22986	s.b	direct slot read; inspect statement kind for name vs expression	storage_location(s.b, env.types)))
+src/semantic_checker.cpp	22990	s.a	expression-bearing slot consumed via EST/tree/checker/emitter path	if (tree_parse_index(s.a, lhs_base, lhs_index))
+src/semantic_checker.cpp	22991	s.a	direct slot read; inspect statement kind for name vs expression	check_ownership_expression(s.line, s.a, env, Effect::Write);
+src/semantic_checker.cpp	22993	s.a	expression-bearing slot consumed via EST/tree/checker/emitter path	if (tree_member_access(s.a))
+src/semantic_checker.cpp	22994	s.a	direct slot read; inspect statement kind for name vs expression	check_ownership_expression(s.line, s.a, env, Effect::Write);
+src/semantic_checker.cpp	22995	s.a	expression-bearing slot consumed via EST/tree/checker/emitter path	else if (tree_simple_identifier(s.a))
+src/semantic_checker.cpp	22996	s.a	direct slot read; inspect statement kind for name vs expression	check_ownership_expression(s.line, s.a, env, Effect::Write);
+src/semantic_checker.cpp	22998	s.b	text/shape helper use; bounded taint review required	string source = trim(s.b);
+src/semantic_checker.cpp	22999	s.b	direct slot read; inspect statement kind for name vs expression	auto source_type = inferred_expr_type(s.b, env.types);
+src/semantic_checker.cpp	23000	s.b	direct slot read; inspect statement kind for name vs expression	bool transfers = storage_location(s.b, env.types) && source_type &&
+src/semantic_checker.cpp	23006	s.a	direct slot read; inspect statement kind for name vs expression	consume_binding(s.line, source, env, s.a);
+src/semantic_checker.cpp	23008	s.b	direct slot read; inspect statement kind for name vs expression	check_ownership_expression(s.line, s.b, env, Effect::Consume);
+src/semantic_checker.cpp	23011	s.b	direct slot read; inspect statement kind for name vs expression	check_ownership_expression(s.line, s.b, env, Effect::Read);
+src/semantic_checker.cpp	23014	s.b	direct slot read; inspect statement kind for name vs expression	if (auto constructed = domain_constructor(s.b)) {
+src/semantic_checker.cpp	23015	s.a	direct slot read; inspect statement kind for name vs expression	env.types[s.a] = *constructed;
+src/semantic_checker.cpp	23016	s.a	direct slot read; inspect statement kind for name vs expression	env.moved.erase(s.a);
+src/semantic_checker.cpp	23020	s.a	expression-bearing slot consumed via EST/tree/checker/emitter path	if (tree_simple_identifier(s.a)) {
+src/semantic_checker.cpp	23025	s.a	literal comparison: NAME/keyword only if statement-kind selected; inventory separately audited	env.types[s.a] = (*source_type == "vector" || *source_type == "queue" ||
+src/semantic_checker.cpp	23029	s.a	direct slot read; inspect statement kind for name vs expression	else if (!env.types.count(s.a)) env.types[s.a] = "_value";
+src/semantic_checker.cpp	23029	s.a	direct slot read; inspect statement kind for name vs expression	else if (!env.types.count(s.a)) env.types[s.a] = "_value";
+src/semantic_checker.cpp	23032	s.a	direct slot read; inspect statement kind for name vs expression	if (!env.binding_identities.count(s.a) && !env.state_fields.count(s.a))
+src/semantic_checker.cpp	23032	s.a	direct slot read; inspect statement kind for name vs expression	if (!env.binding_identities.count(s.a) && !env.state_fields.count(s.a))
+src/semantic_checker.cpp	23033	s.a	direct slot read; inspect statement kind for name vs expression	env.binding_identities[s.a] = statement_binding_identity(
+src/semantic_checker.cpp	23037	s.a	direct slot read; inspect statement kind for name vs expression	env.moved.erase(s.a);
+src/semantic_checker.cpp	23041	s.a	direct slot read; inspect statement kind for name vs expression	fact.mutable_binding = !env.immutable_locals.count(s.a);
+src/semantic_checker.cpp	23042	s.a	text/shape helper use; bounded taint review required	auto identity = env.binding_identities.find(s.a);
+src/semantic_checker.cpp	23046	s.a	direct slot read; inspect statement kind for name vs expression	current_semantic_context_, s.line) + ":" + s.a;
+src/semantic_checker.cpp	23051	s.a	direct slot read; inspect statement kind for name vs expression	refine_map_index_assignment_type(s.a, s.b, env.types);
+src/semantic_checker.cpp	23051	s.b	direct slot read; inspect statement kind for name vs expression	refine_map_index_assignment_type(s.a, s.b, env.types);
+src/semantic_checker.cpp	23057	s.a	direct slot read; inspect statement kind for name vs expression	check_ownership_expression(s.line, s.a, env, Effect::Read);
+src/semantic_checker.cpp	23058	s.a	direct slot read; inspect statement kind for name vs expression	const Handler* handler = check_call(s.line, s.a, s.b, s.args, env.types);
+src/semantic_checker.cpp	23058	s.b	direct slot read; inspect statement kind for name vs expression	const Handler* handler = check_call(s.line, s.a, s.b, s.args, env.types);
+src/semantic_checker.cpp	23058	s.args	call argument values; verify call/message AST projection	const Handler* handler = check_call(s.line, s.a, s.b, s.args, env.types);
+src/semantic_checker.cpp	23059	s.args	call argument values; verify call/message AST projection	for (size_t arg_index = 0; arg_index < s.args.size(); ++arg_index) {
+src/semantic_checker.cpp	23060	s.args	call argument values; verify call/message AST projection	const auto& arg = s.args[arg_index];
+src/semantic_checker.cpp	23070	s.a	direct slot read; inspect statement kind for name vs expression	message_payload_materializes(s.a, env));
+src/semantic_checker.cpp	23090	s.args	call argument values; verify call/message AST projection	for (const auto& arg : s.args) check_ownership_expression(s.line, arg, env, Effect::Read);
+src/semantic_checker.cpp	23095	s.b	direct slot read; inspect statement kind for name vs expression	if (!s.b.empty())
+src/semantic_checker.cpp	23096	s.text	direct slot read; inspect statement kind for name vs expression	check_ownership_expression(s.line, s.text, env, Effect::Read);
+src/semantic_checker.cpp	23098	s.a	direct slot read; inspect statement kind for name vs expression	check_ownership_expression(s.line, s.a + "(" + join_arguments(s.args) + ")",
+src/semantic_checker.cpp	23098	s.args	call argument values; verify call/message AST projection	check_ownership_expression(s.line, s.a + "(" + join_arguments(s.args) + ")",
+src/semantic_checker.cpp	23104	s.b	literal comparison: NAME/keyword only if statement-kind selected; inventory separately audited	if (s.b == "push" && s.args.size() == 1) {
+src/semantic_checker.cpp	23104	s.args	call argument values; verify call/message AST projection	if (s.b == "push" && s.args.size() == 1) {
+src/semantic_checker.cpp	23105	s.a	text/shape helper use; bounded taint review required	auto container = env.types.find(s.a);
+src/semantic_checker.cpp	23107	s.a	direct slot read; inspect statement kind for name vs expression	? current_body_types_->resolved_local(s.a) : nullptr;
+src/semantic_checker.cpp	23113	s.args	call argument values; verify call/message AST projection	auto element = inferred_expr_type(s.args.front(), env.types);
+src/semantic_checker.cpp	23122	s.a	direct slot read; inspect statement kind for name vs expression	auto type = inferred_expr_type(s.a, env.types);
+src/semantic_checker.cpp	23126	s.a	direct slot read; inspect statement kind for name vs expression	check_ownership_expression(s.line, s.a, env, Effect::Read);
+src/semantic_checker.cpp	23129	s.a	direct slot read; inspect statement kind for name vs expression	require_cross_domain_value(s.line, s.a, *current_handler->reply_type,
+src/semantic_checker.cpp	23138	s.text	direct slot read; inspect statement kind for name vs expression	check_ownership_expression(s.line, s.text, env, Effect::Read);
+src/semantic_checker.cpp	23146	s.a	direct slot read; inspect statement kind for name vs expression	if (!s.a.empty()) check_ownership_expression(s.line, s.a, env, Effect::Consume);
+src/semantic_checker.cpp	23146	s.a	direct slot read; inspect statement kind for name vs expression	if (!s.a.empty()) check_ownership_expression(s.line, s.a, env, Effect::Consume);
+src/semantic_checker.cpp	23152	s.a	direct slot read; inspect statement kind for name vs expression	if (!s.a.empty())
+src/semantic_checker.cpp	23153	s.a	direct slot read; inspect statement kind for name vs expression	check_ownership_expression(s.line, s.a, env, Effect::Consume);
+src/semantic_checker.cpp	23243	statement.text	direct slot read; inspect statement kind for name vs expression	if (auto expression = checker_est_view(statement.text);
+src/semantic_checker.cpp	24615	statement.b	binding comparison: allowed only when slot denotes binding/root name	statement.b.empty() && statement.a == name &&
+src/semantic_checker.cpp	24615	statement.a	binding comparison: allowed only when slot denotes binding/root name	statement.b.empty() && statement.a == name &&
+src/semantic_checker.cpp	24616	statement.args	call argument values; verify call/message AST projection	statement.args == args;
+src/semantic_checker.cpp	24622	statement.b	expression-bearing slot consumed via EST/tree/checker/emitter path	direct_call = tree_parse_simple_call(trim(statement.b), direct_callee,
+src/semantic_checker.cpp	24658	statement.b	text/shape helper use; bounded taint review required	if (requirements.size() == 1 && !statement.b.empty()) {
+src/semantic_checker.cpp	24666	statement.b	expression-bearing slot consumed via EST/tree/checker/emitter path	est::ExprSlot::RhsValue, 0, statement.b,
+src/semantic_checker.cpp	24669	statement.b	expression-bearing slot consumed via EST/tree/checker/emitter path	est::ExprSlot::RhsValue, 0, statement.b,
+src/semantic_checker.cpp	24709	statement.b	expression-bearing slot consumed via EST/tree/checker/emitter path	tree_parse_simple_call(trim(statement.b), direct_callee,
+src/semantic_checker.cpp	24716	statement.b	direct slot read; inspect statement kind for name vs expression	0, statement.b, current_check_body_context_,
+src/semantic_checker.cpp	27955	synthetic_return.a	direct slot read; inspect statement kind for name vs expression	synthetic_return.a = expression;
+src/semantic_checker.cpp	27956	synthetic_return.text	direct slot read; inspect statement kind for name vs expression	synthetic_return.text = "return " + expression;
+src/semantic_checker.cpp	28213	statement.b	direct slot read; inspect statement kind for name vs expression	if (legacy_spawn_expression(statement.b))
+src/semantic_checker.cpp	28219	statement.a	binding comparison: allowed only when slot denotes binding/root name	return route.name == statement.a;
+src/semantic_checker.cpp	28221	statement.a	direct slot read; inspect statement kind for name vs expression	err(statement.line, "domain route '" + statement.a +
+src/semantic_checker.cpp	28223	statement.b	direct slot read; inspect statement kind for name vs expression	if (auto constructed = domain_constructor(statement.b)) {
+src/semantic_checker.cpp	28231	statement.a	text/shape helper use; bounded taint review required	auto existing = current_env.find(statement.a);
+src/semantic_checker.cpp	28233	statement.a	direct slot read; inspect statement kind for name vs expression	err(statement.line, "domain handle binding '" + statement.a + "' is immutable");
+src/semantic_checker.cpp	28234	statement.a	direct slot read; inspect statement kind for name vs expression	for (const auto& binding : functional_captures(statement.a, current_env))
+src/semantic_checker.cpp	28238	statement.b	direct slot read; inspect statement kind for name vs expression	FileIOOwnerScope fileio_owner(fileio_owner_initializer_, statement.b);
+src/semantic_checker.cpp	28239	statement.b	expression-bearing slot consumed via EST/tree/checker/emitter path	check_expression(statement.line, statement.b, current_env,
+src/semantic_checker.cpp	28242	statement.a	expression-bearing slot consumed via EST/tree/checker/emitter path	tree_simple_identifier(statement.a) && !current_env.count(statement.a)) {
+src/semantic_checker.cpp	28242	statement.a	expression-bearing slot consumed via EST/tree/checker/emitter path	tree_simple_identifier(statement.a) && !current_env.count(statement.a)) {
+src/semantic_checker.cpp	28243	statement.b	direct slot read; inspect statement kind for name vs expression	auto inferred = inferred_expr_type(statement.b, current_env);
+src/semantic_checker.cpp	28244	statement.b	expression-bearing slot consumed via EST/tree/checker/emitter path	if (!inferred && tree_parse_vector_literal(statement.b))
+src/semantic_checker.cpp	28248	statement.a	expression-bearing slot consumed via EST/tree/checker/emitter path	tree_simple_identifier(statement.a) && current_env.count(statement.a)) {
+src/semantic_checker.cpp	28248	statement.a	expression-bearing slot consumed via EST/tree/checker/emitter path	tree_simple_identifier(statement.a) && current_env.count(statement.a)) {
+src/semantic_checker.cpp	28249	statement.a	direct slot read; inspect statement kind for name vs expression	const auto prior_type = current_env.at(statement.a);
+src/semantic_checker.cpp	28250	statement.b	direct slot read; inspect statement kind for name vs expression	auto new_type = inferred_expr_type(statement.b, current_env);
+src/semantic_checker.cpp	28257	statement.a	direct slot read; inspect statement kind for name vs expression	"assignment to binding '" + statement.a + "' of type '" +
+src/semantic_checker.cpp	28263	statement.a	expression-bearing slot consumed via EST/tree/checker/emitter path	if (tree_simple_identifier(statement.a)) {
+src/semantic_checker.cpp	28264	statement.a	direct slot read; inspect statement kind for name vs expression	if (!current_env.count(statement.a)) {
+src/semantic_checker.cpp	28265	statement.b	direct slot read; inspect statement kind for name vs expression	auto inferred = inferred_expr_type(statement.b, current_env);
+src/semantic_checker.cpp	28266	statement.b	expression-bearing slot consumed via EST/tree/checker/emitter path	if (!inferred && tree_parse_vector_literal(statement.b))
+src/semantic_checker.cpp	28269	statement.a	direct slot read; inspect statement kind for name vs expression	auto bound_type = current_env.at(statement.a);
+src/semantic_checker.cpp	28270	statement.b	direct slot read; inspect statement kind for name vs expression	auto rhs_type = inferred_expr_type(statement.b, current_env);
+src/semantic_checker.cpp	28271	statement.a	direct slot read; inspect statement kind for name vs expression	auto bound_term = checked_types.resolved_local(statement.a);
+src/semantic_checker.cpp	28274	statement.b	direct slot read; inspect statement kind for name vs expression	rhs_term = checked_types.known_expression(statement.b);
+src/semantic_checker.cpp	28285	statement.a	direct slot read; inspect statement kind for name vs expression	canonical_type_name(rhs_type.value_or("_value")) + "' to binding '" + statement.a +
+src/semantic_checker.cpp	28291	statement.a	expression-bearing slot consumed via EST/tree/checker/emitter path	if (tree_parse_index(statement.a, base, index_expression)) {
+src/semantic_checker.cpp	28300	statement.b	direct slot read; inspect statement kind for name vs expression	auto value_type = inferred_expr_type(statement.b, current_env);
+src/semantic_checker.cpp	28306	statement.b	direct slot read; inspect statement kind for name vs expression	value_term = checked_types.known_expression(statement.b);
+src/semantic_checker.cpp	28341	statement.a	expression-bearing slot consumed via EST/tree/checker/emitter path	check_expression(statement.line, statement.a, current_env,
+src/semantic_checker.cpp	28351	statement.a	direct slot read; inspect statement kind for name vs expression	auto element_type = inferred_expr_type(statement.a, current_env);
+src/semantic_checker.cpp	28352	statement.a	direct slot read; inspect statement kind for name vs expression	auto element_term = checked_term(statement.a, element_type);
+src/semantic_checker.cpp	28353	statement.b	direct slot read; inspect statement kind for name vs expression	auto value_term = checked_term(statement.b, value_type);
+src/semantic_checker.cpp	28380	statement.a	expression-bearing slot consumed via EST/tree/checker/emitter path	if (tree_member_access(statement.a)) {
+src/semantic_checker.cpp	28381	statement.a	direct slot read; inspect statement kind for name vs expression	auto field_type = inferred_expr_type(statement.a, current_env);
+src/semantic_checker.cpp	28382	statement.b	direct slot read; inspect statement kind for name vs expression	auto rhs_type = inferred_expr_type(statement.b, current_env);
+src/semantic_checker.cpp	28383	statement.a	direct slot read; inspect statement kind for name vs expression	auto field_term = checked_term(statement.a, field_type);
+src/semantic_checker.cpp	28385	statement.b	direct slot read; inspect statement kind for name vs expression	if (!rhs_term) rhs_term = checked_term(statement.b, rhs_type);
+src/semantic_checker.cpp	28393	statement.a	direct slot read; inspect statement kind for name vs expression	statement.a + "' of type '" +
+src/semantic_checker.cpp	28405	statement.a	expression-bearing slot consumed via EST/tree/checker/emitter path	check_expression(statement.line, statement.a, current_env,
+src/semantic_checker.cpp	28411	statement.a	direct slot read; inspect statement kind for name vs expression	if (!statement.a.empty())
+src/semantic_checker.cpp	28412	statement.a	expression-bearing slot consumed via EST/tree/checker/emitter path	check_expression(statement.line, statement.a, current_env,
+src/semantic_checker.cpp	28418	statement.a	text/shape helper use; bounded taint review required	auto prior = current_env.find(statement.a);
+src/semantic_checker.cpp	28420	statement.a	direct slot read; inspect statement kind for name vs expression	err(statement.line, "domain handle binding '" + statement.a + "' is immutable");
+src/semantic_checker.cpp	28421	statement.b	direct slot read; inspect statement kind for name vs expression	check_for_source(statement.line, statement.b, current_env,
+src/semantic_checker.cpp	28430	statement.args	call argument values; verify call/message AST projection	for (const auto& argument : statement.args) {
+src/semantic_checker.cpp	28441	statement.a	direct slot read; inspect statement kind for name vs expression	statement.line, statement.a, current_env);
+src/semantic_checker.cpp	28443	statement.a	direct slot read; inspect statement kind for name vs expression	statement.line, statement.a, statement.b, statement.args,
+src/semantic_checker.cpp	28443	statement.b	direct slot read; inspect statement kind for name vs expression	statement.line, statement.a, statement.b, statement.args,
+src/semantic_checker.cpp	28443	statement.args	call argument values; verify call/message AST projection	statement.line, statement.a, statement.b, statement.args,
+src/semantic_checker.cpp	28446	statement.a	direct slot read; inspect statement kind for name vs expression	statement.line, statement.a, *target, current_env);
+src/semantic_checker.cpp	28453	statement.a	text/shape helper use; bounded taint review required	auto receiver = current_env.find(statement.a);
+src/semantic_checker.cpp	28458	statement.b	direct slot read; inspect statement kind for name vs expression	"handler '" + current->name + "." + statement.b +
+src/semantic_checker.cpp	28465	statement.a	direct slot read; inspect statement kind for name vs expression	{"domain-instance", statement.a,
+src/semantic_checker.cpp	28466	statement.a	direct slot read; inspect statement kind for name vs expression	domain_instance_semantic_identity(statement.a, current->name),
+src/semantic_checker.cpp	28467	statement.a	direct slot read; inspect statement kind for name vs expression	statement.a, {}, 0},
+src/semantic_checker.cpp	28468	statement.b	direct slot read; inspect statement kind for name vs expression	{"handler", current->name + "." + statement.b,
+src/semantic_checker.cpp	28474	statement.args	call argument values; verify call/message AST projection	for (const auto& argument : statement.args) {
+src/semantic_checker.cpp	28485	statement.args	call argument values; verify call/message AST projection	for (size_t index = 0; index < statement.args.size(); ++index) {
+src/semantic_checker.cpp	28487	statement.args	call argument values; verify call/message AST projection	check_expression(statement.line, statement.args[index], current_env,
+src/semantic_checker.cpp	28500	statement.text	expression-bearing slot consumed via EST/tree/checker/emitter path	// Member calls are captured by check_expression(statement.text) below;
+src/semantic_checker.cpp	28503	statement.b	direct slot read; inspect statement kind for name vs expression	statement.b.empty()) {
+src/semantic_checker.cpp	28506	statement.b	direct slot read; inspect statement kind for name vs expression	statement.b.empty()
+src/semantic_checker.cpp	28509	statement.text	direct slot read; inspect statement kind for name vs expression	statement.text.empty() ? statement.a : statement.text);
+src/semantic_checker.cpp	28509	statement.a	direct slot read; inspect statement kind for name vs expression	statement.text.empty() ? statement.a : statement.text);
+src/semantic_checker.cpp	28509	statement.text	direct slot read; inspect statement kind for name vs expression	statement.text.empty() ? statement.a : statement.text);
+src/semantic_checker.cpp	28511	statement.args	call argument values; verify call/message AST projection	call_occurrence_id).source_operands = statement.args;
+src/semantic_checker.cpp	28526	statement.b	direct slot read; inspect statement kind for name vs expression	if (!statement.b.empty()) {
+src/semantic_checker.cpp	28527	statement.a	text/shape helper use; bounded taint review required	auto receiver = current_env.find(statement.a);
+src/semantic_checker.cpp	28530	statement.a	direct slot read; inspect statement kind for name vs expression	: inferred_expr_type(statement.a, current_env);
+src/semantic_checker.cpp	28535	statement.a	direct slot read; inspect statement kind for name vs expression	statement.line, statement.a, statement.b, statement.args,
+src/semantic_checker.cpp	28535	statement.b	direct slot read; inspect statement kind for name vs expression	statement.line, statement.a, statement.b, statement.args,
+src/semantic_checker.cpp	28535	statement.args	call argument values; verify call/message AST projection	statement.line, statement.a, statement.b, statement.args,
+src/semantic_checker.cpp	28539	statement.b	direct slot read; inspect statement kind for name vs expression	"domain handler '" + domain + "." + statement.b +
+src/semantic_checker.cpp	28544	statement.a	direct slot read; inspect statement kind for name vs expression	{{"domain-instance", statement.a,
+src/semantic_checker.cpp	28545	statement.a	direct slot read; inspect statement kind for name vs expression	domain_instance_semantic_identity(statement.a, domain),
+src/semantic_checker.cpp	28546	statement.a	direct slot read; inspect statement kind for name vs expression	statement.a, {}, 0},
+src/semantic_checker.cpp	28547	statement.b	direct slot read; inspect statement kind for name vs expression	{"handler", domain + "." + statement.b,
+src/semantic_checker.cpp	28551	statement.a	direct slot read; inspect statement kind for name vs expression	"write 'message " + statement.a + "." + statement.b +
+src/semantic_checker.cpp	28551	statement.b	direct slot read; inspect statement kind for name vs expression	"write 'message " + statement.a + "." + statement.b +
+src/semantic_checker.cpp	28564	statement.args	call argument values; verify call/message AST projection	for (const auto& argument : statement.args)
+src/semantic_checker.cpp	28569	statement.b	direct slot read; inspect statement kind for name vs expression	canonical_type_name(*receiver_type), statement.b,
+src/semantic_checker.cpp	28574	statement.b	direct slot read; inspect statement kind for name vs expression	statement.b + "' for supplied arguments");
+src/semantic_checker.cpp	28582	statement.a	binding comparison: allowed only when slot denotes binding/root name	constraint.subject == statement.a &&
+src/semantic_checker.cpp	28583	statement.b	binding comparison: allowed only when slot denotes binding/root name	constraint.detail == statement.b &&
+src/semantic_checker.cpp	28584	statement.args	call argument values; verify call/message AST projection	constraint.arity == statement.args.size();
+src/semantic_checker.cpp	28588	statement.a	direct slot read; inspect statement kind for name vs expression	statement.a + "." + statement.b + "'");
+src/semantic_checker.cpp	28588	statement.b	direct slot read; inspect statement kind for name vs expression	statement.a + "." + statement.b + "'");
+src/semantic_checker.cpp	28595	statement.a	literal comparison: NAME/keyword only if statement-kind selected; inventory separately audited	const bool delayed_assert_check = statement.a == "assert" &&
+src/semantic_checker.cpp	28596	statement.a	direct slot read; inspect statement kind for name vs expression	!functions_.count(statement.a);
+src/semantic_checker.cpp	28598	statement.a	direct slot read; inspect statement kind for name vs expression	check_function_call(statement.line, statement.a, statement.args,
+src/semantic_checker.cpp	28598	statement.args	call argument values; verify call/message AST projection	check_function_call(statement.line, statement.a, statement.args,
+src/semantic_checker.cpp	28611	statement.a	text/shape helper use; bounded taint review required	auto binding = current_env.find(statement.a);
+src/semantic_checker.cpp	28615	statement.a	direct slot read; inspect statement kind for name vs expression	"binding:pending:" + statement.a);
+src/semantic_checker.cpp	28618	statement.a	direct slot read; inspect statement kind for name vs expression	call_occurrence_id, "builtin:" + statement.a);
+src/semantic_checker.cpp	28621	statement.text	direct slot read; inspect statement kind for name vs expression	statement.text.empty() ? statement.a : statement.text,
+src/semantic_checker.cpp	28621	statement.a	direct slot read; inspect statement kind for name vs expression	statement.text.empty() ? statement.a : statement.text,
+src/semantic_checker.cpp	28621	statement.text	direct slot read; inspect statement kind for name vs expression	statement.text.empty() ? statement.a : statement.text,
+src/semantic_checker.cpp	28626	statement.b	direct slot read; inspect statement kind for name vs expression	if (!statement.b.empty()) {
+src/semantic_checker.cpp	28627	statement.text	expression-bearing slot consumed via EST/tree/checker/emitter path	check_expression(statement.line, statement.text, current_env,
+src/semantic_checker.cpp	28640	statement.b	literal comparison: NAME/keyword only if statement-kind selected; inventory separately audited	const bool sort_builtin = statement.b.empty() && statement.a == "sort" &&
+src/semantic_checker.cpp	28640	statement.a	literal comparison: NAME/keyword only if statement-kind selected; inventory separately audited	const bool sort_builtin = statement.b.empty() && statement.a == "sort" &&
+src/semantic_checker.cpp	28641	statement.a	direct slot read; inspect statement kind for name vs expression	!functions_.count(statement.a);
+src/semantic_checker.cpp	28645	statement.args	call argument values; verify call/message AST projection	for (size_t index = 0; index < statement.args.size(); ++index) {
+src/semantic_checker.cpp	28646	statement.args	call argument values; verify call/message AST projection	const auto& argument = statement.args[index];
+src/semantic_checker.cpp	28661	statement.b	direct slot read; inspect statement kind for name vs expression	const auto occurrence_slot = statement.b.empty()
+src/semantic_checker.cpp	28671	statement.b	direct slot read; inspect statement kind for name vs expression	statement.b.empty()) {
+src/semantic_checker.cpp	28677	statement.b	literal comparison: NAME/keyword only if statement-kind selected; inventory separately audited	if (statement.b.empty() && statement.a == "assert" &&
+src/semantic_checker.cpp	28677	statement.a	literal comparison: NAME/keyword only if statement-kind selected; inventory separately audited	if (statement.b.empty() && statement.a == "assert" &&
+src/semantic_checker.cpp	28678	statement.a	direct slot read; inspect statement kind for name vs expression	!functions_.count(statement.a))
+src/semantic_checker.cpp	28679	statement.a	direct slot read; inspect statement kind for name vs expression	check_function_call(statement.line, statement.a, statement.args,
+src/semantic_checker.cpp	28679	statement.args	call argument values; verify call/message AST projection	check_function_call(statement.line, statement.a, statement.args,
+src/semantic_checker.cpp	28683	statement.a	text/shape helper use; bounded taint review required	auto receiver = current_env.find(statement.a);
+src/semantic_checker.cpp	28688	statement.b	direct slot read; inspect statement kind for name vs expression	const Handler* handler = target ? find_handler(*target, statement.b) : nullptr;
+src/semantic_checker.cpp	28714	statement.args	call argument values; verify call/message AST projection	for (size_t index = 0; index < statement.args.size(); ++index) {
+src/semantic_checker.cpp	28716	statement.args	call argument values; verify call/message AST projection	const auto& argument = statement.args[index];
+src/semantic_checker.cpp	28752	statement.args	call argument values; verify call/message AST projection	static_cast<std::uint32_t>(index), statement.args[index],
+src/semantic_checker.cpp	28762	statement.text	literal comparison: NAME/keyword only if statement-kind selected; inventory separately audited	tree_plain_identifier(statement.text) && statement.text != "pass")
+src/semantic_checker.cpp	28762	statement.text	literal comparison: NAME/keyword only if statement-kind selected; inventory separately audited	tree_plain_identifier(statement.text) && statement.text != "pass")
+src/semantic_checker.cpp	28773	statement.a	expression-bearing slot consumed via EST/tree/checker/emitter path	check_expression(statement.line, statement.a, current_env,
+src/semantic_checker.cpp	28775	statement.a	direct slot read; inspect statement kind for name vs expression	auto actual = inferred_expr_type(statement.a, current_env);
+src/semantic_checker.cpp	28776	statement.a	direct slot read; inspect statement kind for name vs expression	if (auto pipeline = functional_pipeline_from_est(statement.a)) {
+src/semantic_checker.cpp	28789	statement.a	direct slot read; inspect statement kind for name vs expression	"cannot infer the type of reply expression '" + statement.a + "'",
+src/semantic_checker.cpp	28793	statement.a	direct slot read; inspect statement kind for name vs expression	{{"expression", statement.a, {}, statement.a, {}, 0},
+src/semantic_checker.cpp	28793	statement.a	direct slot read; inspect statement kind for name vs expression	{{"expression", statement.a, {}, statement.a, {}, 0},
+src/semantic_checker.cpp	28802	statement.a	direct slot read; inspect statement kind for name vs expression	statement.a, *actual, *current_handler->reply_type);
+src/semantic_checker.cpp	28811	statement.a	direct slot read; inspect statement kind for name vs expression	!statement.a.empty())
+src/semantic_checker.cpp	28814	statement.a	direct slot read; inspect statement kind for name vs expression	!current_function && !statement.a.empty())
+src/semantic_checker.cpp	28817	statement.a	direct slot read; inspect statement kind for name vs expression	!statement.a.empty()) {
+src/semantic_checker.cpp	28827	statement.a	expression-bearing slot consumed via EST/tree/checker/emitter path	check_expression(statement.line, statement.a, current_env,
+src/semantic_checker.cpp	28829	statement.a	direct slot read; inspect statement kind for name vs expression	auto actual = inferred_expr_type(statement.a, current_env);
+src/semantic_checker.cpp	28835	statement.a	direct slot read; inspect statement kind for name vs expression	{"expression", statement.a, {}, statement.a, {}, 0},
+src/semantic_checker.cpp	28835	statement.a	direct slot read; inspect statement kind for name vs expression	{"expression", statement.a, {}, statement.a, {}, 0},
+src/semantic_checker.cpp	28843	statement.a	direct slot read; inspect statement kind for name vs expression	"cannot infer the type of return expression '" + statement.a +
+src/semantic_checker.cpp	28867	statement.a	direct slot read; inspect statement kind for name vs expression	!checked_types.known_expression(statement.a) &&
+src/semantic_checker.cpp	28869	statement.a	direct slot read; inspect statement kind for name vs expression	!checked_result_matches(statement.a, *actual,
+src/semantic_checker.cpp	29361	prior.a	binding comparison: allowed only when slot denotes binding/root name	prior.a == name) {
+src/semantic_checker.cpp	30840	statement.a	expression-bearing slot consumed via EST/tree/checker/emitter path	if (!tree_simple_identifier(statement.a))
+src/semantic_checker.cpp	30854	statement.b	expression-bearing slot consumed via EST/tree/checker/emitter path	if (tree_parse_simple_call(trim(statement.b), callee, arguments) &&
+src/semantic_checker.cpp	30865	statement.args	call argument values; verify call/message AST projection	for (size_t index = 0; index < statement.args.size(); ++index)
+src/semantic_checker.cpp	30882	statement.b	direct slot read; inspect statement kind for name vs expression	if (!statement.b.empty()) {
+src/semantic_checker.cpp	30891	statement.args	call argument values; verify call/message AST projection	for (size_t index = 0; index < statement.args.size(); ++index) {
+src/semantic_checker.cpp	30892	statement.b	direct slot read; inspect statement kind for name vs expression	const string role = statement.b.empty()
+src/semantic_checker.cpp	30911	statement.a	direct slot read; inspect statement kind for name vs expression	if (statement.a.empty()) {
+src/semantic_checker.cpp	30925	statement.args	call argument values; verify call/message AST projection	for (size_t index = 0; index < statement.args.size(); ++index)
+src/semantic_checker.cpp	30930	statement.a	direct slot read; inspect statement kind for name vs expression	if (!statement.a.empty()) require_root(statement, "reply-value");
+src/semantic_checker.cpp	30933	statement.a	direct slot read; inspect statement kind for name vs expression	if (!statement.a.empty()) require_root(statement, "return-value");
+src/fileio_semantics.inc	575	s.a	direct slot read; inspect statement kind for name vs expression	fileio_lifecycle_expression(s.line, s.a, flow);
+src/fileio_semantics.inc	644	s.b	binding comparison: allowed only when slot denotes binding/root name	s.kind == Stmt::Kind::For ? s.b : s.a, flow);
+src/fileio_semantics.inc	644	s.a	binding comparison: allowed only when slot denotes binding/root name	s.kind == Stmt::Kind::For ? s.b : s.a, flow);
+src/fileio_semantics.inc	649	s.b	direct slot read; inspect statement kind for name vs expression	canonical_type_name(inferred_expr_type(s.b, flow.types).value_or("")) ==
+src/fileio_semantics.inc	652	s.b	expression-bearing slot consumed via EST/tree/checker/emitter path	const auto batch_binding = tree_identifier_name(s.b);
+src/fileio_semantics.inc	654	s.a	direct slot read; inspect statement kind for name vs expression	branch.range_origin[s.a] = {
+src/fileio_semantics.inc	669	s.a	binding comparison: allowed only when slot denotes binding/root name	if (s.kind == Stmt::Kind::For) flow.range_origin.erase(s.a);
+src/fileio_semantics.inc	675	s.b	direct slot read; inspect statement kind for name vs expression	fileio_lifecycle_expression(s.line, s.b, flow);
+src/fileio_semantics.inc	676	s.b	direct slot read; inspect statement kind for name vs expression	auto type = inferred_expr_type(s.b, flow.types);
+src/fileio_semantics.inc	678	s.b	direct slot read; inspect statement kind for name vs expression	storage_location(s.b, flow.types))
+src/fileio_semantics.inc	682	s.a	direct slot read; inspect statement kind for name vs expression	++flow.batch_generation[s.a];
+src/fileio_semantics.inc	684	s.b	expression-bearing slot consumed via EST/tree/checker/emitter path	const auto source_binding = tree_identifier_name(s.b);
+src/fileio_semantics.inc	686	s.b	expression-bearing slot consumed via EST/tree/checker/emitter path	tree_parse_index(trim(s.b), source, offset) &&
+src/fileio_semantics.inc	691	s.a	direct slot read; inspect statement kind for name vs expression	flow.range_origin[s.a] = {
+src/fileio_semantics.inc	694	s.a	direct slot read; inspect statement kind for name vs expression	flow.range_origin.erase(s.a);
+src/fileio_semantics.inc	697	s.a	direct slot read; inspect statement kind for name vs expression	flow.range_origin[s.a] = flow.range_origin[*source_binding];
+src/fileio_semantics.inc	698	s.a	direct slot read; inspect statement kind for name vs expression	else flow.range_origin.erase(s.a);
+src/fileio_semantics.inc	701	s.b	direct slot read; inspect statement kind for name vs expression	is_direct_fileio_open_initializer(s.b, &open_args)) {
+src/fileio_semantics.inc	702	s.a	direct slot read; inspect statement kind for name vs expression	flow.types[s.a] = "FileIO";
+src/fileio_semantics.inc	703	s.a	direct slot read; inspect statement kind for name vs expression	flow.local_owners.insert(s.a);
+src/fileio_semantics.inc	704	s.a	direct slot read; inspect statement kind for name vs expression	flow.state[s.a] = 1;
+src/fileio_semantics.inc	708	s.a	text/shape helper use; bounded taint review required	flow.mode[s.a] = trim(open_args[1]);
+src/fileio_semantics.inc	709	s.a	literal comparison: NAME/keyword only if statement-kind selected; inventory separately audited	if (flow.mode[s.a] == "ro") flow.may_be_read_only.insert(s.a);
+src/fileio_semantics.inc	709	s.a	literal comparison: NAME/keyword only if statement-kind selected; inventory separately audited	if (flow.mode[s.a] == "ro") flow.may_be_read_only.insert(s.a);
+src/fileio_semantics.inc	710	s.a	direct slot read; inspect statement kind for name vs expression	else flow.may_be_read_only.erase(s.a);
+src/fileio_semantics.inc	712	s.a	expression-bearing slot consumed via EST/tree/checker/emitter path	} else if (type && tree_simple_identifier(s.a)) {
+src/fileio_semantics.inc	713	s.a	direct slot read; inspect statement kind for name vs expression	flow.types[s.a] = *type;
+src/fileio_semantics.inc	716	s.args	call argument values; verify call/message AST projection	for (const auto& argument : s.args)
+src/fileio_semantics.inc	719	s.text	direct slot read; inspect statement kind for name vs expression	string call_text = s.text;
+src/fileio_semantics.inc	720	s.a	expression-bearing slot consumed via EST/tree/checker/emitter path	auto call_name = tree_identifier_name(s.a);
+src/fileio_semantics.inc	721	s.b	binding comparison: allowed only when slot denotes binding/root name	if (s.kind == Stmt::Kind::Call && s.b.empty() && call_name) {
+src/fileio_semantics.inc	723	s.args	call argument values; verify call/message AST projection	for (size_t i = 0; i < s.args.size(); ++i) {
+src/fileio_semantics.inc	725	s.args	call argument values; verify call/message AST projection	call_text += s.args[i];
+src/fileio_semantics.inc	731	s.a	direct slot read; inspect statement kind for name vs expression	fileio_lifecycle_expression(s.line, s.a, flow);
+src/fileio_semantics.inc	765	statement.a	direct slot read; inspect statement kind for name vs expression	source << "message " << statement.a << "." << statement.b << "(";
+src/fileio_semantics.inc	765	statement.b	direct slot read; inspect statement kind for name vs expression	source << "message " << statement.a << "." << statement.b << "(";
+src/fileio_semantics.inc	766	statement.args	call argument values; verify call/message AST projection	for (size_t index = 0; index < statement.args.size(); ++index) {
+src/fileio_semantics.inc	768	statement.args	call argument values; verify call/message AST projection	source << statement.args[index];
+src/fileio_semantics.inc	836	statement.a	direct slot read; inspect statement kind for name vs expression	return fileio_blocking_message(statement.a, statement.b, env,
+src/fileio_semantics.inc	836	statement.b	direct slot read; inspect statement kind for name vs expression	return fileio_blocking_message(statement.a, statement.b, env,
+src/fileio_semantics.inc	837	statement.args	call argument values; verify call/message AST projection	statement.args, visited);
+src/fileio_semantics.inc	846	statement.args	call argument values; verify call/message AST projection	return inspect_arguments(statement.args);
+src/fileio_semantics.inc	848	statement.b	direct slot read; inspect statement kind for name vs expression	if (statement.b.empty()) {
+src/fileio_semantics.inc	849	statement.args	call argument values; verify call/message AST projection	if (auto nested = inspect_arguments(statement.args)) return nested;
+src/fileio_semantics.inc	851	statement.a	direct slot read; inspect statement kind for name vs expression	statement.a, visited, env, statement.args))
+src/fileio_semantics.inc	851	statement.args	call argument values; verify call/message AST projection	statement.a, visited, env, statement.args))
+src/fileio_semantics.inc	852	statement.a	direct slot read; inspect statement kind for name vs expression	return *nested + " via " + statement.a;
+src/fileio_semantics.inc	855	statement.a	direct slot read; inspect statement kind for name vs expression	if (auto nested = fileio_blocking_expression(statement.a, env, visited))
+src/fileio_semantics.inc	857	statement.args	call argument values; verify call/message AST projection	if (auto nested = inspect_arguments(statement.args)) return nested;
+src/fileio_semantics.inc	858	statement.b	direct slot read; inspect statement kind for name vs expression	if (fileio_operation_effect(statement.b) &&
+src/fileio_semantics.inc	859	statement.a	literal comparison: NAME/keyword only if statement-kind selected; inventory separately audited	(statement.a == "FileIO" ||
+src/fileio_semantics.inc	860	statement.a	direct slot read; inspect statement kind for name vs expression	canonical_type_name(inferred_expr_type(statement.a, env).value_or("")) ==
+src/fileio_semantics.inc	862	statement.b	direct slot read; inspect statement kind for name vs expression	return statement.b;
+src/fileio_semantics.inc	866	statement.text	direct slot read; inspect statement kind for name vs expression	return fileio_blocking_expression(statement.text, env, visited);
+src/fileio_semantics.inc	873	statement.a	direct slot read; inspect statement kind for name vs expression	? statement.a : statement.b;
+src/fileio_semantics.inc	873	statement.b	direct slot read; inspect statement kind for name vs expression	? statement.a : statement.b;
+src/fileio_semantics.inc	902	statement.b	direct slot read; inspect statement kind for name vs expression	auto type = inferred_expr_type(statement.b, env);
+src/fileio_semantics.inc	903	statement.a	expression-bearing slot consumed via EST/tree/checker/emitter path	if (type && tree_simple_identifier(statement.a)) env[statement.a] = *type;
+src/fileio_semantics.inc	903	statement.a	expression-bearing slot consumed via EST/tree/checker/emitter path	if (type && tree_simple_identifier(statement.a)) env[statement.a] = *type;
+src/fileio_semantics.inc	963	statement.b	direct slot read; inspect statement kind for name vs expression	auto type = inferred_expr_type(statement.b, env);
+src/fileio_semantics.inc	964	statement.a	expression-bearing slot consumed via EST/tree/checker/emitter path	if (type && tree_simple_identifier(statement.a)) env[statement.a] = *type;
+src/fileio_semantics.inc	964	statement.a	expression-bearing slot consumed via EST/tree/checker/emitter path	if (type && tree_simple_identifier(statement.a)) env[statement.a] = *type;
+src/fileio_semantics.inc	1006	statement.b	direct slot read; inspect statement kind for name vs expression	auto type = inferred_expr_type(statement.b, env);
+src/fileio_semantics.inc	1007	statement.a	expression-bearing slot consumed via EST/tree/checker/emitter path	if (type && tree_simple_identifier(statement.a)) env[statement.a] = *type;
+src/fileio_semantics.inc	1007	statement.a	expression-bearing slot consumed via EST/tree/checker/emitter path	if (type && tree_simple_identifier(statement.a)) env[statement.a] = *type;
+src/file_chunk_lowering.inc	102	statement.a	binding comparison: allowed only when slot denotes binding/root name	if (tree_root_identifier(statement.a) == parameter)
+src/file_chunk_lowering.inc	110	statement.a	expression-bearing slot consumed via EST/tree/checker/emitter path	tree_identifier_named(statement.a, parameter)) ||
+src/file_chunk_lowering.inc	112	statement.args	call argument values; verify call/message AST projection	std::find(statement.args.begin(), statement.args.end(), parameter) !=
+src/file_chunk_lowering.inc	112	statement.args	call argument values; verify call/message AST projection	std::find(statement.args.begin(), statement.args.end(), parameter) !=
+src/file_chunk_lowering.inc	113	statement.args	call argument values; verify call/message AST projection	statement.args.end()))
+src/executor_invoke_lowering.inc	53	statement.a	direct slot read; inspect statement kind for name vs expression	plan.binding = statement.a;
+src/executor_invoke_lowering.inc	109	statement.args	call argument values; verify call/message AST projection	if (statement.args.size() != 1)
+src/executor_invoke_lowering.inc	116	statement.args	call argument values; verify call/message AST projection	if (!tree_parse_member_call(statement.args.front(), domain_binding, handler_name,
+src/executor_invoke_lowering.inc	149	statement.a	direct slot read; inspect statement kind for name vs expression	plan.executor_binding = statement.a;
+src/executor_invoke_lowering.inc	245	statement.a	direct slot read; inspect statement kind for name vs expression	target_for(statement.a, statement.b, statement.line,
+src/executor_invoke_lowering.inc	245	statement.b	direct slot read; inspect statement kind for name vs expression	target_for(statement.a, statement.b, statement.line,
+src/executor_invoke_lowering.inc	280	statement.b	expression-bearing slot consumed via EST/tree/checker/emitter path	if (tree_parse_executor_chain(statement.b, calls)) {
+src/executor_invoke_lowering.inc	307	statement.b	direct slot read; inspect statement kind for name vs expression	if (!functional_pipeline_from_est(statement.b) &&
+src/executor_invoke_lowering.inc	308	statement.b	expression-bearing slot consumed via EST/tree/checker/emitter path	tree_parse_member_call(statement.b, receiver, method, arguments) &&
+src/executor_invoke_lowering.inc	311	statement.b	expression-bearing slot consumed via EST/tree/checker/emitter path	check_expression(statement.line, statement.b, env);
+src/executor_invoke_lowering.inc	323	statement.a	direct slot read; inspect statement kind for name vs expression	if (executor_typed(env, statement.a)) {
+src/executor_invoke_lowering.inc	324	statement.b	literal comparison: NAME/keyword only if statement-kind selected; inventory separately audited	if (statement.b == "invoke") {
+src/executor_invoke_lowering.inc	328	statement.b	literal comparison: NAME/keyword only if statement-kind selected; inventory separately audited	if (statement.b == "join") {
+src/executor_invoke_lowering.inc	329	statement.args	call argument values; verify call/message AST projection	if (!statement.args.empty())
+src/executor_invoke_lowering.inc	335	statement.b	direct slot read; inspect statement kind for name vs expression	"unknown Executor operation '" + statement.b + "'",
+src/executor_invoke_lowering.inc	509	statement.b	expression-bearing slot consumed via EST/tree/checker/emitter path	tree_parse_executor_chain(statement.b, calls) && !calls.empty() &&
+src/executor_invoke_lowering.inc	519	statement.a	direct slot read; inspect statement kind for name vs expression	state[statement.a] = {ExecutorLifecycleState::Active, statement.line};
+src/executor_invoke_lowering.inc	521	statement.b	literal comparison: NAME/keyword only if statement-kind selected; inventory separately audited	(statement.b == "invoke" || statement.b == "join")) {
+src/executor_invoke_lowering.inc	521	statement.b	literal comparison: NAME/keyword only if statement-kind selected; inventory separately audited	(statement.b == "invoke" || statement.b == "join")) {
+src/executor_invoke_lowering.inc	522	statement.a	text/shape helper use; bounded taint review required	auto found = state.find(statement.a);
+src/executor_invoke_lowering.inc	527	statement.a	direct slot read; inspect statement kind for name vs expression	"Executor '" + statement.a +
+src/executor_invoke_lowering.inc	531	statement.a	direct slot read; inspect statement kind for name vs expression	"Executor '" + statement.a + "' is not active here",
+src/executor_invoke_lowering.inc	534	statement.b	literal comparison: NAME/keyword only if statement-kind selected; inventory separately audited	if (statement.b == "join")
+src/executor_invoke_lowering.inc	584	s.a	direct slot read; inspect statement kind for name vs expression	s.a = "executor";
+src/executor_invoke_lowering.inc	585	s.b	direct slot read; inspect statement kind for name vs expression	s.b = "invoke";
+src/static_bounds.inc	142	statement.a	direct slot read; inspect statement kind for name vs expression	if (auto target = storage_location(statement.a, {}, false))
+src/static_bounds.inc	145	statement.a	direct slot read; inspect statement kind for name vs expression	static_mark_possible_mutation(statement.a, fileio_owners, mutated);
+src/static_bounds.inc	146	statement.b	direct slot read; inspect statement kind for name vs expression	expression = statement.b;
+src/static_bounds.inc	150	statement.text	direct slot read; inspect statement kind for name vs expression	expression = statement.text;
+src/static_bounds.inc	155	statement.args	call argument values; verify call/message AST projection	for (const auto& argument : statement.args)
+src/static_bounds.inc	159	statement.a	direct slot read; inspect statement kind for name vs expression	static_mark_possible_mutation(statement.a, fileio_owners, mutated);
+src/static_bounds.inc	160	statement.args	call argument values; verify call/message AST projection	for (const auto& argument : statement.args)
+src/static_bounds.inc	170	statement.a	direct slot read; inspect statement kind for name vs expression	expression = statement.a;
+src/static_bounds.inc	173	statement.b	direct slot read; inspect statement kind for name vs expression	expression = statement.b;
+src/static_bounds.inc	259	statement.b	direct slot read; inspect statement kind for name vs expression	element.bytes = static_payload_byte_bound(statement.b);
+src/static_bounds.inc	261	statement.b	direct slot read; inspect statement kind for name vs expression	auto batch = static_batch_entry_bounds(statement.b);
+src/static_bounds.inc	265	statement.a	direct slot read; inspect statement kind for name vs expression	body.erase(statement.a);
+src/static_bounds.inc	266	statement.a	direct slot read; inspect statement kind for name vs expression	body_owners.erase(statement.a);
+src/static_bounds.inc	267	statement.a	direct slot read; inspect statement kind for name vs expression	if (element.bytes) body[statement.a] = element;
+src/static_bounds.inc	282	arm.args	call argument values; verify call/message AST projection	for (const auto& name : arm.args) branch.erase(name);
+src/static_bounds.inc	283	arm.args	call argument values; verify call/message AST projection	for (const auto& name : arm.args) branch_owners.erase(name);
+src/static_bounds.inc	286	arm.args	call argument values; verify call/message AST projection	for (const auto& name : arm.args) {
+src/static_bounds.inc	309	statement.a	direct slot read; inspect statement kind for name vs expression	body.erase(statement.a);
+src/static_bounds.inc	310	statement.a	text/shape helper use; bounded taint review required	auto old = incoming.find(statement.a);
+src/static_bounds.inc	311	statement.a	binding comparison: allowed only when slot denotes binding/root name	if (old != incoming.end()) body[statement.a] = old->second;
+src/static_bounds.inc	323	statement.a	expression-bearing slot consumed via EST/tree/checker/emitter path	tree_simple_identifier(statement.a)) {
+src/static_bounds.inc	325	statement.b	expression-bearing slot consumed via EST/tree/checker/emitter path	string value = tree_strip_redundant_outer_parentheses(trim(statement.b));
+src/static_bounds.inc	363	statement.a	expression-bearing slot consumed via EST/tree/checker/emitter path	tree_simple_identifier(statement.a);
+src/static_bounds.inc	364	statement.a	direct slot read; inspect statement kind for name vs expression	if (binding) mutated.erase(statement.a);
+src/static_bounds.inc	374	statement.a	direct slot read; inspect statement kind for name vs expression	if (new_fact) facts[statement.a] = std::move(*new_fact);
+src/static_bounds.inc	378	statement.a	expression-bearing slot consumed via EST/tree/checker/emitter path	tree_simple_identifier(statement.a)) {
+src/static_bounds.inc	379	statement.a	direct slot read; inspect statement kind for name vs expression	fileio_owners.erase(statement.a);
+src/static_bounds.inc	380	statement.b	direct slot read; inspect statement kind for name vs expression	if (is_direct_fileio_open_initializer(statement.b))
+src/static_bounds.inc	381	statement.a	direct slot read; inspect statement kind for name vs expression	fileio_owners.insert(statement.a);
+src/native_generator.cpp	1333	statement.a	direct slot read; inspect statement kind for name vs expression	? statement.a : statement.b;
+src/native_generator.cpp	1333	statement.b	direct slot read; inspect statement kind for name vs expression	? statement.a : statement.b;
+src/native_generator.cpp	2558	statement.a	expression-bearing slot consumed via EST/tree/checker/emitter path	const auto result_binding = tree_identifier_name(statement.a);
+src/native_generator.cpp	2565	statement.b	expression-bearing slot consumed via EST/tree/checker/emitter path	statement.b, &statement.expression_handles);
+src/native_generator.cpp	5033	s.a	direct slot read; inspect statement kind for name vs expression	used.insert(s.a);
+src/native_generator.cpp	5413	statement.b	direct slot read; inspect statement kind for name vs expression	if (domain_construction(statement.b)) constructions.push_back(statement);
+src/native_generator.cpp	5427	left.a	direct slot read; inspect statement kind for name vs expression	return domain_ranks[left.a] > domain_ranks[right.a];
+src/native_generator.cpp	5427	right.a	direct slot read; inspect statement kind for name vs expression	return domain_ranks[left.a] > domain_ranks[right.a];
+src/native_generator.cpp	5508	s.text	direct slot read; inspect statement kind for name vs expression	source_comment(o, (base + level) * 4, s.line, s.text);
+src/native_generator.cpp	5545	s.a	direct slot read; inspect statement kind for name vs expression	locals.insert(s.a);
+src/native_generator.cpp	5546	s.a	direct slot read; inspect statement kind for name vs expression	types[s.a] = direct_functional->output_type;
+src/native_generator.cpp	5603	recovered.b	direct slot read; inspect statement kind for name vs expression	recovered.b, binding);
+src/native_generator.cpp	5606	recovered.a	direct slot read; inspect statement kind for name vs expression	recovered.a, binding);
+src/native_generator.cpp	5607	recovered.args	call argument values; verify call/message AST projection	for (const auto& argument : recovered.args)
+src/native_generator.cpp	5839	s.a	direct slot read; inspect statement kind for name vs expression	if (s.a.empty()) {
+src/native_generator.cpp	5854	s.a	direct slot read; inspect statement kind for name vs expression	auto type = generated_expr_type(s.a, &types);
+src/native_generator.cpp	5859	s.a	expression-bearing slot consumed via EST/tree/checker/emitter path	const string value = expr(s.a, d, locals, &types,
+src/native_generator.cpp	5910	s.a	direct slot read; inspect statement kind for name vs expression	auto scrutinee_type = generated_expr_type(s.a, &types);
+src/native_generator.cpp	5932	s.a	expression-bearing slot consumed via EST/tree/checker/emitter path	if (tree_parse_simple_call(s.a, match_callee, match_arguments)) {
+src/native_generator.cpp	5946	s.a	direct slot read; inspect statement kind for name vs expression	const bool recovery_slot = phase21_option_slots_.count(s.a) != 0;
+src/native_generator.cpp	5947	s.b	literal comparison: NAME/keyword only if statement-kind selected; inventory separately audited	if (s.b != "consume" && !recovery_slot) o << "&";
+src/native_generator.cpp	5949	s.b	literal comparison: NAME/keyword only if statement-kind selected; inventory separately audited	if (recovery_slot && s.b == "consume")
+src/native_generator.cpp	5950	s.a	direct slot read; inspect statement kind for name vs expression	o << "__moss_recovery_slot_" << s.a
+src/native_generator.cpp	5953	s.a	expression-bearing slot consumed via EST/tree/checker/emitter path	o << expr(s.a, d, locals, &types);
+src/native_generator.cpp	5993	s.b	literal comparison: NAME/keyword only if statement-kind selected; inventory separately audited	if (s.b != "consume") {
+src/native_generator.cpp	6038	s.a	expression-bearing slot consumed via EST/tree/checker/emitter path	<< expr(s.a, d, locals, &types,
+src/native_generator.cpp	6070	s.a	expression-bearing slot consumed via EST/tree/checker/emitter path	<< expr(s.a, d, locals, &types,
+src/native_generator.cpp	6084	s.b	text/shape helper use; bounded taint review required	string source = trim(s.b);
+src/native_generator.cpp	6109	s.a	direct slot read; inspect statement kind for name vs expression	o << indent(level) << "for " << s.a << " in ("
+src/native_generator.cpp	6113	s.a	direct slot read; inspect statement kind for name vs expression	o << indent(level) << "for " << s.a << " in "
+src/native_generator.cpp	6118	s.a	direct slot read; inspect statement kind for name vs expression	child_locals.insert(s.a);
+src/native_generator.cpp	6119	s.a	direct slot read; inspect statement kind for name vs expression	child_types[s.a] = "int";
+src/native_generator.cpp	6134	s.a	direct slot read; inspect statement kind for name vs expression	o << indent(level) << "for " << s.a << " in ("
+src/native_generator.cpp	6138	s.a	direct slot read; inspect statement kind for name vs expression	child_locals.insert(s.a);
+src/native_generator.cpp	6139	s.a	direct slot read; inspect statement kind for name vs expression	child_types[s.a] = "Range";
+src/native_generator.cpp	6149	s.a	direct slot read; inspect statement kind for name vs expression	o << indent(level) << "for " << s.a << " in ("
+src/native_generator.cpp	6153	s.a	direct slot read; inspect statement kind for name vs expression	child_locals.insert(s.a);
+src/native_generator.cpp	6154	s.a	direct slot read; inspect statement kind for name vs expression	child_types[s.a] = "int";
+src/native_generator.cpp	6173	s.a	direct slot read; inspect statement kind for name vs expression	o << indent(level) << "for " << s.a << " in " << traversal
+src/native_generator.cpp	6177	s.a	direct slot read; inspect statement kind for name vs expression	child_locals.insert(s.a);
+src/native_generator.cpp	6178	s.a	direct slot read; inspect statement kind for name vs expression	child_types[s.a] = element;
+src/native_generator.cpp	6211	s.a	direct slot read; inspect statement kind for name vs expression	o << indent(level + 2) << "Some(" << s.a << ") => {\n";
+src/native_generator.cpp	6214	s.a	direct slot read; inspect statement kind for name vs expression	child_locals.insert(s.a);
+src/native_generator.cpp	6219	s.a	direct slot read; inspect statement kind for name vs expression	child_types[s.a] = element;
+src/native_generator.cpp	6232	s.args	call argument values; verify call/message AST projection	if (s.args.empty()) o << "println!();\n";
+src/native_generator.cpp	6235	s.args	call argument values; verify call/message AST projection	for (size_t k = 0; k < s.args.size(); ++k) { if (k) o << " "; o << "{}"; }
+src/native_generator.cpp	6237	s.args	call argument values; verify call/message AST projection	for (size_t argument = 0; argument < s.args.size(); ++argument) {
+src/native_generator.cpp	6239	s.args	call argument values; verify call/message AST projection	s.args[argument], d, locals, &types,
+src/native_generator.cpp	6242	s.args	call argument values; verify call/message AST projection	auto type = generated_expr_type(s.args[argument], &types);
+src/native_generator.cpp	6302	s.a	literal comparison: NAME/keyword only if statement-kind selected; inventory separately audited	if (s.a == "_") {
+src/native_generator.cpp	6304	s.b	expression-bearing slot consumed via EST/tree/checker/emitter path	<< expr(s.b, d, locals, &types,
+src/native_generator.cpp	6311	s.a	direct slot read; inspect statement kind for name vs expression	if (phase21_option_slots_.count(s.a)) {
+src/native_generator.cpp	6312	s.a	direct slot read; inspect statement kind for name vs expression	o << indent(level) << "__moss_recovery_slot_" << s.a
+src/native_generator.cpp	6313	s.b	expression-bearing slot consumed via EST/tree/checker/emitter path	<< " = Some(" << expr(s.b, d, locals, &types,
+src/native_generator.cpp	6319	s.b	direct slot read; inspect statement kind for name vs expression	if (auto sd = domain_construction(s.b)) {
+src/native_generator.cpp	6321	s.a	direct slot read; inspect statement kind for name vs expression	construction_binding_ = s.a;
+src/native_generator.cpp	6322	s.a	direct slot read; inspect statement kind for name vs expression	remember_domain_instance_binding(s.a, source_domain, s.a);
+src/native_generator.cpp	6322	s.a	direct slot read; inspect statement kind for name vs expression	remember_domain_instance_binding(s.a, source_domain, s.a);
+src/native_generator.cpp	6323	s.a	text/shape helper use; bounded taint review required	auto specialized = specialization_names_.find(*sd + "\n" + s.a);
+src/native_generator.cpp	6325	s.a	direct slot read; inspect statement kind for name vs expression	bool existing_binding = locals.count(s.a);
+src/native_generator.cpp	6326	s.a	direct slot read; inspect statement kind for name vs expression	o << indent(level) << (existing_binding ? "" : "let ") << s.a << " = ";
+src/native_generator.cpp	6327	s.b	direct slot read; inspect statement kind for name vs expression	emit_domain_construction(o, *sd, s.b, d, locals, &types);
+src/native_generator.cpp	6328	s.a	direct slot read; inspect statement kind for name vs expression	locals.insert(s.a);
+src/native_generator.cpp	6329	s.a	direct slot read; inspect statement kind for name vs expression	types[s.a] = *sd;
+src/native_generator.cpp	6336	s.a	expression-bearing slot consumed via EST/tree/checker/emitter path	if (tree_parse_index(s.a, lhs_base, lhs_index)) {
+src/native_generator.cpp	6358	s.a	expression-bearing slot consumed via EST/tree/checker/emitter path	if (tree_parse_index(s.a, lhs_base, lhs_index)) {
+src/native_generator.cpp	6370	s.a	direct slot read; inspect statement kind for name vs expression	else lhs = write_call_place(s.a, d, locals, &types);
+src/native_generator.cpp	6372	s.a	binding comparison: allowed only when slot denotes binding/root name	[&](const Field& field) { return field.name == s.a; });
+src/native_generator.cpp	6373	s.a	expression-bearing slot consumed via EST/tree/checker/emitter path	if (tree_plain_identifier(s.a) && !locals.count(s.a) && !state_field) {
+src/native_generator.cpp	6373	s.a	expression-bearing slot consumed via EST/tree/checker/emitter path	if (tree_plain_identifier(s.a) && !locals.count(s.a) && !state_field) {
+src/native_generator.cpp	6378	s.b	expression-bearing slot consumed via EST/tree/checker/emitter path	if (staged_abi_v10() && tree_empty_constructor_named(s.b, "Map") &&
+src/native_generator.cpp	6387	s.a	binding comparison: allowed only when slot denotes binding/root name	map_base != s.a) continue;
+src/native_generator.cpp	6401	s.b	literal comparison: NAME/keyword only if statement-kind selected; inventory separately audited	canonical_type_name(generated_expr_type(s.b, &types).value_or("")) == "float")
+src/native_generator.cpp	6403	s.a	direct slot read; inspect statement kind for name vs expression	o << indent(level) << "let mut " << s.a;
+src/native_generator.cpp	6406	s.b	expression-bearing slot consumed via EST/tree/checker/emitter path	<< expr(s.b, d, locals, &types,
+src/native_generator.cpp	6410	s.a	direct slot read; inspect statement kind for name vs expression	locals.insert(s.a);
+src/native_generator.cpp	6411	s.b	direct slot read; inspect statement kind for name vs expression	auto generated_type = generated_expr_type(s.b, &types);
+src/native_generator.cpp	6412	s.a	direct slot read; inspect statement kind for name vs expression	types[s.a] = !inferred_map_type.empty() ? inferred_map_type
+src/native_generator.cpp	6417	s.b	expression-bearing slot consumed via EST/tree/checker/emitter path	: tree_empty_constructor_named(s.b, "Map") ? "map"
+src/native_generator.cpp	6418	s.b	expression-bearing slot consumed via EST/tree/checker/emitter path	: tree_empty_constructor_named(s.b, "Queue") ? "queue"
+src/native_generator.cpp	6419	s.b	expression-bearing slot consumed via EST/tree/checker/emitter path	: staged_abi_v10() && tree_empty_constructor_named(s.b, "Set") ? "set"
+src/native_generator.cpp	6420	s.b	expression-bearing slot consumed via EST/tree/checker/emitter path	: (tree_parse_vector_literal(s.b) ? "vector" : "_value");
+src/native_generator.cpp	6421	s.b	expression-bearing slot consumed via EST/tree/checker/emitter path	const auto source_name = tree_identifier_name(s.b);
+src/native_generator.cpp	6427	s.a	direct slot read; inspect statement kind for name vs expression	s.a, source_binding->second.source_domain,
+src/native_generator.cpp	6430	s.a	direct slot read; inspect statement kind for name vs expression	forget_domain_instance_binding(s.a);
+src/native_generator.cpp	6433	s.a	expression-bearing slot consumed via EST/tree/checker/emitter path	bool map_assignment = tree_parse_index(s.a, mb, mi);
+src/native_generator.cpp	6448	s.b	expression-bearing slot consumed via EST/tree/checker/emitter path	string inserted = expr(s.b, d, locals, &types,
+src/native_generator.cpp	6450	s.b	expression-bearing slot consumed via EST/tree/checker/emitter path	const auto source_binding = tree_identifier_name(s.b);
+src/native_generator.cpp	6468	s.a	direct slot read; inspect statement kind for name vs expression	else if (is_object_view(s.a, d, locals, &types))
+src/native_generator.cpp	6469	s.b	expression-bearing slot consumed via EST/tree/checker/emitter path	o << indent(level) << "(" << lhs << ").__moss_replace(" << expr(s.b, d, locals, &types, statement_functional_pipeline_id(s, functional_context, 0)) << ");\n";
+src/native_generator.cpp	6489	s.b	direct slot read; inspect statement kind for name vs expression	collect_concat(s.b);
+src/native_generator.cpp	6490	s.a	expression-bearing slot consumed via EST/tree/checker/emitter path	bool reuse_string_buffer = tree_plain_identifier(s.a) &&
+src/native_generator.cpp	6491	s.a	text/shape helper use; bounded taint review required	locals.count(s.a) && concat_operands.size() > 1 &&
+src/native_generator.cpp	6492	s.a	expression-bearing slot consumed via EST/tree/checker/emitter path	tree_expressions_equal(concat_operands.front(), s.a) &&
+src/native_generator.cpp	6493	s.a	direct slot read; inspect statement kind for name vs expression	canonical_type_name(types.count(s.a) ? types.at(s.a) : "") ==
+src/native_generator.cpp	6493	s.a	direct slot read; inspect statement kind for name vs expression	canonical_type_name(types.count(s.a) ? types.at(s.a) : "") ==
+src/native_generator.cpp	6498	s.a	expression-bearing slot consumed via EST/tree/checker/emitter path	if (tree_expression_mentions_identifier(concat_operands[operand], s.a))
+src/native_generator.cpp	6513	s.a	direct slot read; inspect statement kind for name vs expression	string place = write_call_place(s.a, d, locals, &types);
+src/native_generator.cpp	6532	s.b	expression-bearing slot consumed via EST/tree/checker/emitter path	assigned = expr(s.b, d, locals, &types,
+src/native_generator.cpp	6535	s.b	expression-bearing slot consumed via EST/tree/checker/emitter path	const auto source_binding = tree_identifier_name(s.b);
+src/native_generator.cpp	6544	s.a	expression-bearing slot consumed via EST/tree/checker/emitter path	if (tree_plain_identifier(s.a)) forget_domain_instance_binding(s.a);
+src/native_generator.cpp	6544	s.a	expression-bearing slot consumed via EST/tree/checker/emitter path	if (tree_plain_identifier(s.a)) forget_domain_instance_binding(s.a);
+src/native_generator.cpp	6553	s.a	binding comparison: allowed only when slot denotes binding/root name	if (checked_receiver != s.receiver_types_by_context.end() && types.count(s.a))
+src/native_generator.cpp	6554	s.a	direct slot read; inspect statement kind for name vs expression	types[s.a] = checked_receiver->second;
+src/native_generator.cpp	6555	s.b	direct slot read; inspect statement kind for name vs expression	string statement_receiver_type = !s.b.empty()
+src/native_generator.cpp	6556	s.a	direct slot read; inspect statement kind for name vs expression	? canonical_type_name(generated_expr_type(s.a, &types).value_or("")) : "";
+src/native_generator.cpp	6557	s.b	direct slot read; inspect statement kind for name vs expression	if (!s.b.empty() &&
+src/native_generator.cpp	6566	s.b	literal comparison: NAME/keyword only if statement-kind selected; inventory separately audited	(s.b == "delete" && (statement_receiver_type == "map" ||
+src/native_generator.cpp	6568	s.a	direct slot read; inspect statement kind for name vs expression	string call = s.a + "." + s.b + "(";
+src/native_generator.cpp	6568	s.b	direct slot read; inspect statement kind for name vs expression	string call = s.a + "." + s.b + "(";
+src/native_generator.cpp	6569	s.args	call argument values; verify call/message AST projection	for (size_t argument = 0; argument < s.args.size(); ++argument) {
+src/native_generator.cpp	6571	s.args	call argument values; verify call/message AST projection	call += s.args[argument];
+src/native_generator.cpp	6578	s.b	literal comparison: NAME/keyword only if statement-kind selected; inventory separately audited	if (s.b.empty() && s.a == "assert") {
+src/native_generator.cpp	6578	s.a	literal comparison: NAME/keyword only if statement-kind selected; inventory separately audited	if (s.b.empty() && s.a == "assert") {
+src/native_generator.cpp	6580	s.args	call argument values; verify call/message AST projection	<< expr(s.args.front(), d, locals, &types,
+src/native_generator.cpp	6586	s.text	direct slot read; inspect statement kind for name vs expression	std::to_string(s.line) + ": " + s.text)
+src/native_generator.cpp	6591	s.b	literal comparison: NAME/keyword only if statement-kind selected; inventory separately audited	if (s.b.empty() && s.a == "assertEqual") {
+src/native_generator.cpp	6591	s.a	literal comparison: NAME/keyword only if statement-kind selected; inventory separately audited	if (s.b.empty() && s.a == "assertEqual") {
+src/native_generator.cpp	6596	s.args	call argument values; verify call/message AST projection	<< expr(s.args[0], d, locals, &types,
+src/native_generator.cpp	6601	s.args	call argument values; verify call/message AST projection	<< expr(s.args[1], d, locals, &types,
+src/native_generator.cpp	6606	s.text	direct slot read; inspect statement kind for name vs expression	for (char ch : s.text) {
+src/native_generator.cpp	6621	s.b	literal comparison: NAME/keyword only if statement-kind selected; inventory separately audited	if (s.b.empty() && s.a == "sort" && !functions_.count(s.a) &&
+src/native_generator.cpp	6621	s.a	literal comparison: NAME/keyword only if statement-kind selected; inventory separately audited	if (s.b.empty() && s.a == "sort" && !functions_.count(s.a) &&
+src/native_generator.cpp	6621	s.a	literal comparison: NAME/keyword only if statement-kind selected; inventory separately audited	if (s.b.empty() && s.a == "sort" && !functions_.count(s.a) &&
+src/native_generator.cpp	6622	s.args	call argument values; verify call/message AST projection	(s.args.size() == 1 || s.args.size() == 2)) {
+src/native_generator.cpp	6622	s.args	call argument values; verify call/message AST projection	(s.args.size() == 1 || s.args.size() == 2)) {
+src/native_generator.cpp	6623	s.args	call argument values; verify call/message AST projection	o << indent(level) << sort_call_rust(s.args, d, locals, &types) << ";\n";
+src/native_generator.cpp	6627	s.a	direct slot read; inspect statement kind for name vs expression	string function_name = resolved_callable_identity(s.a, &types);
+src/native_generator.cpp	6636	s.b	direct slot read; inspect statement kind for name vs expression	if (s.b.empty() && known_function && !benchmark_body_) {
+src/native_generator.cpp	6638	s.args	call argument values; verify call/message AST projection	<< render_known_function_call(*function_target, function_target->name, s.args,
+src/native_generator.cpp	6645	s.b	direct slot read; inspect statement kind for name vs expression	s.b.empty() && !known_function;
+src/native_generator.cpp	6648	s.b	direct slot read; inspect statement kind for name vs expression	: !s.b.empty() ? generated_expr_type(s.a, &types)
+src/native_generator.cpp	6648	s.a	direct slot read; inspect statement kind for name vs expression	: !s.b.empty() ? generated_expr_type(s.a, &types)
+src/native_generator.cpp	6651	s.b	direct slot read; inspect statement kind for name vs expression	if (call_receiver_type && (!s.b.empty() || implicit_method))
+src/native_generator.cpp	6654	s.a	direct slot read; inspect statement kind for name vs expression	implicit_method ? s.a : s.b, [&]() {
+src/native_generator.cpp	6654	s.b	direct slot read; inspect statement kind for name vs expression	implicit_method ? s.a : s.b, [&]() {
+src/native_generator.cpp	6656	s.args	call argument values; verify call/message AST projection	for (const auto& argument : s.args)
+src/native_generator.cpp	6674	s.args	call argument values; verify call/message AST projection	vector<string> argument_temporaries(s.args.size());
+src/native_generator.cpp	6676	s.args	call argument values; verify call/message AST projection	for (size_t k = 0; k < s.args.size(); ++k) {
+src/native_generator.cpp	6678	s.b	direct slot read; inspect statement kind for name vs expression	if (!s.b.empty()) {
+src/native_generator.cpp	6682	s.args	call argument values; verify call/message AST projection	tree_parse_member_call(s.args[k], nested_receiver, nested_method,
+src/native_generator.cpp	6684	s.a	expression-bearing slot consumed via EST/tree/checker/emitter path	tree_expressions_equal(nested_receiver, s.a);
+src/native_generator.cpp	6688	s.args	call argument values; verify call/message AST projection	if (tree_parse_simple_call(s.args[k], nested_name, nested_args)) {
+src/native_generator.cpp	6702	s.args	call argument values; verify call/message AST projection	generated_expr_type(s.args[k], &types).value_or("_value");
+src/native_generator.cpp	6704	s.args	call argument values; verify call/message AST projection	<< expr(s.args[k], d, locals, &types,
+src/native_generator.cpp	6713	s.b	direct slot read; inspect statement kind for name vs expression	(s.b.empty() && known_function
+src/native_generator.cpp	6714	s.args	call argument values; verify call/message AST projection	? viewed_function_name(function_target->name, s.args, d, locals, &types)
+src/native_generator.cpp	6715	s.b	direct slot read; inspect statement kind for name vs expression	: !s.b.empty() ? method_receiver_place(s.a, s.b, s.args, d, locals, &types)
+src/native_generator.cpp	6715	s.a	direct slot read; inspect statement kind for name vs expression	: !s.b.empty() ? method_receiver_place(s.a, s.b, s.args, d, locals, &types)
+src/native_generator.cpp	6715	s.b	direct slot read; inspect statement kind for name vs expression	: !s.b.empty() ? method_receiver_place(s.a, s.b, s.args, d, locals, &types)
+src/native_generator.cpp	6715	s.args	call argument values; verify call/message AST projection	: !s.b.empty() ? method_receiver_place(s.a, s.b, s.args, d, locals, &types)
+src/native_generator.cpp	6716	s.a	expression-bearing slot consumed via EST/tree/checker/emitter path	: expr(s.a, d, locals, &types));
+src/native_generator.cpp	6720	s.b	direct slot read; inspect statement kind for name vs expression	if (!s.b.empty()) {
+src/native_generator.cpp	6721	s.b	direct slot read; inspect statement kind for name vs expression	string method = s.b;
+src/native_generator.cpp	6722	s.a	text/shape helper use; bounded taint review required	auto it = types.find(s.a);
+src/native_generator.cpp	6725	s.a	direct slot read; inspect statement kind for name vs expression	call_output << "." << viewed_method_name(s.a, method, s.args, d, locals, &types);
+src/native_generator.cpp	6725	s.args	call argument values; verify call/message AST projection	call_output << "." << viewed_method_name(s.a, method, s.args, d, locals, &types);
+src/native_generator.cpp	6729	s.args	call argument values; verify call/message AST projection	for (size_t k = 0; k < s.args.size(); ++k) {
+src/native_generator.cpp	6731	s.args	call argument values; verify call/message AST projection	is_compile_time_callable(generated_expr_type(s.args[k], &types).value_or(""));
+src/native_generator.cpp	6736	s.args	call argument values; verify call/message AST projection	? s.args[k] : argument_temporaries[k];
+src/native_generator.cpp	6743	s.args	call argument values; verify call/message AST projection	s.args, &types));
+src/native_generator.cpp	6744	s.b	direct slot read; inspect statement kind for name vs expression	} else if (!s.b.empty() || implicit_method) {
+src/native_generator.cpp	6791	s.args	call argument values; verify call/message AST projection	call_output << expr(s.args[k], d, locals, &types,
+src/native_generator.cpp	6818	s.b	direct slot read; inspect statement kind for name vs expression	auto receiver_type = !s.b.empty()
+src/native_generator.cpp	6819	s.a	direct slot read; inspect statement kind for name vs expression	? generated_expr_type(s.a, &types) : std::optional<string>{};
+src/native_generator.cpp	6820	s.b	literal comparison: NAME/keyword only if statement-kind selected; inventory separately audited	if (!s.b.empty() && s.b == "pop" && receiver_type &&
+src/native_generator.cpp	6820	s.b	literal comparison: NAME/keyword only if statement-kind selected; inventory separately audited	if (!s.b.empty() && s.b == "pop" && receiver_type &&
+src/native_generator.cpp	6831	s.a	direct slot read; inspect statement kind for name vs expression	bool joined_assignment = join_assignments.erase(s.a) != 0;
+src/native_generator.cpp	6832	s.b	direct slot read; inspect statement kind for name vs expression	auto sd = domain_construction(s.b);
+src/native_generator.cpp	6835	s.a	direct slot read; inspect statement kind for name vs expression	construction_binding_ = s.a;
+src/native_generator.cpp	6836	s.a	direct slot read; inspect statement kind for name vs expression	remember_domain_instance_binding(s.a, source_domain, s.a);
+src/native_generator.cpp	6836	s.a	direct slot read; inspect statement kind for name vs expression	remember_domain_instance_binding(s.a, source_domain, s.a);
+src/native_generator.cpp	6837	s.a	text/shape helper use; bounded taint review required	auto specialized = specialization_names_.find(*sd + "\n" + s.a);
+src/native_generator.cpp	6842	s.a	direct slot read; inspect statement kind for name vs expression	o << s.a << " = ";
+src/native_generator.cpp	6843	s.b	direct slot read; inspect statement kind for name vs expression	emit_domain_construction(o, *sd, s.b, d, locals, &types);
+src/native_generator.cpp	6844	s.a	direct slot read; inspect statement kind for name vs expression	types[s.a] = *sd;
+src/native_generator.cpp	6846	s.b	expression-bearing slot consumed via EST/tree/checker/emitter path	const auto source_name = tree_identifier_name(s.b);
+src/native_generator.cpp	6850	s.b	expression-bearing slot consumed via EST/tree/checker/emitter path	if (staged_abi_v10() && tree_empty_constructor_named(s.b, "Map") &&
+src/native_generator.cpp	6856	s.a	binding comparison: allowed only when slot denotes binding/root name	map_base != s.a) continue;
+src/native_generator.cpp	6869	s.a	direct slot read; inspect statement kind for name vs expression	o << s.a;
+src/native_generator.cpp	6872	s.b	literal comparison: NAME/keyword only if statement-kind selected; inventory separately audited	canonical_type_name(generated_expr_type(s.b, &types).value_or("")) == "float"))
+src/native_generator.cpp	6879	s.b	expression-bearing slot consumed via EST/tree/checker/emitter path	<< expr(s.b, d, locals, &types,
+src/native_generator.cpp	6884	s.b	direct slot read; inspect statement kind for name vs expression	auto generated_type = generated_expr_type(s.b, &types);
+src/native_generator.cpp	6889	s.a	direct slot read; inspect statement kind for name vs expression	types[s.a] = domain_capability ? source->second
+src/native_generator.cpp	6901	s.a	direct slot read; inspect statement kind for name vs expression	s.a, source_binding->second.source_domain,
+src/native_generator.cpp	6904	s.a	direct slot read; inspect statement kind for name vs expression	forget_domain_instance_binding(s.a);
+src/native_generator.cpp	6906	s.a	direct slot read; inspect statement kind for name vs expression	forget_domain_instance_binding(s.a);
+src/native_generator.cpp	6909	s.a	direct slot read; inspect statement kind for name vs expression	locals.insert(s.a);
+src/native_generator.cpp	6914	s.a	direct slot read; inspect statement kind for name vs expression	string call = "message " + s.a + "." + s.b + "(";
+src/native_generator.cpp	6914	s.b	direct slot read; inspect statement kind for name vs expression	string call = "message " + s.a + "." + s.b + "(";
+src/native_generator.cpp	6915	s.args	call argument values; verify call/message AST projection	for (size_t argument = 0; argument < s.args.size(); ++argument) {
+src/native_generator.cpp	6917	s.args	call argument values; verify call/message AST projection	call += s.args[argument];
+src/native_generator.cpp	6940	s.args	call argument values; verify call/message AST projection	for (size_t argument = 0; argument < s.args.size(); ++argument)
+src/native_generator.cpp	6945	s.a	direct slot read; inspect statement kind for name vs expression	const Domain& target = *domains_.at(canonical_type_name(types.at(s.a)));
+src/native_generator.cpp	6947	s.b	direct slot read; inspect statement kind for name vs expression	types[s.message_result] = find_handler(target, s.b)->reply_type.value_or("unit");
+src/native_generator.cpp	6956	s.a	direct slot read; inspect statement kind for name vs expression	<< message_arg(s.a, *current_handler->reply_type, d, locals, &types,
+src/native_generator.cpp	6968	s.a	direct slot read; inspect statement kind for name vs expression	if (in_function && !s.a.empty()) {
+src/native_generator.cpp	6969	s.a	expression-bearing slot consumed via EST/tree/checker/emitter path	string rendered = expr(s.a, d, locals, &types,
+src/native_generator.cpp	6972	s.a	expression-bearing slot consumed via EST/tree/checker/emitter path	const auto returned_binding = tree_identifier_name(s.a);
+src/native_generator.cpp	7001	s.text	expression-bearing slot consumed via EST/tree/checker/emitter path	o << expr(s.text, d, locals, &types,
+src/file_chunk_codegen.inc	36	s.b	expression-bearing slot consumed via EST/tree/checker/emitter path	if (tree_parse_fileio_open(s.b, open_arguments)) {
+src/file_chunk_codegen.inc	43	s.a	direct slot read; inspect statement kind for name vs expression	o << pad << "let mut " << s.a << " = " << opened << ";\n";
+src/file_chunk_codegen.inc	44	s.a	direct slot read; inspect statement kind for name vs expression	locals.insert(s.a);
+src/file_chunk_codegen.inc	45	s.a	direct slot read; inspect statement kind for name vs expression	types[s.a] = "FileIO";
+src/file_chunk_codegen.inc	50	s.b	expression-bearing slot consumed via EST/tree/checker/emitter path	if (tree_parse_member_call(s.b, receiver, method, arguments) &&
+src/file_chunk_codegen.inc	60	s.a	direct slot read; inspect statement kind for name vs expression	o << pad << "let " << s.a << " = " << read << ";\n";
+src/file_chunk_codegen.inc	61	s.a	direct slot read; inspect statement kind for name vs expression	locals.insert(s.a);
+src/file_chunk_codegen.inc	62	s.a	direct slot read; inspect statement kind for name vs expression	types[s.a] = "Range";
+src/file_chunk_codegen.inc	67	s.a	binding comparison: allowed only when slot denotes binding/root name	if (s.kind != Stmt::Kind::Call || !fileio_typed(types, s.a)) return false;
+src/file_chunk_codegen.inc	69	s.a	direct slot read; inspect statement kind for name vs expression	s.a, s.b, s.args, d, locals, &types);
+src/file_chunk_codegen.inc	69	s.b	direct slot read; inspect statement kind for name vs expression	s.a, s.b, s.args, d, locals, &types);
+src/file_chunk_codegen.inc	69	s.args	call argument values; verify call/message AST projection	s.a, s.b, s.args, d, locals, &types);
+src/file_chunk_codegen.inc	70	s.b	literal comparison: NAME/keyword only if statement-kind selected; inventory separately audited	if (s.b == "write" && s.args.size() == 2) {
+src/file_chunk_codegen.inc	70	s.args	call argument values; verify call/message AST projection	if (s.b == "write" && s.args.size() == 2) {
+src/file_chunk_codegen.inc	73	s.args	call argument values; verify call/message AST projection	expr(s.args[0], d, locals, &types) + ", &( " +
+src/file_chunk_codegen.inc	74	s.args	call argument values; verify call/message AST projection	expr(s.args[1], d, locals, &types) + " ))";
+src/file_chunk_codegen.inc	80	s.b	literal comparison: NAME/keyword only if statement-kind selected; inventory separately audited	if (s.b == "open" && s.args.size() == 2) {
+src/file_chunk_codegen.inc	80	s.args	call argument values; verify call/message AST projection	if (s.b == "open" && s.args.size() == 2) {
+src/file_chunk_codegen.inc	83	s.args	call argument values; verify call/message AST projection	expr(s.args[0], d, locals, &types) + " ), " +
+src/file_chunk_codegen.inc	84	s.args	call argument values; verify call/message AST projection	rust_string_literal(trim(s.args[1])) + ")";
+src/file_chunk_codegen.inc	90	s.b	literal comparison: NAME/keyword only if statement-kind selected; inventory separately audited	if (s.b == "sync" && s.args.size() <= 1) {
+src/file_chunk_codegen.inc	90	s.args	call argument values; verify call/message AST projection	if (s.b == "sync" && s.args.size() <= 1) {
+src/file_chunk_codegen.inc	91	s.args	call argument values; verify call/message AST projection	bool dataonly = !s.args.empty() &&
+src/file_chunk_codegen.inc	92	s.args	call argument values; verify call/message AST projection	tree_identifier_name(s.args[0]) == std::optional<string>("dataonly");
+src/file_chunk_codegen.inc	101	s.b	literal comparison: NAME/keyword only if statement-kind selected; inventory separately audited	if (s.b == "close" && s.args.empty()) {
+src/file_chunk_codegen.inc	101	s.args	call argument values; verify call/message AST projection	if (s.b == "close" && s.args.empty()) {
+src/file_chunk_codegen.inc	109	s.b	direct slot read; inspect statement kind for name vs expression	throw std::runtime_error("internal error: unchecked FileIO operation '" + s.b + "'");

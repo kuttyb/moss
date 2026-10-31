@@ -1,0 +1,72 @@
+[
+  {
+    "label": "baseline",
+    "generated_rust": "/home/owner/daji/code/moss/tmp/cp-e-c2f51b/sdk/tables/build/debug/tables.rs",
+    "generated_numeric_helper_lines": [
+      {
+        "line": 1521,
+        "definition": true,
+        "text": "fn __moss_parse_int(text: &str) -> Result<i64, u8> {"
+      },
+      {
+        "line": 1526,
+        "definition": true,
+        "text": "fn __moss_parse_float(text: &str) -> Result<f64, u8> {"
+      },
+      {
+        "line": 4968,
+        "definition": false,
+        "text": "return Ok(match __moss_parse_int(value.as_str()).map_err(|__moss_numeric_error| if __moss_numeric_error == 0 { __MossRaised::Raised_400b8493102ebccb(std__ParseError::Invalid) } else { __MossRaised::Raised_795894c856782626(std__ParseError::Overflow) }) { Ok(__moss_value) => __moss_value, Err(__moss_error) => break '__moss_try_32 Err(__moss_error.into()) });"
+      },
+      {
+        "line": 5016,
+        "definition": false,
+        "text": "return Ok(match __moss_parse_float(value.as_str()).map_err(|_| __MossRaised::Raised_400b8493102ebccb(std__ParseError::Invalid)) { Ok(__moss_value) => __moss_value, Err(__moss_error) => break '__moss_try_39 Err(__moss_error.into()) });"
+      }
+    ],
+    "source_sha": "c2f51b291c72125dcb0716cf30d22d9a4bf74f7b",
+    "compiler_sha256": "4a334c71d9b5ea5b2925c311f7a462abd046e479fc4b52df4c0453e612ceb286",
+    "source_tree": "/home/owner/daji/code/moss/tmp/cp-e-c2f51b",
+    "cwd": "sdk/tables",
+    "command": [
+      "/home/owner/daji/code/moss/tmp/cp-e-c2f51b/margo",
+      "build",
+      "--json"
+    ],
+    "MOSS": "/home/owner/daji/code/moss/tmp/cp-e-base/build/compiler/moss-dev",
+    "MARGO_HOME": "/home/owner/daji/code/moss/tmp/cp-e-c2f51b/tmp/cp-e-c2f51b/margo-tables-baseline-same-source",
+    "exit": 0,
+    "stdout": "{\"artifacts\": {\"artifacts\": {\"cache_metadata\": \"/home/owner/daji/code/moss/tmp/cp-e-c2f51b/sdk/tables/build/debug/moss_tables.mossbuild\", \"debug_map\": \"/home/owner/daji/code/moss/tmp/cp-e-c2f51b/sdk/tables/build/debug/moss_tables.mossmap\", \"executable\": \"/home/owner/daji/code/moss/tmp/cp-e-c2f51b/sdk/tables/build/debug/moss_tables\", \"generated_rust\": \"/home/owner/daji/code/moss/tmp/cp-e-c2f51b/sdk/tables/build/debug/tables.rs\", \"module_interfaces\": [\"/home/owner/daji/code/moss/tmp/cp-e-c2f51b/sdk/tables/build/debug/tables.mossi\"], \"module_rlibs\": [\"/home/owner/daji/code/moss/tmp/cp-e-c2f51b/sdk/tables/build/debug/libtables.rlib\"], \"specialization_rlib\": null}, \"backend_toolchain\": {\"compile_flags\": [\"--edition=2021\", \"-D\", \"warnings\", \"-g\", \"-C\", \"opt-level=0\"], \"fingerprint\": \"2f48c0ef4ea1736c\", \"profile\": \"debug\", \"resolved_rustc\": \"/home/owner/.cargo/bin/rustc\", \"version_verbose\": \"rustc 1.98.1 (48a229cea 2026-09-01)\\nbinary: rustc\\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\\ncommit-date: 2026-09-01\\nhost: x86_64-unknown-linux-gnu\\nrelease: 1.98.1\\nLLVM version: 22.1.8\"}, \"incremental\": {\"generated_rust_units_rewritten\": 1, \"native_artifact_reused\": false, \"units_analyzed\": 0, \"units_reused\": 229}, \"profile\": \"debug\", \"project\": \"moss.tables\", \"reused\": false, \"source\": \"/home/owner/daji/code/moss/tmp/cp-e-c2f51b/sdk/tables/src/csv_adapter.moss\", \"sources\": [\"/home/owner/daji/code/moss/tmp/cp-e-c2f51b/sdk/tables/src/csv_adapter.moss\", \"/home/owner/daji/code/moss/tmp/cp-e-c2f51b/sdk/tables/src/tables.moss\"]}, \"build_order\": [\"moss.core\", \"moss.text\", \"moss.fmt\", \"moss.parse\", \"moss.csv\", \"moss.tables\"], \"checked\": [\"moss.core\", \"moss.text\", \"moss.fmt\", \"moss.parse\", \"moss.csv\", \"moss.tables\"], \"native_checked\": [\"moss.tables\"], \"native_skipped\": [\"moss.core\", \"moss.text\", \"moss.fmt\", \"moss.parse\", \"moss.csv\"], \"ok\": true, \"packages\": [{\"name\": \"moss.core\", \"source\": {\"kind\": \"path\", \"path\": \"/home/owner/daji/code/moss/tmp/cp-e-c2f51b/sdk/foundations/core\"}}, {\"name\": \"moss.text\", \"source\": {\"kind\": \"path\", \"path\": \"/home/owner/daji/code/moss/tmp/cp-e-c2f51b/sdk/text\"}}, {\"name\": \"moss.fmt\", \"source\": {\"kind\": \"path\", \"path\": \"/home/owner/daji/code/moss/tmp/cp-e-c2f51b/sdk/fmt\"}}, {\"name\": \"moss.parse\", \"source\": {\"kind\": \"path\", \"path\": \"/home/owner/daji/code/moss/tmp/cp-e-c2f51b/sdk/parse\"}}, {\"name\": \"moss.csv\", \"source\": {\"kind\": \"path\", \"path\": \"/home/owner/daji/code/moss/tmp/cp-e-c2f51b/sdk/csv\"}}, {\"name\": \"moss.tables\", \"source\": {\"kind\": \"root\"}}], \"root_package\": \"moss.tables\", \"scheduling_events\": [{\"event\": \"start\", \"package\": \"moss.core\"}, {\"event\": \"finish\", \"package\": \"moss.core\"}, {\"event\": \"start\", \"package\": \"moss.text\"}, {\"event\": \"finish\", \"package\": \"moss.text\"}, {\"event\": \"start\", \"package\": \"moss.fmt\"}, {\"event\": \"start\", \"package\": \"moss.parse\"}, {\"event\": \"finish\", \"package\": \"moss.parse\"}, {\"event\": \"finish\", \"package\": \"moss.fmt\"}, {\"event\": \"start\", \"package\": \"moss.csv\"}, {\"event\": \"finish\", \"package\": \"moss.csv\"}, {\"event\": \"start\", \"package\": \"moss.tables\"}, {\"event\": \"finish\", \"package\": \"moss.tables\"}], \"schema_version\": \"margo-1\", \"skipped\": []}\n",
+    "stderr": ""
+  },
+  {
+    "label": "candidate",
+    "generated_rust": "/home/owner/daji/code/moss/tmp/cp-e-c2f51b/sdk/tables/build/debug/tables.rs",
+    "generated_numeric_helper_lines": [
+      {
+        "line": 4891,
+        "definition": false,
+        "text": "return Ok(match __moss_parse_int(value.as_str()).map_err(|__moss_numeric_error| if __moss_numeric_error == 0 { __MossRaised::Raised_400b8493102ebccb(std__ParseError::Invalid) } else { __MossRaised::Raised_795894c856782626(std__ParseError::Overflow) }) { Ok(__moss_value) => __moss_value, Err(__moss_error) => break '__moss_try_32 Err(__moss_error.into()) });"
+      },
+      {
+        "line": 4939,
+        "definition": false,
+        "text": "return Ok(match __moss_parse_float(value.as_str()).map_err(|_| __MossRaised::Raised_400b8493102ebccb(std__ParseError::Invalid)) { Ok(__moss_value) => __moss_value, Err(__moss_error) => break '__moss_try_39 Err(__moss_error.into()) });"
+      }
+    ],
+    "source_sha": "c2f51b291c72125dcb0716cf30d22d9a4bf74f7b",
+    "compiler_sha256": "759e978b3a78d47d61ed15f5c26cdd615df16422939227ca47a2cc375fd7a509",
+    "source_tree": "/home/owner/daji/code/moss/tmp/cp-e-c2f51b",
+    "cwd": "sdk/tables",
+    "command": [
+      "/home/owner/daji/code/moss/tmp/cp-e-c2f51b/margo",
+      "build",
+      "--json"
+    ],
+    "MOSS": "/home/owner/daji/code/moss/tmp/cp-e-c2f51b/build/compiler/moss-dev",
+    "MARGO_HOME": "/home/owner/daji/code/moss/tmp/cp-e-c2f51b/tmp/cp-e-c2f51b/margo-tables-candidate-same-source",
+    "exit": 1,
+    "stdout": "{\"schema_version\": \"margo-1\", \"ok\": false, \"error\": \"Cargo package build failed: Compiling moss_package_moss_tables v0.1.0 (/home/owner/daji/code/moss/tmp/cp-e-c2f51b/sdk/tables/build/.margo-cargo/debug/crates/moss_package_moss_tables)\\n   Compiling margo_lib_ac1b5104d06e197dac89 v0.1.0 (/home/owner/daji/code/moss/tmp/cp-e-c2f51b/sdk/tables/build/.margo-cargo/debug/crates/margo_lib_ac1b5104d06e197dac89)\\nerror[E0425]: cannot find function `__moss_parse_int` in this scope\\n    --> crates/margo_lib_ac1b5104d06e197dac89/../../../../debug/tables.rs:4891:25\\n     |\\n4891 | ...   return Ok(match __moss_parse_int(value.as_str()).map_err(|__moss_numeric_error| if __moss_numeric_error == 0 { __MossRaised:...\\n     |                       ^^^^^^^^^^^^^^^^ not found in this scope\\n\\nerror[E0425]: cannot find function `__moss_parse_float` in this scope\\n    --> crates/margo_lib_ac1b5104d06e197dac89/../../../../debug/tables.rs:4939:25\\n     |\\n4939 | ...   return Ok(match __moss_parse_float(value.as_str()).map_err(|_| __MossRaised::Raised_400b8493102ebccb(std__ParseError::Invali...\\n     |                       ^^^^^^^^^^^^^^^^^^ not found in this scope\\n\\nerror[E0425]: cannot find function `__moss_parse_int` in this scope\\n    --> crates/moss_package_moss_tables/../../../../debug/tables.rs:4891:25\\n     |\\n4891 | ...   return Ok(match __moss_parse_int(value.as_str()).map_err(|__moss_numeric_error| if __moss_numeric_error == 0 { __MossRaised:...\\n     |                       ^^^^^^^^^^^^^^^^ not found in this scope\\n\\nerror[E0425]: cannot find function `__moss_parse_float` in this scope\\n    --> crates/moss_package_moss_tables/../../../../debug/tables.rs:4939:25\\n     |\\n4939 | ...   return Ok(match __moss_parse_float(value.as_str()).map_err(|_| __MossRaised::Raised_400b8493102ebccb(std__ParseError::Invali...\\n     |                       ^^^^^^^^^^^^^^^^^^ not found in this scope\\n\\nFor more information about this error, try `rustc --explain E0425`.\\nerror: could not compile `margo_lib_ac1b5104d06e197dac89` (lib) due to 2 previous errors\\nwarning: build failed, waiting for other jobs to finish...\\nerror: could not compile `moss_package_moss_tables` (bin \\\"moss_tables\\\") due to 2 previous errors\"}\n",
+    "stderr": ""
+  }
+]

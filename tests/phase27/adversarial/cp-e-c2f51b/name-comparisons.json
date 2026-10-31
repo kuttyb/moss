@@ -1,0 +1,325 @@
+{
+  "count": 40,
+  "sites": [
+    {
+      "path": "src/semantic_checker.cpp",
+      "line": 12714,
+      "field": "statement.b",
+      "literal": "push",
+      "text": "(statement.b == \"push\" ||",
+      "class": "NAME/keyword/pattern marker; statement kind must establish slot role"
+    },
+    {
+      "path": "src/semantic_checker.cpp",
+      "line": 12715,
+      "field": "statement.b",
+      "literal": "insert",
+      "text": "(staged_abi_v10() && statement.b == \"insert\")) &&",
+      "class": "NAME/keyword/pattern marker; statement kind must establish slot role"
+    },
+    {
+      "path": "src/semantic_checker.cpp",
+      "line": 13912,
+      "field": "statement.b",
+      "literal": "push",
+      "text": "(statement.b == \"push\" ||",
+      "class": "NAME/keyword/pattern marker; statement kind must establish slot role"
+    },
+    {
+      "path": "src/semantic_checker.cpp",
+      "line": 13913,
+      "field": "statement.b",
+      "literal": "insert",
+      "text": "(staged_abi_v10() && statement.b == \"insert\")) &&",
+      "class": "NAME/keyword/pattern marker; statement kind must establish slot role"
+    },
+    {
+      "path": "src/semantic_checker.cpp",
+      "line": 14192,
+      "field": "statement.b",
+      "literal": "invoke",
+      "text": "if (statement.kind == Stmt::Kind::Call && statement.b == \"invoke\" &&",
+      "class": "NAME/keyword/pattern marker; statement kind must establish slot role"
+    },
+    {
+      "path": "src/semantic_checker.cpp",
+      "line": 14469,
+      "field": "statement.b",
+      "literal": "invoke",
+      "text": "if (statement.kind == Stmt::Kind::Call && statement.b == \"invoke\" &&",
+      "class": "NAME/keyword/pattern marker; statement kind must establish slot role"
+    },
+    {
+      "path": "src/semantic_checker.cpp",
+      "line": 18327,
+      "field": "statement.b",
+      "literal": "consume",
+      "text": "statement.b == \"consume\" ? Effect::Consume : Effect::Read);",
+      "class": "NAME/keyword/pattern marker; statement kind must establish slot role"
+    },
+    {
+      "path": "src/semantic_checker.cpp",
+      "line": 20849,
+      "field": "s.b",
+      "literal": "push",
+      "text": "bool mutating = s.b == \"push\" || s.b == \"pop\" || s.b == \"pop_front\";",
+      "class": "NAME/keyword/pattern marker; statement kind must establish slot role"
+    },
+    {
+      "path": "src/semantic_checker.cpp",
+      "line": 20849,
+      "field": "s.b",
+      "literal": "pop",
+      "text": "bool mutating = s.b == \"push\" || s.b == \"pop\" || s.b == \"pop_front\";",
+      "class": "NAME/keyword/pattern marker; statement kind must establish slot role"
+    },
+    {
+      "path": "src/semantic_checker.cpp",
+      "line": 20849,
+      "field": "s.b",
+      "literal": "pop_front",
+      "text": "bool mutating = s.b == \"push\" || s.b == \"pop\" || s.b == \"pop_front\";",
+      "class": "NAME/keyword/pattern marker; statement kind must establish slot role"
+    },
+    {
+      "path": "src/semantic_checker.cpp",
+      "line": 21017,
+      "field": "statement.b",
+      "literal": "push",
+      "text": "bool mutating = statement.b == \"push\" || statement.b == \"pop\" || statement.b == \"pop_front\";",
+      "class": "NAME/keyword/pattern marker; statement kind must establish slot role"
+    },
+    {
+      "path": "src/semantic_checker.cpp",
+      "line": 21017,
+      "field": "statement.b",
+      "literal": "pop",
+      "text": "bool mutating = statement.b == \"push\" || statement.b == \"pop\" || statement.b == \"pop_front\";",
+      "class": "NAME/keyword/pattern marker; statement kind must establish slot role"
+    },
+    {
+      "path": "src/semantic_checker.cpp",
+      "line": 21017,
+      "field": "statement.b",
+      "literal": "pop_front",
+      "text": "bool mutating = statement.b == \"push\" || statement.b == \"pop\" || statement.b == \"pop_front\";",
+      "class": "NAME/keyword/pattern marker; statement kind must establish slot role"
+    },
+    {
+      "path": "src/semantic_checker.cpp",
+      "line": 21018,
+      "field": "statement.b",
+      "literal": "pop",
+      "text": "if (statement.b == \"pop\" || statement.b == \"pop_front\") {",
+      "class": "NAME/keyword/pattern marker; statement kind must establish slot role"
+    },
+    {
+      "path": "src/semantic_checker.cpp",
+      "line": 21018,
+      "field": "statement.b",
+      "literal": "pop_front",
+      "text": "if (statement.b == \"pop\" || statement.b == \"pop_front\") {",
+      "class": "NAME/keyword/pattern marker; statement kind must establish slot role"
+    },
+    {
+      "path": "src/semantic_checker.cpp",
+      "line": 22625,
+      "field": "s.b",
+      "literal": "consume",
+      "text": "bool consuming = s.b == \"consume\";",
+      "class": "NAME/keyword/pattern marker; statement kind must establish slot role"
+    },
+    {
+      "path": "src/semantic_checker.cpp",
+      "line": 23104,
+      "field": "s.b",
+      "literal": "push",
+      "text": "if (s.b == \"push\" && s.args.size() == 1) {",
+      "class": "NAME/keyword/pattern marker; statement kind must establish slot role"
+    },
+    {
+      "path": "src/semantic_checker.cpp",
+      "line": 28595,
+      "field": "statement.a",
+      "literal": "assert",
+      "text": "const bool delayed_assert_check = statement.a == \"assert\" &&",
+      "class": "NAME/keyword/pattern marker; statement kind must establish slot role"
+    },
+    {
+      "path": "src/semantic_checker.cpp",
+      "line": 28640,
+      "field": "statement.a",
+      "literal": "sort",
+      "text": "const bool sort_builtin = statement.b.empty() && statement.a == \"sort\" &&",
+      "class": "NAME/keyword/pattern marker; statement kind must establish slot role"
+    },
+    {
+      "path": "src/semantic_checker.cpp",
+      "line": 28677,
+      "field": "statement.a",
+      "literal": "assert",
+      "text": "if (statement.b.empty() && statement.a == \"assert\" &&",
+      "class": "NAME/keyword/pattern marker; statement kind must establish slot role"
+    },
+    {
+      "path": "src/semantic_checker.cpp",
+      "line": 28762,
+      "field": "statement.text",
+      "literal": "pass",
+      "text": "tree_plain_identifier(statement.text) && statement.text != \"pass\")",
+      "class": "NAME/keyword/pattern marker; statement kind must establish slot role"
+    },
+    {
+      "path": "src/fileio_semantics.inc",
+      "line": 859,
+      "field": "statement.a",
+      "literal": "FileIO",
+      "text": "(statement.a == \"FileIO\" ||",
+      "class": "NAME/keyword/pattern marker; statement kind must establish slot role"
+    },
+    {
+      "path": "src/executor_invoke_lowering.inc",
+      "line": 324,
+      "field": "statement.b",
+      "literal": "invoke",
+      "text": "if (statement.b == \"invoke\") {",
+      "class": "NAME/keyword/pattern marker; statement kind must establish slot role"
+    },
+    {
+      "path": "src/executor_invoke_lowering.inc",
+      "line": 328,
+      "field": "statement.b",
+      "literal": "join",
+      "text": "if (statement.b == \"join\") {",
+      "class": "NAME/keyword/pattern marker; statement kind must establish slot role"
+    },
+    {
+      "path": "src/executor_invoke_lowering.inc",
+      "line": 521,
+      "field": "statement.b",
+      "literal": "invoke",
+      "text": "(statement.b == \"invoke\" || statement.b == \"join\")) {",
+      "class": "NAME/keyword/pattern marker; statement kind must establish slot role"
+    },
+    {
+      "path": "src/executor_invoke_lowering.inc",
+      "line": 521,
+      "field": "statement.b",
+      "literal": "join",
+      "text": "(statement.b == \"invoke\" || statement.b == \"join\")) {",
+      "class": "NAME/keyword/pattern marker; statement kind must establish slot role"
+    },
+    {
+      "path": "src/executor_invoke_lowering.inc",
+      "line": 534,
+      "field": "statement.b",
+      "literal": "join",
+      "text": "if (statement.b == \"join\")",
+      "class": "NAME/keyword/pattern marker; statement kind must establish slot role"
+    },
+    {
+      "path": "src/native_generator.cpp",
+      "line": 5947,
+      "field": "s.b",
+      "literal": "consume",
+      "text": "if (s.b != \"consume\" && !recovery_slot) o << \"&\";",
+      "class": "NAME/keyword/pattern marker; statement kind must establish slot role"
+    },
+    {
+      "path": "src/native_generator.cpp",
+      "line": 5949,
+      "field": "s.b",
+      "literal": "consume",
+      "text": "if (recovery_slot && s.b == \"consume\")",
+      "class": "NAME/keyword/pattern marker; statement kind must establish slot role"
+    },
+    {
+      "path": "src/native_generator.cpp",
+      "line": 5993,
+      "field": "s.b",
+      "literal": "consume",
+      "text": "if (s.b != \"consume\") {",
+      "class": "NAME/keyword/pattern marker; statement kind must establish slot role"
+    },
+    {
+      "path": "src/native_generator.cpp",
+      "line": 6302,
+      "field": "s.a",
+      "literal": "_",
+      "text": "if (s.a == \"_\") {",
+      "class": "NAME/keyword/pattern marker; statement kind must establish slot role"
+    },
+    {
+      "path": "src/native_generator.cpp",
+      "line": 6566,
+      "field": "s.b",
+      "literal": "delete",
+      "text": "(s.b == \"delete\" && (statement_receiver_type == \"map\" ||",
+      "class": "NAME/keyword/pattern marker; statement kind must establish slot role"
+    },
+    {
+      "path": "src/native_generator.cpp",
+      "line": 6578,
+      "field": "s.a",
+      "literal": "assert",
+      "text": "if (s.b.empty() && s.a == \"assert\") {",
+      "class": "NAME/keyword/pattern marker; statement kind must establish slot role"
+    },
+    {
+      "path": "src/native_generator.cpp",
+      "line": 6591,
+      "field": "s.a",
+      "literal": "assertEqual",
+      "text": "if (s.b.empty() && s.a == \"assertEqual\") {",
+      "class": "NAME/keyword/pattern marker; statement kind must establish slot role"
+    },
+    {
+      "path": "src/native_generator.cpp",
+      "line": 6621,
+      "field": "s.a",
+      "literal": "sort",
+      "text": "if (s.b.empty() && s.a == \"sort\" && !functions_.count(s.a) &&",
+      "class": "NAME/keyword/pattern marker; statement kind must establish slot role"
+    },
+    {
+      "path": "src/native_generator.cpp",
+      "line": 6820,
+      "field": "s.b",
+      "literal": "pop",
+      "text": "if (!s.b.empty() && s.b == \"pop\" && receiver_type &&",
+      "class": "NAME/keyword/pattern marker; statement kind must establish slot role"
+    },
+    {
+      "path": "src/file_chunk_codegen.inc",
+      "line": 70,
+      "field": "s.b",
+      "literal": "write",
+      "text": "if (s.b == \"write\" && s.args.size() == 2) {",
+      "class": "NAME/keyword/pattern marker; statement kind must establish slot role"
+    },
+    {
+      "path": "src/file_chunk_codegen.inc",
+      "line": 80,
+      "field": "s.b",
+      "literal": "open",
+      "text": "if (s.b == \"open\" && s.args.size() == 2) {",
+      "class": "NAME/keyword/pattern marker; statement kind must establish slot role"
+    },
+    {
+      "path": "src/file_chunk_codegen.inc",
+      "line": 90,
+      "field": "s.b",
+      "literal": "sync",
+      "text": "if (s.b == \"sync\" && s.args.size() <= 1) {",
+      "class": "NAME/keyword/pattern marker; statement kind must establish slot role"
+    },
+    {
+      "path": "src/file_chunk_codegen.inc",
+      "line": 101,
+      "field": "s.b",
+      "literal": "close",
+      "text": "if (s.b == \"close\" && s.args.empty()) {",
+      "class": "NAME/keyword/pattern marker; statement kind must establish slot role"
+    }
+  ]
+}

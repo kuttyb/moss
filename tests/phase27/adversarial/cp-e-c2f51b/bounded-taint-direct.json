@@ -1,0 +1,157 @@
+{
+  "alias_count": 6,
+  "aliases": [
+    {
+      "path": "src/semantic_checker.cpp",
+      "line": 20773,
+      "local": "condition",
+      "source_slot": "while_stmt.a",
+      "uses_within_100_lines": [
+        {
+          "line": 20774,
+          "text": "auto cmp_less = tree_split_binary(condition, {\"<=\", \"<\"});"
+        },
+        {
+          "line": 20775,
+          "text": "auto cmp_greater = tree_split_binary(condition, {\">=\", \">\"});"
+        }
+      ]
+    },
+    {
+      "path": "src/semantic_checker.cpp",
+      "line": 20898,
+      "local": "induction",
+      "source_slot": "loop.a",
+      "uses_within_100_lines": [
+        {
+          "line": 20906,
+          "text": "if (root && (*root == range_binding || *root == induction))"
+        },
+        {
+          "line": 20911,
+          "text": "tree_identifier_named(statement.a, induction)))"
+        },
+        {
+          "line": 20917,
+          "text": "induction) != statement.args.end()))"
+        },
+        {
+          "line": 20928,
+          "text": "return std::make_pair(range_binding, induction);"
+        }
+      ]
+    },
+    {
+      "path": "src/semantic_checker.cpp",
+      "line": 20973,
+      "local": "iter_expr",
+      "source_slot": "statement.b",
+      "uses_within_100_lines": [
+        {
+          "line": 20976,
+          "text": "if ((tree_parse_simple_call(iter_expr, range_callee, range_arguments) &&"
+        },
+        {
+          "line": 20978,
+          "text": "tree_parse_vector_literal(iter_expr)) {"
+        },
+        {
+          "line": 20981,
+          "text": "auto collection_type = inferred_expr_type(iter_expr, env);"
+        },
+        {
+          "line": 20996,
+          "text": "for (const Method* method : implicit_iterator_methods(iter_expr, env))"
+        }
+      ]
+    },
+    {
+      "path": "src/semantic_checker.cpp",
+      "line": 22924,
+      "local": "source",
+      "source_slot": "s.b",
+      "uses_within_100_lines": [
+        {
+          "line": 22927,
+          "text": "!tree_root_member_access_named(source, \"FileIO\", \"open\") &&"
+        },
+        {
+          "line": 22935,
+          "text": "if (tree_simple_identifier(source)) {"
+        },
+        {
+          "line": 22936,
+          "text": "require_available(s.line, source, env);"
+        },
+        {
+          "line": 22937,
+          "text": "consume_binding(s.line, source, env, s.a);"
+        },
+        {
+          "line": 22998,
+          "text": "string source = trim(s.b);"
+        },
+        {
+          "line": 23004,
+          "text": "if (tree_simple_identifier(source)) {"
+        },
+        {
+          "line": 23005,
+          "text": "require_available(s.line, source, env);"
+        },
+        {
+          "line": 23006,
+          "text": "consume_binding(s.line, source, env, s.a);"
+        }
+      ]
+    },
+    {
+      "path": "src/semantic_checker.cpp",
+      "line": 22998,
+      "local": "source",
+      "source_slot": "s.b",
+      "uses_within_100_lines": [
+        {
+          "line": 23004,
+          "text": "if (tree_simple_identifier(source)) {"
+        },
+        {
+          "line": 23005,
+          "text": "require_available(s.line, source, env);"
+        },
+        {
+          "line": 23006,
+          "text": "consume_binding(s.line, source, env, s.a);"
+        }
+      ]
+    },
+    {
+      "path": "src/native_generator.cpp",
+      "line": 6084,
+      "local": "source",
+      "source_slot": "s.b",
+      "uses_within_100_lines": [
+        {
+          "line": 6087,
+          "text": "bool is_range = tree_parse_simple_call(source, range_name, range_args) &&"
+        },
+        {
+          "line": 6089,
+          "text": "auto source_type = generated_expr_type(source, &types);"
+        },
+        {
+          "line": 6133,
+          "text": "string collection_expression = expr(source, d, locals, &types);"
+        },
+        {
+          "line": 6148,
+          "text": "string collection_expression = expr(source, d, locals, &types);"
+        },
+        {
+          "line": 6166,
+          "text": "string collection_expression = expr(source, d, locals, &types);"
+        }
+      ]
+    }
+  ]
+}

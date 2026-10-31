@@ -1,0 +1,160 @@
+{
+  "affected_source_count": 11,
+  "declaration_fallback_count": 13,
+  "sources": [
+    {
+      "source": "examples/swarm/modules/calc_interpreter/repro/natural_full/tests/calc_test.moss",
+      "baseline_symbols_error": "TEST_ASSERTION_CONFIGURATION_ERROR",
+      "candidate_symbols_error": "TEST_ASSERTION_CONFIGURATION_ERROR",
+      "candidate_off_check_ok": false,
+      "candidate_shadow_check_ok": false,
+      "source_declaration_fallback": []
+    },
+    {
+      "source": "examples/swarm/modules/calc_interpreter/repro/natural_full/tests/env_test.moss",
+      "baseline_symbols_error": "TEST_ASSERTION_CONFIGURATION_ERROR",
+      "candidate_symbols_error": "TEST_ASSERTION_CONFIGURATION_ERROR",
+      "candidate_off_check_ok": false,
+      "candidate_shadow_check_ok": false,
+      "source_declaration_fallback": []
+    },
+    {
+      "source": "examples/swarm/modules/calc_interpreter/repro/natural_full/tests/eval_test.moss",
+      "baseline_symbols_error": "TEST_ASSERTION_CONFIGURATION_ERROR",
+      "candidate_symbols_error": "TEST_ASSERTION_CONFIGURATION_ERROR",
+      "candidate_off_check_ok": false,
+      "candidate_shadow_check_ok": false,
+      "source_declaration_fallback": []
+    },
+    {
+      "source": "examples/swarm/modules/calc_interpreter/repro/natural_full/tests/lexer_test.moss",
+      "baseline_symbols_error": "TEST_ASSERTION_CONFIGURATION_ERROR",
+      "candidate_symbols_error": "TEST_ASSERTION_CONFIGURATION_ERROR",
+      "candidate_off_check_ok": false,
+      "candidate_shadow_check_ok": false,
+      "source_declaration_fallback": []
+    },
+    {
+      "source": "examples/swarm/modules/calc_interpreter/repro/natural_full/tests/report_test.moss",
+      "baseline_symbols_error": "TEST_ASSERTION_CONFIGURATION_ERROR",
+      "candidate_symbols_error": "TEST_ASSERTION_CONFIGURATION_ERROR",
+      "candidate_off_check_ok": false,
+      "candidate_shadow_check_ok": false,
+      "source_declaration_fallback": []
+    },
+    {
+      "source": "examples/swarm/modules/calc_interpreter/repro/natural_full/tests/token_test.moss",
+      "baseline_symbols_error": "TEST_ASSERTION_CONFIGURATION_ERROR",
+      "candidate_symbols_error": "TEST_ASSERTION_CONFIGURATION_ERROR",
+      "candidate_off_check_ok": false,
+      "candidate_shadow_check_ok": false,
+      "source_declaration_fallback": []
+    },
+    {
+      "source": "examples/swarm/modules/text_toolkit/toolkit/src/inventory.moss",
+      "baseline_symbols_error": "UNSUPPORTED_STRING_ORDERING",
+      "candidate_symbols_error": "UNSUPPORTED_STRING_ORDERING",
+      "candidate_off_check_ok": false,
+      "candidate_shadow_check_ok": false,
+      "source_declaration_fallback": [
+        {
+          "line": 12,
+          "kind": "fn",
+          "name": "value"
+        },
+        {
+          "line": 15,
+          "kind": "fn",
+          "name": "is_low"
+        },
+        {
+          "line": 20,
+          "kind": "fn",
+          "name": "taken"
+        },
+        {
+          "line": 23,
+          "kind": "fn",
+          "name": "line"
+        },
+        {
+          "line": 29,
+          "kind": "fn",
+          "name": "add"
+        },
+        {
+          "line": 33,
+          "kind": "fn",
+          "name": "size"
+        },
+        {
+          "line": 36,
+          "kind": "fn",
+          "name": "total_value"
+        },
+        {
+          "line": 42,
+          "kind": "fn",
+          "name": "quantities"
+        },
+        {
+          "line": 48,
+          "kind": "fn",
+          "name": "names"
+        },
+        {
+          "line": 54,
+          "kind": "fn",
+          "name": "low_stock"
+        },
+        {
+          "line": 62,
+          "kind": "fn",
+          "name": "fulfill"
+        },
+        {
+          "line": 75,
+          "kind": "fn",
+          "name": "qty_by_category"
+        },
+        {
+          "line": 82,
+          "kind": "fn",
+          "name": "report"
+        }
+      ]
+    },
+    {
+      "source": "examples/swarm/modules/text_toolkit/toolkit/src/table.moss",
+      "baseline_symbols_error": "UNSUPPORTED_STRING_ORDERING",
+      "candidate_symbols_error": "UNSUPPORTED_STRING_ORDERING",
+      "candidate_off_check_ok": false,
+      "candidate_shadow_check_ok": false,
+      "source_declaration_fallback": []
+    },
+    {
+      "source": "examples/swarm/modules/text_toolkit/toolkit/tests/inventory_test.moss",
+      "baseline_symbols_error": "UNSUPPORTED_STRING_ORDERING",
+      "candidate_symbols_error": "UNSUPPORTED_STRING_ORDERING",
+      "candidate_off_check_ok": false,
+      "candidate_shadow_check_ok": false,
+      "source_declaration_fallback": []
+    },
+    {
+      "source": "examples/swarm/modules/text_toolkit/toolkit/tests/stats_test.moss",
+      "baseline_symbols_error": "UNSUPPORTED_STRING_ORDERING",
+      "candidate_symbols_error": "UNSUPPORTED_STRING_ORDERING",
+      "candidate_off_check_ok": false,
+      "candidate_shadow_check_ok": false,
+      "source_declaration_fallback": []
+    },
+    {
+      "source": "examples/swarm/modules/text_toolkit/toolkit/tests/table_test.moss",
+      "baseline_symbols_error": "UNSUPPORTED_STRING_ORDERING",
+      "candidate_symbols_error": "UNSUPPORTED_STRING_ORDERING",
+      "candidate_off_check_ok": false,
+      "candidate_shadow_check_ok": false,
+      "source_declaration_fallback": []
+    }
+  ]
+}

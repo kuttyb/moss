@@ -1,0 +1,116 @@
+{
+  "provider_interface_roots": [
+    "/home/owner/daji/code/moss/tmp/cp-e-c2f51b/packages/linalg/build/debug",
+    "/home/owner/daji/code/moss/tmp/cp-e-c2f51b/packages/math/build/debug",
+    "/home/owner/daji/code/moss/tmp/cp-e-c2f51b/sdk/binary/build/debug",
+    "/home/owner/daji/code/moss/tmp/cp-e-c2f51b/sdk/cbor/build/debug",
+    "/home/owner/daji/code/moss/tmp/cp-e-c2f51b/sdk/csv/build/debug",
+    "/home/owner/daji/code/moss/tmp/cp-e-c2f51b/sdk/datastructures/build/debug",
+    "/home/owner/daji/code/moss/tmp/cp-e-c2f51b/sdk/encoding/build/debug",
+    "/home/owner/daji/code/moss/tmp/cp-e-c2f51b/sdk/fmt/build/debug",
+    "/home/owner/daji/code/moss/tmp/cp-e-c2f51b/sdk/foundations/bytes/build/debug",
+    "/home/owner/daji/code/moss/tmp/cp-e-c2f51b/sdk/foundations/core/build/debug",
+    "/home/owner/daji/code/moss/tmp/cp-e-c2f51b/sdk/ndarray/build/debug",
+    "/home/owner/daji/code/moss/tmp/cp-e-c2f51b/sdk/parse/build/debug",
+    "/home/owner/daji/code/moss/tmp/cp-e-c2f51b/sdk/tables/build/debug",
+    "/home/owner/daji/code/moss/tmp/cp-e-c2f51b/sdk/text/build/debug"
+  ],
+  "results": {
+    "valid-source-free-consumer/standalone/baseline": {
+      "exit": 1,
+      "ok": false,
+      "code": "RECOVERY_PATTERN_REQUIRES_VARIANT",
+      "message": "recovery patterns must name a qualified enum variant",
+      "line": 57,
+      "stderr": ""
+    },
+    "valid-source-free-consumer/standalone/candidate-off": {
+      "exit": 1,
+      "ok": false,
+      "code": "UNKNOWN_ERROR_TYPE",
+      "message": "unknown error enum 'ndarray.NdArrayError'",
+      "line": 57,
+      "stderr": ""
+    },
+    "valid-source-free-consumer/standalone/candidate-shadow": {
+      "exit": 1,
+      "ok": false,
+      "code": "UNKNOWN_ERROR_TYPE",
+      "message": "unknown error enum 'ndarray.NdArrayError'",
+      "line": 57,
+      "stderr": ""
+    },
+    "valid-source-free-consumer/package-source-free/baseline": {
+      "exit": 0,
+      "ok": true,
+      "code": null,
+      "message": null,
+      "line": null,
+      "stderr": ""
+    },
+    "valid-source-free-consumer/package-source-free/candidate-off": {
+      "exit": 0,
+      "ok": true,
+      "code": null,
+      "message": null,
+      "line": null,
+      "stderr": ""
+    },
+    "valid-source-free-consumer/package-source-free/candidate-shadow": {
+      "exit": 0,
+      "ok": true,
+      "code": null,
+      "message": null,
+      "line": null,
+      "stderr": ""
+    },
+    "invalid-imported-function/standalone/baseline": {
+      "exit": 1,
+      "ok": false,
+      "code": "UNKNOWN_SYMBOL_OR_TYPE",
+      "message": "unknown identifier 'ndarray'",
+      "line": 4,
+      "stderr": ""
+    },
+    "invalid-imported-function/standalone/candidate-off": {
+      "exit": 1,
+      "ok": false,
+      "code": "UNKNOWN_SYMBOL_OR_TYPE",
+      "message": "unknown identifier 'ndarray'",
+      "line": 4,
+      "stderr": ""
+    },
+    "invalid-imported-function/standalone/candidate-shadow": {
+      "exit": 1,
+      "ok": false,
+      "code": "UNKNOWN_SYMBOL_OR_TYPE",
+      "message": "unknown identifier 'ndarray'",
+      "line": 4,
+      "stderr": ""
+    },
+    "invalid-imported-function/package-source-free/baseline": {
+      "exit": 1,
+      "ok": false,
+      "code": "UNKNOWN_SYMBOL_OR_TYPE",
+      "message": "unknown local function '__moss_private__ndarray__no_such_function'",
+      "line": 4,
+      "stderr": ""
+    },
+    "invalid-imported-function/package-source-free/candidate-off": {
+      "exit": 1,
+      "ok": false,
+      "code": "UNKNOWN_SYMBOL_OR_TYPE",
+      "message": "unknown local function '__moss_private__ndarray__no_such_function'",
+      "line": 4,
+      "stderr": ""
+    },
+    "invalid-imported-function/package-source-free/candidate-shadow": {
+      "exit": 1,
+      "ok": false,
+      "code": "UNKNOWN_SYMBOL_OR_TYPE",
+      "message": "unknown local function '__moss_private__ndarray__no_such_function'",
+      "line": 4,
+      "stderr": ""
+    }
+  }
+}

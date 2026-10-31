@@ -1,0 +1,74 @@
+{
+  "baseline": {
+    "source_sha": "c2f51b291c72125dcb0716cf30d22d9a4bf74f7b",
+    "compiler_sha256": "4a334c71d9b5ea5b2925c311f7a462abd046e479fc4b52df4c0453e612ceb286",
+    "build_exit": 0,
+    "generated_call_site_count": 2,
+    "generated_definition_count": 2,
+    "generated_lines": [
+      {
+        "line": 1521,
+        "definition": true,
+        "text": "fn __moss_parse_int(text: &str) -> Result<i64, u8> {"
+      },
+      {
+        "line": 1526,
+        "definition": true,
+        "text": "fn __moss_parse_float(text: &str) -> Result<f64, u8> {"
+      },
+      {
+        "line": 4968,
+        "definition": false,
+        "text": "return Ok(match __moss_parse_int(value.as_str()).map_err(|__moss_numeric_error| if __moss_numeric_error == 0 { __MossRaised::Raised_400b8493102ebccb(std__ParseError::Invalid) } else { __MossRaised::Raised_795894c856782626(std__ParseError::Overflow) }) { Ok(__moss_value) => __moss_value, Err(__moss_error) => break '__moss_try_32 Err(__moss_error.into()) });"
+      },
+      {
+        "line": 5016,
+        "definition": false,
+        "text": "return Ok(match __moss_parse_float(value.as_str()).map_err(|_| __MossRaised::Raised_400b8493102ebccb(std__ParseError::Invalid)) { Ok(__moss_value) => __moss_value, Err(__moss_error) => break '__moss_try_39 Err(__moss_error.into()) });"
+      }
+    ]
+  },
+  "candidate": {
+    "source_sha": "c2f51b291c72125dcb0716cf30d22d9a4bf74f7b",
+    "compiler_sha256": "759e978b3a78d47d61ed15f5c26cdd615df16422939227ca47a2cc375fd7a509",
+    "build_exit": 1,
+    "generated_call_site_count": 2,
+    "generated_definition_count": 0,
+    "generated_lines": [
+      {
+        "line": 4891,
+        "definition": false,
+        "text": "return Ok(match __moss_parse_int(value.as_str()).map_err(|__moss_numeric_error| if __moss_numeric_error == 0 { __MossRaised::Raised_400b8493102ebccb(std__ParseError::Invalid) } else { __MossRaised::Raised_795894c856782626(std__ParseError::Overflow) }) { Ok(__moss_value) => __moss_value, Err(__moss_error) => break '__moss_try_32 Err(__moss_error.into()) });"
+      },
+      {
+        "line": 4939,
+        "definition": false,
+        "text": "return Ok(match __moss_parse_float(value.as_str()).map_err(|_| __MossRaised::Raised_400b8493102ebccb(std__ParseError::Invalid)) { Ok(__moss_value) => __moss_value, Err(__moss_error) => break '__moss_try_39 Err(__moss_error.into()) });"
+      }
+    ]
+  },
+  "runtime_source_definitions": [
+    {
+      "file": "src/numeric_runtime.cpp",
+      "line": 176,
+      "text": "fn __moss_parse_int(text: &str) -> Result<i64, u8> {"
+    },
+    {
+      "file": "src/numeric_runtime.cpp",
+      "line": 181,
+      "text": "fn __moss_parse_float(text: &str) -> Result<f64, u8> {"
+    }
+  ],
+  "conditional_runtime_emission": [
+    {
+      "file": "src/native_generator.cpp",
+      "line": 226,
+      "text": "if (program_uses_numeric_builtins()) o << numeric_runtime_rust();"
+    },
+    {
+      "file": "src/native_generator.cpp",
+      "line": 318,
+      "text": "bool program_uses_numeric_builtins() const {"
+    }
+  ]
+}

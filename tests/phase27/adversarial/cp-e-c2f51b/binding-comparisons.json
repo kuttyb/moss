@@ -1,0 +1,68 @@
+{
+  "count": 9,
+  "sites": [
+    {
+      "path": "src/semantic_checker.cpp",
+      "line": 9905,
+      "field": "a",
+      "rhs": "if (stmt.a == name) {",
+      "class": "binding/root-name relation; only valid for name/binding slots"
+    },
+    {
+      "path": "src/semantic_checker.cpp",
+      "line": 12656,
+      "field": "a",
+      "rhs": "if (prior.a == base && tree_empty_constructor_named(prior.b, \"Map\")) {",
+      "class": "binding/root-name relation; only valid for name/binding slots"
+    },
+    {
+      "path": "src/semantic_checker.cpp",
+      "line": 12677,
+      "field": "a",
+      "rhs": "if (prior.a == base && tree_empty_constructor_named(prior.b, \"Map\")) {",
+      "class": "binding/root-name relation; only valid for name/binding slots"
+    },
+    {
+      "path": "src/semantic_checker.cpp",
+      "line": 12725,
+      "field": "a",
+      "rhs": "if (prior.a == statement.a &&",
+      "class": "binding/root-name relation; only valid for name/binding slots"
+    },
+    {
+      "path": "src/semantic_checker.cpp",
+      "line": 12999,
+      "field": "a",
+      "rhs": "candidate.a != name ||",
+      "class": "binding/root-name relation; only valid for name/binding slots"
+    },
+    {
+      "path": "src/semantic_checker.cpp",
+      "line": 19799,
+      "field": "a",
+      "rhs": "statement.a == selected_binding) {",
+      "class": "binding/root-name relation; only valid for name/binding slots"
+    },
+    {
+      "path": "src/semantic_checker.cpp",
+      "line": 19886,
+      "field": "a",
+      "rhs": "if (statement.a == selected_binding) selected_binding.clear();",
+      "class": "binding/root-name relation; only valid for name/binding slots"
+    },
+    {
+      "path": "src/semantic_checker.cpp",
+      "line": 24615,
+      "field": "a",
+      "rhs": "statement.b.empty() && statement.a == name &&",
+      "class": "binding/root-name relation; only valid for name/binding slots"
+    },
+    {
+      "path": "src/semantic_checker.cpp",
+      "line": 29361,
+      "field": "a",
+      "rhs": "prior.a == name) {",
+      "class": "binding/root-name relation; only valid for name/binding slots"
+    }
+  ]
+}
