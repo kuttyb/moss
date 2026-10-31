@@ -1,0 +1,4 @@
+fn main():
+  values = []
+  result = values.pop()
+  echo result

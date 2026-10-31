@@ -1,0 +1,37 @@
+{
+  "baseline": "04be1a1bbbc7a4fd8fe2e4090b4b5bad5dd573e4",
+  "sources": 2118,
+  "runs": 6354,
+  "differences": [
+    {
+      "source": "sdk/advanced-data-acceptance/fixtures/source_free_consumer.moss",
+      "base": {
+        "ok": false,
+        "error": [
+          "RECOVERY_PATTERN_REQUIRES_VARIANT",
+          57,
+          1,
+          "recovery patterns must name a qualified enum variant"
+        ]
+      },
+      "off": {
+        "ok": false,
+        "error": [
+          "UNKNOWN_ERROR_TYPE",
+          57,
+          1,
+          "unknown error enum 'ndarray.NdArrayError'"
+        ]
+      },
+      "shadow": {
+        "ok": false,
+        "error": [
+          "UNKNOWN_ERROR_TYPE",
+          57,
+          1,
+          "unknown error enum 'ndarray.NdArrayError'"
+        ]
+      }
+    }
+  ]
+}
