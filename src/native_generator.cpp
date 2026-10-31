@@ -333,6 +333,55 @@ class Generator {
     if (p_.expression_arena && arena_uses(*p_.expression_arena)) return true;
     for (const auto& arena : p_.expression_arenas)
       if (arena && arena_uses(*arena)) return true;
+    // MOSS_EST=off deliberately leaves Program's persistent expression arenas
+    // null. The Rust emitter still needs to know whether its on-demand EST
+    // lowering will emit numeric helper calls. Rebuild node views for the
+    // parsed source bodies in that mode instead of searching their spellings.
+    const auto expression_uses = [&](std::string_view source) {
+      if (source.empty()) return false;
+      const auto view = est::parse_view(source);
+      return view && view->arena && arena_uses(*view->arena);
+    };
+    const auto body_uses = [&](const vector<Stmt>& body) {
+      for (const auto& statement : body) {
+        if (expression_uses(statement.a) || expression_uses(statement.b) ||
+            expression_uses(statement.text)) return true;
+        for (const auto& argument : statement.args)
+          if (expression_uses(argument)) return true;
+        if (statement.kind == Stmt::Kind::Call && statement.text.empty()) {
+          string call = statement.a;
+          if (!statement.b.empty()) call += "." + statement.b;
+          call += "(";
+          for (std::size_t index = 0; index < statement.args.size(); ++index) {
+            if (index) call += ", ";
+            call += statement.args[index];
+          }
+          call += ")";
+          if (expression_uses(call)) return true;
+        }
+      }
+      return false;
+    };
+    for (const auto& function : p_.functions)
+      if (body_uses(function.body) ||
+          (function.result_expression &&
+           expression_uses(*function.result_expression))) return true;
+    for (const auto& object : p_.objects)
+      for (const auto& method : object.methods)
+        if (body_uses(method.body) ||
+            (method.result_expression &&
+             expression_uses(*method.result_expression))) return true;
+    for (const auto& domain : p_.domains)
+      for (const auto& handler : domain.handlers)
+        if (body_uses(handler.body)) return true;
+    for (const auto& domain : specialized_domains_)
+      for (const auto& handler : domain.handlers)
+        if (body_uses(handler.body)) return true;
+    if (p_.main && body_uses(p_.main->body)) return true;
+    for (const auto& test : p_.tests)
+      if (body_uses(test.body)) return true;
+    for (const auto& benchmark : p_.benchmarks)
+      if (body_uses(benchmark.body)) return true;
     return false;
   }
   const Program* semantic_program_ = nullptr;
