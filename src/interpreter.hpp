@@ -1104,6 +1104,22 @@ class FastInterpreter {
     return selected;
   }
 
+  bool checked_call_requires_specialization(
+      const Function& target, const Frame& caller, int line) const {
+    if (!target.static_dispatch) return false;
+    for (const auto& edge : program_.semantic_call_edges) {
+      if (edge.source != caller.functional_context ||
+          edge.target != "fn:" + target.name || edge.line != line)
+        continue;
+      if (std::any_of(target.specializations.begin(), target.specializations.end(),
+              [&](const FunctionSpecialization& candidate) {
+                return candidate.parameter_types == edge.argument_types;
+              }))
+        return true;
+    }
+    return false;
+  }
+
   const ObjectType* object_type(const std::string& name) const {
     for (const auto& candidate : program_.objects)
       if (candidate.name == name) return &candidate;
@@ -1293,6 +1309,14 @@ class FastInterpreter {
         if (callee == "map") {
           auto output_type = checked_pipeline_stage_output_type(
               parsed, stage_index, frame, line);
+          if (!output_type) {
+#ifndef NDEBUG
+            if (const char* count = std::getenv("MOSS_TEST_COUNT_FACT");
+                count && std::string(count) == "g3")
+              std::cerr << "MOSS_TEST_FACT_COUNTER|g3|line=" << line
+                        << "|context=" << frame.functional_context << "\n";
+#endif
+          }
           if (!output_type && !args.empty()) {
             std::string callback = trim_copy(args.front());
             std::string callback_name = callback;
@@ -2527,6 +2551,15 @@ class FastInterpreter {
     Frame frame;
     frame.function = target.name;
     const auto* specialization = specialization_for_call(target, caller, line);
+    if (!specialization && checked_call_requires_specialization(target, caller, line)) {
+#ifndef NDEBUG
+      if (const char* count = std::getenv("MOSS_TEST_COUNT_FACT");
+          count && std::string(count) == "g4")
+        std::cerr << "MOSS_TEST_FACT_COUNTER|g4|line=" << line
+                  << "|context=" << caller.functional_context
+                  << "|callee=" << target.name << "\n";
+#endif
+    }
     frame.functional_context = functional_function_context(target, specialization);
     frame.source_file = target.execution_source_file.empty()
         ? target.source_file : target.execution_source_file;
@@ -3005,10 +3038,8 @@ class FastInterpreter {
         } else {
           Value iterable = evaluate_expression_source(statement.b, frame, statement.line, output);
           declare_local(frame, statement.a);
-          if (iterable.kind == Value::Kind::Vector ||
-              iterable.kind == Value::Kind::Queue) {
-            auto source = iterable.kind == Value::Kind::Vector
-                ? iterable.vector : iterable.queue;
+          if (iterable.kind == Value::Kind::Vector) {
+            auto source = iterable.vector;
             if (!iterable.element_type.empty())
               frame.local_types[statement.a] = iterable.element_type;
             const auto elements = *source;
