@@ -1,0 +1,504 @@
+{
+  "candidate": "/home/owner/daji/code/moss/tmp/cp-e-blind-81dc92d7/build/compiler/moss-opt",
+  "baseline": "/home/owner/daji/code/moss/tmp/cp-e-baseline/build/compiler/moss-opt",
+  "sources": 1972,
+  "baseline_accepted": 1307,
+  "timeouts": 0,
+  "differences": [
+    {
+      "source": "examples/swarm/modules/domain_services/repro/test_diag_location/single/tests/bad.moss",
+      "verdicts": {
+        "baseline-off": {
+          "ok": false,
+          "diagnostic": {
+            "code": "TYPE_AMBIGUOUS_OPEN_RESULT",
+            "line": 2,
+            "column": 1,
+            "message": "unbound open result type for variable 'm'; heterogeneous or unresolved collection element type",
+            "semantic_identity": "test:tests/bad.moss:bare map to typed param"
+          }
+        },
+        "baseline-shadow": {
+          "ok": false,
+          "diagnostic": {
+            "code": "TYPE_AMBIGUOUS_OPEN_RESULT",
+            "line": 2,
+            "column": 1,
+            "message": "unbound open result type for variable 'm'; heterogeneous or unresolved collection element type",
+            "semantic_identity": "test:tests/bad.moss:bare map to typed param"
+          }
+        },
+        "candidate-off": {
+          "ok": false,
+          "diagnostic": {
+            "code": "MOSS_COMPILE_ERROR",
+            "line": 2,
+            "column": 1,
+            "message": "unbound open result type for variable 'm'; heterogeneous or unresolved collection element type",
+            "semantic_identity": "test:tests/bad.moss:bare map to typed param"
+          }
+        },
+        "candidate-shadow": {
+          "ok": false,
+          "diagnostic": {
+            "code": "MOSS_COMPILE_ERROR",
+            "line": 2,
+            "column": 1,
+            "message": "unbound open result type for variable 'm'; heterogeneous or unresolved collection element type",
+            "semantic_identity": "test:tests/bad.moss:bare map to typed param"
+          }
+        }
+      }
+    },
+    {
+      "source": "examples/swarm/modules/domain_services/repro/test_diag_location/split/tests/bad.moss",
+      "verdicts": {
+        "baseline-off": {
+          "ok": false,
+          "diagnostic": {
+            "code": "TYPE_AMBIGUOUS_OPEN_RESULT",
+            "line": 6,
+            "column": 1,
+            "message": "unbound open result type for variable 'm'; heterogeneous or unresolved collection element type",
+            "semantic_identity": "test:tests/bad.moss:bare map to typed param"
+          }
+        },
+        "baseline-shadow": {
+          "ok": false,
+          "diagnostic": {
+            "code": "TYPE_AMBIGUOUS_OPEN_RESULT",
+            "line": 6,
+            "column": 1,
+            "message": "unbound open result type for variable 'm'; heterogeneous or unresolved collection element type",
+            "semantic_identity": "test:tests/bad.moss:bare map to typed param"
+          }
+        },
+        "candidate-off": {
+          "ok": false,
+          "diagnostic": {
+            "code": "MOSS_COMPILE_ERROR",
+            "line": 6,
+            "column": 1,
+            "message": "unbound open result type for variable 'm'; heterogeneous or unresolved collection element type",
+            "semantic_identity": "test:tests/bad.moss:bare map to typed param"
+          }
+        },
+        "candidate-shadow": {
+          "ok": false,
+          "diagnostic": {
+            "code": "MOSS_COMPILE_ERROR",
+            "line": 6,
+            "column": 1,
+            "message": "unbound open result type for variable 'm'; heterogeneous or unresolved collection element type",
+            "semantic_identity": "test:tests/bad.moss:bare map to typed param"
+          }
+        }
+      }
+    },
+    {
+      "source": "sdk/advanced-data-acceptance/fixtures/source_free_consumer.moss",
+      "verdicts": {
+        "baseline-off": {
+          "ok": false,
+          "diagnostic": {
+            "code": "RECOVERY_PATTERN_REQUIRES_VARIANT",
+            "line": 57,
+            "column": 1,
+            "message": "recovery patterns must name a qualified enum variant",
+            "semantic_identity": "main@11"
+          }
+        },
+        "baseline-shadow": {
+          "ok": false,
+          "diagnostic": {
+            "code": "RECOVERY_PATTERN_REQUIRES_VARIANT",
+            "line": 57,
+            "column": 1,
+            "message": "recovery patterns must name a qualified enum variant",
+            "semantic_identity": "main@11"
+          }
+        },
+        "candidate-off": {
+          "ok": false,
+          "diagnostic": {
+            "code": "UNKNOWN_ERROR_TYPE",
+            "line": 57,
+            "column": 1,
+            "message": "unknown error enum 'ndarray.NdArrayError'",
+            "semantic_identity": "main@11"
+          }
+        },
+        "candidate-shadow": {
+          "ok": false,
+          "diagnostic": {
+            "code": "UNKNOWN_ERROR_TYPE",
+            "line": 57,
+            "column": 1,
+            "message": "unknown error enum 'ndarray.NdArrayError'",
+            "semantic_identity": "main@11"
+          }
+        }
+      }
+    },
+    {
+      "source": "tests/negative/unresolved_field_value.moss",
+      "verdicts": {
+        "baseline-off": {
+          "ok": false,
+          "diagnostic": {
+            "code": "TYPE_AMBIGUOUS_OPEN_RESULT",
+            "line": 5,
+            "column": 1,
+            "message": "unbound open result type for variable 'value'; heterogeneous or unresolved collection element type",
+            "semantic_identity": "main@4"
+          }
+        },
+        "baseline-shadow": {
+          "ok": false,
+          "diagnostic": {
+            "code": "TYPE_AMBIGUOUS_OPEN_RESULT",
+            "line": 5,
+            "column": 1,
+            "message": "unbound open result type for variable 'value'; heterogeneous or unresolved collection element type",
+            "semantic_identity": "main@4"
+          }
+        },
+        "candidate-off": {
+          "ok": false,
+          "diagnostic": {
+            "code": "MOSS_COMPILE_ERROR",
+            "line": 5,
+            "column": 1,
+            "message": "unbound open result type for variable 'value'; heterogeneous or unresolved collection element type",
+            "semantic_identity": "main@4"
+          }
+        },
+        "candidate-shadow": {
+          "ok": false,
+          "diagnostic": {
+            "code": "MOSS_COMPILE_ERROR",
+            "line": 5,
+            "column": 1,
+            "message": "unbound open result type for variable 'value'; heterogeneous or unresolved collection element type",
+            "semantic_identity": "main@4"
+          }
+        }
+      }
+    },
+    {
+      "source": "tests/phase25/g2/conformance/unpinned_local_without_echo.moss",
+      "verdicts": {
+        "baseline-off": {
+          "ok": false,
+          "diagnostic": {
+            "code": "TYPE_AMBIGUOUS_OPEN_RESULT",
+            "line": 2,
+            "column": 1,
+            "message": "unbound open result type for variable 'values'; heterogeneous or unresolved collection element type",
+            "semantic_identity": "main@1"
+          }
+        },
+        "baseline-shadow": {
+          "ok": false,
+          "diagnostic": {
+            "code": "TYPE_AMBIGUOUS_OPEN_RESULT",
+            "line": 2,
+            "column": 1,
+            "message": "unbound open result type for variable 'values'; heterogeneous or unresolved collection element type",
+            "semantic_identity": "main@1"
+          }
+        },
+        "candidate-off": {
+          "ok": false,
+          "diagnostic": {
+            "code": "MOSS_COMPILE_ERROR",
+            "line": 2,
+            "column": 1,
+            "message": "unbound open result type for variable 'values'; heterogeneous or unresolved collection element type",
+            "semantic_identity": "main@1"
+          }
+        },
+        "candidate-shadow": {
+          "ok": false,
+          "diagnostic": {
+            "code": "MOSS_COMPILE_ERROR",
+            "line": 2,
+            "column": 1,
+            "message": "unbound open result type for variable 'values'; heterogeneous or unresolved collection element type",
+            "semantic_identity": "main@1"
+          }
+        }
+      }
+    },
+    {
+      "source": "tests/phase25/integration/fixtures/adversarial/family02_empty_closure/02_unpinned_empty_vector_neg/case.moss",
+      "verdicts": {
+        "baseline-off": {
+          "ok": false,
+          "diagnostic": {
+            "code": "TYPE_AMBIGUOUS_OPEN_RESULT",
+            "line": 2,
+            "column": 1,
+            "message": "unbound open result type for variable 'v'; heterogeneous or unresolved collection element type",
+            "semantic_identity": "main@1"
+          }
+        },
+        "baseline-shadow": {
+          "ok": false,
+          "diagnostic": {
+            "code": "TYPE_AMBIGUOUS_OPEN_RESULT",
+            "line": 2,
+            "column": 1,
+            "message": "unbound open result type for variable 'v'; heterogeneous or unresolved collection element type",
+            "semantic_identity": "main@1"
+          }
+        },
+        "candidate-off": {
+          "ok": false,
+          "diagnostic": {
+            "code": "MOSS_COMPILE_ERROR",
+            "line": 2,
+            "column": 1,
+            "message": "unbound open result type for variable 'v'; heterogeneous or unresolved collection element type",
+            "semantic_identity": "main@1"
+          }
+        },
+        "candidate-shadow": {
+          "ok": false,
+          "diagnostic": {
+            "code": "MOSS_COMPILE_ERROR",
+            "line": 2,
+            "column": 1,
+            "message": "unbound open result type for variable 'v'; heterogeneous or unresolved collection element type",
+            "semantic_identity": "main@1"
+          }
+        }
+      }
+    },
+    {
+      "source": "tests/phase25/key_protocol/09b-empty-map-get-never-inserted/case.moss",
+      "verdicts": {
+        "baseline-off": {
+          "ok": false,
+          "diagnostic": {
+            "code": "TYPE_AMBIGUOUS_OPEN_RESULT",
+            "line": 3,
+            "column": 1,
+            "message": "unbound open result type for variable 'm'; heterogeneous or unresolved collection element type",
+            "semantic_identity": "main@2"
+          }
+        },
+        "baseline-shadow": {
+          "ok": false,
+          "diagnostic": {
+            "code": "TYPE_AMBIGUOUS_OPEN_RESULT",
+            "line": 3,
+            "column": 1,
+            "message": "unbound open result type for variable 'm'; heterogeneous or unresolved collection element type",
+            "semantic_identity": "main@2"
+          }
+        },
+        "candidate-off": {
+          "ok": false,
+          "diagnostic": {
+            "code": "MOSS_COMPILE_ERROR",
+            "line": 3,
+            "column": 1,
+            "message": "unbound open result type for variable 'm'; heterogeneous or unresolved collection element type",
+            "semantic_identity": "main@2"
+          }
+        },
+        "candidate-shadow": {
+          "ok": false,
+          "diagnostic": {
+            "code": "MOSS_COMPILE_ERROR",
+            "line": 3,
+            "column": 1,
+            "message": "unbound open result type for variable 'm'; heterogeneous or unresolved collection element type",
+            "semantic_identity": "main@2"
+          }
+        }
+      }
+    },
+    {
+      "source": "tests/phase25/key_protocol/09e-empty-map-never-used/case.moss",
+      "verdicts": {
+        "baseline-off": {
+          "ok": false,
+          "diagnostic": {
+            "code": "TYPE_AMBIGUOUS_OPEN_RESULT",
+            "line": 3,
+            "column": 1,
+            "message": "unbound open result type for variable 'm'; heterogeneous or unresolved collection element type",
+            "semantic_identity": "main@2"
+          }
+        },
+        "baseline-shadow": {
+          "ok": false,
+          "diagnostic": {
+            "code": "TYPE_AMBIGUOUS_OPEN_RESULT",
+            "line": 3,
+            "column": 1,
+            "message": "unbound open result type for variable 'm'; heterogeneous or unresolved collection element type",
+            "semantic_identity": "main@2"
+          }
+        },
+        "candidate-off": {
+          "ok": false,
+          "diagnostic": {
+            "code": "MOSS_COMPILE_ERROR",
+            "line": 3,
+            "column": 1,
+            "message": "unbound open result type for variable 'm'; heterogeneous or unresolved collection element type",
+            "semantic_identity": "main@2"
+          }
+        },
+        "candidate-shadow": {
+          "ok": false,
+          "diagnostic": {
+            "code": "MOSS_COMPILE_ERROR",
+            "line": 3,
+            "column": 1,
+            "message": "unbound open result type for variable 'm'; heterogeneous or unresolved collection element type",
+            "semantic_identity": "main@2"
+          }
+        }
+      }
+    },
+    {
+      "source": "tests/phase27/est/repro/incomplete_vector.moss",
+      "verdicts": {
+        "baseline-off": {
+          "ok": false,
+          "diagnostic": {
+            "code": "MOSS_COMPILE_ERROR",
+            "line": 2,
+            "column": 1,
+            "message": "heterogeneous or unresolved collection element type",
+            "semantic_identity": "main@1"
+          }
+        },
+        "baseline-shadow": {
+          "ok": false,
+          "diagnostic": {
+            "code": "MOSS_COMPILE_ERROR",
+            "line": 2,
+            "column": 1,
+            "message": "heterogeneous or unresolved collection element type",
+            "semantic_identity": "main@1"
+          }
+        },
+        "candidate-off": {
+          "ok": false,
+          "diagnostic": {
+            "code": "MOSS_COMPILE_ERROR",
+            "line": 2,
+            "column": 1,
+            "message": "unbound open result type for variable 'value'; heterogeneous or unresolved collection element type",
+            "semantic_identity": "main@1"
+          }
+        },
+        "candidate-shadow": {
+          "ok": false,
+          "diagnostic": {
+            "code": "MOSS_COMPILE_ERROR",
+            "line": 2,
+            "column": 1,
+            "message": "unbound open result type for variable 'value'; heterogeneous or unresolved collection element type",
+            "semantic_identity": "main@1"
+          }
+        }
+      }
+    },
+    {
+      "source": "tests/phase27/est/repro/package_open_collection/src/main.moss",
+      "verdicts": {
+        "baseline-off": {
+          "ok": false,
+          "diagnostic": {
+            "code": "MOSS_COMPILE_ERROR",
+            "line": 2,
+            "column": 1,
+            "message": "heterogeneous or unresolved collection element type",
+            "semantic_identity": "main@1"
+          }
+        },
+        "baseline-shadow": {
+          "ok": false,
+          "diagnostic": {
+            "code": "MOSS_COMPILE_ERROR",
+            "line": 2,
+            "column": 1,
+            "message": "heterogeneous or unresolved collection element type",
+            "semantic_identity": "main@1"
+          }
+        },
+        "candidate-off": {
+          "ok": false,
+          "diagnostic": {
+            "code": "MOSS_COMPILE_ERROR",
+            "line": 2,
+            "column": 1,
+            "message": "unbound open result type for variable 'value'; heterogeneous or unresolved collection element type",
+            "semantic_identity": "main@1"
+          }
+        },
+        "candidate-shadow": {
+          "ok": false,
+          "diagnostic": {
+            "code": "MOSS_COMPILE_ERROR",
+            "line": 2,
+            "column": 1,
+            "message": "unbound open result type for variable 'value'; heterogeneous or unresolved collection element type",
+            "semantic_identity": "main@1"
+          }
+        }
+      }
+    },
+    {
+      "source": "tests/phase27/est/repro/unresolved_collection_result.moss",
+      "verdicts": {
+        "baseline-off": {
+          "ok": false,
+          "diagnostic": {
+            "code": "MOSS_COMPILE_ERROR",
+            "line": 2,
+            "column": 1,
+            "message": "heterogeneous or unresolved collection element type",
+            "semantic_identity": "main@1"
+          }
+        },
+        "baseline-shadow": {
+          "ok": false,
+          "diagnostic": {
+            "code": "MOSS_COMPILE_ERROR",
+            "line": 2,
+            "column": 1,
+            "message": "heterogeneous or unresolved collection element type",
+            "semantic_identity": "main@1"
+          }
+        },
+        "candidate-off": {
+          "ok": false,
+          "diagnostic": {
+            "code": "MOSS_COMPILE_ERROR",
+            "line": 2,
+            "column": 1,
+            "message": "unbound open result type for variable 'value'; heterogeneous or unresolved collection element type",
+            "semantic_identity": "main@1"
+          }
+        },
+        "candidate-shadow": {
+          "ok": false,
+          "diagnostic": {
+            "code": "MOSS_COMPILE_ERROR",
+            "line": 2,
+            "column": 1,
+            "message": "unbound open result type for variable 'value'; heterogeneous or unresolved collection element type",
+            "semantic_identity": "main@1"
+          }
+        }
+      }
+    }
+  ]
+}

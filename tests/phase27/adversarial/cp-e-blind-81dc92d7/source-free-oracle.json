@@ -1,0 +1,30 @@
+[
+  {
+    "compiler": "baseline",
+    "mode": "off",
+    "rc": 0,
+    "stdout": "Compiled-only advanced-data gate passed: ABI-9 release: 5 Team A modules, 14 current source-backed provider interfaces\n",
+    "stderr": ""
+  },
+  {
+    "compiler": "baseline",
+    "mode": "shadow",
+    "rc": 0,
+    "stdout": "Compiled-only advanced-data gate passed: ABI-9 release: 5 Team A modules, 14 current source-backed provider interfaces\n",
+    "stderr": ""
+  },
+  {
+    "compiler": "candidate",
+    "mode": "off",
+    "rc": 0,
+    "stdout": "Compiled-only advanced-data gate passed: ABI-9 release: 5 Team A modules, 14 current source-backed provider interfaces\n",
+    "stderr": ""
+  },
+  {
+    "compiler": "candidate",
+    "mode": "shadow",
+    "rc": 0,
+    "stdout": "Compiled-only advanced-data gate passed: ABI-9 release: 5 Team A modules, 14 current source-backed provider interfaces\n",
+    "stderr": ""
+  }
+]
