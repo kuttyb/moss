@@ -67,10 +67,10 @@ The preceding review sections describe historical frozen checkpoints. The curren
 
 ### Emitter semantic-fact audit (record only; no moves in 27.3)
 
-- Parameter ABI mode: `src/native_generator.cpp:1223` — `function_parameter_abi` chooses value/shared-borrow/mutable-borrow using parameter effects, concrete type, and generic constraint operations. Specialization facts take a separate path through `concrete_parameter_abi`.
-- Synchronization fragment locks: `src/handler_lowering.inc:146` — `path_fragment_plan` rebuilds a fragment lock set from writes, consumes, and protected reads, then maps leaves to classes/modes from the domain plan.
-- Domain construction ordering: `src/native_generator.cpp:5381` and `src/native_generator.cpp:5393` — the emitter separates constructor statements from executable statements and orders constructors by reverse domain rank; `src/native_generator.cpp:6967` recognizes constructor expressions.
-- Functional lowering choice: `src/native_generator.cpp:3117` — the emitter dispatches to fused or eager code generation from `planned->fused`; nested unplanned pipelines use eager lowering. This consumes checked/optimized plan fields but still selects the backend path.
+- Parameter ABI mode: [`native_generator.cpp:1288-1303`](../../src/native_generator.cpp#L1288) chooses value/shared-borrow/mutable-borrow from parameter effects, concrete type borrowability, and generic constraint operations; specialization uses `concrete_parameter_abi`. [`native_generator.cpp:4920-4936`](../../src/native_generator.cpp#L4920) consumes the choice to emit Rust parameter references and mutability.
+- Synchronization fragment locks: [`handler_lowering.inc:144-160`](../../src/handler_lowering.inc#L144) rebuilds each path fragment's exclusive/protected-read/lock sets from effect leaves and maps them to synchronization classes/modes from the domain plan.
+- Domain construction recognition and ordering: [`native_generator.cpp:7063-7067`](../../src/native_generator.cpp#L7063) recognizes a domain constructor call; [`native_generator.cpp:5459-5477`](../../src/native_generator.cpp#L5459) partitions constructions from executable statements and orders constructions by reverse domain rank.
+- Functional lowering choice: [`native_generator.cpp:3182-3186`](../../src/native_generator.cpp#L3182) selects fused versus eager code generation from `planned->fused`; nested unplanned pipelines use eager lowering. This consumes checked/optimized plan fields but still selects the backend path.
 
 These decisions remain for a later backend-contract phase; Phase 27.3 did not move them.
 
@@ -159,10 +159,10 @@ The compiler-perf acceptance gate against `phase27-1-m1` that was recorded in `2
 
 The Rust emitter still performs these semantic or lowering decisions locally; this round records them for the later backend-contract phase and does not move them:
 
-- Parameter passing mode: [`native_generator.cpp:1239-1254`](../../src/native_generator.cpp#L1239) selects Value/SharedBorrow/MutableBorrow from specialized effects, concrete type copy/borrowability, and generic constraint operations. [`native_generator.cpp:4871-4888`](../../src/native_generator.cpp#L4871) consumes that result to emit parameter mutability and Rust reference syntax.
+- Parameter passing mode: [`native_generator.cpp:1288-1303`](../../src/native_generator.cpp#L1288) selects Value/SharedBorrow/MutableBorrow from specialized effects, concrete type copy/borrowability, and generic constraint operations. [`native_generator.cpp:4920-4936`](../../src/native_generator.cpp#L4920) consumes that result to emit parameter mutability and Rust reference syntax.
 - Failure-path synchronization sets: [`handler_lowering.inc:144-160`](../../src/handler_lowering.inc#L144) assembles exclusive, protected-read, and lock sets from effect leaves and the synchronization plan, then derives class modes.
-- Composition construction order: [`native_generator.cpp:5405-5428`](../../src/native_generator.cpp#L5405) partitions domain constructions from executable statements and sorts constructions by concrete-domain rank.
-- Fused/eager pipeline lowering: [`native_generator.cpp:3133-3137`](../../src/native_generator.cpp#L3133) selects fused versus eager code generation from the stored pipeline plan.
+- Composition construction recognition/order: [`native_generator.cpp:7063-7067`](../../src/native_generator.cpp#L7063) recognizes a domain constructor call; [`native_generator.cpp:5459-5477`](../../src/native_generator.cpp#L5459) partitions domain constructions from executable statements and sorts constructions by reverse domain rank.
+- Fused/eager pipeline lowering: [`native_generator.cpp:3182-3186`](../../src/native_generator.cpp#L3182) selects fused versus eager code generation from the stored pipeline plan.
 
 ### Latest idle W2/W3 profile (diagnostic comparison)
 
