@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <functional>
 #include <map>
@@ -26,6 +27,7 @@ class FunctionalOptimizer {
 
   void run(bool enabled) {
     CompilerStageTimer timer("functional_optimizer");
+    index_owned_expressions();
     program_.functional_traversal_groups.clear();
     for (auto& pipeline : program_.functional_pipelines) {
       pipeline.count_uses_exact_length = false;
@@ -84,17 +86,20 @@ class FunctionalOptimizer {
         if (function.static_dispatch && !function.specializations.empty()) {
           for (const auto& specialization : function.specializations) {
             string context = functional_function_context(function, &specialization);
+            auto result = result_pipeline(
+                function.expression_handles,
+                function.result_functional_expression_plans_by_context,
+                context);
             plan_scope(function.body, context, known,
-                       result_pipeline_id(function.result_functional_pipeline_ids,
-                                          context),
-                       function.result_expression);
+                       result);
           }
         } else {
           string context = functional_function_context(function);
+          auto result = result_pipeline(
+              function.expression_handles,
+              function.result_functional_expression_plans_by_context, context);
           plan_scope(function.body, context, known,
-                     result_pipeline_id(function.result_functional_pipeline_ids,
-                                        context),
-                     function.result_expression);
+                     result);
         }
       }
       for (auto& object : program_.objects) {
@@ -103,10 +108,10 @@ class FunctionalOptimizer {
           for (const auto& field : object.fields) known.insert(field.name);
           for (const auto& parameter : method.params) known.insert(parameter.name);
           string context = functional_method_context(object, method);
-          plan_scope(method.body, context, known,
-                     result_pipeline_id(method.result_functional_pipeline_ids,
-                                        context),
-                     method.result_expression);
+          auto result = result_pipeline(
+              method.expression_handles,
+              method.result_functional_expression_plans_by_context, context);
+          plan_scope(method.body, context, known, result);
         }
       }
       for (auto& domain : program_.domains) {
@@ -115,15 +120,15 @@ class FunctionalOptimizer {
           for (const auto& field : domain.state) known.insert(field.name);
           for (const auto& parameter : handler.params) known.insert(parameter.name);
           plan_scope(handler.body, functional_handler_context(domain, handler),
-                     known, 0, std::nullopt);
+                     known, std::nullopt);
         }
       }
       if (program_.main)
-        plan_scope(program_.main->body, "main", {}, 0, std::nullopt);
+        plan_scope(program_.main->body, "main", {}, std::nullopt);
       for (auto& test : program_.tests)
-        plan_scope(test.body, "test:" + test.name, {}, 0, std::nullopt);
+        plan_scope(test.body, "test:" + test.name, {}, std::nullopt);
       for (auto& benchmark : program_.benchmarks)
-        plan_scope(benchmark.body, "bench:" + benchmark.name, {}, 0,
+        plan_scope(benchmark.body, "bench:" + benchmark.name, {},
                    std::nullopt);
     }
 
@@ -132,17 +137,251 @@ class FunctionalOptimizer {
   }
 
  private:
+  struct ExpressionRef {
+    const est::Arena* arena = nullptr;
+    est::ExprId expression = 0;
+    std::uint32_t arena_index = 0;
+  };
+
   struct ScopeOccurrence {
     size_t statement_index = 0;
     size_t pipeline_id = 0;
     Stmt* statement = nullptr;
     bool result_expression = false;
     bool new_binding = false;
-    string expression;
+    ExpressionRef expression;
     string result_binding;
   };
 
   Program& program_;
+  std::unordered_map<std::size_t, ExpressionRef> pipeline_expressions_;
+
+  std::optional<ExpressionRef> owned_expression(
+      const vector<est::Handle>& handles,
+      const Stmt::FunctionalExpressionPlan& plan) const {
+    for (const auto& handle : handles) {
+      if (handle.arena_index != plan.arena_index ||
+          handle.expr != plan.expression)
+        continue;
+      if (handle.arena_index >= program_.expression_arenas.size() ||
+          !program_.expression_arenas[handle.arena_index])
+        return std::nullopt;
+      return ExpressionRef{program_.expression_arenas[handle.arena_index].get(),
+                           handle.expr, handle.arena_index};
+    }
+    return std::nullopt;
+  }
+
+  void index_body_expressions(const vector<Stmt>& body) {
+    for (const auto& statement : body) {
+      for (const auto& [context, plans] :
+           statement.functional_expression_plans_by_context) {
+        (void)context;
+        for (const auto& plan : plans) {
+          if (!plan.pipeline_id) continue;
+          if (auto expression = owned_expression(statement.expression_handles,
+                                                 plan))
+            pipeline_expressions_.emplace(plan.pipeline_id, *expression);
+        }
+      }
+    }
+  }
+
+  void index_owned_expressions() {
+    pipeline_expressions_.clear();
+    if (program_.main) index_body_expressions(program_.main->body);
+    for (const auto& function : program_.functions) {
+      index_body_expressions(function.body);
+      for (const auto& [context, plan] :
+           function.result_functional_expression_plans_by_context) {
+        (void)context;
+        if (plan.pipeline_id)
+          if (auto expression = owned_expression(function.expression_handles,
+                                                 plan))
+            pipeline_expressions_.emplace(plan.pipeline_id, *expression);
+      }
+    }
+    for (const auto& object : program_.objects)
+      for (const auto& method : object.methods) {
+        index_body_expressions(method.body);
+        for (const auto& [context, plan] :
+             method.result_functional_expression_plans_by_context) {
+          (void)context;
+          if (plan.pipeline_id)
+            if (auto expression = owned_expression(method.expression_handles,
+                                                   plan))
+              pipeline_expressions_.emplace(plan.pipeline_id, *expression);
+        }
+      }
+    for (const auto& domain : program_.domains) {
+      for (const auto& handler : domain.handlers) {
+        index_body_expressions(handler.body);
+        for (const auto& arm : handler.failure_arms)
+          index_body_expressions(arm.body);
+      }
+    }
+    for (const auto& test : program_.tests) index_body_expressions(test.body);
+    for (const auto& benchmark : program_.benchmarks)
+      index_body_expressions(benchmark.body);
+  }
+
+  static est::ExprId unparenthesized(const est::Arena& arena,
+                                    est::ExprId expression) {
+    while (const auto* grouped =
+               std::get_if<est::Parenthesized>(&arena.at(expression)))
+      expression = grouped->inner;
+    return expression;
+  }
+
+  static const est::Identifier* root_identifier(const ExpressionRef& ref) {
+    return ref.arena
+        ? std::get_if<est::Identifier>(&ref.arena->at(ref.expression))
+        : nullptr;
+  }
+
+  static void count_identifier_nodes(const est::Arena& arena,
+                                     est::ExprId expression,
+                                     const string& name, size_t& count) {
+    std::visit([&](const auto& node) {
+      using T = std::decay_t<decltype(node)>;
+      auto visit = [&](est::ExprId child) {
+        count_identifier_nodes(arena, child, name, count);
+      };
+      auto visit_all = [&](const auto& children) {
+        for (const auto child : children) visit(child);
+      };
+      if constexpr (std::is_same_v<T, est::Identifier>) {
+        if (node.name == name) ++count;
+      } else if constexpr (std::is_same_v<T, est::Unary>) visit(node.operand);
+      else if constexpr (std::is_same_v<T, est::Binary>) {
+        visit(node.left); visit(node.right);
+      } else if constexpr (std::is_same_v<T, est::Call>) {
+        visit(node.callee); visit_all(node.arguments);
+      } else if constexpr (std::is_same_v<T, est::Member>) visit(node.base);
+      else if constexpr (std::is_same_v<T, est::Index>) {
+        visit(node.base); visit(node.index);
+      } else if constexpr (std::is_same_v<T, est::Parenthesized>) visit(node.inner);
+      else if constexpr (std::is_same_v<T, est::Message>) {
+        visit(node.target); visit_all(node.arguments);
+      } else if constexpr (std::is_same_v<T, est::NamedArgument>) visit(node.value);
+      else if constexpr (std::is_same_v<T, est::Collection> ||
+                         std::is_same_v<T, est::Tuple>) visit_all(node.elements);
+      else if constexpr (std::is_same_v<T, est::Constructor>) {
+        visit(node.type); visit_all(node.type_arguments); visit_all(node.arguments);
+      } else if constexpr (std::is_same_v<T, est::Pipeline>) {
+        visit(node.input); visit_all(node.stages);
+      }
+    }, arena.at(expression));
+  }
+
+  static bool equal_expression(const est::Arena& left, est::ExprId lhs,
+                               const est::Arena& right, est::ExprId rhs) {
+    const auto& a = left.at(lhs);
+    const auto& b = right.at(rhs);
+    if (a.index() != b.index()) return false;
+    return std::visit([&](const auto& node) -> bool {
+      using T = std::decay_t<decltype(node)>;
+      const auto* other = std::get_if<T>(&b);
+      if (!other) return false;
+      auto child = [&](est::ExprId x, est::ExprId y) {
+        return equal_expression(left, x, right, y);
+      };
+      auto children = [&](const auto& xs, const auto& ys) {
+        if (xs.size() != ys.size()) return false;
+        for (size_t index = 0; index < xs.size(); ++index)
+          if (!child(xs[index], ys[index])) return false;
+        return true;
+      };
+      if constexpr (std::is_same_v<T, est::Literal>)
+        return node.spelling == other->spelling;
+      else if constexpr (std::is_same_v<T, est::Identifier>)
+        return node.name == other->name;
+      else if constexpr (std::is_same_v<T, est::Unary>)
+        return node.op == other->op && child(node.operand, other->operand);
+      else if constexpr (std::is_same_v<T, est::Binary>)
+        return node.op == other->op && child(node.left, other->left) &&
+            child(node.right, other->right);
+      else if constexpr (std::is_same_v<T, est::Call>)
+        return child(node.callee, other->callee) &&
+            children(node.arguments, other->arguments);
+      else if constexpr (std::is_same_v<T, est::Member>)
+        return node.name == other->name && child(node.base, other->base);
+      else if constexpr (std::is_same_v<T, est::Index>)
+        return child(node.base, other->base) && child(node.index, other->index);
+      else if constexpr (std::is_same_v<T, est::Parenthesized>)
+        return child(node.inner, other->inner);
+      else if constexpr (std::is_same_v<T, est::Message>)
+        return node.handler == other->handler &&
+            child(node.target, other->target) &&
+            children(node.arguments, other->arguments);
+      else if constexpr (std::is_same_v<T, est::NamedArgument>)
+        return node.name == other->name && node.separator == other->separator &&
+            child(node.value, other->value);
+      else if constexpr (std::is_same_v<T, est::Placeholder> ||
+                         std::is_same_v<T, est::MissingExpression>) return true;
+      else if constexpr (std::is_same_v<T, est::Collection>)
+        return node.delimiter == other->delimiter &&
+            children(node.elements, other->elements);
+      else if constexpr (std::is_same_v<T, est::Tuple>)
+        return children(node.elements, other->elements);
+      else if constexpr (std::is_same_v<T, est::Constructor>)
+        return child(node.type, other->type) &&
+            children(node.type_arguments, other->type_arguments) &&
+            children(node.arguments, other->arguments);
+      else if constexpr (std::is_same_v<T, est::Pipeline>)
+        return child(node.input, other->input) &&
+            children(node.stages, other->stages);
+      return false;
+    }, a);
+  }
+
+  static bool inert_literal(const est::Arena& arena, est::ExprId expression) {
+    bool negative = false;
+    const auto* unary = std::get_if<est::Unary>(&arena.at(expression));
+    if (unary) {
+      if (unary->op != "+" && unary->op != "-") return false;
+      negative = unary->op == "-";
+      expression = unary->operand;
+      if (std::holds_alternative<est::Unary>(arena.at(expression))) return false;
+    }
+    const auto* literal = std::get_if<est::Literal>(&arena.at(expression));
+    if (!literal) return false;
+    if (literal->literal_class == est::LiteralClass::Boolean) return !unary;
+    if (!literal->numeric.ok) return false;
+    if (literal->numeric.kind == NumericLiteral::Kind::Float)
+      return std::isfinite(literal->numeric.floating);
+    const auto limit = negative ? kNumericIntMinMagnitude
+                                : kNumericIntMaxMagnitude;
+    return !literal->numeric.magnitude_overflow &&
+        literal->numeric.magnitude <= limit;
+  }
+
+  static std::optional<size_t> inert_literal_vector_size(
+      const est::Arena& arena, est::ExprId expression) {
+    expression = unparenthesized(arena, expression);
+    const auto* collection = std::get_if<est::Collection>(&arena.at(expression));
+    if (!collection || collection->delimiter != '[') return std::nullopt;
+    if (!std::all_of(collection->elements.begin(), collection->elements.end(),
+                     [&](est::ExprId item) {
+                       return inert_literal(arena, item);
+                     }))
+      return std::nullopt;
+    return collection->elements.size();
+  }
+
+  std::optional<ExpressionRef> pipeline_source_expression(
+      const FunctionalPipeline& pipeline) const {
+    auto found = pipeline_expressions_.find(pipeline.transient_id);
+    if (found == pipeline_expressions_.end() || !found->second.arena)
+      return std::nullopt;
+    auto root = unparenthesized(*found->second.arena,
+                                found->second.expression);
+    const auto* syntax =
+        std::get_if<est::Pipeline>(&found->second.arena->at(root));
+    if (!syntax) return std::nullopt;
+    return ExpressionRef{found->second.arena, syntax->input,
+                         found->second.arena_index};
+  }
 
   FunctionalPipeline* pipeline_by_id(size_t id) {
     auto found = std::find_if(
@@ -198,15 +437,31 @@ class FunctionalOptimizer {
            primitive_term(element, "bool");
   }
 
-  static bool identity_map_step(const FunctionalPipeline& pipeline,
-                                const FunctionalSemanticStep& step) {
+  bool identity_map_step(const FunctionalPipeline& pipeline,
+                         const FunctionalSemanticStep& step) const {
     if (step.kind != FunctionalNodeKind::Map ||
         step.source_node_indices.size() != 1)
       return false;
     size_t node_index = step.source_node_indices.front();
     if (node_index == 0 || node_index >= pipeline.nodes.size()) return false;
     const FunctionalNode& node = pipeline.nodes[node_index];
-    return trim(node.callable_expression) == "_" &&
+    auto expression = pipeline_expressions_.find(pipeline.transient_id);
+    if (expression == pipeline_expressions_.end() || !expression->second.arena)
+      return false;
+    const auto root = unparenthesized(*expression->second.arena,
+                                      expression->second.expression);
+    const auto* syntax = std::get_if<est::Pipeline>(
+        &expression->second.arena->at(root));
+    const size_t stage_index = node_index - 1;
+    if (!syntax || stage_index >= syntax->stages.size()) return false;
+    est::ExprId callable = syntax->stages[stage_index];
+    if (const auto* call = std::get_if<est::Call>(
+            &expression->second.arena->at(callable))) {
+      if (call->arguments.empty()) return false;
+      callable = call->arguments.front();
+    }
+    return std::holds_alternative<est::Placeholder>(
+               expression->second.arena->at(callable)) &&
         canonical_type_name(node.input_type) ==
             canonical_type_name(node.output_type) &&
         trivial_pipeline_element_type(node.input_type) &&
@@ -218,7 +473,7 @@ class FunctionalOptimizer {
   // following predicate can therefore consume the earlier value unchanged,
   // and the redundant map can disappear. All non-identity maps remain in
   // source order.
-  static void rewrite_identity_map_filter(FunctionalPipeline& pipeline) {
+  void rewrite_identity_map_filter(FunctionalPipeline& pipeline) {
     for (size_t index = 0; index + 1 < pipeline.semantic_steps.size();) {
       FunctionalSemanticStep& map_step = pipeline.semantic_steps[index];
       const FunctionalSemanticStep& filter_step =
@@ -340,52 +595,119 @@ class FunctionalOptimizer {
     }
   }
 
-  static size_t result_pipeline_id(
-      const std::unordered_map<string,size_t>& ids, const string& context) {
-    auto found = ids.find(context);
-    return found == ids.end() ? 0 : found->second;
+  std::optional<std::pair<size_t, ExpressionRef>> statement_pipeline(
+      const Stmt& statement, const string& context) const {
+    auto plans = statement.functional_expression_plans_by_context.find(context);
+    if (plans == statement.functional_expression_plans_by_context.end() ||
+        plans->second.empty() || !plans->second.front().pipeline_id)
+      return std::nullopt;
+    const auto& plan = plans->second.front();
+    auto expression = owned_expression(statement.expression_handles, plan);
+    if (!expression) return std::nullopt;
+    return std::make_pair(plan.pipeline_id, *expression);
   }
 
-  static size_t statement_pipeline_id(const Stmt& statement,
-                                      const string& context) {
-    auto found = statement.functional_pipeline_ids.find(context);
-    if (found == statement.functional_pipeline_ids.end() ||
-        found->second.empty())
-      return 0;
-    return found->second.front();
+  std::optional<std::pair<size_t, ExpressionRef>> result_pipeline(
+      const vector<est::Handle>& handles,
+      const std::unordered_map<string, Stmt::FunctionalExpressionPlan>& plans,
+      const string& context) const {
+    auto found = plans.find(context);
+    if (found == plans.end() || !found->second.pipeline_id)
+      return std::nullopt;
+    auto expression = owned_expression(handles, found->second);
+    if (!expression) return std::nullopt;
+    return std::make_pair(found->second.pipeline_id, *expression);
   }
 
-  static size_t word_occurrences(const string& expression,
-                                 const string& name) {
-    size_t result = 0;
-    bool in_string = false;
-    bool escaped = false;
-    for (size_t index = 0; index < expression.size();) {
-      char ch = expression[index];
-      if (in_string) {
-        if (escaped) escaped = false;
-        else if (ch == '\\') escaped = true;
-        else if (ch == '"') in_string = false;
-        ++index;
+  std::optional<ExpressionRef> handle_expression(
+      const vector<est::Handle>& handles, est::ExprSlot slot,
+      std::uint32_t argument_index = 0) const {
+    for (const auto& handle : handles) {
+      if (handle.slot != slot || handle.argument_index != argument_index ||
+          handle.arena_index >= program_.expression_arenas.size() ||
+          !program_.expression_arenas[handle.arena_index])
         continue;
-      }
-      if (ch == '"') {
-        in_string = true;
-        ++index;
-        continue;
-      }
-      if (!(std::isalpha(static_cast<unsigned char>(ch)) || ch == '_')) {
-        ++index;
-        continue;
-      }
-      size_t end = index + 1;
-      while (end < expression.size() &&
-             (std::isalnum(static_cast<unsigned char>(expression[end])) ||
-              expression[end] == '_'))
-        ++end;
-      if (expression.substr(index, end - index) == name) ++result;
-      index = end;
+      return ExpressionRef{program_.expression_arenas[handle.arena_index].get(),
+                           handle.expr, handle.arena_index};
     }
+    return std::nullopt;
+  }
+
+  std::vector<ExpressionRef> statement_expression_roots(
+      const Stmt& statement) const {
+    std::vector<ExpressionRef> roots;
+    auto add = [&](est::ExprSlot slot, std::uint32_t index = 0) {
+      if (auto ref = handle_expression(statement.expression_handles, slot, index))
+        roots.push_back(*ref);
+    };
+    switch (statement.kind) {
+      case Stmt::Kind::Assign:
+        add(est::ExprSlot::LhsPlace);
+        add(est::ExprSlot::RhsValue);
+        break;
+      case Stmt::Kind::Let: case Stmt::Kind::Var:
+        add(est::ExprSlot::Initializer);
+        break;
+      case Stmt::Kind::Raw:
+        if (statement.est_raw_form &&
+            *statement.est_raw_form != est::RawForm::ExprStmt) {
+          add(est::ExprSlot::LhsPlace);
+          add(est::ExprSlot::RhsValue);
+        } else add(est::ExprSlot::Expression);
+        break;
+      case Stmt::Kind::Call:
+        add(est::ExprSlot::Expression);
+        break;
+      case Stmt::Kind::Message:
+        add(est::ExprSlot::Receiver);
+        break;
+      case Stmt::Kind::Echo:
+        for (std::uint32_t i = 0; i < statement.args.size(); ++i)
+          add(est::ExprSlot::Argument, i);
+        break;
+      case Stmt::Kind::If: case Stmt::Kind::While:
+        add(est::ExprSlot::Condition);
+        break;
+      case Stmt::Kind::For:
+        add(est::ExprSlot::Iterable);
+        break;
+      case Stmt::Kind::Match:
+        add(est::ExprSlot::Scrutinee);
+        break;
+      case Stmt::Kind::Reply: case Stmt::Kind::Return:
+        add(est::ExprSlot::ReturnValue);
+        break;
+      case Stmt::Kind::Raise:
+        add(est::ExprSlot::RaisedValue);
+        break;
+      default: break;
+    }
+    return roots;
+  }
+
+  std::optional<string> statement_binding(const Stmt& statement) const {
+    if (statement.kind != Stmt::Kind::Assign &&
+        statement.kind != Stmt::Kind::Let &&
+        statement.kind != Stmt::Kind::Var)
+      return std::nullopt;
+    auto lhs = handle_expression(statement.expression_handles,
+                                 est::ExprSlot::LhsPlace);
+    if (!lhs) return std::nullopt;
+    const auto* identifier = root_identifier(*lhs);
+    return identifier ? std::optional<string>(identifier->name) : std::nullopt;
+  }
+
+  bool statement_defines(const Stmt& statement, const string& name) const {
+    auto binding = statement_binding(statement);
+    return binding && *binding == name;
+  }
+
+  static size_t identifier_uses(const ExpressionRef& expression,
+                                const string& name) {
+    size_t result = 0;
+    if (expression.arena)
+      count_identifier_nodes(*expression.arena, expression.expression,
+                             name, result);
     return result;
   }
 
@@ -565,57 +887,6 @@ class FunctionalOptimizer {
     return "ownership or eager-ordering barrier";
   }
 
-  static bool inert_literal(string value) {
-    value = trim(std::move(value));
-    if (value == "true" || value == "false") return true;
-    size_t index = 0;
-    if (!value.empty() && (value.front() == '+' || value.front() == '-'))
-      ++index;
-    bool digit = false;
-    bool dot = false;
-    for (; index < value.size(); ++index) {
-      char ch = value[index];
-      if (std::isdigit(static_cast<unsigned char>(ch))) {
-        digit = true;
-        continue;
-      }
-      if (ch == '.' && !dot) {
-        dot = true;
-        continue;
-      }
-      return false;
-    }
-    if (!digit) return false;
-    try {
-      size_t consumed = 0;
-      if (dot)
-        (void)std::stod(value, &consumed);
-      else
-        (void)std::stoll(value, &consumed);
-      return consumed == value.size();
-    } catch (const std::exception&) {
-      // Do not let an optimization hide an invalid/out-of-range literal that
-      // ordinary Rust lowering would reject.
-      return false;
-    }
-  }
-
-  static std::optional<size_t> inert_literal_vector_size(
-      const string& expression) {
-    string value = trim(expression);
-    if (value.size() < 2 || value.front() != '[' || value.back() != ']')
-      return std::nullopt;
-    auto elements = split_top_level(value.substr(1, value.size() - 2), ',');
-    if (elements.size() == 1 && trim(elements.front()).empty())
-      return size_t{0};
-    if (!std::all_of(elements.begin(), elements.end(),
-                     [](const string& element) {
-                       return inert_literal(element);
-                     }))
-      return std::nullopt;
-    return elements.size();
-  }
-
   static void eliminate_semantic_step(
       FunctionalPipeline& pipeline, size_t step_index, const string& reason,
       const string& rewrite_name) {
@@ -707,8 +978,11 @@ class FunctionalOptimizer {
               "replaced traversal with exact source cardinality", provenance);
           pipeline.optimization_notes.push_back(
               "count -> len; reason: exact source cardinality known");
-          if (auto size = inert_literal_vector_size(
-                  pipeline.source_expression)) {
+          const auto source_expression = pipeline_source_expression(pipeline);
+          if (source_expression) {
+            if (auto size = inert_literal_vector_size(
+                    *source_expression->arena,
+                    source_expression->expression)) {
             pipeline.count_uses_known_size = true;
             pipeline.known_source_size = *size;
             record_semantic_rewrite(
@@ -719,6 +993,7 @@ class FunctionalOptimizer {
             pipeline.optimization_notes.push_back(
                 "count -> constant " + std::to_string(*size) +
                 "; reason: inert literal cardinality known");
+            }
           }
         } else if (eliminated) {
           pipeline.optimization_notes.push_back(
@@ -780,13 +1055,6 @@ class FunctionalOptimizer {
     }
   }
 
-  static bool statement_defines(const Stmt& statement, const string& name) {
-    return (statement.kind == Stmt::Kind::Assign ||
-            statement.kind == Stmt::Kind::Let ||
-            statement.kind == Stmt::Kind::Var) &&
-        trim(statement.a) == name;
-  }
-
   static bool occurrence_is_terminal_assignment(
       const ScopeOccurrence& occurrence, const FunctionalPipeline& pipeline) {
     return occurrence.statement && occurrence.new_binding &&
@@ -798,68 +1066,71 @@ class FunctionalOptimizer {
 
   vector<ScopeOccurrence> collect_scope_occurrences(
       vector<Stmt>& body, const string& context,
-      std::set<string> known_bindings, size_t result_id,
-      const std::optional<string>& result_expression) {
+      std::set<string> known_bindings,
+      const std::optional<std::pair<size_t, ExpressionRef>>& result) {
     vector<ScopeOccurrence> occurrences;
     for (size_t index = 0; index < body.size(); ++index) {
       Stmt& statement = body[index];
       if (statement.indent != 0) continue;
-      size_t id = statement_pipeline_id(statement, context);
-      bool binding_statement = statement.kind == Stmt::Kind::Assign ||
-          statement.kind == Stmt::Kind::Let ||
-          statement.kind == Stmt::Kind::Var;
-      bool simple_binding = binding_statement && plain_identifier(statement.a);
-      bool is_new = simple_binding && !known_bindings.count(statement.a);
-      if (id) {
+      const auto plan = statement_pipeline(statement, context);
+      const auto binding = statement_binding(statement);
+      const bool is_new = binding && !known_bindings.count(*binding);
+      if (plan) {
         ScopeOccurrence occurrence;
         occurrence.statement_index = index;
-        occurrence.pipeline_id = id;
+        occurrence.pipeline_id = plan->first;
         occurrence.statement = &statement;
         occurrence.new_binding = is_new;
-        occurrence.expression = statement.b;
-        if (simple_binding) occurrence.result_binding = statement.a;
+        occurrence.expression = plan->second;
+        if (binding) occurrence.result_binding = *binding;
         occurrences.push_back(std::move(occurrence));
       }
-      if (simple_binding)
-        known_bindings.insert(statement.a);
+      if (binding) known_bindings.insert(*binding);
       if (statement.kind == Stmt::Kind::If)
         for (const auto& joined : statement.joined_types)
           known_bindings.insert(joined.first);
     }
-    if (result_id && result_expression) {
-      ScopeOccurrence result;
-      result.statement_index = body.size();
-      result.pipeline_id = result_id;
-      result.result_expression = true;
-      result.expression = *result_expression;
-      occurrences.push_back(std::move(result));
+    if (result && result->first) {
+      ScopeOccurrence result_occurrence;
+      result_occurrence.statement_index = body.size();
+      result_occurrence.pipeline_id = result->first;
+      result_occurrence.result_expression = true;
+      result_occurrence.expression = result->second;
+      occurrences.push_back(std::move(result_occurrence));
     }
     return occurrences;
   }
 
   size_t later_binding_uses(const vector<Stmt>& body, size_t producer_index,
-                            const std::optional<string>& result_expression,
+                            const std::optional<ExpressionRef>& result_expression,
                             const string& binding,
                             bool& reassigned) const {
     size_t uses = 0;
     reassigned = false;
     for (size_t index = producer_index + 1; index < body.size(); ++index) {
       const Stmt& statement = body[index];
-      size_t count = word_occurrences(statement.text, binding);
+      size_t count = 0;
+      for (const auto& root : statement_expression_roots(statement))
+        count += identifier_uses(root, binding);
       if (statement_defines(statement, binding)) {
         reassigned = true;
-        if (count) --count;
+        const auto lhs = handle_expression(statement.expression_handles,
+                                           est::ExprSlot::LhsPlace);
+        if (lhs) {
+          const auto lhs_uses = identifier_uses(*lhs, binding);
+          count = lhs_uses > count ? 0 : count - lhs_uses;
+        }
       }
       uses += count;
     }
     if (result_expression)
-      uses += word_occurrences(*result_expression, binding);
+      uses += identifier_uses(*result_expression, binding);
     return uses;
   }
 
   void plan_cross_binding_fusion(
       vector<Stmt>& body, vector<ScopeOccurrence>& occurrences,
-      const std::optional<string>& result_expression) {
+      const std::optional<ExpressionRef>& result_expression) {
     for (size_t index = 0; index < occurrences.size(); ++index) {
       ScopeOccurrence& producer_occurrence = occurrences[index];
       if (!producer_occurrence.statement ||
@@ -930,7 +1201,11 @@ class FunctionalOptimizer {
       }
       FunctionalPipeline* consumer =
           pipeline_by_id(consumer_occurrence.pipeline_id);
-      if (!consumer || trim(consumer->source_expression) != binding) {
+      const auto consumer_source = consumer
+          ? pipeline_source_expression(*consumer) : std::nullopt;
+      const auto* consumer_identifier = consumer_source
+          ? root_identifier(*consumer_source) : nullptr;
+      if (!consumer_identifier || consumer_identifier->name != binding) {
         producer->binding_materialization_reason =
             "use is outside a compatible functional consumer";
         continue;
@@ -989,8 +1264,10 @@ class FunctionalOptimizer {
             consumer->optimization_notes.push_back(
                 "map stage eliminated; reason: output unused and callback is "
                 "pure/non-failing/non-divergent");
-          if (auto size = inert_literal_vector_size(
-                  producer->source_expression)) {
+          const auto producer_source = pipeline_source_expression(*producer);
+          if (producer_source) {
+            if (auto size = inert_literal_vector_size(
+                    *producer_source->arena, producer_source->expression)) {
             consumer->count_uses_known_size = true;
             consumer->known_source_size = *size;
             record_semantic_rewrite(
@@ -998,6 +1275,7 @@ class FunctionalOptimizer {
                 "virtual upstream has inert literal cardinality " +
                     std::to_string(*size),
                 producer->nodes.front().provenance);
+            }
           }
         } else {
           string reason = callback_may_diverge(*producer)
@@ -1046,13 +1324,15 @@ class FunctionalOptimizer {
     for (size_t first = 0; first < occurrences.size();) {
       ScopeOccurrence& initial = occurrences[first];
       FunctionalPipeline* initial_pipeline = pipeline_by_id(initial.pipeline_id);
+      const auto initial_source = initial_pipeline
+          ? pipeline_source_expression(*initial_pipeline) : std::nullopt;
       if (!initial_pipeline || initial.result_expression ||
           !occurrence_is_terminal_assignment(initial, *initial_pipeline) ||
           initial_pipeline->virtual_upstream_pipeline_id ||
           !initial_pipeline->fusion_eligible ||
           initial_pipeline->nodes.empty() ||
           !initial_pipeline->nodes.front().effects.fusion_safe() ||
-          !plain_identifier(trim(initial_pipeline->source_expression))) {
+          !initial_source || !root_identifier(*initial_source)) {
         ++first;
         continue;
       }
@@ -1061,6 +1341,8 @@ class FunctionalOptimizer {
       for (size_t next = first + 1; next < occurrences.size(); ++next) {
         ScopeOccurrence& occurrence = occurrences[next];
         FunctionalPipeline* pipeline = pipeline_by_id(occurrence.pipeline_id);
+        const auto source = pipeline
+            ? pipeline_source_expression(*pipeline) : std::nullopt;
         const ScopeOccurrence& previous = occurrences[members.back()];
         if (!pipeline || occurrence.result_expression ||
             occurrence.statement_index != previous.statement_index + 1 ||
@@ -1069,8 +1351,9 @@ class FunctionalOptimizer {
             !pipeline->fusion_eligible ||
             pipeline->nodes.empty() ||
             !pipeline->nodes.front().effects.fusion_safe() ||
-            trim(pipeline->source_expression) !=
-                trim(initial_pipeline->source_expression))
+            !source || !equal_expression(
+                *source->arena, source->expression,
+                *initial_source->arena, initial_source->expression))
           break;
         members.push_back(next);
       }
@@ -1093,9 +1376,11 @@ class FunctionalOptimizer {
         FunctionalPipeline* pipeline =
             pipeline_by_id(occurrences[member].pipeline_id);
         dependent = dependent || captures_any_result(*pipeline, result_bindings);
-        for (const auto& result_binding : result_bindings)
-          dependent = dependent ||
-              word_occurrences(pipeline->expression, result_binding) != 0;
+        const auto expression = pipeline_expressions_.find(pipeline->transient_id);
+        if (expression != pipeline_expressions_.end())
+          for (const auto& result_binding : result_bindings)
+            dependent = dependent || identifier_uses(
+                expression->second, result_binding) != 0;
       }
       if (!useful_traversal || dependent) {
         first = members.back() + 1;
@@ -1107,7 +1392,7 @@ class FunctionalOptimizer {
       group.context = context;
       group.line = initial.statement->line;
       group.source_file = initial.statement->source_file;
-      group.source_expression = trim(initial_pipeline->source_expression);
+      group.source_expression = initial_pipeline->source_expression;
       group.source_type = initial_pipeline->source_type;
       group.semantic_identity = context + "@" + std::to_string(group.line) +
           ":shared-source";
@@ -1142,11 +1427,14 @@ class FunctionalOptimizer {
     }
   }
 
-  void plan_scope(vector<Stmt>& body, const string& context,
-                  const std::set<string>& known_bindings, size_t result_id,
-                  const std::optional<string>& result_expression) {
+  void plan_scope(
+      vector<Stmt>& body, const string& context,
+      const std::set<string>& known_bindings,
+      const std::optional<std::pair<size_t, ExpressionRef>>& result) {
     auto occurrences = collect_scope_occurrences(
-        body, context, known_bindings, result_id, result_expression);
+        body, context, known_bindings, result);
+    const auto result_expression = result
+        ? std::optional<ExpressionRef>(result->second) : std::nullopt;
     plan_cross_binding_fusion(body, occurrences, result_expression);
     plan_shared_traversals(occurrences, context);
   }

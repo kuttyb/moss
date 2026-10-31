@@ -306,6 +306,16 @@ struct Stmt {
   // have several static specializations, so one AST statement can legitimately
   // point at several distinct compilation-local pipeline IDs.
   mutable std::unordered_map<string,vector<std::size_t>> functional_pipeline_ids;
+  // Expression-tree keyed mirror of functional_pipeline_ids. The optimizer
+  // resolves plans through the owning expression Handle; legacy IDs remain
+  // available to other consumers during the staged migration.
+  struct FunctionalExpressionPlan {
+    std::uint32_t arena_index = 0;
+    est::ExprId expression = 0;
+    std::size_t pipeline_id = 0;
+  };
+  mutable std::unordered_map<string,vector<FunctionalExpressionPlan>>
+      functional_expression_plans_by_context;
   // Phase 20 Agent D: nonzero once check_executor_invoke has built a checked
   // RootSubmissionPlan for this `executor.invoke(...)` statement (index into
   // Program::root_submission_plans, offset by one so 0 means "none"). See
@@ -418,6 +428,8 @@ struct Method {
   int result_line = 0;
   vector<int> result_continuation_lines;
   std::unordered_map<string,std::size_t> result_functional_pipeline_ids;
+  std::unordered_map<string,Stmt::FunctionalExpressionPlan>
+      result_functional_expression_plans_by_context;
   // Inferred receiver/parameter effects used by ownership checking and Rust
   // lowering.  They are never written in Moss source.
   Effect receiver_effect = Effect::Read;
@@ -647,6 +659,8 @@ struct Function {
   std::optional<string> result_expression; int result_line = 0; bool expression_body = false;
   vector<int> result_continuation_lines;
   std::unordered_map<string,std::size_t> result_functional_pipeline_ids;
+  std::unordered_map<string,Stmt::FunctionalExpressionPlan>
+      result_functional_expression_plans_by_context;
   bool generic = false; bool static_dispatch = false;
   std::unordered_map<string,string> generic_results; int line = 0;
   vector<Constraint> constraints;

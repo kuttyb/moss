@@ -21731,6 +21731,10 @@ class Checker {
       auto expressions = functional_statement_expressions(statement);
       auto& ids = statement.functional_pipeline_ids[context];
       ids.clear();
+      auto& expression_plans =
+          statement.functional_expression_plans_by_context[context];
+      expression_plans.clear();
+      std::set<std::pair<std::uint32_t, est::ExprId>> used_handles;
       for (size_t index = 0; index < expressions.size(); ++index) {
         string identity = context + "@" + std::to_string(statement.line) +
             ":expression:" + std::to_string(index);
@@ -21740,6 +21744,22 @@ class Checker {
             implicit_object, statement.continuation_lines,
             statement.source_file, &statement.expression_handles);
         ids.push_back(id.value_or(0));
+        Stmt::FunctionalExpressionPlan expression_plan;
+        expression_plan.pipeline_id = id.value_or(0);
+        if (id) {
+          const auto fingerprint = est::fingerprint(expressions[index]);
+          for (const auto& handle : statement.expression_handles) {
+            const auto key = std::make_pair(handle.arena_index, handle.expr);
+            if (handle.source_fingerprint != fingerprint ||
+                used_handles.count(key))
+              continue;
+            expression_plan.arena_index = handle.arena_index;
+            expression_plan.expression = handle.expr;
+            used_handles.insert(key);
+            break;
+          }
+        }
+        expression_plans.push_back(expression_plan);
       }
     };
     env = walk_type_environment(body, std::move(env), visitor, true);
@@ -21757,7 +21777,30 @@ class Checker {
           result_expression_handles);
       if (result_pipeline_ids) {
         result_pipeline_ids->erase(context);
-        if (id) (*result_pipeline_ids)[context] = *id;
+        if (id) {
+          (*result_pipeline_ids)[context] = *id;
+          if (result_expression_handles) {
+            const auto fingerprint = est::fingerprint(*result);
+            for (const auto& handle : *result_expression_handles) {
+              if (handle.slot != est::ExprSlot::ReturnValue ||
+                  handle.source_fingerprint != fingerprint)
+                continue;
+              Stmt::FunctionalExpressionPlan plan{
+                  handle.arena_index, handle.expr, *id};
+              if (owning_function) {
+                owning_function->result_functional_expression_plans_by_context[
+                    context] = plan;
+              } else {
+                for (auto& object : p_.objects)
+                  for (auto& method : object.methods)
+                    if (&method.expression_handles == result_expression_handles)
+                      method.result_functional_expression_plans_by_context[
+                          context] = plan;
+              }
+              break;
+            }
+          }
+        }
       }
     }
   }
@@ -21769,6 +21812,7 @@ class Checker {
     for (auto& function : p_.functions) {
       function.callable_dependencies.clear();
       function.result_functional_pipeline_ids.clear();
+      function.result_functional_expression_plans_by_context.clear();
       if (function.static_dispatch && !function.specializations.empty()) {
         for (const auto& specialization : function.specializations) {
           TypeEnv env;
@@ -21798,6 +21842,7 @@ class Checker {
     for (auto& object : p_.objects) {
       for (auto& method : object.methods) {
         method.result_functional_pipeline_ids.clear();
+        method.result_functional_expression_plans_by_context.clear();
         TypeEnv env;
         env["self"] = object.name;
         for (const auto& field : object.fields) env[field.name] = field.type;
