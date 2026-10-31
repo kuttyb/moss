@@ -1,0 +1,200 @@
+{
+  "traceEvents": [
+    {"name": "process_name", "ph": "M", "pid": 1930012, "args": {"name": "moss"}},
+    {"name": "thread_name", "ph": "M", "pid": 1930012, "tid": 1, "args": {"name": "main"}},
+    {"name": "parsing", "cat": "compiler", "ph": "X", "ts": 53, "dur": 68, "pid": 1930012, "tid": 1, "args": {}},
+    {"name": "project_discovery", "cat": "compiler", "ph": "X", "ts": 24, "dur": 125, "pid": 1930012, "tid": 1, "args": {}},
+    {"name": "parsing", "cat": "compiler", "ph": "X", "ts": 157, "dur": 29, "pid": 1930012, "tid": 1, "args": {}},
+    {"name": "declaration_and_symbol_analysis", "cat": "compiler", "ph": "X", "ts": 199, "dur": 29, "pid": 1930012, "tid": 1, "args": {}},
+    {"name": "inference_round_0", "cat": "type_inference", "ph": "X", "ts": 368, "dur": 81, "pid": 1930012, "tid": 1, "args": {}},
+    {"name": "inference_round_1", "cat": "type_inference", "ph": "X", "ts": 462, "dur": 52, "pid": 1930012, "tid": 1, "args": {}},
+    {"name": "open_callable_summaries", "cat": "compiler", "ph": "X", "ts": 578, "dur": 0, "pid": 1930012, "tid": 1, "args": {}},
+    {"name": "open_callable_summaries", "cat": "compiler", "ph": "X", "ts": 646, "dur": 0, "pid": 1930012, "tid": 1, "args": {}},
+    {"name": "type_inference", "cat": "compiler", "ph": "X", "ts": 239, "dur": 415, "pid": 1930012, "tid": 1, "args": {}},
+    {"name": "effects", "cat": "compiler", "ph": "X", "ts": 657, "dur": 110, "pid": 1930012, "tid": 1, "args": {}},
+    {"name": "concrete_graph", "cat": "compiler", "ph": "X", "ts": 776, "dur": 8, "pid": 1930012, "tid": 1, "args": {}},
+    {"name": "specialization_checking", "cat": "compiler", "ph": "X", "ts": 792, "dur": 285, "pid": 1930012, "tid": 1, "args": {}},
+    {"name": "specialization_effects", "cat": "compiler", "ph": "X", "ts": 1109, "dur": 0, "pid": 1930012, "tid": 1, "args": {}},
+    {"name": "occurrence_and_summary_projection", "cat": "compiler", "ph": "X", "ts": 1119, "dur": 1, "pid": 1930012, "tid": 1, "args": {}},
+    {"name": "synchronization_plan", "cat": "compiler", "ph": "X", "ts": 1121, "dur": 69, "pid": 1930012, "tid": 1, "args": {}},
+    {"name": "typed_semantics_export", "cat": "compiler", "ph": "X", "ts": 1199, "dur": 17, "pid": 1930012, "tid": 1, "args": {}},
+    {"name": "semantic_analysis", "cat": "compiler", "ph": "X", "ts": 238, "dur": 1058, "pid": 1930012, "tid": 1, "args": {}},
+    {"name": "functional_optimizer", "cat": "compiler", "ph": "X", "ts": 1303, "dur": 0, "pid": 1930012, "tid": 1, "args": {}},
+    {"name": "process_main", "cat": "compiler", "ph": "X", "ts": 1, "dur": 1335, "pid": 1930012, "tid": 1, "args": {}},
+    {"name": "compiler_counters", "cat": "counters", "ph": "C", "ts": 1374, "pid": 1930012, "tid": 1, "args": {"actual_specialization_checks": 0, "checked_specializations": 0, "effects_fixed_point_rounds": 2, "functions_analyzed": 0, "inference_changed_functions": 0, "inference_changed_functions_round_0": 0, "inference_changed_functions_round_1": 0, "inference_changed_functions_round_2": 0, "inference_changed_functions_round_3": 0, "inference_reinferred_functions": 0, "inference_reinferred_functions_round_0": 0, "inference_reinferred_functions_round_1": 0, "inference_reinferred_functions_round_2": 0, "inference_reinferred_functions_round_3": 0, "inference_rounds": 4, "inference_work_units": 4, "sig_infer_outer_rounds": 4, "specialization_body_checking": 0, "specialization_requests": 0, "types_analyzed": 1, "typesolver_resolve": 382, "typesolver_unify": 41}}
+  ],
+  "displayTimeUnit": "ms",
+  "metadata": {
+    "format": "Chrome Trace Event JSON",
+    "compiler": "moss-opt",
+    "counters": {
+      "actual_specialization_checks": 0,
+      "checked_specializations": 0,
+      "effects_fixed_point_rounds": 2,
+      "functions_analyzed": 0,
+      "inference_changed_functions": 0,
+      "inference_changed_functions_round_0": 0,
+      "inference_changed_functions_round_1": 0,
+      "inference_changed_functions_round_2": 0,
+      "inference_changed_functions_round_3": 0,
+      "inference_reinferred_functions": 0,
+      "inference_reinferred_functions_round_0": 0,
+      "inference_reinferred_functions_round_1": 0,
+      "inference_reinferred_functions_round_2": 0,
+      "inference_reinferred_functions_round_3": 0,
+      "inference_rounds": 4,
+      "inference_work_units": 4,
+      "sig_infer_outer_rounds": 4,
+      "specialization_body_checking": 0,
+      "specialization_requests": 0,
+      "types_analyzed": 1,
+      "typesolver_resolve": 382,
+      "typesolver_unify": 41
+    },
+    "operations": {
+      "build_open_callable_summaries": {
+        "calls": 2,
+        "total_ms": 0.000335,
+        "distinct_inputs": 0,
+        "repeated_calls": 2,
+        "avg_us": 0.1675
+      },
+      "check_ownership": {
+        "calls": 3,
+        "total_ms": 0.066103,
+        "distinct_inputs": 0,
+        "repeated_calls": 3,
+        "avg_us": 22.0343
+      },
+      "infer_domain_state_fields": {
+        "calls": 3,
+        "total_ms": 0.088788,
+        "distinct_inputs": 0,
+        "repeated_calls": 3,
+        "avg_us": 29.596
+      },
+      "infer_handler_reply_types": {
+        "calls": 3,
+        "total_ms": 0.057929,
+        "distinct_inputs": 0,
+        "repeated_calls": 3,
+        "avg_us": 19.3097
+      },
+      "sig_infer_prelude_constraints": {
+        "calls": 4,
+        "total_ms": 0.000184,
+        "distinct_inputs": 0,
+        "repeated_calls": 4,
+        "avg_us": 0.046
+      },
+      "sig_infer_round_body": {
+        "calls": 4,
+        "total_ms": 0.127216,
+        "distinct_inputs": 0,
+        "repeated_calls": 4,
+        "avg_us": 31.804
+      },
+      "spec_effects_pass1": {
+        "calls": 1,
+        "total_ms": 3.3e-05,
+        "distinct_inputs": 0,
+        "repeated_calls": 1,
+        "avg_us": 0.033
+      },
+      "spec_effects_pass2_recheck": {
+        "calls": 1,
+        "total_ms": 2.6e-05,
+        "distinct_inputs": 0,
+        "repeated_calls": 1,
+        "avg_us": 0.026
+      }
+    },
+    "stage_totals": {
+      "concrete_graph": {
+        "calls": 1,
+        "total_ms": 0.008051,
+        "total_ns": 8051
+      },
+      "declaration_and_symbol_analysis": {
+        "calls": 1,
+        "total_ms": 0.029825,
+        "total_ns": 29825
+      },
+      "effects": {
+        "calls": 1,
+        "total_ms": 0.110292,
+        "total_ns": 110292
+      },
+      "functional_optimizer": {
+        "calls": 1,
+        "total_ms": 0.000136,
+        "total_ns": 136
+      },
+      "inference_round_0": {
+        "calls": 1,
+        "total_ms": 0.08173,
+        "total_ns": 81730
+      },
+      "inference_round_1": {
+        "calls": 1,
+        "total_ms": 0.05281,
+        "total_ns": 52810
+      },
+      "occurrence_and_summary_projection": {
+        "calls": 1,
+        "total_ms": 0.001048,
+        "total_ns": 1048
+      },
+      "open_callable_summaries": {
+        "calls": 2,
+        "total_ms": 0.000749,
+        "total_ns": 749
+      },
+      "parsing": {
+        "calls": 2,
+        "total_ms": 0.098157,
+        "total_ns": 98157
+      },
+      "process_main": {
+        "calls": 1,
+        "total_ms": 1.33507,
+        "total_ns": 1335074
+      },
+      "project_discovery": {
+        "calls": 1,
+        "total_ms": 0.125274,
+        "total_ns": 125274
+      },
+      "semantic_analysis": {
+        "calls": 1,
+        "total_ms": 1.05811,
+        "total_ns": 1058114
+      },
+      "specialization_checking": {
+        "calls": 1,
+        "total_ms": 0.285711,
+        "total_ns": 285711
+      },
+      "specialization_effects": {
+        "calls": 1,
+        "total_ms": 0.000601,
+        "total_ns": 601
+      },
+      "synchronization_plan": {
+        "calls": 1,
+        "total_ms": 0.069144,
+        "total_ns": 69144
+      },
+      "type_inference": {
+        "calls": 1,
+        "total_ms": 0.415355,
+        "total_ns": 415355
+      },
+      "typed_semantics_export": {
+        "calls": 1,
+        "total_ms": 0.017727,
+        "total_ns": 17727
+      }
+    }
+  }
+}

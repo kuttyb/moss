@@ -1,0 +1,364 @@
+{
+  "traceEvents": [
+    {"name": "process_name", "ph": "M", "pid": 1927642, "args": {"name": "moss"}},
+    {"name": "thread_name", "ph": "M", "pid": 1927642, "tid": 1, "args": {"name": "main"}},
+    {"name": "parsing", "cat": "compiler", "ph": "X", "ts": 82, "dur": 476, "pid": 1927642, "tid": 1, "args": {}},
+    {"name": "project_discovery", "cat": "compiler", "ph": "X", "ts": 28, "dur": 601, "pid": 1927642, "tid": 1, "args": {}},
+    {"name": "parsing", "cat": "compiler", "ph": "X", "ts": 655, "dur": 327, "pid": 1927642, "tid": 1, "args": {}},
+    {"name": "declaration_and_symbol_analysis", "cat": "compiler", "ph": "X", "ts": 1001, "dur": 51, "pid": 1927642, "tid": 1, "args": {}},
+    {"name": "inference_round_0", "cat": "type_inference", "ph": "X", "ts": 8200, "dur": 3268, "pid": 1927642, "tid": 1, "args": {}},
+    {"name": "open_callable_summaries", "cat": "compiler", "ph": "X", "ts": 14458, "dur": 121, "pid": 1927642, "tid": 1, "args": {}},
+    {"name": "open_callable_summaries", "cat": "compiler", "ph": "X", "ts": 16222, "dur": 62, "pid": 1927642, "tid": 1, "args": {}},
+    {"name": "type_inference", "cat": "compiler", "ph": "X", "ts": 1073, "dur": 15334, "pid": 1927642, "tid": 1, "args": {}},
+    {"name": "effects", "cat": "compiler", "ph": "X", "ts": 16418, "dur": 6186, "pid": 1927642, "tid": 1, "args": {}},
+    {"name": "concrete_graph", "cat": "compiler", "ph": "X", "ts": 22626, "dur": 21, "pid": 1927642, "tid": 1, "args": {}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 40423, "dur": 75, "pid": 1927642, "tid": 1, "args": {"function": "wide_000_a"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 40324, "dur": 329, "pid": 1927642, "tid": 1, "args": {"function": "wide_000_b"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 41078, "dur": 63, "pid": 1927642, "tid": 1, "args": {"function": "wide_001_a"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 40993, "dur": 284, "pid": 1927642, "tid": 1, "args": {"function": "wide_001_b"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 41675, "dur": 57, "pid": 1927642, "tid": 1, "args": {"function": "wide_002_a"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 41594, "dur": 269, "pid": 1927642, "tid": 1, "args": {"function": "wide_002_b"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 42298, "dur": 63, "pid": 1927642, "tid": 1, "args": {"function": "wide_003_a"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 42214, "dur": 287, "pid": 1927642, "tid": 1, "args": {"function": "wide_003_b"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 42920, "dur": 61, "pid": 1927642, "tid": 1, "args": {"function": "wide_004_a"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 42820, "dur": 297, "pid": 1927642, "tid": 1, "args": {"function": "wide_004_b"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 43513, "dur": 56, "pid": 1927642, "tid": 1, "args": {"function": "wide_005_a"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 43433, "dur": 269, "pid": 1927642, "tid": 1, "args": {"function": "wide_005_b"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 44001, "dur": 38, "pid": 1927642, "tid": 1, "args": {"function": "wide_006_a"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 43948, "dur": 182, "pid": 1927642, "tid": 1, "args": {"function": "wide_006_b"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 44378, "dur": 35, "pid": 1927642, "tid": 1, "args": {"function": "wide_007_a"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 44329, "dur": 168, "pid": 1927642, "tid": 1, "args": {"function": "wide_007_b"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 44746, "dur": 35, "pid": 1927642, "tid": 1, "args": {"function": "wide_008_a"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 44698, "dur": 168, "pid": 1927642, "tid": 1, "args": {"function": "wide_008_b"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 45128, "dur": 38, "pid": 1927642, "tid": 1, "args": {"function": "wide_009_a"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 45075, "dur": 175, "pid": 1927642, "tid": 1, "args": {"function": "wide_009_b"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 45510, "dur": 38, "pid": 1927642, "tid": 1, "args": {"function": "wide_010_a"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 45460, "dur": 173, "pid": 1927642, "tid": 1, "args": {"function": "wide_010_b"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 45871, "dur": 37, "pid": 1927642, "tid": 1, "args": {"function": "wide_011_a"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 45823, "dur": 175, "pid": 1927642, "tid": 1, "args": {"function": "wide_011_b"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 46281, "dur": 39, "pid": 1927642, "tid": 1, "args": {"function": "wide_012_a"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 46228, "dur": 178, "pid": 1927642, "tid": 1, "args": {"function": "wide_012_b"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 46656, "dur": 38, "pid": 1927642, "tid": 1, "args": {"function": "wide_013_a"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 46604, "dur": 173, "pid": 1927642, "tid": 1, "args": {"function": "wide_013_b"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 47034, "dur": 37, "pid": 1927642, "tid": 1, "args": {"function": "wide_014_a"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 46984, "dur": 173, "pid": 1927642, "tid": 1, "args": {"function": "wide_014_b"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 47400, "dur": 35, "pid": 1927642, "tid": 1, "args": {"function": "wide_015_a"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 47352, "dur": 165, "pid": 1927642, "tid": 1, "args": {"function": "wide_015_b"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 47769, "dur": 36, "pid": 1927642, "tid": 1, "args": {"function": "wide_016_a"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 47720, "dur": 170, "pid": 1927642, "tid": 1, "args": {"function": "wide_016_b"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 48131, "dur": 34, "pid": 1927642, "tid": 1, "args": {"function": "wide_017_a"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 48083, "dur": 164, "pid": 1927642, "tid": 1, "args": {"function": "wide_017_b"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 48486, "dur": 35, "pid": 1927642, "tid": 1, "args": {"function": "wide_018_a"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 48437, "dur": 166, "pid": 1927642, "tid": 1, "args": {"function": "wide_018_b"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 48839, "dur": 34, "pid": 1927642, "tid": 1, "args": {"function": "wide_019_a"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 48791, "dur": 173, "pid": 1927642, "tid": 1, "args": {"function": "wide_019_b"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 49198, "dur": 35, "pid": 1927642, "tid": 1, "args": {"function": "wide_020_a"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 49150, "dur": 167, "pid": 1927642, "tid": 1, "args": {"function": "wide_020_b"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 49554, "dur": 38, "pid": 1927642, "tid": 1, "args": {"function": "wide_021_a"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 49505, "dur": 172, "pid": 1927642, "tid": 1, "args": {"function": "wide_021_b"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 49915, "dur": 35, "pid": 1927642, "tid": 1, "args": {"function": "wide_022_a"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 49867, "dur": 167, "pid": 1927642, "tid": 1, "args": {"function": "wide_022_b"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 50305, "dur": 38, "pid": 1927642, "tid": 1, "args": {"function": "wide_023_a"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 50254, "dur": 176, "pid": 1927642, "tid": 1, "args": {"function": "wide_023_b"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 50683, "dur": 36, "pid": 1927642, "tid": 1, "args": {"function": "wide_024_a"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 50620, "dur": 182, "pid": 1927642, "tid": 1, "args": {"function": "wide_024_b"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 51048, "dur": 35, "pid": 1927642, "tid": 1, "args": {"function": "wide_025_a"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 50989, "dur": 176, "pid": 1927642, "tid": 1, "args": {"function": "wide_025_b"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 51411, "dur": 38, "pid": 1927642, "tid": 1, "args": {"function": "wide_026_a"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 51361, "dur": 173, "pid": 1927642, "tid": 1, "args": {"function": "wide_026_b"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 51775, "dur": 37, "pid": 1927642, "tid": 1, "args": {"function": "wide_027_a"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 51728, "dur": 169, "pid": 1927642, "tid": 1, "args": {"function": "wide_027_b"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 52130, "dur": 35, "pid": 1927642, "tid": 1, "args": {"function": "wide_028_a"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 52083, "dur": 165, "pid": 1927642, "tid": 1, "args": {"function": "wide_028_b"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 52483, "dur": 36, "pid": 1927642, "tid": 1, "args": {"function": "wide_029_a"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 52435, "dur": 168, "pid": 1927642, "tid": 1, "args": {"function": "wide_029_b"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 52851, "dur": 36, "pid": 1927642, "tid": 1, "args": {"function": "wide_030_a"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 52804, "dur": 164, "pid": 1927642, "tid": 1, "args": {"function": "wide_030_b"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 53216, "dur": 36, "pid": 1927642, "tid": 1, "args": {"function": "wide_031_a"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 53166, "dur": 173, "pid": 1927642, "tid": 1, "args": {"function": "wide_031_b"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 53650, "dur": 41, "pid": 1927642, "tid": 1, "args": {"function": "wide_032_a"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 53554, "dur": 227, "pid": 1927642, "tid": 1, "args": {"function": "wide_032_b"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 54042, "dur": 62, "pid": 1927642, "tid": 1, "args": {"function": "wide_033_a"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 53991, "dur": 199, "pid": 1927642, "tid": 1, "args": {"function": "wide_033_b"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 54437, "dur": 35, "pid": 1927642, "tid": 1, "args": {"function": "wide_034_a"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 54388, "dur": 167, "pid": 1927642, "tid": 1, "args": {"function": "wide_034_b"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 54805, "dur": 36, "pid": 1927642, "tid": 1, "args": {"function": "wide_035_a"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 54756, "dur": 172, "pid": 1927642, "tid": 1, "args": {"function": "wide_035_b"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 55164, "dur": 34, "pid": 1927642, "tid": 1, "args": {"function": "wide_036_a"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 55117, "dur": 163, "pid": 1927642, "tid": 1, "args": {"function": "wide_036_b"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 55523, "dur": 35, "pid": 1927642, "tid": 1, "args": {"function": "wide_037_a"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 55476, "dur": 165, "pid": 1927642, "tid": 1, "args": {"function": "wide_037_b"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 55871, "dur": 33, "pid": 1927642, "tid": 1, "args": {"function": "wide_038_a"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 55825, "dur": 162, "pid": 1927642, "tid": 1, "args": {"function": "wide_038_b"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 56219, "dur": 35, "pid": 1927642, "tid": 1, "args": {"function": "wide_039_a"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 56171, "dur": 165, "pid": 1927642, "tid": 1, "args": {"function": "wide_039_b"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 56569, "dur": 34, "pid": 1927642, "tid": 1, "args": {"function": "wide_040_a"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 56522, "dur": 178, "pid": 1927642, "tid": 1, "args": {"function": "wide_040_b"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 56933, "dur": 35, "pid": 1927642, "tid": 1, "args": {"function": "wide_041_a"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 56886, "dur": 164, "pid": 1927642, "tid": 1, "args": {"function": "wide_041_b"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 57282, "dur": 35, "pid": 1927642, "tid": 1, "args": {"function": "wide_042_a"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 57235, "dur": 165, "pid": 1927642, "tid": 1, "args": {"function": "wide_042_b"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 57633, "dur": 35, "pid": 1927642, "tid": 1, "args": {"function": "wide_043_a"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 57586, "dur": 164, "pid": 1927642, "tid": 1, "args": {"function": "wide_043_b"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 57979, "dur": 34, "pid": 1927642, "tid": 1, "args": {"function": "wide_044_a"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 57933, "dur": 197, "pid": 1927642, "tid": 1, "args": {"function": "wide_044_b"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 58399, "dur": 40, "pid": 1927642, "tid": 1, "args": {"function": "wide_045_a"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 58345, "dur": 177, "pid": 1927642, "tid": 1, "args": {"function": "wide_045_b"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 58775, "dur": 37, "pid": 1927642, "tid": 1, "args": {"function": "wide_046_a"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 58725, "dur": 170, "pid": 1927642, "tid": 1, "args": {"function": "wide_046_b"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 59157, "dur": 42, "pid": 1927642, "tid": 1, "args": {"function": "wide_047_a"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 59103, "dur": 197, "pid": 1927642, "tid": 1, "args": {"function": "wide_047_b"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 59591, "dur": 40, "pid": 1927642, "tid": 1, "args": {"function": "wide_048_a"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 59539, "dur": 181, "pid": 1927642, "tid": 1, "args": {"function": "wide_048_b"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 59980, "dur": 38, "pid": 1927642, "tid": 1, "args": {"function": "wide_049_a"}},
+    {"name": "specialization_body_checking", "cat": "specialization", "ph": "X", "ts": 59929, "dur": 174, "pid": 1927642, "tid": 1, "args": {"function": "wide_049_b"}},
+    {"name": "specialization_checking", "cat": "compiler", "ph": "X", "ts": 22659, "dur": 42596, "pid": 1927642, "tid": 1, "args": {}},
+    {"name": "specialization_effects", "cat": "compiler", "ph": "X", "ts": 66168, "dur": 1951, "pid": 1927642, "tid": 1, "args": {}},
+    {"name": "occurrence_and_summary_projection", "cat": "compiler", "ph": "X", "ts": 68136, "dur": 580, "pid": 1927642, "tid": 1, "args": {}},
+    {"name": "synchronization_plan", "cat": "compiler", "ph": "X", "ts": 68731, "dur": 11, "pid": 1927642, "tid": 1, "args": {}},
+    {"name": "typed_semantics_export", "cat": "compiler", "ph": "X", "ts": 68753, "dur": 524, "pid": 1927642, "tid": 1, "args": {}},
+    {"name": "semantic_analysis", "cat": "compiler", "ph": "X", "ts": 1063, "dur": 68374, "pid": 1927642, "tid": 1, "args": {}},
+    {"name": "functional_optimizer", "cat": "compiler", "ph": "X", "ts": 69441, "dur": 0, "pid": 1927642, "tid": 1, "args": {}},
+    {"name": "process_main", "cat": "compiler", "ph": "X", "ts": 1, "dur": 69913, "pid": 1927642, "tid": 1, "args": {}},
+    {"name": "compiler_counters", "cat": "counters", "ph": "C", "ts": 70030, "pid": 1927642, "tid": 1, "args": {"actual_specialization_checks": 100, "checked_specializations": 100, "distinct_specialization_keys": 100, "effects_fixed_point_rounds": 1, "functions_analyzed": 100, "inference_changed_functions": 0, "inference_changed_functions_round_0": 0, "inference_changed_functions_round_1": 0, "inference_changed_functions_round_2": 0, "inference_changed_functions_round_3": 0, "inference_reinferred_functions": 400, "inference_reinferred_functions_round_0": 100, "inference_reinferred_functions_round_1": 100, "inference_reinferred_functions_round_2": 100, "inference_reinferred_functions_round_3": 100, "inference_rounds": 3, "inference_work_units": 300, "sig_infer_outer_rounds": 4, "specialization_body_checking": 12444094, "specialization_requests": 100, "types_analyzed": 0, "typesolver_fresh": 1700, "typesolver_resolve": 28775, "typesolver_unify": 300}}
+  ],
+  "displayTimeUnit": "ms",
+  "metadata": {
+    "format": "Chrome Trace Event JSON",
+    "compiler": "moss-opt",
+    "counters": {
+      "actual_specialization_checks": 100,
+      "checked_specializations": 100,
+      "distinct_specialization_keys": 100,
+      "effects_fixed_point_rounds": 1,
+      "functions_analyzed": 100,
+      "inference_changed_functions": 0,
+      "inference_changed_functions_round_0": 0,
+      "inference_changed_functions_round_1": 0,
+      "inference_changed_functions_round_2": 0,
+      "inference_changed_functions_round_3": 0,
+      "inference_reinferred_functions": 400,
+      "inference_reinferred_functions_round_0": 100,
+      "inference_reinferred_functions_round_1": 100,
+      "inference_reinferred_functions_round_2": 100,
+      "inference_reinferred_functions_round_3": 100,
+      "inference_rounds": 3,
+      "inference_work_units": 300,
+      "sig_infer_outer_rounds": 4,
+      "specialization_body_checking": 12444094,
+      "specialization_requests": 100,
+      "types_analyzed": 0,
+      "typesolver_fresh": 1700,
+      "typesolver_resolve": 28775,
+      "typesolver_unify": 300
+    },
+    "operations": {
+      "build_open_callable_summaries": {
+        "calls": 2,
+        "total_ms": 0.181899,
+        "distinct_inputs": 0,
+        "repeated_calls": 2,
+        "avg_us": 90.9495
+      },
+      "check_function": {
+        "calls": 100,
+        "total_ms": 15.5318,
+        "distinct_inputs": 100,
+        "repeated_calls": 0,
+        "avg_us": 155.318
+      },
+      "check_ownership": {
+        "calls": 201,
+        "total_ms": 8.91903,
+        "distinct_inputs": 0,
+        "repeated_calls": 201,
+        "avg_us": 44.3733
+      },
+      "concrete_function_effects": {
+        "calls": 1100,
+        "total_ms": 4.44312,
+        "distinct_inputs": 150,
+        "repeated_calls": 950,
+        "avg_us": 4.0392
+      },
+      "concrete_function_observable_effects": {
+        "calls": 700,
+        "total_ms": 3.51155,
+        "distinct_inputs": 150,
+        "repeated_calls": 550,
+        "avg_us": 5.0165
+      },
+      "infer_domain_state_fields": {
+        "calls": 2,
+        "total_ms": 0.254734,
+        "distinct_inputs": 0,
+        "repeated_calls": 2,
+        "avg_us": 127.367
+      },
+      "infer_handler_reply_types": {
+        "calls": 2,
+        "total_ms": 0.21161,
+        "distinct_inputs": 0,
+        "repeated_calls": 2,
+        "avg_us": 105.805
+      },
+      "infer_statement_expressions": {
+        "calls": 400,
+        "total_ms": 3.00816,
+        "distinct_inputs": 100,
+        "repeated_calls": 300,
+        "avg_us": 7.5204
+      },
+      "observable_body_effects": {
+        "calls": 100,
+        "total_ms": 0.602051,
+        "distinct_inputs": 100,
+        "repeated_calls": 0,
+        "avg_us": 6.02051
+      },
+      "phase21_raise_set": {
+        "calls": 100,
+        "total_ms": 0.548675,
+        "distinct_inputs": 100,
+        "repeated_calls": 0,
+        "avg_us": 5.48675
+      },
+      "sig_infer_prelude_constraints": {
+        "calls": 3,
+        "total_ms": 2.20374,
+        "distinct_inputs": 0,
+        "repeated_calls": 3,
+        "avg_us": 734.581
+      },
+      "sig_infer_result_reconciliation": {
+        "calls": 400,
+        "total_ms": 3.85021,
+        "distinct_inputs": 100,
+        "repeated_calls": 300,
+        "avg_us": 9.62552
+      },
+      "sig_infer_round_body": {
+        "calls": 4,
+        "total_ms": 9.46724,
+        "distinct_inputs": 0,
+        "repeated_calls": 4,
+        "avg_us": 2366.81
+      },
+      "solve_local_collection_types": {
+        "calls": 400,
+        "total_ms": 0.23229,
+        "distinct_inputs": 100,
+        "repeated_calls": 300,
+        "avg_us": 0.580725
+      },
+      "spec_cache_miss_body_check": {
+        "calls": 100,
+        "total_ms": 12.4723,
+        "distinct_inputs": 100,
+        "repeated_calls": 0,
+        "avg_us": 124.723
+      },
+      "spec_effects_pass1": {
+        "calls": 1,
+        "total_ms": 1.01623,
+        "distinct_inputs": 0,
+        "repeated_calls": 1,
+        "avg_us": 1016.23
+      },
+      "spec_effects_pass2_recheck": {
+        "calls": 1,
+        "total_ms": 0.93239,
+        "distinct_inputs": 0,
+        "repeated_calls": 1,
+        "avg_us": 932.39
+      }
+    },
+    "stage_totals": {
+      "concrete_graph": {
+        "calls": 1,
+        "total_ms": 0.021433,
+        "total_ns": 21433
+      },
+      "declaration_and_symbol_analysis": {
+        "calls": 1,
+        "total_ms": 0.051756,
+        "total_ns": 51756
+      },
+      "effects": {
+        "calls": 1,
+        "total_ms": 6.1864,
+        "total_ns": 6186399
+      },
+      "functional_optimizer": {
+        "calls": 1,
+        "total_ms": 0.000506,
+        "total_ns": 506
+      },
+      "inference_round_0": {
+        "calls": 1,
+        "total_ms": 3.26818,
+        "total_ns": 3268181
+      },
+      "occurrence_and_summary_projection": {
+        "calls": 1,
+        "total_ms": 0.580856,
+        "total_ns": 580856
+      },
+      "open_callable_summaries": {
+        "calls": 2,
+        "total_ms": 0.183068,
+        "total_ns": 183068
+      },
+      "parsing": {
+        "calls": 2,
+        "total_ms": 0.804407,
+        "total_ns": 804407
+      },
+      "process_main": {
+        "calls": 1,
+        "total_ms": 69.9135,
+        "total_ns": 69913455
+      },
+      "project_discovery": {
+        "calls": 1,
+        "total_ms": 0.601826,
+        "total_ns": 601826
+      },
+      "semantic_analysis": {
+        "calls": 1,
+        "total_ms": 68.3745,
+        "total_ns": 68374510
+      },
+      "specialization_body_checking": {
+        "calls": 100,
+        "total_ms": 11.4313,
+        "total_ns": 11431275
+      },
+      "specialization_checking": {
+        "calls": 1,
+        "total_ms": 42.5964,
+        "total_ns": 42596364
+      },
+      "specialization_effects": {
+        "calls": 1,
+        "total_ms": 1.9517,
+        "total_ns": 1951701
+      },
+      "synchronization_plan": {
+        "calls": 1,
+        "total_ms": 0.011944,
+        "total_ns": 11944
+      },
+      "type_inference": {
+        "calls": 1,
+        "total_ms": 15.3342,
+        "total_ns": 15334185
+      },
+      "typed_semantics_export": {
+        "calls": 1,
+        "total_ms": 0.524654,
+        "total_ns": 524654
+      }
+    }
+  }
+}

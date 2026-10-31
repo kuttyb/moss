@@ -1,0 +1,630 @@
+Preparing 77 fixtures, 3 timing repetitions, 1 profiling sample
+Corpus integrity verified: 100% matching SHA256 hashes for Group A and Group B.
+Corpus integrity verified: 100% matching SHA256 hashes for Group A and Group B.
+
+=== Interleaved timing repetition 1/3 ===
+[timing 1/3] example_checkout                         candidate      4.16 ms
+[timing 1/3] example_checkout                         baseline       3.75 ms
+[timing 1/3] example_collections                      baseline       2.89 ms
+[timing 1/3] example_collections                      candidate      3.41 ms
+[timing 1/3] example_counter                          candidate      1.86 ms
+[timing 1/3] example_counter                          baseline       1.64 ms
+[timing 1/3] example_domain_typing                    baseline       3.52 ms
+[timing 1/3] example_domain_typing                    candidate      3.72 ms
+[timing 1/3] example_domains_and_messages             candidate      2.01 ms
+[timing 1/3] example_domains_and_messages             baseline       2.52 ms
+[timing 1/3] example_functional_basics                baseline       2.65 ms
+[timing 1/3] example_functional_basics                candidate      3.20 ms
+[timing 1/3] example_functional_dataflow              candidate      3.27 ms
+[timing 1/3] example_functional_dataflow              baseline       2.87 ms
+[timing 1/3] example_functional_pipeline              baseline       1.51 ms
+[timing 1/3] example_functional_pipeline              candidate      1.89 ms
+[timing 1/3] example_shared_memory                    candidate      2.21 ms
+[timing 1/3] example_shared_memory                    baseline       1.98 ms
+[timing 1/3] example_static_duck_typing               baseline       2.90 ms
+[timing 1/3] example_static_duck_typing               candidate      2.85 ms
+[timing 1/3] mg1_multi_file                           candidate      5.91 ms
+[timing 1/3] mg1_multi_file                           baseline       5.74 ms
+[timing 1/3] mg2_multi_module                         baseline       5.47 ms
+[timing 1/3] mg2_multi_module                         candidate      5.88 ms
+[timing 1/3] mg3_deep_chain                           candidate      4.92 ms
+[timing 1/3] mg3_deep_chain                           baseline       4.88 ms
+[timing 1/3] mg4_fan_out                              baseline       8.51 ms
+[timing 1/3] mg4_fan_out                              candidate      8.73 ms
+[timing 1/3] mg5_diamond                              candidate      3.67 ms
+[timing 1/3] mg5_diamond                              baseline       3.76 ms
+[timing 1/3] negative_await_retired                   baseline       1.03 ms
+[timing 1/3] negative_await_retired                   candidate      1.01 ms
+[timing 1/3] negative_domain_route_cycle              candidate      1.34 ms
+[timing 1/3] negative_domain_route_cycle              baseline       1.68 ms
+[timing 1/3] negative_duck_missing_method             baseline       1.58 ms
+[timing 1/3] negative_duck_missing_method             candidate      1.73 ms
+[timing 1/3] negative_heterogeneous_collection        candidate      1.55 ms
+[timing 1/3] negative_heterogeneous_collection        baseline       1.26 ms
+[timing 1/3] negative_mutually_recursive_functions    baseline       1.32 ms
+[timing 1/3] negative_mutually_recursive_functions    candidate      1.35 ms
+[timing 1/3] negative_self_send_rejected              candidate      1.30 ms
+[timing 1/3] negative_self_send_rejected              baseline       1.31 ms
+[timing 1/3] negative_spawn_retired                   baseline       1.22 ms
+[timing 1/3] negative_spawn_retired                   candidate      1.25 ms
+[timing 1/3] negative_trait_missing_method            candidate      2.19 ms
+[timing 1/3] negative_trait_missing_method            baseline       2.59 ms
+[timing 1/3] negative_write_write_alias               baseline       1.78 ms
+[timing 1/3] negative_write_write_alias               candidate      1.91 ms
+[timing 1/3] rw_example_checkout                      candidate      3.63 ms
+[timing 1/3] rw_example_checkout                      baseline       3.25 ms
+[timing 1/3] rw_example_collections                   baseline       2.79 ms
+[timing 1/3] rw_example_collections                   candidate      3.27 ms
+[timing 1/3] rw_example_counter                       candidate      1.74 ms
+[timing 1/3] rw_example_counter                       baseline       2.08 ms
+[timing 1/3] rw_example_domains                       baseline       1.82 ms
+[timing 1/3] rw_example_domains                       candidate      2.05 ms
+[timing 1/3] rw_example_pipeline                      candidate      1.80 ms
+[timing 1/3] rw_example_pipeline                      baseline       1.57 ms
+[timing 1/3] rw_packages_regex                        baseline     639.62 ms
+[timing 1/3] rw_packages_regex                        candidate    656.28 ms
+[timing 1/3] rw_phase106d1_borrowed_reads             candidate     12.26 ms
+[timing 1/3] rw_phase106d1_borrowed_reads             baseline      12.36 ms
+[timing 1/3] rw_phase106d1_read_projection            baseline      13.36 ms
+[timing 1/3] rw_phase106d1_read_projection            candidate     14.68 ms
+[timing 1/3] rw_phase106d_handler_2pl                 candidate      8.83 ms
+[timing 1/3] rw_phase106d_handler_2pl                 baseline       6.44 ms
+[timing 1/3] rw_phase15_15_enum_positive              baseline       4.98 ms
+[timing 1/3] rw_phase15_15_enum_positive              candidate      6.62 ms
+[timing 1/3] rw_phase20_fileio_helper                 candidate      3.15 ms
+[timing 1/3] rw_phase20_fileio_helper                 baseline       2.24 ms
+[timing 1/3] rw_phase21_fileio_root_cleanup           baseline       2.84 ms
+[timing 1/3] rw_phase21_fileio_root_cleanup           candidate      3.03 ms
+[timing 1/3] rw_phase24_string_concat                 candidate      5.76 ms
+[timing 1/3] rw_phase24_string_concat                 baseline       5.13 ms
+[timing 1/3] rw_phase25_integer_overflow              baseline       5.41 ms
+[timing 1/3] rw_phase25_integer_overflow              candidate      5.79 ms
+[timing 1/3] rw_phase46_semantic_barriers             candidate      7.28 ms
+[timing 1/3] rw_phase46_semantic_barriers             baseline       6.06 ms
+[timing 1/3] rw_phase47_iteration                     baseline       7.25 ms
+[timing 1/3] rw_phase47_iteration                     candidate      8.03 ms
+[timing 1/3] rw_phase4_functional                     candidate     13.96 ms
+[timing 1/3] rw_phase4_functional                     baseline      11.88 ms
+[timing 1/3] rw_projects_cache                        baseline      25.16 ms
+[timing 1/3] rw_projects_cache                        candidate     31.00 ms
+[timing 1/3] rw_projects_rolling_window               candidate     51.63 ms
+[timing 1/3] rw_projects_rolling_window               baseline      42.19 ms
+[timing 1/3] rw_sdk_datastructures                    baseline     228.66 ms
+[timing 1/3] rw_sdk_datastructures                    candidate    261.44 ms
+[timing 1/3] rw_swarm_047_reduce_map                  candidate     11.48 ms
+[timing 1/3] rw_swarm_047_reduce_map                  baseline       8.65 ms
+[timing 1/3] rw_swarm_066_for_range                   baseline       8.04 ms
+[timing 1/3] rw_swarm_066_for_range                   candidate      9.22 ms
+[timing 1/3] rw_tests_branch_confined_open            candidate      3.37 ms
+[timing 1/3] rw_tests_branch_confined_open            baseline       2.96 ms
+[timing 1/3] test_phase45_short_circuit_failure_barrier baseline       2.04 ms
+[timing 1/3] test_phase45_short_circuit_failure_barrier candidate      2.41 ms
+[timing 1/3] test_trait_open_forwarding               candidate      3.04 ms
+[timing 1/3] test_trait_open_forwarding               baseline       2.79 ms
+[timing 1/3] test_unused_inferred_field_template      baseline       1.34 ms
+[timing 1/3] test_unused_inferred_field_template      candidate      1.43 ms
+[timing 1/3] w2_spec_distinct_n008                    candidate     95.64 ms
+[timing 1/3] w2_spec_distinct_n008                    baseline      89.73 ms
+[timing 1/3] w2_spec_distinct_n016                    baseline     382.51 ms
+[timing 1/3] w2_spec_distinct_n016                    candidate    405.11 ms
+[timing 1/3] w2_spec_distinct_n032                    candidate   1918.54 ms
+[timing 1/3] w2_spec_distinct_n032                    baseline    1851.12 ms
+[timing 1/3] w3_spec_repeated_n008                    baseline      63.09 ms
+[timing 1/3] w3_spec_repeated_n008                    candidate     65.48 ms
+[timing 1/3] w3_spec_repeated_n016                    candidate    235.00 ms
+[timing 1/3] w3_spec_repeated_n016                    baseline     231.35 ms
+[timing 1/3] w3_spec_repeated_n032                    baseline     877.80 ms
+[timing 1/3] w3_spec_repeated_n032                    candidate    885.85 ms
+[timing 1/3] w4_infer_deep_d005                       candidate      6.31 ms
+[timing 1/3] w4_infer_deep_d005                       baseline       6.07 ms
+[timing 1/3] w4_infer_deep_d010                       baseline      12.30 ms
+[timing 1/3] w4_infer_deep_d010                       candidate     12.92 ms
+[timing 1/3] w4_infer_deep_d015                       candidate     20.30 ms
+[timing 1/3] w4_infer_deep_d015                       baseline      21.67 ms
+[timing 1/3] w4_infer_deep_d018                       baseline      24.59 ms
+[timing 1/3] w4_infer_deep_d018                       candidate     29.19 ms
+[timing 1/3] w5_infer_wide_w010                       candidate     14.91 ms
+[timing 1/3] w5_infer_wide_w010                       baseline      12.41 ms
+[timing 1/3] w5_infer_wide_w025                       baseline      32.87 ms
+[timing 1/3] w5_infer_wide_w025                       candidate     33.27 ms
+[timing 1/3] w5_infer_wide_w050                       candidate     66.00 ms
+[timing 1/3] w5_infer_wide_w050                       baseline      58.62 ms
+[timing 1/3] w5_infer_wide_w100                       baseline     112.37 ms
+[timing 1/3] w5_infer_wide_w100                       candidate    127.07 ms
+[timing 1/3] w6_types_count_t010                      candidate      8.10 ms
+[timing 1/3] w6_types_count_t010                      baseline       6.94 ms
+[timing 1/3] w6_types_count_t025                      baseline      15.22 ms
+[timing 1/3] w6_types_count_t025                      candidate     17.84 ms
+[timing 1/3] w6_types_count_t050                      candidate     38.72 ms
+[timing 1/3] w6_types_count_t050                      baseline      33.69 ms
+[timing 1/3] w6_types_count_t100                      baseline      84.62 ms
+[timing 1/3] w6_types_count_t100                      candidate    106.48 ms
+[timing 1/3] w7_collections_nested_k1                 candidate      2.27 ms
+[timing 1/3] w7_collections_nested_k1                 baseline       1.58 ms
+[timing 1/3] w7_collections_nested_k2                 baseline       1.59 ms
+[timing 1/3] w7_collections_nested_k2                 candidate      1.87 ms
+[timing 1/3] w7_collections_nested_k3                 candidate      2.25 ms
+[timing 1/3] w7_collections_nested_k3                 baseline       1.97 ms
+[timing 1/3] w7_collections_nested_k4                 baseline       2.44 ms
+[timing 1/3] w7_collections_nested_k4                 candidate      2.85 ms
+[timing 1/3] w7_collections_nested_k5                 candidate      4.94 ms
+[timing 1/3] w7_collections_nested_k5                 baseline       3.12 ms
+[timing 1/3] w8_traits_dispatch_c010                  baseline       8.35 ms
+[timing 1/3] w8_traits_dispatch_c010                  candidate      9.25 ms
+[timing 1/3] w8_traits_dispatch_c025                  candidate     19.60 ms
+[timing 1/3] w8_traits_dispatch_c025                  baseline      20.43 ms
+[timing 1/3] w8_traits_dispatch_c050                  baseline      40.78 ms
+[timing 1/3] w8_traits_dispatch_c050                  candidate     37.20 ms
+[timing 1/3] w8_traits_dispatch_c100                  candidate     84.95 ms
+[timing 1/3] w8_traits_dispatch_c100                  baseline      68.92 ms
+
+=== Interleaved timing repetition 2/3 ===
+[timing 2/3] w8_traits_dispatch_c100                  baseline      73.11 ms
+[timing 2/3] w8_traits_dispatch_c100                  candidate     79.53 ms
+[timing 2/3] w8_traits_dispatch_c050                  candidate     42.22 ms
+[timing 2/3] w8_traits_dispatch_c050                  baseline      35.17 ms
+[timing 2/3] w8_traits_dispatch_c025                  baseline      17.28 ms
+[timing 2/3] w8_traits_dispatch_c025                  candidate     19.49 ms
+[timing 2/3] w8_traits_dispatch_c010                  candidate      8.88 ms
+[timing 2/3] w8_traits_dispatch_c010                  baseline       8.24 ms
+[timing 2/3] w7_collections_nested_k5                 baseline       3.08 ms
+[timing 2/3] w7_collections_nested_k5                 candidate      3.38 ms
+[timing 2/3] w7_collections_nested_k4                 candidate      2.82 ms
+[timing 2/3] w7_collections_nested_k4                 baseline       2.46 ms
+[timing 2/3] w7_collections_nested_k3                 baseline       1.96 ms
+[timing 2/3] w7_collections_nested_k3                 candidate      2.23 ms
+[timing 2/3] w7_collections_nested_k2                 candidate      1.83 ms
+[timing 2/3] w7_collections_nested_k2                 baseline       1.70 ms
+[timing 2/3] w7_collections_nested_k1                 baseline       1.34 ms
+[timing 2/3] w7_collections_nested_k1                 candidate      1.49 ms
+[timing 2/3] w6_types_count_t100                      candidate    100.03 ms
+[timing 2/3] w6_types_count_t100                      baseline      94.17 ms
+[timing 2/3] w6_types_count_t050                      baseline      38.50 ms
+[timing 2/3] w6_types_count_t050                      candidate     42.36 ms
+[timing 2/3] w6_types_count_t025                      candidate     17.26 ms
+[timing 2/3] w6_types_count_t025                      baseline      17.34 ms
+[timing 2/3] w6_types_count_t010                      baseline       6.98 ms
+[timing 2/3] w6_types_count_t010                      candidate      7.21 ms
+[timing 2/3] w5_infer_wide_w100                       candidate    133.22 ms
+[timing 2/3] w5_infer_wide_w100                       baseline     111.07 ms
+[timing 2/3] w5_infer_wide_w050                       baseline      57.65 ms
+[timing 2/3] w5_infer_wide_w050                       candidate     65.02 ms
+[timing 2/3] w5_infer_wide_w025                       candidate     34.00 ms
+[timing 2/3] w5_infer_wide_w025                       baseline      28.05 ms
+[timing 2/3] w5_infer_wide_w010                       baseline      13.51 ms
+[timing 2/3] w5_infer_wide_w010                       candidate     13.45 ms
+[timing 2/3] w4_infer_deep_d018                       candidate     27.83 ms
+[timing 2/3] w4_infer_deep_d018                       baseline      28.58 ms
+[timing 2/3] w4_infer_deep_d015                       baseline      19.82 ms
+[timing 2/3] w4_infer_deep_d015                       candidate     23.62 ms
+[timing 2/3] w4_infer_deep_d010                       candidate     12.39 ms
+[timing 2/3] w4_infer_deep_d010                       baseline      11.29 ms
+[timing 2/3] w4_infer_deep_d005                       baseline       5.26 ms
+[timing 2/3] w4_infer_deep_d005                       candidate      5.72 ms
+[timing 2/3] w3_spec_repeated_n032                    candidate    909.34 ms
+[timing 2/3] w3_spec_repeated_n032                    baseline     869.81 ms
+[timing 2/3] w3_spec_repeated_n016                    baseline     225.94 ms
+[timing 2/3] w3_spec_repeated_n016                    candidate    226.21 ms
+[timing 2/3] w3_spec_repeated_n008                    candidate     61.87 ms
+[timing 2/3] w3_spec_repeated_n008                    baseline      59.63 ms
+[timing 2/3] w2_spec_distinct_n032                    baseline    1844.71 ms
+[timing 2/3] w2_spec_distinct_n032                    candidate   1916.12 ms
+[timing 2/3] w2_spec_distinct_n016                    candidate    393.10 ms
+[timing 2/3] w2_spec_distinct_n016                    baseline     381.49 ms
+[timing 2/3] w2_spec_distinct_n008                    baseline      88.05 ms
+[timing 2/3] w2_spec_distinct_n008                    candidate     92.46 ms
+[timing 2/3] test_unused_inferred_field_template      candidate      1.48 ms
+[timing 2/3] test_unused_inferred_field_template      baseline       1.34 ms
+[timing 2/3] test_trait_open_forwarding               baseline       2.66 ms
+[timing 2/3] test_trait_open_forwarding               candidate      2.84 ms
+[timing 2/3] test_phase45_short_circuit_failure_barrier candidate      2.65 ms
+[timing 2/3] test_phase45_short_circuit_failure_barrier baseline       2.09 ms
+[timing 2/3] rw_tests_branch_confined_open            baseline       2.73 ms
+[timing 2/3] rw_tests_branch_confined_open            candidate      3.47 ms
+[timing 2/3] rw_swarm_066_for_range                   candidate     12.11 ms
+[timing 2/3] rw_swarm_066_for_range                   baseline       7.93 ms
+[timing 2/3] rw_swarm_047_reduce_map                  baseline       7.14 ms
+[timing 2/3] rw_swarm_047_reduce_map                  candidate      8.24 ms
+[timing 2/3] rw_sdk_datastructures                    candidate    253.29 ms
+[timing 2/3] rw_sdk_datastructures                    baseline     235.95 ms
+[timing 2/3] rw_projects_rolling_window               baseline      42.82 ms
+[timing 2/3] rw_projects_rolling_window               candidate     50.91 ms
+[timing 2/3] rw_projects_cache                        candidate     30.67 ms
+[timing 2/3] rw_projects_cache                        baseline      25.35 ms
+[timing 2/3] rw_phase4_functional                     baseline      11.64 ms
+[timing 2/3] rw_phase4_functional                     candidate     14.63 ms
+[timing 2/3] rw_phase47_iteration                     candidate      7.91 ms
+[timing 2/3] rw_phase47_iteration                     baseline       7.69 ms
+[timing 2/3] rw_phase46_semantic_barriers             baseline       6.31 ms
+[timing 2/3] rw_phase46_semantic_barriers             candidate      8.54 ms
+[timing 2/3] rw_phase25_integer_overflow              candidate      5.90 ms
+[timing 2/3] rw_phase25_integer_overflow              baseline       5.36 ms
+[timing 2/3] rw_phase24_string_concat                 baseline       5.00 ms
+[timing 2/3] rw_phase24_string_concat                 candidate      6.60 ms
+[timing 2/3] rw_phase21_fileio_root_cleanup           candidate      2.99 ms
+[timing 2/3] rw_phase21_fileio_root_cleanup           baseline       2.91 ms
+[timing 2/3] rw_phase20_fileio_helper                 baseline       2.13 ms
+[timing 2/3] rw_phase20_fileio_helper                 candidate      2.34 ms
+[timing 2/3] rw_phase15_15_enum_positive              candidate      5.64 ms
+[timing 2/3] rw_phase15_15_enum_positive              baseline       5.05 ms
+[timing 2/3] rw_phase106d_handler_2pl                 baseline       6.55 ms
+[timing 2/3] rw_phase106d_handler_2pl                 candidate      7.04 ms
+[timing 2/3] rw_phase106d1_read_projection            candidate     10.30 ms
+[timing 2/3] rw_phase106d1_read_projection            baseline       9.73 ms
+[timing 2/3] rw_phase106d1_borrowed_reads             baseline      12.18 ms
+[timing 2/3] rw_phase106d1_borrowed_reads             candidate     12.67 ms
+[timing 2/3] rw_packages_regex                        candidate    671.41 ms
+[timing 2/3] rw_packages_regex                        baseline     643.86 ms
+[timing 2/3] rw_example_pipeline                      baseline       1.97 ms
+[timing 2/3] rw_example_pipeline                      candidate      2.03 ms
+[timing 2/3] rw_example_domains                       candidate      2.16 ms
+[timing 2/3] rw_example_domains                       baseline       2.37 ms
+[timing 2/3] rw_example_counter                       baseline       1.66 ms
+[timing 2/3] rw_example_counter                       candidate      1.98 ms
+[timing 2/3] rw_example_collections                   candidate      3.42 ms
+[timing 2/3] rw_example_collections                   baseline       3.10 ms
+[timing 2/3] rw_example_checkout                      baseline       3.38 ms
+[timing 2/3] rw_example_checkout                      candidate      3.82 ms
+[timing 2/3] negative_write_write_alias               candidate      1.88 ms
+[timing 2/3] negative_write_write_alias               baseline       1.91 ms
+[timing 2/3] negative_trait_missing_method            baseline       1.98 ms
+[timing 2/3] negative_trait_missing_method            candidate      2.19 ms
+[timing 2/3] negative_spawn_retired                   candidate      1.27 ms
+[timing 2/3] negative_spawn_retired                   baseline       1.19 ms
+[timing 2/3] negative_self_send_rejected              baseline       1.41 ms
+[timing 2/3] negative_self_send_rejected              candidate      1.52 ms
+[timing 2/3] negative_mutually_recursive_functions    candidate      1.39 ms
+[timing 2/3] negative_mutually_recursive_functions    baseline       1.30 ms
+[timing 2/3] negative_heterogeneous_collection        baseline       1.25 ms
+[timing 2/3] negative_heterogeneous_collection        candidate      1.39 ms
+[timing 2/3] negative_duck_missing_method             candidate      2.41 ms
+[timing 2/3] negative_duck_missing_method             baseline       1.77 ms
+[timing 2/3] negative_domain_route_cycle              baseline       1.26 ms
+[timing 2/3] negative_domain_route_cycle              candidate      1.41 ms
+[timing 2/3] negative_await_retired                   candidate      0.99 ms
+[timing 2/3] negative_await_retired                   baseline       1.09 ms
+[timing 2/3] mg5_diamond                              baseline       3.51 ms
+[timing 2/3] mg5_diamond                              candidate      3.80 ms
+[timing 2/3] mg4_fan_out                              candidate      9.06 ms
+[timing 2/3] mg4_fan_out                              baseline       8.65 ms
+[timing 2/3] mg3_deep_chain                           baseline       4.38 ms
+[timing 2/3] mg3_deep_chain                           candidate      4.68 ms
+[timing 2/3] mg2_multi_module                         candidate      6.07 ms
+[timing 2/3] mg2_multi_module                         baseline       8.58 ms
+[timing 2/3] mg1_multi_file                           baseline       7.13 ms
+[timing 2/3] mg1_multi_file                           candidate      5.55 ms
+[timing 2/3] example_static_duck_typing               candidate      2.82 ms
+[timing 2/3] example_static_duck_typing               baseline       2.80 ms
+[timing 2/3] example_shared_memory                    baseline       2.16 ms
+[timing 2/3] example_shared_memory                    candidate      2.52 ms
+[timing 2/3] example_functional_pipeline              candidate      2.36 ms
+[timing 2/3] example_functional_pipeline              baseline       1.65 ms
+[timing 2/3] example_functional_dataflow              baseline       3.30 ms
+[timing 2/3] example_functional_dataflow              candidate      3.42 ms
+[timing 2/3] example_functional_basics                candidate      2.99 ms
+[timing 2/3] example_functional_basics                baseline       2.80 ms
+[timing 2/3] example_domains_and_messages             baseline       1.90 ms
+[timing 2/3] example_domains_and_messages             candidate      2.86 ms
+[timing 2/3] example_domain_typing                    candidate      5.66 ms
+[timing 2/3] example_domain_typing                    baseline       3.51 ms
+[timing 2/3] example_counter                          baseline       1.60 ms
+[timing 2/3] example_counter                          candidate      1.79 ms
+[timing 2/3] example_collections                      candidate      3.29 ms
+[timing 2/3] example_collections                      baseline       3.16 ms
+[timing 2/3] example_checkout                         baseline       3.48 ms
+[timing 2/3] example_checkout                         candidate      3.79 ms
+
+=== Interleaved timing repetition 3/3 ===
+[timing 3/3] example_checkout                         candidate      3.85 ms
+[timing 3/3] example_checkout                         baseline       3.38 ms
+[timing 3/3] example_collections                      baseline       2.90 ms
+[timing 3/3] example_collections                      candidate      3.59 ms
+[timing 3/3] example_counter                          candidate      1.85 ms
+[timing 3/3] example_counter                          baseline       1.83 ms
+[timing 3/3] example_domain_typing                    baseline       3.54 ms
+[timing 3/3] example_domain_typing                    candidate      3.98 ms
+[timing 3/3] example_domains_and_messages             candidate      1.93 ms
+[timing 3/3] example_domains_and_messages             baseline       1.78 ms
+[timing 3/3] example_functional_basics                baseline       2.51 ms
+[timing 3/3] example_functional_basics                candidate      3.21 ms
+[timing 3/3] example_functional_dataflow              candidate      3.61 ms
+[timing 3/3] example_functional_dataflow              baseline       3.14 ms
+[timing 3/3] example_functional_pipeline              baseline       2.11 ms
+[timing 3/3] example_functional_pipeline              candidate      1.71 ms
+[timing 3/3] example_shared_memory                    candidate      2.12 ms
+[timing 3/3] example_shared_memory                    baseline       1.96 ms
+[timing 3/3] example_static_duck_typing               baseline       2.55 ms
+[timing 3/3] example_static_duck_typing               candidate      2.76 ms
+[timing 3/3] mg1_multi_file                           candidate      5.28 ms
+[timing 3/3] mg1_multi_file                           baseline       5.31 ms
+[timing 3/3] mg2_multi_module                         baseline       5.40 ms
+[timing 3/3] mg2_multi_module                         candidate      5.84 ms
+[timing 3/3] mg3_deep_chain                           candidate      4.93 ms
+[timing 3/3] mg3_deep_chain                           baseline       4.26 ms
+[timing 3/3] mg4_fan_out                              baseline       8.25 ms
+[timing 3/3] mg4_fan_out                              candidate      9.00 ms
+[timing 3/3] mg5_diamond                              candidate      3.86 ms
+[timing 3/3] mg5_diamond                              baseline       3.72 ms
+[timing 3/3] negative_await_retired                   baseline       1.11 ms
+[timing 3/3] negative_await_retired                   candidate      1.30 ms
+[timing 3/3] negative_domain_route_cycle              candidate      1.46 ms
+[timing 3/3] negative_domain_route_cycle              baseline       1.17 ms
+[timing 3/3] negative_duck_missing_method             baseline       1.55 ms
+[timing 3/3] negative_duck_missing_method             candidate      1.74 ms
+[timing 3/3] negative_heterogeneous_collection        candidate      1.38 ms
+[timing 3/3] negative_heterogeneous_collection        baseline       1.23 ms
+[timing 3/3] negative_mutually_recursive_functions    baseline       1.28 ms
+[timing 3/3] negative_mutually_recursive_functions    candidate      1.41 ms
+[timing 3/3] negative_self_send_rejected              candidate      1.78 ms
+[timing 3/3] negative_self_send_rejected              baseline       1.68 ms
+[timing 3/3] negative_spawn_retired                   baseline       1.19 ms
+[timing 3/3] negative_spawn_retired                   candidate      1.23 ms
+[timing 3/3] negative_trait_missing_method            candidate      2.23 ms
+[timing 3/3] negative_trait_missing_method            baseline       2.11 ms
+[timing 3/3] negative_write_write_alias               baseline       1.74 ms
+[timing 3/3] negative_write_write_alias               candidate      1.85 ms
+[timing 3/3] rw_example_checkout                      candidate      3.92 ms
+[timing 3/3] rw_example_checkout                      baseline       4.74 ms
+[timing 3/3] rw_example_collections                   baseline       3.38 ms
+[timing 3/3] rw_example_collections                   candidate      3.49 ms
+[timing 3/3] rw_example_counter                       candidate      2.54 ms
+[timing 3/3] rw_example_counter                       baseline       1.80 ms
+[timing 3/3] rw_example_domains                       baseline       1.88 ms
+[timing 3/3] rw_example_domains                       candidate      2.16 ms
+[timing 3/3] rw_example_pipeline                      candidate      1.73 ms
+[timing 3/3] rw_example_pipeline                      baseline       1.61 ms
+[timing 3/3] rw_packages_regex                        baseline     654.36 ms
+[timing 3/3] rw_packages_regex                        candidate    677.16 ms
+[timing 3/3] rw_phase106d1_borrowed_reads             candidate     11.89 ms
+[timing 3/3] rw_phase106d1_borrowed_reads             baseline      11.08 ms
+[timing 3/3] rw_phase106d1_read_projection            baseline      10.06 ms
+[timing 3/3] rw_phase106d1_read_projection            candidate      9.80 ms
+[timing 3/3] rw_phase106d_handler_2pl                 candidate      7.17 ms
+[timing 3/3] rw_phase106d_handler_2pl                 baseline       7.48 ms
+[timing 3/3] rw_phase15_15_enum_positive              baseline       5.02 ms
+[timing 3/3] rw_phase15_15_enum_positive              candidate      5.91 ms
+[timing 3/3] rw_phase20_fileio_helper                 candidate      2.78 ms
+[timing 3/3] rw_phase20_fileio_helper                 baseline       2.26 ms
+[timing 3/3] rw_phase21_fileio_root_cleanup           baseline       2.69 ms
+[timing 3/3] rw_phase21_fileio_root_cleanup           candidate      2.92 ms
+[timing 3/3] rw_phase24_string_concat                 candidate      5.78 ms
+[timing 3/3] rw_phase24_string_concat                 baseline       5.06 ms
+[timing 3/3] rw_phase25_integer_overflow              baseline       5.31 ms
+[timing 3/3] rw_phase25_integer_overflow              candidate      6.09 ms
+[timing 3/3] rw_phase46_semantic_barriers             candidate      7.18 ms
+[timing 3/3] rw_phase46_semantic_barriers             baseline       5.93 ms
+[timing 3/3] rw_phase47_iteration                     baseline       7.46 ms
+[timing 3/3] rw_phase47_iteration                     candidate      8.00 ms
+[timing 3/3] rw_phase4_functional                     candidate     14.32 ms
+[timing 3/3] rw_phase4_functional                     baseline      11.81 ms
+[timing 3/3] rw_projects_cache                        baseline      26.37 ms
+[timing 3/3] rw_projects_cache                        candidate     28.93 ms
+[timing 3/3] rw_projects_rolling_window               candidate     49.10 ms
+[timing 3/3] rw_projects_rolling_window               baseline      48.67 ms
+[timing 3/3] rw_sdk_datastructures                    baseline     239.77 ms
+[timing 3/3] rw_sdk_datastructures                    candidate    257.01 ms
+[timing 3/3] rw_swarm_047_reduce_map                  candidate      8.89 ms
+[timing 3/3] rw_swarm_047_reduce_map                  baseline      10.42 ms
+[timing 3/3] rw_swarm_066_for_range                   baseline       7.40 ms
+[timing 3/3] rw_swarm_066_for_range                   candidate      8.35 ms
+[timing 3/3] rw_tests_branch_confined_open            candidate      3.45 ms
+[timing 3/3] rw_tests_branch_confined_open            baseline       3.30 ms
+[timing 3/3] test_phase45_short_circuit_failure_barrier baseline       2.42 ms
+[timing 3/3] test_phase45_short_circuit_failure_barrier candidate      2.43 ms
+[timing 3/3] test_trait_open_forwarding               candidate      2.98 ms
+[timing 3/3] test_trait_open_forwarding               baseline       2.68 ms
+[timing 3/3] test_unused_inferred_field_template      baseline       1.11 ms
+[timing 3/3] test_unused_inferred_field_template      candidate      1.33 ms
+[timing 3/3] w2_spec_distinct_n008                    candidate     89.35 ms
+[timing 3/3] w2_spec_distinct_n008                    baseline      86.83 ms
+[timing 3/3] w2_spec_distinct_n016                    baseline     368.49 ms
+[timing 3/3] w2_spec_distinct_n016                    candidate    401.67 ms
+[timing 3/3] w2_spec_distinct_n032                    candidate   1938.11 ms
+[timing 3/3] w2_spec_distinct_n032                    baseline    1835.35 ms
+[timing 3/3] w3_spec_repeated_n008                    baseline      56.58 ms
+[timing 3/3] w3_spec_repeated_n008                    candidate     58.44 ms
+[timing 3/3] w3_spec_repeated_n016                    candidate    224.34 ms
+[timing 3/3] w3_spec_repeated_n016                    baseline     228.90 ms
+[timing 3/3] w3_spec_repeated_n032                    baseline     864.36 ms
+[timing 3/3] w3_spec_repeated_n032                    candidate    890.40 ms
+[timing 3/3] w4_infer_deep_d005                       candidate      5.97 ms
+[timing 3/3] w4_infer_deep_d005                       baseline       7.64 ms
+[timing 3/3] w4_infer_deep_d010                       baseline      10.73 ms
+[timing 3/3] w4_infer_deep_d010                       candidate     12.24 ms
+[timing 3/3] w4_infer_deep_d015                       candidate     19.98 ms
+[timing 3/3] w4_infer_deep_d015                       baseline      21.91 ms
+[timing 3/3] w4_infer_deep_d018                       baseline      24.72 ms
+[timing 3/3] w4_infer_deep_d018                       candidate     27.38 ms
+[timing 3/3] w5_infer_wide_w010                       candidate     13.82 ms
+[timing 3/3] w5_infer_wide_w010                       baseline      12.04 ms
+[timing 3/3] w5_infer_wide_w025                       baseline      30.84 ms
+[timing 3/3] w5_infer_wide_w025                       candidate     32.63 ms
+[timing 3/3] w5_infer_wide_w050                       candidate     69.94 ms
+[timing 3/3] w5_infer_wide_w050                       baseline      54.48 ms
+[timing 3/3] w5_infer_wide_w100                       baseline     111.74 ms
+[timing 3/3] w5_infer_wide_w100                       candidate    126.17 ms
+[timing 3/3] w6_types_count_t010                      candidate      8.32 ms
+[timing 3/3] w6_types_count_t010                      baseline       7.72 ms
+[timing 3/3] w6_types_count_t025                      baseline      14.97 ms
+[timing 3/3] w6_types_count_t025                      candidate     18.06 ms
+[timing 3/3] w6_types_count_t050                      candidate     41.85 ms
+[timing 3/3] w6_types_count_t050                      baseline      32.71 ms
+[timing 3/3] w6_types_count_t100                      baseline      86.35 ms
+[timing 3/3] w6_types_count_t100                      candidate    103.44 ms
+[timing 3/3] w7_collections_nested_k1                 candidate      1.78 ms
+[timing 3/3] w7_collections_nested_k1                 baseline       1.51 ms
+[timing 3/3] w7_collections_nested_k2                 baseline       1.64 ms
+[timing 3/3] w7_collections_nested_k2                 candidate      2.09 ms
+[timing 3/3] w7_collections_nested_k3                 candidate      2.32 ms
+[timing 3/3] w7_collections_nested_k3                 baseline       2.16 ms
+[timing 3/3] w7_collections_nested_k4                 baseline       2.38 ms
+[timing 3/3] w7_collections_nested_k4                 candidate      2.68 ms
+[timing 3/3] w7_collections_nested_k5                 candidate      3.29 ms
+[timing 3/3] w7_collections_nested_k5                 baseline       2.89 ms
+[timing 3/3] w8_traits_dispatch_c010                  baseline       9.20 ms
+[timing 3/3] w8_traits_dispatch_c010                  candidate      9.10 ms
+[timing 3/3] w8_traits_dispatch_c025                  candidate     22.26 ms
+[timing 3/3] w8_traits_dispatch_c025                  baseline      18.22 ms
+[timing 3/3] w8_traits_dispatch_c050                  baseline      34.08 ms
+[timing 3/3] w8_traits_dispatch_c050                  candidate     39.55 ms
+[timing 3/3] w8_traits_dispatch_c100                  candidate     76.50 ms
+[timing 3/3] w8_traits_dispatch_c100                  baseline      72.61 ms
+
+=== Separate profiling pass (1 sample) ===
+[profiling] example_checkout                         baseline  counters=49
+[profiling] example_checkout                         candidate counters=49
+[profiling] example_collections                      candidate counters=46
+[profiling] example_collections                      baseline  counters=46
+[profiling] example_counter                          baseline  counters=49
+[profiling] example_counter                          candidate counters=49
+[profiling] example_domain_typing                    candidate counters=50
+[profiling] example_domain_typing                    baseline  counters=50
+[profiling] example_domains_and_messages             baseline  counters=49
+[profiling] example_domains_and_messages             candidate counters=49
+[profiling] example_functional_basics                candidate counters=45
+[profiling] example_functional_basics                baseline  counters=45
+[profiling] example_functional_dataflow              baseline  counters=50
+[profiling] example_functional_dataflow              candidate counters=50
+[profiling] example_functional_pipeline              candidate counters=45
+[profiling] example_functional_pipeline              baseline  counters=45
+[profiling] example_shared_memory                    baseline  counters=49
+[profiling] example_shared_memory                    candidate counters=49
+[profiling] example_static_duck_typing               candidate counters=47
+[profiling] example_static_duck_typing               baseline  counters=47
+[profiling] mg1_multi_file                           baseline  counters=45
+[profiling] mg1_multi_file                           candidate counters=45
+[profiling] mg2_multi_module                         candidate counters=45
+[profiling] mg2_multi_module                         baseline  counters=45
+[profiling] mg3_deep_chain                           baseline  counters=49
+[profiling] mg3_deep_chain                           candidate counters=49
+[profiling] mg4_fan_out                              candidate counters=49
+[profiling] mg4_fan_out                              baseline  counters=49
+[profiling] mg5_diamond                              baseline  counters=49
+[profiling] mg5_diamond                              candidate counters=49
+[profiling] negative_await_retired                   candidate counters=0
+[profiling] negative_await_retired                   baseline  counters=0
+[profiling] negative_domain_route_cycle              baseline  counters=0
+[profiling] negative_domain_route_cycle              candidate counters=0
+[profiling] negative_duck_missing_method             candidate counters=0
+[profiling] negative_duck_missing_method             baseline  counters=0
+[profiling] negative_heterogeneous_collection        baseline  counters=0
+[profiling] negative_heterogeneous_collection        candidate counters=0
+[profiling] negative_mutually_recursive_functions    candidate counters=0
+[profiling] negative_mutually_recursive_functions    baseline  counters=0
+[profiling] negative_self_send_rejected              baseline  counters=0
+[profiling] negative_self_send_rejected              candidate counters=0
+[profiling] negative_spawn_retired                   candidate counters=0
+[profiling] negative_spawn_retired                   baseline  counters=0
+[profiling] negative_trait_missing_method            baseline  counters=0
+[profiling] negative_trait_missing_method            candidate counters=0
+[profiling] negative_write_write_alias               candidate counters=0
+[profiling] negative_write_write_alias               baseline  counters=0
+[profiling] rw_example_checkout                      baseline  counters=49
+[profiling] rw_example_checkout                      candidate counters=49
+[profiling] rw_example_collections                   candidate counters=46
+[profiling] rw_example_collections                   baseline  counters=46
+[profiling] rw_example_counter                       baseline  counters=49
+[profiling] rw_example_counter                       candidate counters=49
+[profiling] rw_example_domains                       candidate counters=49
+[profiling] rw_example_domains                       baseline  counters=49
+[profiling] rw_example_pipeline                      baseline  counters=45
+[profiling] rw_example_pipeline                      candidate counters=45
+[profiling] rw_packages_regex                        candidate counters=49
+[profiling] rw_packages_regex                        baseline  counters=49
+[profiling] rw_phase106d1_borrowed_reads             baseline  counters=45
+[profiling] rw_phase106d1_borrowed_reads             candidate counters=45
+[profiling] rw_phase106d1_read_projection            candidate counters=46
+[profiling] rw_phase106d1_read_projection            baseline  counters=46
+[profiling] rw_phase106d_handler_2pl                 baseline  counters=45
+[profiling] rw_phase106d_handler_2pl                 candidate counters=45
+[profiling] rw_phase15_15_enum_positive              candidate counters=49
+[profiling] rw_phase15_15_enum_positive              baseline  counters=49
+[profiling] rw_phase20_fileio_helper                 baseline  counters=45
+[profiling] rw_phase20_fileio_helper                 candidate counters=45
+[profiling] rw_phase21_fileio_root_cleanup           candidate counters=49
+[profiling] rw_phase21_fileio_root_cleanup           baseline  counters=49
+[profiling] rw_phase24_string_concat                 baseline  counters=45
+[profiling] rw_phase24_string_concat                 candidate counters=45
+[profiling] rw_phase25_integer_overflow              candidate counters=55
+[profiling] rw_phase25_integer_overflow              baseline  counters=55
+[profiling] rw_phase46_semantic_barriers             baseline  counters=45
+[profiling] rw_phase46_semantic_barriers             candidate counters=45
+[profiling] rw_phase47_iteration                     candidate counters=48
+[profiling] rw_phase47_iteration                     baseline  counters=48
+[profiling] rw_phase4_functional                     baseline  counters=46
+[profiling] rw_phase4_functional                     candidate counters=46
+[profiling] rw_projects_cache                        candidate counters=45
+[profiling] rw_projects_cache                        baseline  counters=45
+[profiling] rw_projects_rolling_window               baseline  counters=45
+[profiling] rw_projects_rolling_window               candidate counters=45
+[profiling] rw_sdk_datastructures                    candidate counters=49
+[profiling] rw_sdk_datastructures                    baseline  counters=49
+[profiling] rw_swarm_047_reduce_map                  baseline  counters=49
+[profiling] rw_swarm_047_reduce_map                  candidate counters=49
+[profiling] rw_swarm_066_for_range                   candidate counters=45
+[profiling] rw_swarm_066_for_range                   baseline  counters=45
+[profiling] rw_tests_branch_confined_open            baseline  counters=45
+[profiling] rw_tests_branch_confined_open            candidate counters=45
+[profiling] test_phase45_short_circuit_failure_barrier candidate counters=45
+[profiling] test_phase45_short_circuit_failure_barrier baseline  counters=45
+[profiling] test_trait_open_forwarding               baseline  counters=55
+[profiling] test_trait_open_forwarding               candidate counters=55
+[profiling] test_unused_inferred_field_template      candidate counters=45
+[profiling] test_unused_inferred_field_template      baseline  counters=45
+[profiling] w2_spec_distinct_n008                    baseline  counters=121
+[profiling] w2_spec_distinct_n008                    candidate counters=121
+[profiling] w2_spec_distinct_n016                    candidate counters=321
+[profiling] w2_spec_distinct_n016                    baseline  counters=321
+[profiling] w2_spec_distinct_n032                    baseline  counters=1105
+[profiling] w2_spec_distinct_n032                    candidate counters=1105
+[profiling] w3_spec_repeated_n008                    candidate counters=55
+[profiling] w3_spec_repeated_n008                    baseline  counters=55
+[profiling] w3_spec_repeated_n016                    baseline  counters=55
+[profiling] w3_spec_repeated_n016                    candidate counters=55
+[profiling] w3_spec_repeated_n032                    candidate counters=55
+[profiling] w3_spec_repeated_n032                    baseline  counters=55
+[profiling] w4_infer_deep_d005                       baseline  counters=55
+[profiling] w4_infer_deep_d005                       candidate counters=55
+[profiling] w4_infer_deep_d010                       candidate counters=60
+[profiling] w4_infer_deep_d010                       baseline  counters=60
+[profiling] w4_infer_deep_d015                       baseline  counters=65
+[profiling] w4_infer_deep_d015                       candidate counters=65
+[profiling] w4_infer_deep_d018                       candidate counters=68
+[profiling] w4_infer_deep_d018                       baseline  counters=68
+[profiling] w5_infer_wide_w010                       baseline  counters=69
+[profiling] w5_infer_wide_w010                       candidate counters=69
+[profiling] w5_infer_wide_w025                       candidate counters=99
+[profiling] w5_infer_wide_w025                       baseline  counters=99
+[profiling] w5_infer_wide_w050                       baseline  counters=149
+[profiling] w5_infer_wide_w050                       candidate counters=149
+[profiling] w5_infer_wide_w100                       candidate counters=249
+[profiling] w5_infer_wide_w100                       baseline  counters=249
+[profiling] w6_types_count_t010                      baseline  counters=45
+[profiling] w6_types_count_t010                      candidate counters=45
+[profiling] w6_types_count_t025                      candidate counters=45
+[profiling] w6_types_count_t025                      baseline  counters=45
+[profiling] w6_types_count_t050                      baseline  counters=45
+[profiling] w6_types_count_t050                      candidate counters=45
+[profiling] w6_types_count_t100                      candidate counters=45
+[profiling] w6_types_count_t100                      baseline  counters=45
+[profiling] w7_collections_nested_k1                 baseline  counters=45
+[profiling] w7_collections_nested_k1                 candidate counters=45
+[profiling] w7_collections_nested_k2                 candidate counters=45
+[profiling] w7_collections_nested_k2                 baseline  counters=45
+[profiling] w7_collections_nested_k3                 baseline  counters=45
+[profiling] w7_collections_nested_k3                 candidate counters=45
+[profiling] w7_collections_nested_k4                 candidate counters=45
+[profiling] w7_collections_nested_k4                 baseline  counters=45
+[profiling] w7_collections_nested_k5                 baseline  counters=45
+[profiling] w7_collections_nested_k5                 candidate counters=45
+[profiling] w8_traits_dispatch_c010                  candidate counters=55
+[profiling] w8_traits_dispatch_c010                  baseline  counters=55
+[profiling] w8_traits_dispatch_c025                  baseline  counters=70
+[profiling] w8_traits_dispatch_c025                  candidate counters=70
+[profiling] w8_traits_dispatch_c050                  candidate counters=95
+[profiling] w8_traits_dispatch_c050                  baseline  counters=95
+[profiling] w8_traits_dispatch_c100                  baseline  counters=145
+[profiling] w8_traits_dispatch_c100                  candidate counters=145
+Report: /home/owner/daji/code/moss/tmp/compiler-perf/20261031-092915/LOCAL_REPORT.md
+Candidate medians: /home/owner/daji/code/moss/tmp/compiler-perf/20261031-092915/phase26_candidate_medians.csv
+Per-fixture work counters: /home/owner/daji/code/moss/tmp/compiler-perf/20261031-092915/phase26_work_counters.csv
