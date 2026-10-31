@@ -53,7 +53,7 @@ Peer follow-up iteration 2 — final bulk rerun after expected-slot correction a
 
 At the time of final review, merge-commit off/shadow checks, `.mossi` and package gates, and first-parent perf were pending; their completed results follow.
 
-## Final merge-commit gates
+## Pre-advance merge gate run (superseded by the final delivery merge)
 
 Merge candidate `223c9f03505e348a2c26fab3c76eaddd9c238ede` has first parent `38056e74c049bcb4170e15a2288ab975abca3158` (current `origin/main` at fetch). The candidate tree contains no source edits beyond the audited SHA `e8081229`; it adds the review and delivery evidence.
 
@@ -71,6 +71,22 @@ First-parent performance: aggregate 5.467 s → 5.573 s (+1.9%). No `rw_*` workl
 
 ## Delivery
 
-- Merge: `223c9f03505e348a2c26fab3c76eaddd9c238ede` (first parent `38056e74c049bcb4170e15a2288ab975abca3158`).
+- Merge: `293bb6c53988c099974b04a0a21c5df77e9ef77e` (first parent current `origin/main` `cc1d22172508cb9e35d0230898e4be4d2a452492`).
 - Annotated tag: `phase27-4-m1` targets the merge commit above.
 - Final Agent 2 verdict: **GO — frozen SHA `e80812291c32454fece6c840f0369acb61c87b7e`.**
+
+## Final delivery merge gates
+
+The final merge commit is `293bb6c53988c099974b04a0a21c5df77e9ef77e`, first parent `cc1d22172508cb9e35d0230898e4be4d2a452492`. It carries the audited Phase 27.4 source unchanged; the first-parent advance added only the current `AGENTS.md` semantic-authority documentation.
+
+| Gate | Result | Evidence |
+|---|---|---|
+| `MOSS_EST=off make --jobs="$(nproc)" check` | PASS, all regression jobs | `tests/phase27/adversarial/phase27-4-gates-final-293bb6c5/merge-293bb6c5-check-off.log` |
+| `MOSS_EST=shadow make --jobs="$(nproc)" check` | PASS, all regression jobs | `tests/phase27/adversarial/phase27-4-gates-final-293bb6c5/merge-293bb6c5-check-shadow.log` |
+| Both conformance gates | PASS in both full checks | same off/shadow logs |
+| Baseline `.mossi` parity | PASS, normalized output equal | `tests/phase27/adversarial/phase27-4-gates-final-293bb6c5/merge-293bb6c5-mossi-baseline.log` |
+| EST `.mossi` off/shadow parity and imports | PASS, generic and Section2 imports | `tests/phase27/adversarial/phase27-4-gates-final-293bb6c5/merge-293bb6c5-est-mossi.log` |
+| Source-free package acceptance, ABI v9 debug | PASS, five Team A modules and 14 provider interfaces | `tests/phase27/adversarial/phase27-4-gates-final-293bb6c5/merge-293bb6c5-source-free.log` |
+| Compiler perf vs current first parent | PASS | `tests/phase27/adversarial/phase27-4-perf-final-293bb6c5/LOCAL_REPORT.md` |
+
+Final first-parent perf: aggregate 5.416 s → 5.534 s (+2.2%). No `rw_*` workload crossed the beyond-noise alert. The `rw_*` increases above 5% remained below the noise floor: `rw_phase106d_handler_2pl` (+7.8%, +0.56 ms), `rw_phase106d1_read_projection` (+7.6%, +0.74 ms), and `rw_phase25_integer_overflow` (+6.9%, +0.41 ms). The sole beyond-noise alert was torture fixture `w2_spec_distinct_n032` (+7.4%, +140.47 ms); w2–w8 are record-only and nonblocking. No repeat was required by the aggregate/`rw_*` gate; no perf tuning was done. Corpus integrity passed for both revisions. The evidence note records that the working tree dirty flag reflected only untracked gate logs, not compiler source changes.

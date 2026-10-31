@@ -1,0 +1,35 @@
+{
+  "baseline_toolchain_identity": {
+    "moss_path": "/home/owner/daji/code/moss/tmp/phase27-mossi-baseline/1793472685567205610/active-moss",
+    "moss_sha256": "e9ffab899862087e007730320c409e2fa31ab6a8b1b871fe03ab962567cb62f9",
+    "rustc_path": "/home/owner/.cargo/bin/rustup",
+    "rustc_sha256": "dda7234360b7f578ca8b0ddcb80145646fa61a67c1720a5abc7051b35c9fcb71",
+    "rustc_version": "rustup 1.29.1 (d95a37b6a 2026-08-13)"
+  },
+  "candidate_toolchain_identity": {
+    "moss_path": "/home/owner/daji/code/moss/tmp/phase27-mossi-baseline/1793472685567205610/active-moss",
+    "moss_sha256": "3e08381e8a8989e940b2e381a8122cd279f48a5cc54fc5ded0566ee0e975504f",
+    "rustc_path": "/home/owner/.cargo/bin/rustup",
+    "rustc_sha256": "dda7234360b7f578ca8b0ddcb80145646fa61a67c1720a5abc7051b35c9fcb71",
+    "rustc_version": "rustup 1.29.1 (d95a37b6a 2026-08-13)"
+  },
+  "results": {
+    "app": {
+      "baseline_execution_body_hash": "a683c78d496636badcf6d45659a04a9ccc397c714fc04fc0d34fc0130409f83d",
+      "baseline_raw_sha256": "dcde5375c8816a24689b87a5d67380e3f37ad1da34d4f1c29b47d5daa773ef22",
+      "candidate_raw_sha256": "4c7e8e08f2bc23cd34a6a1d4e863ae5d1c125b96f3535a3d68cb5a67ecf0f4f0",
+      "normalized_bytes_equal": true,
+      "recomputed_baseline_package_fingerprint": "158d8a002653d1e37310910ea0df01ef8b66db621123710262427a3c958bb3e5",
+      "recomputed_execution_body_hash": "a683c78d496636badcf6d45659a04a9ccc397c714fc04fc0d34fc0130409f83d"
+    },
+    "library": {
+      "baseline_execution_body_hash": "1f60c36b7961bc7b0ad68769829b84509b54991165c95893efd8ae22b835be74",
+      "baseline_raw_sha256": "80761ff841561b8dd315e8f83c820582aa79ffaef54fbecdbf18b54faf9aacdc",
+      "candidate_raw_sha256": "c1602587376e6ad386d8e1231859a9bcb5b6021ecaa73855fde788880d2f968d",
+      "normalized_bytes_equal": true,
+      "recomputed_baseline_package_fingerprint": "7937f4f55d12dc1df995603fbbf64461bb487a61cb9859a0ebb0bc47da194bd6",
+      "recomputed_execution_body_hash": "1f60c36b7961bc7b0ad68769829b84509b54991165c95893efd8ae22b835be74"
+    }
+  }
+}
+report: tmp/phase27-mossi-baseline/1793472685567205610/report.json
