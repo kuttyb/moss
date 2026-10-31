@@ -1802,8 +1802,10 @@ static void populate_impl(Program& program, std::vector<Stmt>* additional,
         bind(s.expression_handles, owner, ExprSlot::Iterable, 0, s.b); break;
       case Stmt::Kind::Match:
         bind(s.expression_handles, owner, ExprSlot::Scrutinee, 0, s.a); break;
-      case Stmt::Kind::Var:
-        bind(s.expression_handles, owner, ExprSlot::Initializer, 0, s.b); break;
+      case Stmt::Kind::Let: case Stmt::Kind::Var:
+        bind(s.expression_handles, owner, ExprSlot::LhsPlace, 0, s.a);
+        bind(s.expression_handles, owner, ExprSlot::Initializer, 0, s.b);
+        break;
       case Stmt::Kind::Assign: {
         assert(!s.est_raw_form.has_value());
         const auto target = trim(s.a);

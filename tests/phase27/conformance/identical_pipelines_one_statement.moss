@@ -1,0 +1,10 @@
+fn bump(value: Int) -> Int:
+  echo 777777
+  return value + 1
+
+fn consume(left: Vector[Int], right: Vector[Int]):
+  echo left |> sum, right |> sum
+
+proc main():
+  values = [1, 2, 3]
+  consume(values |> map(bump), values |> map(bump))

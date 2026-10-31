@@ -1,0 +1,7 @@
+identical_pipelines_one_statement.moss: decision and three-engine parity passed; callbacks=6
+field_name_not_binding_use.moss: decision and three-engine parity passed; callbacks=3
+field-name LEGACY MISPARSE two-path decision delta reproduced
+rebound_pipeline_binding.moss: decision and three-engine parity passed; callbacks=9
+message_argument_binding_use.moss: decision and three-engine parity passed; callbacks=3
+callback_reads_pipeline_binding.moss: decision and three-engine parity passed; callbacks=3
+missing_dependency_handle_blocks_fusion.moss: decision and three-engine parity passed; callbacks=3

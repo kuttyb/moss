@@ -1,0 +1,12 @@
+type Stats:
+  total: Int
+
+fn bump(value: Int) -> Int:
+  echo 777777
+  return value + 1
+
+proc main():
+  values = [1, 2, 3]
+  total = values |> map(bump)
+  p = Stats(total = 7)
+  echo p.total

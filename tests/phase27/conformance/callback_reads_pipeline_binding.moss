@@ -1,0 +1,13 @@
+fn bump(value: Int) -> Int:
+  echo 777777
+  return value + 1
+
+fn plus(value: Int) -> Int:
+  return value + 1
+
+proc main():
+  values = [1, 2, 3]
+  total = values |> map(plus)
+  result = total |> map(_ + total[0]) |> sum
+  observed = values |> map(bump) |> sum
+  echo result, observed
