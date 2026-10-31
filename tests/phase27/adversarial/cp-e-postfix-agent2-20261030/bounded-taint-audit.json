@@ -1,0 +1,119 @@
+{
+  "candidate_sha": "68a61a7b927b6ae9e651de9866d8a034405f95f9",
+  "scope": "bounded taint from expression-bearing Stmt fields and EST-rendered expression strings through executor include chains, helper parameters, and locals; semantic character inspection only",
+  "findings": [
+    {
+      "classification": "MIGRATION BUG",
+      "component": "checker",
+      "source": "src/semantic_checker.cpp:21277",
+      "reader": "functional_captures(expression, env) scans expression tokens/characters to compute capture names",
+      "taint_origins": [
+        "src/semantic_checker.cpp:20037 phase21_failure_capture_reads <- statement_expressions(statement)",
+        "src/semantic_checker.cpp:21341 functional_stage_effects <- identity copied from functional callable",
+        "src/semantic_checker.cpp:21913 check_functional_pipeline <- callable copied from stage.arguments",
+        "src/semantic_checker.cpp:27979 check_expression <- value",
+        "src/semantic_checker.cpp:28296 statement.a"
+      ],
+      "impact": "semantic capture-set decision from expression text"
+    },
+    {
+      "classification": "MIGRATION BUG",
+      "component": "checker",
+      "source": "src/semantic_checker.cpp:26623-26625",
+      "reader": "check_expression inspects original.front/back and matching_paren, then substr to classify grouped expressions",
+      "taint_origins": [
+        "check_expression(line, statement.b) at :28301",
+        "check_expression(line, statement.a) at :28403/:28467/:28474",
+        "statement.args at :28549",
+        "statement.text at :28689",
+        "additional statement expression slots at :28835 onward"
+      ],
+      "impact": "expression shape/grouping classification"
+    },
+    {
+      "classification": "MIGRATION BUG",
+      "component": "checker",
+      "source": "src/semantic_checker.cpp:26721",
+      "reader": "check_expression inspects leading ! characters in value for unsupported-operator diagnostics",
+      "taint_origins": [
+        "check_expression expression argument, including statement slots listed in grouping finding"
+      ],
+      "impact": "operator/diagnostic decision from expression text"
+    },
+    {
+      "classification": "MIGRATION BUG",
+      "component": "checker",
+      "source": "src/semantic_checker.cpp:18718",
+      "reader": "collect_local_call_sites strips grouping by front/back, matching_paren and substr after tree_normalize_pipeline",
+      "taint_origins": [
+        "statement expression call paths at :16696/:17050/:17232/:17297/:19130/:19187"
+      ],
+      "impact": "call-site discovery from expression characters"
+    },
+    {
+      "classification": "MIGRATION BUG",
+      "component": "checker",
+      "source": "src/semantic_checker.cpp:18899",
+      "reader": "has_unresolved_local_callable_call strips grouped expression text",
+      "taint_origins": [
+        "record_signature_call_dependencies at :18950 <- statement/function expressions; callers :14290/:15408"
+      ],
+      "impact": "call-target classification from expression characters"
+    },
+    {
+      "classification": "MIGRATION BUG",
+      "component": "emitter",
+      "source": "src/native_generator.cpp:1698",
+      "reader": "generated_expression_uses scans callable text for placeholder _",
+      "taint_origins": [
+        "generated_callable_result at :1729",
+        "render_functional_callable at :2435 <- functional callback/callable strings; input paths include :1823/:2640/:2753/:2894/:2995/:3048"
+      ],
+      "impact": "placeholder semantics chosen from expression text; structural tree_placeholder_expression already exists"
+    },
+    {
+      "classification": "MIGRATION BUG",
+      "component": "emitter",
+      "source": "src/native_generator.cpp:3196,4361-4426",
+      "reader": "expr(string e) tokenizes expression text for view_place paths, domain state identifiers, float comparison text replacement, write-through parameter replacement, boolean keyword replacement, and reserved member identifiers",
+      "taint_origins": [
+        "Stmt expression fields s.a/s.b/s.args/s.text passed through expr; examples around :5915/:6009/:6094/:6126/:6360"
+      ],
+      "impact": "expression lowering/name/operator decisions from characters"
+    },
+    {
+      "classification": "MIGRATION BUG",
+      "component": "emitter",
+      "source": "src/native_generator.cpp:3451 and :3467-3469",
+      "reader": "concat lowering tests operand.front/back for quote delimiters to classify string literals",
+      "taint_origins": [
+        "binary child expression strings passed to concatenation lowering"
+      ],
+      "impact": "literal kind decided from text"
+    },
+    {
+      "classification": "MIGRATION BUG",
+      "component": "emitter",
+      "source": "src/native_generator.cpp:4447,4459",
+      "reader": "replace_word and replace_unqualified_word scan expression characters",
+      "taint_origins": [
+        "expr operator/name rewrites at :4421-4426; placeholder replacement at :2438"
+      ],
+      "impact": "semantic source rewrite based on expression text"
+    }
+  ],
+  "legacy_oracle_exceptions": [
+    {
+      "source": "src/semantic_checker.cpp:10857 legacy_expression_uses",
+      "classification": "legacy shadow/oracle only; retained comparator, not active tree-path reader"
+    },
+    {
+      "source": "src/semantic_checker.cpp:11398 split_binary_uncached",
+      "classification": "legacy shadow/oracle parser only"
+    },
+    {
+      "source": "src/native_generator.cpp:1081 tree_placeholder_expression",
+      "classification": "structural EST query; not a string reader"
+    }
+  ]
+}
