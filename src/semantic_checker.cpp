@@ -27970,21 +27970,21 @@ class Checker {
         Function* resolved_target = nullptr;
         check_function_call(line, callee, args, env, nullptr, std::nullopt,
                             &resolved_target);
-        if (current_body_types_ && !checking_specialization_ &&
-            !current_body_types_->active_expression_occurrences.empty()) {
-          const auto occurrence =
-              current_body_types_->active_expression_occurrences.back();
-          if (resolved_target) {
-            retain_active_expression_target(
-                resolved_target->semantic_callable_id);
-          } else if (auto binding = env.find(callee);
-                     binding != env.end() && open_generic(binding->second)) {
-            retain_active_expression_target("binding:pending:" + callee);
+        if (resolved_target) {
+          retain_active_expression_target(
+              resolved_target->semantic_callable_id);
+        } else if (auto binding = env.find(callee);
+                   binding != env.end() && open_generic(binding->second)) {
+          retain_active_expression_target("binding:pending:" + callee);
+          if (current_body_types_ && !checking_specialization_ &&
+              !current_body_types_->active_expression_occurrences.empty()) {
+            const auto occurrence =
+                current_body_types_->active_expression_occurrences.back();
             current_body_types_->retain_expression_type(
                 occurrence, current_body_types_->solver.fresh(0));
-          } else {
-            retain_active_expression_target("builtin:" + callee);
           }
+        } else {
+          retain_active_expression_target("builtin:" + callee);
         }
         for (size_t index = 0; index < args.size(); ++index) {
           const auto& arg = args[index];
@@ -28002,7 +28002,6 @@ class Checker {
         // sufficient to connect the caller's body solver to the callee's
         // summary namespace.
         if (resolved_target && current_body_types_ &&
-            !checking_specialization_ &&
             !current_body_types_->active_expression_occurrences.empty() &&
             resolved_target->open_summary &&
             resolved_target->open_summary->scheme_complete &&

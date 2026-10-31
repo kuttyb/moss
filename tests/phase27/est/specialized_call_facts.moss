@@ -1,0 +1,27 @@
+trait Measured:
+  fn measure() -> Int
+
+type First:
+  value: Int
+  fn measure() -> Int:
+    return value
+
+type Second:
+  value: Int
+  fn measure() -> Int:
+    return value * 2
+
+fn leaf(value: Int) -> Int:
+  return value
+
+fn inner(item: Measured) -> Int:
+  return leaf(1)
+
+fn outer(item: Measured) -> Int:
+  if item.measure() < 0:
+    return 0
+  return inner(item) + 1
+
+fn main():
+  echo outer(First(value: 3))
+  echo outer(Second(value: 4))
