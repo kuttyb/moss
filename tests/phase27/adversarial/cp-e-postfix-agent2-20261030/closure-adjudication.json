@@ -1,0 +1,118 @@
+{
+  "files": 2103,
+  "runs": 8412,
+  "trace_complete": 7624,
+  "timeouts": 12,
+  "complete_paired_cases": 3812,
+  "same_mode_closure_or_edge_differences": 4,
+  "differences": [
+    {
+      "mode": "off",
+      "path": "tests/phase27/est/repro/empty_call_argument.moss",
+      "baseline_only_checked": [],
+      "candidate_only_checked": [
+        [
+          "function",
+          "tests/phase27/est/repro/empty_call_argument.moss",
+          "callable-v1:module-v1:__standalone__@0.0.0::main:fn:add"
+        ]
+      ],
+      "edge_missing": [],
+      "edge_added": [
+        [
+          "entry:tests/phase27/est/repro/empty_call_argument.moss",
+          "function",
+          "add"
+        ],
+        [
+          "entry:tests/phase27/est/repro/empty_call_argument.moss",
+          "method",
+          "add"
+        ]
+      ],
+      "classification": "LEGACY MISPARSE",
+      "oracle": "Both baseline and candidate reject the identical source at line 5 column 1 with TYPE_MISMATCH; explicit syntactic call target is add. Baseline closure omits fn:add and its call edges; candidate includes them. This is rejected empty-argument syntax, so the closure delta is bookkeeping on rejected source with no verdict or diagnostic difference."
+    },
+    {
+      "mode": "shadow",
+      "path": "tests/phase27/est/repro/empty_call_argument.moss",
+      "baseline_only_checked": [],
+      "candidate_only_checked": [
+        [
+          "function",
+          "tests/phase27/est/repro/empty_call_argument.moss",
+          "callable-v1:module-v1:__standalone__@0.0.0::main:fn:add"
+        ]
+      ],
+      "edge_missing": [],
+      "edge_added": [
+        [
+          "entry:tests/phase27/est/repro/empty_call_argument.moss",
+          "function",
+          "add"
+        ],
+        [
+          "entry:tests/phase27/est/repro/empty_call_argument.moss",
+          "method",
+          "add"
+        ]
+      ],
+      "classification": "LEGACY MISPARSE",
+      "oracle": "Both baseline and candidate reject the identical source at line 5 column 1 with TYPE_MISMATCH; explicit syntactic call target is add. Baseline closure omits fn:add and its call edges; candidate includes them. This is rejected empty-argument syntax, so the closure delta is bookkeeping on rejected source with no verdict or diagnostic difference."
+    },
+    {
+      "mode": "off",
+      "path": "tests/phase27/est/repro/empty_trailing_call_argument.moss",
+      "baseline_only_checked": [],
+      "candidate_only_checked": [
+        [
+          "function",
+          "tests/phase27/est/repro/empty_trailing_call_argument.moss",
+          "callable-v1:module-v1:__standalone__@0.0.0::main:fn:add"
+        ]
+      ],
+      "edge_missing": [],
+      "edge_added": [
+        [
+          "entry:tests/phase27/est/repro/empty_trailing_call_argument.moss",
+          "function",
+          "add"
+        ],
+        [
+          "entry:tests/phase27/est/repro/empty_trailing_call_argument.moss",
+          "method",
+          "add"
+        ]
+      ],
+      "classification": "LEGACY MISPARSE",
+      "oracle": "Both baseline and candidate reject the identical source at line 5 column 1 with TYPE_MISMATCH; explicit syntactic call target is add. Baseline closure omits fn:add and its call edges; candidate includes them. This is rejected empty-argument syntax, so the closure delta is bookkeeping on rejected source with no verdict or diagnostic difference."
+    },
+    {
+      "mode": "shadow",
+      "path": "tests/phase27/est/repro/empty_trailing_call_argument.moss",
+      "baseline_only_checked": [],
+      "candidate_only_checked": [
+        [
+          "function",
+          "tests/phase27/est/repro/empty_trailing_call_argument.moss",
+          "callable-v1:module-v1:__standalone__@0.0.0::main:fn:add"
+        ]
+      ],
+      "edge_missing": [],
+      "edge_added": [
+        [
+          "entry:tests/phase27/est/repro/empty_trailing_call_argument.moss",
+          "function",
+          "add"
+        ],
+        [
+          "entry:tests/phase27/est/repro/empty_trailing_call_argument.moss",
+          "method",
+          "add"
+        ]
+      ],
+      "classification": "LEGACY MISPARSE",
+      "oracle": "Both baseline and candidate reject the identical source at line 5 column 1 with TYPE_MISMATCH; explicit syntactic call target is add. Baseline closure omits fn:add and its call edges; candidate includes them. This is rejected empty-argument syntax, so the closure delta is bookkeeping on rejected source with no verdict or diagnostic difference."
+    }
+  ]
+}

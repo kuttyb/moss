@@ -1,0 +1,8 @@
+fn twice(x: Int) -> Int:
+  return x * 2
+
+fn apply(f, x):
+  return f(x: x)
+
+fn main():
+  echo apply(twice, 4)

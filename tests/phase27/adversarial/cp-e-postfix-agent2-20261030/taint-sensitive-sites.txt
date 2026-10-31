@@ -1,0 +1,26 @@
+src/native_generator.cpp:1720:      if (expression.compare(index, end - index, name) == 0) return true;
+src/native_generator.cpp:3451:              operand.front() == '"' && operand.back() == '"';
+src/native_generator.cpp:4478:      if (expression.substr(start, end - start) == from &&
+src/semantic_checker.cpp:4873:                !source.front()->checked_type)
+src/semantic_checker.cpp:4877:            auto source_type = checked_body_type(source.front()->checked_type);
+src/semantic_checker.cpp:4896:            auto input = lower_expression(source.front()->id, depth + 1);
+src/semantic_checker.cpp:4922:          auto input = lower_expression(source.front()->id, depth + 1);
+src/semantic_checker.cpp:6619:            ? edge.source.substr(3) : string();
+src/semantic_checker.cpp:9427:    auto bracket = value.find('[');
+src/semantic_checker.cpp:9428:    if (bracket != string::npos && value.back() == ']')
+src/semantic_checker.cpp:9430:               value.substr(bracket + 1, value.size() - bracket - 2), ','))
+src/semantic_checker.cpp:9894:        if (starts_with(identity, "callable:")) identity = identity.substr(9);
+src/semantic_checker.cpp:10469:      if (starts_with(value, "callable:")) value = value.substr(9);
+src/semantic_checker.cpp:10874:      if (expression.compare(i, end - i, name) == 0) {
+src/semantic_checker.cpp:11429:            expression.compare(i, op.size(), op) != 0)
+src/semantic_checker.cpp:11478:          return std::make_pair(trim(expression.substr(0, i)),
+src/semantic_checker.cpp:11479:                                trim(expression.substr(i + op.size())));
+src/semantic_checker.cpp:18718:    while (value.size() >= 2 && value.front() == '(' && value.back() == ')' &&
+src/semantic_checker.cpp:18720:      value = trim(value.substr(1, value.size() - 2));
+src/semantic_checker.cpp:18899:    while (value.size() >= 2 && value.front() == '(' && value.back() == ')' &&
+src/semantic_checker.cpp:18901:      value = trim(value.substr(1, value.size() - 2));
+src/semantic_checker.cpp:19244:            return candidate.name == callee.substr(3);
+src/semantic_checker.cpp:20721:        if (starts_with(identity, "callable:")) identity = identity.substr(9);
+src/semantic_checker.cpp:21300:      string name = expression.substr(index, end - index);
+src/semantic_checker.cpp:26721:    if (!value.empty() && value.front() == '!' &&
+src/semantic_checker.cpp:27490:    if (tree_parse_simple_call(value, callee, args) && callee.find('.') == string::npos) {
