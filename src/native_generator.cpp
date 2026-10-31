@@ -51,6 +51,70 @@ using std::vector;
 
 namespace moss {
 
+namespace {
+
+struct EstSourceEdit {
+  std::size_t begin = 0, end = 0;
+  string replacement;
+};
+
+template <typename Visitor>
+void visit_est_expression(const est::ExpressionView& view, est::ExprId id,
+                          const Visitor& visitor) {
+  if (!view.arena || id >= view.arena->size()) return;
+  visitor(id, view.arena->at(id));
+  std::visit([&](const auto& node) {
+    using T = std::decay_t<decltype(node)>;
+    auto visit = [&](est::ExprId child) {
+      visit_est_expression(view, child, visitor);
+    };
+    auto visit_all = [&](const vector<est::ExprId>& children) {
+      for (const auto child : children) visit(child);
+    };
+    if constexpr (std::is_same_v<T, est::Unary>) visit(node.operand);
+    else if constexpr (std::is_same_v<T, est::Binary>) {
+      visit(node.left); visit(node.right);
+    } else if constexpr (std::is_same_v<T, est::Call>) {
+      visit(node.callee); visit_all(node.arguments);
+    } else if constexpr (std::is_same_v<T, est::Member>) visit(node.base);
+    else if constexpr (std::is_same_v<T, est::Index>) {
+      visit(node.base); visit(node.index);
+    } else if constexpr (std::is_same_v<T, est::Parenthesized>) visit(node.inner);
+    else if constexpr (std::is_same_v<T, est::Message>) {
+      visit(node.target); visit_all(node.arguments);
+    } else if constexpr (std::is_same_v<T, est::NamedArgument>) visit(node.value);
+    else if constexpr (std::is_same_v<T, est::Collection> ||
+                       std::is_same_v<T, est::Tuple>) visit_all(node.elements);
+    else if constexpr (std::is_same_v<T, est::Constructor>) {
+      visit(node.type); visit_all(node.type_arguments); visit_all(node.arguments);
+    } else if constexpr (std::is_same_v<T, est::Pipeline>) {
+      visit(node.input); visit_all(node.stages);
+    }
+  }, view.arena->at(id));
+}
+
+string apply_est_source_edits(const string& source,
+                              vector<EstSourceEdit> edits) {
+  std::sort(edits.begin(), edits.end(), [](const auto& left, const auto& right) {
+    if (left.begin != right.begin) return left.begin < right.begin;
+    return left.end > right.end;
+  });
+  vector<EstSourceEdit> selected;
+  std::size_t covered = 0;
+  for (auto& edit : edits) {
+    if (edit.begin > edit.end || edit.end > source.size() ||
+        edit.begin < covered) continue;
+    selected.push_back(std::move(edit));
+    covered = selected.back().end;
+  }
+  string result = source;
+  for (auto edit = selected.rbegin(); edit != selected.rend(); ++edit)
+    result.replace(edit->begin, edit->end - edit->begin, edit->replacement);
+  return result;
+}
+
+}  // namespace
+
 
 
 // Generator-private post-rewrite lowering metadata. The checker-owned parsed
@@ -1083,6 +1147,67 @@ class Generator {
     return syntax && est::placeholder_expression(*syntax);
   }
 
+  string replace_est_placeholders(const string& source,
+                                  const string& replacement) const {
+    auto syntax = expression_view_from_est(source);
+    if (!syntax || !syntax->arena) return source;
+    vector<EstSourceEdit> edits;
+    visit_est_expression(*syntax, syntax->root,
+        [&](est::ExprId id, const est::Node& node) {
+      if (!std::holds_alternative<est::Placeholder>(node)) return;
+      const auto span = syntax->arena->span(id);
+      edits.push_back({span.source_begin, span.source_end, replacement});
+    });
+    return apply_est_source_edits(source, std::move(edits));
+  }
+
+  string rewrite_est_expression_source(
+      const string& source, const Domain* domain,
+      const std::set<string>& locals,
+      const std::unordered_map<string,string>* types) const {
+    auto syntax = expression_view_from_est(source);
+    if (!syntax || !syntax->arena) return source;
+    std::set<string> state_names;
+    if (domain && !view_domain_ && !view_method_) {
+      for (const auto& field : domain->state) state_names.insert(field.name);
+      for (const auto& route : domain->routes) state_names.insert(route.name);
+    }
+    vector<EstSourceEdit> edits;
+    visit_est_expression(*syntax, syntax->root,
+        [&](est::ExprId id, const est::Node& node) {
+      const auto span = syntax->arena->span(id);
+      if (const auto* identifier = std::get_if<est::Identifier>(&node)) {
+        const string name = identifier->name;
+        const string token_source = syntax->source_text(id).value_or(name);
+        std::optional<string> replacement;
+        if (view_domain_ || view_method_ || !view_parameters_.empty())
+          replacement = view_place(token_source, domain, locals, types);
+        if (!replacement && state_names.count(name) && !locals.count(name))
+          replacement = (objects_.count(domain->name) ? "self." : "state.") + name;
+        if (!replacement && write_through_parameters_.count(name))
+          replacement = "(*" + name + ")";
+        if (replacement)
+          edits.push_back({span.source_begin, span.source_end,
+                           std::move(*replacement)});
+      } else if (const auto* member = std::get_if<est::Member>(&node)) {
+        const string node_source = syntax->source_text(id).value_or(string());
+        if ((view_domain_ || view_method_ || !view_parameters_.empty()))
+          if (auto place = view_place(node_source, domain, locals, types)) {
+            edits.push_back({span.source_begin, span.source_end,
+                             std::move(*place)});
+            return;
+          }
+        const string escaped = rust_identifier(member->name);
+        if (escaped != member->name &&
+            member->name.size() <= span.source_end - span.source_begin) {
+          const auto begin = span.source_end - member->name.size();
+          edits.push_back({begin, span.source_end, escaped});
+        }
+      }
+    });
+    return apply_est_source_edits(source, std::move(edits));
+  }
+
   est::LiteralClass tree_literal_class(std::string_view expression) const {
     auto syntax = expression_view_from_est(expression);
     return syntax ? est::root_literal_class(*syntax) : est::LiteralClass::None;
@@ -1695,32 +1820,10 @@ class Generator {
     return callable;
   }
 
-  static bool generated_expression_uses(const string& expression,
-                                        const string& name) {
-    bool in_string = false, escaped = false;
-    for (size_t index = 0; index < expression.size();) {
-      char ch = expression[index];
-      if (in_string) {
-        if (escaped) escaped = false;
-        else if (ch == '\\') escaped = true;
-        else if (ch == '"') in_string = false;
-        ++index;
-        continue;
-      }
-      if (ch == '"') { in_string = true; ++index; continue; }
-      if (!(std::isalpha(static_cast<unsigned char>(ch)) || ch == '_')) {
-        ++index;
-        continue;
-      }
-      size_t end = index + 1;
-      while (end < expression.size() &&
-             (std::isalnum(static_cast<unsigned char>(expression[end])) ||
-              expression[end] == '_'))
-        ++end;
-      if (expression.compare(index, end - index, name) == 0) return true;
-      index = end;
-    }
-    return false;
+  bool generated_expression_uses(const string& expression,
+                                const string& name) const {
+    auto syntax = expression_view_from_est(expression);
+    return syntax && est::contains_identifier(*syntax, name);
   }
 
   std::optional<string> generated_callable_result(
@@ -2435,8 +2538,8 @@ class Generator {
     if (generated_expression_uses(callable, "_")) {
       if (arguments.size() != 1)
         throw std::runtime_error("internal error: placeholder functional arity");
-      string replaced = replace_unqualified_word(callable, "_",
-                                                 arguments.front().expression);
+      string replaced = replace_est_placeholders(
+          callable, arguments.front().expression);
       std::unordered_map<string,string> callback_types = types
           ? *types : std::unordered_map<string,string>{};
       callback_types[arguments.front().expression] = arguments.front().type;
@@ -3201,15 +3304,17 @@ class Generator {
     // Remove only complete balanced outer groups before lowering. Nested groups
     // still protect precedence until their recursive expr() call reaches them.
     e = tree_strip_expression_grouping(std::move(e));
-    if (phase21_option_slots_.count(e))
-      return "__moss_recovery_slot_" + e +
+    const auto root_name = tree_identifier_name(e);
+    if (root_name && phase21_option_slots_.count(*root_name))
+      return "__moss_recovery_slot_" + *root_name +
           (phase21_codegen_statement_ &&
-           phase21_codegen_statement_->ownership_consumed_bindings.count(e)
+           phase21_codegen_statement_->ownership_consumed_bindings.count(*root_name)
               ? ".take()" : ".as_ref()") +
           ".unwrap_or_else(|| std::process::abort())";
     if (auto place = view_place(e, d, locals, types)) return *place;
-    if (write_through_parameters_.count(e) && types && types->count(e) && copy_type(types->at(e)))
-      return "*" + e;
+    if (root_name && write_through_parameters_.count(*root_name) && types &&
+        types->count(*root_name) && copy_type(types->at(*root_name)))
+      return "*" + *root_name;
     // `message` is a Moss expression as well as a statement.  Assignment
     // statements have a dedicated lowering path, but expression positions
     // (for example `echo message d.Get()`) must retain the same synchronous
@@ -3447,8 +3552,8 @@ class Generator {
         joined << "{ ";
         for (size_t index = 0; index < operands.size(); ++index) {
           const string operand = trim(operands[index]);
-          const bool literal = operand.size() >= 2 &&
-              operand.front() == '"' && operand.back() == '"';
+          const bool literal = tree_literal_class(operand) ==
+              est::LiteralClass::String;
           joined << "let __moss_concat_" << index << " = ";
           if (literal) joined << operand << "; ";
           else
@@ -3464,9 +3569,9 @@ class Generator {
         joined << "); ";
         for (size_t index = 0; index < operands.size(); ++index)
           joined << "__moss_concat_result.push_str(__moss_concat_" << index
-                 << (trim(operands[index]).size() >= 2 &&
-                     trim(operands[index]).front() == '"' &&
-                     trim(operands[index]).back() == '"' ? "); " : ".as_str()); ");
+                 << (tree_literal_class(operands[index]) ==
+                         est::LiteralClass::String
+                         ? "); " : ".as_str()); ");
         joined << "__moss_concat_result }";
         return joined.str();
       }
@@ -3565,7 +3670,7 @@ class Generator {
       if (base_type && canonical_type_name(*base_type) == "Range")
         return "(" + expr(ib, d, locals, types) + ").get(" +
             expr(ii, d, locals, types) + ")";
-      bool string_index = ii.size() >= 2 && ii.front() == '"' && ii.back() == '"';
+      bool string_index = tree_literal_class(ii) == est::LiteralClass::String;
       string ir = string_index ? ii : expr(ii, d, locals, types);
       bool map_index = base_type &&
           (canonical_type_name(*base_type) == "map" ||
@@ -3708,8 +3813,7 @@ class Generator {
                   << receiver_expression << "); ";
           string requests = tree_strip_expression_grouping(
               trim(member_arguments.front()));
-          bool inline_requests = requests.size() >= 2 &&
-              requests.front() == '[' && requests.back() == ']';
+          bool inline_requests = tree_parse_vector_literal(requests).has_value();
           if (!inline_requests) {
             auto request_type = generated_expr_type(requests, types);
             string concrete_request_type = request_type
@@ -3855,14 +3959,14 @@ class Generator {
                 write_call_place(member_receiver, d, locals, types) +
                 "); let __moss_part = " + [&]() {
                   const string part = trim(member_arguments[0]);
-                  return part.size() >= 2 && part.front() == '"' &&
-                      part.back() == '"' ? part : "&(" +
+                  return tree_literal_class(part) == est::LiteralClass::String
+                      ? part : "&(" +
                       expr(member_arguments[0], d, locals, types) + ")";
                 }() + "; __moss_string.push_str(" + [&]() {
-                  const string part = trim(member_arguments[0]);
                   return string("__moss_part") +
-                      (part.size() >= 2 && part.front() == '"' &&
-                       part.back() == '"' ? "" : ".as_str()");
+                      (tree_literal_class(member_arguments[0]) ==
+                               est::LiteralClass::String
+                           ? "" : ".as_str()");
                 }() + "); }";
           if (member_name == "split" && member_arguments.size() == 1)
             return "{ let __moss_separator = " + expr(member_arguments[0], d, locals, types) +
@@ -4354,136 +4458,9 @@ class Generator {
       }
     }
 
-    // Expand borrowed access paths before the ordinary state identifier rewrite.
-    if (view_domain_ || view_method_ || !view_parameters_.empty()) {
-      string result;
-      bool quoted = false, escaped = false;
-      for (size_t i = 0; i < e.size();) {
-        char ch = e[i];
-        if (quoted) {
-          result += ch; ++i;
-          if (escaped) escaped = false;
-          else if (ch == '\\') escaped = true;
-          else if (ch == '\"') quoted = false;
-        } else if (ch == '\"') { quoted = true; result += ch; ++i; }
-        else if (std::isalpha(static_cast<unsigned char>(ch)) || ch == '_') {
-          size_t end = i + 1;
-          while (end < e.size() && (std::isalnum(static_cast<unsigned char>(e[end])) || e[end] == '_' || e[end] == '.')) ++end;
-          string path = e.substr(i, end - i);
-          auto place = view_place(path, d, locals, types);
-          result += place ? *place : path; i = end;
-        } else { result += ch; ++i; }
-      }
-      e = result;
-    }
-    // Replace domain state identifiers with state.<name>, respecting basic identifier boundaries.
-    if (d && !view_domain_ && !view_method_) {
-      std::set<string> fields;
-      for (const auto& f : d->state) fields.insert(f.name);
-      for (const auto& route : d->routes) fields.insert(route.name);
-      string out;
-      bool in_str = false, esc = false;
-      for (size_t i = 0; i < e.size();) {
-        char c = e[i];
-        if (in_str) {
-          out.push_back(c);
-          if (esc) esc = false;
-          else if (c == '\\') esc = true;
-          else if (c == '"') in_str = false;
-          ++i;
-          continue;
-        }
-        if (c == '"') { in_str = true; out.push_back(c); ++i; continue; }
-        if (std::isalpha((unsigned char)c) || c == '_') {
-          size_t j = i + 1;
-          while (j < e.size() && (std::isalnum((unsigned char)e[j]) || e[j] == '_')) ++j;
-          string tok = e.substr(i, j-i);
-          // If already preceded by '.', it is a member name, not state identifier.
-          bool member = i > 0 && e[i-1] == '.';
-          if (!member && fields.count(tok) && !locals.count(tok))
-            out += (objects_.count(d->name) ? "self." : "state.") + tok;
-          else out += tok;
-          i = j;
-        } else { out.push_back(c); ++i; }
-      }
-      e = out;
-      if (objects_.count(d->name)) {
-        for (const auto& f : d->state) if (canonical_type_name(f.type) == "float") {
-          for (const auto& op : {string(" > "), string(" < "), string(" >= "), string(" <= "), string(" == "), string(" != ")}) {
-            string needle = "self." + f.name + op + "0";
-            auto pos = e.find(needle);
-            if (pos != string::npos) e.replace(pos, needle.size(), "self." + f.name + op + "0.0");
-          }
-        }
-      }
-    }
-    for (const auto& parameter : write_through_parameters_)
-      e = replace_unqualified_word(e, parameter, "(*" + parameter + ")");
-    // Nim-ish boolean words.
-    replace_word(e, "and", "&&");
-    replace_word(e, "xor", "^");
-    replace_word(e, "or", "||");
-    replace_word(e, "not", "!");
-    // Escape Rust-reserved member names without changing the Moss identifier.
-    for (size_t pos = 0; pos + 1 < e.size();) {
-      if (e[pos] != '.') { ++pos; continue; }
-      size_t begin = pos + 1, end = begin;
-      while (end < e.size() &&
-             (std::isalnum(static_cast<unsigned char>(e[end])) || e[end] == '_'))
-        ++end;
-      if (end > begin) {
-        string member = e.substr(begin, end - begin);
-        string escaped = rust_identifier(member);
-        if (escaped != member) {
-          e.replace(begin, member.size(), escaped);
-          end += escaped.size() - member.size();
-        }
-      }
-      pos = end;
-    }
-    return e;
+    return rewrite_est_expression_source(e, d, locals, types);
   }
 
-  static void replace_word(string& s, const string& from, const string& to) {
-    string out;
-    for (size_t i = 0; i < s.size();) {
-      if (i + from.size() <= s.size() && s.compare(i, from.size(), from) == 0 &&
-          (i == 0 || !(std::isalnum((unsigned char)s[i-1]) || s[i-1] == '_')) &&
-          (i+from.size() == s.size() || !(std::isalnum((unsigned char)s[i+from.size()]) || s[i+from.size()] == '_'))) {
-        out += to; i += from.size();
-      } else out.push_back(s[i++]);
-    }
-    s.swap(out);
-  }
-
-  static string replace_unqualified_word(const string& expression,
-                                         const string& from, const string& to) {
-    string out;
-    for (size_t index = 0; index < expression.size();) {
-      if (!(std::isalpha(static_cast<unsigned char>(expression[index])) ||
-            expression[index] == '_')) {
-        out.push_back(expression[index++]);
-        continue;
-      }
-      size_t start = index;
-      size_t end = index + 1;
-      while (end < expression.size() &&
-             (std::isalnum(static_cast<unsigned char>(expression[end])) ||
-              expression[end] == '_'))
-        ++end;
-      size_t previous = start;
-      while (previous > 0 &&
-             std::isspace(static_cast<unsigned char>(expression[previous - 1])))
-        --previous;
-      if (expression.substr(start, end - start) == from &&
-          (previous == 0 || expression[previous - 1] != '.'))
-        out += to;
-      else
-        out.append(expression, start, end - start);
-      index = end;
-    }
-    return out;
-  }
 
   static string fresh_generated_name(const string& base, std::set<string>& used) {
     string candidate = base;
@@ -6412,8 +6389,8 @@ class Generator {
             }
           }
           if (tree_parse_index(s.a, lhs_base, lhs_index)) {
-            bool string_index = lhs_index.size() >= 2 && lhs_index.front() == '"' &&
-                lhs_index.back() == '"';
+            bool string_index = tree_literal_class(lhs_index) ==
+                est::LiteralClass::String;
             string ir = !index_temporary.empty() ? index_temporary :
                 (string_index ? lhs_index : expr(lhs_index, d, locals, &types));
             auto base_type = generated_expr_type(lhs_base, &types);
@@ -6492,14 +6469,16 @@ class Generator {
             if (map_assignment && map_assignment_type &&
                 (canonical_type_name(*map_assignment_type) == "map" ||
                  starts_with(canonical_type_name(*map_assignment_type), "map["))) {
-              string key = mi.size() >= 2 && mi.front() == '"' && mi.back() == '"'
+              const bool string_key = tree_literal_class(mi) ==
+                  est::LiteralClass::String;
+              string key = string_key
                   ? "MossStr::from(" + mi + ")" : expr(mi, d, locals, &types);
               auto key_type = generated_expr_type(mi, &types);
               if (key_type && shared_nominal_map_key(*key_type) &&
                   is_object_view(mi, d, locals, &types))
                 key = "(" + key + ").__moss_value()";
               else if (key_type && !copy_type(*key_type) &&
-                  !(mi.size() >= 2 && mi.front() == '"' && mi.back() == '"'))
+                  !string_key)
                 key = "(" + key + ").clone()";
               string inserted = expr(s.b, d, locals, &types,
                   statement_functional_pipeline_id(s, functional_context, 0));
@@ -6558,8 +6537,8 @@ class Generator {
                 reused << "{ ";
                 for (size_t operand = 1; operand < concat_operands.size(); ++operand) {
                   const string part = trim(concat_operands[operand]);
-                  const bool literal = part.size() >= 2 &&
-                      part.front() == '"' && part.back() == '"';
+                  const bool literal = tree_literal_class(part) ==
+                      est::LiteralClass::String;
                   reused << "let __moss_append_" << operand << " = ";
                   if (literal) reused << part << "; ";
                   else
@@ -6578,9 +6557,8 @@ class Generator {
                 for (size_t operand = 1; operand < concat_operands.size(); ++operand)
                   reused << "(" << place << ").push_str(__moss_append_"
                          << operand
-                         << (trim(concat_operands[operand]).size() >= 2 &&
-                             trim(concat_operands[operand]).front() == '"' &&
-                             trim(concat_operands[operand]).back() == '"'
+                         << (tree_literal_class(concat_operands[operand]) ==
+                                 est::LiteralClass::String
                                  ? "); " : ".as_str()); ");
                 reused << "}";
                 assigned = reused.str();
