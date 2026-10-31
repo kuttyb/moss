@@ -1,0 +1,6 @@
+type P:
+  n: Int
+
+fn main():
+  p = P(n: 1)
+  echo p.0x

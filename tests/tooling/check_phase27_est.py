@@ -34,6 +34,22 @@ def check_rejected_source_parity():
     expected = {
         "numeric_member_field.moss":
             ("UNKNOWN_FIELD", "record 'P' has no field '0'", 6, 1),
+        "numeric_member_name.moss":
+            ("UNKNOWN_FIELD", "type 'P' has no field '0x'", 6, 1),
+        "numeric_member_zero_e.moss":
+            ("UNKNOWN_FIELD", "type 'P' has no field '0e'", 6, 1),
+        "numeric_member_hex.moss":
+            ("UNKNOWN_FIELD", "type 'P' has no field '0xff'", 6, 1),
+        "numeric_member_underscored.moss":
+            ("UNKNOWN_FIELD", "record 'P' has no field '0_1'", 6, 1),
+        "numeric_member_exponent.moss":
+            ("UNKNOWN_FIELD", "type 'P' has no field '1e3'", 6, 1),
+        "numeric_member_word.moss":
+            ("UNKNOWN_FIELD", "type 'P' has no field '1foo'", 6, 1),
+        "numeric_member_named.moss":
+            ("UNKNOWN_FIELD", "type 'P' has no field '1_name'", 6, 1),
+        "numeric_member_trailing_dot.moss":
+            ("UNKNOWN_FIELD", "record 'P' has no field '1'", 6, 1),
         "unsupported_exponent.moss":
             ("MOSS_COMPILE_ERROR", "invalid arithmetic expression", 2, 1),
         "unsupported_operators.moss":

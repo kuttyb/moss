@@ -291,12 +291,31 @@ std::vector<Token> lex(std::string_view source) {
       else ++column;
     }
   };
+  const auto ends_expression = [](const Token& token) {
+    return token.word || token.literal || token.text == ")" ||
+        token.text == "]" || token.text == "}";
+  };
   for (std::size_t i = 0; i < source.size();) {
     const unsigned char c = source[i];
     if (std::isspace(c)) { const auto begin = i++; advance(begin, i); continue; }
     const auto start = i;
     const auto start_line = line, start_column = column;
-    if (std::isalpha(c) || c == '_') {
+    const bool member_suffix = result.size() >= 2 &&
+        result.back().text == "." && ends_expression(result[result.size() - 2]) &&
+        (std::isalnum(c) || c == '_');
+    if (member_suffix) {
+      // A malformed numeric member suffix is still a name for the legacy
+      // field diagnostic (`record.0x` -> UNKNOWN_FIELD). Keep its characters
+      // together after the member delimiter instead of sending them to the
+      // numeric-literal scanner.
+      while (i < source.size() &&
+             (std::isalnum(static_cast<unsigned char>(source[i])) ||
+              source[i] == '_')) ++i;
+      result.push_back({std::string(source.substr(start, i-start)), true, false,
+                        start_line, start_column,
+                        static_cast<std::uint32_t>(start),
+                        static_cast<std::uint32_t>(i)});
+    } else if (std::isalpha(c) || c == '_') {
       while (i < source.size() && (std::isalnum(static_cast<unsigned char>(source[i])) || source[i] == '_')) ++i;
       result.push_back({std::string(source.substr(start, i-start)), true, false,
                         start_line, start_column,
@@ -306,9 +325,7 @@ std::vector<Token> lex(std::string_view source) {
                (c == '.' && i + 1 < source.size() &&
                 std::isdigit(static_cast<unsigned char>(source[i + 1])) &&
                 (result.empty() ||
-                 !(result.back().word || result.back().literal ||
-                   result.back().text == ")" || result.back().text == "]" ||
-                   result.back().text == "}")))) {
+                 !ends_expression(result.back())))) {
       const auto literal = scan_numeric_literal(source, i);
       if (!literal.ok || literal.end <= i)
         throw std::invalid_argument("EST invalid numeric literal");
@@ -572,10 +589,17 @@ class Reader {
     }
     while (position_ < tokens_.size()) {
       if (take(".")) {
-        if (position_ == tokens_.size() ||
-            (!tokens_[position_].word &&
-             !(tokens_[position_].literal_class == LiteralClass::Integer &&
-               tokens_[position_].decimal_integer_digits)))
+        if (position_ == tokens_.size()) {
+          const auto* numeric_member = std::get_if<Member>(&arena_.at(id));
+          if (numeric_member && !numeric_member->name.empty() &&
+              moss::ascii_is_digit(
+                  static_cast<unsigned char>(numeric_member->name.front())))
+            break;
+          throw std::invalid_argument("EST expected member name");
+        }
+        if (!tokens_[position_].word &&
+            !(tokens_[position_].literal_class == LiteralClass::Integer &&
+              tokens_[position_].decimal_integer_digits))
           throw std::invalid_argument("EST expected member name");
         // Preserve the legacy checker diagnostic for malformed numeric field
         // spellings such as `record.0`: model the suffix as a member name so
@@ -1242,8 +1266,20 @@ SourceSyntaxIssue source_syntax_issue(std::string_view source) {
   if (!tokens.empty() && tokens.back().text == "." &&
       incomplete_collection_initializer_syntax(source))
     return SourceSyntaxIssue::UnclosedCollection;
-  if (!tokens.empty() && tokens.back().text == ".")
-    return SourceSyntaxIssue::TrailingMember;
+  if (!tokens.empty() && tokens.back().text == ".") {
+    const bool follows_numeric_member = tokens.size() >= 4 &&
+        tokens[tokens.size() - 3].text == "." &&
+        tokens[tokens.size() - 2].word &&
+        !tokens[tokens.size() - 2].text.empty() &&
+        moss::ascii_is_digit(static_cast<unsigned char>(
+            tokens[tokens.size() - 2].text.front())) &&
+        (tokens[tokens.size() - 4].word ||
+         tokens[tokens.size() - 4].literal ||
+         tokens[tokens.size() - 4].text == ")" ||
+         tokens[tokens.size() - 4].text == "]" ||
+         tokens[tokens.size() - 4].text == "}");
+    if (!follows_numeric_member) return SourceSyntaxIssue::TrailingMember;
+  }
 
   static const std::set<std::string_view> binary_operators = {
       "+", "-", "*", "/", "%", "**", "==", "!=", "<", "<=",

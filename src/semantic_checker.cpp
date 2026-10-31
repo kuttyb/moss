@@ -27391,7 +27391,14 @@ class Checker {
             const auto& fields = objects_.at(type)->fields;
             bool known = std::any_of(fields.begin(), fields.end(),
                 [&](const Field& candidate) { return candidate.name == field; });
-            if (!known)
+            const bool decimal_member_name = !field.empty() &&
+                std::all_of(field.begin(), field.end(), [](unsigned char ch) {
+                  return moss::ascii_is_digit(ch) || ch == '_';
+                });
+            const bool legacy_type_name_diagnostic = !field.empty() &&
+                moss::ascii_is_digit(static_cast<unsigned char>(field.front())) &&
+                !decimal_member_name;
+            if (!known && !legacy_type_name_diagnostic)
               err(line, "record '" + type + "' has no field '" + field + "'",
                   "UNKNOWN_FIELD");
           } else if (builtin_equality_type(type) || type == "map" || type == "queue" ||
