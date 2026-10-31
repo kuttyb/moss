@@ -1,6 +1,6 @@
 # CP-E independent review: Phase 27.3 numeric member fix
 
-Verdict: **NO-GO**
+NO-GO
 
 Source: `04f61b52ba410b1f542328fd878ce518fb25658f`
 Baseline: `04be1a1bbbc7a4fd8fe2e4090b4b5bad5dd573e4`
