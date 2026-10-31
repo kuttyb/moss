@@ -10984,6 +10984,20 @@ class Checker {
     return tree_parse_member_access(text, base, member);
   }
 
+  static bool tree_root_member_access_named(const string& text,
+                                            std::string_view base_name,
+                                            std::string_view member_name) {
+    const auto syntax = checker_est_view(text);
+    if (!syntax || !syntax->arena || syntax->root >= syntax->arena->size())
+      return false;
+    const auto* member = std::get_if<moss::est::Member>(
+        &syntax->arena->at(syntax->root));
+    if (!member || member->name != member_name) return false;
+    const auto* base = std::get_if<moss::est::Identifier>(
+        &syntax->arena->at(member->base));
+    return base && base->name == base_name;
+  }
+
   static bool tree_parse_member_access(const string& text, string& base,
                                        string& member) {
     auto* cached = checker_est_view_entry(text);
@@ -22910,7 +22924,7 @@ class Checker {
           string source = trim(s.b);
           auto source_type = inferred_expr_type(s.b, env.types);
           if (source_type && canonical_type_name(*source_type) == "FileIO" &&
-              source != "FileIO.open" &&
+              !tree_root_member_access_named(source, "FileIO", "open") &&
               storage_location(s.b, env.types))
             err(s.line, "FileIO ownership is pinned to its original binding",
                 "FILEIO_PINNED_OWNERSHIP");
