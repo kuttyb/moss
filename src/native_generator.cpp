@@ -1029,6 +1029,11 @@ class Generator {
     return syntax && est::empty_vector_literal(*syntax);
   }
 
+  bool tree_placeholder_expression(std::string_view expression) const {
+    auto syntax = expression_view_from_est(expression);
+    return syntax && est::placeholder_expression(*syntax);
+  }
+
   est::LiteralClass tree_literal_class(std::string_view expression) const {
     auto syntax = expression_view_from_est(expression);
     return syntax ? est::root_literal_class(*syntax) : est::LiteralClass::None;
@@ -1844,10 +1849,14 @@ class Generator {
     if (literal == est::LiteralClass::String)
       return string("string");
     if (types) {
-      auto local = types->find(value);
-      if (local != types->end() && !local->second.empty() &&
-          !contains_internal_placeholder(local->second))
-        return canonical_type_name(local->second);
+      auto identifier = tree_identifier_name(value);
+      if (!identifier && tree_placeholder_expression(value)) identifier = "_";
+      if (identifier) {
+        auto local = types->find(*identifier);
+        if (local != types->end() && !local->second.empty() &&
+            !contains_internal_placeholder(local->second))
+          return canonical_type_name(local->second);
+      }
     }
     string unary_operation, unary_operand;
     if (tree_parse_unary(value, unary_operation, unary_operand) &&

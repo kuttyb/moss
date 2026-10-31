@@ -10367,8 +10367,13 @@ class Checker {
     if (literal == moss::est::LiteralClass::Boolean) return "bool";
     if (literal == moss::est::LiteralClass::String) return "string";
     if (literal == moss::est::LiteralClass::Character) return "char";
-    auto local = env.find(e);
-    if (local != env.end() && local->second && local->second->name != "_value") return local->second->to_canonical_string();
+    auto identifier = tree_identifier_name(e);
+    if (!identifier && tree_placeholder_expression(e)) identifier = "_";
+    if (identifier) {
+      auto local = env.find(*identifier);
+      if (local != env.end() && local->second && local->second->name != "_value")
+        return local->second->to_canonical_string();
+    }
     if (tree_decimal_integer_literal(e, true, false)) return "int";
     if (literal == moss::est::LiteralClass::Float) return "float";
     return std::nullopt;
