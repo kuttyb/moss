@@ -1,0 +1,15 @@
+{
+  "candidate_compiler": "/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/build/compiler-asan/moss-dev",
+  "candidate_revision": "55994899539532c763d6489b16b859f419b12205",
+  "compiler_sha256": "0362c778054c917ed7eabf8220e643996e948ba559b3d964e763e13a926833e0",
+  "finding_count": 0,
+  "findings": [],
+  "mode": "MOSS_EST=shadow",
+  "review_evidence_materialized": false,
+  "sanitizers": [
+    "ASan",
+    "UBSan"
+  ],
+  "source_count": 2225,
+  "timeout_seconds": 180
+}

@@ -1,0 +1,249 @@
+{
+  "baseline_compiler_sha256": "4a334c71d9b5ea5b2925c311f7a462abd046e479fc4b52df4c0453e612ceb286",
+  "candidate_compiler_sha256": "e9ffab899862087e007730320c409e2fa31ab6a8b1b871fe03ab962567cb62f9",
+  "checks": {
+    "baseline_off": {
+      "kind": "process",
+      "returncode": 0,
+      "stderr": "",
+      "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/tests/phase27/adversarial/cp-f-55994899/probes/wrapping_message_argument.moss\", \"diagnostics\": []}\n}\n"
+    },
+    "candidate_off": {
+      "kind": "process",
+      "returncode": 0,
+      "stderr": "",
+      "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/tests/phase27/adversarial/cp-f-55994899/probes/wrapping_message_argument.moss\", \"diagnostics\": []}\n}\n"
+    },
+    "candidate_shadow": {
+      "kind": "process",
+      "returncode": 0,
+      "stderr": "",
+      "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/phase27-3/cp-f-55994899-clean/tests/phase27/adversarial/cp-f-55994899/probes/wrapping_message_argument.moss\", \"diagnostics\": []}\n}\n"
+    }
+  },
+  "copied_probe": "tests/phase27/adversarial/cp-f-55994899/probes/wrapping_message_argument.moss",
+  "errors": [],
+  "expected_stdout": "-9223372036854775808\n",
+  "fast_debug": {
+    "baseline_off": {
+      "kind": "process",
+      "returncode": 0,
+      "stderr": "",
+      "stdout": "-9223372036854775808\n"
+    },
+    "candidate_shadow": {
+      "kind": "process",
+      "returncode": 0,
+      "stderr": "",
+      "stdout": "-9223372036854775808\n"
+    }
+  },
+  "native": {
+    "baseline:default:default": {
+      "emit": {
+        "kind": "process",
+        "returncode": 0,
+        "stderr": ""
+      },
+      "run": {
+        "kind": "process",
+        "returncode": 0,
+        "stderr": "",
+        "stdout": "-9223372036854775808\n"
+      },
+      "rustc": {
+        "kind": "process",
+        "returncode": 0,
+        "stderr": "",
+        "stdout": ""
+      }
+    },
+    "baseline:default:optimized": {
+      "emit": {
+        "kind": "process",
+        "returncode": 0,
+        "stderr": ""
+      },
+      "run": {
+        "kind": "process",
+        "returncode": 0,
+        "stderr": "",
+        "stdout": "-9223372036854775808\n"
+      },
+      "rustc": {
+        "kind": "process",
+        "returncode": 0,
+        "stderr": "",
+        "stdout": ""
+      }
+    },
+    "baseline:optimized:default": {
+      "emit": {
+        "kind": "process",
+        "returncode": 0,
+        "stderr": ""
+      },
+      "run": {
+        "kind": "process",
+        "returncode": 0,
+        "stderr": "",
+        "stdout": "-9223372036854775808\n"
+      },
+      "rustc": {
+        "kind": "process",
+        "returncode": 0,
+        "stderr": "",
+        "stdout": ""
+      }
+    },
+    "baseline:optimized:optimized": {
+      "emit": {
+        "kind": "process",
+        "returncode": 0,
+        "stderr": ""
+      },
+      "run": {
+        "kind": "process",
+        "returncode": 0,
+        "stderr": "",
+        "stdout": "-9223372036854775808\n"
+      },
+      "rustc": {
+        "kind": "process",
+        "returncode": 0,
+        "stderr": "",
+        "stdout": ""
+      }
+    },
+    "candidate:default:default": {
+      "emit": {
+        "kind": "process",
+        "returncode": 0,
+        "stderr": ""
+      },
+      "run": {
+        "kind": "process",
+        "returncode": 0,
+        "stderr": "",
+        "stdout": "-9223372036854775808\n"
+      },
+      "rustc": {
+        "kind": "process",
+        "returncode": 0,
+        "stderr": "",
+        "stdout": ""
+      }
+    },
+    "candidate:default:optimized": {
+      "emit": {
+        "kind": "process",
+        "returncode": 0,
+        "stderr": ""
+      },
+      "run": {
+        "kind": "process",
+        "returncode": 0,
+        "stderr": "",
+        "stdout": "-9223372036854775808\n"
+      },
+      "rustc": {
+        "kind": "process",
+        "returncode": 0,
+        "stderr": "",
+        "stdout": ""
+      }
+    },
+    "candidate:optimized:default": {
+      "emit": {
+        "kind": "process",
+        "returncode": 0,
+        "stderr": ""
+      },
+      "run": {
+        "kind": "process",
+        "returncode": 0,
+        "stderr": "",
+        "stdout": "-9223372036854775808\n"
+      },
+      "rustc": {
+        "kind": "process",
+        "returncode": 0,
+        "stderr": "",
+        "stdout": ""
+      }
+    },
+    "candidate:optimized:optimized": {
+      "emit": {
+        "kind": "process",
+        "returncode": 0,
+        "stderr": ""
+      },
+      "run": {
+        "kind": "process",
+        "returncode": 0,
+        "stderr": "",
+        "stdout": "-9223372036854775808\n"
+      },
+      "rustc": {
+        "kind": "process",
+        "returncode": 0,
+        "stderr": "",
+        "stdout": ""
+      }
+    }
+  },
+  "observed_outputs": [
+    {
+      "engine": "fast_debug:baseline_off",
+      "returncode": 0,
+      "stdout": "-9223372036854775808\n"
+    },
+    {
+      "engine": "fast_debug:candidate_shadow",
+      "returncode": 0,
+      "stdout": "-9223372036854775808\n"
+    },
+    {
+      "engine": "native:baseline:default:default",
+      "returncode": 0,
+      "stdout": "-9223372036854775808\n"
+    },
+    {
+      "engine": "native:baseline:default:optimized",
+      "returncode": 0,
+      "stdout": "-9223372036854775808\n"
+    },
+    {
+      "engine": "native:baseline:optimized:default",
+      "returncode": 0,
+      "stdout": "-9223372036854775808\n"
+    },
+    {
+      "engine": "native:baseline:optimized:optimized",
+      "returncode": 0,
+      "stdout": "-9223372036854775808\n"
+    },
+    {
+      "engine": "native:candidate:default:default",
+      "returncode": 0,
+      "stdout": "-9223372036854775808\n"
+    },
+    {
+      "engine": "native:candidate:default:optimized",
+      "returncode": 0,
+      "stdout": "-9223372036854775808\n"
+    },
+    {
+      "engine": "native:candidate:optimized:default",
+      "returncode": 0,
+      "stdout": "-9223372036854775808\n"
+    },
+    {
+      "engine": "native:candidate:optimized:optimized",
+      "returncode": 0,
+      "stdout": "-9223372036854775808\n"
+    }
+  ],
+  "source": "tests/phase27/adversarial/cp-f-phase27-3/wrapping-message-argument.moss",
+  "source_sha256": "47e8a7bc6a063050d4324c00befac93f00a84b1e0f442096b4b36660838fb71e"
+}
