@@ -1,0 +1,4 @@
+fn main():
+  values = []
+  result = values[0]
+  echo result

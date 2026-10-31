@@ -1,0 +1,4 @@
+fn main():
+  values = Map()
+  result = values.get("x")
+  echo result

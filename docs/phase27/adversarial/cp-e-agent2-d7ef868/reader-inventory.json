@@ -1,0 +1,683 @@
+{
+  "candidate": "d7ef868d7206bc72bf03a209edff613fafb00932",
+  "baseline": "04be1a1bbbc7a4fd8fe2e4090b4b5bad5dd573e4",
+  "source_scope": "src/semantic_checker.cpp, src/native_generator.cpp, src/*.inc; full raw field hits are in raw-stmt-field-hits.txt",
+  "string_debt_lint": "pass",
+  "legacy_parser_reader_sites_in_checker_or_emitter": 0,
+  "legacy_reader_sites_all_consumers": [
+    {
+      "consumer": "compiler_frontend",
+      "path": "src/moss.cpp",
+      "line": 350,
+      "text": "auto arguments = split_top_level(type.substr(bracket + 1,",
+      "api": "split_top_level",
+      "count": 1
+    },
+    {
+      "consumer": "compiler_frontend",
+      "path": "src/moss.cpp",
+      "line": 873,
+      "text": "for (auto part : split_top_level(value.substr(open + 1, value.size() - open - 2), ',')) {",
+      "api": "split_top_level",
+      "count": 1
+    },
+    {
+      "consumer": "compiler_frontend",
+      "path": "src/moss.cpp",
+      "line": 1022,
+      "text": "if (!trim(inside).empty()) args = split_top_level(inside, ',');",
+      "api": "split_top_level",
+      "count": 1
+    },
+    {
+      "consumer": "compiler_frontend",
+      "path": "src/moss.cpp",
+      "line": 1032,
+      "text": "if (!parse_simple_call(text, callee, args) || !args.empty()) return std::nullopt;",
+      "api": "parse_simple_call",
+      "count": 1
+    },
+    {
+      "consumer": "compiler_frontend",
+      "path": "src/moss.cpp",
+      "line": 1106,
+      "text": "if (!trim(inside).empty()) args = split_top_level(inside, ',');",
+      "api": "split_top_level",
+      "count": 1
+    },
+    {
+      "consumer": "compiler_frontend",
+      "path": "src/moss.cpp",
+      "line": 1126,
+      "text": "if (parse_simple_call(value, callee, args) && callee == \"Executor\" && args.empty()) {",
+      "api": "parse_simple_call",
+      "count": 1
+    },
+    {
+      "consumer": "compiler_frontend",
+      "path": "src/moss.cpp",
+      "line": 1132,
+      "text": "if (!parse_member_call(value, receiver, method, call_args)) return false;",
+      "api": "parse_member_call",
+      "count": 1
+    },
+    {
+      "consumer": "compiler_frontend",
+      "path": "src/moss.cpp",
+      "line": 1146,
+      "text": "if (!parse_member_call(text, receiver, method, args)) return false;",
+      "api": "parse_member_call",
+      "count": 1
+    },
+    {
+      "consumer": "compiler_frontend",
+      "path": "src/moss.cpp",
+      "line": 1184,
+      "text": "if (!parse_member_call(source, fileio_receiver, method, arguments)) return false;",
+      "api": "parse_member_call",
+      "count": 1
+    },
+    {
+      "consumer": "compiler_frontend",
+      "path": "src/moss.cpp",
+      "line": 1194,
+      "text": "called = parse_member_call(value, enum_name, case_name, fields);",
+      "api": "parse_member_call",
+      "count": 1
+    },
+    {
+      "consumer": "compiler_frontend",
+      "path": "src/moss.cpp",
+      "line": 1195,
+      "text": "if (called) return plain_identifier(enum_name) && plain_identifier(case_name);",
+      "api": "plain_identifier",
+      "count": 2
+    },
+    {
+      "consumer": "compiler_frontend",
+      "path": "src/moss.cpp",
+      "line": 1201,
+      "text": "return plain_identifier(enum_name) && plain_identifier(case_name);",
+      "api": "plain_identifier",
+      "count": 2
+    },
+    {
+      "consumer": "compiler_frontend",
+      "path": "src/moss.cpp",
+      "line": 1216,
+      "text": "return plain_identifier(receiver) && plain_identifier(method) && receiver != \"_\";",
+      "api": "plain_identifier",
+      "count": 2
+    },
+    {
+      "consumer": "compiler_frontend",
+      "path": "src/moss.cpp",
+      "line": 1250,
+      "text": "string value = strip_redundant_outer_parentheses(expression);",
+      "api": "strip_redundant_outer_parentheses",
+      "count": 1
+    },
+    {
+      "consumer": "compiler_frontend",
+      "path": "src/moss.cpp",
+      "line": 1270,
+      "text": "return inside.empty() ? vector<string>{} : split_top_level(inside, ',');",
+      "api": "split_top_level",
+      "count": 1
+    },
+    {
+      "consumer": "compiler_frontend",
+      "path": "src/moss.cpp",
+      "line": 1351,
+      "text": "size_t equal = top_level_assignment(text);",
+      "api": "top_level_assignment",
+      "count": 1
+    },
+    {
+      "consumer": "compiler_frontend",
+      "path": "src/moss.cpp",
+      "line": 1352,
+      "text": "size_t colon = top_level_colon(text);",
+      "api": "top_level_colon",
+      "count": 1
+    },
+    {
+      "consumer": "compiler_frontend",
+      "path": "src/moss.cpp",
+      "line": 1359,
+      "text": "return plain_identifier(name) && !value.empty();",
+      "api": "plain_identifier",
+      "count": 1
+    },
+    {
+      "consumer": "compiler_frontend",
+      "path": "src/moss.cpp",
+      "line": 1429,
+      "text": "bool call = parse_simple_call(parts[index], callee, arguments);",
+      "api": "parse_simple_call",
+      "count": 1
+    },
+    {
+      "consumer": "compiler_frontend",
+      "path": "src/moss.cpp",
+      "line": 1457,
+      "text": "if (parse_simple_call(stage, callee, args)) {",
+      "api": "parse_simple_call",
+      "count": 1
+    },
+    {
+      "consumer": "compiler_frontend",
+      "path": "src/moss.cpp",
+      "line": 4714,
+      "text": "!plain_identifier(function.params[0].name) ||",
+      "api": "plain_identifier",
+      "count": 1
+    },
+    {
+      "consumer": "compiler_frontend",
+      "path": "src/moss.cpp",
+      "line": 4715,
+      "text": "!plain_identifier(function.params[1].name) ||",
+      "api": "plain_identifier",
+      "count": 1
+    },
+    {
+      "consumer": "compiler_frontend",
+      "path": "src/moss.cpp",
+      "line": 5294,
+      "text": "!plain_identifier(function.params[expression.ordinal].name))",
+      "api": "plain_identifier",
+      "count": 1
+    },
+    {
+      "consumer": "compiler_frontend",
+      "path": "src/moss.cpp",
+      "line": 5716,
+      "text": "!plain_identifier(variant->fields[index].name))",
+      "api": "plain_identifier",
+      "count": 1
+    },
+    {
+      "consumer": "compiler_frontend",
+      "path": "src/moss.cpp",
+      "line": 5799,
+      "text": "!plain_identifier(variant->fields[index].name) ||",
+      "api": "plain_identifier",
+      "count": 1
+    },
+    {
+      "consumer": "compiler_frontend",
+      "path": "src/moss.cpp",
+      "line": 5951,
+      "text": "!plain_identifier(function.params.front().name) ||",
+      "api": "plain_identifier",
+      "count": 1
+    },
+    {
+      "consumer": "compiler_frontend",
+      "path": "src/moss.cpp",
+      "line": 5977,
+      "text": "!plain_identifier(function.params.front().name) ||",
+      "api": "plain_identifier",
+      "count": 1
+    },
+    {
+      "consumer": "compiler_frontend",
+      "path": "src/moss.cpp",
+      "line": 6000,
+      "text": "!plain_identifier(function.params.front().name) ||",
+      "api": "plain_identifier",
+      "count": 1
+    },
+    {
+      "consumer": "compiler_frontend",
+      "path": "src/moss.cpp",
+      "line": 7669,
+      "text": "if (!plain_identifier(name)) continue;",
+      "api": "plain_identifier",
+      "count": 1
+    },
+    {
+      "consumer": "compiler_frontend",
+      "path": "src/moss.cpp",
+      "line": 10852,
+      "text": "size_t assignment = top_level_assignment(expression);",
+      "api": "top_level_assignment",
+      "count": 1
+    },
+    {
+      "consumer": "compiler_frontend",
+      "path": "src/moss.cpp",
+      "line": 13691,
+      "text": "const size_t assignment = top_level_assignment(statement.text);",
+      "api": "top_level_assignment",
+      "count": 1
+    },
+    {
+      "consumer": "compiler_frontend",
+      "path": "src/moss.cpp",
+      "line": 13777,
+      "text": "if (plain_identifier(arm.a)) arm_locals.insert(arm.a);",
+      "api": "plain_identifier",
+      "count": 1
+    },
+    {
+      "consumer": "compiler_frontend",
+      "path": "src/moss.cpp",
+      "line": 13875,
+      "text": "if (plain_identifier(statement.a)) {",
+      "api": "plain_identifier",
+      "count": 1
+    },
+    {
+      "consumer": "compiler_frontend",
+      "path": "src/moss.cpp",
+      "line": 13901,
+      "text": "else if (callee.find('.') == string::npos && plain_identifier(callee) &&",
+      "api": "plain_identifier",
+      "count": 1
+    },
+    {
+      "consumer": "compiler_frontend",
+      "path": "src/moss.cpp",
+      "line": 13925,
+      "text": "(statement.kind == Stmt::Kind::Assign && plain_identifier(statement.a))) {",
+      "api": "plain_identifier",
+      "count": 1
+    },
+    {
+      "consumer": "compiler_frontend",
+      "path": "src/moss.cpp",
+      "line": 13928,
+      "text": "if (plain_identifier(statement.a)) locals.insert(statement.a);",
+      "api": "plain_identifier",
+      "count": 1
+    },
+    {
+      "consumer": "compiler_frontend",
+      "path": "src/moss.cpp",
+      "line": 15134,
+      "text": "for (const auto& argument : split_top_level(",
+      "api": "split_top_level",
+      "count": 1
+    },
+    {
+      "consumer": "compiler_frontend",
+      "path": "src/moss.cpp",
+      "line": 15145,
+      "text": "for (const auto& argument : split_top_level(",
+      "api": "split_top_level",
+      "count": 1
+    },
+    {
+      "consumer": "compiler_frontend",
+      "path": "src/moss.cpp",
+      "line": 23929,
+      "text": "for (const auto& sample : split_top_level(fields[9], ',')) {",
+      "api": "split_top_level",
+      "count": 1
+    },
+    {
+      "consumer": "compiler_frontend",
+      "path": "src/moss.cpp",
+      "line": 24959,
+      "text": "? vector<string>{} : split_top_level(arguments_text, ',');",
+      "api": "split_top_level",
+      "count": 1
+    },
+    {
+      "consumer": "compiler_frontend",
+      "path": "src/moss.cpp",
+      "line": 25021,
+      "text": "if (operands.size() != 1 || !plain_identifier(operands[0]))",
+      "api": "plain_identifier",
+      "count": 1
+    },
+    {
+      "consumer": "compiler_frontend",
+      "path": "src/moss.cpp",
+      "line": 25917,
+      "text": "? moss::top_level_assignment(statement.text)",
+      "api": "top_level_assignment",
+      "count": 1
+    },
+    {
+      "consumer": "compiler_frontend",
+      "path": "src/moss.cpp",
+      "line": 25936,
+      "text": "if (moss::plain_identifier(statement.a)) {",
+      "api": "plain_identifier",
+      "count": 1
+    },
+    {
+      "consumer": "compiler_frontend",
+      "path": "src/moss.cpp",
+      "line": 25947,
+      "text": "if (moss::plain_identifier(statement.a))",
+      "api": "plain_identifier",
+      "count": 1
+    },
+    {
+      "consumer": "compiler_frontend",
+      "path": "src/moss.cpp",
+      "line": 25956,
+      "text": "if (moss::plain_identifier(statement.message_result)) {",
+      "api": "plain_identifier",
+      "count": 1
+    },
+    {
+      "consumer": "optimizer",
+      "path": "src/functional_optimizer.cpp",
+      "line": 209,
+      "text": "return trim(node.callable_expression) == \"_\" &&",
+      "api": "trim_compare",
+      "count": 1
+    },
+    {
+      "consumer": "optimizer",
+      "path": "src/functional_optimizer.cpp",
+      "line": 608,
+      "text": "auto elements = split_top_level(value.substr(1, value.size() - 2), ',');",
+      "api": "split_top_level",
+      "count": 1
+    },
+    {
+      "consumer": "optimizer",
+      "path": "src/functional_optimizer.cpp",
+      "line": 787,
+      "text": "trim(statement.a) == name;",
+      "api": "trim_compare",
+      "count": 1
+    },
+    {
+      "consumer": "optimizer",
+      "path": "src/functional_optimizer.cpp",
+      "line": 811,
+      "text": "bool simple_binding = binding_statement && plain_identifier(statement.a);",
+      "api": "plain_identifier",
+      "count": 1
+    },
+    {
+      "consumer": "optimizer",
+      "path": "src/functional_optimizer.cpp",
+      "line": 848,
+      "text": "size_t count = word_occurrences(statement.text, binding);",
+      "api": "word_occurrences",
+      "count": 1
+    },
+    {
+      "consumer": "optimizer",
+      "path": "src/functional_optimizer.cpp",
+      "line": 856,
+      "text": "uses += word_occurrences(*result_expression, binding);",
+      "api": "word_occurrences",
+      "count": 1
+    },
+    {
+      "consumer": "optimizer",
+      "path": "src/functional_optimizer.cpp",
+      "line": 933,
+      "text": "if (!consumer || trim(consumer->source_expression) != binding) {",
+      "api": "trim_compare",
+      "count": 1
+    },
+    {
+      "consumer": "optimizer",
+      "path": "src/functional_optimizer.cpp",
+      "line": 1055,
+      "text": "!plain_identifier(trim(initial_pipeline->source_expression))) {",
+      "api": "plain_identifier",
+      "count": 1
+    },
+    {
+      "consumer": "optimizer",
+      "path": "src/functional_optimizer.cpp",
+      "line": 1072,
+      "text": "trim(pipeline->source_expression) !=",
+      "api": "trim_compare",
+      "count": 1
+    },
+    {
+      "consumer": "optimizer",
+      "path": "src/functional_optimizer.cpp",
+      "line": 1098,
+      "text": "word_occurrences(pipeline->expression, result_binding) != 0;",
+      "api": "word_occurrences",
+      "count": 1
+    },
+    {
+      "consumer": "parser",
+      "path": "src/parser.cpp",
+      "line": 44,
+      "text": "if (!plain_identifier(name)) fail(L, \"module name must be an identifier\");",
+      "api": "plain_identifier",
+      "count": 1
+    },
+    {
+      "consumer": "parser",
+      "path": "src/parser.cpp",
+      "line": 58,
+      "text": "if (!plain_identifier(name)) fail(L, \"import name must be an identifier\");",
+      "api": "plain_identifier",
+      "count": 1
+    },
+    {
+      "consumer": "parser",
+      "path": "src/parser.cpp",
+      "line": 96,
+      "text": "if (parse_simple_call(statement.text, callee, statement.args)) {",
+      "api": "parse_simple_call",
+      "count": 1
+    },
+    {
+      "consumer": "parser",
+      "path": "src/parser.cpp",
+      "line": 153,
+      "text": "if (!parse_member_call(text, receiver, handler, args)) return false;",
+      "api": "parse_member_call",
+      "count": 1
+    },
+    {
+      "consumer": "parser",
+      "path": "src/parser.cpp",
+      "line": 180,
+      "text": "for (auto part : split_top_level(inside, ',')) {",
+      "api": "split_top_level",
+      "count": 1
+    },
+    {
+      "consumer": "parser",
+      "path": "src/parser.cpp",
+      "line": 205,
+      "text": "if (trim(rest.substr(eq + 1)) != \"object\")",
+      "api": "trim_compare",
+      "count": 1
+    },
+    {
+      "consumer": "parser",
+      "path": "src/parser.cpp",
+      "line": 395,
+      "text": "auto colon = top_level_colon(text);",
+      "api": "top_level_colon",
+      "count": 1
+    },
+    {
+      "consumer": "parser",
+      "path": "src/parser.cpp",
+      "line": 403,
+      "text": "if (!plain_identifier(route.name) || route.type.empty())",
+      "api": "plain_identifier",
+      "count": 1
+    },
+    {
+      "consumer": "parser",
+      "path": "src/parser.cpp",
+      "line": 412,
+      "text": "for (const auto& item : split_top_level(inline_body, ',')) add_route(head, item);",
+      "api": "split_top_level",
+      "count": 1
+    },
+    {
+      "consumer": "parser",
+      "path": "src/parser.cpp",
+      "line": 417,
+      "text": "(lines_[i_].indent > head.indent || trim(lines_[i_].text) == \")\")) {",
+      "api": "trim_compare",
+      "count": 1
+    },
+    {
+      "consumer": "parser",
+      "path": "src/parser.cpp",
+      "line": 419,
+      "text": "if (trim(line.text) == \")\") { closed = true; break; }",
+      "api": "trim_compare",
+      "count": 1
+    },
+    {
+      "consumer": "parser",
+      "path": "src/parser.cpp",
+      "line": 435,
+      "text": "auto eq = top_level_assignment(rest);",
+      "api": "top_level_assignment",
+      "count": 1
+    },
+    {
+      "consumer": "parser",
+      "path": "src/parser.cpp",
+      "line": 436,
+      "text": "auto colon = top_level_colon(rest);",
+      "api": "top_level_colon",
+      "count": 1
+    },
+    {
+      "consumer": "parser",
+      "path": "src/parser.cpp",
+      "line": 455,
+      "text": "if (!plain_identifier(f.name))",
+      "api": "plain_identifier",
+      "count": 1
+    },
+    {
+      "consumer": "parser",
+      "path": "src/parser.cpp",
+      "line": 499,
+      "text": "auto alternatives = split_top_level(selector, ',');",
+      "api": "split_top_level",
+      "count": 1
+    },
+    {
+      "consumer": "parser",
+      "path": "src/parser.cpp",
+      "line": 505,
+      "text": "else if (alternatives.size() == 1 && plain_identifier(selector))",
+      "api": "plain_identifier",
+      "count": 1
+    },
+    {
+      "consumer": "parser",
+      "path": "src/parser.cpp",
+      "line": 673,
+      "text": "s.args = split_top_level(trim(L.text.substr(5)), ',');",
+      "api": "split_top_level",
+      "count": 1
+    },
+    {
+      "consumer": "parser",
+      "path": "src/parser.cpp",
+      "line": 708,
+      "text": "if (!trim(inside).empty()) for (auto binding : split_top_level(inside, ',')) {",
+      "api": "split_top_level",
+      "count": 1
+    },
+    {
+      "consumer": "parser",
+      "path": "src/parser.cpp",
+      "line": 740,
+      "text": "if (!plain_identifier(s.a)) fail(L, \"for loop binding must be an identifier\");",
+      "api": "plain_identifier",
+      "count": 1
+    },
+    {
+      "consumer": "parser",
+      "path": "src/parser.cpp",
+      "line": 756,
+      "text": "auto eq = top_level_assignment(rest);",
+      "api": "top_level_assignment",
+      "count": 1
+    },
+    {
+      "consumer": "parser",
+      "path": "src/parser.cpp",
+      "line": 782,
+      "text": "auto assignment = top_level_assignment(L.text);",
+      "api": "top_level_assignment",
+      "count": 1
+    },
+    {
+      "consumer": "parser",
+      "path": "src/parser.cpp",
+      "line": 829,
+      "text": "if (parse_member_call(L.text, s.a, s.b, s.args) && identifier(s.b)) {",
+      "api": "parse_member_call",
+      "count": 1
+    },
+    {
+      "consumer": "parser",
+      "path": "src/parser.cpp",
+      "line": 834,
+      "text": "if (parse_simple_call(L.text, callee, s.args)) {",
+      "api": "parse_simple_call",
+      "count": 1
+    }
+  ],
+  "raw_name_comparison_counts": {
+    "checker:FileIO": 1,
+    "checker:assert": 2,
+    "checker:consume": 2,
+    "checker:insert": 2,
+    "checker:invoke": 4,
+    "checker:join": 3,
+    "checker:pass": 1,
+    "checker:pop": 3,
+    "checker:pop_front": 3,
+    "checker:push": 5,
+    "checker:sort": 1,
+    "emitter:_": 1,
+    "emitter:assert": 1,
+    "emitter:assertEqual": 1,
+    "emitter:close": 1,
+    "emitter:consume": 3,
+    "emitter:delete": 1,
+    "emitter:open": 1,
+    "emitter:pop": 1,
+    "emitter:sort": 1,
+    "emitter:sync": 1,
+    "emitter:write": 1
+  },
+  "raw_binding_comparison_counts": {
+    "checker:a": 9
+  },
+  "raw_shape_tests": [],
+  "tree_expression_text_occurrences": 0,
+  "exemptions": [
+    {
+      "path": "src/semantic_checker.cpp",
+      "function": "builtin_equality_type",
+      "api": "split_top_level",
+      "reason": "Splits canonical type argument spellings; this is type syntax, not expression or pattern text."
+    },
+    {
+      "path": "src/semantic_checker.cpp",
+      "function": "contains_float_type",
+      "api": "split_top_level",
+      "reason": "Splits canonical type argument spellings; this is type syntax, not expression or pattern text."
+    },
+    {
+      "path": "src/semantic_checker.cpp",
+      "function": "phase20_is_nontransferable_capability",
+      "api": "split_top_level",
+      "reason": "Splits canonical type argument spellings; this is type syntax, not expression or pattern text."
+    }
+  ],
+  "exemption_policy": "tooling lint requires path+function+API exact keys, nonempty reason, unique keys, resolved function body, exactly one matching site; rejects stale/unmatched exemptions"
+}

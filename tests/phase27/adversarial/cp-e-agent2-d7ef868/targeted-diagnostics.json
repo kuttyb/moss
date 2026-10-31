@@ -1,0 +1,1552 @@
+{
+  "heterogeneous_vector.moss": {
+    "baseline:off": {
+      "returncode": 1,
+      "payload": {
+        "protocol_version": 1,
+        "schema_version": "moss-agent-1",
+        "compiler_version": "0.1.0",
+        "command": "check",
+        "ok": false,
+        "error": {
+          "code": "MOSS_COMPILE_ERROR",
+          "severity": "error",
+          "message": "heterogeneous or unresolved collection element type",
+          "source_file": "/home/owner/daji/code/moss/tmp/review-agent2-d7ef868/tests/phase27/adversarial/cp-e-agent2-d7ef868/heterogeneous_vector.moss",
+          "line": 2,
+          "column": 1,
+          "span": {
+            "start_line": 2,
+            "start_column": 1,
+            "end_line": 2,
+            "end_column": 1
+          },
+          "source": {
+            "file": "/home/owner/daji/code/moss/tmp/review-agent2-d7ef868/tests/phase27/adversarial/cp-e-agent2-d7ef868/heterogeneous_vector.moss",
+            "line": 2,
+            "column": 1,
+            "span": {
+              "start_line": 2,
+              "start_column": 1,
+              "end_line": 2,
+              "end_column": 1
+            }
+          },
+          "semantic_identity": "main@1",
+          "symbol": null,
+          "rule": null,
+          "cause": null,
+          "related": [],
+          "guidance": null,
+          "details": {
+            "ownership_expected": null,
+            "ownership_actual": null,
+            "consume_line": null,
+            "recursion_witness": null,
+            "resolution": null
+          },
+          "fixes": [],
+          "legal_alternatives": []
+        }
+      },
+      "stderr": ""
+    },
+    "candidate:off": {
+      "returncode": 1,
+      "payload": {
+        "protocol_version": 1,
+        "schema_version": "moss-agent-1",
+        "compiler_version": "0.1.0",
+        "command": "check",
+        "ok": false,
+        "error": {
+          "code": "MOSS_COMPILE_ERROR",
+          "severity": "error",
+          "message": "heterogeneous or unresolved collection element type",
+          "source_file": "/home/owner/daji/code/moss/tmp/review-agent2-d7ef868/tests/phase27/adversarial/cp-e-agent2-d7ef868/heterogeneous_vector.moss",
+          "line": 2,
+          "column": 1,
+          "span": {
+            "start_line": 2,
+            "start_column": 1,
+            "end_line": 2,
+            "end_column": 1
+          },
+          "source": {
+            "file": "/home/owner/daji/code/moss/tmp/review-agent2-d7ef868/tests/phase27/adversarial/cp-e-agent2-d7ef868/heterogeneous_vector.moss",
+            "line": 2,
+            "column": 1,
+            "span": {
+              "start_line": 2,
+              "start_column": 1,
+              "end_line": 2,
+              "end_column": 1
+            }
+          },
+          "semantic_identity": "main@1",
+          "symbol": null,
+          "rule": null,
+          "cause": null,
+          "related": [],
+          "guidance": null,
+          "details": {
+            "ownership_expected": null,
+            "ownership_actual": null,
+            "consume_line": null,
+            "recursion_witness": null,
+            "resolution": null
+          },
+          "fixes": [],
+          "legal_alternatives": []
+        }
+      },
+      "stderr": ""
+    },
+    "candidate:shadow": {
+      "returncode": 1,
+      "payload": {
+        "protocol_version": 1,
+        "schema_version": "moss-agent-1",
+        "compiler_version": "0.1.0",
+        "command": "check",
+        "ok": false,
+        "error": {
+          "code": "MOSS_COMPILE_ERROR",
+          "severity": "error",
+          "message": "heterogeneous or unresolved collection element type",
+          "source_file": "/home/owner/daji/code/moss/tmp/review-agent2-d7ef868/tests/phase27/adversarial/cp-e-agent2-d7ef868/heterogeneous_vector.moss",
+          "line": 2,
+          "column": 1,
+          "span": {
+            "start_line": 2,
+            "start_column": 1,
+            "end_line": 2,
+            "end_column": 1
+          },
+          "source": {
+            "file": "/home/owner/daji/code/moss/tmp/review-agent2-d7ef868/tests/phase27/adversarial/cp-e-agent2-d7ef868/heterogeneous_vector.moss",
+            "line": 2,
+            "column": 1,
+            "span": {
+              "start_line": 2,
+              "start_column": 1,
+              "end_line": 2,
+              "end_column": 1
+            }
+          },
+          "semantic_identity": "main@1",
+          "symbol": null,
+          "rule": null,
+          "cause": null,
+          "related": [],
+          "guidance": null,
+          "details": {
+            "ownership_expected": null,
+            "ownership_actual": null,
+            "consume_line": null,
+            "recursion_witness": null,
+            "resolution": null
+          },
+          "fixes": [],
+          "legal_alternatives": []
+        }
+      },
+      "stderr": ""
+    }
+  },
+  "incomplete_binary.moss": {
+    "baseline:off": {
+      "returncode": 1,
+      "payload": {
+        "protocol_version": 1,
+        "schema_version": "moss-agent-1",
+        "compiler_version": "0.1.0",
+        "command": "check",
+        "ok": false,
+        "error": {
+          "code": "MOSS_COMPILE_ERROR",
+          "severity": "error",
+          "message": "invalid arithmetic expression",
+          "source_file": "/home/owner/daji/code/moss/tmp/review-agent2-d7ef868/tests/phase27/adversarial/cp-e-agent2-d7ef868/incomplete_binary.moss",
+          "line": 2,
+          "column": 1,
+          "span": {
+            "start_line": 2,
+            "start_column": 1,
+            "end_line": 2,
+            "end_column": 1
+          },
+          "source": {
+            "file": "/home/owner/daji/code/moss/tmp/review-agent2-d7ef868/tests/phase27/adversarial/cp-e-agent2-d7ef868/incomplete_binary.moss",
+            "line": 2,
+            "column": 1,
+            "span": {
+              "start_line": 2,
+              "start_column": 1,
+              "end_line": 2,
+              "end_column": 1
+            }
+          },
+          "semantic_identity": "main@1",
+          "symbol": null,
+          "rule": null,
+          "cause": null,
+          "related": [],
+          "guidance": null,
+          "details": {
+            "ownership_expected": null,
+            "ownership_actual": null,
+            "consume_line": null,
+            "recursion_witness": null,
+            "resolution": null
+          },
+          "fixes": [],
+          "legal_alternatives": []
+        }
+      },
+      "stderr": ""
+    },
+    "candidate:off": {
+      "returncode": 1,
+      "payload": {
+        "protocol_version": 1,
+        "schema_version": "moss-agent-1",
+        "compiler_version": "0.1.0",
+        "command": "check",
+        "ok": false,
+        "error": {
+          "code": "MOSS_COMPILE_ERROR",
+          "severity": "error",
+          "message": "invalid arithmetic expression",
+          "source_file": "/home/owner/daji/code/moss/tmp/review-agent2-d7ef868/tests/phase27/adversarial/cp-e-agent2-d7ef868/incomplete_binary.moss",
+          "line": 2,
+          "column": 1,
+          "span": {
+            "start_line": 2,
+            "start_column": 1,
+            "end_line": 2,
+            "end_column": 1
+          },
+          "source": {
+            "file": "/home/owner/daji/code/moss/tmp/review-agent2-d7ef868/tests/phase27/adversarial/cp-e-agent2-d7ef868/incomplete_binary.moss",
+            "line": 2,
+            "column": 1,
+            "span": {
+              "start_line": 2,
+              "start_column": 1,
+              "end_line": 2,
+              "end_column": 1
+            }
+          },
+          "semantic_identity": "main@1",
+          "symbol": null,
+          "rule": null,
+          "cause": null,
+          "related": [],
+          "guidance": null,
+          "details": {
+            "ownership_expected": null,
+            "ownership_actual": null,
+            "consume_line": null,
+            "recursion_witness": null,
+            "resolution": null
+          },
+          "fixes": [],
+          "legal_alternatives": []
+        }
+      },
+      "stderr": ""
+    },
+    "candidate:shadow": {
+      "returncode": 1,
+      "payload": {
+        "protocol_version": 1,
+        "schema_version": "moss-agent-1",
+        "compiler_version": "0.1.0",
+        "command": "check",
+        "ok": false,
+        "error": {
+          "code": "MOSS_COMPILE_ERROR",
+          "severity": "error",
+          "message": "invalid arithmetic expression",
+          "source_file": "/home/owner/daji/code/moss/tmp/review-agent2-d7ef868/tests/phase27/adversarial/cp-e-agent2-d7ef868/incomplete_binary.moss",
+          "line": 2,
+          "column": 1,
+          "span": {
+            "start_line": 2,
+            "start_column": 1,
+            "end_line": 2,
+            "end_column": 1
+          },
+          "source": {
+            "file": "/home/owner/daji/code/moss/tmp/review-agent2-d7ef868/tests/phase27/adversarial/cp-e-agent2-d7ef868/incomplete_binary.moss",
+            "line": 2,
+            "column": 1,
+            "span": {
+              "start_line": 2,
+              "start_column": 1,
+              "end_line": 2,
+              "end_column": 1
+            }
+          },
+          "semantic_identity": "main@1",
+          "symbol": null,
+          "rule": null,
+          "cause": null,
+          "related": [],
+          "guidance": null,
+          "details": {
+            "ownership_expected": null,
+            "ownership_actual": null,
+            "consume_line": null,
+            "recursion_witness": null,
+            "resolution": null
+          },
+          "fixes": [],
+          "legal_alternatives": []
+        }
+      },
+      "stderr": ""
+    }
+  },
+  "incomplete_member.moss": {
+    "baseline:off": {
+      "returncode": 1,
+      "payload": {
+        "protocol_version": 1,
+        "schema_version": "moss-agent-1",
+        "compiler_version": "0.1.0",
+        "command": "check",
+        "ok": false,
+        "error": {
+          "code": "TYPE_AMBIGUOUS_OPEN_RESULT",
+          "severity": "error",
+          "message": "unbound open result type for variable 'result'; heterogeneous or unresolved collection element type",
+          "source_file": "/home/owner/daji/code/moss/tmp/review-agent2-d7ef868/tests/phase27/adversarial/cp-e-agent2-d7ef868/incomplete_member.moss",
+          "line": 3,
+          "column": 1,
+          "span": {
+            "start_line": 3,
+            "start_column": 1,
+            "end_line": 3,
+            "end_column": 1
+          },
+          "source": {
+            "file": "/home/owner/daji/code/moss/tmp/review-agent2-d7ef868/tests/phase27/adversarial/cp-e-agent2-d7ef868/incomplete_member.moss",
+            "line": 3,
+            "column": 1,
+            "span": {
+              "start_line": 3,
+              "start_column": 1,
+              "end_line": 3,
+              "end_column": 1
+            }
+          },
+          "semantic_identity": "main@1",
+          "symbol": null,
+          "rule": null,
+          "cause": null,
+          "related": [],
+          "guidance": null,
+          "details": {
+            "ownership_expected": null,
+            "ownership_actual": null,
+            "consume_line": null,
+            "recursion_witness": null,
+            "resolution": null
+          },
+          "fixes": [],
+          "legal_alternatives": []
+        }
+      },
+      "stderr": ""
+    },
+    "candidate:off": {
+      "returncode": 1,
+      "payload": {
+        "protocol_version": 1,
+        "schema_version": "moss-agent-1",
+        "compiler_version": "0.1.0",
+        "command": "check",
+        "ok": false,
+        "error": {
+          "code": "MOSS_COMPILE_ERROR",
+          "severity": "error",
+          "message": "heterogeneous or unresolved collection element type",
+          "source_file": "/home/owner/daji/code/moss/tmp/review-agent2-d7ef868/tests/phase27/adversarial/cp-e-agent2-d7ef868/incomplete_member.moss",
+          "line": 3,
+          "column": 1,
+          "span": {
+            "start_line": 3,
+            "start_column": 1,
+            "end_line": 3,
+            "end_column": 1
+          },
+          "source": {
+            "file": "/home/owner/daji/code/moss/tmp/review-agent2-d7ef868/tests/phase27/adversarial/cp-e-agent2-d7ef868/incomplete_member.moss",
+            "line": 3,
+            "column": 1,
+            "span": {
+              "start_line": 3,
+              "start_column": 1,
+              "end_line": 3,
+              "end_column": 1
+            }
+          },
+          "semantic_identity": "main@1",
+          "symbol": null,
+          "rule": null,
+          "cause": null,
+          "related": [],
+          "guidance": null,
+          "details": {
+            "ownership_expected": null,
+            "ownership_actual": null,
+            "consume_line": null,
+            "recursion_witness": null,
+            "resolution": null
+          },
+          "fixes": [],
+          "legal_alternatives": []
+        }
+      },
+      "stderr": ""
+    },
+    "candidate:shadow": {
+      "returncode": 1,
+      "payload": {
+        "protocol_version": 1,
+        "schema_version": "moss-agent-1",
+        "compiler_version": "0.1.0",
+        "command": "check",
+        "ok": false,
+        "error": {
+          "code": "MOSS_COMPILE_ERROR",
+          "severity": "error",
+          "message": "heterogeneous or unresolved collection element type",
+          "source_file": "/home/owner/daji/code/moss/tmp/review-agent2-d7ef868/tests/phase27/adversarial/cp-e-agent2-d7ef868/incomplete_member.moss",
+          "line": 3,
+          "column": 1,
+          "span": {
+            "start_line": 3,
+            "start_column": 1,
+            "end_line": 3,
+            "end_column": 1
+          },
+          "source": {
+            "file": "/home/owner/daji/code/moss/tmp/review-agent2-d7ef868/tests/phase27/adversarial/cp-e-agent2-d7ef868/incomplete_member.moss",
+            "line": 3,
+            "column": 1,
+            "span": {
+              "start_line": 3,
+              "start_column": 1,
+              "end_line": 3,
+              "end_column": 1
+            }
+          },
+          "semantic_identity": "main@1",
+          "symbol": null,
+          "rule": null,
+          "cause": null,
+          "related": [],
+          "guidance": null,
+          "details": {
+            "ownership_expected": null,
+            "ownership_actual": null,
+            "consume_line": null,
+            "recursion_witness": null,
+            "resolution": null
+          },
+          "fixes": [],
+          "legal_alternatives": []
+        }
+      },
+      "stderr": ""
+    }
+  },
+  "unresolved_index.moss": {
+    "baseline:off": {
+      "returncode": 1,
+      "payload": {
+        "protocol_version": 1,
+        "schema_version": "moss-agent-1",
+        "compiler_version": "0.1.0",
+        "command": "check",
+        "ok": false,
+        "error": {
+          "code": "TYPE_AMBIGUOUS_OPEN_RESULT",
+          "severity": "error",
+          "message": "unbound open result type for variable 'result'; heterogeneous or unresolved collection element type",
+          "source_file": "/home/owner/daji/code/moss/tmp/review-agent2-d7ef868/tests/phase27/adversarial/cp-e-agent2-d7ef868/unresolved_index.moss",
+          "line": 3,
+          "column": 1,
+          "span": {
+            "start_line": 3,
+            "start_column": 1,
+            "end_line": 3,
+            "end_column": 1
+          },
+          "source": {
+            "file": "/home/owner/daji/code/moss/tmp/review-agent2-d7ef868/tests/phase27/adversarial/cp-e-agent2-d7ef868/unresolved_index.moss",
+            "line": 3,
+            "column": 1,
+            "span": {
+              "start_line": 3,
+              "start_column": 1,
+              "end_line": 3,
+              "end_column": 1
+            }
+          },
+          "semantic_identity": "main@1",
+          "symbol": null,
+          "rule": null,
+          "cause": null,
+          "related": [],
+          "guidance": null,
+          "details": {
+            "ownership_expected": null,
+            "ownership_actual": null,
+            "consume_line": null,
+            "recursion_witness": null,
+            "resolution": null
+          },
+          "fixes": [],
+          "legal_alternatives": []
+        }
+      },
+      "stderr": ""
+    },
+    "candidate:off": {
+      "returncode": 1,
+      "payload": {
+        "protocol_version": 1,
+        "schema_version": "moss-agent-1",
+        "compiler_version": "0.1.0",
+        "command": "check",
+        "ok": false,
+        "error": {
+          "code": "TYPE_AMBIGUOUS_OPEN_RESULT",
+          "severity": "error",
+          "message": "unbound open result type for variable 'result'; heterogeneous or unresolved collection element type",
+          "source_file": "/home/owner/daji/code/moss/tmp/review-agent2-d7ef868/tests/phase27/adversarial/cp-e-agent2-d7ef868/unresolved_index.moss",
+          "line": 3,
+          "column": 1,
+          "span": {
+            "start_line": 3,
+            "start_column": 1,
+            "end_line": 3,
+            "end_column": 1
+          },
+          "source": {
+            "file": "/home/owner/daji/code/moss/tmp/review-agent2-d7ef868/tests/phase27/adversarial/cp-e-agent2-d7ef868/unresolved_index.moss",
+            "line": 3,
+            "column": 1,
+            "span": {
+              "start_line": 3,
+              "start_column": 1,
+              "end_line": 3,
+              "end_column": 1
+            }
+          },
+          "semantic_identity": "main@1",
+          "symbol": null,
+          "rule": null,
+          "cause": null,
+          "related": [],
+          "guidance": null,
+          "details": {
+            "ownership_expected": null,
+            "ownership_actual": null,
+            "consume_line": null,
+            "recursion_witness": null,
+            "resolution": null
+          },
+          "fixes": [],
+          "legal_alternatives": []
+        }
+      },
+      "stderr": ""
+    },
+    "candidate:shadow": {
+      "returncode": 1,
+      "payload": {
+        "protocol_version": 1,
+        "schema_version": "moss-agent-1",
+        "compiler_version": "0.1.0",
+        "command": "check",
+        "ok": false,
+        "error": {
+          "code": "TYPE_AMBIGUOUS_OPEN_RESULT",
+          "severity": "error",
+          "message": "unbound open result type for variable 'result'; heterogeneous or unresolved collection element type",
+          "source_file": "/home/owner/daji/code/moss/tmp/review-agent2-d7ef868/tests/phase27/adversarial/cp-e-agent2-d7ef868/unresolved_index.moss",
+          "line": 3,
+          "column": 1,
+          "span": {
+            "start_line": 3,
+            "start_column": 1,
+            "end_line": 3,
+            "end_column": 1
+          },
+          "source": {
+            "file": "/home/owner/daji/code/moss/tmp/review-agent2-d7ef868/tests/phase27/adversarial/cp-e-agent2-d7ef868/unresolved_index.moss",
+            "line": 3,
+            "column": 1,
+            "span": {
+              "start_line": 3,
+              "start_column": 1,
+              "end_line": 3,
+              "end_column": 1
+            }
+          },
+          "semantic_identity": "main@1",
+          "symbol": null,
+          "rule": null,
+          "cause": null,
+          "related": [],
+          "guidance": null,
+          "details": {
+            "ownership_expected": null,
+            "ownership_actual": null,
+            "consume_line": null,
+            "recursion_witness": null,
+            "resolution": null
+          },
+          "fixes": [],
+          "legal_alternatives": []
+        }
+      },
+      "stderr": ""
+    }
+  },
+  "unresolved_map.moss": {
+    "baseline:off": {
+      "returncode": 1,
+      "payload": {
+        "protocol_version": 1,
+        "schema_version": "moss-agent-1",
+        "compiler_version": "0.1.0",
+        "command": "check",
+        "ok": false,
+        "error": {
+          "code": "ECHO_DISPLAY_UNSUPPORTED",
+          "severity": "error",
+          "message": "echo cannot display a Map ('map'), which has no deterministic display order; echo its values by key (echo supports Int, Float, Bool, Char, String, and Vector of those)",
+          "source_file": "/home/owner/daji/code/moss/tmp/review-agent2-d7ef868/tests/phase27/adversarial/cp-e-agent2-d7ef868/unresolved_map.moss",
+          "line": 3,
+          "column": 1,
+          "span": {
+            "start_line": 3,
+            "start_column": 1,
+            "end_line": 3,
+            "end_column": 1
+          },
+          "source": {
+            "file": "/home/owner/daji/code/moss/tmp/review-agent2-d7ef868/tests/phase27/adversarial/cp-e-agent2-d7ef868/unresolved_map.moss",
+            "line": 3,
+            "column": 1,
+            "span": {
+              "start_line": 3,
+              "start_column": 1,
+              "end_line": 3,
+              "end_column": 1
+            }
+          },
+          "semantic_identity": "main@1",
+          "symbol": null,
+          "rule": null,
+          "cause": null,
+          "related": [],
+          "guidance": null,
+          "details": {
+            "ownership_expected": null,
+            "ownership_actual": null,
+            "consume_line": null,
+            "recursion_witness": null,
+            "resolution": null
+          },
+          "fixes": [],
+          "legal_alternatives": []
+        }
+      },
+      "stderr": ""
+    },
+    "candidate:off": {
+      "returncode": 1,
+      "payload": {
+        "protocol_version": 1,
+        "schema_version": "moss-agent-1",
+        "compiler_version": "0.1.0",
+        "command": "check",
+        "ok": false,
+        "error": {
+          "code": "ECHO_DISPLAY_UNSUPPORTED",
+          "severity": "error",
+          "message": "echo cannot display a Map ('map'), which has no deterministic display order; echo its values by key (echo supports Int, Float, Bool, Char, String, and Vector of those)",
+          "source_file": "/home/owner/daji/code/moss/tmp/review-agent2-d7ef868/tests/phase27/adversarial/cp-e-agent2-d7ef868/unresolved_map.moss",
+          "line": 3,
+          "column": 1,
+          "span": {
+            "start_line": 3,
+            "start_column": 1,
+            "end_line": 3,
+            "end_column": 1
+          },
+          "source": {
+            "file": "/home/owner/daji/code/moss/tmp/review-agent2-d7ef868/tests/phase27/adversarial/cp-e-agent2-d7ef868/unresolved_map.moss",
+            "line": 3,
+            "column": 1,
+            "span": {
+              "start_line": 3,
+              "start_column": 1,
+              "end_line": 3,
+              "end_column": 1
+            }
+          },
+          "semantic_identity": "main@1",
+          "symbol": null,
+          "rule": null,
+          "cause": null,
+          "related": [],
+          "guidance": null,
+          "details": {
+            "ownership_expected": null,
+            "ownership_actual": null,
+            "consume_line": null,
+            "recursion_witness": null,
+            "resolution": null
+          },
+          "fixes": [],
+          "legal_alternatives": []
+        }
+      },
+      "stderr": ""
+    },
+    "candidate:shadow": {
+      "returncode": 1,
+      "payload": {
+        "protocol_version": 1,
+        "schema_version": "moss-agent-1",
+        "compiler_version": "0.1.0",
+        "command": "check",
+        "ok": false,
+        "error": {
+          "code": "ECHO_DISPLAY_UNSUPPORTED",
+          "severity": "error",
+          "message": "echo cannot display a Map ('map'), which has no deterministic display order; echo its values by key (echo supports Int, Float, Bool, Char, String, and Vector of those)",
+          "source_file": "/home/owner/daji/code/moss/tmp/review-agent2-d7ef868/tests/phase27/adversarial/cp-e-agent2-d7ef868/unresolved_map.moss",
+          "line": 3,
+          "column": 1,
+          "span": {
+            "start_line": 3,
+            "start_column": 1,
+            "end_line": 3,
+            "end_column": 1
+          },
+          "source": {
+            "file": "/home/owner/daji/code/moss/tmp/review-agent2-d7ef868/tests/phase27/adversarial/cp-e-agent2-d7ef868/unresolved_map.moss",
+            "line": 3,
+            "column": 1,
+            "span": {
+              "start_line": 3,
+              "start_column": 1,
+              "end_line": 3,
+              "end_column": 1
+            }
+          },
+          "semantic_identity": "main@1",
+          "symbol": null,
+          "rule": null,
+          "cause": null,
+          "related": [],
+          "guidance": null,
+          "details": {
+            "ownership_expected": null,
+            "ownership_actual": null,
+            "consume_line": null,
+            "recursion_witness": null,
+            "resolution": null
+          },
+          "fixes": [],
+          "legal_alternatives": []
+        }
+      },
+      "stderr": ""
+    }
+  },
+  "unresolved_map_lookup.moss": {
+    "baseline:off": {
+      "returncode": 1,
+      "payload": {
+        "protocol_version": 1,
+        "schema_version": "moss-agent-1",
+        "compiler_version": "0.1.0",
+        "command": "check",
+        "ok": false,
+        "error": {
+          "code": "TYPE_MISMATCH",
+          "severity": "error",
+          "message": "builtin get(key, default) expects 2 arguments, got 1",
+          "source_file": "/home/owner/daji/code/moss/tmp/review-agent2-d7ef868/tests/phase27/adversarial/cp-e-agent2-d7ef868/unresolved_map_lookup.moss",
+          "line": 3,
+          "column": 1,
+          "span": {
+            "start_line": 3,
+            "start_column": 1,
+            "end_line": 3,
+            "end_column": 1
+          },
+          "source": {
+            "file": "/home/owner/daji/code/moss/tmp/review-agent2-d7ef868/tests/phase27/adversarial/cp-e-agent2-d7ef868/unresolved_map_lookup.moss",
+            "line": 3,
+            "column": 1,
+            "span": {
+              "start_line": 3,
+              "start_column": 1,
+              "end_line": 3,
+              "end_column": 1
+            }
+          },
+          "semantic_identity": "main@1",
+          "symbol": null,
+          "rule": null,
+          "cause": null,
+          "related": [],
+          "guidance": null,
+          "details": {
+            "ownership_expected": null,
+            "ownership_actual": null,
+            "consume_line": null,
+            "recursion_witness": null,
+            "resolution": null
+          },
+          "fixes": [],
+          "legal_alternatives": []
+        }
+      },
+      "stderr": ""
+    },
+    "candidate:off": {
+      "returncode": 1,
+      "payload": {
+        "protocol_version": 1,
+        "schema_version": "moss-agent-1",
+        "compiler_version": "0.1.0",
+        "command": "check",
+        "ok": false,
+        "error": {
+          "code": "TYPE_MISMATCH",
+          "severity": "error",
+          "message": "builtin get(key, default) expects 2 arguments, got 1",
+          "source_file": "/home/owner/daji/code/moss/tmp/review-agent2-d7ef868/tests/phase27/adversarial/cp-e-agent2-d7ef868/unresolved_map_lookup.moss",
+          "line": 3,
+          "column": 1,
+          "span": {
+            "start_line": 3,
+            "start_column": 1,
+            "end_line": 3,
+            "end_column": 1
+          },
+          "source": {
+            "file": "/home/owner/daji/code/moss/tmp/review-agent2-d7ef868/tests/phase27/adversarial/cp-e-agent2-d7ef868/unresolved_map_lookup.moss",
+            "line": 3,
+            "column": 1,
+            "span": {
+              "start_line": 3,
+              "start_column": 1,
+              "end_line": 3,
+              "end_column": 1
+            }
+          },
+          "semantic_identity": "main@1",
+          "symbol": null,
+          "rule": null,
+          "cause": null,
+          "related": [],
+          "guidance": null,
+          "details": {
+            "ownership_expected": null,
+            "ownership_actual": null,
+            "consume_line": null,
+            "recursion_witness": null,
+            "resolution": null
+          },
+          "fixes": [],
+          "legal_alternatives": []
+        }
+      },
+      "stderr": ""
+    },
+    "candidate:shadow": {
+      "returncode": 1,
+      "payload": {
+        "protocol_version": 1,
+        "schema_version": "moss-agent-1",
+        "compiler_version": "0.1.0",
+        "command": "check",
+        "ok": false,
+        "error": {
+          "code": "TYPE_MISMATCH",
+          "severity": "error",
+          "message": "builtin get(key, default) expects 2 arguments, got 1",
+          "source_file": "/home/owner/daji/code/moss/tmp/review-agent2-d7ef868/tests/phase27/adversarial/cp-e-agent2-d7ef868/unresolved_map_lookup.moss",
+          "line": 3,
+          "column": 1,
+          "span": {
+            "start_line": 3,
+            "start_column": 1,
+            "end_line": 3,
+            "end_column": 1
+          },
+          "source": {
+            "file": "/home/owner/daji/code/moss/tmp/review-agent2-d7ef868/tests/phase27/adversarial/cp-e-agent2-d7ef868/unresolved_map_lookup.moss",
+            "line": 3,
+            "column": 1,
+            "span": {
+              "start_line": 3,
+              "start_column": 1,
+              "end_line": 3,
+              "end_column": 1
+            }
+          },
+          "semantic_identity": "main@1",
+          "symbol": null,
+          "rule": null,
+          "cause": null,
+          "related": [],
+          "guidance": null,
+          "details": {
+            "ownership_expected": null,
+            "ownership_actual": null,
+            "consume_line": null,
+            "recursion_witness": null,
+            "resolution": null
+          },
+          "fixes": [],
+          "legal_alternatives": []
+        }
+      },
+      "stderr": ""
+    }
+  },
+  "unresolved_nested.moss": {
+    "baseline:off": {
+      "returncode": 1,
+      "payload": {
+        "protocol_version": 1,
+        "schema_version": "moss-agent-1",
+        "compiler_version": "0.1.0",
+        "command": "check",
+        "ok": false,
+        "error": {
+          "code": "ECHO_DISPLAY_UNSUPPORTED",
+          "severity": "error",
+          "message": "echo cannot display a Vector whose element type is unknown ('vector'); give it elements or use a typed constructor such as Vector[Int]() (echo supports Int, Float, Bool, Char, String, and Vector of those)",
+          "source_file": "/home/owner/daji/code/moss/tmp/review-agent2-d7ef868/tests/phase27/adversarial/cp-e-agent2-d7ef868/unresolved_nested.moss",
+          "line": 4,
+          "column": 1,
+          "span": {
+            "start_line": 4,
+            "start_column": 1,
+            "end_line": 4,
+            "end_column": 1
+          },
+          "source": {
+            "file": "/home/owner/daji/code/moss/tmp/review-agent2-d7ef868/tests/phase27/adversarial/cp-e-agent2-d7ef868/unresolved_nested.moss",
+            "line": 4,
+            "column": 1,
+            "span": {
+              "start_line": 4,
+              "start_column": 1,
+              "end_line": 4,
+              "end_column": 1
+            }
+          },
+          "semantic_identity": "main@1",
+          "symbol": null,
+          "rule": null,
+          "cause": null,
+          "related": [],
+          "guidance": null,
+          "details": {
+            "ownership_expected": null,
+            "ownership_actual": null,
+            "consume_line": null,
+            "recursion_witness": null,
+            "resolution": null
+          },
+          "fixes": [],
+          "legal_alternatives": []
+        }
+      },
+      "stderr": ""
+    },
+    "candidate:off": {
+      "returncode": 1,
+      "payload": {
+        "protocol_version": 1,
+        "schema_version": "moss-agent-1",
+        "compiler_version": "0.1.0",
+        "command": "check",
+        "ok": false,
+        "error": {
+          "code": "ECHO_DISPLAY_UNSUPPORTED",
+          "severity": "error",
+          "message": "echo cannot display a Vector whose element type is unknown ('vector'); give it elements or use a typed constructor such as Vector[Int]() (echo supports Int, Float, Bool, Char, String, and Vector of those)",
+          "source_file": "/home/owner/daji/code/moss/tmp/review-agent2-d7ef868/tests/phase27/adversarial/cp-e-agent2-d7ef868/unresolved_nested.moss",
+          "line": 4,
+          "column": 1,
+          "span": {
+            "start_line": 4,
+            "start_column": 1,
+            "end_line": 4,
+            "end_column": 1
+          },
+          "source": {
+            "file": "/home/owner/daji/code/moss/tmp/review-agent2-d7ef868/tests/phase27/adversarial/cp-e-agent2-d7ef868/unresolved_nested.moss",
+            "line": 4,
+            "column": 1,
+            "span": {
+              "start_line": 4,
+              "start_column": 1,
+              "end_line": 4,
+              "end_column": 1
+            }
+          },
+          "semantic_identity": "main@1",
+          "symbol": null,
+          "rule": null,
+          "cause": null,
+          "related": [],
+          "guidance": null,
+          "details": {
+            "ownership_expected": null,
+            "ownership_actual": null,
+            "consume_line": null,
+            "recursion_witness": null,
+            "resolution": null
+          },
+          "fixes": [],
+          "legal_alternatives": []
+        }
+      },
+      "stderr": ""
+    },
+    "candidate:shadow": {
+      "returncode": 1,
+      "payload": {
+        "protocol_version": 1,
+        "schema_version": "moss-agent-1",
+        "compiler_version": "0.1.0",
+        "command": "check",
+        "ok": false,
+        "error": {
+          "code": "ECHO_DISPLAY_UNSUPPORTED",
+          "severity": "error",
+          "message": "echo cannot display a Vector whose element type is unknown ('vector'); give it elements or use a typed constructor such as Vector[Int]() (echo supports Int, Float, Bool, Char, String, and Vector of those)",
+          "source_file": "/home/owner/daji/code/moss/tmp/review-agent2-d7ef868/tests/phase27/adversarial/cp-e-agent2-d7ef868/unresolved_nested.moss",
+          "line": 4,
+          "column": 1,
+          "span": {
+            "start_line": 4,
+            "start_column": 1,
+            "end_line": 4,
+            "end_column": 1
+          },
+          "source": {
+            "file": "/home/owner/daji/code/moss/tmp/review-agent2-d7ef868/tests/phase27/adversarial/cp-e-agent2-d7ef868/unresolved_nested.moss",
+            "line": 4,
+            "column": 1,
+            "span": {
+              "start_line": 4,
+              "start_column": 1,
+              "end_line": 4,
+              "end_column": 1
+            }
+          },
+          "semantic_identity": "main@1",
+          "symbol": null,
+          "rule": null,
+          "cause": null,
+          "related": [],
+          "guidance": null,
+          "details": {
+            "ownership_expected": null,
+            "ownership_actual": null,
+            "consume_line": null,
+            "recursion_witness": null,
+            "resolution": null
+          },
+          "fixes": [],
+          "legal_alternatives": []
+        }
+      },
+      "stderr": ""
+    }
+  },
+  "unresolved_pop.moss": {
+    "baseline:off": {
+      "returncode": 1,
+      "payload": {
+        "protocol_version": 1,
+        "schema_version": "moss-agent-1",
+        "compiler_version": "0.1.0",
+        "command": "check",
+        "ok": false,
+        "error": {
+          "code": "TYPE_AMBIGUOUS_OPEN_RESULT",
+          "severity": "error",
+          "message": "unbound open result type for variable 'result'; heterogeneous or unresolved collection element type",
+          "source_file": "/home/owner/daji/code/moss/tmp/review-agent2-d7ef868/tests/phase27/adversarial/cp-e-agent2-d7ef868/unresolved_pop.moss",
+          "line": 3,
+          "column": 1,
+          "span": {
+            "start_line": 3,
+            "start_column": 1,
+            "end_line": 3,
+            "end_column": 1
+          },
+          "source": {
+            "file": "/home/owner/daji/code/moss/tmp/review-agent2-d7ef868/tests/phase27/adversarial/cp-e-agent2-d7ef868/unresolved_pop.moss",
+            "line": 3,
+            "column": 1,
+            "span": {
+              "start_line": 3,
+              "start_column": 1,
+              "end_line": 3,
+              "end_column": 1
+            }
+          },
+          "semantic_identity": "main@1",
+          "symbol": null,
+          "rule": null,
+          "cause": null,
+          "related": [],
+          "guidance": null,
+          "details": {
+            "ownership_expected": null,
+            "ownership_actual": null,
+            "consume_line": null,
+            "recursion_witness": null,
+            "resolution": null
+          },
+          "fixes": [],
+          "legal_alternatives": []
+        }
+      },
+      "stderr": ""
+    },
+    "candidate:off": {
+      "returncode": 1,
+      "payload": {
+        "protocol_version": 1,
+        "schema_version": "moss-agent-1",
+        "compiler_version": "0.1.0",
+        "command": "check",
+        "ok": false,
+        "error": {
+          "code": "TYPE_AMBIGUOUS_OPEN_RESULT",
+          "severity": "error",
+          "message": "unbound open result type for variable 'result'; heterogeneous or unresolved collection element type",
+          "source_file": "/home/owner/daji/code/moss/tmp/review-agent2-d7ef868/tests/phase27/adversarial/cp-e-agent2-d7ef868/unresolved_pop.moss",
+          "line": 3,
+          "column": 1,
+          "span": {
+            "start_line": 3,
+            "start_column": 1,
+            "end_line": 3,
+            "end_column": 1
+          },
+          "source": {
+            "file": "/home/owner/daji/code/moss/tmp/review-agent2-d7ef868/tests/phase27/adversarial/cp-e-agent2-d7ef868/unresolved_pop.moss",
+            "line": 3,
+            "column": 1,
+            "span": {
+              "start_line": 3,
+              "start_column": 1,
+              "end_line": 3,
+              "end_column": 1
+            }
+          },
+          "semantic_identity": "main@1",
+          "symbol": null,
+          "rule": null,
+          "cause": null,
+          "related": [],
+          "guidance": null,
+          "details": {
+            "ownership_expected": null,
+            "ownership_actual": null,
+            "consume_line": null,
+            "recursion_witness": null,
+            "resolution": null
+          },
+          "fixes": [],
+          "legal_alternatives": []
+        }
+      },
+      "stderr": ""
+    },
+    "candidate:shadow": {
+      "returncode": 1,
+      "payload": {
+        "protocol_version": 1,
+        "schema_version": "moss-agent-1",
+        "compiler_version": "0.1.0",
+        "command": "check",
+        "ok": false,
+        "error": {
+          "code": "TYPE_AMBIGUOUS_OPEN_RESULT",
+          "severity": "error",
+          "message": "unbound open result type for variable 'result'; heterogeneous or unresolved collection element type",
+          "source_file": "/home/owner/daji/code/moss/tmp/review-agent2-d7ef868/tests/phase27/adversarial/cp-e-agent2-d7ef868/unresolved_pop.moss",
+          "line": 3,
+          "column": 1,
+          "span": {
+            "start_line": 3,
+            "start_column": 1,
+            "end_line": 3,
+            "end_column": 1
+          },
+          "source": {
+            "file": "/home/owner/daji/code/moss/tmp/review-agent2-d7ef868/tests/phase27/adversarial/cp-e-agent2-d7ef868/unresolved_pop.moss",
+            "line": 3,
+            "column": 1,
+            "span": {
+              "start_line": 3,
+              "start_column": 1,
+              "end_line": 3,
+              "end_column": 1
+            }
+          },
+          "semantic_identity": "main@1",
+          "symbol": null,
+          "rule": null,
+          "cause": null,
+          "related": [],
+          "guidance": null,
+          "details": {
+            "ownership_expected": null,
+            "ownership_actual": null,
+            "consume_line": null,
+            "recursion_witness": null,
+            "resolution": null
+          },
+          "fixes": [],
+          "legal_alternatives": []
+        }
+      },
+      "stderr": ""
+    }
+  },
+  "unresolved_return.moss": {
+    "baseline:off": {
+      "returncode": 1,
+      "payload": {
+        "protocol_version": 1,
+        "schema_version": "moss-agent-1",
+        "compiler_version": "0.1.0",
+        "command": "check",
+        "ok": false,
+        "error": {
+          "code": "TYPE_INFERENCE_FAILED",
+          "severity": "error",
+          "message": "cannot infer concrete argument types for static specialization of function 'identity'; give empty collections a typed constructor such as Vector[Int]()",
+          "source_file": "/home/owner/daji/code/moss/tmp/review-agent2-d7ef868/tests/phase27/adversarial/cp-e-agent2-d7ef868/unresolved_return.moss",
+          "line": 4,
+          "column": 1,
+          "span": {
+            "start_line": 4,
+            "start_column": 1,
+            "end_line": 4,
+            "end_column": 1
+          },
+          "source": {
+            "file": "/home/owner/daji/code/moss/tmp/review-agent2-d7ef868/tests/phase27/adversarial/cp-e-agent2-d7ef868/unresolved_return.moss",
+            "line": 4,
+            "column": 1,
+            "span": {
+              "start_line": 4,
+              "start_column": 1,
+              "end_line": 4,
+              "end_column": 1
+            }
+          },
+          "semantic_identity": "main@3",
+          "symbol": null,
+          "rule": null,
+          "cause": null,
+          "related": [],
+          "guidance": null,
+          "details": {
+            "ownership_expected": null,
+            "ownership_actual": null,
+            "consume_line": null,
+            "recursion_witness": null,
+            "resolution": null
+          },
+          "fixes": [],
+          "legal_alternatives": []
+        }
+      },
+      "stderr": ""
+    },
+    "candidate:off": {
+      "returncode": 1,
+      "payload": {
+        "protocol_version": 1,
+        "schema_version": "moss-agent-1",
+        "compiler_version": "0.1.0",
+        "command": "check",
+        "ok": false,
+        "error": {
+          "code": "TYPE_INFERENCE_FAILED",
+          "severity": "error",
+          "message": "cannot infer concrete argument types for static specialization of function 'identity'; give empty collections a typed constructor such as Vector[Int]()",
+          "source_file": "/home/owner/daji/code/moss/tmp/review-agent2-d7ef868/tests/phase27/adversarial/cp-e-agent2-d7ef868/unresolved_return.moss",
+          "line": 4,
+          "column": 1,
+          "span": {
+            "start_line": 4,
+            "start_column": 1,
+            "end_line": 4,
+            "end_column": 1
+          },
+          "source": {
+            "file": "/home/owner/daji/code/moss/tmp/review-agent2-d7ef868/tests/phase27/adversarial/cp-e-agent2-d7ef868/unresolved_return.moss",
+            "line": 4,
+            "column": 1,
+            "span": {
+              "start_line": 4,
+              "start_column": 1,
+              "end_line": 4,
+              "end_column": 1
+            }
+          },
+          "semantic_identity": "main@3",
+          "symbol": null,
+          "rule": null,
+          "cause": null,
+          "related": [],
+          "guidance": null,
+          "details": {
+            "ownership_expected": null,
+            "ownership_actual": null,
+            "consume_line": null,
+            "recursion_witness": null,
+            "resolution": null
+          },
+          "fixes": [],
+          "legal_alternatives": []
+        }
+      },
+      "stderr": ""
+    },
+    "candidate:shadow": {
+      "returncode": 1,
+      "payload": {
+        "protocol_version": 1,
+        "schema_version": "moss-agent-1",
+        "compiler_version": "0.1.0",
+        "command": "check",
+        "ok": false,
+        "error": {
+          "code": "TYPE_INFERENCE_FAILED",
+          "severity": "error",
+          "message": "cannot infer concrete argument types for static specialization of function 'identity'; give empty collections a typed constructor such as Vector[Int]()",
+          "source_file": "/home/owner/daji/code/moss/tmp/review-agent2-d7ef868/tests/phase27/adversarial/cp-e-agent2-d7ef868/unresolved_return.moss",
+          "line": 4,
+          "column": 1,
+          "span": {
+            "start_line": 4,
+            "start_column": 1,
+            "end_line": 4,
+            "end_column": 1
+          },
+          "source": {
+            "file": "/home/owner/daji/code/moss/tmp/review-agent2-d7ef868/tests/phase27/adversarial/cp-e-agent2-d7ef868/unresolved_return.moss",
+            "line": 4,
+            "column": 1,
+            "span": {
+              "start_line": 4,
+              "start_column": 1,
+              "end_line": 4,
+              "end_column": 1
+            }
+          },
+          "semantic_identity": "main@3",
+          "symbol": null,
+          "rule": null,
+          "cause": null,
+          "related": [],
+          "guidance": null,
+          "details": {
+            "ownership_expected": null,
+            "ownership_actual": null,
+            "consume_line": null,
+            "recursion_witness": null,
+            "resolution": null
+          },
+          "fixes": [],
+          "legal_alternatives": []
+        }
+      },
+      "stderr": ""
+    }
+  },
+  "unresolved_vector.moss": {
+    "baseline:off": {
+      "returncode": 1,
+      "payload": {
+        "protocol_version": 1,
+        "schema_version": "moss-agent-1",
+        "compiler_version": "0.1.0",
+        "command": "check",
+        "ok": false,
+        "error": {
+          "code": "ECHO_DISPLAY_UNSUPPORTED",
+          "severity": "error",
+          "message": "echo cannot display a Vector whose element type is unknown ('vector'); give it elements or use a typed constructor such as Vector[Int]() (echo supports Int, Float, Bool, Char, String, and Vector of those)",
+          "source_file": "/home/owner/daji/code/moss/tmp/review-agent2-d7ef868/tests/phase27/adversarial/cp-e-agent2-d7ef868/unresolved_vector.moss",
+          "line": 3,
+          "column": 1,
+          "span": {
+            "start_line": 3,
+            "start_column": 1,
+            "end_line": 3,
+            "end_column": 1
+          },
+          "source": {
+            "file": "/home/owner/daji/code/moss/tmp/review-agent2-d7ef868/tests/phase27/adversarial/cp-e-agent2-d7ef868/unresolved_vector.moss",
+            "line": 3,
+            "column": 1,
+            "span": {
+              "start_line": 3,
+              "start_column": 1,
+              "end_line": 3,
+              "end_column": 1
+            }
+          },
+          "semantic_identity": "main@1",
+          "symbol": null,
+          "rule": null,
+          "cause": null,
+          "related": [],
+          "guidance": null,
+          "details": {
+            "ownership_expected": null,
+            "ownership_actual": null,
+            "consume_line": null,
+            "recursion_witness": null,
+            "resolution": null
+          },
+          "fixes": [],
+          "legal_alternatives": []
+        }
+      },
+      "stderr": ""
+    },
+    "candidate:off": {
+      "returncode": 1,
+      "payload": {
+        "protocol_version": 1,
+        "schema_version": "moss-agent-1",
+        "compiler_version": "0.1.0",
+        "command": "check",
+        "ok": false,
+        "error": {
+          "code": "ECHO_DISPLAY_UNSUPPORTED",
+          "severity": "error",
+          "message": "echo cannot display a Vector whose element type is unknown ('vector'); give it elements or use a typed constructor such as Vector[Int]() (echo supports Int, Float, Bool, Char, String, and Vector of those)",
+          "source_file": "/home/owner/daji/code/moss/tmp/review-agent2-d7ef868/tests/phase27/adversarial/cp-e-agent2-d7ef868/unresolved_vector.moss",
+          "line": 3,
+          "column": 1,
+          "span": {
+            "start_line": 3,
+            "start_column": 1,
+            "end_line": 3,
+            "end_column": 1
+          },
+          "source": {
+            "file": "/home/owner/daji/code/moss/tmp/review-agent2-d7ef868/tests/phase27/adversarial/cp-e-agent2-d7ef868/unresolved_vector.moss",
+            "line": 3,
+            "column": 1,
+            "span": {
+              "start_line": 3,
+              "start_column": 1,
+              "end_line": 3,
+              "end_column": 1
+            }
+          },
+          "semantic_identity": "main@1",
+          "symbol": null,
+          "rule": null,
+          "cause": null,
+          "related": [],
+          "guidance": null,
+          "details": {
+            "ownership_expected": null,
+            "ownership_actual": null,
+            "consume_line": null,
+            "recursion_witness": null,
+            "resolution": null
+          },
+          "fixes": [],
+          "legal_alternatives": []
+        }
+      },
+      "stderr": ""
+    },
+    "candidate:shadow": {
+      "returncode": 1,
+      "payload": {
+        "protocol_version": 1,
+        "schema_version": "moss-agent-1",
+        "compiler_version": "0.1.0",
+        "command": "check",
+        "ok": false,
+        "error": {
+          "code": "ECHO_DISPLAY_UNSUPPORTED",
+          "severity": "error",
+          "message": "echo cannot display a Vector whose element type is unknown ('vector'); give it elements or use a typed constructor such as Vector[Int]() (echo supports Int, Float, Bool, Char, String, and Vector of those)",
+          "source_file": "/home/owner/daji/code/moss/tmp/review-agent2-d7ef868/tests/phase27/adversarial/cp-e-agent2-d7ef868/unresolved_vector.moss",
+          "line": 3,
+          "column": 1,
+          "span": {
+            "start_line": 3,
+            "start_column": 1,
+            "end_line": 3,
+            "end_column": 1
+          },
+          "source": {
+            "file": "/home/owner/daji/code/moss/tmp/review-agent2-d7ef868/tests/phase27/adversarial/cp-e-agent2-d7ef868/unresolved_vector.moss",
+            "line": 3,
+            "column": 1,
+            "span": {
+              "start_line": 3,
+              "start_column": 1,
+              "end_line": 3,
+              "end_column": 1
+            }
+          },
+          "semantic_identity": "main@1",
+          "symbol": null,
+          "rule": null,
+          "cause": null,
+          "related": [],
+          "guidance": null,
+          "details": {
+            "ownership_expected": null,
+            "ownership_actual": null,
+            "consume_line": null,
+            "recursion_witness": null,
+            "resolution": null
+          },
+          "fixes": [],
+          "legal_alternatives": []
+        }
+      },
+      "stderr": ""
+    }
+  }
+}
