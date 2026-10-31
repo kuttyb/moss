@@ -8023,10 +8023,10 @@ class Checker {
       if (!normal_type || !recovered_type ||
           normal_type->to_canonical_string() !=
               state.solver.resolve(formal)->to_canonical_string() ||
-          trim(state.expression_occurrences[
+          !tree_identifier_named(state.expression_occurrences[
               state.expression_root_slots.at(
-                  {normal_return->id, "return-value"})].source_expression) !=
-              function.params.front().name ||
+                  {normal_return->id, "return-value"})].source_expression,
+              function.params.front().name) ||
           raise_root == state.expression_root_slots.end() ||
           raise_root->second >= state.expression_occurrences.size())
         continue;
