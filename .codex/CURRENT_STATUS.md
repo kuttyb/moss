@@ -13574,4 +13574,11 @@ check` passed 154/154, zero failures or skips. Branch remains unmerged.
 - Frozen implementation `15c21ae6b23388af3eca8496f1d150a7bcbb82e1` passed full `make check` in off and shadow. The only later change before merge is delivery documentation and the test-driver hook-off check; compiler source is unchanged.
 - Agent 2 reviewed the exact frozen SHA and returned GO. It found no mismatched checked specialization in audited emitter calls, confirmed no `block_binders`/`joined_binders` references remain, and confirmed both G1/G2 hook-off removal drivers fail as expected.
 - First-parent perf against `1c9489aaac40a4dc9386c4e1257fc02474fbf433`: 77 fixtures, three interleaved repetitions, aggregate median +1.4%, no fixture beyond the noise threshold. Report: `tmp/compiler-perf/20261031-141231/LOCAL_REPORT.md`.
-- Phase report and team closeout: `docs/phase27/27_5_1_REPORT.md` and `docs/phase27/agent-patterns/phase27-5-1.md`. Record merge SHA and tag after delivery.
+- Phase report and team closeout: `docs/phase27/27_5_1_REPORT.md` and `docs/phase27/agent-patterns/phase27-5-1.md`. The merge is `e7a9f7076d2c0d70603ad0ffb823aea8c44a030b` and tag `phase27-5-1-m1` points to it.
+
+### Phase 27.5.2 — compiler-state handoff checkpoint
+
+- Branch `phase27-5-2-work` starts at tag `phase27-5-1-m1`, commit `e7a9f7076d2c0d70603ad0ffb823aea8c44a030b`, and is pushed to `origin`.
+- Before branch edits, built the baseline `moss-dev` from that exact tag in a detached worktree and copied it to disposable `tmp/phase27-5-2-baseline-moss`; SHA-256 `e07941624dff52907512bfb0011498d82b75659b6dd0f6a15ab479dd7501054d`.
+- Ran `./moss agent bootstrap --json`; reported language version `moss-0.1` and canonical guide `docs/GENTLE_INTRODUCTION_TO_MOSS.md`.
+- Implementation, parity capture, coverage inventory, gates, performance, and Agent 2 review remain pending. Continue with the user's S1-S5 order; keep full suites/performance until final gates.
