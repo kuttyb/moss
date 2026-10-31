@@ -1,0 +1,20 @@
+[
+  {
+    "case": "missing function",
+    "expected_fragment": "missing exemption function",
+    "error": "missing exemption function(s): missing_cp_e_function",
+    "passed": true
+  },
+  {
+    "case": "stale API key",
+    "expected_fragment": "stale expression-reader exemptions",
+    "error": "stale expression-reader exemptions: ('src/semantic_checker.cpp', 'phase20_is_nontransferable_capability', 'parse_simple_call')",
+    "passed": true
+  },
+  {
+    "case": "multiple sites under one exemption",
+    "expected_fragment": "gained multiple reader sites",
+    "error": "exemption function gained multiple reader sites: ('src/semantic_checker.cpp', 'phase20_is_nontransferable_capability', 'split_top_level') (2)",
+    "passed": true
+  }
+]
