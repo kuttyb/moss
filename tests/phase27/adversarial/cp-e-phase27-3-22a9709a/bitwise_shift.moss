@@ -1,0 +1,3 @@
+# docs/LANGUAGE_SYNTAX.md §Bitwise and shift operators
+fn main():
+  echo (5 & 3) << 1

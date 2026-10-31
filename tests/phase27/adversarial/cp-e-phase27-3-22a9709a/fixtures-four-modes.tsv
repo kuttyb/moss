@@ -1,0 +1,16 @@
+tests/phase27/est/message_expression.moss	baseline	off	0	True	{}
+tests/phase27/est/message_expression.moss	baseline	shadow	0	True	{}
+tests/phase27/est/message_expression.moss	candidate	off	0	True	{}
+tests/phase27/est/message_expression.moss	candidate	shadow	0	True	{}
+tests/phase27/est/bitwise_shift.moss	baseline	off	0	True	{}
+tests/phase27/est/bitwise_shift.moss	baseline	shadow	0	True	{}
+tests/phase27/est/bitwise_shift.moss	candidate	off	0	True	{}
+tests/phase27/est/bitwise_shift.moss	candidate	shadow	0	True	{}
+tests/phase27/est/numeric_member.moss	baseline	off	0	True	{}
+tests/phase27/est/numeric_member.moss	baseline	shadow	0	True	{}
+tests/phase27/est/numeric_member.moss	candidate	off	0	True	{}
+tests/phase27/est/numeric_member.moss	candidate	shadow	0	True	{}
+tests/phase27/est/syntax_27_1b.moss	baseline	off	0	True	{}
+tests/phase27/est/syntax_27_1b.moss	baseline	shadow	0	True	{}
+tests/phase27/est/syntax_27_1b.moss	candidate	off	0	True	{}
+tests/phase27/est/syntax_27_1b.moss	candidate	shadow	0	True	{}
