@@ -18,4 +18,12 @@ Base: `phase27-3-m1`, merge `ce5f836e06ce93909c358e6e6455402417d14991`. The opti
 
 Raw results and command logs: `tests/phase27/adversarial/phase27-4-iteration-1/`. The bulk harness reused the committed Phase 27.3 corpus, Rust emission, and examples parity scripts against the exact `phase27-3-m1` baseline.
 
-Full `make check` off/shadow, `.mossi` parity, idle first-parent performance, and the single fresh Agent 2 review remain pending. No review verdict or final gate is claimed at this checkpoint.
+## Gates before Agent 2
+
+- `MOSS_EST=off make --jobs="$(nproc)" check` — PASS. Log: `tests/phase27/adversarial/phase27-4-gates-iteration-1/check-off.log`.
+- `MOSS_EST=shadow make --jobs="$(nproc)" check` — PASS. Log: `tests/phase27/adversarial/phase27-4-gates-iteration-1/check-shadow.log`.
+- EST `.mossi` off/shadow raw parity and generic/Section2 import checks — PASS. Log: `tests/phase27/adversarial/phase27-4-gates-iteration-1/est-mossi.log`.
+- Phase 27.3 `.mossi` baseline parity — PASS; normalized library and app bytes match. Log: `tests/phase27/adversarial/phase27-4-gates-iteration-1/mossi-baseline.log`.
+- Source-free package acceptance (`--abi v9 --profile debug`) — PASS. Log: `tests/phase27/adversarial/phase27-4-gates-iteration-1/source-free-candidate.log`.
+- First-parent performance against `ce5f836e06ce93909c358e6e6455402417d14991`: aggregate 5.447 s → 5.611 s (+3.0%). No `rw_*` workload crossed the beyond-noise alert. The only alert was torture fixture `w2_spec_distinct_n032` (+7.9%, +150.06 ms); recorded and nonblocking per the Phase 27.4 ruling. No repeat was required by the aggregate/`rw_*` gate. Historical comparison vs `phase27-1-m1` is not a gate and is pending report extraction. Raw report and CSVs: `tests/phase27/adversarial/phase27-4-perf-iteration-1/`.
+- The one fresh Agent 2 audit at frozen implementation SHA `7dd0468540359447c5c1fff55e5eadaa2f66f174` is in progress. Merge and merge-commit gates remain pending.
