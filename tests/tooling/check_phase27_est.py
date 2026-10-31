@@ -46,6 +46,10 @@ def check_rejected_source_parity():
             ("MOSS_COMPILE_ERROR", "indentation jumps more than one block level", 3, 1),
         "incomplete_expression.moss":
             ("MOSS_COMPILE_ERROR", "invalid arithmetic expression", 2, 1),
+        "unresolved_collection_result.moss":
+            ("MOSS_COMPILE_ERROR", "unbound open result type for variable 'value'; heterogeneous or unresolved collection element type", 2, 1),
+        "incomplete_vector.moss":
+            ("MOSS_COMPILE_ERROR", "unbound open result type for variable 'value'; heterogeneous or unresolved collection element type", 2, 1),
         "juxtaposed_operands.moss":
             ("INVALID_EXPRESSION",
              "invalid expression '2 3': '2' is followed by '3' with no operator between them (if, while, and for are statements, not expressions)",
@@ -147,26 +151,31 @@ def check_rejected_source_parity():
                     raise SystemExit(f"{mode} rejected-source mismatch for {name}: {actual}, expected {signature}")
 
     package_fixture = ROOT / "tests/phase27/adversarial/cp-e-rawshape-rerun/package_incomplete"
+    package_open_collection = ROOT / "tests/phase27/est/repro/package_open_collection"
     with tempfile.TemporaryDirectory(prefix="phase27-incomplete-package-", dir=ROOT / "tmp") as scratch:
-        package = pathlib.Path(scratch) / "package"
-        shutil.copytree(package_fixture, package)
-        for mode in ("off", "shadow"):
-            env = os.environ.copy()
-            env.update({"MOSS": str(COMPILER), "MOSS_EST": mode,
-                        "MARGO_HOME": str(pathlib.Path(scratch) / f"margo-{mode}")})
-            result = subprocess.run(
-                [str(ROOT / "margo"), "build", "--check", "--json"],
-                cwd=package, env=env, text=True, stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE, check=False)
-            try:
-                payload = json.loads(result.stdout)
-            except json.JSONDecodeError as error:
-                raise SystemExit(f"package {mode} check did not return JSON: {result.stdout}{result.stderr}") from error
-            details = payload.get("error", "")
-            if result.returncode == 0 or payload.get("ok") or \
-                    '"code": "MOSS_COMPILE_ERROR"' not in details or \
-                    '"message": "invalid arithmetic expression"' not in details:
-                raise SystemExit(f"package {mode} did not preserve incomplete-expression rejection: {payload}")
+        for fixture, error_message in (
+                (package_fixture, "invalid arithmetic expression"),
+                (package_open_collection,
+                 "unbound open result type for variable 'value'; heterogeneous or unresolved collection element type")):
+            package = pathlib.Path(scratch) / fixture.name
+            shutil.copytree(fixture, package)
+            for mode in ("off", "shadow"):
+                env = os.environ.copy()
+                env.update({"MOSS": str(COMPILER), "MOSS_EST": mode,
+                            "MARGO_HOME": str(pathlib.Path(scratch) / f"margo-{fixture.name}-{mode}")})
+                result = subprocess.run(
+                    [str(ROOT / "margo"), "build", "--check", "--json"],
+                    cwd=package, env=env, text=True, stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE, check=False)
+                try:
+                    payload = json.loads(result.stdout)
+                except json.JSONDecodeError as error:
+                    raise SystemExit(f"package {mode} check did not return JSON: {result.stdout}{result.stderr}") from error
+                details = payload.get("error", "")
+                if result.returncode == 0 or payload.get("ok") or \
+                        '"code": "MOSS_COMPILE_ERROR"' not in details or \
+                        f'"message": "{error_message}"' not in details:
+                    raise SystemExit(f"package {mode} changed the baseline rejection for {fixture.name}: {payload}")
 
 def main():
     check_rejected_source_parity()

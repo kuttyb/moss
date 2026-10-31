@@ -9907,8 +9907,7 @@ class Checker {
             break;
           }
         }
-        err(err_line, "unbound open result type for variable '" + name + "'; heterogeneous or unresolved collection element type",
-            "TYPE_AMBIGUOUS_OPEN_RESULT");
+        err(err_line, "unbound open result type for variable '" + name + "'; heterogeneous or unresolved collection element type");
       }
     }
   }
