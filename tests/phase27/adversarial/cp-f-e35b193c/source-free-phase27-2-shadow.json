@@ -1,0 +1,17 @@
+{
+  "command": [
+    "python3",
+    "sdk/advanced-data-acceptance/check_source_free.py",
+    "--abi",
+    "v9",
+    "--profile",
+    "debug"
+  ],
+  "compiler_sha256": "4a334c71d9b5ea5b2925c311f7a462abd046e479fc4b52df4c0453e612ceb286",
+  "mode": "shadow",
+  "ok": true,
+  "returncode": 0,
+  "revision": "phase27-2",
+  "stderr": "",
+  "stdout": "Compiled-only advanced-data gate passed: ABI-9 debug: 5 Team A modules, 14 current source-backed provider interfaces\n"
+}
