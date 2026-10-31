@@ -19145,37 +19145,62 @@ class Checker {
   // These slots mirror the expressions that Rust emission evaluates directly.
   // Keeping them separate from the broader call/effect walker lets semantic
   // analysis attach one exact pipeline plan to each concrete codegen use.
-  vector<string> functional_statement_expressions(const Stmt& statement) const {
-    vector<string> expressions;
+  struct FunctionalStatementExpression {
+    string text;
+    est::ExprSlot slot = est::ExprSlot::Expression;
+    std::uint32_t argument_index = 0;
+  };
+
+  vector<FunctionalStatementExpression> functional_statement_expressions(
+      const Stmt& statement) const {
+    vector<FunctionalStatementExpression> expressions;
+    auto add = [&](const string& text, est::ExprSlot slot,
+                   std::uint32_t argument_index = 0) {
+      expressions.push_back({text, slot, argument_index});
+    };
     switch (statement.kind) {
       case Stmt::Kind::Let:
       case Stmt::Kind::Var:
+        add(statement.b, est::ExprSlot::Initializer);
+        break;
       case Stmt::Kind::Assign:
-        expressions.push_back(statement.b);
+        add(statement.b, est::ExprSlot::RhsValue);
         break;
       case Stmt::Kind::Call:
       case Stmt::Kind::Message:
       case Stmt::Kind::Echo:
-        expressions.insert(expressions.end(), statement.args.begin(),
-                           statement.args.end());
+        for (std::uint32_t index = 0; index < statement.args.size(); ++index)
+          add(statement.args[index], est::ExprSlot::Argument, index);
         break;
       case Stmt::Kind::If:
       case Stmt::Kind::While:
+        add(statement.a, est::ExprSlot::Condition);
+        break;
       case Stmt::Kind::Match:
-        expressions.push_back(statement.a);
+        add(statement.a, est::ExprSlot::Scrutinee);
         break;
       case Stmt::Kind::Case:
         break;
       case Stmt::Kind::For:
-        expressions.push_back(statement.b);
+        add(statement.b, est::ExprSlot::Iterable);
         break;
       case Stmt::Kind::Reply:
       case Stmt::Kind::Return:
+        if (!statement.a.empty())
+          add(statement.a, est::ExprSlot::ReturnValue);
+        break;
       case Stmt::Kind::Raise:
-        if (!statement.a.empty()) expressions.push_back(statement.a);
+        if (!statement.a.empty())
+          add(statement.a, est::ExprSlot::RaisedValue);
         break;
       case Stmt::Kind::Raw:
-        expressions.push_back(statement.text);
+        if (statement.est_raw_form &&
+            *statement.est_raw_form != est::RawForm::ExprStmt) {
+          // Functional expression discovery only consumes expression
+          // statements from Raw nodes; assignments are handled as Assign.
+          break;
+        }
+        add(statement.text, est::ExprSlot::Expression);
         break;
       case Stmt::Kind::Pass:
       case Stmt::Kind::Else:
@@ -21734,12 +21759,12 @@ class Checker {
       auto& expression_plans =
           statement.functional_expression_plans_by_context[context];
       expression_plans.clear();
-      std::set<std::pair<std::uint32_t, est::ExprId>> used_handles;
       for (size_t index = 0; index < expressions.size(); ++index) {
+        const auto& occurrence = expressions[index];
         string identity = context + "@" + std::to_string(statement.line) +
             ":expression:" + std::to_string(index);
         auto id = add_functional_pipeline_ir(
-            statement.line, expressions[index], context, identity, current_env,
+            statement.line, occurrence.text, context, identity, current_env,
             owning_function, next_pipeline_id, next_node_id, domain_fields,
             implicit_object, statement.continuation_lines,
             statement.source_file, &statement.expression_handles);
@@ -21747,16 +21772,18 @@ class Checker {
         Stmt::FunctionalExpressionPlan expression_plan;
         expression_plan.pipeline_id = id.value_or(0);
         if (id) {
-          const auto fingerprint = est::fingerprint(expressions[index]);
-          for (const auto& handle : statement.expression_handles) {
-            const auto key = std::make_pair(handle.arena_index, handle.expr);
-            if (handle.source_fingerprint != fingerprint ||
-                used_handles.count(key))
-              continue;
-            expression_plan.arena_index = handle.arena_index;
-            expression_plan.expression = handle.expr;
-            used_handles.insert(key);
-            break;
+          const auto fingerprint = est::fingerprint(occurrence.text);
+          auto handle = std::find_if(statement.expression_handles.begin(),
+              statement.expression_handles.end(), [&](const auto& candidate) {
+                return candidate.slot == occurrence.slot &&
+                    candidate.argument_index == occurrence.argument_index;
+              });
+          if (handle != statement.expression_handles.end() &&
+              handle->source_fingerprint == fingerprint) {
+            expression_plan.slot = occurrence.slot;
+            expression_plan.argument_index = occurrence.argument_index;
+            expression_plan.arena_index = handle->arena_index;
+            expression_plan.expression = handle->expr;
           }
         }
         expression_plans.push_back(expression_plan);
@@ -21783,10 +21810,15 @@ class Checker {
             const auto fingerprint = est::fingerprint(*result);
             for (const auto& handle : *result_expression_handles) {
               if (handle.slot != est::ExprSlot::ReturnValue ||
+                  handle.argument_index != 0 ||
                   handle.source_fingerprint != fingerprint)
                 continue;
-              Stmt::FunctionalExpressionPlan plan{
-                  handle.arena_index, handle.expr, *id};
+              Stmt::FunctionalExpressionPlan plan;
+              plan.slot = handle.slot;
+              plan.argument_index = handle.argument_index;
+              plan.arena_index = handle.arena_index;
+              plan.expression = handle.expr;
+              plan.pipeline_id = *id;
               if (owning_function) {
                 owning_function->result_functional_expression_plans_by_context[
                     context] = plan;

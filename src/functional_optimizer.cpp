@@ -1,7 +1,8 @@
 #include <algorithm>
-#include <cassert>
 #include <cmath>
 #include <cstddef>
+#include <cstdio>
+#include <cstdlib>
 #include <functional>
 #include <map>
 #include <optional>
@@ -91,16 +92,24 @@ class FunctionalOptimizer {
                 function.expression_handles,
                 function.result_functional_expression_plans_by_context,
                 context);
-            plan_scope(function.body, context, known,
-                       result);
+            auto result_expression = handle_expression(
+                function.expression_handles, est::ExprSlot::ReturnValue);
+            bool result_complete = !function.result_expression ||
+                result_expression.has_value();
+            plan_scope(function.body, context, known, result,
+                       result_expression, result_complete);
           }
         } else {
           string context = functional_function_context(function);
           auto result = result_pipeline(
               function.expression_handles,
               function.result_functional_expression_plans_by_context, context);
-          plan_scope(function.body, context, known,
-                     result);
+          auto result_expression = handle_expression(
+              function.expression_handles, est::ExprSlot::ReturnValue);
+          bool result_complete = !function.result_expression ||
+              result_expression.has_value();
+          plan_scope(function.body, context, known, result,
+                     result_expression, result_complete);
         }
       }
       for (auto& object : program_.objects) {
@@ -112,7 +121,12 @@ class FunctionalOptimizer {
           auto result = result_pipeline(
               method.expression_handles,
               method.result_functional_expression_plans_by_context, context);
-          plan_scope(method.body, context, known, result);
+          auto result_expression = handle_expression(
+              method.expression_handles, est::ExprSlot::ReturnValue);
+          bool result_complete = !method.result_expression ||
+              result_expression.has_value();
+          plan_scope(method.body, context, known, result,
+                     result_expression, result_complete);
         }
       }
       for (auto& domain : program_.domains) {
@@ -121,16 +135,18 @@ class FunctionalOptimizer {
           for (const auto& field : domain.state) known.insert(field.name);
           for (const auto& parameter : handler.params) known.insert(parameter.name);
           plan_scope(handler.body, functional_handler_context(domain, handler),
-                     known, std::nullopt);
+                     known, std::nullopt, std::nullopt, true);
         }
       }
       if (program_.main)
-        plan_scope(program_.main->body, "main", {}, std::nullopt);
+        plan_scope(program_.main->body, "main", {}, std::nullopt,
+                   std::nullopt, true);
       for (auto& test : program_.tests)
-        plan_scope(test.body, "test:" + test.name, {}, std::nullopt);
+        plan_scope(test.body, "test:" + test.name, {}, std::nullopt,
+                   std::nullopt, true);
       for (auto& benchmark : program_.benchmarks)
         plan_scope(benchmark.body, "bench:" + benchmark.name, {},
-                   std::nullopt);
+                   std::nullopt, std::nullopt, true);
     }
 
     rebuild_provenance();
@@ -154,6 +170,17 @@ class FunctionalOptimizer {
     string result_binding;
   };
 
+  struct DependencyCollection {
+    std::vector<ExpressionRef> roots;
+    bool complete = true;
+  };
+
+  struct BindingUseAnalysis {
+    size_t uses = 0;
+    bool reassigned = false;
+    bool complete = true;
+  };
+
   Program& program_;
   std::unordered_map<std::size_t, ExpressionRef> pipeline_expressions_;
 
@@ -161,7 +188,9 @@ class FunctionalOptimizer {
       const vector<est::Handle>& handles,
       const Stmt::FunctionalExpressionPlan& plan) const {
     for (const auto& handle : handles) {
-      if (handle.arena_index != plan.arena_index ||
+      if (handle.slot != plan.slot ||
+          handle.argument_index != plan.argument_index ||
+          handle.arena_index != plan.arena_index ||
           handle.expr != plan.expression)
         continue;
       if (handle.arena_index >= program_.expression_arenas.size() ||
@@ -634,15 +663,39 @@ class FunctionalOptimizer {
     return std::nullopt;
   }
 
-  std::vector<ExpressionRef> statement_expression_roots(
-      const Stmt& statement, bool& has_missing_expression_handle) const {
-    std::vector<ExpressionRef> roots;
+  DependencyCollection statement_expression_roots(
+      const Stmt& statement) const {
+    DependencyCollection result;
     auto add = [&](est::ExprSlot slot, std::uint32_t index = 0) {
-      if (auto ref = handle_expression(statement.expression_handles, slot, index))
-        roots.push_back(*ref);
+      bool injected_missing = false;
+#ifndef NDEBUG
+      if (const char* injection =
+              std::getenv("MOSS_TEST_MISSING_EXPRESSION_HANDLE")) {
+        const string requested = std::to_string(statement.line) + ":" +
+            std::to_string(static_cast<unsigned>(slot)) + ":" +
+            std::to_string(index);
+        injected_missing = requested == injection;
+      }
+      if (injected_missing) {
+        std::fprintf(stderr,
+            "MOSS_INTERNAL_INVARIANT missing expression handle injected "
+            "line=%d slot=%u argument=%u\n", statement.line,
+            static_cast<unsigned>(slot), index);
+      }
+#endif
+      auto ref = injected_missing
+          ? std::optional<ExpressionRef>{}
+          : handle_expression(statement.expression_handles, slot, index);
+      if (ref) result.roots.push_back(*ref);
       else {
-        has_missing_expression_handle = true;
-        assert(false && "expected expression slot is missing its EST handle");
+        result.complete = false;
+#ifndef NDEBUG
+        if (!injected_missing)
+          std::fprintf(stderr,
+              "MOSS_INTERNAL_INVARIANT missing expected expression handle "
+              "line=%d slot=%u argument=%u\n", statement.line,
+              static_cast<unsigned>(slot), index);
+#endif
       }
     };
     switch (statement.kind) {
@@ -652,7 +705,7 @@ class FunctionalOptimizer {
         break;
       case Stmt::Kind::Let: case Stmt::Kind::Var:
         add(est::ExprSlot::LhsPlace);
-        add(est::ExprSlot::Initializer);
+        if (!statement.b.empty()) add(est::ExprSlot::Initializer);
         break;
       case Stmt::Kind::Raw:
         if (statement.est_raw_form &&
@@ -665,6 +718,9 @@ class FunctionalOptimizer {
         add(est::ExprSlot::Expression);
         break;
       case Stmt::Kind::Message:
+        // The Receiver root owns the complete Message tree. The parser may
+        // leave only separate Argument roots when that parse fails; these do
+        // not prove a complete dependency set.
         add(est::ExprSlot::Receiver);
         break;
       case Stmt::Kind::Echo:
@@ -681,14 +737,14 @@ class FunctionalOptimizer {
         add(est::ExprSlot::Scrutinee);
         break;
       case Stmt::Kind::Reply: case Stmt::Kind::Return:
-        add(est::ExprSlot::ReturnValue);
+        if (!statement.a.empty()) add(est::ExprSlot::ReturnValue);
         break;
       case Stmt::Kind::Raise:
-        add(est::ExprSlot::RaisedValue);
+        if (!statement.a.empty()) add(est::ExprSlot::RaisedValue);
         break;
       default: break;
     }
-    return roots;
+    return result;
   }
 
   std::optional<string> statement_binding(const Stmt& statement) const {
@@ -1107,27 +1163,21 @@ class FunctionalOptimizer {
     return occurrences;
   }
 
-  size_t later_binding_uses(const vector<Stmt>& body, size_t producer_index,
-                            const std::optional<ExpressionRef>& result_expression,
-                            const string& binding,
-                            bool& reassigned) const {
-    size_t uses = 0;
-    reassigned = false;
+  BindingUseAnalysis later_binding_uses(
+      const vector<Stmt>& body, size_t producer_index,
+      const std::optional<ExpressionRef>& result_expression,
+      const string& binding, bool result_expression_complete) const {
+    BindingUseAnalysis analysis;
+    analysis.complete = result_expression_complete;
     for (size_t index = producer_index + 1; index < body.size(); ++index) {
       const Stmt& statement = body[index];
       size_t count = 0;
-      bool missing_expression_handle = false;
-      for (const auto& root : statement_expression_roots(
-               statement, missing_expression_handle))
+      const auto dependencies = statement_expression_roots(statement);
+      analysis.complete = analysis.complete && dependencies.complete;
+      for (const auto& root : dependencies.roots)
         count += identifier_uses(root, binding);
-      if (missing_expression_handle) {
-        // Missing tree data cannot prove that the binding is unused or safe to
-        // fuse. Conservatively block fusion and reassignment assumptions.
-        uses = std::max(uses, size_t{2});
-        reassigned = true;
-      }
       if (statement_defines(statement, binding)) {
-        reassigned = true;
+        analysis.reassigned = true;
         const auto lhs = handle_expression(statement.expression_handles,
                                            est::ExprSlot::LhsPlace);
         if (lhs) {
@@ -1135,16 +1185,17 @@ class FunctionalOptimizer {
           count = lhs_uses > count ? 0 : count - lhs_uses;
         }
       }
-      uses += count;
+      analysis.uses += count;
     }
     if (result_expression)
-      uses += identifier_uses(*result_expression, binding);
-    return uses;
+      analysis.uses += identifier_uses(*result_expression, binding);
+    return analysis;
   }
 
   void plan_cross_binding_fusion(
       vector<Stmt>& body, vector<ScopeOccurrence>& occurrences,
-      const std::optional<ExpressionRef>& result_expression) {
+      const std::optional<ExpressionRef>& result_expression,
+      bool result_expression_complete) {
     for (size_t index = 0; index < occurrences.size(); ++index) {
       ScopeOccurrence& producer_occurrence = occurrences[index];
       if (!producer_occurrence.statement ||
@@ -1157,18 +1208,22 @@ class FunctionalOptimizer {
         continue;
 
       const string& binding = producer_occurrence.result_binding;
-      bool reassigned = false;
-      size_t uses = later_binding_uses(
+      const BindingUseAnalysis use_analysis = later_binding_uses(
           body, producer_occurrence.statement_index, result_expression,
-          binding, reassigned);
-      bool immutable = producer_occurrence.new_binding && !reassigned &&
+          binding, result_expression_complete);
+      const size_t uses = use_analysis.uses;
+      bool immutable = producer_occurrence.new_binding &&
+          !use_analysis.reassigned && use_analysis.complete &&
           (producer_occurrence.statement->kind == Stmt::Kind::Assign ||
            producer_occurrence.statement->kind == Stmt::Kind::Var);
       producer->binding_name = binding;
       producer->binding_immutable = immutable;
       producer->binding_use_count = uses;
 
-      if (!immutable)
+      if (!use_analysis.complete)
+        producer->binding_materialization_reason =
+            "incomplete expression dependency collection";
+      else if (!immutable)
         producer->binding_materialization_reason =
             "binding is mutable or reassigned";
       else if (uses > 1)
@@ -1180,7 +1235,8 @@ class FunctionalOptimizer {
         producer->binding_materialization_reason =
             "use is outside the adjacent functional region";
 
-      if (!immutable || uses != 1 || index + 1 >= occurrences.size())
+      if (!use_analysis.complete || !immutable || uses != 1 ||
+          index + 1 >= occurrences.size())
         continue;
       ScopeOccurrence& consumer_occurrence = occurrences[index + 1];
       bool adjacent = consumer_occurrence.result_expression
@@ -1334,7 +1390,9 @@ class FunctionalOptimizer {
   }
 
   void plan_shared_traversals(vector<ScopeOccurrence>& occurrences,
-                              const string& context) {
+                              const string& context,
+                              bool dependencies_complete) {
+    if (!dependencies_complete) return;
     for (size_t first = 0; first < occurrences.size();) {
       ScopeOccurrence& initial = occurrences[first];
       FunctionalPipeline* initial_pipeline = pipeline_by_id(initial.pipeline_id);
@@ -1444,13 +1502,27 @@ class FunctionalOptimizer {
   void plan_scope(
       vector<Stmt>& body, const string& context,
       const std::set<string>& known_bindings,
-      const std::optional<std::pair<size_t, ExpressionRef>>& result) {
+      const std::optional<std::pair<size_t, ExpressionRef>>& result,
+      const std::optional<ExpressionRef>& result_expression,
+      bool result_expression_complete) {
     auto occurrences = collect_scope_occurrences(
         body, context, known_bindings, result);
-    const auto result_expression = result
-        ? std::optional<ExpressionRef>(result->second) : std::nullopt;
-    plan_cross_binding_fusion(body, occurrences, result_expression);
-    plan_shared_traversals(occurrences, context);
+    bool dependencies_complete = result_expression_complete;
+    for (const auto& statement : body)
+      dependencies_complete = dependencies_complete &&
+          statement_expression_roots(statement).complete;
+    if (!result_expression_complete) {
+#ifndef NDEBUG
+      std::fprintf(stderr,
+          "MOSS_INTERNAL_INVARIANT missing result expression handle "
+          "context=%s slot=%u\n", context.c_str(),
+          static_cast<unsigned>(est::ExprSlot::ReturnValue));
+#endif
+    }
+    plan_cross_binding_fusion(body, occurrences, result_expression,
+                              result_expression_complete);
+    plan_shared_traversals(occurrences, context,
+                           dependencies_complete);
   }
 
   void rebuild_provenance() {
@@ -1687,6 +1759,32 @@ void dump_functional_ir(std::ostream& out, const Program& program,
       out << "\n";
     }
     out << "  decision: " << group.decision << "\n\n";
+  }
+  if (!decisions_only) {
+    auto dump_expression_plans = [&](const vector<Stmt>& body) {
+      for (const auto& statement : body)
+        for (const auto& [context, plans] :
+             statement.functional_expression_plans_by_context)
+          for (const auto& plan : plans)
+            if (plan.pipeline_id)
+              out << "ExpressionPlan [" << context << "] line "
+                  << statement.line << " pipeline=%" << plan.pipeline_id
+                  << " slot=" << static_cast<unsigned>(plan.slot)
+                  << " argument=" << plan.argument_index
+                  << " ExprId=" << plan.expression << "\n";
+    };
+    if (program.main) dump_expression_plans(program.main->body);
+    for (const auto& function : program.functions)
+      dump_expression_plans(function.body);
+    for (const auto& object : program.objects)
+      for (const auto& method : object.methods)
+        dump_expression_plans(method.body);
+    for (const auto& domain : program.domains)
+      for (const auto& handler : domain.handlers)
+        dump_expression_plans(handler.body);
+    for (const auto& test : program.tests) dump_expression_plans(test.body);
+    for (const auto& benchmark : program.benchmarks)
+      dump_expression_plans(benchmark.body);
   }
 }
 

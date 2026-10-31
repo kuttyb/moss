@@ -310,6 +310,8 @@ struct Stmt {
   // resolves plans through the owning expression Handle; legacy IDs remain
   // available to other consumers during the staged migration.
   struct FunctionalExpressionPlan {
+    est::ExprSlot slot = est::ExprSlot::Expression;
+    std::uint32_t argument_index = 0;
     std::uint32_t arena_index = 0;
     est::ExprId expression = 0;
     std::size_t pipeline_id = 0;
