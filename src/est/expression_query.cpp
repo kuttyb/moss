@@ -25,6 +25,7 @@ std::optional<std::string> ExpressionView::source_text(ExprId expression) const 
   const auto begin = c.source_begin - r.source_begin;
   const auto length = c.source_end - c.source_begin;
   if (begin > source.size() || length > source.size() - begin) return std::nullopt;
+  if (length == 0) return std::string{};
   const auto text = std::string_view(source).substr(begin, length);
   const auto first = text.find_first_not_of(" \t\r\n");
   if (first == std::string_view::npos) return std::string{};
@@ -324,6 +325,7 @@ bool equal_node(const Arena& left, ExprId lhs, const Arena& right, ExprId rhs) {
       return node.name == other->name && node.separator == other->separator &&
              equal_node(left, node.value, right, other->value);
     else if constexpr (std::is_same_v<T, Placeholder>) return true;
+    else if constexpr (std::is_same_v<T, MissingExpression>) return true;
     else if constexpr (std::is_same_v<T, Collection>)
       return node.delimiter == other->delimiter && same_children(node.elements, other->elements);
     else if constexpr (std::is_same_v<T, Tuple>) return same_children(node.elements, other->elements);

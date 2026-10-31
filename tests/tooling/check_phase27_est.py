@@ -52,6 +52,12 @@ def check_rejected_source_parity():
             ("MOSS_COMPILE_ERROR", "heterogeneous or unresolved collection element type", 2, 1),
         "trailing_member_after_empty_vector.moss":
             ("TYPE_AMBIGUOUS_OPEN_RESULT", "unbound open result type for variable 'result'; heterogeneous or unresolved collection element type", 3, 1),
+        "empty_call_argument.moss":
+            ("TYPE_MISMATCH", "argument 1 to function 'add' has type '', expected 'int'", 5, 1),
+        "empty_trailing_call_argument.moss":
+            ("TYPE_MISMATCH", "argument 2 to function 'add' has type '', expected 'int'", 5, 1),
+        "empty_vector_element.moss":
+            ("ECHO_DISPLAY_UNSUPPORTED", "echo cannot display a Vector whose element type is unknown ('vector'); give it elements or use a typed constructor such as Vector[Int]() (echo supports Int, Float, Bool, Char, String, and Vector of those)", 2, 1),
         "juxtaposed_operands.moss":
             ("INVALID_EXPRESSION",
              "invalid expression '2 3': '2' is followed by '3' with no operator between them (if, while, and for are statements, not expressions)",

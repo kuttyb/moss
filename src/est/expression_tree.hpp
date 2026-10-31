@@ -100,6 +100,7 @@ struct MemberAccess {
 };
 struct NamedArgument { std::string name; ExprId value; char separator = '='; };
 struct Placeholder {};
+struct MissingExpression {};
 struct Collection { char delimiter; std::vector<ExprId> elements; };
 struct Tuple { std::vector<ExprId> elements; };
 struct Constructor { ExprId type; std::vector<ExprId> type_arguments;
@@ -109,7 +110,8 @@ struct Constructor { ExprId type; std::vector<ExprId> type_arguments;
 struct Pipeline { ExprId input; std::vector<ExprId> stages; };
 using Node = std::variant<Literal, Identifier, Unary, Binary, Call, Member,
                           Index, Parenthesized, Message, NamedArgument,
-                          Placeholder, Collection, Tuple, Constructor, Pipeline>;
+                          Placeholder, Collection, Tuple, Constructor, Pipeline,
+                          MissingExpression>;
 
 enum class Outcome : std::uint8_t { Built, Deferred27_1b, RejectedSource, Failed };
 

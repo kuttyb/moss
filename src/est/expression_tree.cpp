@@ -422,41 +422,78 @@ class Reader {
   void expect(const char* spelling) {
     if (!take(spelling)) throw std::invalid_argument(std::string("EST expected ") + spelling);
   }
+  ExprId missing_expression() {
+    if (position_ >= tokens_.size())
+      throw std::invalid_argument("EST missing expression position");
+    const auto& token = tokens_[position_];
+    SourceSpan span;
+    span.line = base_line_ + token.line - 1;
+    span.column = token.line == 1
+        ? base_column_ + token.column - 1 : token.column;
+    span.origin_id = origin_id_;
+    span.source_begin = span.source_end = token.source_begin;
+    return arena_.append(MissingExpression{}, span);
+  }
   std::vector<ExprId> call_arguments() {
     expect("(");
     std::vector<ExprId> args;
     if (!take(")")) {
-      do {
+      for (;;) {
+        if (position_ < tokens_.size() &&
+            (tokens_[position_].text == "," ||
+             tokens_[position_].text == ")")) {
+          args.push_back(missing_expression());
+        } else {
         if (position_ + 1 < tokens_.size() && tokens_[position_].word &&
             (tokens_[position_ + 1].text == ":" ||
              tokens_[position_ + 1].text == "=")) {
           const auto argument_begin = tokens_[position_].source_begin;
           const auto name = tokens_[position_++].text;
           const char separator = tokens_[position_++].text.front();
-          args.push_back(append(NamedArgument{name, expression(0), separator},
+          const auto value = position_ < tokens_.size() &&
+              (tokens_[position_].text == "," ||
+               tokens_[position_].text == ")")
+              ? missing_expression() : expression(0);
+          args.push_back(append(NamedArgument{name, value, separator},
                                 argument_begin));
         } else {
           args.push_back(expression(0));
         }
-      } while (take(","));
-      expect(")");
+        }
+        if (take(",")) continue;
+        expect(")");
+        break;
+      }
     }
     return args;
   }
   std::vector<ExprId> collection_items(char close) {
     std::vector<ExprId> items;
     if (take(close == ']' ? "]" : "}")) return items;
-    do {
+    for (;;) {
+      const char* close_spelling = close == ']' ? "]" : "}";
+      if (position_ < tokens_.size() &&
+          (tokens_[position_].text == "," ||
+           tokens_[position_].text == close_spelling)) {
+        items.push_back(missing_expression());
+      } else {
       if (position_ + 1 < tokens_.size() && tokens_[position_].word &&
           (tokens_[position_ + 1].text == ":" ||
            tokens_[position_ + 1].text == "=")) {
         const auto item_begin = tokens_[position_].source_begin;
         const auto name = tokens_[position_++].text;
         const char separator = tokens_[position_++].text.front();
-        items.push_back(append(NamedArgument{name, expression(0), separator}, item_begin));
+        const auto value = position_ < tokens_.size() &&
+            (tokens_[position_].text == "," ||
+             tokens_[position_].text == close_spelling)
+            ? missing_expression() : expression(0);
+        items.push_back(append(NamedArgument{name, value, separator}, item_begin));
       } else items.push_back(expression(0));
-    } while (take(","));
-    expect(close == ']' ? "]" : "}");
+      }
+      if (take(",")) continue;
+      expect(close_spelling);
+      break;
+    }
     return items;
   }
   ExprId message_primary(std::uint32_t message_begin) {
@@ -687,6 +724,8 @@ Shape shape_of(const Arena& arena, ExprId id) {
       return result;
     } else if constexpr (std::is_same_v<T, NamedArgument>) return {"named", node.name, {shape_of(arena, node.value)}};
     else if constexpr (std::is_same_v<T, Placeholder>) return {"placeholder", {}, {}};
+    else if constexpr (std::is_same_v<T, MissingExpression>)
+      return {"missing-expression", {}, {}};
     else if constexpr (std::is_same_v<T, Collection>) {
       Shape result{"collection", std::string(1, node.delimiter), {}};
       for (auto child : node.elements) result.children.push_back(shape_of(arena, child));
@@ -1397,6 +1436,8 @@ std::string dump_node(const Arena& arena, ExprId id) {
           << dump_node(arena, value.value) << ')';
     else if constexpr (std::is_same_v<T, Placeholder>)
       out << "(placeholder#" << id << ')';
+    else if constexpr (std::is_same_v<T, MissingExpression>)
+      out << "(missing-expression#" << id << ')';
     else if constexpr (std::is_same_v<T, Collection>) {
       out << "(collection#" << id << ' ' << value.delimiter;
       for (const auto element : value.elements) out << ' ' << dump_node(arena, element);
