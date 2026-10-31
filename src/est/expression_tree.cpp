@@ -897,8 +897,7 @@ std::optional<Shape> string_shape(std::string source) {
       return result;
     }
   }
-  if (source.front() == '{' && source.back() == '}' &&
-      matching_paren(source, 0) == source.size() - 1) {
+  if (source.front() == '{' && source.back() == '}') {
     const auto inside = trim(source.substr(1, source.size() - 2));
     Shape result{"collection", "{", {}};
     if (inside.empty()) return result;
