@@ -139,6 +139,7 @@ TOOLING_TESTS: list[tuple] = [
     ("check_phase27_untyped_pipeline_return", [sys.executable, "tests/tooling/check_phase27_untyped_pipeline_return.py", "{compiler}"]),
     ("check_phase27_accepts_rustc", [sys.executable, "tests/tooling/check_phase27_accepts_rustc.py", "{compiler}"]),
     ("check_phase27_three_engine", [sys.executable, "tests/tooling/check_phase27_three_engine.py", "{compiler}"]),
+    ("check_phase27_field_name_binding_use", [sys.executable, "tests/tooling/check_phase27_field_name_binding_use.py", "{compiler}"]),
     ("check_phase26_1_1_x1_v10", [sys.executable, "tests/tooling/check_phase26_1_1_x1_v10.py", "{compiler}"]),
     ("check_phase26_1_1_x2", [sys.executable, "tests/tooling/check_phase26_1_1_x2.py", "{compiler}"]),
     ("check_phase26_1_1_x4", [sys.executable, "tests/tooling/check_phase26_1_1_x4.py", "{compiler}"]),

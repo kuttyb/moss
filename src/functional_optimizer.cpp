@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cassert>
 #include <cmath>
 #include <cstddef>
 #include <functional>
@@ -634,11 +635,15 @@ class FunctionalOptimizer {
   }
 
   std::vector<ExpressionRef> statement_expression_roots(
-      const Stmt& statement) const {
+      const Stmt& statement, bool& has_missing_expression_handle) const {
     std::vector<ExpressionRef> roots;
     auto add = [&](est::ExprSlot slot, std::uint32_t index = 0) {
       if (auto ref = handle_expression(statement.expression_handles, slot, index))
         roots.push_back(*ref);
+      else {
+        has_missing_expression_handle = true;
+        assert(false && "expected expression slot is missing its EST handle");
+      }
     };
     switch (statement.kind) {
       case Stmt::Kind::Assign:
@@ -646,6 +651,7 @@ class FunctionalOptimizer {
         add(est::ExprSlot::RhsValue);
         break;
       case Stmt::Kind::Let: case Stmt::Kind::Var:
+        add(est::ExprSlot::LhsPlace);
         add(est::ExprSlot::Initializer);
         break;
       case Stmt::Kind::Raw:
@@ -1110,8 +1116,16 @@ class FunctionalOptimizer {
     for (size_t index = producer_index + 1; index < body.size(); ++index) {
       const Stmt& statement = body[index];
       size_t count = 0;
-      for (const auto& root : statement_expression_roots(statement))
+      bool missing_expression_handle = false;
+      for (const auto& root : statement_expression_roots(
+               statement, missing_expression_handle))
         count += identifier_uses(root, binding);
+      if (missing_expression_handle) {
+        // Missing tree data cannot prove that the binding is unused or safe to
+        // fuse. Conservatively block fusion and reassignment assumptions.
+        uses = std::max(uses, size_t{2});
+        reassigned = true;
+      }
       if (statement_defines(statement, binding)) {
         reassigned = true;
         const auto lhs = handle_expression(statement.expression_handles,
