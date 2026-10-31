@@ -5,28 +5,20 @@
 - Working branch `phase27-5-3-work`, based on `phase27-5-2-m1`
   (`a2b308fd804d0d3b9970a292b2f4de076bf20f2d`). Baseline binaries and the
   kickoff checkpoint are recorded in commit `76c8fe0a`.
-- Fast Debug slice in progress: pipeline execution now takes the checked EST
-  pipeline node, uses the checker-owned functional stage identity/output type,
-  and evaluates callback/index children by ExprId. The consumer-side EST
-  reparsing fallback has been removed from `interpreter.hpp`.
-- Targeted results on current worktree: `examples/functional_basics.moss`,
-  `tests/swarm_001_parenthesized_pipeline.moss`, and
-  `tests/phase27/est/specialized_call_facts.moss` pass under Fast Debug.
-  `MOSS_EST_COVERAGE_STATS=1` reports all four Fast Debug reparse sites at
-  zero for the first two; the specialized-call fixture also reports zero after
-  subtree lookup was corrected.
-- Added and registered `tests/tooling/check_phase27_5_3_fastdebug_checked_tree.py`.
-  It checks all three fixtures under native, Fast Debug, and optimized Rust
-  execution and asserts zero Fast Debug reparse counters. The script and
-  `python3 tests/tooling/check_agent_feedback.py` pass. `AGENTS.md` now states
-  the Phase 27.5.3 semantic-authority rule; the class inventory and empty
-  conflict registry are in `docs/COMPILER_STATE.md` and
-  `docs/phase27/27_5_3_CONFLICTS.md`.
-- Validation has been targeted only; no full suites or performance runs have
-  been started. No Phase 27.5.3 merge/tag has been made. Remaining work:
-  implement and register K2/K3 perturbation/removal tests, migrate all Fast
-  Debug static decisions, update AGENTS.md and COMPILER_STATE.md, then run the
-  C1 checkpoint suite and Agent 2 audit.
+- The Fast Debug checked-tree change was tested on three fixtures and pushed
+  as `88f611ce`; its then-current behavior matched native and optimized Rust
+  and reported zero Fast Debug reparses. The fallback removal was not corpus
+  safe: the one default full-suite attempt passed 111/165 jobs and failed 54.
+  Representative sources `tests/phase106e_domains.moss`,
+  `tests/tooling/fixtures/phase21_addendum_grouped_root.moss`, and
+  `tests/tooling/fixtures/phase21_capture_owned_string.moss` failed with
+  `MOSS_INTERNAL_INVARIANT missing checked expression handle`. The source
+  changes were reverted to preserve their prior behavior.
+- Current local changes retain K10, the class 1–9 inventory, the conflict
+  registry, and a registered focused three-engine parity test; K2/K3 hooks and
+  tests remain absent. The attempted `make check` stopped after the default
+  suite failure, so shadow and final restored-candidate suites remain pending.
+  No performance suite has run. No Phase 27.5.3 merge/tag has been made.
 
 ## Phase 26.2 stabilization progress
 

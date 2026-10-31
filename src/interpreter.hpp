@@ -628,94 +628,12 @@ class FastInterpreter {
   std::optional<ExpressionTreeView> expression_tree(
       std::string_view source) const {
     ExpressionTreeView view;
-    bool active_tree_belongs_to_current_statement =
-        active_expression_tree_ && active_expression_tree_->owned;
-    if (active_expression_tree_ && active_expression_tree_->arena &&
-        active_expression_handles_) {
-      const auto active_fingerprint = est::fingerprint(
-          active_expression_tree_->source);
-      for (const auto& handle : *active_expression_handles_) {
-        if (handle.arena_index >= program_.expression_arenas.size() ||
-            program_.expression_arenas[handle.arena_index].get() !=
-                active_expression_tree_->arena ||
-            handle.source_fingerprint != active_fingerprint)
-          continue;
-        active_tree_belongs_to_current_statement = true;
-        break;
-      }
-    }
-    if (active_tree_belongs_to_current_statement &&
-        active_expression_tree_ && active_expression_tree_->arena) {
-      std::vector<est::ExprId> pending{active_expression_node_};
-      std::set<est::ExprId> visited;
-      std::optional<est::ExprId> exact_subtree;
-      std::uint32_t exact_width = UINT32_MAX;
-      while (!pending.empty()) {
-        const auto candidate = pending.back();
-        pending.pop_back();
-        if (!visited.insert(candidate).second) continue;
-        const auto span = active_expression_tree_->arena->span(candidate);
-        if (span.source_begin > span.source_end ||
-            span.source_end > active_expression_tree_->source.size())
-          continue;
-        const auto candidate_text = std::string_view(
-            active_expression_tree_->source).substr(
-                span.source_begin, span.source_end - span.source_begin);
-        if (trim_copy(std::string(candidate_text)) ==
-            trim_copy(std::string(source))) {
-          const auto width = span.source_end - span.source_begin;
-          if (width < exact_width) {
-            exact_subtree = candidate;
-            exact_width = width;
-          }
-        }
-        std::visit([&](const auto& node) {
-          using T = std::decay_t<decltype(node)>;
-          if constexpr (std::is_same_v<T, est::Unary>) {
-            pending.push_back(node.operand);
-          } else if constexpr (std::is_same_v<T, est::Binary>) {
-            pending.push_back(node.right);
-            pending.push_back(node.left);
-          } else if constexpr (std::is_same_v<T, est::Call>) {
-            pending.insert(pending.end(), node.arguments.begin(),
-                           node.arguments.end());
-            pending.push_back(node.callee);
-          } else if constexpr (std::is_same_v<T, est::Member>) {
-            pending.push_back(node.base);
-          } else if constexpr (std::is_same_v<T, est::Index>) {
-            pending.push_back(node.index);
-            pending.push_back(node.base);
-          } else if constexpr (std::is_same_v<T, est::Parenthesized>) {
-            pending.push_back(node.inner);
-          } else if constexpr (std::is_same_v<T, est::Message>) {
-            pending.insert(pending.end(), node.arguments.begin(),
-                           node.arguments.end());
-            pending.push_back(node.target);
-          } else if constexpr (std::is_same_v<T, est::NamedArgument>) {
-            pending.push_back(node.value);
-          } else if constexpr (std::is_same_v<T, est::Collection> ||
-                               std::is_same_v<T, est::Tuple>) {
-            pending.insert(pending.end(), node.elements.begin(),
-                           node.elements.end());
-          } else if constexpr (std::is_same_v<T, est::Constructor>) {
-            pending.insert(pending.end(), node.type_arguments.begin(),
-                           node.type_arguments.end());
-            pending.insert(pending.end(), node.arguments.begin(),
-                           node.arguments.end());
-            pending.push_back(node.type);
-          } else if constexpr (std::is_same_v<T, est::Pipeline>) {
-            pending.insert(pending.end(), node.stages.begin(),
-                           node.stages.end());
-            pending.push_back(node.input);
-          }
-        }, active_expression_tree_->arena->at(candidate));
-      }
-      if (exact_subtree) {
-        view.source = active_expression_tree_->source;
-        view.arena = active_expression_tree_->arena;
-        view.root = *exact_subtree;
-        return view;
-      }
+    if (active_expression_tree_ &&
+        expression_node_text(*active_expression_tree_, active_expression_node_) == source) {
+      view.source = active_expression_tree_->source;
+      view.arena = active_expression_tree_->arena;
+      view.root = active_expression_node_;
+      return view;
     }
     view.source.assign(source);
     const auto fingerprint = est::fingerprint(view.source);
@@ -735,8 +653,14 @@ class FastInterpreter {
 #ifdef MOSS_TEST_BUILD
     est::record_consumer_reparse(est::ConsumerReparseSite::FastDebugExpressionTree);
 #endif
-    throw RuntimeError(0,
-        "MOSS_INTERNAL_INVARIANT missing checked expression handle");
+    view.owned = std::make_unique<est::Arena>();
+    try {
+      view.root = est::parse_expression(*view.owned, view.source);
+      view.arena = view.owned.get();
+      return view;
+    } catch (const std::invalid_argument&) {
+      return std::nullopt;
+    }
   }
 
   Value evaluate_tree_node(const ExpressionTreeView& tree, est::ExprId node,
@@ -1211,9 +1135,7 @@ class FastInterpreter {
 
   std::optional<ParsedFunctionalPipeline> functional_pipeline_from_est(
       std::string_view expression,
-      const std::vector<est::Handle>* handles = nullptr,
-      const ExpressionTreeView* checked_tree = nullptr,
-      est::ExprId checked_root = 0) const {
+      const std::vector<est::Handle>* handles = nullptr) const {
     if (expression.find("|>") == std::string_view::npos)
       return std::nullopt;
     const auto resolve_stage = [](std::string_view name)
@@ -1242,19 +1164,20 @@ class FastInterpreter {
             return parsed;
     }
 
-    if (checked_tree && checked_tree->arena &&
-        std::holds_alternative<est::Pipeline>(
-            checked_tree->arena->at(checked_root))) {
-      auto parsed = est::functional_pipeline(*checked_tree->arena,
-          checked_root, expression, resolve_stage);
-      if (parsed) return parsed;
-      throw RuntimeError(0, "MOSS_INTERNAL_INVARIANT missing checked pipeline node: " +
-          std::string(expression) + " root=" + std::to_string(checked_root) +
-          " node=" + std::to_string(checked_tree->arena->at(checked_root).index()));
+    // Some nested or transformed expressions have no retained source handle.
+    // Parse those into EST and dispatch through the Pipeline node.
+#ifdef MOSS_TEST_BUILD
+    est::record_consumer_reparse(
+        est::ConsumerReparseSite::FastDebugFunctionalPipeline);
+#endif
+    est::Arena temporary;
+    try {
+      const auto root = est::parse_expression(temporary, expression);
+      return est::functional_pipeline(temporary, root, expression,
+                                      resolve_stage);
+    } catch (const std::invalid_argument&) {
+      return std::nullopt;
     }
-
-    throw RuntimeError(0,
-        "MOSS_INTERNAL_INVARIANT missing checked pipeline handle");
   }
 
   Value invoke_pipeline_callable(const std::string& callable,
@@ -1283,45 +1206,7 @@ class FastInterpreter {
     return evaluate_expression_source(invocation + ")", callback, line, output);
   }
 
-  Value invoke_pipeline_callable(const ExpressionTreeView& tree,
-                                 est::ExprId callable_expression,
-                                 const std::vector<Value>& values,
-                                 std::string_view checked_callable_identity,
-                                 Frame& frame, int line,
-                                 std::ostream& output) {
-    Frame callback = frame;
-    std::vector<std::string> names;
-    for (std::size_t i = 0; i < values.size(); ++i) {
-      std::string name = "__moss_pipeline_arg_" + std::to_string(i);
-      callback.locals[name] = values[i];
-      names.push_back(name);
-    }
-    if (values.size() == 1) callback.locals["_"] = values.front();
-    const auto* facts = tree.arena->facts(callable_expression,
-                                          frame.functional_context);
-    const std::string_view target_identity =
-        !checked_callable_identity.empty() &&
-                checked_callable_identity.rfind("placeholder:", 0) != 0
-        ? checked_callable_identity
-        : (facts ? std::string_view(facts->resolved_target) : std::string_view{});
-    if (!target_identity.empty()) {
-      for (const auto& candidate : program_.functions)
-        if (candidate.semantic_callable_id == target_identity)
-          return call(candidate, names, callback, line, output);
-      for (const auto& candidate : program_.file_scope_pruned_functions)
-        if (candidate.semantic_callable_id == target_identity)
-          return call(candidate, names, callback, line, output);
-      if (const auto* checked_name =
-              function_signature(std::string(target_identity)))
-        return call(*checked_name, names, callback, line, output);
-      throw RuntimeError(line,
-          "MOSS_INTERNAL_INVARIANT checked pipeline callable target is unavailable: " +
-              std::string(target_identity));
-    }
-    return evaluate_tree_node(tree, callable_expression, callback, line, output);
-  }
-
-  const FunctionalNode* checked_pipeline_stage(
+  std::optional<std::string> checked_pipeline_stage_output_type(
       const ParsedFunctionalPipeline& parsed, size_t stage_index,
       const Frame& frame, int line) const {
     for (const auto& pipeline : program_.functional_pipelines) {
@@ -1338,9 +1223,9 @@ class FastInterpreter {
           break;
         }
       if (!matches) continue;
-      return &pipeline.nodes[stage_index];
+      return pipeline.nodes[stage_index].output_type;
     }
-    return nullptr;
+    return std::nullopt;
   }
 
   static std::optional<std::string> checked_vector_element_type(
@@ -1393,33 +1278,27 @@ class FastInterpreter {
         if (current.kind != Value::Kind::Vector || args.size() != 1)
           throw RuntimeError(line, "invalid checked pipeline stage '" + callee + "'");
         std::vector<Value> values;
-        const auto* stage_call = stage_index - 1 < pipeline_node.stages.size()
-            ? std::get_if<est::Call>(
-                  &tree.arena->at(pipeline_node.stages[stage_index - 1]))
-            : nullptr;
-        if (!stage_call || stage_call->arguments.size() != 1)
-          throw RuntimeError(line,
-              "MOSS_INTERNAL_INVARIANT missing checked pipeline callback");
-        const auto* checked_stage = checked_pipeline_stage(
-            parsed, stage_index, frame, line);
-        if (!checked_stage)
-          throw RuntimeError(line,
-              "MOSS_INTERNAL_INVARIANT missing checked pipeline stage");
+        std::optional<std::string> inferred_map_element_type;
         for (const auto& value : *current.vector) {
-          Value transformed = invoke_pipeline_callable(
-              tree, stage_call->arguments.front(), {value},
-              checked_stage->callable_identity, frame, line, output);
+          Value transformed = invoke_pipeline_callable(args.front(), {value}, frame, line, output);
           if (callee == "map") {
+            switch (transformed.kind) {
+              case Value::Kind::Bool: inferred_map_element_type = "bool"; break;
+              case Value::Kind::Int: inferred_map_element_type = "int"; break;
+              case Value::Kind::Float: inferred_map_element_type = "float"; break;
+              case Value::Kind::String: inferred_map_element_type = "string"; break;
+              case Value::Kind::Char: inferred_map_element_type = "char"; break;
+              case Value::Kind::Vector: inferred_map_element_type = "vector[" + transformed.element_type + "]"; break;
+              case Value::Kind::Struct: if (transformed.object) inferred_map_element_type = transformed.object->type; break;
+              default: break;
+            }
             values.push_back(std::move(transformed));
           } else if (transformed.truthy()) values.push_back(value);
         }
         std::string element_type = current.element_type;
         if (callee == "map") {
-          const auto* checked_stage = checked_pipeline_stage(
+          auto output_type = checked_pipeline_stage_output_type(
               parsed, stage_index, frame, line);
-          std::optional<std::string> output_type = checked_stage
-              ? std::optional<std::string>(checked_stage->output_type)
-              : std::nullopt;
           if (!output_type) {
 #ifndef NDEBUG
             if (const char* count = std::getenv("MOSS_TEST_COUNT_FACT");
@@ -1428,10 +1307,29 @@ class FastInterpreter {
                         << "|context=" << frame.functional_context << "\n";
 #endif
           }
+          if (!output_type && !args.empty()) {
+            std::string callback = trim_copy(args.front());
+            std::string callback_name = callback;
+            std::vector<std::string> callback_args;
+            expression_call(callback, callback_name, callback_args);
+            for (std::size_t separator = callback_name.find('.');
+                 separator != std::string::npos;
+                 separator = callback_name.find('.', separator + 2))
+              callback_name.replace(separator, 1, "__");
+            auto callback_function = function_signature(callback_name);
+            if (!callback_function) {
+              auto local = frame.locals.find(callback_name);
+              if (local != frame.locals.end() && local->second.kind == Value::Kind::Callable)
+                callback_function = function_signature(local->second.string);
+            }
+            if (callback_function && callback_function->return_type)
+              output_type = "vector[" + *callback_function->return_type + "]";
+          }
           auto output_element = output_type ? checked_vector_element_type(*output_type) : std::nullopt;
+          if (!output_element && inferred_map_element_type)
+            output_element = inferred_map_element_type;
           if (!output_element)
-            throw RuntimeError(line,
-                "MOSS_INTERNAL_INVARIANT missing checked map output type");
+            throw RuntimeError(line, "internal error: missing checked map output type");
           element_type = *output_element;
         }
         current = Value::vector_value(std::move(values),
@@ -1449,43 +1347,15 @@ class FastInterpreter {
         } else {
           throw RuntimeError(line, "internal error: reduce stage has no EST node");
         }
-        const auto* stage_call = stage_index - 1 < pipeline_node.stages.size()
-            ? std::get_if<est::Call>(
-                  &tree.arena->at(pipeline_node.stages[stage_index - 1]))
-            : nullptr;
-        if (!stage_call || stage_call->arguments.size() != 2)
-          throw RuntimeError(line,
-              "MOSS_INTERNAL_INVARIANT missing checked reduce callback");
-        const auto* checked_stage = checked_pipeline_stage(
-            parsed, stage_index, frame, line);
-        if (!checked_stage)
-          throw RuntimeError(line,
-              "MOSS_INTERNAL_INVARIANT missing checked pipeline stage");
         for (const auto& value : *current.vector)
-          reduced = invoke_pipeline_callable(tree, stage_call->arguments[1],
-              {reduced, value}, checked_stage->callable_identity,
-              frame, line, output);
+          reduced = invoke_pipeline_callable(args[1], {reduced, value}, frame, line, output);
         current = reduced;
       } else if (callee == "any" || callee == "all") {
         if (current.kind != Value::Kind::Vector || args.size() != 1)
           throw RuntimeError(line, "invalid checked pipeline stage '" + callee + "'");
         bool result = callee == "all";
-        const auto* stage_call = stage_index - 1 < pipeline_node.stages.size()
-            ? std::get_if<est::Call>(
-                  &tree.arena->at(pipeline_node.stages[stage_index - 1]))
-            : nullptr;
-        if (!stage_call || stage_call->arguments.size() != 1)
-          throw RuntimeError(line,
-              "MOSS_INTERNAL_INVARIANT missing checked predicate");
-        const auto* checked_stage = checked_pipeline_stage(
-            parsed, stage_index, frame, line);
-        if (!checked_stage)
-          throw RuntimeError(line,
-              "MOSS_INTERNAL_INVARIANT missing checked pipeline stage");
         for (const auto& value : *current.vector) {
-          bool predicate = invoke_pipeline_callable(tree,
-              stage_call->arguments.front(), {value},
-              checked_stage->callable_identity, frame, line, output).truthy();
+          bool predicate = invoke_pipeline_callable(args.front(), {value}, frame, line, output).truthy();
           if (callee == "any" && predicate) result = true;
           if (callee == "all" && !predicate) result = false;
         }
@@ -1518,7 +1388,7 @@ class FastInterpreter {
       }
       throw RuntimeError(line, "unsupported expression '" + e + "'");
     }
-    return evaluate_tree_node(*tree, tree->root, frame, line, output);
+    return evaluate_expression_tree(*tree, tree->root, frame, line, output);
   }
 
   Value evaluate_expression_tree(const ExpressionTreeView& tree_view,
@@ -1543,15 +1413,11 @@ class FastInterpreter {
       if (constructor.rfind("Vector[", 0) == 0 && constructor.back() == ']')
         return Value::vector_value({}, constructor.substr(7, constructor.size() - 8));
     }
-    if (tree && std::holds_alternative<est::Pipeline>(
-                    tree->arena->at(current_root))) {
-      auto pipeline = functional_pipeline_from_est(e, nullptr, tree,
-                                                    current_root);
-      const auto* pipeline_node =
-          std::get_if<est::Pipeline>(&tree->arena->at(current_root));
-      if (!pipeline || !pipeline_node)
-        throw RuntimeError(line,
-            "MOSS_INTERNAL_INVARIANT missing checked pipeline plan");
+    if (auto pipeline = functional_pipeline_from_est(e)) {
+      const auto* pipeline_node = tree
+          ? std::get_if<est::Pipeline>(&tree->arena->at(current_root)) : nullptr;
+      if (!pipeline_node)
+        throw RuntimeError(line, "internal error: checked pipeline has no EST node");
       return eval_pipeline(*pipeline, frame, line, output, *tree, *pipeline_node);
     }
     if (tree) {
@@ -1629,27 +1495,6 @@ class FastInterpreter {
         if (op == "*") return Value::float_value(lhs * rhs);
         if (op == "%") throw RuntimeError(line, "integer remainder requires Int operands");
         return Value::float_value(lhs / rhs);
-      }
-    }
-    if (tree) {
-      if (const auto* index =
-              std::get_if<est::Index>(&tree->arena->at(current_root))) {
-        Value base = evaluate_tree_node(*tree, index->base, frame, line, output);
-        Value key = evaluate_tree_node(*tree, index->index, frame, line, output);
-        if (base.kind == Value::Kind::Map && base.map) {
-          for (const auto& entry : *base.map)
-            if (protocol_key_equal(entry.first, key, frame, line, output)) {
-              emit("LocalRead", frame, line, e);
-              return entry.second;
-            }
-          throw RuntimeError(line, "missing map key");
-        }
-        const auto values = base.vector ? base.vector : base.queue;
-        if (!values || key.kind != Value::Kind::Int || key.integer < 0 ||
-            static_cast<std::size_t>(key.integer) >= values->size())
-          throw RuntimeError(line, "vector index out of bounds");
-        emit("LocalRead", frame, line, e);
-        return values->at(static_cast<std::size_t>(key.integer));
       }
     }
     if (auto place = locate(e, frame, line, output); place.value) {
@@ -2080,12 +1925,9 @@ class FastInterpreter {
           return evaluate_tree_node(*tree, member_node->base, frame, line, output);
         throw RuntimeError(line, "internal error: member expression has no EST base");
       };
-      if (member_node && member_argument_nodes) {
-          std::string method_name = member_node->name;
-          std::vector<std::string> method_args;
-          method_args.reserve(member_argument_nodes->size());
-          for (const auto argument : *member_argument_nodes)
-            method_args.emplace_back(expression_node_text(*tree, argument));
+      if (member->second.find('(') != std::string::npos) {
+        std::string method_name; std::vector<std::string> method_args;
+        if (expression_call(member->second, method_name, method_args)) {
           auto evaluate_method_argument = [&](std::size_t index) {
             if (member_argument_nodes && index < member_argument_nodes->size())
               return evaluate_tree_node(*tree, member_argument_nodes->at(index),
@@ -2380,6 +2222,7 @@ class FastInterpreter {
                 : "unresolved method '" + method_name + "'");
           return call_method(*target, receiver, method_args, frame, line, output,
                              locate(member->first, frame, line, output));
+        }
       }
       auto receiver = evaluate_member_receiver();
       if (receiver.kind != Value::Kind::Struct || !receiver.object)
