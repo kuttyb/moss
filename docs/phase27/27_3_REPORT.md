@@ -144,3 +144,12 @@ CP-F verdict: GO. Frozen candidate `2bdc2ea16cff57882dcfb45f99b5c2df39d6d98f` ag
 ### Phase 27.3 performance gate clarification (L7)
 
 The compiler-perf acceptance gate against `phase27-1-m1` that was recorded in `27_2_REPORT.md` is withdrawn for this phase and future phases: it assumed expression strings and their machinery would be deleted, which is no longer planned. Acceptance is based on candidate-off performance against the merge commit's first parent. If any workload appears beyond the noise floor, repeat it once on an idle machine; a confirmed beyond-noise slowdown must be fixed. Record the `phase27-1-m1` delta for historical context, but do not gate on it. The current W2 result against phase27-2-m1 is diagnostic only; final acceptance still requires the merge-first-parent comparison.
+
+### Semantic-fact audit (record only; no migrations in this round)
+
+The Rust emitter still performs these semantic or lowering decisions locally; this round records them for the later backend-contract phase and does not move them:
+
+- Parameter passing mode: [`native_generator.cpp:1239-1254`](../../src/native_generator.cpp#L1239) selects Value/SharedBorrow/MutableBorrow from specialized effects, concrete type copy/borrowability, and generic constraint operations. [`native_generator.cpp:4871-4888`](../../src/native_generator.cpp#L4871) consumes that result to emit parameter mutability and Rust reference syntax.
+- Failure-path synchronization sets: [`handler_lowering.inc:144-160`](../../src/handler_lowering.inc#L144) assembles exclusive, protected-read, and lock sets from effect leaves and the synchronization plan, then derives class modes.
+- Composition construction order: [`native_generator.cpp:5405-5428`](../../src/native_generator.cpp#L5405) partitions domain constructions from executable statements and sorts constructions by concrete-domain rank.
+- Fused/eager pipeline lowering: [`native_generator.cpp:3133-3137`](../../src/native_generator.cpp#L3133) selects fused versus eager code generation from the stored pipeline plan.
